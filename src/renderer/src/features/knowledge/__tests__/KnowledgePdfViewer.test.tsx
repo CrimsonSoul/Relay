@@ -233,6 +233,52 @@ describe('KnowledgePdfViewer', () => {
     expect(onPageChange).toHaveBeenLastCalledWith(2);
   });
 
+  it('keeps the uniquely named mode control focused while its pressed state and name change', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    renderComponent();
+
+    const continuousMode = await screen.findByRole('button', { name: 'View: Continuous' });
+    expect(screen.getAllByRole('button', { name: /^View:/ })).toHaveLength(1);
+    continuousMode.focus();
+    fireEvent.click(continuousMode);
+
+    const singleMode = await screen.findByRole('button', { name: 'View: Single page' });
+    expect(singleMode).toHaveAttribute('aria-pressed', 'false');
+    expect(singleMode).toHaveFocus();
+
+    fireEvent.click(singleMode);
+    const restoredContinuousMode = await screen.findByRole('button', {
+      name: 'View: Continuous',
+    });
+    expect(restoredContinuousMode).toHaveAttribute('aria-pressed', 'true');
+    expect(restoredContinuousMode).toHaveFocus();
+  });
+
+  it('reads a cached offline PDF in Continuous and Single without another fetch or load', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    getKnowledgePdf.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([1, 2, 3]).buffer,
+      checksum: 'a'.repeat(64),
+      source: 'cache',
+    });
+    renderComponent();
+
+    expect(await screen.findByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Page 1')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+
+    expect(await screen.findByRole('button', { name: 'View: Single page' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByLabelText('Page 1')).toBeVisible();
+    expect(screen.queryByText(/not cached on this laptop/i)).not.toBeInTheDocument();
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
   it('switches modes on the shared current page without refetching or destroying the PDF', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);

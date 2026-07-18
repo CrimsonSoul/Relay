@@ -412,6 +412,8 @@
 
 .knowledge-viewer__controls {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
@@ -427,6 +429,10 @@
   font-family: var(--font-family-mono);
   font-weight: var(--weight-bold);
   cursor: pointer;
+  transition:
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .knowledge-viewer__controls button:hover:not(:disabled),
@@ -434,6 +440,11 @@
   border-color: var(--color-border-strong);
   color: var(--color-text-primary);
   background: var(--color-bg-surface-3);
+}
+
+.knowledge-viewer__controls button:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
 }
 
 .knowledge-viewer__controls button:disabled {
@@ -512,16 +523,20 @@
 
 .knowledge-page-shell {
   position: relative;
+  box-sizing: border-box;
   flex: 0 0 auto;
 }
 
 .knowledge-page-shell > .knowledge-page {
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
   min-height: 100%;
 }
 
 .knowledge-page-placeholder {
   display: flex;
+  box-sizing: border-box;
   width: 100%;
   min-height: inherit;
   align-items: center;
@@ -550,7 +565,9 @@
 
 .knowledge-page__error {
   display: flex;
-  min-width: 320px;
+  box-sizing: border-box;
+  width: min(320px, 100%);
+  min-width: 0;
   min-height: 180px;
   align-items: center;
   justify-content: center;
@@ -1426,6 +1443,11 @@
     padding: 8px;
   }
 
+  .knowledge-viewer__controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .knowledge-viewer__controls .knowledge-viewer__fit,
   .knowledge-viewer__control-divider,
   .knowledge-viewer__zoom {
@@ -1489,6 +1511,33 @@
 }
 
 @media (max-width: 560px) {
+  .knowledge-viewer__toolbar {
+    padding-inline: 6px;
+  }
+
+  .knowledge-viewer__controls {
+    gap: 4px;
+  }
+
+  .knowledge-viewer__page-status {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .knowledge-viewer__controls .knowledge-viewer__mode {
+    min-width: 108px;
+    padding-inline: 8px;
+  }
+
+  .knowledge-viewer__viewport {
+    padding: 18px;
+  }
+
+  .knowledge-page__error {
+    min-height: 150px;
+    padding-inline: 16px;
+  }
+
   .knowledge-management__category-tool {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1519,6 +1568,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .knowledge-viewer__controls button {
+    transition-duration: 0s;
+  }
+
+  .knowledge-viewer__viewport {
+    scroll-behavior: auto;
+  }
+
   .knowledge-skeleton,
   .knowledge-skeleton--title {
     animation: none;

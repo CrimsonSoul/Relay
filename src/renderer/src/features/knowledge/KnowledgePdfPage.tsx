@@ -239,6 +239,7 @@ export function KnowledgePdfPage({
         <div
           className="knowledge-page__error"
           role="status"
+          aria-live="polite"
           aria-label={`Page ${pageIndex + 1} rendering error`}
         >
           <p>{error}</p>

@@ -245,6 +245,25 @@ describe('KnowledgeContinuousPdf', () => {
     await waitFor(() => expect(scrollTo).toHaveBeenCalledOnce());
   });
 
+  it('routes programmatic page navigation through instant scrolling for reduced motion', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+      })) as unknown as typeof globalThis.matchMedia,
+    );
+    const { pdf } = createPdf(6);
+    const readerRef = createRef<KnowledgeContinuousPdfHandle>();
+    const { container } = render(<KnowledgeContinuousPdf ref={readerRef} {...props(pdf)} />);
+    const targetShell = container.querySelector<HTMLElement>('[data-page-index="2"]')!;
+    Object.defineProperty(targetShell, 'offsetTop', { configurable: true, value: 700 });
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+
+    act(() => readerRef.current?.scrollToPage(2));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 672, behavior: 'auto' });
+  });
+
   it('does not turn observer feedback, zoom, or late metrics into programmatic scrolling', async () => {
     const { pdf } = createPdf(6);
     const { container, rerender } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
@@ -365,6 +384,27 @@ describe('KnowledgeContinuousPdf', () => {
     expect(greatestActiveReads).toBe(4);
     expect(container.querySelectorAll('.knowledge-page-shell')).toHaveLength(200);
     expect(screen.getAllByTestId('rendered-pdf-page').length).toBeLessThanOrEqual(5);
+
+    const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: shells[0], intersectionRatio: 0 },
+        { target: shells[100], intersectionRatio: 1 },
+      ]);
+    });
+    expect(
+      screen.getAllByTestId('rendered-pdf-page').map((page) => page.dataset.pageIndex),
+    ).toEqual(['98', '99', '100', '101', '102']);
+
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: shells[100], intersectionRatio: 0 },
+        { target: shells[199], intersectionRatio: 1 },
+      ]);
+    });
+    expect(
+      screen.getAllByTestId('rendered-pdf-page').map((page) => page.dataset.pageIndex),
+    ).toEqual(['197', '198', '199']);
 
     unmount();
     for (const pending of pendingReads) {

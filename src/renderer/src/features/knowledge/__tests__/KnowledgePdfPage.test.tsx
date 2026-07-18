@@ -127,9 +127,10 @@ describe('KnowledgePdfPage', () => {
     getPage.mockRejectedValueOnce(new Error('corrupt page')).mockResolvedValueOnce(page);
     render(<KnowledgePdfPage {...props()} />);
 
-    expect(
-      await screen.findByRole('status', { name: 'Page 1 rendering error' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: 'Page 1 rendering error' })).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
     expect(screen.getByRole('button', { name: 'Retry page 1' })).toBeInTheDocument();
     expect(onStatus).toHaveBeenCalledWith({
       state: 'error',
