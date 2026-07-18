@@ -83,6 +83,7 @@ describe('Knowledge Management visual system', () => {
   it('preserves readable section labels and stacked tools at each breakpoint', () => {
     const rail1100 = ruleBody(mediaBody(1100), '.knowledge-management__rail');
     const railButton1100 = ruleBody(mediaBody(1100), '.knowledge-management__rail button');
+    const uploadFile1100 = ruleBody(mediaBody(1100), '.knowledge-upload-file');
     const toolbar820 = ruleBody(mediaBody(820), '.knowledge-management__toolbar');
     const rail560 = ruleBody(mediaBody(560), '.knowledge-management__rail');
     const railButton560 = ruleBody(mediaBody(560), '.knowledge-management__rail button');
@@ -90,12 +91,19 @@ describe('Knowledge Management visual system', () => {
 
     expect(rail1100).toContain('overflow-x: auto;');
     expect(rail1100).toContain('flex-direction: row;');
+    expect(rail1100).toContain('gap: var(--space-2);');
+    expect(rail1100).toContain('padding: var(--space-2);');
     expect(railButton1100).toContain('min-height: 44px;');
+    expect(railButton1100).toContain('flex: 1 0 132px;');
+    expect(uploadFile1100).toContain('gap: var(--space-4);');
     expect(toolbar820).toContain('position: static;');
+    expect(toolbar820).toContain('align-items: stretch;');
     expect(toolbar820).toContain('flex-direction: column;');
     expect(rail560).toContain('overflow-x: auto;');
     expect(railButton560).toContain('min-height: 44px;');
     expect(railButton560).toContain('flex: 0 0 auto;');
+    expect(railButton560).toContain('min-width: 132px;');
+    expect(railButton560).toContain('padding: 0 var(--space-3);');
     expect(railLabel560).toContain('font-size: 10px;');
     expect(mediaBody(560)).not.toContain('span::first-letter');
   });

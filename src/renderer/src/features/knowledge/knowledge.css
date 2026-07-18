@@ -1353,7 +1353,7 @@
 
   .knowledge-upload-file {
     grid-template-columns: minmax(190px, 1fr) minmax(130px, 0.7fr) auto;
-    gap: 10px;
+    gap: var(--space-4);
   }
 }
 
