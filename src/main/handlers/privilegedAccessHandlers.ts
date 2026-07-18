@@ -29,8 +29,8 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 const SIGNED_OUT_VIEW: PrivilegedSessionView = {
   state: 'signed-out',
   accountId: null,
-  operatorId: null,
-  operatorName: null,
+  username: null,
+  displayName: null,
   role: null,
   capabilities: [],
   deviceId: null,
@@ -39,7 +39,7 @@ const SIGNED_OUT_VIEW: PrivilegedSessionView = {
 
 export interface PrivilegedAccessRuntime {
   getView(): PrivilegedSessionView;
-  login(input: { operatorId: string; password: string }): Promise<PrivilegedSessionView>;
+  login(input: { username: string; password: string }): Promise<PrivilegedSessionView>;
   logout(): Promise<void>;
   lock(): void;
   reauthenticate(password: string): Promise<PrivilegedReauthenticationProof>;
@@ -123,7 +123,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (!parsed.success) return failure('invalid-input');
     const runtime = getRuntime();
     if (!runtime) return failure('offline');
-    const limiterKey = `${parsed.data.operatorId}:${runtime.getView().deviceId ?? 'unpaired'}`;
+    const limiterKey = `${parsed.data.username}:${runtime.getView().deviceId ?? 'unpaired'}`;
     if (!loginLimiter.tryConsume(limiterKey).allowed) return failure('conflict');
     try {
       return success(publicView(await runtime.login(parsed.data)));
@@ -241,9 +241,9 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (
       !runtime ||
       view?.state !== 'active' ||
-      view.role !== 'admin' ||
+      (view.role !== 'owner' && view.role !== 'admin') ||
       view.deviceId !== null ||
-      !view.operatorId
+      !view.accountId
     ) {
       return failure('unauthorized');
     }
@@ -251,7 +251,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (!manager) return failure('offline');
     try {
       return success<PrivilegedCredentialSetupView>(
-        await manager.setupCredential({ actorOperatorId: view.operatorId, ...parsed.data }),
+        await manager.setupCredential({ actorAccountId: view.accountId, ...parsed.data }),
       );
     } catch {
       return failure('server-error');

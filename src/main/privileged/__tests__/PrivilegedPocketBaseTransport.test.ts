@@ -16,6 +16,7 @@ const envelope: SignedPrivilegedCommandEnvelope = {
   accountId: 'account-admin',
   deviceId: 'device-1',
   roleClaim: 'admin',
+  displayNameSnapshot: 'Ryan Bledsoe',
   command: 'privileged.status.read',
   payload: { clientVersion: '1' },
   payloadHash: 'a'.repeat(64),
@@ -48,7 +49,7 @@ describe('PrivilegedPocketBaseClientTransport', () => {
       wait: vi.fn(async () => undefined),
     });
 
-    await expect(transport.submitCommand(envelope, 'operator-1', 'b'.repeat(64))).resolves.toEqual({
+    await expect(transport.submitCommand(envelope, 'b'.repeat(64))).resolves.toEqual({
       ok: true,
       requestId: 'request-1',
       value: { status: 'ready' },
@@ -57,7 +58,7 @@ describe('PrivilegedPocketBaseClientTransport', () => {
       RELAY_PRIVILEGED_COMMANDS_COLLECTION,
       expect.objectContaining({
         requestId: 'request-1',
-        operatorId: 'operator-1',
+        displayNameSnapshot: 'Ryan Bledsoe',
         state: 'pending',
         hasExpectedRevision: false,
       }),
@@ -86,7 +87,7 @@ describe('PrivilegedPocketBaseClientTransport', () => {
       challengeId: 'challenge-1',
       accountId: 'account-admin',
       authenticatedAccountId: 'account-admin',
-      operatorId: 'operator-1',
+      displayNameSnapshot: 'Ryan Bledsoe',
       code: 'ABCD2345',
       publicJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
       fingerprint: 'f'.repeat(64),
@@ -107,17 +108,15 @@ describe('PrivilegedPocketBaseClientTransport', () => {
 });
 
 describe('PocketBasePrivilegedRepository', () => {
-  it('normalizes the permanent owner and additional administrator assignments', async () => {
+  it('normalizes account-based owner and Publisher assignments', async () => {
     const getFirstListItem = vi.fn(async () => ({
       id: 'state-1',
       key: 'primary',
-      adminOperatorId: 'operator-ryan',
-      adminOperatorIds: ['operator-ryan', 'operator-charles'],
-      publisherOperatorId: '',
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: 'account-publisher',
       assignmentVersion: 2,
-      rosterMigrationVersion: 2,
-      updatedByOperatorId: '',
-      updatedAt: '2026-07-16T12:00:00.000Z',
+      identityMigrationVersion: 2,
+      updatedByAccountId: 'account-ryan',
       created: '2026-07-16T12:00:00.000Z',
       updated: '2026-07-16T12:00:00.000Z',
     }));
@@ -126,8 +125,8 @@ describe('PocketBasePrivilegedRepository', () => {
     } as never);
 
     await expect(repository.getState()).resolves.toMatchObject({
-      adminOperatorId: 'operator-ryan',
-      adminOperatorIds: ['operator-ryan', 'operator-charles'],
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: 'account-publisher',
     });
   });
 
@@ -137,7 +136,7 @@ describe('PocketBasePrivilegedRepository', () => {
       requestId: 'request-admin',
       accountId: 'account-admin',
       deviceId: 'device-1',
-      operatorId: 'operator-1',
+      displayNameSnapshot: 'Ryan Bledsoe',
       roleClaim: 'admin',
       command: 'administration.snapshot.read',
       payload: {},
@@ -154,8 +153,9 @@ describe('PocketBasePrivilegedRepository', () => {
       updated: '2026-07-15T12:00:00.000Z',
     }));
     const create = vi.fn();
+    const update = vi.fn(async () => ({}));
     const repository = new PocketBasePrivilegedRepository({
-      collection: vi.fn(() => ({ getFirstListItem, create })),
+      collection: vi.fn(() => ({ getFirstListItem, create, update })),
     } as never);
 
     await expect(
@@ -163,7 +163,8 @@ describe('PocketBasePrivilegedRepository', () => {
         requestId: 'request-admin',
         accountId: 'account-admin',
         deviceId: 'device-1',
-        operatorId: 'operator-1',
+        operatorId: null,
+        displayNameSnapshot: 'Ryan Bledsoe',
         roleClaim: 'admin',
         command: 'administration.snapshot.read',
         payload: {},
@@ -179,16 +180,23 @@ describe('PocketBasePrivilegedRepository', () => {
       command: { command: 'administration.snapshot.read' },
     });
     expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      'command-record',
+      { displayNameSnapshot: 'Ryan Bledsoe', operatorId: '' },
+      { requestKey: null },
+    );
   });
 
   it('accepts PocketBase auth records that omit non-authorizing timestamps', async () => {
     const getOne = vi.fn(async () => ({
       id: 'account-admin',
-      operatorId: 'operator-1',
-      role: 'admin',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      storedRole: 'administrator',
       active: true,
       mustChangePassword: false,
       credentialVersion: 1,
+      revision: 3,
     }));
     const repository = new PocketBasePrivilegedRepository({
       collection: vi.fn(() => ({ getOne })),
@@ -225,7 +233,7 @@ describe('PocketBasePrivilegedRepository', () => {
       pairedAt: '2026-07-15T12:00:00.000Z',
       lastUsedAt: null,
       revokedAt: null,
-      revokedByOperatorId: null,
+      revokedByAccountId: null,
       revision: 1,
     });
 
@@ -267,7 +275,6 @@ describe('PrivilegedServerQueue', () => {
     const commandRecord = {
       id: 'command-record',
       ...envelope,
-      operatorId: 'operator-1',
       bodyHash: 'b'.repeat(64),
       hasExpectedRevision: false,
       state: 'pending',
@@ -276,7 +283,7 @@ describe('PrivilegedServerQueue', () => {
       id: 'pairing-record',
       requestId: 'pairing-request-1',
       accountId: 'account-admin',
-      operatorId: 'operator-1',
+      displayNameSnapshot: 'Forged Name',
       challengeId: 'challenge-1',
       code: 'ABCD2345',
       publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
@@ -292,6 +299,16 @@ describe('PrivilegedServerQueue', () => {
         getFullList: vi.fn(async () =>
           name === RELAY_PRIVILEGED_COMMANDS_COLLECTION ? [commandRecord] : [pairingRecord],
         ),
+        getOne: vi.fn(async () => ({
+          id: 'account-admin',
+          username: 'ryan',
+          displayName: 'Ryan Bledsoe',
+          storedRole: 'administrator',
+          active: true,
+          mustChangePassword: false,
+          credentialVersion: 1,
+          revision: 3,
+        })),
         update: name === RELAY_PRIVILEGED_COMMANDS_COLLECTION ? updateCommand : updatePairing,
       })),
     };
@@ -324,7 +341,11 @@ describe('PrivilegedServerQueue', () => {
     );
     expect(updatePairing).toHaveBeenCalledWith(
       'pairing-record',
-      expect.objectContaining({ code: 'REDACTED', state: 'completed' }),
+      expect.objectContaining({
+        code: 'REDACTED',
+        displayNameSnapshot: 'Ryan Bledsoe',
+        state: 'completed',
+      }),
       { requestKey: null },
     );
   });

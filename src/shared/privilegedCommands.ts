@@ -148,6 +148,7 @@ export type PrivilegedCommandSigningBody<K extends PrivilegedCommandName = Privi
     accountId: string;
     deviceId: string;
     roleClaim: PrivilegedRole;
+    displayNameSnapshot: string;
     command: K;
     payload: PrivilegedCommandPayloadMap[K];
     payloadHash: string;
@@ -263,6 +264,7 @@ export function canonicalPrivilegedSigningBytes(
     accountId: envelope.accountId,
     deviceId: envelope.deviceId,
     roleClaim: envelope.roleClaim,
+    displayNameSnapshot: envelope.displayNameSnapshot,
     command: envelope.command,
     payload: envelope.payload,
     payloadHash: envelope.payloadHash,
@@ -837,6 +839,7 @@ const ENVELOPE_KEYS = [
   'accountId',
   'deviceId',
   'roleClaim',
+  'displayNameSnapshot',
   'command',
   'payload',
   'payloadHash',
@@ -860,6 +863,7 @@ export function validateSignedPrivilegedCommandEnvelope(
     accountId,
     deviceId,
     roleClaim,
+    displayNameSnapshot,
     command,
     payload,
     payloadHash,
@@ -875,6 +879,9 @@ export function validateSignedPrivilegedCommandEnvelope(
     !boundedIdentifier(accountId, 200) ||
     !boundedIdentifier(deviceId, 200) ||
     !isPrivilegedRole(roleClaim) ||
+    typeof displayNameSnapshot !== 'string' ||
+    displayNameSnapshot.length === 0 ||
+    displayNameSnapshot.length > 120 ||
     (command !== 'privileged.reauth.confirm' && !isPublicPrivilegedCommandName(command)) ||
     !isPrivilegedSha256(payloadHash) ||
     (expectedRevision !== null &&
@@ -907,6 +914,7 @@ export function validateSignedPrivilegedCommandEnvelope(
     accountId,
     deviceId,
     roleClaim,
+    displayNameSnapshot,
     command,
     payload: normalizedPayload,
     payloadHash,

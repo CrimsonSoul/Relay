@@ -1,9 +1,9 @@
 import PocketBase, { BaseAuthStore, ClientResponseError } from 'pocketbase';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-  type PrivilegedRole,
   type RelayPrivilegedAccountRecord,
 } from '@shared/privilegedAccess';
+import { normalizeRoleUsername } from '@shared/roleAccounts';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 
 export type PrivilegedAuthenticationErrorCode = 'invalid-credentials' | 'offline';
@@ -26,7 +26,7 @@ type PrivilegedAuthResponse = {
 
 type PrivilegedAuthCollection = {
   authWithPassword(
-    operatorId: string,
+    username: string,
     password: string,
     options: { requestKey: null },
   ): Promise<PrivilegedAuthResponse>;
@@ -55,8 +55,8 @@ type PrivilegedPocketBaseClientOptions = {
 };
 
 export interface PrivilegedAuthClient {
-  authenticate(operatorId: string, password: string): Promise<RelayPrivilegedAccountRecord>;
-  reauthenticate(operatorId: string, password: string): Promise<RelayPrivilegedAccountRecord>;
+  authenticate(username: string, password: string): Promise<RelayPrivilegedAccountRecord>;
+  reauthenticate(username: string, password: string): Promise<RelayPrivilegedAccountRecord>;
   clear(): void;
   createRecord?(
     collection: string,
@@ -68,10 +68,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isPrivilegedRole(value: unknown): value is PrivilegedRole {
-  return value === 'admin' || value === 'publisher';
-}
-
 function isBoundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
@@ -81,23 +77,34 @@ function normalizeAccountRecord(value: unknown): RelayPrivilegedAccountRecord | 
   const {
     id,
     collectionName,
-    operatorId,
-    role,
+    username,
+    displayName,
+    storedRole,
     active,
     mustChangePassword,
     credentialVersion,
+    revision,
+    legacyOperatorId,
     created,
     updated,
   } = value;
   if (
     collectionName !== RELAY_PRIVILEGED_ACCOUNTS_COLLECTION ||
     !isBoundedString(id, 200) ||
-    !isBoundedString(operatorId, 200) ||
-    !isPrivilegedRole(role) ||
+    !isBoundedString(username, 64) ||
+    normalizeRoleUsername(username) !== username ||
+    !isBoundedString(displayName, 120) ||
+    (storedRole !== 'administrator' && storedRole !== 'publisher') ||
     typeof active !== 'boolean' ||
     typeof mustChangePassword !== 'boolean' ||
     !Number.isSafeInteger(credentialVersion) ||
     (credentialVersion as number) < 0 ||
+    !Number.isSafeInteger(revision) ||
+    (revision as number) < 0 ||
+    (legacyOperatorId !== undefined &&
+      legacyOperatorId !== null &&
+      legacyOperatorId !== '' &&
+      !isBoundedString(legacyOperatorId, 200)) ||
     (created !== undefined && (typeof created !== 'string' || created.length > 100)) ||
     (updated !== undefined && (typeof updated !== 'string' || updated.length > 100))
   ) {
@@ -105,11 +112,16 @@ function normalizeAccountRecord(value: unknown): RelayPrivilegedAccountRecord | 
   }
   return {
     id,
-    operatorId,
-    role,
+    username,
+    displayName,
+    storedRole,
     active,
     mustChangePassword,
     credentialVersion: credentialVersion as number,
+    revision: revision as number,
+    ...(typeof legacyOperatorId === 'string' && legacyOperatorId.length > 0
+      ? { legacyOperatorId }
+      : {}),
     created: typeof created === 'string' ? created : '',
     updated: typeof updated === 'string' ? updated : '',
   };
@@ -141,12 +153,12 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     this.client = this.buildClient(this.serverUrl);
   }
 
-  authenticate(operatorId: string, password: string): Promise<RelayPrivilegedAccountRecord> {
-    return this.authenticateFresh(operatorId, password);
+  authenticate(username: string, password: string): Promise<RelayPrivilegedAccountRecord> {
+    return this.authenticateFresh(username, password);
   }
 
-  reauthenticate(operatorId: string, password: string): Promise<RelayPrivilegedAccountRecord> {
-    return this.authenticateFresh(operatorId, password);
+  reauthenticate(username: string, password: string): Promise<RelayPrivilegedAccountRecord> {
+    return this.authenticateFresh(username, password);
   }
 
   clear(): void {
@@ -220,16 +232,17 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
   }
 
   private async authenticateFresh(
-    operatorId: string,
+    username: string,
     password: string,
   ): Promise<RelayPrivilegedAccountRecord> {
     this.clear();
     try {
+      const normalizedUsername = normalizeRoleUsername(username);
       const response = await this.client
         .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-        .authWithPassword(operatorId, password, { requestKey: null });
+        .authWithPassword(normalizedUsername, password, { requestKey: null });
       const account = normalizeAccountRecord(response.record);
-      if (!account || account.operatorId !== operatorId) {
+      if (!account || account.username !== normalizedUsername) {
         this.clear();
         throw new PrivilegedAuthenticationError('invalid-credentials');
       }

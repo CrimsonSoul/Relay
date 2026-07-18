@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_PRIVILEGED_CAPABILITIES,
+  OWNER_PRIVILEGED_CAPABILITIES,
   PRIVILEGED_SESSION_IDLE_MS,
   type RelayPrivilegedAccountRecord,
 } from '@shared/privilegedAccess';
@@ -10,7 +11,7 @@ import {
   type PrivilegedAuthorization,
 } from '../PrivilegedSessionManager';
 
-const OPERATOR_ID = 'operator-ryan-bledsoe';
+const USERNAME = 'ryan';
 const PASSWORD = 'Test-access-value-123!';
 const START_TIME = new Date('2026-07-15T12:00:00.000Z').getTime();
 
@@ -19,11 +20,13 @@ function accountRecord(
 ): RelayPrivilegedAccountRecord {
   return {
     id: 'account-admin',
-    operatorId: OPERATOR_ID,
-    role: 'admin',
+    username: USERNAME,
+    displayName: 'Ryan Bledsoe',
+    storedRole: 'administrator',
     active: true,
     mustChangePassword: false,
     credentialVersion: 1,
+    revision: 3,
     created: '2026-07-15T11:00:00.000Z',
     updated: '2026-07-15T11:00:00.000Z',
     ...overrides,
@@ -54,8 +57,8 @@ describe('PrivilegedSessionManager', () => {
     authorization = {
       assigned: true,
       deviceId: 'device-work-laptop',
-      operatorName: 'Ryan Bledsoe',
       paired: true,
+      role: 'owner',
     };
     resolveAuthorization = vi.fn(async () => authorization);
     confirmReauthentication = vi.fn(async () => ({ requestId: 'reauth-command-id' }));
@@ -76,28 +79,29 @@ describe('PrivilegedSessionManager', () => {
     });
   }
 
-  it('logs in to an active assigned account and exposes only the public session view', async () => {
+  it('authenticates with username and returns the effective owner role without operator selection', async () => {
     const manager = createManager();
 
-    const view = await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    const view = await manager.login({ username: USERNAME, password: PASSWORD });
 
     expect(view).toEqual({
       state: 'active',
       accountId: 'account-admin',
-      operatorId: OPERATOR_ID,
-      operatorName: 'Ryan Bledsoe',
-      role: 'admin',
-      capabilities: ADMIN_PRIVILEGED_CAPABILITIES,
+      username: USERNAME,
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
+      capabilities: expect.arrayContaining(ADMIN_PRIVILEGED_CAPABILITIES),
       deviceId: 'device-work-laptop',
       expiresAt: new Date(START_TIME + PRIVILEGED_SESSION_IDLE_MS).toISOString(),
     });
     expect(JSON.stringify(view)).not.toContain(PASSWORD);
-    expect(view.capabilities).not.toBe(ADMIN_PRIVILEGED_CAPABILITIES);
+    expect(authClient.authenticate).toHaveBeenCalledWith(USERNAME, PASSWORD);
+    expect(JSON.stringify(view)).not.toContain('operator');
   });
 
   it('locks exactly after 15 minutes of privileged inactivity', async () => {
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
 
     await vi.advanceTimersByTimeAsync(PRIVILEGED_SESSION_IDLE_MS - 1);
     expect(manager.getView().state).toBe('active');
@@ -109,7 +113,7 @@ describe('PrivilegedSessionManager', () => {
 
   it('refreshes the idle deadline only for privileged activity', async () => {
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
     await vi.advanceTimersByTimeAsync(10 * 60 * 1_000);
 
     manager.recordPrivilegedActivity();
@@ -125,7 +129,7 @@ describe('PrivilegedSessionManager', () => {
 
   it('supports explicit lock, logout, and app-close disposal', async () => {
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
 
     manager.lock();
     expect(manager.getView().state).toBe('locked');
@@ -133,43 +137,53 @@ describe('PrivilegedSessionManager', () => {
     await manager.logout();
     expect(manager.getView().state).toBe('signed-out');
 
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
     manager.dispose();
     expect(manager.getView().state).toBe('signed-out');
     expect(authClient.clear).toHaveBeenCalledTimes(3);
   });
 
-  it('locks when selected operator attribution changes away from the signed-in operator', async () => {
-    const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
-
-    manager.handleSelectedOperatorChange('operator-tristan-bowles');
-
-    expect(manager.getView().state).toBe('locked');
-    expect(authClient.clear).toHaveBeenCalledOnce();
-  });
-
-  it('locks on account disablement, replacement, or operator mismatch', async () => {
+  it('locks on account disablement, replacement, username change, or credential replacement', async () => {
     const cases: Array<RelayPrivilegedAccountRecord | null> = [
       accountRecord({ active: false }),
       accountRecord({ id: 'replacement-account' }),
-      accountRecord({ operatorId: 'different-operator' }),
+      accountRecord({ username: 'charles' }),
+      accountRecord({ credentialVersion: 2 }),
       null,
     ];
 
     for (const changedAccount of cases) {
       const manager = createManager();
-      await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+      await manager.login({ username: USERNAME, password: PASSWORD });
       manager.handleAccountChanged(changedAccount);
       expect(manager.getView().state).toBe('locked');
     }
+  });
+
+  it('invalidates the affected session after ownership or Publisher authority changes', async () => {
+    const manager = createManager();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+
+    manager.handleAuthorityChanged(['account-charles', 'account-admin']);
+
+    expect(manager.getView().state).toBe('locked');
+    expect(authClient.clear).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the session active when only the account display name changes', async () => {
+    const manager = createManager();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+
+    manager.handleAccountChanged(accountRecord({ displayName: 'Ryan B.' }));
+
+    expect(manager.getView().state).toBe('active');
   });
 
   it('returns pairing-required for an authenticated but unpaired remote device', async () => {
     authorization = { ...authorization, deviceId: null, paired: false };
     const manager = createManager();
 
-    const view = await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    const view = await manager.login({ username: USERNAME, password: PASSWORD });
 
     expect(view).toMatchObject({
       state: 'pairing-required',
@@ -186,7 +200,7 @@ describe('PrivilegedSessionManager', () => {
   it('activates the authenticated account only after a paired device is bound', async () => {
     authorization = { ...authorization, deviceId: null, paired: false };
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
 
     const view = manager.activatePairedDevice('device-new-laptop');
 
@@ -194,7 +208,7 @@ describe('PrivilegedSessionManager', () => {
       state: 'active',
       accountId: 'account-admin',
       deviceId: 'device-new-laptop',
-      capabilities: ADMIN_PRIVILEGED_CAPABILITIES,
+      capabilities: OWNER_PRIVILEGED_CAPABILITIES,
     });
   });
 
@@ -202,7 +216,7 @@ describe('PrivilegedSessionManager', () => {
     resolveAuthorization.mockRejectedValueOnce(new Error('lookup failed'));
     const manager = createManager();
 
-    await expect(manager.login({ operatorId: OPERATOR_ID, password: PASSWORD })).rejects.toThrow(
+    await expect(manager.login({ username: USERNAME, password: PASSWORD })).rejects.toThrow(
       'Unable to authorize this privileged account.',
     );
     expect(authClient.clear).toHaveBeenCalledOnce();
@@ -212,22 +226,18 @@ describe('PrivilegedSessionManager', () => {
   it('rejects inactive, unassigned, and mismatched accounts generically', async () => {
     const manager = createManager();
     currentAccount = accountRecord({ active: false });
-    await expect(
-      manager.login({ operatorId: OPERATOR_ID, password: PASSWORD }),
-    ).rejects.toBeInstanceOf(PrivilegedSessionError);
+    await expect(manager.login({ username: USERNAME, password: PASSWORD })).rejects.toBeInstanceOf(
+      PrivilegedSessionError,
+    );
 
     currentAccount = accountRecord();
-    authorization = { ...authorization, assigned: false };
-    await expect(
-      manager.login({ operatorId: OPERATOR_ID, password: PASSWORD }),
-    ).rejects.toMatchObject({
+    authorization = { ...authorization, assigned: false, role: null };
+    await expect(manager.login({ username: USERNAME, password: PASSWORD })).rejects.toMatchObject({
       code: 'unauthorized',
     });
 
-    currentAccount = accountRecord({ operatorId: 'different-operator' });
-    await expect(
-      manager.login({ operatorId: OPERATOR_ID, password: PASSWORD }),
-    ).rejects.toMatchObject({
+    currentAccount = accountRecord({ username: 'charles' });
+    await expect(manager.login({ username: USERNAME, password: PASSWORD })).rejects.toMatchObject({
       code: 'unauthorized',
     });
   });
@@ -235,35 +245,34 @@ describe('PrivilegedSessionManager', () => {
   it('enforces password bounds without trimming or retaining the password', async () => {
     const manager = createManager();
 
-    await expect(
-      manager.login({ operatorId: OPERATOR_ID, password: 'short' }),
-    ).rejects.toMatchObject({
+    await expect(manager.login({ username: USERNAME, password: 'short' })).rejects.toMatchObject({
       code: 'invalid-input',
     });
     await expect(
-      manager.login({ operatorId: OPERATOR_ID, password: 'x'.repeat(129) }),
+      manager.login({ username: USERNAME, password: 'x'.repeat(129) }),
     ).rejects.toMatchObject({ code: 'invalid-input' });
 
     const spacedPassword = ` ${PASSWORD} `;
-    await manager.login({ operatorId: OPERATOR_ID, password: spacedPassword });
-    expect(authClient.authenticate).toHaveBeenCalledWith(OPERATOR_ID, spacedPassword);
+    await manager.login({ username: USERNAME, password: spacedPassword });
+    expect(authClient.authenticate).toHaveBeenCalledWith(USERNAME, spacedPassword);
     expect(Object.values(manager)).not.toContain(spacedPassword);
   });
 
   it('reauthenticates with a fresh password check and returns a five-minute opaque proof', async () => {
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
     await vi.advanceTimersByTimeAsync(60_000);
 
     const proof = await manager.reauthenticate(PASSWORD);
 
-    expect(authClient.reauthenticate).toHaveBeenCalledWith(OPERATOR_ID, PASSWORD);
+    expect(authClient.reauthenticate).toHaveBeenCalledWith(USERNAME, PASSWORD);
     expect(confirmReauthentication).toHaveBeenCalledWith({
       accountId: 'account-admin',
       authenticatedAt: new Date(START_TIME + 60_000).toISOString(),
       deviceId: 'device-work-laptop',
-      operatorId: OPERATOR_ID,
-      role: 'admin',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
+      username: USERNAME,
     });
     expect(proof).toEqual({
       proofId: 'reauth-command-id',
@@ -273,12 +282,12 @@ describe('PrivilegedSessionManager', () => {
 
   it('rejects reauthentication after lock or when the fresh account no longer matches', async () => {
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
     manager.lock();
 
     await expect(manager.reauthenticate(PASSWORD)).rejects.toMatchObject({ code: 'locked' });
 
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
     authClient.reauthenticate.mockResolvedValueOnce(accountRecord({ id: 'replacement-account' }));
     await expect(manager.reauthenticate(PASSWORD)).rejects.toMatchObject({ code: 'unauthorized' });
     expect(manager.getView().state).toBe('locked');
@@ -286,7 +295,7 @@ describe('PrivilegedSessionManager', () => {
 
   it('locks immediately when the fresh password authentication fails', async () => {
     const manager = createManager();
-    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await manager.login({ username: USERNAME, password: PASSWORD });
     authClient.reauthenticate.mockRejectedValueOnce(new Error('invalid credentials'));
 
     await expect(manager.reauthenticate(PASSWORD)).rejects.toThrow(

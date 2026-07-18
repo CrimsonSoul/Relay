@@ -19,7 +19,6 @@ import {
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
 import {
-  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type PrivilegedPairingChallengeView,
@@ -27,7 +26,7 @@ import {
   type RelayPrivilegedAccountRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
-import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
+import { getEffectiveRole } from '@shared/roleAccounts';
 import { KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION } from '@shared/knowledge';
 import type { RelayConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
@@ -89,15 +88,14 @@ async function applyKnowledgeChunkE2EDelay(collection: string): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
-export type PrivilegedAccountIdentity = Pick<PrivilegedAuthorization, 'assigned' | 'operatorName'>;
+export type PrivilegedAccountIdentity = Pick<PrivilegedAuthorization, 'assigned' | 'role'>;
 
 export interface PrivilegedClientTransport {
   completePairing(
-    input: PairingCompletionInput & { operatorId: string },
+    input: PairingCompletionInput & { displayNameSnapshot: string },
   ): Promise<PairingCompletion>;
   submitCommand(
     envelope: SignedPrivilegedCommandEnvelope,
-    operatorId: string,
     bodyHash: string,
   ): Promise<PrivilegedCommandResult>;
   dispose(): void | Promise<void>;
@@ -231,7 +229,6 @@ export class PrivilegedRuntime {
     if (
       view.state !== 'active' ||
       !view.accountId ||
-      !view.operatorId ||
       !view.capabilities.includes('knowledge.manage') ||
       !this.authClient.createRecord
     ) {
@@ -241,7 +238,7 @@ export class PrivilegedRuntime {
     return this.authClient.createRecord(collection, data);
   }
 
-  login(input: { operatorId: string; password: string }): Promise<PrivilegedSessionView> {
+  login(input: { username: string; password: string }): Promise<PrivilegedSessionView> {
     this.assertAvailable();
     return this.sessionManager.login(input);
   }
@@ -292,7 +289,7 @@ export class PrivilegedRuntime {
       this.mode !== 'client' ||
       view.state !== 'pairing-required' ||
       !view.accountId ||
-      !view.operatorId
+      !view.displayName
     ) {
       throw runtimeError('unauthorized');
     }
@@ -301,7 +298,7 @@ export class PrivilegedRuntime {
     let completion: PairingCompletion;
     try {
       completion = await this.clientTransport!.completePairing(
-        this.toPairingRequest(input, view.accountId, view.operatorId, pending),
+        this.toPairingRequest(input, view.accountId, view.displayName, pending),
       );
     } catch (error) {
       await this.deviceStore
@@ -317,7 +314,7 @@ export class PrivilegedRuntime {
   submitPublicCommand(input: PublicPrivilegedCommandRequest): Promise<PrivilegedCommandResult> {
     this.assertAvailable();
     const view = this.getView();
-    if (view.state !== 'active' || !view.accountId || !view.operatorId || !view.role) {
+    if (view.state !== 'active' || !view.accountId || !view.displayName || !view.role) {
       return Promise.resolve({ ok: false, error: 'locked' });
     }
     if (this.mode === 'server') {
@@ -327,7 +324,7 @@ export class PrivilegedRuntime {
     return this.submitRemote(
       {
         accountId: view.accountId,
-        operatorId: view.operatorId,
+        displayName: view.displayName,
         role: view.role,
       },
       view.deviceId,
@@ -340,6 +337,10 @@ export class PrivilegedRuntime {
   onSessionChanged(listener: SessionListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  handleAuthorityChanged(accountIds: readonly string[]): void {
+    this.sessionManager.handleAuthorityChanged(accountIds);
   }
 
   dispose(): Promise<void> {
@@ -367,7 +368,7 @@ export class PrivilegedRuntime {
     const device = await this.deviceStore.findForAccount(account.id);
     if (!device) return { ...identity, deviceId: null, paired: false };
     const probe = await this.submitRemote(
-      { accountId: account.id, operatorId: account.operatorId, role: account.role },
+      { accountId: account.id, displayName: account.displayName, role: identity.role! },
       device.deviceId,
       'privileged.status.read',
       { clientVersion: '1' },
@@ -383,8 +384,9 @@ export class PrivilegedRuntime {
 
   private async confirmReauthentication(input: {
     accountId: string;
-    operatorId: string;
-    role: RelayPrivilegedAccountRecord['role'];
+    username: string;
+    displayName: string;
+    role: NonNullable<PrivilegedSessionView['role']>;
     deviceId: string | null;
     authenticatedAt: string;
   }): Promise<{ requestId: string }> {
@@ -416,14 +418,13 @@ export class PrivilegedRuntime {
     expectedRevision: number | null,
   ): Promise<PrivilegedCommandResult> {
     const view = this.getView();
-    if (!view.accountId || !view.operatorId) {
+    if (!view.accountId) {
       return Promise.resolve({ ok: false, error: 'unauthorized' });
     }
     return this.commandProcessor!.processLocal(
       {
         requestId: this.createId(),
         accountId: view.accountId,
-        operatorId: view.operatorId,
         command,
         payload,
         expectedRevision,
@@ -439,8 +440,8 @@ export class PrivilegedRuntime {
   private async submitRemote<K extends PrivilegedCommandName>(
     identity: {
       accountId: string;
-      operatorId: string;
-      role: RelayPrivilegedAccountRecord['role'];
+      displayName: string;
+      role: NonNullable<PrivilegedSessionView['role']>;
     },
     deviceId: string,
     command: K,
@@ -456,6 +457,7 @@ export class PrivilegedRuntime {
       accountId: identity.accountId,
       deviceId,
       roleClaim: identity.role,
+      displayNameSnapshot: identity.displayName,
       command,
       payload,
       payloadHash,
@@ -466,11 +468,7 @@ export class PrivilegedRuntime {
     };
     const bytes = canonicalPrivilegedSigningBytes(envelope);
     envelope.signature = await this.deviceStore.sign(identity.accountId, deviceId, bytes);
-    const result = await this.clientTransport!.submitCommand(
-      envelope,
-      identity.operatorId,
-      sha256(bytes),
-    );
+    const result = await this.clientTransport!.submitCommand(envelope, sha256(bytes));
     if (result.ok && recordActivity) this.sessionManager.recordPrivilegedActivity();
     return result;
   }
@@ -478,14 +476,14 @@ export class PrivilegedRuntime {
   private toPairingRequest(
     input: PrivilegedPairingCompletionInput,
     accountId: string,
-    operatorId: string,
+    displayName: string,
     pending: PendingDeviceKey,
-  ): PairingCompletionInput & { operatorId: string } {
+  ): PairingCompletionInput & { displayNameSnapshot: string } {
     return {
       challengeId: input.challengeId,
       accountId,
       authenticatedAccountId: accountId,
-      operatorId,
+      displayNameSnapshot: displayName,
       code: input.code,
       publicJwk: pending.publicJwk as JsonWebKey,
       fingerprint: pending.fingerprint,
@@ -527,6 +525,7 @@ export function registerProductionAdministrationCommands(options: {
     requestId: string,
     context: { accountId: string; deviceId: string | null },
   ) => Promise<boolean>;
+  onAuthorityChanged?: (accountIds: string[]) => void | Promise<void>;
 }): {
   roleAccountManager: RoleAccountManager;
   publisherManager: PublisherAssignmentManager;
@@ -546,8 +545,13 @@ export function registerProductionAdministrationCommands(options: {
     pb: options.pb,
     snapshotReader,
     coordinator,
+    onAuthorityChanged: options.onAuthorityChanged,
   });
-  const publisherManager = new PublisherAssignmentManager({ pb: options.pb, coordinator });
+  const publisherManager = new PublisherAssignmentManager({
+    pb: options.pb,
+    coordinator,
+    onAssignmentChanged: options.onAuthorityChanged,
+  });
   registerAdministrationCommands({
     registrar: options.registrar,
     roleAccountManager,
@@ -560,25 +564,16 @@ export function registerProductionAdministrationCommands(options: {
   return { roleAccountManager, publisherManager, deviceManager, snapshotReader, coordinator };
 }
 
-function boundedIdentityString(value: unknown, max: number): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= max;
-}
-
 async function resolveProductionIdentity(
   authClient: PrivilegedPocketBaseClient,
   account: RelayPrivilegedAccountRecord,
 ): Promise<PrivilegedAccountIdentity> {
-  const [state, operator] = await Promise.all([
-    authClient.getFirstRecord(RELAY_PRIVILEGED_STATE_COLLECTION, 'key="primary"'),
-    authClient.getRecord(RELAY_OPERATORS_COLLECTION, account.operatorId),
-  ]);
-  const operatorName = boundedIdentityString(operator.displayName, 120) ? operator.displayName : '';
-  const operatorIsCurrent = operator.id === account.operatorId && operator.active === true;
-  const assigned =
-    operatorIsCurrent &&
-    ((account.role === 'admin' && isPrivilegedAdministrator(state, account.operatorId)) ||
-      (account.role === 'publisher' && state.publisherOperatorId === account.operatorId));
-  return { assigned, operatorName };
+  const state = (await authClient.getFirstRecord(
+    RELAY_PRIVILEGED_STATE_COLLECTION,
+    'key="primary"',
+  )) as unknown as RelayPrivilegedStateRecord;
+  const role = getEffectiveRole(account, state);
+  return { assigned: account.active && role !== null, role };
 }
 
 export async function resolveProductionPairingTarget(
@@ -595,10 +590,7 @@ export async function resolveProductionPairingTarget(
         .getOne<RelayPrivilegedAccountRecord>(targetAccountId, { requestKey: null }),
     ]);
     if (account.id !== targetAccountId || account.active !== true) return false;
-    return (
-      (account.role === 'admin' && isPrivilegedAdministrator(state, account.operatorId)) ||
-      (account.role === 'publisher' && account.operatorId === state.publisherOperatorId)
-    );
+    return getEffectiveRole(account, state) !== null;
   } catch {
     return false;
   }
@@ -645,12 +637,14 @@ export async function createProductionPrivilegedRuntime(
   const administrationService = options.dynatraceProblemsManager
     ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
     : undefined;
+  let runtime: PrivilegedRuntime | null = null;
   registerProductionAdministrationCommands({
     pb: options.serverClient,
     registrar: commandProcessor,
     administrationService,
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
+    onAuthorityChanged: (accountIds) => runtime?.handleAuthorityChanged(accountIds),
   });
   const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
   const knowledgeUploadRepository = new PocketBaseKnowledgeUploadRepository({
@@ -680,7 +674,7 @@ export async function createProductionPrivilegedRuntime(
     pairingService,
   });
   await serverQueue.start();
-  return new PrivilegedRuntime({
+  runtime = new PrivilegedRuntime({
     additionalDisposable: {
       dispose: async () => {
         await serverQueue.dispose();
@@ -697,4 +691,5 @@ export async function createProductionPrivilegedRuntime(
       resolveProductionPairingTarget(options.serverClient!, targetAccountId),
     resolveAccountIdentity,
   });
+  return runtime;
 }

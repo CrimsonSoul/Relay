@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { EventSource as MainProcessEventSource } from 'eventsource';
 import {
-  MAX_PRIVILEGED_ADMINISTRATORS,
-  getPrivilegedAdministratorOperatorIds,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
@@ -14,7 +12,6 @@ import {
   type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
-import { RELAY_OPERATORS_COLLECTION, type RelayOperatorRecord } from '@shared/operators';
 import {
   canonicalizePrivilegedValue,
   isPublicPrivilegedCommandName,
@@ -102,6 +99,14 @@ function boundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
 
+function optionalBoundedString(value: unknown, max: number): boolean {
+  return value === undefined || value === null || value === '' || boundedString(value, max);
+}
+
+function isStoredRoleClaim(value: unknown): value is PrivilegedRole {
+  return value === 'owner' || value === 'admin' || value === 'publisher';
+}
+
 function restoreCanonicalTimestamp(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   const parsed = Date.parse(value);
@@ -173,7 +178,6 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
 
   async submitCommand(
     envelope: SignedPrivilegedCommandEnvelope,
-    operatorId: string,
     bodyHash: string,
   ): Promise<PrivilegedCommandResult> {
     if (this.disposed) return { ok: false, error: 'offline' };
@@ -182,7 +186,7 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
         requestId: envelope.requestId,
         accountId: envelope.accountId,
         deviceId: envelope.deviceId,
-        operatorId,
+        displayNameSnapshot: envelope.displayNameSnapshot,
         roleClaim: envelope.roleClaim,
         command: envelope.command,
         issuedAt: envelope.issuedAt,
@@ -201,14 +205,14 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
   }
 
   async completePairing(
-    input: PairingCompletionInput & { operatorId: string },
+    input: PairingCompletionInput & { displayNameSnapshot: string },
   ): Promise<PairingCompletion> {
     if (this.disposed) throw new PrivilegedTransportError('offline');
     try {
       const created = await this.client.createRecord(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION, {
         requestId: this.createId(),
         accountId: input.accountId,
-        operatorId: input.operatorId,
+        displayNameSnapshot: input.displayNameSnapshot,
         challengeId: input.challengeId,
         code: input.code,
         publicKey: input.publicJwk,
@@ -262,15 +266,32 @@ function escapeFilter(value: string): string {
 
 function normalizeAccount(value: unknown): RelayPrivilegedAccountRecord | null {
   if (!isRecord(value)) return null;
-  const { id, operatorId, role, active, mustChangePassword, credentialVersion, created, updated } =
-    value;
+  const {
+    id,
+    username,
+    displayName,
+    storedRole,
+    active,
+    mustChangePassword,
+    credentialVersion,
+    revision,
+    legacyOperatorId,
+    created,
+    updated,
+  } = value;
   if (
     !boundedString(id, 200) ||
-    !boundedString(operatorId, 200) ||
-    (role !== 'admin' && role !== 'publisher') ||
+    !boundedString(username, 64) ||
+    !boundedString(displayName, 120) ||
+    (storedRole !== 'administrator' && storedRole !== 'publisher') ||
     typeof active !== 'boolean' ||
     typeof mustChangePassword !== 'boolean' ||
     !Number.isSafeInteger(credentialVersion) ||
+    !Number.isSafeInteger(revision) ||
+    (legacyOperatorId !== undefined &&
+      legacyOperatorId !== null &&
+      legacyOperatorId !== '' &&
+      !boundedString(legacyOperatorId, 200)) ||
     (created !== undefined && (typeof created !== 'string' || created.length > 100)) ||
     (updated !== undefined && (typeof updated !== 'string' || updated.length > 100))
   ) {
@@ -278,29 +299,17 @@ function normalizeAccount(value: unknown): RelayPrivilegedAccountRecord | null {
   }
   return {
     id,
-    operatorId,
-    role,
+    username,
+    displayName,
+    storedRole,
     active,
     mustChangePassword,
     credentialVersion: credentialVersion as number,
+    revision: revision as number,
+    ...(typeof legacyOperatorId === 'string' && legacyOperatorId ? { legacyOperatorId } : {}),
     created: typeof created === 'string' ? created : '',
     updated: typeof updated === 'string' ? updated : '',
   };
-}
-
-function normalizeOperator(value: unknown): RelayOperatorRecord | null {
-  if (!isRecord(value)) return null;
-  const { id, displayName, active, created, updated } = value;
-  if (
-    !boundedString(id, 200) ||
-    !boundedString(displayName, 120) ||
-    typeof active !== 'boolean' ||
-    !boundedString(created, 100) ||
-    !boundedString(updated, 100)
-  ) {
-    return null;
-  }
-  return { id, displayName, active, created, updated };
 }
 
 function normalizeState(value: unknown): RelayPrivilegedStateRecord | null {
@@ -308,34 +317,26 @@ function normalizeState(value: unknown): RelayPrivilegedStateRecord | null {
   const {
     id,
     key,
-    adminOperatorId,
-    adminOperatorIds,
-    publisherOperatorId,
+    ownerAccountId,
+    publisherAccountId,
     assignmentVersion,
-    rosterMigrationVersion,
-    updatedByOperatorId,
-    updatedAt,
+    identityMigrationVersion,
+    updatedByAccountId,
     created,
     updated,
   } = value;
   if (
     !boundedString(id, 200) ||
     key !== 'primary' ||
-    !boundedString(adminOperatorId, 200) ||
-    (adminOperatorIds !== undefined &&
-      adminOperatorIds !== null &&
-      (!Array.isArray(adminOperatorIds) ||
-        adminOperatorIds.length > MAX_PRIVILEGED_ADMINISTRATORS ||
-        adminOperatorIds.some((operatorId) => !boundedString(operatorId, 200)))) ||
-    (publisherOperatorId !== null &&
-      publisherOperatorId !== '' &&
-      !boundedString(publisherOperatorId, 200)) ||
+    !boundedString(ownerAccountId, 200) ||
+    (publisherAccountId !== null &&
+      publisherAccountId !== '' &&
+      !boundedString(publisherAccountId, 200)) ||
     !Number.isSafeInteger(assignmentVersion) ||
-    !Number.isSafeInteger(rosterMigrationVersion) ||
-    (updatedByOperatorId !== null &&
-      updatedByOperatorId !== '' &&
-      !boundedString(updatedByOperatorId, 200)) ||
-    !boundedString(updatedAt, 100) ||
+    !Number.isSafeInteger(identityMigrationVersion) ||
+    (updatedByAccountId !== null &&
+      updatedByAccountId !== '' &&
+      !boundedString(updatedByAccountId, 200)) ||
     !boundedString(created, 100) ||
     !boundedString(updated, 100)
   ) {
@@ -344,16 +345,11 @@ function normalizeState(value: unknown): RelayPrivilegedStateRecord | null {
   return {
     id,
     key: 'primary',
-    adminOperatorId,
-    adminOperatorIds: getPrivilegedAdministratorOperatorIds({
-      adminOperatorId,
-      adminOperatorIds,
-    }),
-    publisherOperatorId: publisherOperatorId || null,
+    ownerAccountId,
+    publisherAccountId: publisherAccountId || null,
     assignmentVersion: assignmentVersion as number,
-    rosterMigrationVersion: rosterMigrationVersion as number,
-    updatedByOperatorId: updatedByOperatorId || null,
-    updatedAt,
+    identityMigrationVersion: identityMigrationVersion as number,
+    updatedByAccountId: updatedByAccountId || null,
     created,
     updated,
   };
@@ -391,8 +387,9 @@ function normalizeStoredCommand(value: unknown): StoredPrivilegedCommand | null 
     !boundedString(value.requestId, 128) ||
     !boundedString(value.accountId, 200) ||
     (value.deviceId !== null && value.deviceId !== '' && !boundedString(value.deviceId, 200)) ||
-    !boundedString(value.operatorId, 200) ||
-    (value.roleClaim !== 'admin' && value.roleClaim !== 'publisher') ||
+    !optionalBoundedString(value.operatorId, 200) ||
+    !optionalBoundedString(value.displayNameSnapshot, 120) ||
+    !isStoredRoleClaim(value.roleClaim) ||
     (value.command !== 'privileged.reauth.confirm' &&
       !isPublicPrivilegedCommandName(value.command)) ||
     !isRecord(value.payload) ||
@@ -409,7 +406,9 @@ function normalizeStoredCommand(value: unknown): StoredPrivilegedCommand | null 
     requestId: value.requestId,
     accountId: value.accountId,
     deviceId: value.deviceId || null,
-    operatorId: value.operatorId,
+    operatorId: typeof value.operatorId === 'string' && value.operatorId ? value.operatorId : null,
+    displayNameSnapshot:
+      typeof value.displayNameSnapshot === 'string' ? value.displayNameSnapshot : '',
     roleClaim: value.roleClaim as PrivilegedRole,
     command: value.command,
     issuedAt: value.issuedAt,
@@ -440,18 +439,6 @@ export class PocketBasePrivilegedRepository
         await this.pb
           .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
           .getOne(accountId, { requestKey: null }),
-      );
-    } catch {
-      return null;
-    }
-  }
-
-  async getOperator(operatorId: string) {
-    try {
-      return normalizeOperator(
-        await this.pb
-          .collection(RELAY_OPERATORS_COLLECTION)
-          .getOne(operatorId, { requestKey: null }),
       );
     } catch {
       return null;
@@ -493,7 +480,18 @@ export class PocketBasePrivilegedRepository
           requestKey: null,
         }),
       );
-      if (existing) return { kind: 'existing', command: existing };
+      if (existing) {
+        if (existing.state === 'pending') {
+          await collection.update(
+            existing.id,
+            { displayNameSnapshot: claim.displayNameSnapshot, operatorId: '' },
+            { requestKey: null },
+          );
+          existing.displayNameSnapshot = claim.displayNameSnapshot;
+          existing.operatorId = null;
+        }
+        return { kind: 'existing', command: existing };
+      }
     } catch {
       /* Create below when no record exists. */
     }
@@ -625,7 +623,7 @@ export class PocketBasePrivilegedRepository
         pairedAt: activation.pairedAt,
         lastUsedAt: '',
         revokedAt: '',
-        revokedByOperatorId: '',
+        revokedByAccountId: '',
         revision: activation.revision,
       },
       { requestKey: null },
@@ -729,6 +727,7 @@ export class PrivilegedServerQueue {
         accountId: record.accountId,
         deviceId: record.deviceId,
         roleClaim: record.roleClaim,
+        displayNameSnapshot: record.displayNameSnapshot,
         command: record.command,
         payload: record.payload,
         payloadHash: createHash('sha256')
@@ -768,6 +767,17 @@ export class PrivilegedServerQueue {
   private async processPairing(record: UnknownRecord): Promise<void> {
     const collection = this.pb.collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION);
     try {
+      const account = normalizeAccount(
+        await this.pb
+          .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+          .getOne(String(record.accountId ?? ''), { requestKey: null }),
+      );
+      if (!account?.active) throw new TypeError('Pairing account is unavailable.');
+      await collection.update(
+        record.id,
+        { displayNameSnapshot: account.displayName, operatorId: '' },
+        { requestKey: null },
+      );
       const result = await this.pairingService.completePairing({
         challengeId: String(record.challengeId ?? ''),
         accountId: String(record.accountId ?? ''),
@@ -782,6 +792,7 @@ export class PrivilegedServerQueue {
         record.id,
         {
           code: 'REDACTED',
+          displayNameSnapshot: account.displayName,
           state: 'completed',
           result,
           safeError: '',

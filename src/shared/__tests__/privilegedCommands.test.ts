@@ -24,6 +24,7 @@ function makeEnvelope(
     accountId: 'account-123',
     deviceId: 'device-123',
     roleClaim: 'admin',
+    displayNameSnapshot: 'Ryan Bledsoe',
     command: 'privileged.status.read',
     payload: { clientVersion: '1.0.0' },
     payloadHash: 'a'.repeat(64),

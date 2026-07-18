@@ -13,7 +13,6 @@ import {
   canonicalizePrivilegedValue,
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
-import type { RelayOperatorRecord } from '@shared/operators';
 import {
   PrivilegedCommandConflictError,
   PrivilegedCommandProcessor,
@@ -25,7 +24,6 @@ import {
 
 const NOW = new Date('2026-07-15T12:00:00.000Z').getTime();
 const ACCOUNT_ID = 'account-admin';
-const OPERATOR_ID = 'operator-ryan-bledsoe';
 const DEVICE_ID = 'device-work-laptop';
 
 function sha256(value: string | Uint8Array): string {
@@ -37,22 +35,13 @@ function accountRecord(
 ): RelayPrivilegedAccountRecord {
   return {
     id: ACCOUNT_ID,
-    operatorId: OPERATOR_ID,
-    role: 'admin',
+    username: 'ryan',
+    displayName: 'Ryan Bledsoe',
+    storedRole: 'administrator',
     active: true,
     mustChangePassword: false,
     credentialVersion: 1,
-    created: '2026-07-15T11:00:00.000Z',
-    updated: '2026-07-15T11:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function operatorRecord(overrides: Partial<RelayOperatorRecord> = {}): RelayOperatorRecord {
-  return {
-    id: OPERATOR_ID,
-    displayName: 'Ryan Bledsoe',
-    active: true,
+    revision: 3,
     created: '2026-07-15T11:00:00.000Z',
     updated: '2026-07-15T11:00:00.000Z',
     ...overrides,
@@ -65,12 +54,11 @@ function stateRecord(
   return {
     id: 'privileged-state',
     key: 'primary',
-    adminOperatorId: OPERATOR_ID,
-    publisherOperatorId: null,
+    ownerAccountId: 'account-owner',
+    publisherAccountId: null,
     assignmentVersion: 3,
-    rosterMigrationVersion: 1,
-    updatedByOperatorId: null,
-    updatedAt: '2026-07-15T11:00:00.000Z',
+    identityMigrationVersion: 1,
+    updatedByAccountId: null,
     created: '2026-07-15T11:00:00.000Z',
     updated: '2026-07-15T11:00:00.000Z',
     ...overrides,
@@ -110,7 +98,7 @@ describe('PrivilegedCommandProcessor', () => {
       pairedAt: '2026-07-15T11:00:00.000Z',
       lastUsedAt: null,
       revokedAt: null,
-      revokedByOperatorId: null,
+      revokedByAccountId: null,
       revision: 4,
       created: '2026-07-15T11:00:00.000Z',
       updated: '2026-07-15T11:00:00.000Z',
@@ -119,7 +107,6 @@ describe('PrivilegedCommandProcessor', () => {
     completed = [];
     repository = {
       getAccount: vi.fn(async () => accountRecord()),
-      getOperator: vi.fn(async () => operatorRecord()),
       getState: vi.fn(async () => stateRecord()),
       getDevice: vi.fn(async () => device),
       claimCommand: vi.fn(async (claim) => {
@@ -147,6 +134,7 @@ describe('PrivilegedCommandProcessor', () => {
       accountId: ACCOUNT_ID,
       deviceId: DEVICE_ID,
       roleClaim: 'admin',
+      displayNameSnapshot: 'Forged Display Name',
       command: 'privileged.status.read',
       payload,
       payloadHash: sha256(canonicalizePrivilegedValue(payload)),
@@ -210,24 +198,15 @@ describe('PrivilegedCommandProcessor', () => {
     expect(repository.claimCommand).not.toHaveBeenCalled();
   });
 
-  it('checks current account, operator, assignment, and device state before cryptography', async () => {
+  it('checks current account, assignment, and device state before cryptography', async () => {
     vi.mocked(repository.getAccount).mockResolvedValueOnce(accountRecord({ active: false }));
     const processor = createProcessor();
     await expect(processor.process(envelope())).resolves.toMatchObject({
       ok: false,
       error: 'unauthorized',
     });
-    expect(repository.getOperator).not.toHaveBeenCalled();
-
-    vi.mocked(repository.getOperator).mockResolvedValueOnce(operatorRecord({ active: false }));
-    await expect(processor.process(envelope())).resolves.toMatchObject({
-      ok: false,
-      error: 'unauthorized',
-    });
-    expect(repository.getDevice).not.toHaveBeenCalled();
-
-    vi.mocked(repository.getState).mockResolvedValueOnce(
-      stateRecord({ adminOperatorId: 'different-operator' }),
+    vi.mocked(repository.getAccount).mockResolvedValueOnce(
+      accountRecord({ storedRole: 'publisher' }),
     );
     await expect(processor.process(envelope())).resolves.toMatchObject({
       ok: false,
@@ -264,19 +243,20 @@ describe('PrivilegedCommandProcessor', () => {
 
   it('authorizes an additional assigned administrator with the full admin role', async () => {
     vi.mocked(repository.getAccount).mockResolvedValueOnce(
-      accountRecord({ operatorId: 'operator-charles-gibbs' }),
-    );
-    vi.mocked(repository.getOperator).mockResolvedValueOnce(
-      operatorRecord({
-        id: 'operator-charles-gibbs',
+      accountRecord({
+        id: 'account-charles',
+        username: 'charles',
         displayName: 'Charles Gibbs',
       }),
     );
-    vi.mocked(repository.getState).mockResolvedValueOnce(
-      stateRecord({ adminOperatorIds: [OPERATOR_ID, 'operator-charles-gibbs'] }),
-    );
+    vi.mocked(repository.getDevice).mockResolvedValueOnce({
+      ...device,
+      accountId: 'account-charles',
+    });
 
-    await expect(createProcessor().process(envelope())).resolves.toMatchObject({ ok: true });
+    await expect(
+      createProcessor().process(envelope({ accountId: 'account-charles' })),
+    ).resolves.toMatchObject({ ok: true });
     expect(handler).toHaveBeenCalledOnce();
   });
 
@@ -317,16 +297,16 @@ describe('PrivilegedCommandProcessor', () => {
 
   it('returns bounded revision conflict details from registered handlers', async () => {
     const processor = createProcessor();
-    processor.registerCommand('operator.rename', 'operators.manage', async () => {
+    processor.registerCommand('account.display-name.update', 'settings.manage', async () => {
       throw new PrivilegedCommandConflictError(9);
     });
 
     await expect(
       processor.process(
         envelope({
-          command: 'operator.rename',
+          command: 'account.display-name.update',
           payload: {
-            operatorId: 'operator-2',
+            accountId: 'account-2',
             displayName: 'Morgan Lee',
             expectedRevision: 8,
           },
@@ -423,7 +403,8 @@ describe('PrivilegedCommandProcessor', () => {
       requestId: 'request-1',
       accountId: ACCOUNT_ID,
       deviceId: DEVICE_ID,
-      operatorId: OPERATOR_ID,
+      operatorId: null,
+      displayNameSnapshot: 'Ryan Bledsoe',
       bodyHash: expect.stringMatching(/^[0-9a-f]{64}$/),
       state: 'processing',
     });
@@ -533,7 +514,6 @@ describe('PrivilegedCommandProcessor', () => {
     const command = {
       requestId: 'local-request',
       accountId: ACCOUNT_ID,
-      operatorId: OPERATOR_ID,
       command: 'privileged.status.read' as const,
       payload: { clientVersion: '1.0.0' },
       expectedRevision: null,
@@ -541,8 +521,8 @@ describe('PrivilegedCommandProcessor', () => {
     const session = {
       state: 'active' as const,
       accountId: ACCOUNT_ID,
-      operatorId: OPERATOR_ID,
-      operatorName: 'Ryan Bledsoe',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
       role: 'admin' as const,
       capabilities: [...ADMIN_PRIVILEGED_CAPABILITIES],
       deviceId: null,

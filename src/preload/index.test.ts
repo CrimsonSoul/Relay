@@ -83,7 +83,7 @@ describe('preload Knowledge web link bridge', () => {
   });
 
   it('exposes the narrow privileged bridge and forwards only its approved arguments', async () => {
-    const login = { operatorId: 'operator-admin', password: 'Test-access-value-123!' };
+    const login = { username: 'ryan', password: 'Test-access-value-123!' };
     const reauthentication = { password: 'Test-access-value-123!' };
     const pairing = {
       challengeId: 'challenge-1',
@@ -105,7 +105,7 @@ describe('preload Knowledge web link bridge', () => {
     await api.completePrivilegedPairing(pairing);
     await api.submitPrivilegedCommand(command);
     const credential = {
-      operatorId: 'operator-admin',
+      accountId: 'account-admin',
       password: 'Test-access-value-123!',
       passwordConfirm: 'Test-access-value-123!',
     };
@@ -137,8 +137,8 @@ describe('preload Knowledge web link bridge', () => {
     const view = {
       state: 'signed-out',
       accountId: null,
-      operatorId: null,
-      operatorName: null,
+      username: null,
+      displayName: null,
       role: null,
       capabilities: [],
       deviceId: null,

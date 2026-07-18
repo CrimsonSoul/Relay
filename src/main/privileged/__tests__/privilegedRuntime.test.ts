@@ -10,7 +10,7 @@ import {
   type PrivilegedClientTransport,
 } from '../privilegedRuntime';
 
-const OPERATOR_ID = 'operator-ryan-bledsoe';
+const USERNAME = 'ryan';
 const ACCOUNT_ID = 'account-admin';
 const DEVICE_ID = 'device-work-laptop';
 const PASSWORD = 'Test-access-value-123!';
@@ -18,11 +18,13 @@ const START_TIME = new Date('2026-07-15T12:00:00.000Z').getTime();
 
 const account: RelayPrivilegedAccountRecord = {
   id: ACCOUNT_ID,
-  operatorId: OPERATOR_ID,
-  role: 'admin',
+  username: USERNAME,
+  displayName: 'Ryan Bledsoe',
+  storedRole: 'administrator',
   active: true,
   mustChangePassword: false,
   credentialVersion: 1,
+  revision: 3,
   created: '2026-07-15T11:00:00.000Z',
   updated: '2026-07-15T11:00:00.000Z',
 };
@@ -113,7 +115,7 @@ describe('PrivilegedRuntime', () => {
       now: () => START_TIME,
       resolveAccountIdentity: vi.fn(async () => ({
         assigned: true,
-        operatorName: 'Ryan Bledsoe',
+        role: 'admin',
       })),
       ...overrides,
     } as never);
@@ -122,7 +124,7 @@ describe('PrivilegedRuntime', () => {
   it('proves an existing paired device with a signed status command during login', async () => {
     const runtime = createClientRuntime();
 
-    const view = await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    const view = await runtime.login({ username: USERNAME, password: PASSWORD });
 
     expect(view).toMatchObject({ state: 'active', deviceId: DEVICE_ID });
     expect(submitCommand).toHaveBeenCalledOnce();
@@ -132,6 +134,7 @@ describe('PrivilegedRuntime', () => {
       deviceId: DEVICE_ID,
       command: 'privileged.status.read',
       roleClaim: 'admin',
+      displayNameSnapshot: 'Ryan Bledsoe',
     });
     expect(envelope.payloadHash).toBe(
       createHash('sha256')
@@ -150,7 +153,7 @@ describe('PrivilegedRuntime', () => {
     const createRecord = vi.fn(async () => ({ id: 'chunk-1' }));
     Object.assign(authClient, { createRecord });
     const runtime = createClientRuntime();
-    await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
 
     const pending = runtime.createPrivilegedRecord(KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION, {});
     await Promise.resolve();
@@ -164,7 +167,7 @@ describe('PrivilegedRuntime', () => {
   it('returns pairing-required without a key, then binds and activates a paired device', async () => {
     deviceStore.findForAccount.mockResolvedValueOnce(null);
     const runtime = createClientRuntime();
-    await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
     expect(runtime.getView().state).toBe('pairing-required');
 
     const result = await runtime.completePairing({
@@ -191,7 +194,7 @@ describe('PrivilegedRuntime', () => {
     deviceStore.findForAccount.mockResolvedValueOnce(null);
     completePairing.mockRejectedValueOnce(new Error('offline'));
     const runtime = createClientRuntime();
-    await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
 
     await expect(
       runtime.completePairing({
@@ -235,10 +238,10 @@ describe('PrivilegedRuntime', () => {
       resolvePairingTarget,
       resolveAccountIdentity: vi.fn(async () => ({
         assigned: true,
-        operatorName: 'Ryan Bledsoe',
+        role: 'admin',
       })),
     } as never);
-    await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
 
     await runtime.submitPublicCommand({
       command: 'privileged.status.read',
@@ -248,7 +251,7 @@ describe('PrivilegedRuntime', () => {
     const challenge = await runtime.createPairingChallenge('account-publisher');
 
     expect(processor.processLocal).toHaveBeenCalledWith(
-      expect.objectContaining({ accountId: ACCOUNT_ID, operatorId: OPERATOR_ID }),
+      expect.objectContaining({ accountId: ACCOUNT_ID }),
       expect.objectContaining({ isServerMode: true, trustedLocalSender: true }),
     );
     expect(processor.process).not.toHaveBeenCalled();
@@ -279,11 +282,11 @@ describe('PrivilegedRuntime', () => {
         pairingService,
         resolveAccountIdentity: vi.fn(async () => ({
           assigned: true,
-          operatorName: 'Ryan Bledsoe',
+          role: 'admin',
         })),
         resolvePairingTarget,
       } as never);
-      await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+      await runtime.login({ username: USERNAME, password: PASSWORD });
 
       await expect(runtime.createPairingChallenge(targetAccountId)).rejects.toMatchObject({
         code: 'unauthorized',
@@ -295,8 +298,10 @@ describe('PrivilegedRuntime', () => {
   it('requires device-management capability before creating a pairing challenge', async () => {
     authClient.authenticate.mockResolvedValueOnce({
       ...account,
-      operatorId: 'operator-tristan-bowles',
-      role: 'publisher',
+      id: 'account-publisher',
+      username: 'tristan',
+      displayName: 'Tristan Bowles',
+      storedRole: 'publisher',
     });
     const pairingService = {
       createChallenge: vi.fn(),
@@ -313,10 +318,10 @@ describe('PrivilegedRuntime', () => {
       pairingService,
       resolveAccountIdentity: vi.fn(async () => ({
         assigned: true,
-        operatorName: 'Tristan Bowles',
+        role: 'publisher',
       })),
     } as never);
-    await runtime.login({ operatorId: 'operator-tristan-bowles', password: PASSWORD });
+    await runtime.login({ username: 'tristan', password: PASSWORD });
 
     await expect(runtime.createPairingChallenge(ACCOUNT_ID)).rejects.toMatchObject({
       code: 'unauthorized',
@@ -328,7 +333,7 @@ describe('PrivilegedRuntime', () => {
     const runtime = createClientRuntime();
     const listener = vi.fn();
     const unsubscribe = runtime.onSessionChanged(listener);
-    await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
 
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ state: 'active' }));
     unsubscribe();
@@ -356,7 +361,7 @@ describe('PrivilegedRuntime', () => {
       pairingService,
       resolveAccountIdentity: vi.fn(async () => ({
         assigned: true,
-        operatorName: 'Ryan Bledsoe',
+        role: 'admin',
       })),
     } as never);
 
@@ -371,14 +376,15 @@ describe('resolveProductionPairingTarget', () => {
   const publisherAccount = {
     ...account,
     id: 'account-publisher',
-    operatorId: 'operator-tristan-bowles',
-    role: 'publisher' as const,
+    username: 'tristan',
+    displayName: 'Tristan Bowles',
+    storedRole: 'publisher' as const,
   };
 
   it('accepts only an active account holding the current administrator or publisher assignment', async () => {
     const getFirstListItem = vi.fn(async () => ({
-      adminOperatorId: OPERATOR_ID,
-      publisherOperatorId: 'operator-tristan-bowles',
+      ownerAccountId: ACCOUNT_ID,
+      publisherAccountId: 'account-publisher',
     }));
     const getOne = vi.fn(async () => publisherAccount);
     const pb = {
@@ -404,15 +410,15 @@ describe('resolveProductionPairingTarget', () => {
 
   it('accepts Charles as an active additional administrator pairing target', async () => {
     const getFirstListItem = vi.fn(async () => ({
-      adminOperatorId: OPERATOR_ID,
-      adminOperatorIds: [OPERATOR_ID, 'operator-charles-gibbs'],
-      publisherOperatorId: null,
+      ownerAccountId: ACCOUNT_ID,
+      publisherAccountId: null,
     }));
     const getOne = vi.fn(async () => ({
       ...account,
       id: 'account-charles',
-      operatorId: 'operator-charles-gibbs',
-      role: 'admin' as const,
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+      storedRole: 'administrator' as const,
       active: true,
     }));
     const pb = {

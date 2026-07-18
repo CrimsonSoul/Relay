@@ -2,7 +2,6 @@ import { createHash, createPublicKey, randomUUID, verify as verifySignature } fr
 import type { JsonWebKey } from 'node:crypto';
 import {
   getPrivilegedCapabilities,
-  isPrivilegedAdministrator,
   type PrivilegedCapability,
   type PrivilegedRole,
   type PrivilegedSessionView,
@@ -10,6 +9,7 @@ import {
   type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
+import { getEffectiveRole } from '@shared/roleAccounts';
 import {
   MAX_PRIVILEGED_REQUEST_ID_LENGTH,
   canonicalPrivilegedSigningBytes,
@@ -23,7 +23,6 @@ import {
   type PublicPrivilegedCommandName,
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
-import type { RelayOperatorRecord } from '@shared/operators';
 import { createPrivilegedRateLimiters, type KeyedRateLimiter } from '../rateLimiter';
 
 const IN_PROGRESS_RECOVERY_MS = 2 * 60 * 1_000;
@@ -34,7 +33,8 @@ export type PrivilegedCommandClaim = {
   requestId: string;
   accountId: string;
   deviceId: string | null;
-  operatorId: string;
+  operatorId: string | null;
+  displayNameSnapshot: string;
   roleClaim: PrivilegedRole;
   command: PrivilegedCommandName;
   issuedAt: string;
@@ -68,7 +68,6 @@ export type PrivilegedCommandCompletion = {
 
 export interface PrivilegedCommandRepository {
   getAccount(accountId: string): Promise<RelayPrivilegedAccountRecord | null>;
-  getOperator(operatorId: string): Promise<RelayOperatorRecord | null>;
   getState(): Promise<RelayPrivilegedStateRecord | null>;
   getDevice(accountId: string, deviceId: string): Promise<RelayPrivilegedDeviceRecord | null>;
   claimCommand(claim: PrivilegedCommandClaim): Promise<PrivilegedCommandClaimResult>;
@@ -84,7 +83,6 @@ export interface PrivilegedCommandRepository {
 
 export type PrivilegedAuthorizationContext = {
   account: RelayPrivilegedAccountRecord;
-  operator: RelayOperatorRecord;
   state: RelayPrivilegedStateRecord;
   device: RelayPrivilegedDeviceRecord | null;
   role: PrivilegedRole;
@@ -98,7 +96,6 @@ export type PrivilegedCommandHandlerContext = PrivilegedAuthorizationContext & {
 export type LocalPrivilegedCommand = {
   requestId?: string;
   accountId: string;
-  operatorId: string;
   command: PrivilegedCommandName;
   payload: unknown;
   expectedRevision: number | null;
@@ -164,7 +161,8 @@ type NormalizedCommand = {
   requestId: string;
   accountId: string;
   deviceId: string | null;
-  operatorId: string;
+  operatorId: string | null;
+  displayNameSnapshot: string;
   roleClaim: PrivilegedRole;
   command: PrivilegedCommandName;
   payload: PrivilegedCommandPayloadMap[PrivilegedCommandName];
@@ -189,15 +187,6 @@ const silentLogger = { warn: () => undefined };
 
 function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
-}
-
-function effectiveRole(
-  account: RelayPrivilegedAccountRecord,
-  state: RelayPrivilegedStateRecord,
-): PrivilegedRole | null {
-  if (isPrivilegedAdministrator(state, account.operatorId)) return 'admin';
-  if (state.publisherOperatorId === account.operatorId) return 'publisher';
-  return null;
 }
 
 function defaultCapabilityResolver(
@@ -382,7 +371,7 @@ export class PrivilegedCommandProcessor {
     if (
       !safeRequestId(requestId) ||
       context.session.accountId !== input.accountId ||
-      context.session.operatorId !== input.operatorId ||
+      !context.session.displayName ||
       context.session.role === null ||
       context.session.deviceId !== null ||
       context.session.expiresAt === null ||
@@ -400,6 +389,7 @@ export class PrivilegedCommandProcessor {
       accountId: input.accountId,
       deviceId: null,
       roleClaim: context.session.role,
+      displayNameSnapshot: context.session.displayName,
       command: input.command,
       payload,
       expectedRevision: input.expectedRevision,
@@ -408,7 +398,7 @@ export class PrivilegedCommandProcessor {
     };
     const command: NormalizedCommand = {
       ...signingBody,
-      operatorId: input.operatorId,
+      operatorId: null,
       payloadHash: sha256(canonicalizePrivilegedValue(payload)),
       signature: null,
       bodyHash: sha256(canonicalizePrivilegedValue(signingBody)),
@@ -446,19 +436,13 @@ export class PrivilegedCommandProcessor {
     envelope: SignedPrivilegedCommandEnvelope | null,
   ): Promise<AuthorizationResult> {
     const account = await this.repository.getAccount(command.accountId);
-    if (!account?.active) return { ok: false, error: 'unauthorized' };
-    const operator = await this.repository.getOperator(account.operatorId);
-    if (
-      !operator?.active ||
-      operator.id !== account.operatorId ||
-      (command.operatorId.length > 0 && operator.id !== command.operatorId)
-    ) {
+    if (!account?.active || account.id !== command.accountId) {
       return { ok: false, error: 'unauthorized' };
     }
     const state = await this.repository.getState();
     if (!state) return { ok: false, error: 'unauthorized' };
-    const role = effectiveRole(account, state);
-    if (!role || role !== account.role || role !== command.roleClaim) {
+    const role = getEffectiveRole(account, state);
+    if (!role || role !== command.roleClaim) {
       return { ok: false, error: 'unauthorized' };
     }
 
@@ -470,7 +454,7 @@ export class PrivilegedCommandProcessor {
       return { ok: false, error: 'conflict' };
     }
 
-    const authorization = { account, operator, state, device, role };
+    const authorization = { account, state, device, role };
     const capabilities = [...new Set(this.capabilityResolver(authorization))];
     const requiredCapability = this.getRequiredCapability(command.command);
     if (!requiredCapability || !capabilities.includes(requiredCapability)) {
@@ -543,8 +527,9 @@ export class PrivilegedCommandProcessor {
       requestId: envelope.requestId,
       accountId: envelope.accountId,
       deviceId: envelope.deviceId,
-      operatorId: '',
+      operatorId: null,
       roleClaim: envelope.roleClaim,
+      displayNameSnapshot: envelope.displayNameSnapshot,
       command: envelope.command,
       payload: envelope.payload,
       payloadHash: envelope.payloadHash,
@@ -558,12 +543,13 @@ export class PrivilegedCommandProcessor {
 
   private async claimAndExecute(authorized: AuthorizedCommand): Promise<PrivilegedCommandResult> {
     const { command, context } = authorized;
-    command.operatorId = context.operator.id;
+    command.displayNameSnapshot = context.account.displayName;
     const claim: PrivilegedCommandClaim = {
       requestId: command.requestId,
       accountId: command.accountId,
       deviceId: command.deviceId,
       operatorId: command.operatorId,
+      displayNameSnapshot: command.displayNameSnapshot,
       roleClaim: command.roleClaim,
       command: command.command,
       issuedAt: command.issuedAt,

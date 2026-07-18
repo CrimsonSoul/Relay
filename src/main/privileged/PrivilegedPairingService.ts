@@ -65,7 +65,7 @@ export type PairingDeviceActivation = {
   pairedAt: string;
   lastUsedAt: null;
   revokedAt: null;
-  revokedByOperatorId: null;
+  revokedByAccountId: null;
   revision: 1;
 };
 
@@ -381,7 +381,7 @@ export class PrivilegedPairingService {
         pairedAt,
         lastUsedAt: null,
         revokedAt: null,
-        revokedByOperatorId: null,
+        revokedByAccountId: null,
         revision: 1,
       });
       challenge.record.status = 'completed';

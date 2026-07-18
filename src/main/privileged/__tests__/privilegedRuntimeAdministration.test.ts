@@ -10,11 +10,13 @@ describe('production administration command wiring', () => {
       }),
     };
     const pb = { collection: vi.fn() };
+    const onAuthorityChanged = vi.fn();
 
     const services = registerProductionAdministrationCommands({
       pb: pb as never,
       registrar: registrar as never,
       consumeReauthenticationProof: vi.fn(async () => true),
+      onAuthorityChanged,
     });
 
     expect(services.roleAccountManager.constructor.name).toBe('RoleAccountManager');
@@ -25,6 +27,14 @@ describe('production administration command wiring', () => {
     expect((services.publisherManager as unknown as { coordinator: unknown }).coordinator).toBe(
       services.coordinator,
     );
+    expect(
+      (services.roleAccountManager as unknown as { onAuthorityChanged: unknown })
+        .onAuthorityChanged,
+    ).toBe(onAuthorityChanged);
+    expect(
+      (services.publisherManager as unknown as { onAssignmentChanged: unknown })
+        .onAssignmentChanged,
+    ).toBe(onAuthorityChanged);
     expect(registered.has('account.admin.create')).toBe(true);
     expect(registered.has('account.publisher.create')).toBe(true);
   });

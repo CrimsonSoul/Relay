@@ -3,6 +3,7 @@ import {
   MIN_PRIVILEGED_PASSWORD_LENGTH,
   PRIVILEGED_SESSION_IDLE_MS,
   getPrivilegedCapabilities,
+  type PrivilegedRole,
   type PrivilegedSessionView,
   type RelayPrivilegedAccountRecord,
 } from '@shared/privilegedAccess';
@@ -21,15 +22,16 @@ export class PrivilegedSessionError extends Error {
 
 export type PrivilegedAuthorization = {
   assigned: boolean;
-  operatorName: string;
   paired: boolean;
   deviceId: string | null;
+  role: PrivilegedRole | null;
 };
 
 type ReauthenticationConfirmation = {
   accountId: string;
-  operatorId: string;
-  role: RelayPrivilegedAccountRecord['role'];
+  username: string;
+  displayName: string;
+  role: PrivilegedRole;
   deviceId: string | null;
   authenticatedAt: string;
 };
@@ -44,7 +46,7 @@ type PrivilegedSessionManagerOptions = {
 
 export interface PrivilegedSessionManagerService {
   getView(): PrivilegedSessionView;
-  login(input: { operatorId: string; password: string }): Promise<PrivilegedSessionView>;
+  login(input: { username: string; password: string }): Promise<PrivilegedSessionView>;
   reauthenticate(password: string): Promise<{ proofId: string; expiresAt: string }>;
   activatePairedDevice(deviceId: string): PrivilegedSessionView;
   recordPrivilegedActivity(): void;
@@ -56,8 +58,8 @@ export interface PrivilegedSessionManagerService {
 const SIGNED_OUT_VIEW: PrivilegedSessionView = {
   state: 'signed-out',
   accountId: null,
-  operatorId: null,
-  operatorName: null,
+  username: null,
+  displayName: null,
   role: null,
   capabilities: [],
   deviceId: null,
@@ -91,9 +93,21 @@ function validatePassword(password: string): void {
   }
 }
 
-function validateOperatorId(operatorId: string): string {
-  const normalized = operatorId.trim();
-  if (normalized.length === 0 || normalized.length > 200) {
+function validateUsername(username: string): string {
+  const normalized = username.trim().toLocaleLowerCase('en');
+  if (normalized.length < 3 || normalized.length > 64 || !/^[a-z0-9._-]+$/.test(normalized)) {
+    throw new PrivilegedSessionError('invalid-input');
+  }
+  return normalized;
+}
+
+function validateIdentifier(value: string): string {
+  const normalized = value.trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > 200 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(normalized)
+  ) {
     throw new PrivilegedSessionError('invalid-input');
   }
   return normalized;
@@ -107,8 +121,8 @@ function isSameAccount(
     changed !== null &&
     changed.active &&
     changed.id === current.id &&
-    changed.operatorId === current.operatorId &&
-    changed.role === current.role &&
+    changed.username === current.username &&
+    changed.storedRole === current.storedRole &&
     changed.credentialVersion === current.credentialVersion
   );
 }
@@ -136,15 +150,15 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     return publicCopy(this.view);
   }
 
-  async login(input: { operatorId: string; password: string }): Promise<PrivilegedSessionView> {
+  async login(input: { username: string; password: string }): Promise<PrivilegedSessionView> {
     this.assertNotDisposed();
-    const operatorId = validateOperatorId(input.operatorId);
+    const username = validateUsername(input.username);
     validatePassword(input.password);
     this.clearTimer();
 
     let account: RelayPrivilegedAccountRecord;
     try {
-      account = await this.authClient.authenticate(operatorId, input.password);
+      account = await this.authClient.authenticate(username, input.password);
     } catch (error) {
       this.clearIdentity();
       if (isOfflineAuthenticationError(error)) {
@@ -154,7 +168,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       throw error;
     }
 
-    if (!account.active || account.operatorId !== operatorId) {
+    if (!account.active || account.username !== username) {
       this.failAuthorization();
     }
 
@@ -164,7 +178,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     } catch {
       this.failAuthorization();
     }
-    if (!authorization.assigned || authorization.operatorName.trim().length === 0) {
+    if (!authorization.assigned || !authorization.role) {
       this.failAuthorization();
     }
 
@@ -173,9 +187,9 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       this.setView({
         state: 'pairing-required',
         accountId: account.id,
-        operatorId: account.operatorId,
-        operatorName: authorization.operatorName,
-        role: account.role,
+        username: account.username,
+        displayName: account.displayName,
+        role: authorization.role,
         capabilities: [],
         deviceId: null,
         expiresAt: null,
@@ -187,14 +201,14 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     const capabilities = getPrivilegedCapabilities({
       active: account.active,
       assigned: authorization.assigned,
-      role: account.role,
+      role: authorization.role,
     });
     this.setView({
       state: 'active',
       accountId: account.id,
-      operatorId: account.operatorId,
-      operatorName: authorization.operatorName,
-      role: account.role,
+      username: account.username,
+      displayName: account.displayName,
+      role: authorization.role,
       capabilities,
       deviceId: authorization.deviceId,
       expiresAt: null,
@@ -211,7 +225,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
 
     let refreshed: RelayPrivilegedAccountRecord;
     try {
-      refreshed = await this.authClient.reauthenticate(account.operatorId, password);
+      refreshed = await this.authClient.reauthenticate(account.username, password);
     } catch {
       this.lock();
       throw new PrivilegedSessionError('unauthorized');
@@ -221,12 +235,32 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       throw new PrivilegedSessionError('unauthorized');
     }
 
+    let authorization: PrivilegedAuthorization;
+    try {
+      authorization = await this.resolveAuthorization(refreshed);
+    } catch {
+      this.lock();
+      throw new PrivilegedSessionError('unauthorized');
+    }
+    if (!authorization.assigned || !authorization.role || authorization.role !== this.view.role) {
+      this.lock();
+      throw new PrivilegedSessionError('unauthorized');
+    }
+    this.account = refreshed;
+    this.setView({
+      ...this.view,
+      username: refreshed.username,
+      displayName: refreshed.displayName,
+      role: authorization.role,
+    });
+
     const authenticatedAtMs = this.now();
     const authenticatedAt = new Date(authenticatedAtMs).toISOString();
     const result = await this.confirmReauthentication({
       accountId: account.id,
-      operatorId: account.operatorId,
-      role: account.role,
+      username: refreshed.username,
+      displayName: refreshed.displayName,
+      role: authorization.role,
       deviceId: this.view.deviceId,
       authenticatedAt,
     });
@@ -243,7 +277,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
 
   activatePairedDevice(deviceId: string): PrivilegedSessionView {
     this.assertNotDisposed();
-    const normalizedDeviceId = validateOperatorId(deviceId);
+    const normalizedDeviceId = validateIdentifier(deviceId);
     const account = this.account;
     if (this.view.state !== 'pairing-required' || !account) {
       throw new PrivilegedSessionError('unauthorized');
@@ -254,7 +288,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       capabilities: getPrivilegedCapabilities({
         active: account.active,
         assigned: true,
-        role: account.role,
+        role: this.view.role!,
       }),
       deviceId: normalizedDeviceId,
     });
@@ -298,14 +332,20 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     this.disposed = true;
   }
 
-  handleSelectedOperatorChange(selectedOperatorId: string | null): void {
-    if (this.view.state !== 'active') return;
-    if (selectedOperatorId !== this.view.operatorId) this.lock();
-  }
-
   handleAccountChanged(changedAccount: RelayPrivilegedAccountRecord | null): void {
     if (!this.account || this.view.state === 'signed-out') return;
-    if (!isSameAccount(this.account, changedAccount)) this.lock();
+    if (!isSameAccount(this.account, changedAccount)) {
+      this.lock();
+      return;
+    }
+    this.account = changedAccount;
+    if (this.view.displayName !== changedAccount.displayName) {
+      this.setView({ ...this.view, displayName: changedAccount.displayName });
+    }
+  }
+
+  handleAuthorityChanged(accountIds: readonly string[]): void {
+    if (this.account && accountIds.includes(this.account.id)) this.lock();
   }
 
   handleDisconnect(): void {

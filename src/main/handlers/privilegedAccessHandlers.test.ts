@@ -11,8 +11,8 @@ function signedOutView() {
   return {
     state: 'signed-out' as const,
     accountId: null,
-    operatorId: null,
-    operatorName: null,
+    username: null,
+    displayName: null,
     role: null,
     capabilities: [],
     deviceId: null,
@@ -29,14 +29,18 @@ describe('setupPrivilegedAccessHandlers', () => {
   const accountManager = {
     setupInitialAdministrator: vi.fn(async () => ({
       accountId: 'account-admin',
-      operatorId: 'operator-admin',
-      role: 'admin' as const,
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      storedRole: 'administrator' as const,
+      role: 'owner' as const,
       credentialState: 'configured' as const,
       credentialVersion: 1,
     })),
     setupCredential: vi.fn(async () => ({
       accountId: 'account-publisher',
-      operatorId: 'operator-publisher',
+      username: 'tristan',
+      displayName: 'Tristan Bowles',
+      storedRole: 'publisher' as const,
       role: 'publisher' as const,
       credentialState: 'configured' as const,
       credentialVersion: 1,
@@ -136,7 +140,7 @@ describe('setupPrivilegedAccessHandlers', () => {
 
     await expect(
       invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, {
-        operatorId: 'operator-admin',
+        username: 'ryan',
         password: PASSWORD,
         token: 'unexpected',
       }),
@@ -146,7 +150,7 @@ describe('setupPrivilegedAccessHandlers', () => {
     vi.mocked(runtime.login).mockRejectedValueOnce(new Error('PocketBase sensitive details'));
     await expect(
       invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, {
-        operatorId: 'operator-admin',
+        username: 'ryan',
         password: PASSWORD,
       }),
     ).resolves.toEqual({ ok: false, error: 'invalid-credentials' });
@@ -157,13 +161,13 @@ describe('setupPrivilegedAccessHandlers', () => {
     const spacedPassword = ` ${PASSWORD} `;
 
     await invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, {
-      operatorId: 'operator-admin',
+      username: 'ryan',
       password: spacedPassword,
     });
     await invoke(IPC_CHANNELS.PRIVILEGED_REAUTHENTICATE, { password: spacedPassword });
 
     expect(runtime.login).toHaveBeenCalledWith({
-      operatorId: 'operator-admin',
+      username: 'ryan',
       password: spacedPassword,
     });
     expect(runtime.reauthenticate).toHaveBeenCalledWith(spacedPassword);
@@ -193,14 +197,14 @@ describe('setupPrivilegedAccessHandlers', () => {
   it('allows first administrator setup only through trusted local server IPC', async () => {
     setup();
     const input = {
-      operatorId: 'operator-admin',
+      accountId: 'account-admin',
       password: PASSWORD,
       passwordConfirm: PASSWORD,
     };
     await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN, input)).resolves.toMatchObject(
       {
         ok: true,
-        value: { operatorId: 'operator-admin', credentialState: 'configured' },
+        value: { accountId: 'account-admin', credentialState: 'configured' },
       },
     );
     expect(accountManager.setupInitialAdministrator).toHaveBeenCalledWith(input);
@@ -215,7 +219,7 @@ describe('setupPrivilegedAccessHandlers', () => {
 
   it('requires an active local administrator before publisher setup or recovery', async () => {
     const input = {
-      operatorId: 'operator-publisher',
+      accountId: 'account-publisher',
       password: PASSWORD,
       passwordConfirm: PASSWORD,
     };
@@ -228,19 +232,19 @@ describe('setupPrivilegedAccessHandlers', () => {
     vi.mocked(runtime.getView).mockReturnValue({
       state: 'active',
       accountId: 'account-admin',
-      operatorId: 'operator-admin',
-      operatorName: 'Ryan Bledsoe',
-      role: 'admin',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
       capabilities: ['settings.manage'],
       deviceId: null,
       expiresAt: '2026-07-15T23:15:00.000Z',
     });
     await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, input)).resolves.toMatchObject({
       ok: true,
-      value: { operatorId: 'operator-publisher' },
+      value: { accountId: 'account-publisher' },
     });
     expect(accountManager.setupCredential).toHaveBeenCalledWith({
-      actorOperatorId: 'operator-admin',
+      actorAccountId: 'account-admin',
       ...input,
     });
   });
@@ -262,9 +266,9 @@ describe('setupPrivilegedAccessHandlers', () => {
     sessionListener?.({
       state: 'active',
       accountId: 'account-admin',
-      operatorId: 'operator-admin',
-      operatorName: 'Ryan Bledsoe',
-      role: 'admin',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
       capabilities: ['privileged.status.read', 'not-real'],
       deviceId: 'device-1',
       expiresAt: '2026-07-15T12:15:00.000Z',
@@ -274,9 +278,9 @@ describe('setupPrivilegedAccessHandlers', () => {
     expect(broadcast).toHaveBeenCalledWith(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, {
       state: 'active',
       accountId: 'account-admin',
-      operatorId: 'operator-admin',
-      operatorName: 'Ryan Bledsoe',
-      role: 'admin',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
       capabilities: ['privileged.status.read'],
       deviceId: 'device-1',
       expiresAt: '2026-07-15T12:15:00.000Z',

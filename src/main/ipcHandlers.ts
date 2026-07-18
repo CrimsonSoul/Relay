@@ -124,9 +124,9 @@ export function setupIpcHandlers(opts: {
         }
         return new PrivilegedAccountManager({
           pb,
-          onCredentialChanged: (operatorId) => {
+          onCredentialChanged: (accountId) => {
             const runtime = getPrivilegedRuntime?.();
-            if (runtime?.getView().operatorId === operatorId) runtime.lock();
+            if (runtime?.getView().accountId === accountId) runtime.lock();
           },
         });
       },

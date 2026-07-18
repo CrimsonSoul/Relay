@@ -7,7 +7,7 @@ import {
   type PrivilegedPocketBaseClientAdapter,
 } from '../PrivilegedPocketBaseClient';
 
-const OPERATOR_ID = 'operator-ryan-bledsoe';
+const USERNAME = 'ryan';
 const PASSWORD = 'Test-access-value-123!';
 const RAW_TOKEN = 'raw-privileged-token-value';
 
@@ -15,11 +15,14 @@ function accountRecord(overrides: Record<string, unknown> = {}) {
   return {
     id: 'account-admin',
     collectionName: RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-    operatorId: OPERATOR_ID,
-    role: 'admin',
+    username: USERNAME,
+    displayName: 'Ryan Bledsoe',
+    storedRole: 'administrator',
     active: true,
     mustChangePassword: false,
     credentialVersion: 1,
+    revision: 3,
+    email: 'ryan@relay.invalid',
     created: '2026-07-15T12:00:00.000Z',
     updated: '2026-07-15T12:00:00.000Z',
     ...overrides,
@@ -78,7 +81,7 @@ describe('PrivilegedPocketBaseClient', () => {
     sharedAuthStore.save('shared-app-token', { id: 'shared-user' });
     const client = createPrivilegedClient();
 
-    await client.authenticate(OPERATOR_ID, PASSWORD);
+    await client.authenticate(USERNAME, PASSWORD);
 
     expect(authStores).toHaveLength(1);
     expect(authStores[0]).toBeInstanceOf(BaseAuthStore);
@@ -90,12 +93,13 @@ describe('PrivilegedPocketBaseClient', () => {
   it('authenticates only against the privileged collection and returns sanitized account data', async () => {
     const client = createPrivilegedClient();
 
-    const account = await client.authenticate(OPERATOR_ID, PASSWORD);
+    const account = await client.authenticate(USERNAME, PASSWORD);
 
     expect(adapters[0]?.collection).toHaveBeenCalledWith(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION);
-    expect(authWithPassword).toHaveBeenCalledWith(OPERATOR_ID, PASSWORD, { requestKey: null });
-    expect(account).toEqual(accountRecord({ collectionName: undefined }));
+    expect(authWithPassword).toHaveBeenCalledWith(USERNAME, PASSWORD, { requestKey: null });
+    expect(account).toEqual(accountRecord({ collectionName: undefined, email: undefined }));
     expect(JSON.stringify(account)).not.toContain(RAW_TOKEN);
+    expect(JSON.stringify(account)).not.toContain('@relay.invalid');
     expect(Object.keys(account)).not.toContain('token');
   });
 
@@ -108,9 +112,10 @@ describe('PrivilegedPocketBaseClient', () => {
     });
     const client = createPrivilegedClient();
 
-    await expect(client.authenticate(OPERATOR_ID, PASSWORD)).resolves.toMatchObject({
+    await expect(client.authenticate(USERNAME, PASSWORD)).resolves.toMatchObject({
       id: 'account-admin',
-      operatorId: OPERATOR_ID,
+      username: USERNAME,
+      displayName: 'Ryan Bledsoe',
       created: '',
       updated: '',
     });
@@ -118,14 +123,14 @@ describe('PrivilegedPocketBaseClient', () => {
 
   it('clears privileged authentication on disconnect and reconfigure', async () => {
     const client = createPrivilegedClient();
-    await client.authenticate(OPERATOR_ID, PASSWORD);
+    await client.authenticate(USERNAME, PASSWORD);
     const originalStore = authStores[0] as BaseAuthStore;
 
     client.disconnect();
     expect(originalStore.token).toBe('');
     expect(adapters[0]?.cancelAllRequests).toHaveBeenCalled();
 
-    await client.authenticate(OPERATOR_ID, PASSWORD);
+    await client.authenticate(USERNAME, PASSWORD);
     client.reconfigure('https://relay-two.example.com', false);
 
     expect(originalStore.token).toBe('');
@@ -138,14 +143,14 @@ describe('PrivilegedPocketBaseClient', () => {
     authWithPassword.mockRejectedValueOnce(
       new ClientResponseError({
         status: 400,
-        response: { message: 'operatorId or credential was wrong: sensitive detail' },
+        response: { message: 'username or credential was wrong: sensitive detail' },
       }),
     );
     const client = createPrivilegedClient();
 
     let error: unknown;
     try {
-      await client.authenticate(OPERATOR_ID, PASSWORD);
+      await client.authenticate(USERNAME, PASSWORD);
     } catch (caught) {
       error = caught;
     }
@@ -162,22 +167,22 @@ describe('PrivilegedPocketBaseClient', () => {
     );
     const client = createPrivilegedClient();
 
-    await expect(client.authenticate(OPERATOR_ID, PASSWORD)).rejects.toMatchObject({
+    await expect(client.authenticate(USERNAME, PASSWORD)).rejects.toMatchObject({
       code: 'offline',
       message: 'Privileged access is unavailable while Relay is offline.',
     });
   });
 
-  it('rejects malformed or mismatched account responses and clears their tokens', async () => {
+  it('rejects malformed or mismatched username responses and clears their tokens', async () => {
     authWithPassword.mockImplementationOnce(async () => {
       const authStore = authStores.at(-1) as BaseAuthStore;
-      const record = accountRecord({ operatorId: 'different-operator' });
+      const record = accountRecord({ username: 'charles' });
       authStore.save(RAW_TOKEN, record);
       return { token: RAW_TOKEN, record };
     });
     const client = createPrivilegedClient();
 
-    await expect(client.authenticate(OPERATOR_ID, PASSWORD)).rejects.toMatchObject({
+    await expect(client.authenticate(USERNAME, PASSWORD)).rejects.toMatchObject({
       code: 'invalid-credentials',
     });
     expect(authStores[0]?.token).toBe('');
@@ -201,7 +206,7 @@ describe('PrivilegedPocketBaseClient', () => {
       code: 'invalid-credentials',
     });
 
-    await client.authenticate(OPERATOR_ID, PASSWORD);
+    await client.authenticate(USERNAME, PASSWORD);
     await expect(
       client.createRecord('relay_privileged_commands', { state: 'pending' }),
     ).resolves.toMatchObject({ id: 'created-record', state: 'pending' });
