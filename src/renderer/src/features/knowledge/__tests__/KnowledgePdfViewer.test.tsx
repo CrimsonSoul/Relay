@@ -302,6 +302,103 @@ describe('KnowledgePdfViewer', () => {
     offsetTop.mockRestore();
   });
 
+  it('reopens a fresh same-valued target in Single without reacting to stable rerenders', async () => {
+    const initialTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    const { rerender } = renderComponent({
+      target: initialTarget,
+      currentSection: 'Repeated Single target',
+    });
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: initialTarget, currentSection: 'Incidental Single rerender' })}
+      />,
+    );
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(1);
+
+    const repeatedTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Repeated Single target' })}
+      />,
+    );
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalledTimes(2));
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Second incidental rerender' })}
+      />,
+    );
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(2);
+    expect(onPageChange.mock.calls).toEqual([[2]]);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it('scrolls a fresh same-page Single target to the top without reacting to stable rerenders', async () => {
+    const initialTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const { container, rerender } = renderComponent({
+      target: initialTarget,
+      currentSection: 'Same-page Single target',
+    });
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalledTimes(1));
+    const viewport = container.querySelector<HTMLElement>('.knowledge-viewer__viewport');
+    expect(viewport).not.toBeNull();
+    Object.defineProperty(viewport!, 'scrollTop', { configurable: true, value: 420 });
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: initialTarget, currentSection: 'Incidental Single rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    const repeatedTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Same-page Single target' })}
+      />,
+    );
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 0 }]]));
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Second incidental rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(1);
+    expect(onPageChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View: Single page' }));
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })),
+    );
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 0 }]]));
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(3);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
   it('uses continuous previous and next controls without feeding observer updates back into scroll', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     const { container } = renderComponent();

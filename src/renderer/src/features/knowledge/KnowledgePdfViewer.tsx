@@ -42,6 +42,12 @@ type PendingFocusRequest = {
   target: KnowledgeViewerTarget;
 };
 
+type SingleTopRequest = {
+  documentId: string;
+  checksum: string;
+  target: KnowledgeViewerTarget;
+};
+
 type KnowledgeViewerError = {
   message: string;
   documentId: string;
@@ -107,6 +113,7 @@ export function KnowledgePdfViewer({
   const [navigationTarget, setNavigationTarget] = useState<KnowledgeViewerTarget | null>(
     initialNavigationTarget,
   );
+  const [singleTopRequest, setSingleTopRequest] = useState<SingleTopRequest | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<KnowledgeViewerError | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -256,10 +263,43 @@ export function KnowledgePdfViewer({
     navigationTargetRef.current = nextTarget;
     issuedNavigationTargetRef.current = null;
     setNavigationTarget(nextTarget);
-  }, [normalizedTargetPageIndex, target, targetRequestKey, targetTop]);
+    const activePdfIdentity = pdfIdentityRef.current;
+    const canApplySingleTarget =
+      isNewTargetRequest &&
+      nextTarget &&
+      viewModeRef.current === 'single' &&
+      activeDocumentRef.current.active &&
+      activePdfIdentity?.documentId === documentId &&
+      activePdfIdentity.checksum === documentChecksum;
+    if (canApplySingleTarget) {
+      if (pageIndexRef.current !== nextTarget.pageIndex) {
+        pageIndexRef.current = nextTarget.pageIndex;
+        setPageIndex(nextTarget.pageIndex);
+      } else if (nextTarget.top === null) {
+        setSingleTopRequest({
+          documentId: activePdfIdentity.documentId,
+          checksum: activePdfIdentity.checksum,
+          target: nextTarget,
+        });
+      }
+    }
+  }, [
+    documentChecksum,
+    documentId,
+    normalizedTargetPageIndex,
+    target,
+    targetRequestKey,
+    targetTop,
+  ]);
 
   useEffect(() => {
-    if (!pdf || normalizedTargetPageIndex === undefined) return;
+    if (
+      !pdf ||
+      normalizedTargetPageIndex === undefined ||
+      pageIndexRef.current === normalizedTargetPageIndex
+    ) {
+      return;
+    }
     pageIndexRef.current = normalizedTargetPageIndex;
     setPageIndex(normalizedTargetPageIndex);
   }, [normalizedTargetPageIndex, pdf]);
@@ -422,6 +462,32 @@ export function KnowledgePdfViewer({
     },
     [focusPendingRequest],
   );
+
+  useEffect(() => {
+    if (!singleTopRequest) return;
+    setSingleTopRequest((currentRequest) =>
+      currentRequest === singleTopRequest ? null : currentRequest,
+    );
+    const activePdfIdentity = pdfIdentityRef.current;
+    const activeDocument = activeDocumentRef.current;
+    const pendingTarget = navigationTargetRef.current;
+    if (
+      viewModeRef.current !== 'single' ||
+      !activeDocument.active ||
+      activeDocument.documentId !== singleTopRequest.documentId ||
+      activeDocument.checksum !== singleTopRequest.checksum ||
+      activePdfIdentity?.documentId !== singleTopRequest.documentId ||
+      activePdfIdentity.checksum !== singleTopRequest.checksum ||
+      !viewerTargetsMatch(pendingTarget, singleTopRequest.target) ||
+      pageIndexRef.current !== singleTopRequest.target.pageIndex
+    ) {
+      return;
+    }
+    viewportRef.current?.scrollTo({ top: 0 });
+    observedPageIndexRef.current = singleTopRequest.target.pageIndex;
+    issuedNavigationTargetRef.current = singleTopRequest.target;
+    consumeNavigationTarget(singleTopRequest.target.pageIndex);
+  }, [consumeNavigationTarget, singleTopRequest]);
 
   const handlePageStatus = useCallback(
     (status: KnowledgePdfPageStatus) => {
