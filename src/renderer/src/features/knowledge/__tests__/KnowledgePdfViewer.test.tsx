@@ -279,6 +279,23 @@ describe('KnowledgePdfViewer', () => {
     expect(destroy).not.toHaveBeenCalled();
   });
 
+  it('uses instant scrolling for a Single-page destination when reduced motion is requested', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+      })) as unknown as typeof globalThis.matchMedia,
+    );
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    renderComponent({
+      target: { pageIndex: 1, top: 650 },
+      currentSection: 'Reduced-motion destination',
+    });
+
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 129.5, behavior: 'auto' }));
+  });
+
   it('switches modes on the shared current page without refetching or destroying the PDF', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);

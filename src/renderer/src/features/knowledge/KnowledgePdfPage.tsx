@@ -47,6 +47,13 @@ function scrollViewer(element: HTMLDivElement | null, options: ScrollToOptions):
   if (typeof element?.scrollTo === 'function') element.scrollTo(options);
 }
 
+function destinationScrollBehavior(): ScrollBehavior {
+  return typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth';
+}
+
 export function KnowledgePdfPage({
   pdf,
   pageIndex,
@@ -186,7 +193,7 @@ export function KnowledgePdfPage({
               pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
               {
                 top: Math.max(0, y - 28),
-                behavior: 'smooth',
+                behavior: destinationScrollBehavior(),
               },
             );
           } else {
