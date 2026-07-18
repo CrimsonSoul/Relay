@@ -102,6 +102,26 @@
   color: var(--color-text-secondary);
 }
 
+.knowledge-catalog__search svg {
+  width: 16px;
+  height: 16px;
+  margin-left: 11px;
+  fill: none;
+  stroke: var(--color-text-secondary);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.knowledge-catalog__filters > label select {
+  padding: 0 34px 0 10px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238A8A8A' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 7px;
+}
+
 .knowledge-catalog__filters > label:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-dim);
@@ -133,11 +153,16 @@
   margin-top: 38px;
 }
 
+.knowledge-catalog__recent .knowledge-catalog__section-heading {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .knowledge-recent-shelf {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid var(--color-border);
-  border-left: 1px solid var(--color-border);
+  gap: 8px;
 }
 
 .knowledge-recent-item {
@@ -146,9 +171,7 @@
   align-items: center;
   gap: 11px;
   min-height: 64px;
-  border: 0;
-  border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
+  border: 1px solid var(--color-border);
   padding: 11px 13px;
   color: var(--color-text-primary);
   background: var(--color-bg-surface);
@@ -785,7 +808,7 @@
   border-bottom: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
   font-family: var(--font-family-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;

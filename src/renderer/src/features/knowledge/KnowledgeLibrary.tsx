@@ -60,7 +60,10 @@ export function KnowledgeLibrary({
 
       <div className="knowledge-catalog__filters" aria-label="Wiki filters">
         <label className="knowledge-catalog__search">
-          <span aria-hidden="true">⌕</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-4-4" />
+          </svg>
           <input
             type="search"
             aria-label="Search Wiki catalog"
