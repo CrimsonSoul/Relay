@@ -293,7 +293,6 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             </TactileButton>
           </div>
           <div className="assembler-command-group assembler-command-group--workflow">
-            <span className="assembler-sort-label">Sort by</span>
             <ListToolbar
               sortDirection={asm.sortConfig.direction}
               onToggleSortDirection={() =>

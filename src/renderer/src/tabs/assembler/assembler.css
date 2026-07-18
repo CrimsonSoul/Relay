@@ -541,8 +541,7 @@
 }
 
 .assembler-page-context,
-.assembler-pane-header > span:first-child,
-.assembler-sort-label {
+.assembler-pane-header > span:first-child {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);

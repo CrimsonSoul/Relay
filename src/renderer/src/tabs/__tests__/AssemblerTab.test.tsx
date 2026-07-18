@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssemblerTab } from '../AssemblerTab';
 import type { BridgeGroup, Contact, BridgeHistoryEntry } from '@shared/ipc';
@@ -140,6 +140,7 @@ vi.mock('../../components/ListToolbar', () => ({
     disabled?: boolean;
   }) => (
     <div data-testid="list-toolbar">
+      <span>Sort By</span>
       <button disabled={disabled} onClick={onToggleSortDirection}>
         toggle-sort-dir
       </button>
@@ -327,6 +328,13 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
     expect(screen.getByText('Ready · 0 selected')).toBeInTheDocument();
+  });
+
+  it('renders one Sort By label in the Compose actions toolbar', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    const actionsToolbar = screen.getByRole('toolbar', { name: 'Compose actions' });
+    expect(within(actionsToolbar).getAllByText(/^sort by$/i)).toHaveLength(1);
   });
 
   it('derives Compose header and pane counts from current recipients', () => {
