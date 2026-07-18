@@ -119,7 +119,7 @@ function SettingsShell({
             Relay configuration
           </h1>
           <p className="settings-page__description">
-            Manage this workstation, shared data, operator access, and Dynatrace.
+            Manage this workstation, shared data, account access, and Dynatrace.
           </p>
         </div>
       </header>

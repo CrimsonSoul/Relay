@@ -20,7 +20,6 @@ export const RELAY_SETTINGS_MUTATION_INVENTORY: ReadonlyArray<
   ['appearance.accent', 'ordinary-workstation'],
   ['appearance.accent-schedule', 'ordinary-workstation'],
   ['dynatrace.dashboard', 'ordinary-workstation'],
-  ['operator.selection', 'ordinary-workstation'],
   ['dynatrace.environment-url', 'remote-nonsecret'],
   ['dynatrace.platform-token', 'remote-secret-replacement'],
   ['dynatrace.alerting-profiles', 'remote-nonsecret'],

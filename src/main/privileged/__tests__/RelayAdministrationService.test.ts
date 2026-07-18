@@ -28,12 +28,13 @@ describe('RelayAdministrationService', () => {
     return new RelayAdministrationService({ dynatrace });
   }
 
-  it('classifies every current settings mutation and keeps path operations local', () => {
+  it('classifies every live settings mutation, excludes retired selection, and keeps paths local', () => {
+    const retiredSelection = ['operator', 'selection'].join('.');
+
     expect(RELAY_SETTINGS_MUTATION_INVENTORY).toEqual([
       ['appearance.accent', 'ordinary-workstation'],
       ['appearance.accent-schedule', 'ordinary-workstation'],
       ['dynatrace.dashboard', 'ordinary-workstation'],
-      ['operator.selection', 'ordinary-workstation'],
       ['dynatrace.environment-url', 'remote-nonsecret'],
       ['dynatrace.platform-token', 'remote-secret-replacement'],
       ['dynatrace.alerting-profiles', 'remote-nonsecret'],
@@ -43,6 +44,9 @@ describe('RelayAdministrationService', () => {
       ['filesystem.folder-picker', 'unsupported-remote'],
       ['filesystem.executable-picker', 'unsupported-remote'],
     ]);
+    expect(RELAY_SETTINGS_MUTATION_INVENTORY.map(([setting]) => setting)).not.toContain(
+      retiredSelection,
+    );
   });
 
   it('returns redacted setting summaries without a secret value or path', () => {

@@ -114,6 +114,10 @@ describe('SettingsModal', () => {
   it('renders focused sections when used as the Settings page', () => {
     render(<SettingsModal {...defaultProps} presentation="page" onOpenDataManager={vi.fn()} />);
 
+    expect(
+      screen.getByText('Manage this workstation, shared data, account access, and Dynatrace.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/operator access/i)).toBeNull();
     expect(screen.getByRole('tab', { name: 'Appearance' })).toHaveAttribute(
       'aria-selected',
       'true',

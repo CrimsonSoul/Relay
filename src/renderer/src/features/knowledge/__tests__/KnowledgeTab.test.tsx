@@ -7,25 +7,26 @@ import type { KnowledgeViewerTarget } from '../knowledgePdfDestination';
 import { KnowledgeTab } from '../KnowledgeTab';
 
 const toastMocks = vi.hoisted(() => ({ showToast: vi.fn() }));
+const privilegedAccessMocks = vi.hoisted(() => ({ usePrivilegedAccess: vi.fn() }));
 
 vi.mock('../useKnowledgeLibrary', () => ({ useKnowledgeLibrary: vi.fn() }));
 vi.mock('../../../components/Toast', () => ({
   useToast: () => ({ showToast: toastMocks.showToast }),
 }));
 vi.mock('../../../contexts/PrivilegedAccessContext', () => ({
-  usePrivilegedAccess: () => ({
-    session: {
-      state: 'signed-out',
-      accountId: null,
-      operatorId: null,
-      operatorName: null,
-      role: null,
-      capabilities: [],
-      deviceId: null,
-      expiresAt: null,
-    },
-  }),
+  usePrivilegedAccess: privilegedAccessMocks.usePrivilegedAccess,
 }));
+
+const signedOutSession = {
+  state: 'signed-out',
+  accountId: null,
+  username: null,
+  displayName: null,
+  role: null,
+  capabilities: [],
+  deviceId: null,
+  expiresAt: null,
+};
 
 type ViewerMockProps = {
   document: KnowledgeDocumentRecord | null;
@@ -132,6 +133,7 @@ describe('KnowledgeTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     latestViewerProps = null;
+    privilegedAccessMocks.usePrivilegedAccess.mockReturnValue({ session: signedOutSession });
     globalThis.api = {
       getKnowledgeIndexStatus: vi.fn(async () => ({
         state: 'idle',
@@ -448,6 +450,37 @@ describe('KnowledgeTab', () => {
     expect(screen.queryByText(/config data directory/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());
+  });
+
+  it('describes account-based team publishing for an empty managed library', () => {
+    privilegedAccessMocks.usePrivilegedAccess.mockReturnValue({
+      session: {
+        state: 'active',
+        accountId: 'account-publisher',
+        username: 'publisher',
+        displayName: 'Knowledge Publisher',
+        role: 'publisher',
+        capabilities: ['knowledge.manage'],
+        deviceId: 'device-1',
+        expiresAt: '2026-07-18T00:00:00.000Z',
+      },
+    });
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="server" />);
+
+    expect(
+      screen.getByText(
+        'Use the protected management workspace to stage and publish PDF guides for your Relay team.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/every Relay operator/i)).toBeNull();
   });
 
   it('distinguishes a failed first index from an ordinary empty library', async () => {

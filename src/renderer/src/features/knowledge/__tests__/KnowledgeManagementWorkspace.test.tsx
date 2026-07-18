@@ -79,6 +79,12 @@ describe('KnowledgeManagementWorkspace', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'Manage knowledge base' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Stage, review, publish, and recover PDF guides shared across the Relay team.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/shared with every operator/i)).toBeNull();
     expect(screen.getByRole('button', { name: /Documents 1/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Uploads 0/ })).toBeInTheDocument();
     expect(screen.getByText('Checkout runbook')).toBeInTheDocument();

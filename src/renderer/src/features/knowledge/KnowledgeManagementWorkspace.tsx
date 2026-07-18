@@ -240,7 +240,7 @@ export function KnowledgeManagementWorkspace({
         <div>
           <span className="knowledge-tab__kicker">Protected publisher workspace</span>
           <h1>Manage knowledge base</h1>
-          <p>Stage, review, publish, and recover PDF guides shared with every operator.</p>
+          <p>Stage, review, publish, and recover PDF guides shared across the Relay team.</p>
         </div>
         <div className="knowledge-management__header-actions">
           <span className="knowledge-management__role">

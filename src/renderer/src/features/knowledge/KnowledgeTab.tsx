@@ -78,7 +78,7 @@ function emptyLibraryDescription(isServer: boolean, canManage: boolean): string 
     return 'The Relay server has not shared any knowledge documents yet. They will appear here automatically when available.';
   }
   if (canManage) {
-    return 'Use the protected management workspace to stage and publish PDF guides for every Relay operator.';
+    return 'Use the protected management workspace to stage and publish PDF guides for your Relay team.';
   }
   return 'A designated Knowledge Base publisher can add PDF guides from their signed-in Relay workstation.';
 }

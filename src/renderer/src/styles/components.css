@@ -1705,10 +1705,6 @@ body.modal-open {
   grid-template-columns: 1fr;
 }
 
-.settings-page .settings-body--operators {
-  grid-template-columns: 1fr;
-}
-
 .settings-page .settings-body--access {
   grid-template-columns: 1fr;
 }
@@ -1811,176 +1807,6 @@ body.modal-open {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.settings-page .operator-settings {
-  gap: var(--space-5);
-}
-
-.operator-settings__header {
-  display: flex;
-  max-width: 75ch;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.operator-settings__title {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-}
-
-.operator-settings__header .settings-description {
-  margin: 0;
-}
-
-.operator-settings__capability {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  line-height: var(--leading-normal);
-}
-
-.operator-settings__add {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--space-3);
-}
-
-.operator-settings__field,
-.operator-settings__rename {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.operator-settings__label,
-.operator-settings__group-heading {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-}
-
-.operator-settings__validation {
-  color: var(--alarm-bright);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-normal);
-}
-
-.operator-settings__feedback,
-.operator-settings__state {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  line-height: var(--leading-normal);
-}
-
-.operator-settings__feedback--success {
-  border-color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 10%, transparent);
-  color: #6ad982;
-}
-
-.operator-settings__feedback--error,
-.operator-settings__state--error {
-  border-color: var(--alarm);
-  background: var(--alarm-dim);
-  color: var(--alarm-bright);
-}
-
-.operator-settings__list {
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-}
-
-.operator-settings__group + .operator-settings__group {
-  margin-top: var(--space-5);
-  border-top: 1px solid var(--color-border-strong);
-}
-
-.operator-settings__group-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.operator-settings__count {
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.operator-settings__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3) var(--space-4);
-  min-width: 0;
-  padding: var(--space-2) var(--space-4);
-}
-
-.operator-settings__row + .operator-settings__row {
-  border-top: 1px solid var(--color-border);
-}
-
-.operator-settings__identity {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.operator-settings__name {
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  line-height: var(--leading-tight);
-  overflow-wrap: anywhere;
-}
-
-.operator-settings__status,
-.operator-settings__group-empty {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  font-weight: 650;
-  line-height: var(--leading-normal);
-}
-
-.operator-settings__group-empty {
-  padding: var(--space-4);
-}
-
-.operator-settings__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-.operator-settings__action.tactile-button {
-  min-height: 44px;
-  padding-right: var(--space-3);
-  padding-left: var(--space-3);
-}
-
-.operator-settings__rename-input {
-  min-width: 0;
 }
 
 .privileged-access {
@@ -2576,19 +2402,6 @@ body.modal-open {
 }
 
 @media (max-width: 600px) {
-  .operator-settings__add,
-  .operator-settings__row {
-    grid-template-columns: 1fr;
-  }
-
-  .operator-settings__add-button {
-    width: 100%;
-  }
-
-  .operator-settings__actions {
-    justify-content: flex-start;
-  }
-
   .privileged-access__field-grid,
   .privileged-access__challenge {
     grid-template-columns: 1fr;
