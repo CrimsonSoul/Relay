@@ -50,7 +50,6 @@ vi.mock('../../services/importExportService', () => ({
     'bridge_history',
     'alert_history',
     'notes',
-    'standalone_notes',
   ],
 }));
 
@@ -595,21 +594,6 @@ describe('useDataManager', () => {
       });
 
       expect(mockExportToJson).toHaveBeenCalledWith('notes');
-    });
-
-    it('maps standalone_notes category correctly', async () => {
-      setupDownloadMocks();
-
-      const { result } = renderHook(() => useDataManager());
-
-      await act(async () => {
-        await result.current.exportData({
-          format: 'json',
-          category: 'standalone_notes',
-        });
-      });
-
-      expect(mockExportToJson).toHaveBeenCalledWith('standalone_notes');
     });
   });
 

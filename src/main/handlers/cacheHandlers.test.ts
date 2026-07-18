@@ -131,6 +131,13 @@ describe('cacheHandlers', () => {
       expect(result).toEqual([]);
     });
 
+    it('does not expose archived standalone notes through the cache', () => {
+      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'standalone_notes');
+
+      expect(result).toEqual([]);
+      expect(mockCache.readCollection).not.toHaveBeenCalled();
+    });
+
     it('returns empty array for non-string collection', () => {
       const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 42);
 
@@ -156,7 +163,6 @@ describe('cacheHandlers', () => {
         'alert_history',
         'alert_reminders',
         'notes',
-        'standalone_notes',
         'oncall_dismissals',
         'conflict_log',
         'oncall_board_settings',
@@ -187,6 +193,12 @@ describe('cacheHandlers', () => {
 
     it('returns early for invalid collection', () => {
       handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'bogus', 'create', { id: '1' });
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('does not ingest archived standalone note records', () => {
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'standalone_notes', 'create', { id: 'note-1' });
+
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
@@ -369,6 +381,14 @@ describe('cacheHandlers', () => {
 
     it('returns early for invalid collection', () => {
       handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'invalid', []);
+      expect(mockCache.writeCollection).not.toHaveBeenCalled();
+    });
+
+    it('does not persist archived standalone note snapshots', () => {
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'standalone_notes', '1:0123456789abcdef', [
+        { id: 'note-1' },
+      ]);
+
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 

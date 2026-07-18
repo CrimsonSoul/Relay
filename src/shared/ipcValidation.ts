@@ -14,7 +14,7 @@ import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
 } from './privilegedAccess';
-import type { PublicPrivilegedCommandRequest } from './ipc';
+import { TAB_NAMES, type PublicPrivilegedCommandRequest } from './ipc';
 import {
   isPublicPrivilegedCommandName,
   normalizePrivilegedCommandPayload,
@@ -30,6 +30,8 @@ const MAX_SEARCH = 2000;
 const MAX_ID = 200;
 const MAX_ARRAY_ITEMS = 500;
 const MAX_GROUP_CONTACTS = 200;
+
+export const TabNameSchema = z.enum(TAB_NAMES);
 
 export const KnowledgePdfRequestSchema = z
   .object({
@@ -306,7 +308,6 @@ export const ExportOptionsSchema = z.object({
     'bridge_history',
     'alert_history',
     'notes',
-    'standalone_notes',
     'all',
   ]),
   includeMetadata: z.boolean().optional(),
@@ -320,7 +321,6 @@ export const DataCategorySchema = z.enum([
   'bridge_history',
   'alert_history',
   'notes',
-  'standalone_notes',
   'all',
 ]);
 

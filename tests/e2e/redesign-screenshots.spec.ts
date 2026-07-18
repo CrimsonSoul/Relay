@@ -120,15 +120,13 @@ type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 const COMPACT_TABS = [
   { id: 'sidebar-compose', breadcrumb: 'Compose', shot: 'compose-compact.png' },
   { id: 'sidebar-alerts', breadcrumb: 'Alerts', shot: 'alerts-compact.png' },
-  { id: 'sidebar-notes', breadcrumb: 'Notes', shot: 'notes-compact.png' },
   { id: 'sidebar-status', breadcrumb: 'Service Status', shot: 'cloud-status-compact.png' },
   {
     id: 'sidebar-problems',
     breadcrumb: 'Dynatrace Problems',
     shot: 'dynatrace-problems-compact.png',
   },
-  { id: 'sidebar-people', breadcrumb: 'People', shot: 'people-compact.png' },
-  { id: 'sidebar-servers', breadcrumb: 'Servers', shot: 'servers-compact.png' },
+  { id: 'sidebar-knowledge', breadcrumb: 'Knowledge', shot: 'knowledge-compact.png' },
   { id: 'sidebar-settings', breadcrumb: 'Settings', shot: 'settings-compact.png' },
 ] as const;
 
@@ -170,9 +168,6 @@ const captureCompactTabTour = async (window: Page, electronApp: ElectronApp) => 
     await goToTab(window, tab.id, tab.breadcrumb);
 
     if (tab.id === 'sidebar-compose') await expectCompactComposeActionsAligned(window);
-    if (tab.id === 'sidebar-notes') {
-      await expect(window.locator('.notes-masonry-column')).toHaveCount(2);
-    }
     if (tab.id === 'sidebar-settings') {
       await window.getByRole('tab', { name: 'Appearance' }).click();
       await expectSettingsBottomGutter(window);
@@ -327,34 +322,6 @@ const seedData = async (port: number) => {
     await pb.collection('oncall').create(row, { requestKey: null });
   }
 
-  // --- Standalone notes with different category colors ---
-  const notes = [
-    {
-      title: 'Failover Runbook',
-      content: 'Promote replica, rotate credentials, update DNS. Validate with smoke suite.',
-      color: 'amber',
-      tags: ['runbook', 'database'],
-      sortOrder: 0,
-    },
-    {
-      title: 'Maintenance Window',
-      content: 'Edge proxies patched every second Tuesday, 02:00-04:00 UTC.',
-      color: 'blue',
-      tags: ['maintenance'],
-      sortOrder: 1,
-    },
-    {
-      title: 'Escalation Contacts',
-      content: 'Payments escalation currently unstaffed — see On-Call board.',
-      color: 'red',
-      tags: ['escalation', 'urgent'],
-      sortOrder: 2,
-    },
-  ];
-  for (const note of notes) {
-    await pb.collection('standalone_notes').create(note, { requestKey: null });
-  }
-
   // --- One alert history entry ---
   await pb.collection('alert_history').create(
     {
@@ -506,14 +473,28 @@ test.describe('Redesign screenshot harness', () => {
         await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
       }
 
-      // --- People ---
-      await goToTab(window, 'sidebar-people', 'People');
+      // --- Knowledge workspace ---
+      await goToTab(window, 'sidebar-knowledge', 'Knowledge');
+      await expect(window.getByRole('button', { name: /Open Wiki/ })).toBeVisible();
+      await expect(window.getByRole('button', { name: /Open Contacts/ })).toBeVisible();
+      await expect(window.getByRole('button', { name: /Open Servers/ })).toBeVisible();
+      await shoot(window, 'knowledge.png');
+
+      // --- Wiki ---
+      await window.getByRole('button', { name: /Open Wiki/ }).click();
+      await expect(window.getByRole('heading', { name: 'Wiki' })).toBeVisible();
+      await shoot(window, 'wiki.png');
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
+
+      // --- Contacts ---
+      await window.getByRole('button', { name: /Open Contacts/ }).click();
       await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('Grace Hopper');
-      await shoot(window, 'people.png');
+      await shoot(window, 'contacts.png');
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
 
       // --- Servers ---
-      await goToTab(window, 'sidebar-servers', 'Servers');
+      await window.getByRole('button', { name: /Open Servers/ }).click();
       await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('prod-db-01');
       await shoot(window, 'servers.png');
@@ -529,11 +510,6 @@ test.describe('Redesign screenshot harness', () => {
       await shoot(window, 'alert-history.png');
       await window.keyboard.press('Escape');
       await expect(window.locator('.alert-history-content')).not.toBeVisible();
-
-      // --- Notes ---
-      await goToTab(window, 'sidebar-notes', 'Notes');
-      await expect(window.locator('.tab-panel--active')).toContainText('Failover Runbook');
-      await shoot(window, 'notes.png');
 
       // --- Cloud / Service Status ---
       await goToTab(window, 'sidebar-status', 'Service Status');

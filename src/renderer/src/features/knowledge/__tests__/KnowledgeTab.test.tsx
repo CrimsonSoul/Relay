@@ -151,7 +151,53 @@ describe('KnowledgeTab', () => {
     delete globalThis.api;
   });
 
-  it('renders the focus reader, filters by nested headings, and jumps to a selected heading', async () => {
+  it('reports the document count after a usable Wiki snapshot loads', async () => {
+    const onLibraryCountChange = vi.fn();
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('guide', 'Operator guide', 'General'),
+        document('lane', 'Lane recovery', 'Store systems'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />);
+
+    await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('reports an unavailable count before a usable snapshot and when loading fails', async () => {
+    const onLibraryCountChange = vi.fn();
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      loading: true,
+      error: null,
+      hasLoadedSnapshot: false,
+      refetch: vi.fn(async () => undefined),
+    });
+    const view = render(
+      <KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />,
+    );
+    await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(null));
+
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      loading: false,
+      error: 'offline',
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    view.rerender(
+      <KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />,
+    );
+
+    await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(null));
+  });
+
+  it('renders the Wiki reader, filters by nested headings, and jumps to a selected heading', async () => {
     const laneGuide = document('lane', 'Lane recovery', 'Store systems');
     laneGuide.outline = [
       { id: 'lane-heading', label: 'Verify the printer', level: 1, pageIndex: 0, top: 700 },
@@ -166,11 +212,11 @@ describe('KnowledgeTab', () => {
 
     render(<KnowledgeTab active relayMode="server" />);
 
-    expect(screen.getByRole('heading', { name: 'Knowledge base' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Wiki' })).toBeInTheDocument();
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
     expect(screen.getByText(/2 documents across 2 categories/i)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search knowledge base' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Wiki' }), {
       target: { value: 'lane service' },
     });
     expect(screen.getByRole('treeitem', { name: 'Operator guide' })).toBeInTheDocument();
@@ -219,7 +265,7 @@ describe('KnowledgeTab', () => {
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
-    const search = screen.getByRole('searchbox', { name: 'Search knowledge base' });
+    const search = screen.getByRole('searchbox', { name: 'Search Wiki' });
     fireEvent.change(search, { target: { value: 'Operator' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Activate Lane recovery.pdf#page=3' }));
@@ -445,8 +491,8 @@ describe('KnowledgeTab', () => {
 
     render(<KnowledgeTab active relayMode="server" />);
 
-    expect(screen.getByText(/no knowledge documents yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/designated Knowledge Base publisher/i)).toBeInTheDocument();
+    expect(screen.getByText(/no Wiki documents yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/designated Wiki publisher/i)).toBeInTheDocument();
     expect(screen.queryByText(/config data directory/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());

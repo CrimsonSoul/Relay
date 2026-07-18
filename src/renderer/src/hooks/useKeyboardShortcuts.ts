@@ -15,16 +15,13 @@ export function useKeyboardShortcuts({
   searchInputRef,
 }: UseKeyboardShortcutsParams): void {
   useEffect(() => {
-    const tabMap: Record<string, string> = {
+    const tabMap: Partial<Record<string, TabName>> = {
       '1': 'Compose',
-      '2': 'Personnel',
-      '3': 'People',
-      '4': 'Servers',
+      '2': 'Alerts',
+      '3': 'Personnel',
+      '4': 'Knowledge',
       '5': 'Status',
-      '6': 'Notes',
-      '7': 'Alerts',
-      '8': 'Problems',
-      '9': 'Knowledge',
+      '6': 'Problems',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -51,10 +48,11 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // Cmd/Ctrl+1-9 for tab navigation
-      if (mod && !e.shiftKey && tabMap[e.key]) {
+      // Cmd/Ctrl+1-6 for top-level navigation
+      const destination = tabMap[e.key];
+      if (mod && !e.shiftKey && destination) {
         e.preventDefault();
-        setActiveTab(tabMap[e.key] as TabName);
+        setActiveTab(destination);
       }
     };
 

@@ -51,12 +51,12 @@ export function useCommandSearch(
           data: { action: 'navigate', tab: 'Personnel' },
         },
         {
-          id: 'action-people',
+          id: 'action-contacts',
           type: 'action',
-          title: 'Go to People',
+          title: 'Go to Contacts',
           subtitle: 'Search contacts directory',
           iconType: 'people',
-          data: { action: 'navigate', tab: 'People' },
+          data: { action: 'open-knowledge', destination: 'contacts' },
         },
         {
           id: 'action-problems',

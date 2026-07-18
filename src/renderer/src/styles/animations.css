@@ -74,42 +74,32 @@
 }
 
 /* Stagger children delays — 30ms steps, capped at the 8th child so a full
-   board settles in under ~550ms. The notes masonry nests cards one level
-   deeper (columns), so those are staggered per-row via the column selector. */
-.stagger-children > *:nth-child(1),
-.stagger-children .notes-masonry-column > *:nth-child(1) {
+   board settles in under ~550ms. */
+.stagger-children > *:nth-child(1) {
   animation-delay: 0ms;
 }
-.stagger-children > *:nth-child(2),
-.stagger-children .notes-masonry-column > *:nth-child(2) {
+.stagger-children > *:nth-child(2) {
   animation-delay: 30ms;
 }
-.stagger-children > *:nth-child(3),
-.stagger-children .notes-masonry-column > *:nth-child(3) {
+.stagger-children > *:nth-child(3) {
   animation-delay: 60ms;
 }
-.stagger-children > *:nth-child(4),
-.stagger-children .notes-masonry-column > *:nth-child(4) {
+.stagger-children > *:nth-child(4) {
   animation-delay: 90ms;
 }
-.stagger-children > *:nth-child(5),
-.stagger-children .notes-masonry-column > *:nth-child(5) {
+.stagger-children > *:nth-child(5) {
   animation-delay: 120ms;
 }
-.stagger-children > *:nth-child(6),
-.stagger-children .notes-masonry-column > *:nth-child(6) {
+.stagger-children > *:nth-child(6) {
   animation-delay: 150ms;
 }
-.stagger-children > *:nth-child(7),
-.stagger-children .notes-masonry-column > *:nth-child(7) {
+.stagger-children > *:nth-child(7) {
   animation-delay: 180ms;
 }
-.stagger-children > *:nth-child(8),
-.stagger-children .notes-masonry-column > *:nth-child(8) {
+.stagger-children > *:nth-child(8) {
   animation-delay: 210ms;
 }
-.stagger-children > *:nth-child(n + 9),
-.stagger-children .notes-masonry-column > *:nth-child(n + 9) {
+.stagger-children > *:nth-child(n + 9) {
   animation-delay: 210ms;
 }
 

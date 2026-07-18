@@ -49,18 +49,16 @@ describe('Sidebar', () => {
     clientPresence: { count: 0, hostnames: [] },
   };
 
-  it('renders all navigation items', () => {
-    render(<Sidebar {...defaultProps} />);
+  it('renders only the six top-level destinations in their shortcut order', () => {
+    const { container } = render(<Sidebar {...defaultProps} />);
 
-    expect(screen.getByTestId('sidebar-btn-compose')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-alerts')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-on-call')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-notes')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-knowledge')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-status')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-problems')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-people')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-servers')).toBeInTheDocument();
+    const navLabels = [...container.querySelectorAll('.sidebar-nav button')].map(
+      (button) => button.textContent,
+    );
+    expect(navLabels).toEqual(['Compose', 'Alerts', 'On-Call', 'Knowledge', 'Status', 'Problems']);
+    expect(screen.queryByTestId('sidebar-btn-notes')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar-btn-people')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar-btn-servers')).not.toBeInTheDocument();
   });
 
   it('renders Settings button', () => {
@@ -178,7 +176,7 @@ describe('Sidebar', () => {
     expect(onTabChange).toHaveBeenCalledWith('Alerts');
   });
 
-  it('opens Knowledge from the navigation immediately after Notes', () => {
+  it('opens Knowledge from the navigation immediately after On-Call', () => {
     const onTabChange = vi.fn();
     const { container } = render(<Sidebar {...defaultProps} onTabChange={onTabChange} />);
 
@@ -187,7 +185,7 @@ describe('Sidebar', () => {
     const navLabels = [...container.querySelectorAll('.sidebar-nav button')].map(
       (button) => button.textContent,
     );
-    expect(navLabels.indexOf('Knowledge')).toBe(navLabels.indexOf('Notes') + 1);
+    expect(navLabels.indexOf('Knowledge')).toBe(navLabels.indexOf('On-Call') + 1);
   });
 
   it('calls onOpenSettings when Settings is clicked', () => {

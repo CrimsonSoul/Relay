@@ -499,17 +499,6 @@ const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
-    name: 'standalone_notes',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'title' },
-      { type: 'text', name: 'content' },
-      { type: 'text', name: 'color' },
-      { type: 'json', name: 'tags' },
-      { type: 'number', name: 'sortOrder' },
-    ],
-  },
-  {
     name: 'oncall_dismissals',
     type: 'base',
     fields: [

@@ -25,7 +25,7 @@ import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { StartupErrorScreen } from './components/StartupErrorScreen';
 import { ConnectionManager } from './components/ConnectionManager';
-import { Contact, TabName, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
+import { Contact, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
@@ -46,6 +46,11 @@ import {
   setOnCallFontScale,
 } from './theme/onCallDisplay';
 import { requestKnowledgeDocumentOpen } from './features/knowledge/knowledgeNavigation';
+import {
+  normalizeLegacyTabRequest,
+  requestKnowledgeDestinationOpen,
+  type KnowledgeContentDestination,
+} from './features/knowledge/knowledgeWorkspaceNavigation';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -56,13 +61,13 @@ function lazyTab<T extends Record<string, ComponentType>>(
 }
 
 // Lazy load non-default tabs and settings modal
-const DirectoryTab = lazyTab(() => import('./tabs/DirectoryTab'), 'DirectoryTab');
-const ServersTab = lazyTab(() => import('./tabs/ServersTab'), 'ServersTab');
 const PersonnelTab = lazyTab(() => import('./tabs/PersonnelTab'), 'PersonnelTab');
 const SettingsTab = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
 const DataManagerModal = lazyTab(() => import('./components/DataManagerModal'), 'DataManagerModal');
-const NotesTab = lazyTab(() => import('./tabs/NotesTab'), 'NotesTab');
-const KnowledgeTab = lazyTab(() => import('./features/knowledge/KnowledgeTab'), 'KnowledgeTab');
+const KnowledgeWorkspace = lazyTab(
+  () => import('./features/knowledge/KnowledgeWorkspace'),
+  'KnowledgeWorkspace',
+);
 const CloudStatusTab = lazyTab(() => import('./tabs/CloudStatusTab'), 'CloudStatusTab');
 const DynatraceProblemsTab = lazyTab(
   () => import('./tabs/DynatraceProblemsTab'),
@@ -167,6 +172,31 @@ export function MainApp({
   } = useAppAssembler();
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
+  const handleTabRequest = useCallback(
+    (requestedTab: string) => {
+      const normalized = normalizeLegacyTabRequest(requestedTab);
+      if (normalized.knowledgeDestination) {
+        requestKnowledgeDestinationOpen(normalized.knowledgeDestination);
+      }
+      setActiveTab(normalized.tab);
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeDestination = useCallback(
+    (destination: KnowledgeContentDestination) => {
+      requestKnowledgeDestinationOpen(destination);
+      setActiveTab('Knowledge');
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeDocument = useCallback(
+    (documentId: string, headingId?: string) => {
+      requestKnowledgeDocumentOpen(documentId, headingId);
+      requestKnowledgeDestinationOpen('wiki');
+      setActiveTab('Knowledge');
+    },
+    [setActiveTab],
+  );
 
   // Track which tabs have been mounted at least once
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
@@ -291,7 +321,7 @@ export function MainApp({
       <div className="app-container">
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabRequest}
           onOpenSettings={handleOpenSettings}
           relayMode={relayConfig?.mode}
           relayConfig={relayConfig}
@@ -308,10 +338,7 @@ export function MainApp({
                 {{
                   Compose: 'Compose',
                   Personnel: 'On-Call',
-                  People: 'People',
-                  Servers: 'Servers',
-                  Notes: 'Notes',
-                  Knowledge: 'Knowledge Base',
+                  Knowledge: 'Knowledge',
                   Status: 'Service Status',
                   Problems: 'Dynatrace Problems',
                   Alerts: 'Alerts',
@@ -331,15 +358,13 @@ export function MainApp({
                     setActiveTab('Compose');
                   },
                   onToggleGroup: handleLoadGroupFromPalette,
-                  onNavigateToTab: (tab) => setActiveTab(tab as TabName),
+                  onNavigateToTab: handleTabRequest,
+                  onOpenKnowledgeDestination: handleOpenKnowledgeDestination,
                   onOpenAddContact: (email) => {
                     setInitialContactEmail(email || '');
                     addContactModal.open();
                   },
-                  onOpenKnowledgeDocument: (documentId, headingId) => {
-                    requestKnowledgeDocumentOpen(documentId, headingId);
-                    setActiveTab('Knowledge');
-                  },
+                  onOpenKnowledgeDocument: handleOpenKnowledgeDocument,
                 }}
               />
             </div>
@@ -386,45 +411,17 @@ export function MainApp({
                 </ErrorBoundary>
               </RetainedTabPanel>
             )}
-            {mountedTabs.has('People') && (
-              <RetainedTabPanel active={activeTab === 'People'}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <DirectoryTab
-                      contacts={data.contacts}
-                      groups={data.groups}
-                      servers={data.servers}
-                      onAddToAssembler={handleAddToAssembler}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              </RetainedTabPanel>
-            )}
-            {mountedTabs.has('Servers') && (
-              <RetainedTabPanel active={activeTab === 'Servers'}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <ServersTab servers={data.servers} contacts={data.contacts} />
-                  </Suspense>
-                </ErrorBoundary>
-              </RetainedTabPanel>
-            )}
-            {mountedTabs.has('Notes') && (
-              <RetainedTabPanel active={activeTab === 'Notes'}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <NotesTab active={activeTab === 'Notes'} />
-                  </Suspense>
-                </ErrorBoundary>
-              </RetainedTabPanel>
-            )}
             {mountedTabs.has('Knowledge') && (
               <RetainedTabPanel active={activeTab === 'Knowledge'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <KnowledgeTab
+                    <KnowledgeWorkspace
                       active={activeTab === 'Knowledge'}
+                      contacts={data.contacts}
+                      groups={data.groups}
+                      servers={data.servers}
                       relayMode={relayConfig?.mode}
+                      onAddToAssembler={handleAddToAssembler}
                     />
                   </Suspense>
                 </ErrorBoundary>

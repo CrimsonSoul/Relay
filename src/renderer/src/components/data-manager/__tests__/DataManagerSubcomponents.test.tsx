@@ -161,6 +161,12 @@ describe('DataManagerImport', () => {
     fireEvent.change(select, { target: { value: 'servers' } });
     expect(setImportCategory).toHaveBeenCalledWith('servers');
   });
+
+  it('does not offer Standalone Notes as an import category', () => {
+    render(<DataManagerImport {...defaultImportProps} />);
+
+    expect(screen.queryByRole('option', { name: 'Standalone Notes' })).not.toBeInTheDocument();
+  });
 });
 
 // ── DataManagerExport ────────────────────────────────────────────────────────
@@ -234,5 +240,11 @@ describe('DataManagerExport', () => {
     const [, formatSelect] = screen.getAllByRole('combobox');
     fireEvent.change(formatSelect, { target: { value: 'csv' } });
     expect(setExportFormat).toHaveBeenCalledWith('csv');
+  });
+
+  it('does not offer Standalone Notes as an export category', () => {
+    render(<DataManagerExport {...defaultExportProps} />);
+
+    expect(screen.queryByRole('option', { name: 'Standalone Notes' })).not.toBeInTheDocument();
   });
 });

@@ -148,6 +148,24 @@ describe('offlineMutationHandlers', () => {
     expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
   });
 
+  it('rejects archived standalone note mutations', () => {
+    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      {},
+      {
+        collection: 'standalone_notes',
+        action: 'create',
+        data: { title: 'Archived note' },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Collection is not available offline',
+    });
+    expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
+    expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
+  });
+
   it('rejects offline queue writes in server mode', () => {
     appConfig.load.mockReturnValueOnce({ mode: 'server' } as never);
 

@@ -14,14 +14,11 @@ const shortcuts = [
     category: 'Navigation',
     items: [
       { keys: `${modKey} + 1`, description: 'Go to Compose' },
-      { keys: `${modKey} + 2`, description: 'Go to On-Call Board' },
-      { keys: `${modKey} + 3`, description: 'Go to People' },
-      { keys: `${modKey} + 4`, description: 'Go to Servers' },
+      { keys: `${modKey} + 2`, description: 'Go to Alerts' },
+      { keys: `${modKey} + 3`, description: 'Go to On-Call Board' },
+      { keys: `${modKey} + 4`, description: 'Go to Knowledge' },
       { keys: `${modKey} + 5`, description: 'Go to Service Status' },
-      { keys: `${modKey} + 6`, description: 'Go to Notes' },
-      { keys: `${modKey} + 7`, description: 'Go to Alerts' },
-      { keys: `${modKey} + 8`, description: 'Go to Dynatrace Problems' },
-      { keys: `${modKey} + 9`, description: 'Go to Knowledge Base' },
+      { keys: `${modKey} + 6`, description: 'Go to Dynatrace Problems' },
     ],
   },
   {

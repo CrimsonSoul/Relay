@@ -89,6 +89,10 @@ beforeEach(() => {
   mockToBlob.mockResolvedValue(new Blob([new Uint8Array([1, 2, 3, 4])]));
 });
 
+it('does not expose archived standalone notes as an import/export collection', () => {
+  expect(ALL_COLLECTIONS).not.toContain('standalone_notes');
+});
+
 // ---------------------------------------------------------------------------
 // exportToJson
 // ---------------------------------------------------------------------------

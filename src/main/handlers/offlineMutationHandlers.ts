@@ -24,7 +24,6 @@ const WRITABLE_COLLECTIONS = new Set<OfflineWritableCollection>([
   'alert_history',
   'alert_reminders',
   'notes',
-  'standalone_notes',
   'oncall_dismissals',
   'oncall_board_settings',
   'dynatrace_problem_states',

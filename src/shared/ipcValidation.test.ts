@@ -11,6 +11,9 @@ import {
   PrivilegedPairingCompletionSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
+  TabNameSchema,
+  DataCategorySchema,
+  ExportOptionsSchema,
 } from './ipcValidation';
 import { IPC_CHANNELS } from './ipc';
 
@@ -21,6 +24,29 @@ describe('retired roster IPC', () => {
     expect(Object.values(IPC_CHANNELS).some((channel) => channel.startsWith(retiredPrefix))).toBe(
       false,
     );
+  });
+});
+
+describe('TabNameSchema', () => {
+  it('accepts only current outer navigation tabs', () => {
+    expect(TabNameSchema.safeParse('Knowledge').success).toBe(true);
+    expect(TabNameSchema.safeParse('Compose').success).toBe(true);
+  });
+
+  it.each(['People', 'Servers', 'Notes'])('rejects removed top-level tab %s', (tab) => {
+    expect(TabNameSchema.safeParse(tab).success).toBe(false);
+  });
+});
+
+describe('standalone notes retirement', () => {
+  it('rejects standalone_notes as a Data Manager category', () => {
+    expect(DataCategorySchema.safeParse('standalone_notes').success).toBe(false);
+  });
+
+  it('rejects standalone_notes export requests', () => {
+    expect(
+      ExportOptionsSchema.safeParse({ format: 'json', category: 'standalone_notes' }).success,
+    ).toBe(false);
   });
 });
 
