@@ -5,6 +5,7 @@ import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { getDocument, TextLayer } from 'pdfjs-dist/build/pdf.mjs';
 import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
 import type { KnowledgeViewerTarget } from '../knowledgePdfDestination';
+import { KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY } from '../knowledgePdfViewMode';
 import { KnowledgePdfViewer } from '../KnowledgePdfViewer';
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf-worker.js' }));
@@ -29,6 +30,41 @@ function deferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+type ObserverEntry = {
+  target: Element;
+  intersectionRatio: number;
+  isIntersecting?: boolean;
+};
+
+class IntersectionObserverDouble {
+  static readonly instances: IntersectionObserverDouble[] = [];
+
+  readonly observe = vi.fn();
+  readonly unobserve = vi.fn();
+  readonly disconnect = vi.fn();
+
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    readonly options?: IntersectionObserverInit,
+  ) {
+    IntersectionObserverDouble.instances.push(this);
+  }
+
+  showPage(target: Element): void {
+    this.emit([{ target, intersectionRatio: 1 }]);
+  }
+
+  emit(entries: ObserverEntry[]): void {
+    this.callback(
+      entries.map(
+        ({ target, intersectionRatio, isIntersecting = intersectionRatio > 0 }) =>
+          ({ target, intersectionRatio, isIntersecting }) as IntersectionObserverEntry,
+      ),
+      this as unknown as IntersectionObserver,
+    );
+  }
 }
 
 function record(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDocumentRecord {
@@ -137,6 +173,18 @@ describe('KnowledgePdfViewer', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, 'single');
+    IntersectionObserverDouble.instances.splice(0);
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverDouble);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })) as unknown as typeof globalThis.matchMedia,
+    );
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
     annotationMocks.clear();
     operatorListMocks.clear();
     getPage.mockImplementation(async (pageNumber: number) => page(pageNumber));
@@ -159,7 +207,123 @@ describe('KnowledgePdfViewer', () => {
 
   afterEach(() => {
     delete globalThis.api;
+    localStorage.clear();
+    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('defaults to a pressed Continuous control and tracks the most visible page', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const { container } = renderComponent();
+
+    expect(await screen.findByRole('button', { name: 'View: Continuous' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+
+    const pageThree = container.querySelector<HTMLElement>('[data-page-index="2"]');
+    expect(pageThree).not.toBeNull();
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
+    act(() => IntersectionObserverDouble.instances[0].showPage(pageThree!));
+
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenLastCalledWith(2);
+  });
+
+  it('switches modes on the shared current page without refetching or destroying the PDF', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const { container } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const pageTwo = container.querySelector<HTMLElement>('[data-page-index="1"]');
+    expect(pageTwo).not.toBeNull();
+
+    act(() => IntersectionObserverDouble.instances[0].showPage(pageTwo!));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+
+    expect(await screen.findByRole('button', { name: 'View: Single page' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByLabelText('Page 2')).toBeVisible();
+    expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('single');
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0 }));
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'View: Single page' }));
+
+    expect(await screen.findByRole('button', { name: 'View: Continuous' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })),
+    );
+    expect(scrollTo.mock.calls).toEqual([[expect.objectContaining({ behavior: 'smooth' })]]);
+    expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('continuous');
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it('uses continuous previous and next controls without feeding observer updates back into scroll', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const { container } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const viewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    const scrollTo = vi.fn();
+    viewport.scrollTo = scrollTo;
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    Object.defineProperty(pages[0], 'offsetTop', { configurable: true, value: 200 });
+    Object.defineProperty(pages[1], 'offsetTop', { configurable: true, value: 1000 });
+    Object.defineProperty(pages[2], 'offsetTop', { configurable: true, value: 1600 });
+
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
+    act(() => IntersectionObserverDouble.instances[0].showPage(pages[1]));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 172, behavior: 'smooth' });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1572, behavior: 'smooth' });
+  });
+
+  it('keeps outline offsets, shared zoom, and fit width without a second PDF fetch', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const { container } = renderComponent({
+      target: { pageIndex: 1, top: 650 },
+      currentSection: 'Recovery procedure',
+    });
+
+    expect(await screen.findByText('Current section · Recovery procedure')).toBeInTheDocument();
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 129.5, behavior: 'smooth' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('120%')).toBeInTheDocument();
+
+    const continuousViewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    Object.defineProperty(continuousViewport, 'clientWidth', { configurable: true, value: 648 });
+    fireEvent.click(screen.getByRole('button', { name: 'Fit width' }));
+    await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    expect(await screen.findByLabelText('Page 2')).toBeVisible();
+    expect(container.querySelectorAll('.knowledge-page')).toHaveLength(1);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
   });
 
   it('loads the selected PDF through Relay with script execution disabled and renders selectable text', async () => {

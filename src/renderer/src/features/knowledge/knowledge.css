@@ -473,6 +473,21 @@
   font-size: 10px;
 }
 
+.knowledge-viewer__controls .knowledge-viewer__mode {
+  width: auto;
+  min-width: 112px;
+  padding: 0 10px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.knowledge-viewer__controls .knowledge-viewer__mode[aria-pressed='true'] {
+  border-color: var(--color-border-accent);
+  color: var(--accent-bright);
+  background: var(--accent-subtle);
+}
+
 .knowledge-viewer__viewport {
   position: relative;
   display: flex;

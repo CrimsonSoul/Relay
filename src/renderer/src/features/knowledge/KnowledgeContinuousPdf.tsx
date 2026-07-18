@@ -17,6 +17,7 @@ type KnowledgeContinuousPdfProps = {
   resolveUrl: KnowledgePdfPageProps['resolveUrl'];
   onActivateResolvedLink: KnowledgePdfPageProps['onActivateResolvedLink'];
   onActivateDestination: KnowledgePdfPageProps['onActivateDestination'];
+  onPageStatus?: KnowledgePdfPageProps['onStatus'];
   onCurrentPageChange: (pageIndex: number) => void;
 };
 
@@ -65,6 +66,7 @@ export const KnowledgeContinuousPdf = forwardRef<
     resolveUrl,
     onActivateResolvedLink,
     onActivateDestination,
+    onPageStatus = ignorePageStatus,
     onCurrentPageChange,
   },
   ref,
@@ -168,15 +170,17 @@ export const KnowledgeContinuousPdf = forwardRef<
     };
     previousNavigationRequestRef.current = nextRequest;
 
-    const documentChanged = previousRequest?.pdf !== pdf;
-    const activePageChanged = previousRequest?.activePageIndex !== boundedRequestedPageIndex;
+    const documentChanged = previousRequest !== null && previousRequest.pdf !== pdf;
+    const activePageChanged =
+      previousRequest !== null && previousRequest.activePageIndex !== boundedRequestedPageIndex;
     const targetChanged =
       previousRequest?.targetPageIndex !== targetPageIndex ||
       previousRequest?.targetTop !== targetTop;
     const targetRemoved =
       previousRequest?.targetPageIndex !== undefined && targetPageIndex === undefined;
     const targetRequestChanged = targetPageIndex !== undefined && targetChanged;
-    const focusRequestChanged = previousRequest?.focusRequestKey !== focusRequestKey;
+    const focusRequestChanged =
+      previousRequest !== null && previousRequest.focusRequestKey !== focusRequestKey;
     const observerFeedback =
       previousRequest !== null &&
       activePageChanged &&
@@ -184,7 +188,6 @@ export const KnowledgeContinuousPdf = forwardRef<
       !focusRequestChanged &&
       boundedRequestedPageIndex === observedCurrentPageIndexRef.current;
     const isExternalRequest =
-      previousRequest === null ||
       documentChanged ||
       targetRequestChanged ||
       focusRequestChanged ||
@@ -249,11 +252,12 @@ export const KnowledgeContinuousPdf = forwardRef<
                 scale={scale}
                 render
                 targetTop={null}
+                scrollOnReady={false}
                 retryKey={0}
                 resolveUrl={resolveUrl}
                 onActivateResolvedLink={onActivateResolvedLink}
                 onActivateDestination={onActivateDestination}
-                onStatus={ignorePageStatus}
+                onStatus={onPageStatus}
               />
             ) : (
               <div className="knowledge-page-placeholder" aria-hidden="true">

@@ -6,6 +6,13 @@ export type KnowledgeViewerTarget = {
   top: number | null;
 };
 
+export function clampKnowledgePdfPageIndex(pageIndex: number, pageCount: number): number {
+  const boundedPageCount = Number.isFinite(pageCount) ? Math.max(0, Math.floor(pageCount)) : 0;
+  if (boundedPageCount === 0) return 0;
+  const integerPageIndex = Number.isFinite(pageIndex) ? Math.floor(pageIndex) : 0;
+  return Math.min(Math.max(0, integerPageIndex), boundedPageCount - 1);
+}
+
 function destinationType(value: unknown): string {
   if (value && typeof value === 'object' && 'name' in value) {
     return String((value as { name: unknown }).name);

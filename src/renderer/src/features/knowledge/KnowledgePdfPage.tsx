@@ -23,6 +23,7 @@ export type KnowledgePdfPageProps = {
   scale: number;
   render: boolean;
   targetTop: number | null;
+  scrollOnReady?: boolean;
   retryKey: number;
   resolveUrl: (url: string) => KnowledgeResolvedLink;
   onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
@@ -52,6 +53,7 @@ export function KnowledgePdfPage({
   scale,
   render,
   targetTop,
+  scrollOnReady = true,
   retryKey,
   resolveUrl,
   onActivateResolvedLink,
@@ -177,22 +179,24 @@ export function KnowledgePdfPage({
         if (textResult.error !== null) throw textResult.error;
         if (disposed) return;
 
-        if (targetTop !== null) {
-          const [, y] = viewport.convertToViewportPoint(0, targetTop);
-          scrollViewer(
-            pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
-            {
-              top: Math.max(0, y - 28),
-              behavior: 'smooth',
-            },
-          );
-        } else {
-          scrollViewer(
-            pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
-            {
-              top: 0,
-            },
-          );
+        if (scrollOnReady) {
+          if (targetTop !== null) {
+            const [, y] = viewport.convertToViewportPoint(0, targetTop);
+            scrollViewer(
+              pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
+              {
+                top: Math.max(0, y - 28),
+                behavior: 'smooth',
+              },
+            );
+          } else {
+            scrollViewer(
+              pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
+              {
+                top: 0,
+              },
+            );
+          }
         }
 
         setLinkRender({ viewport, items: extractKnowledgeLinkItems(annotations) });
@@ -212,7 +216,7 @@ export function KnowledgePdfPage({
       cancelPageWork();
       cleanupPage();
     };
-  }, [onStatus, pageIndex, pdf, render, retryKey, scale, targetTop, localRetryKey]);
+  }, [onStatus, pageIndex, pdf, render, retryKey, scale, scrollOnReady, targetTop, localRetryKey]);
 
   return (
     <div ref={pageShellRef} className="knowledge-page" data-testid="knowledge-pdf-page-shell">
