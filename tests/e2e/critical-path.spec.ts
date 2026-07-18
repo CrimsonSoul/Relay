@@ -77,6 +77,67 @@ const rightClick = async (target: Locator) => {
 
 const getActivePanel = (window: Page) => window.locator('.tab-panel--active');
 
+const expectDirectoryBandsToSpanWorkspace = async (workspace: Locator) => {
+  const splitLayout = workspace.locator('.tab-split-layout');
+
+  for (const selector of ['.collapsible-header', '.list-filters']) {
+    const band = workspace.locator(selector);
+    await expect
+      .poll(async () => {
+        const [layoutBox, bandBox] = await Promise.all([
+          splitLayout.boundingBox(),
+          band.boundingBox(),
+        ]);
+        if (!layoutBox || !bandBox) return null;
+
+        return {
+          left: Math.round(bandBox.x - layoutBox.x),
+          right: Math.round(layoutBox.x + layoutBox.width - bandBox.x - bandBox.width),
+        };
+      })
+      .toEqual({ left: 0, right: 0 });
+  }
+};
+
+const expectDirectoryToolbarControlsToBeCentered = async (workspace: Locator) => {
+  const toolbar = workspace.locator('.collapsible-header');
+  const controls = [
+    toolbar.locator('.list-toolbar-sort-select'),
+    toolbar.locator('.list-toolbar-sort-dir'),
+    toolbar.locator('.btn-collapsible'),
+  ];
+
+  await expect
+    .poll(async () => {
+      const [toolbarBox, ...controlBoxes] = await Promise.all([
+        toolbar.boundingBox(),
+        ...controls.map((control) => control.boundingBox()),
+      ]);
+      if (!toolbarBox || controlBoxes.some((box) => !box)) return null;
+
+      return {
+        toolbarHeightWithinTolerance: Math.abs(toolbarBox.height - 62) <= 1,
+        controls: controlBoxes.map((box) => {
+          const top = box!.y - toolbarBox.y;
+          const bottom = toolbarBox.y + toolbarBox.height - box!.y - box!.height;
+          return {
+            heightWithinTolerance: Math.abs(box!.height - 34) <= 1,
+            insetWithinTolerance: Math.abs(Math.min(top, bottom) - 14) <= 1,
+            centered: Math.abs(top - bottom) <= 1,
+          };
+        }),
+      };
+    })
+    .toEqual({
+      toolbarHeightWithinTolerance: true,
+      controls: Array.from({ length: 3 }, () => ({
+        heightWithinTolerance: true,
+        insetWithinTolerance: true,
+        centered: true,
+      })),
+    });
+};
+
 const makePort = () => 20_000 + crypto.randomInt(20_000);
 
 const runDynatraceSeed = (
@@ -732,6 +793,13 @@ test.describe('Vital Critical Path', () => {
     await createContextualNoteDirect(pbPort, 'contact', contactEmail, contactNote);
     await createContextualNoteDirect(pbPort, 'server', serverName, serverNote);
 
+    if (!electronApp) throw new Error('Electron app not launched');
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(1160, 900);
+    });
+    await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBeLessThanOrEqual(1160);
+    expect(await window.evaluate(() => globalThis.innerWidth)).toBeGreaterThan(899);
+
     const home = await goToKnowledgeHome(window);
     const destinationButtons = home.getByRole('button', {
       name: /^Open (?:Wiki|Contacts|Servers),/,
@@ -761,6 +829,8 @@ test.describe('Vital Critical Path', () => {
     const contactsWorkspace = window.getByRole('region', { name: 'contacts workspace' });
     await expect(wikiWorkspace).toBeHidden();
     await expect(window.locator('[data-knowledge-panel]:visible')).toHaveCount(1);
+    await expectDirectoryBandsToSpanWorkspace(contactsWorkspace);
+    await expectDirectoryToolbarControlsToBeCentered(contactsWorkspace);
     const contactRow = contactsWorkspace
       .getByRole('button', { name: new RegExp(escapeRegExp(contactEmail), 'i') })
       .first();
@@ -771,6 +841,8 @@ test.describe('Vital Critical Path', () => {
 
     await destinationNavigation.getByRole('button', { name: 'Servers', exact: true }).click();
     const serversWorkspace = window.getByRole('region', { name: 'servers workspace' });
+    await expectDirectoryBandsToSpanWorkspace(serversWorkspace);
+    await expectDirectoryToolbarControlsToBeCentered(serversWorkspace);
     const serverRow = serversWorkspace
       .getByRole('button', { name: new RegExp(escapeRegExp(serverName), 'i') })
       .first();

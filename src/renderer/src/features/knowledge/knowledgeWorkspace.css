@@ -266,22 +266,25 @@
   .tab-split-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 288px;
-}
-
-.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .tab-main-content {
-  display: grid;
   grid-template-rows: 62px 44px minmax(0, 1fr);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .tab-main-content:not(:has(.list-filters)) {
+  .tab-main-content {
+  display: contents;
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout:not(:has(.list-filters)) {
   grid-template-rows: 62px minmax(0, 1fr);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .collapsible-header {
+  grid-column: 1 / -1;
+  grid-row: 1;
   height: 62px;
+  align-items: center;
   flex-wrap: nowrap;
   gap: 9px;
   padding: 0 24px;
@@ -332,6 +335,8 @@
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .list-filters {
+  grid-column: 1 / -1;
+  grid-row: 2;
   min-width: 0;
   height: 44px;
   flex-wrap: nowrap;
@@ -341,6 +346,12 @@
   padding: 0 24px;
   border-bottom: 1px solid var(--color-border-subtle);
   scrollbar-width: thin;
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-list-container {
+  grid-column: 1;
+  grid-row: 3;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -355,9 +366,17 @@
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .detail-panel {
   display: flex;
+  grid-column: 2;
+  grid-row: 3;
   width: 288px;
   margin-left: 0;
   background: var(--color-bg-app);
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .tab-split-layout:not(:has(.list-filters))
+  :is(.tab-list-container, .detail-panel) {
+  grid-row: 2;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -432,7 +451,7 @@
 @media (max-width: 899px) {
   .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
     .tab-split-layout {
-    display: block;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
