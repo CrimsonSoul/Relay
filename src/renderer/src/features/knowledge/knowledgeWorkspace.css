@@ -573,6 +573,10 @@
   flex: 1;
 }
 
+.knowledge-workspace-shell__panel[hidden] {
+  display: none;
+}
+
 .knowledge-workspace-shell__panel > * {
   min-width: 0;
   min-height: 0;

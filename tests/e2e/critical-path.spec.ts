@@ -753,9 +753,14 @@ test.describe('Vital Critical Path', () => {
     await expect(
       destinationNavigation.getByRole('button', { name: 'Wiki', exact: true }),
     ).toHaveAttribute('aria-current', 'page');
+    const wikiWorkspace = window.getByRole('region', { name: 'wiki workspace' });
+    await expect(wikiWorkspace).toBeVisible();
+    await expect(window.locator('[data-knowledge-panel]:visible')).toHaveCount(1);
 
     await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
     const contactsWorkspace = window.getByRole('region', { name: 'contacts workspace' });
+    await expect(wikiWorkspace).toBeHidden();
+    await expect(window.locator('[data-knowledge-panel]:visible')).toHaveCount(1);
     const contactRow = contactsWorkspace
       .getByRole('button', { name: new RegExp(escapeRegExp(contactEmail), 'i') })
       .first();
