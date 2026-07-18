@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeHtml, sanitizeHtml, hasVisibleText } from '../alertUtils';
+import { escapeHtml, sanitizeHtml, hasVisibleText, isAlertMessageComplete } from '../alertUtils';
 
 describe('escapeHtml', () => {
   it('escapes ampersands', () => {
@@ -283,5 +283,19 @@ describe('hasVisibleText', () => {
 
   it('returns true when text is deeply nested', () => {
     expect(hasVisibleText('<div><p><span>deep</span></p></div>')).toBe(true);
+  });
+});
+
+describe('isAlertMessageComplete', () => {
+  it('requires both a non-empty subject and visible body text', () => {
+    expect(isAlertMessageComplete('', '')).toBe(false);
+    expect(isAlertMessageComplete('POS outage', '')).toBe(false);
+    expect(isAlertMessageComplete('', '<p>Investigating.</p>')).toBe(false);
+    expect(isAlertMessageComplete('POS outage', '<p>Investigating.</p>')).toBe(true);
+  });
+
+  it('rejects whitespace and invisible editor markers', () => {
+    expect(isAlertMessageComplete('   ', '<p>Investigating.</p>')).toBe(false);
+    expect(isAlertMessageComplete('POS outage', '<p>\u200b</p>')).toBe(false);
   });
 });

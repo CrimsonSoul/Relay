@@ -133,3 +133,8 @@ export function hasVisibleText(html: string): boolean {
     .replaceAll('\u2060', '');
   return visibleText.trim().length > 0;
 }
+
+/** A required alert message is complete only when subject and visible body text are present. */
+export function isAlertMessageComplete(subject: string, bodyHtml: string): boolean {
+  return subject.trim().length > 0 && hasVisibleText(bodyHtml);
+}

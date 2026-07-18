@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { hasVisibleText, type Severity } from './alertUtils';
+import { isAlertMessageComplete, type Severity } from './alertUtils';
 import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
 import type { AlertBodyEditorHandle } from './alerts/AlertBodyEditor';
@@ -72,7 +72,7 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
     ref,
   ) => {
     const bodyEditorRef = useRef<AlertBodyEditorHandle>(null);
-    const messageComplete = subject.trim().length > 0 && hasVisibleText(bodyHtml);
+    const messageComplete = isAlertMessageComplete(subject, bodyHtml);
     const normalizedClickThroughUrl = sanitizeAlertClickUrl(clickThroughUrl);
     const hasClickThroughUrl = clickThroughUrl.trim().length > 0;
     const clickThroughUrlInvalid = hasClickThroughUrl && !normalizedClickThroughUrl;
