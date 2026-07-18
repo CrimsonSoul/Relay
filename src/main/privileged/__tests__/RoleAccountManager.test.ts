@@ -62,6 +62,7 @@ describe('RoleAccountManager', () => {
     update: vi.fn(async (id: string, data: Record<string, unknown>) =>
       account({ id, ...accounts.find((entry) => entry.id === id), ...data }),
     ),
+    delete: vi.fn(async () => true),
   };
   const stateCollection = {
     getFirstListItem: vi.fn(async () => state()),
@@ -84,6 +85,10 @@ describe('RoleAccountManager', () => {
       async (id: string) => accounts.find((entry) => entry.id === id)!,
     );
     stateCollection.getFirstListItem.mockResolvedValue(state());
+    stateCollection.update.mockImplementation(async (_id: string, data: Record<string, unknown>) =>
+      state(data),
+    );
+    accountCollection.delete.mockResolvedValue(true);
   });
 
   function manager() {
@@ -259,5 +264,101 @@ describe('RoleAccountManager', () => {
         expectedStateRevision: 4,
       }),
     ).rejects.toThrow('Only the Relay owner can manage administrators.');
+  });
+
+  it('rolls back a created Administrator when singleton state changes before commit', async () => {
+    stateCollection.getFirstListItem
+      .mockResolvedValueOnce(state())
+      .mockResolvedValueOnce(state({ assignmentVersion: 5 }));
+
+    await expect(
+      manager().createAdministrator({
+        actorAccountId: 'account-ryan',
+        username: 'admin-2',
+        displayName: 'Admin Two',
+        expectedStateRevision: 4,
+      }),
+    ).rejects.toEqual(new RoleAccountConflictError(5));
+
+    expect(accountCollection.delete).toHaveBeenCalledWith('account-created', { requestKey: null });
+    expect(stateCollection.update).not.toHaveBeenCalled();
+    expect(snapshotReader.read).not.toHaveBeenCalled();
+  });
+
+  it('rolls back a created Publisher when singleton state changes before commit', async () => {
+    stateCollection.getFirstListItem
+      .mockResolvedValueOnce(state())
+      .mockResolvedValueOnce(state({ assignmentVersion: 5 }));
+
+    await expect(
+      manager().createPublisher({
+        actorAccountId: 'account-charles',
+        username: 'publisher-2',
+        displayName: 'Publisher Two',
+        expectedStateRevision: 4,
+      }),
+    ).rejects.toEqual(new RoleAccountConflictError(5));
+
+    expect(accountCollection.delete).toHaveBeenCalledWith('account-created', { requestKey: null });
+    expect(snapshotReader.read).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Administrator', 'createAdministrator', 'account-ryan', 'admin-2'],
+    ['Publisher', 'createPublisher', 'account-charles', 'publisher-2'],
+  ] as const)(
+    'rolls back a created %s when the singleton write fails',
+    async (_label, method, actorAccountId, username) => {
+      stateCollection.update.mockRejectedValueOnce(new Error('PocketBase unavailable'));
+
+      await expect(
+        manager()[method]({
+          actorAccountId,
+          username,
+          displayName: 'New Account',
+          expectedStateRevision: 4,
+        }),
+      ).rejects.toThrow('PocketBase unavailable');
+
+      expect(accountCollection.delete).toHaveBeenCalledWith('account-created', {
+        requestKey: null,
+      });
+      expect(snapshotReader.read).not.toHaveBeenCalled();
+    },
+  );
+
+  it('serializes simultaneous account creation so one state revision cannot create two accounts', async () => {
+    let currentState = state();
+    stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+    stateCollection.update.mockImplementation(
+      async (_id: string, data: Record<string, unknown>) => {
+        currentState = state({ ...data });
+        return currentState;
+      },
+    );
+    accountCollection.create.mockImplementation(async (data: Record<string, unknown>) =>
+      account({ id: `account-${String(data.username)}`, ...data }),
+    );
+    const roleManager = manager();
+
+    const results = await Promise.allSettled([
+      roleManager.createAdministrator({
+        actorAccountId: 'account-ryan',
+        username: 'admin-2',
+        displayName: 'Admin Two',
+        expectedStateRevision: 4,
+      }),
+      roleManager.createAdministrator({
+        actorAccountId: 'account-ryan',
+        username: 'admin-3',
+        displayName: 'Admin Three',
+        expectedStateRevision: 4,
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    expect(accountCollection.create).toHaveBeenCalledTimes(1);
+    expect(stateCollection.update).toHaveBeenCalledTimes(1);
   });
 });

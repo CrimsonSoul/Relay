@@ -43,6 +43,7 @@ export class PublisherAssignmentManager {
   private readonly pb: PocketBase;
   private readonly now: () => number;
   private readonly onAssignmentChanged?: (accountIds: string[]) => void | Promise<void>;
+  private assignmentTail: Promise<void> = Promise.resolve();
 
   constructor(options: PublisherAssignmentManagerOptions) {
     this.pb = options.pb;
@@ -51,6 +52,17 @@ export class PublisherAssignmentManager {
   }
 
   async assign(input: PublisherAssignmentInput): Promise<PublisherAssignmentResult> {
+    const result = this.assignmentTail.then(() => this.assignExclusive(input));
+    this.assignmentTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async assignExclusive(
+    input: PublisherAssignmentInput,
+  ): Promise<PublisherAssignmentResult> {
     const state = await this.getState();
     const actor = await this.getAccount(input.actorAccountId);
     const actorRole = getEffectiveRole(actor, state);
@@ -72,11 +84,15 @@ export class PublisherAssignmentManager {
     if (target && target.storedRole !== 'publisher') {
       throw new Error('Select a Publisher account for Knowledge Publisher.');
     }
-    if (target) await this.preparePendingPublisher(target, input.actorAccountId);
 
-    const nextRevision = state.assignmentVersion + 1;
+    const commitState = await this.getState();
+    if (commitState.id !== state.id || commitState.assignmentVersion !== state.assignmentVersion) {
+      throw new PublisherAssignmentConflictError(commitState.assignmentVersion);
+    }
+
+    const nextRevision = commitState.assignmentVersion + 1;
     await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(
-      state.id,
+      commitState.id,
       {
         publisherAccountId: input.accountId ?? '',
         assignmentVersion: nextRevision,
@@ -85,13 +101,14 @@ export class PublisherAssignmentManager {
       },
       { requestKey: null },
     );
-    if (state.publisherAccountId) {
+    if (target) await this.preparePendingPublisher(target, input.actorAccountId);
+    if (commitState.publisherAccountId) {
       await this.disablePublisher(
-        await this.getAccount(state.publisherAccountId),
+        await this.getAccount(commitState.publisherAccountId),
         input.actorAccountId,
       );
     }
-    const changedAccounts = [state.publisherAccountId, input.accountId].filter(
+    const changedAccounts = [commitState.publisherAccountId, input.accountId].filter(
       (accountId): accountId is string => Boolean(accountId),
     );
     await this.onAssignmentChanged?.([...new Set(changedAccounts)]);

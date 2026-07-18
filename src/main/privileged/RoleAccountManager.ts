@@ -73,6 +73,7 @@ export class RoleAccountManager {
   private readonly snapshotReader: Pick<RelayAdministrationSnapshotReader, 'read'>;
   private readonly now: () => number;
   private readonly onAuthorityChanged?: (accountIds: string[]) => void | Promise<void>;
+  private authorityMutationTail: Promise<void> = Promise.resolve();
 
   constructor(options: RoleAccountManagerOptions) {
     this.pb = options.pb;
@@ -82,6 +83,12 @@ export class RoleAccountManager {
   }
 
   async createAdministrator(input: CreateRoleAccountInput): Promise<RelayAdministrationSnapshot> {
+    return this.withAuthorityMutation(() => this.createAdministratorExclusive(input));
+  }
+
+  private async createAdministratorExclusive(
+    input: CreateRoleAccountInput,
+  ): Promise<RelayAdministrationSnapshot> {
     const state = await this.getState();
     const actor = await this.getAccount(input.actorAccountId);
     this.assertOwner(state, actor);
@@ -93,12 +100,20 @@ export class RoleAccountManager {
     ) {
       throw new Error('Relay already has the maximum number of administrators.');
     }
-    await this.createAccount(accounts, input, 'administrator');
-    await this.updateState(state, { updatedByAccountId: input.actorAccountId });
+    const created = await this.createAccount(accounts, input, 'administrator');
+    await this.commitCreatedAccount(created, () =>
+      this.updateState(state, { updatedByAccountId: input.actorAccountId }),
+    );
     return this.snapshotReader.read({ accountId: input.actorAccountId });
   }
 
   async createPublisher(input: CreateRoleAccountInput): Promise<RelayAdministrationSnapshot> {
+    return this.withAuthorityMutation(() => this.createPublisherExclusive(input));
+  }
+
+  private async createPublisherExclusive(
+    input: CreateRoleAccountInput,
+  ): Promise<RelayAdministrationSnapshot> {
     const state = await this.getState();
     const actor = await this.getAccount(input.actorAccountId);
     this.assertPublisherManager(state, actor);
@@ -107,10 +122,12 @@ export class RoleAccountManager {
       throw new Error('Assign or replace the current Publisher before creating another one.');
     }
     const created = await this.createAccount(await this.listAccounts(), input, 'publisher');
-    await this.updateState(state, {
-      publisherAccountId: created.id,
-      updatedByAccountId: input.actorAccountId,
-    });
+    await this.commitCreatedAccount(created, () =>
+      this.updateState(state, {
+        publisherAccountId: created.id,
+        updatedByAccountId: input.actorAccountId,
+      }),
+    );
     return this.snapshotReader.read({ accountId: input.actorAccountId });
   }
 
@@ -160,6 +177,12 @@ export class RoleAccountManager {
   }
 
   async transferOwnership(input: OwnershipTransferInput): Promise<RelayAdministrationSnapshot> {
+    return this.withAuthorityMutation(() => this.transferOwnershipExclusive(input));
+  }
+
+  private async transferOwnershipExclusive(
+    input: OwnershipTransferInput,
+  ): Promise<RelayAdministrationSnapshot> {
     const state = await this.getState();
     const actor = await this.getAccount(input.actorAccountId);
     this.assertOwner(state, actor);
@@ -204,6 +227,29 @@ export class RoleAccountManager {
         },
         { requestKey: null },
       );
+  }
+
+  private async commitCreatedAccount(
+    account: RelayPrivilegedAccountRecord,
+    commit: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await commit();
+    } catch (error) {
+      await this.pb
+        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+        .delete(account.id, { requestKey: null });
+      throw error;
+    }
+  }
+
+  private withAuthorityMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.authorityMutationTail.then(operation);
+    this.authorityMutationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   private assertCanManageTarget(

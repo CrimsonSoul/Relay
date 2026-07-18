@@ -90,7 +90,12 @@ export class RelayAdministrationSnapshotReader {
           .getFullList<RelayPrivilegedAccountRecord>({ requestKey: null }),
       ),
     ]);
-    if (accounts.length > MAX_PRIVILEGED_ADMINISTRATORS + 1) {
+    const visibleAccounts = accounts.filter(
+      ({ id, storedRole }) =>
+        storedRole === 'administrator' ||
+        (storedRole === 'publisher' && id === state.publisherAccountId),
+    );
+    if (visibleAccounts.length > MAX_PRIVILEGED_ADMINISTRATORS + 1) {
       throw new Error('Administration snapshot data is invalid.');
     }
     const actor = accounts.find(({ id }) => id === input.accountId);
@@ -102,7 +107,7 @@ export class RelayAdministrationSnapshotReader {
     );
     try {
       return {
-        accounts: accounts
+        accounts: visibleAccounts
           .map((account) => accountView(account, state))
           .sort((left, right) => {
             if (left.accountId === state.ownerAccountId) return -1;

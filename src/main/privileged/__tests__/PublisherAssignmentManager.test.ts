@@ -169,4 +169,66 @@ describe('PublisherAssignmentManager', () => {
       }),
     ).rejects.toThrow(/unauthorized/i);
   });
+
+  it('detects a mid-operation assignment change before resetting credentials or devices', async () => {
+    stateCollection.getFirstListItem
+      .mockResolvedValueOnce(state())
+      .mockResolvedValueOnce(
+        state({ assignmentVersion: 4, publisherAccountId: 'account-previous' }),
+      );
+
+    await expect(
+      manager().assign({
+        actorAccountId: 'account-charles',
+        accountId: 'account-publisher',
+        expectedStateRevision: 3,
+      }),
+    ).rejects.toEqual(new PublisherAssignmentConflictError(4));
+
+    expect(stateCollection.update).not.toHaveBeenCalled();
+    expect(accountCollection.update).not.toHaveBeenCalled();
+    expect(deviceCollection.getFullList).not.toHaveBeenCalled();
+    expect(onAssignmentChanged).not.toHaveBeenCalled();
+  });
+
+  it('serializes simultaneous assignments so only one expected revision can commit', async () => {
+    let currentState = state();
+    stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+    stateCollection.update.mockImplementation(
+      async (_id: string, data: Record<string, unknown>) => {
+        currentState = state({ ...data });
+        return currentState;
+      },
+    );
+    records.set(
+      'account-publisher-2',
+      account({
+        id: 'account-publisher-2',
+        username: 'publisher-2',
+        displayName: 'Publisher Two',
+        storedRole: 'publisher',
+      }),
+    );
+    const assignmentManager = manager();
+
+    const results = await Promise.allSettled([
+      assignmentManager.assign({
+        actorAccountId: 'account-charles',
+        accountId: 'account-publisher',
+        expectedStateRevision: 3,
+      }),
+      assignmentManager.assign({
+        actorAccountId: 'account-charles',
+        accountId: 'account-publisher-2',
+        expectedStateRevision: 3,
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    expect(results.find(({ status }) => status === 'rejected')).toMatchObject({
+      reason: new PublisherAssignmentConflictError(4),
+    });
+    expect(stateCollection.update).toHaveBeenCalledTimes(1);
+  });
 });

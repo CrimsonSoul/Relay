@@ -32,7 +32,6 @@ import { KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION } from '@shared/knowledge';
 import type { RelayConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import { loggers } from '../logger';
-import { RelayOperatorManager } from '../operators/RelayOperatorManager';
 import {
   PrivilegedPocketBaseClient,
   type PrivilegedAuthClient,
@@ -65,6 +64,7 @@ import { PublisherAssignmentManager } from './PublisherAssignmentManager';
 import { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
 import { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
 import { RelayAdministrationService } from './RelayAdministrationService';
+import { RoleAccountManager } from './RoleAccountManager';
 import { registerKnowledgeManagementCommands } from '../knowledge/registerKnowledgeManagementCommands';
 import { ManagedKnowledgeService } from '../knowledge/ManagedKnowledgeService';
 import { KnowledgeMutationCoordinator } from '../knowledge/KnowledgeMutationCoordinator';
@@ -516,6 +516,46 @@ export type ProductionPrivilegedRuntimeOptions = {
   > | null;
 };
 
+type ProductionAdministrationRegistrar = Pick<PrivilegedCommandProcessor, 'registerCommand'>;
+
+export function registerProductionAdministrationCommands(options: {
+  pb: PocketBase;
+  registrar: ProductionAdministrationRegistrar;
+  administrationService?: RelayAdministrationService;
+  consumeReauthenticationProof: (
+    requestId: string,
+    context: { accountId: string; deviceId: string | null },
+  ) => Promise<boolean>;
+}): {
+  roleAccountManager: RoleAccountManager;
+  publisherManager: PublisherAssignmentManager;
+  deviceManager: PrivilegedDeviceManager;
+  snapshotReader: RelayAdministrationSnapshotReader;
+} {
+  const deviceManager = new PrivilegedDeviceManager({ pb: options.pb });
+  const snapshotReader = new RelayAdministrationSnapshotReader({
+    pb: options.pb,
+    deviceManager,
+    administrationService: options.administrationService ?? { getSettingSummaries: () => [] },
+    logger: loggers.security,
+  });
+  const roleAccountManager = new RoleAccountManager({
+    pb: options.pb,
+    snapshotReader,
+  });
+  const publisherManager = new PublisherAssignmentManager({ pb: options.pb });
+  registerAdministrationCommands({
+    registrar: options.registrar,
+    roleAccountManager,
+    publisherManager,
+    deviceManager,
+    administrationService: options.administrationService,
+    snapshotReader,
+    consumeReauthenticationProof: options.consumeReauthenticationProof,
+  });
+  return { roleAccountManager, publisherManager, deviceManager, snapshotReader };
+}
+
 function boundedIdentityString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
@@ -598,26 +638,13 @@ export async function createProductionPrivilegedRuntime(
     repository,
     logger: loggers.security,
   });
-  const operatorManager = new RelayOperatorManager(options.serverClient);
-  const publisherManager = new PublisherAssignmentManager({ pb: options.serverClient });
-  const deviceManager = new PrivilegedDeviceManager({ pb: options.serverClient });
   const administrationService = options.dynatraceProblemsManager
     ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
     : undefined;
-  registerAdministrationCommands({
+  registerProductionAdministrationCommands({
+    pb: options.serverClient,
     registrar: commandProcessor,
-    operatorManager,
-    publisherManager,
-    deviceManager,
     administrationService,
-    snapshotReader: administrationService
-      ? new RelayAdministrationSnapshotReader({
-          pb: options.serverClient,
-          deviceManager,
-          administrationService,
-          logger: loggers.security,
-        })
-      : undefined,
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });
