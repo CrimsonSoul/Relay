@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Activity, useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
@@ -1181,6 +1181,53 @@ describe('KnowledgePdfViewer', () => {
     globalThis.removeEventListener('unhandledrejection', unhandled);
   });
 
+  it('does not reconnect pages to a destroyed PDF when the retained Wiki becomes visible again', async () => {
+    let firstPdfDestroyed = false;
+    const firstPdfDestroy = vi.fn(async () => {
+      firstPdfDestroyed = true;
+    });
+    const firstPdfGetPage = vi.fn((pageNumber: number) => {
+      if (firstPdfDestroyed) {
+        throw new TypeError("Cannot read properties of null (reading 'sendWithPromise')");
+      }
+      return Promise.resolve(page(pageNumber));
+    });
+    const secondPdfLoad = deferred<ReturnType<typeof pdf>>();
+    getDocumentMock
+      .mockReturnValueOnce({
+        promise: Promise.resolve(
+          pdf({
+            getPage: firstPdfGetPage,
+            destroy: firstPdfDestroy,
+          }),
+        ),
+        destroy: loadingDestroy,
+      } as never)
+      .mockReturnValueOnce({
+        promise: secondPdfLoad.promise,
+        destroy: loadingDestroy,
+      } as never);
+
+    const renderRetainedViewer = (visible: boolean) => (
+      <Activity mode={visible ? 'visible' : 'hidden'}>
+        <KnowledgePdfViewer {...viewerProps({ active: visible })} />
+      </Activity>
+    );
+    const { rerender } = render(renderRetainedViewer(true));
+    await screen.findByText('Page 1 of 3');
+    await waitFor(() => expect(firstPdfGetPage).toHaveBeenCalled());
+
+    rerender(renderRetainedViewer(false));
+    await waitFor(() => expect(firstPdfDestroy).toHaveBeenCalledOnce());
+    firstPdfGetPage.mockClear();
+
+    rerender(renderRetainedViewer(true));
+    await waitFor(() => expect(getDocumentMock).toHaveBeenCalledTimes(2));
+
+    expect(firstPdfGetPage).not.toHaveBeenCalled();
+    expect(screen.getByText('Loading document')).toBeInTheDocument();
+  });
+
   it.each(['rejects', 'throws'])(
     'keeps an active readable page visible when optional annotation extraction %s',
     async (failureMode) => {
@@ -1371,6 +1418,7 @@ describe('KnowledgePdfViewer', () => {
     );
     await waitFor(() => expect(requestedGetPage).toHaveBeenCalledWith(2));
     expect(externalFocus).toHaveFocus();
+    const textLayerCountBeforeUnrelatedDocument = TextLayerMock.mock.calls.length;
 
     const unrelatedDocument = record({
       id: 'doc-3',
@@ -1391,7 +1439,9 @@ describe('KnowledgePdfViewer', () => {
     );
 
     await waitFor(() => expect(unrelatedGetPage).toHaveBeenCalledWith(1));
-    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(TextLayerMock).toHaveBeenCalledTimes(textLayerCountBeforeUnrelatedDocument + 1),
+    );
     expect(externalFocus).toHaveFocus();
     externalFocus.remove();
   });

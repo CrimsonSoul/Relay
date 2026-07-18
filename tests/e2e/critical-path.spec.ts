@@ -1293,6 +1293,48 @@ test.describe('Vital Critical Path', () => {
     expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
   });
 
+  test('Knowledge PDF links survive repeated top-level tab leave and return cycles', async () => {
+    test.setTimeout(120_000);
+    const connectedClient = await launchConnectedClient();
+    const lifecycleErrors: string[] = [];
+    const captureLifecycleError = (message: string) => {
+      if (/sendWithPromise|KnowledgePdfPage|Wiki unavailable/i.test(message)) {
+        lifecycleErrors.push(message);
+      }
+    };
+    connectedClient.on('console', (message) => {
+      if (message.type() === 'error') captureLifecycleError(message.text());
+    });
+    connectedClient.on('pageerror', (error) => captureLifecycleError(error.message));
+
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
+    await connectedClient
+      .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
+      .click();
+    await connectedClient
+      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
+      .click();
+    const wikiWorkspace = connectedClient.getByRole('region', { name: 'wiki workspace' });
+    const viewer = connectedClient.getByRole('region', {
+      name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
+    });
+    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      await goToTab(connectedClient, 'sidebar-compose', 'Compose');
+      await expect(wikiWorkspace).toBeHidden();
+
+      await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge');
+      await expect(wikiWorkspace).toBeVisible();
+      await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+      await expect(
+        connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
+      ).toHaveCount(0);
+    }
+
+    expect(lifecycleErrors).toEqual([]);
+  });
+
   test('role accounts preserve username sign-in, owner boundaries, passwordless use, and offline reading', async () => {
     test.setTimeout(180_000);
     await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);
