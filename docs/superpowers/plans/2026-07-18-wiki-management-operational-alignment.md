@@ -95,6 +95,7 @@ describe('Knowledge Management visual system', () => {
     const railButton = ruleBody(css, '.knowledge-management__rail button');
     const activeRailButton = ruleBody(css, '.knowledge-management__rail button.is-active');
     const count = ruleBody(css, '.knowledge-management__rail strong');
+    const role = ruleBody(css, '.knowledge-management__role');
     const toolbar = ruleBody(css, '.knowledge-management__toolbar');
     const controls = ruleBody(css, '.knowledge-management :is(input, select)');
     const categoryTool = ruleBody(css, '.knowledge-management__category-tool');
@@ -111,6 +112,7 @@ describe('Knowledge Management visual system', () => {
     expect(activeRailButton).toContain('background: var(--accent-subtle);');
     expect(activeRailButton).not.toContain('linear-gradient');
     expect(count).toContain('border-radius: 2px;');
+    expect(role).toContain('border-radius: 2px;');
     expect(toolbar).toContain('gap: var(--space-4);');
     expect(toolbar).toContain('padding: var(--space-3) var(--space-4);');
     expect(toolbar).toContain('background: var(--color-bg-surface);');
@@ -204,9 +206,10 @@ Update the matching selectors in `src/renderer/src/features/knowledge/knowledge.
   gap: var(--space-2);
 }
 
-.knowledge-management__role,
-.knowledge-management-status,
-.knowledge-management-row__type,
+.knowledge-management__role {
+  border-radius: 2px;
+}
+
 .knowledge-management__rail strong {
   border-radius: 2px;
 }
@@ -261,6 +264,10 @@ Update the matching selectors in `src/renderer/src/features/knowledge/knowledge.
   font-size: var(--text-sm);
 }
 
+.knowledge-management-status {
+  border-radius: 2px;
+}
+
 .knowledge-upload-queue__summary {
   padding: var(--space-4);
   background: var(--accent-subtle);
@@ -270,10 +277,32 @@ Update the matching selectors in `src/renderer/src/features/knowledge/knowledge.
 Apply these exact spacing-token substitutions in the touched management selectors:
 
 ```css
+.knowledge-management__role,
+.knowledge-management__feedback,
+.knowledge-management__recovery {
+  padding: var(--space-2) var(--space-3);
+}
+
+.knowledge-management__rail strong,
+.knowledge-management-status {
+  padding: var(--space-1) var(--space-2);
+}
+
 .knowledge-management__search,
 .knowledge-management-row__editor label,
 .knowledge-management-row__delete label {
   gap: var(--space-2);
+}
+
+.knowledge-management :is(input, select) {
+  padding: 0 var(--space-3);
+}
+
+.knowledge-management-row__identity h2,
+.knowledge-management-row__identity p,
+.knowledge-audit-row h2,
+.knowledge-audit-row p {
+  margin: var(--space-1) 0 0;
 }
 
 .knowledge-management-row__meta {
@@ -344,9 +373,30 @@ Replace the management-specific 1100px rail overrides with:
   min-height: 44px;
   flex: 1 0 132px;
 }
+
+.knowledge-management-row {
+  gap: var(--space-4);
+  padding-inline: var(--space-4);
+}
 ```
 
-Add `position: static;` to `.knowledge-management__toolbar` inside `@media (max-width: 820px)` while retaining its stacked column layout. Change the management root's narrow padding to `var(--space-3)`.
+Inside `@media (max-width: 820px)`, retain the existing stacked layout and set these exact values:
+
+```css
+.knowledge-management {
+  padding: var(--space-3);
+}
+
+.knowledge-management__header {
+  gap: var(--space-3);
+}
+
+.knowledge-management__toolbar {
+  position: static;
+  align-items: stretch;
+  flex-direction: column;
+}
+```
 
 Replace the management-specific 560px rail rules with:
 
@@ -440,13 +490,24 @@ Add this test to `KnowledgeManagementStyles.test.ts`:
 
 ```ts
 it('uses outlined danger for entry actions without weakening confirmation danger', () => {
-  const outline = ruleBody(css, '.knowledge-management__danger-outline');
-  const outlineHover = ruleBody(css, '.knowledge-management__danger-outline:hover');
+  const outline = ruleBody(
+    css,
+    '.knowledge-management .tactile-button--danger.knowledge-management__danger-outline',
+  );
+  const outlineHover = ruleBody(
+    css,
+    '.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:hover',
+  );
+  const outlineDisabledHover = ruleBody(
+    css,
+    '.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:disabled:hover',
+  );
 
   expect(outline).toContain('border-color: var(--alarm);');
   expect(outline).toContain('color: var(--alarm-bright);');
   expect(outline).toContain('background: transparent;');
   expect(outlineHover).toContain('background: var(--alarm-dim);');
+  expect(outlineDisabledHover).toContain('background: transparent;');
 });
 ```
 
@@ -485,16 +546,22 @@ Leave the password-confirmed Delete permanently submit button as `variant="dange
 Add to `knowledge.css` beside the row action rules:
 
 ```css
-.knowledge-management__danger-outline {
+.knowledge-management .tactile-button--danger.knowledge-management__danger-outline {
   border-color: var(--alarm);
   color: var(--alarm-bright);
   background: transparent;
 }
 
-.knowledge-management__danger-outline:hover {
+.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:hover {
   border-color: var(--alarm-bright);
   color: var(--alarm-bright);
   background: var(--alarm-dim);
+}
+
+.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:disabled:hover {
+  border-color: var(--alarm);
+  color: var(--alarm-bright);
+  background: transparent;
 }
 ```
 
@@ -561,7 +628,13 @@ Run:
 node /Users/ryan/.codex/skills/impeccable/scripts/detect.mjs --json --scope layout src/renderer/src/features/knowledge/knowledge.css src/renderer/src/features/knowledge/KnowledgeManagementWorkspace.tsx
 ```
 
-Expected: no unresolved layout findings in touched selectors. For every detector item outside the touched selectors, record the selector and why it is pre-existing and outside this approved pass before continuing.
+Then scan only added CSS declarations for spacing values outside Relay's documented scale:
+
+```bash
+git diff 4b405e4c..HEAD -- src/renderer/src/features/knowledge/knowledge.css | rg '^\+.*(gap|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?):[^;]*(2|3|5|6|7|9|10|13|14|17|18|20|28|30)px'
+```
+
+Expected: the detector reports no unresolved layout findings in touched selectors, and the added-declaration scan exits 1 with no matches. For every detector item outside the touched selectors, record the selector and why it is pre-existing and outside this approved pass before continuing.
 
 - [ ] **Step 4: Verify every management section in Electron**
 
