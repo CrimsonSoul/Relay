@@ -81,6 +81,26 @@ describe('AssemblerSidebar', () => {
     expect(selectedRule).toContain('background: var(--accent-dim)');
   });
 
+  it('overrides the legacy compact sidebar cascade with the Compose operational frame', () => {
+    const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
+
+    expect(css).toMatch(
+      /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-layout\s*\{[\s\S]*?grid-template-columns: 280px minmax\(0, 1fr\);[\s\S]*?gap: 0;/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.assembler-sidebar \.sig-grp\s*\{[\s\S]*?justify-content: flex-start;[\s\S]*?border-right: 0;/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 1120px\)\s*\{[\s\S]*?\.assembler-sidebar \.sig-grp--on\s*\{[\s\S]*?background: var\(--accent-dim\);[\s\S]*?border-right-color: transparent;/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-layout\s*\{[\s\S]*?grid-template-columns: 1fr;/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 620px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-page-header\s*\{[\s\S]*?flex-direction: column;/,
+    );
+  });
+
   it('sorts groups alphabetically', () => {
     const groups = [makeGroup('1', 'Zebra'), makeGroup('2', 'Alpha')];
     const { container } = render(<AssemblerSidebar {...defaultProps} groups={groups} />);

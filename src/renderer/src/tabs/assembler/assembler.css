@@ -772,6 +772,80 @@
   .assembler-command-group--workflow {
     justify-content: flex-start;
   }
+
+  /* Keep the Compose workspace intact after the legacy responsive rules load. */
+  .assembler-tab .assembler-layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .assembler-sidebar .assembler-sidebar-panel {
+    overflow-x: hidden;
+    overflow-y: overlay;
+  }
+
+  .assembler-sidebar .assembler-sidebar-groups-header {
+    display: flex;
+  }
+
+  .assembler-sidebar .assembler-sidebar-groups-title {
+    display: inline;
+  }
+
+  .assembler-sidebar .assembler-sidebar-add-btn {
+    display: flex;
+  }
+
+  .assembler-sidebar .assembler-sidebar-group-list {
+    gap: 4px;
+  }
+
+  .assembler-sidebar .sig-grp-info {
+    display: block;
+  }
+
+  .assembler-sidebar .sig-sidebar-footer {
+    display: flex;
+  }
+
+  .assembler-sidebar .sig-grp {
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 0;
+    padding: 14px;
+    border-right: 0;
+  }
+
+  .assembler-sidebar .sig-grp--on {
+    background: var(--accent-dim);
+    border-right-color: transparent;
+  }
+
+  .assembler-sidebar .sig-grp-check {
+    display: flex;
+  }
+
+  .assembler-sidebar .sig-grp-token {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+  }
+
+  .assembler-sidebar .sig-grp--on .sig-grp-token {
+    border-color: var(--accent);
+    color: var(--accent-bright);
+  }
+
+  .assembler-sidebar .assembler-sidebar-empty {
+    padding: 20px;
+    color: var(--color-text-tertiary);
+    font-size: var(--text-xs);
+  }
+
+  .assembler-sidebar .assembler-sidebar-empty::before {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -779,21 +853,22 @@
     overflow-y: auto;
   }
 
-  .assembler-layout {
+  .assembler-tab .assembler-layout {
     flex: 0 0 auto;
     grid-template-columns: 1fr;
     grid-template-rows: minmax(300px, 42vh) minmax(420px, 1fr);
+    gap: 0;
     overflow: visible;
   }
 
-  .assembler-groups-pane {
+  .assembler-tab .assembler-groups-pane {
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
   }
 }
 
 @media (max-width: 620px) {
-  .assembler-page-header {
+  .assembler-tab .assembler-page-header {
     align-items: flex-start;
     flex-direction: column;
   }
