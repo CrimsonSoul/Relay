@@ -99,31 +99,6 @@ const HISTORICAL_SNAPSHOT_FIELDS: ReadonlyArray<{
     snapshotField: 'author',
   },
   {
-    collection: 'knowledge_documents',
-    operatorIdField: 'publishedByOperatorId',
-    snapshotField: 'publishedByName',
-  },
-  {
-    collection: 'knowledge_documents',
-    operatorIdField: 'trashedByOperatorId',
-    snapshotField: 'trashedByName',
-  },
-  {
-    collection: 'knowledge_upload_batches',
-    operatorIdField: 'operatorId',
-    snapshotField: 'operatorName',
-  },
-  {
-    collection: 'knowledge_uploads',
-    operatorIdField: 'operatorId',
-    snapshotField: 'operatorName',
-  },
-  {
-    collection: 'knowledge_audit_events',
-    operatorIdField: 'operatorId',
-    snapshotField: 'operatorName',
-  },
-  {
     collection: 'relay_privileged_commands',
     operatorIdField: 'operatorId',
     snapshotField: 'displayNameSnapshot',
@@ -360,6 +335,19 @@ function resolveAdministratorAccounts(
   indexed: ReadonlyMap<string, MigrationAccountRecord>,
   operatorIds: string[],
 ): { administrators: MigrationAccountRecord[] } | { reason: string } {
+  const authorizedOperatorIds = new Set(operatorIds);
+  for (const [operatorId, account] of indexed) {
+    // Legacy Administrator eligibility was role-based, so inactive rows must fail closed too.
+    if (
+      storedRoleForAccount(account) === 'administrator' &&
+      !authorizedOperatorIds.has(operatorId)
+    ) {
+      return {
+        reason: `Administrator auth account ${account.id} is not authorized by legacy privileged state.`,
+      };
+    }
+  }
+
   const administrators: MigrationAccountRecord[] = [];
   for (const operatorId of operatorIds) {
     const account = indexed.get(operatorId);
@@ -388,6 +376,17 @@ function resolveAuthorityAccounts(
     : null;
   if (authority.publisherOperatorId && !publisher) {
     return { reason: `Publisher operator ${authority.publisherOperatorId} has no auth account.` };
+  }
+  const publisherAccounts = [...indexed.values()].filter(
+    (account) => storedRoleForAccount(account) === 'publisher',
+  );
+  if (
+    publisherAccounts.length > 1 ||
+    (publisherAccounts.length === 1 && publisherAccounts[0]!.id !== publisher?.id)
+  ) {
+    return {
+      reason: 'Publisher auth accounts do not match the authoritative legacy Publisher pointer.',
+    };
   }
 
   const administratorResolution = resolveAdministratorAccounts(
@@ -518,6 +517,18 @@ export class RoleAccountMigration {
     const state = this.primaryState(states);
 
     if (state && Number(state.identityMigrationVersion) >= ROLE_ACCOUNT_MIGRATION_VERSION) {
+      const roster = collectionByName.get(LEGACY_ROSTER_COLLECTION);
+      if (roster) {
+        const operators = await this.listRecords<LegacyOperatorRecord>(LEGACY_ROSTER_COLLECTION);
+        const recovery = await this.planExistingMigration(
+          collectionByName,
+          operators,
+          accounts,
+          states,
+        );
+        if ('reason' in recovery) return { status: 'deferred', reason: recovery.reason };
+        return this.commitExistingMigration(roster, recovery);
+      }
       return this.finishConvertedMigration(collectionByName, accounts, state);
     }
 
@@ -600,34 +611,50 @@ export class RoleAccountMigration {
     for (const update of planned.historicalUpdates) {
       await this.pb.collection(update.collection).update(update.recordId, update.data);
     }
+
+    const committedAccounts = await this.verifyAccountUpdates(planned.accounts);
+    await this.verifyHistoricalUpdates(planned.historicalUpdates);
+    const retainedAccounts = committedAccounts.filter(
+      ({ id }) => !planned.retiredAccountIds.includes(id),
+    );
+    const projectedState: MigrationStateRecord = {
+      ...planned.state,
+      ownerAccountId: planned.ownerAccountId,
+      publisherAccountId: planned.publisherAccountId ?? '',
+    };
+    const projected = this.validateConvertedState(retainedAccounts, projectedState);
+    if ('reason' in projected) {
+      throw new Error(`Role account migration validation failed: ${projected.reason}`);
+    }
+
+    const nextAssignmentVersion =
+      (nonNegativeInteger(planned.state.assignmentVersion) ? planned.state.assignmentVersion : 0) +
+      1;
     await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(planned.state.id, {
       ownerAccountId: planned.ownerAccountId,
       publisherAccountId: planned.publisherAccountId ?? '',
       identityMigrationVersion: ROLE_ACCOUNT_MIGRATION_VERSION,
-      assignmentVersion:
-        (nonNegativeInteger(planned.state.assignmentVersion)
-          ? planned.state.assignmentVersion
-          : 0) + 1,
+      assignmentVersion: nextAssignmentVersion,
       updatedByAccountId: '',
       updatedAt: new Date(this.now()).toISOString(),
     });
 
-    const committedAccounts = await this.listRecords<MigrationAccountRecord>(
-      RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-    );
     const committedState = this.primaryState(
       await this.listRecords<MigrationStateRecord>(RELAY_PRIVILEGED_STATE_COLLECTION),
     );
-    if (!committedState)
-      throw new Error('Role account migration could not re-read singleton state.');
-    const retainedAccounts = committedAccounts.filter(
-      ({ id }) => !planned.retiredAccountIds.includes(id),
-    );
+    if (
+      !committedState ||
+      committedState.ownerAccountId !== planned.ownerAccountId ||
+      committedState.publisherAccountId !== (planned.publisherAccountId ?? '') ||
+      Number(committedState.identityMigrationVersion) < ROLE_ACCOUNT_MIGRATION_VERSION ||
+      committedState.assignmentVersion !== nextAssignmentVersion
+    ) {
+      throw new Error('Role account migration state update was not persisted.');
+    }
     const converted = this.validateConvertedState(retainedAccounts, committedState);
     if ('reason' in converted) {
       throw new Error(`Role account migration validation failed: ${converted.reason}`);
     }
-    await this.verifyHistoricalUpdates(planned.historicalUpdates);
     await this.retireAccounts(
       committedAccounts.filter(({ id }) => planned.retiredAccountIds.includes(id)),
     );
@@ -711,6 +738,32 @@ export class RoleAccountMigration {
     for (const account of accounts) {
       await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).delete(account.id);
     }
+  }
+
+  private async verifyAccountUpdates(
+    accounts: PlannedAccount[],
+  ): Promise<MigrationAccountRecord[]> {
+    const committed = await this.listRecords<MigrationAccountRecord>(
+      RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+    );
+    const committedById = new Map(committed.map((account) => [account.id, account]));
+    for (const planned of accounts) {
+      const account = committedById.get(planned.record.id);
+      const revision = nonNegativeInteger(planned.record.revision) ? planned.record.revision : 0;
+      if (
+        !account ||
+        account.username !== planned.username ||
+        account.displayName !== planned.displayName ||
+        account.storedRole !== planned.storedRole ||
+        account.legacyOperatorId !== planned.operatorId ||
+        account.revision !== revision
+      ) {
+        throw new Error(
+          `Role account migration validation failed: account update ${planned.record.id} was not persisted.`,
+        );
+      }
+    }
+    return committed;
   }
 
   private async verifyHistoricalUpdates(updates: PlannedUpdate[]): Promise<void> {
@@ -875,6 +928,10 @@ export class RoleAccountMigration {
       if (!normalizedDisplayName(account.displayName) || !storedRoleForAccount(account)) {
         return { reason: `Converted account ${account.id} is incomplete.` };
       }
+    }
+    const publishers = accounts.filter((account) => account.storedRole === 'publisher');
+    if (publishers.length > 1) {
+      return { reason: 'Converted accounts contain more than one Publisher.' };
     }
     if (nonEmptyString(state.publisherAccountId)) {
       const publisher = accounts.find(({ id }) => id === state.publisherAccountId);

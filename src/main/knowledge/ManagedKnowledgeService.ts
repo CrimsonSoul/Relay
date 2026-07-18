@@ -8,6 +8,7 @@ import {
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_UPLOADS_COLLECTION,
   compareKnowledgeDocuments,
+  normalizeKnowledgeAuditEventView,
   normalizeKnowledgeDocumentRecord,
   normalizeKnowledgeSearchText,
   type KnowledgeAuditAction,
@@ -22,7 +23,7 @@ import {
 } from '@shared/knowledge';
 
 type Actor = { accountId: string; displayName: string };
-type UploadRecord = KnowledgeUploadView & { pdf: string; accountId: string; operatorId: string };
+type UploadRecord = KnowledgeUploadView & { pdf: string; accountId: string };
 type StoredUploadRecord = Partial<KnowledgeUploadView> & {
   id: string;
   requestId: string;
@@ -116,8 +117,8 @@ function auditView(event: KnowledgeAuditEventView): KnowledgeAuditEventView {
     fileName: event.fileName || null,
     title: event.title || null,
     category: event.category || null,
-    operatorId: event.operatorId,
-    operatorName: event.operatorName,
+    accountId: event.accountId,
+    actorDisplayName: event.actorDisplayName,
     occurredAt: canonicalTimestamp(event.occurredAt),
   };
 }
@@ -340,7 +341,8 @@ export class ManagedKnowledgeService {
   }): Promise<KnowledgeManagementDocumentView> {
     return this.patchDocument(input, 'trashed', {
       lifecycleState: 'trashed',
-      trashedByOperatorId: input.actor.accountId,
+      trashedByAccountId: input.actor.accountId,
+      trashedByOperatorId: '',
       trashedByName: input.actor.displayName,
       trashedAt: this.timestamp(),
     });
@@ -356,6 +358,7 @@ export class ManagedKnowledgeService {
     await this.assertUniqueFilename(current.fileName, current.id);
     return this.patchKnownDocument(input, current, 'restored', {
       lifecycleState: 'active',
+      trashedByAccountId: '',
       trashedByOperatorId: '',
       trashedByName: '',
       trashedAt: '',
@@ -384,9 +387,12 @@ export class ManagedKnowledgeService {
     pageSize: number;
     targetId: string | null;
   }): Promise<KnowledgePage<KnowledgeAuditEventView>> {
-    const events = await this.pb
+    const rawEvents = await this.pb
       .collection(KNOWLEDGE_AUDIT_EVENTS_COLLECTION)
-      .getFullList<KnowledgeAuditEventView>({ requestKey: null, sort: '-occurredAt' });
+      .getFullList<Record<string, unknown>>({ requestKey: null, sort: '-occurredAt' });
+    const events = rawEvents
+      .map(normalizeKnowledgeAuditEventView)
+      .filter((event): event is KnowledgeAuditEventView => event !== null);
     const filtered = input.targetId
       ? events.filter(({ targetId }) => targetId === input.targetId)
       : events;
@@ -486,9 +492,11 @@ export class ManagedKnowledgeService {
       indexedAt: metadata.publishedAt,
       lifecycleState: 'active',
       revision: metadata.revision,
-      publishedByOperatorId: metadata.actor.accountId,
+      publishedByAccountId: metadata.actor.accountId,
+      publishedByOperatorId: '',
       publishedByName: metadata.actor.displayName,
       publishedAt: metadata.publishedAt,
+      trashedByAccountId: '',
       trashedByOperatorId: '',
       trashedByName: '',
       trashedAt: '',
@@ -533,10 +541,10 @@ export class ManagedKnowledgeService {
       indexedAt: metadata.publishedAt,
       lifecycleState: 'active',
       revision: metadata.revision,
-      publishedByOperatorId: metadata.actor.accountId,
+      publishedByAccountId: metadata.actor.accountId,
       publishedByName: metadata.actor.displayName,
       publishedAt: metadata.publishedAt,
-      trashedByOperatorId: null,
+      trashedByAccountId: null,
       trashedByName: null,
       trashedAt: null,
       created: canonicalTimestamp(
@@ -622,8 +630,10 @@ export class ManagedKnowledgeService {
         fileName: document?.fileName ?? '',
         title: document?.displayTitle ?? '',
         category: document?.category ?? '',
-        operatorId: actor.accountId,
-        operatorName: actor.displayName,
+        accountId: actor.accountId,
+        actorDisplayName: actor.displayName,
+        operatorId: '',
+        operatorName: '',
         occurredAt: this.timestamp(),
         details,
       },

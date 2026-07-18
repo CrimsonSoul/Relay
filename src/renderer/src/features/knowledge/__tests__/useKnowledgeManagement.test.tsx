@@ -39,8 +39,8 @@ describe('useKnowledgeManagement', () => {
       session: {
         state: 'active',
         accountId: 'account-publisher',
-        operatorId: 'operator-publisher',
-        operatorName: 'Tristan Bowles',
+        username: 'tristan',
+        displayName: 'Tristan Bowles',
         role: 'publisher',
         capabilities: ['privileged.status.read', 'knowledge.manage'],
         deviceId: 'device-1',
@@ -155,8 +155,8 @@ describe('useKnowledgeManagement', () => {
       fileName: 'Runbook.pdf',
       title: 'Runbook',
       category: 'Operations',
-      operatorId: 'operator-publisher',
-      operatorName: 'Tristan Bowles',
+      accountId: 'account-publisher',
+      actorDisplayName: 'Tristan Bowles',
       occurredAt: '2026-07-16T01:00:00.000Z',
     };
     const second = { ...first, id: 'audit-2', requestId: 'request-audit-2' };

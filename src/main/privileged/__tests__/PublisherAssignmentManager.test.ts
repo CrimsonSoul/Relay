@@ -486,4 +486,65 @@ describe('PublisherAssignmentManager', () => {
     expect(accountCollection.update).not.toHaveBeenCalled();
     expect(deviceCollection.getFullList).not.toHaveBeenCalled();
   });
+
+  it('reuses the retained Publisher after unassignment instead of creating another account', async () => {
+    let currentState = state({ publisherAccountId: 'account-publisher' });
+    const currentAccounts = new Map(
+      ['account-ryan', 'account-charles', 'account-publisher'].map((id) => [id, records.get(id)!]),
+    );
+    stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+    stateCollection.update.mockImplementation(
+      async (_id: string, data: Record<string, unknown>) => {
+        currentState = state({
+          ...data,
+          publisherAccountId:
+            data.publisherAccountId === '' ? null : (data.publisherAccountId as string | null),
+        });
+        return currentState;
+      },
+    );
+    accountCollection.getFullList.mockImplementation(async () => [...currentAccounts.values()]);
+    accountCollection.getOne.mockImplementation(async (id: string) => currentAccounts.get(id));
+    accountCollection.update.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const updated = account({ ...currentAccounts.get(id), id, ...data });
+        currentAccounts.set(id, updated);
+        return updated;
+      },
+    );
+    accountCollection.create.mockImplementation(async (data: Record<string, unknown>) => {
+      const created = account({ id: `account-${String(data.username)}`, ...data });
+      currentAccounts.set(created.id, created);
+      return created;
+    });
+    const coordinator = new TestAuthorityMutationCoordinator();
+    const publisherManager = manager(coordinator);
+    const roleManager = new RoleAccountManager({
+      pb: pb as never,
+      snapshotReader: { read: vi.fn(async () => ({ generatedAt: NOW })) } as never,
+      now: () => Date.parse(NOW),
+      coordinator,
+    });
+
+    await publisherManager.assign({
+      actorAccountId: 'account-charles',
+      accountId: null,
+      expectedStateRevision: 3,
+    });
+
+    await expect(
+      roleManager.createPublisher({
+        actorAccountId: 'account-charles',
+        username: 'publisher-2',
+        displayName: 'Publisher Two',
+        expectedStateRevision: 4,
+      }),
+    ).rejects.toThrow(/retained Publisher account/i);
+    expect(currentState.publisherAccountId).toBeNull();
+    expect(
+      [...currentAccounts.values()].filter(({ storedRole }) => storedRole === 'publisher'),
+    ).toHaveLength(1);
+    expect(accountCollection.getFullList).toHaveBeenCalledTimes(1);
+    expect(accountCollection.create).not.toHaveBeenCalled();
+  });
 });

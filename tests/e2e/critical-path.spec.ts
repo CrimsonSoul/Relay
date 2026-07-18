@@ -1033,11 +1033,9 @@ test.describe('Vital Critical Path', () => {
 
     await installKnowledgeDialogFixture([largePath, smallPath]);
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient
-      .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
-      .click();
+    await connectedClient.getByRole('button', { name: 'Manage Wiki', exact: true }).click();
     await expect(
-      connectedClient.getByRole('heading', { name: 'Manage knowledge base', exact: true }),
+      connectedClient.getByRole('heading', { name: 'Manage Wiki', exact: true }),
     ).toBeVisible();
     await connectedClient.getByRole('button', { name: 'Add PDFs', exact: true }).click();
     await expect(connectedClient.getByRole('button', { name: 'Uploads 2' })).toBeVisible();
@@ -1091,9 +1089,7 @@ test.describe('Vital Critical Path', () => {
     await expect(restartedAccess.getByText('Publisher', { exact: true })).toBeVisible();
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient
-      .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
-      .click();
+    await connectedClient.getByRole('button', { name: 'Manage Wiki', exact: true }).click();
     await connectedClient.getByRole('button', { name: /Uploads \d+/ }).click();
     await expect(
       connectedClient.getByText('Restored after restart', { exact: true }),

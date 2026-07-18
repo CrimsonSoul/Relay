@@ -367,6 +367,53 @@ describe('RoleAccountMigration', () => {
     });
   });
 
+  it('defers without writes when multiple Publisher accounts conflict with the authoritative pointer', async () => {
+    const fixture = legacyFixture({
+      relay_operators: [
+        { id: 'ryan-op', displayName: 'Ryan Bledsoe', active: true },
+        { id: 'charles-op', displayName: 'Charles Gibbs', active: true },
+        { id: 'publisher-op', displayName: 'Paris Carlson', active: true },
+        { id: 'stale-publisher-op', displayName: 'Stale Publisher', active: false },
+      ],
+      relay_privileged_accounts: [
+        ...legacyFixture().records.get('relay_privileged_accounts')!,
+        {
+          id: 'account-publisher',
+          operatorId: 'publisher-op',
+          role: 'publisher',
+          active: true,
+          mustChangePassword: false,
+          credentialVersion: 2,
+        },
+        {
+          id: 'account-stale-publisher',
+          operatorId: 'stale-publisher-op',
+          role: 'publisher',
+          active: false,
+          mustChangePassword: true,
+          credentialVersion: 3,
+        },
+      ],
+      relay_privileged_state: [
+        {
+          id: 'privileged-state',
+          key: 'primary',
+          adminOperatorId: 'ryan-op',
+          adminOperatorIds: ['ryan-op', 'charles-op'],
+          publisherOperatorId: 'publisher-op',
+          assignmentVersion: 8,
+        },
+      ],
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('Publisher auth accounts'),
+    });
+    expect(fixture.writes).toEqual([]);
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
+  });
+
   it('defers without writes when a requested username collides', async () => {
     const fixture = legacyFixture();
     fixture.records.get('relay_privileged_accounts')!.push({
@@ -412,16 +459,79 @@ describe('RoleAccountMigration', () => {
     expect(fixture.record('alert_reminders', 'preserved').createdBy).toBe('Original Ryan Snapshot');
   });
 
-  it('re-reads historical backfills before deleting legacy identity collections', async () => {
+  it('never rewrites historical Knowledge attribution rows', async () => {
+    const fixture = legacyFixture({
+      knowledge_documents: [
+        {
+          id: 'legacy-document',
+          publishedByOperatorId: 'charles-op',
+          publishedByName: '',
+        },
+      ],
+      knowledge_uploads: [
+        {
+          id: 'legacy-upload',
+          operatorId: 'charles-op',
+          operatorName: '',
+        },
+      ],
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+    expect(fixture.record('knowledge_documents', 'legacy-document')).toEqual({
+      id: 'legacy-document',
+      publishedByOperatorId: 'charles-op',
+      publishedByName: '',
+    });
+    expect(fixture.record('knowledge_uploads', 'legacy-upload')).toEqual({
+      id: 'legacy-upload',
+      operatorId: 'charles-op',
+      operatorName: '',
+    });
+    expect(fixture.writes.filter(({ collection }) => collection.startsWith('knowledge_'))).toEqual(
+      [],
+    );
+  });
+
+  it('verifies historical backfills before committing the marker and retries them on restart', async () => {
     const fixture = legacyFixture({
       alert_reminders: [{ id: 'blank', operatorId: 'charles-op', createdBy: '' }],
     });
     fixture.ignoreNextUpdateFor = 'alert_reminders';
 
     await expect(migration(fixture).run()).rejects.toThrow(/historical snapshot/i);
-
     expect(fixture.record('alert_reminders', 'blank').createdBy).toBe('');
+    expect(fixture.record('relay_privileged_state', 'privileged-state')).not.toHaveProperty(
+      'identityMigrationVersion',
+    );
     expect(fixture.hasCollection('relay_operators')).toBe(true);
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+    expect(fixture.record('alert_reminders', 'blank').createdBy).toBe('Charles Gibbs');
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
+  });
+
+  it('verifies account updates before committing the marker and retries them on restart', async () => {
+    const fixture = legacyFixture();
+    fixture.ignoreNextUpdateFor = 'relay_privileged_accounts';
+
+    await expect(migration(fixture).run()).rejects.toThrow(/account update/i);
+    expect(fixture.record('relay_privileged_accounts', 'account-charles')).not.toHaveProperty(
+      'storedRole',
+    );
+    expect(fixture.record('relay_privileged_state', 'privileged-state')).not.toHaveProperty(
+      'identityMigrationVersion',
+    );
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+    expect(fixture.record('relay_privileged_accounts', 'account-charles')).toMatchObject({
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+      storedRole: 'administrator',
+      legacyOperatorId: 'charles-op',
+    });
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
   });
 
   it('defers an unresolvable historical attribution before making changes', async () => {
@@ -437,7 +547,7 @@ describe('RoleAccountMigration', () => {
     expect(fixture.hasCollection('relay_operators')).toBe(true);
   });
 
-  it('does not delete a leftover roster until historical snapshots are verified', async () => {
+  it('repairs a historical snapshot left behind by a marker-present partial migration', async () => {
     const fixture = legacyFixture({
       relay_privileged_accounts: [
         {
@@ -459,6 +569,9 @@ describe('RoleAccountMigration', () => {
         {
           id: 'privileged-state',
           key: 'primary',
+          adminOperatorId: 'ryan-op',
+          adminOperatorIds: ['ryan-op', 'charles-op'],
+          publisherOperatorId: '',
           ownerAccountId: 'account-ryan',
           publisherAccountId: '',
           identityMigrationVersion: ROLE_ACCOUNT_MIGRATION_VERSION,
@@ -467,9 +580,71 @@ describe('RoleAccountMigration', () => {
       alert_reminders: [{ id: 'blank', operatorId: 'charles-op', createdBy: '' }],
     });
 
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+    expect(fixture.record('alert_reminders', 'blank').createdBy).toBe('Charles Gibbs');
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
+  });
+
+  it('repairs an account left behind by a marker-present partial migration', async () => {
+    const fixture = legacyFixture();
+    Object.assign(fixture.record('relay_privileged_accounts', 'account-charles'), {
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+      storedRole: 'administrator',
+      legacyOperatorId: 'charles-op',
+    });
+    Object.assign(fixture.record('relay_privileged_state', 'privileged-state'), {
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: '',
+      identityMigrationVersion: ROLE_ACCOUNT_MIGRATION_VERSION,
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+    expect(fixture.record('relay_privileged_accounts', 'account-ryan')).toMatchObject({
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      storedRole: 'administrator',
+      legacyOperatorId: 'ryan-op',
+    });
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
+  });
+
+  it('defers marker-present recovery when a converted administrator is absent from the authoritative roster', async () => {
+    const fixture = legacyFixture();
+    Object.assign(fixture.record('relay_privileged_accounts', 'account-ryan'), {
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      storedRole: 'administrator',
+      legacyOperatorId: 'ryan-op',
+    });
+    Object.assign(fixture.record('relay_privileged_accounts', 'account-charles'), {
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+      storedRole: 'administrator',
+      legacyOperatorId: 'charles-op',
+    });
+    fixture.records.get('relay_operators')!.push({
+      id: 'stale-admin-op',
+      displayName: 'Stale Administrator',
+      active: true,
+    });
+    fixture.records.get('relay_privileged_accounts')!.push({
+      id: 'account-stale-admin',
+      username: 'stale.admin',
+      displayName: 'Stale Administrator',
+      storedRole: 'administrator',
+      legacyOperatorId: 'stale-admin-op',
+      active: true,
+    });
+    Object.assign(fixture.record('relay_privileged_state', 'privileged-state'), {
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: '',
+      identityMigrationVersion: ROLE_ACCOUNT_MIGRATION_VERSION,
+    });
+
     await expect(migration(fixture).run()).resolves.toMatchObject({
       status: 'deferred',
-      reason: expect.stringContaining('historical'),
+      reason: expect.stringContaining('account-stale-admin'),
     });
     expect(fixture.writes).toEqual([]);
     expect(fixture.hasCollection('relay_operators')).toBe(true);
@@ -479,13 +654,23 @@ describe('RoleAccountMigration', () => {
     const fixture = legacyFixture({
       relay_operators: [
         ...legacyFixture().records.get('relay_operators')!,
-        { id: 'first-op', displayName: 'First Publisher', active: true },
-        { id: 'second-op', displayName: 'Second Publisher', active: true },
+        { id: 'first-op', displayName: 'First Administrator', active: true },
+        { id: 'second-op', displayName: 'Second Administrator', active: true },
       ],
       relay_privileged_accounts: [
         ...legacyFixture().records.get('relay_privileged_accounts')!,
-        { id: 'account-first', operatorId: 'first-op', role: 'publisher', username: 'shared' },
-        { id: 'account-second', operatorId: 'second-op', role: 'publisher', username: 'SHARED' },
+        { id: 'account-first', operatorId: 'first-op', role: 'admin', username: 'shared' },
+        { id: 'account-second', operatorId: 'second-op', role: 'admin', username: 'SHARED' },
+      ],
+      relay_privileged_state: [
+        {
+          id: 'privileged-state',
+          key: 'primary',
+          adminOperatorId: 'ryan-op',
+          adminOperatorIds: ['ryan-op', 'charles-op', 'first-op', 'second-op'],
+          publisherOperatorId: '',
+          assignmentVersion: 3,
+        },
       ],
     });
 
@@ -507,6 +692,60 @@ describe('RoleAccountMigration', () => {
       reason: expect.stringContaining('Administrator'),
     });
     expect(fixture.writes).toEqual([]);
+  });
+
+  it('defers without writes when an active administrator account is absent from the authoritative roster', async () => {
+    const fixture = legacyFixture();
+    fixture.records.get('relay_operators')!.push({
+      id: 'stale-admin-op',
+      displayName: 'Stale Administrator',
+      active: true,
+    });
+    fixture.records.get('relay_privileged_accounts')!.push({
+      id: 'account-stale-admin',
+      operatorId: 'stale-admin-op',
+      role: 'admin',
+      active: true,
+      mustChangePassword: false,
+      credentialVersion: 2,
+    });
+    const legacyAccounts = structuredClone(fixture.records.get('relay_privileged_accounts'));
+    const legacyState = structuredClone(fixture.records.get('relay_privileged_state'));
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('account-stale-admin'),
+    });
+    expect(fixture.writes).toEqual([]);
+    expect(fixture.records.get('relay_privileged_accounts')).toEqual(legacyAccounts);
+    expect(fixture.records.get('relay_privileged_state')).toEqual(legacyState);
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
+  });
+
+  it('also defers an inactive stale administrator because the legacy role remains eligible for conversion', async () => {
+    const fixture = legacyFixture();
+    fixture.records.get('relay_operators')!.push({
+      id: 'inactive-stale-admin-op',
+      displayName: 'Inactive Stale Administrator',
+      active: false,
+    });
+    fixture.records.get('relay_privileged_accounts')!.push({
+      id: 'account-inactive-stale-admin',
+      operatorId: 'inactive-stale-admin-op',
+      storedRole: 'administrator',
+      active: false,
+      mustChangePassword: false,
+      credentialVersion: 1,
+    });
+    const legacyAccounts = structuredClone(fixture.records.get('relay_privileged_accounts'));
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('account-inactive-stale-admin'),
+    });
+    expect(fixture.writes).toEqual([]);
+    expect(fixture.records.get('relay_privileged_accounts')).toEqual(legacyAccounts);
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
   });
 
   it('is idempotent after a successful restart', async () => {

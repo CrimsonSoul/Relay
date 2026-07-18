@@ -37,10 +37,10 @@ export type ManagedKnowledgeFields = {
   lifecycleState: KnowledgeLifecycleState;
   displayTitle: string;
   revision: number;
-  publishedByOperatorId: string;
+  publishedByAccountId: string;
   publishedByName: string;
   publishedAt: string;
-  trashedByOperatorId: string | null;
+  trashedByAccountId: string | null;
   trashedByName: string | null;
   trashedAt: string | null;
 };
@@ -212,8 +212,8 @@ export type KnowledgeAuditEventView = {
   fileName: string | null;
   title: string | null;
   category: string | null;
-  operatorId: string;
-  operatorName: string;
+  accountId: string;
+  actorDisplayName: string;
   occurredAt: string;
 };
 
@@ -326,9 +326,11 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     lifecycleState: rawLifecycleState,
     displayTitle: rawDisplayTitle,
     revision: rawRevision,
+    publishedByAccountId: rawPublishedByAccountId,
     publishedByOperatorId: rawPublishedByOperatorId,
     publishedByName: rawPublishedByName,
     publishedAt: rawPublishedAt,
+    trashedByAccountId: rawTrashedByAccountId,
     trashedByOperatorId: rawTrashedByOperatorId,
     trashedByName: rawTrashedByName,
     trashedAt: rawTrashedAt,
@@ -337,10 +339,10 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
   const lifecycleState = rawLifecycleState ?? 'active';
   const displayTitle = rawDisplayTitle ?? title;
   const revision = rawRevision ?? 1;
-  const publishedByOperatorId = rawPublishedByOperatorId ?? '';
+  const publishedByAccountId = rawPublishedByAccountId || rawPublishedByOperatorId || '';
   const publishedByName = rawPublishedByName ?? '';
   const publishedAt = rawPublishedAt ?? indexedAt;
-  const trashedByOperatorId = rawTrashedByOperatorId || null;
+  const trashedByAccountId = rawTrashedByAccountId || rawTrashedByOperatorId || null;
   const trashedByName = rawTrashedByName || null;
   const trashedAt = rawTrashedAt || null;
 
@@ -374,18 +376,18 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     !boundedString(displayTitle, 240) ||
     !Number.isInteger(revision) ||
     (revision as number) < 1 ||
-    typeof publishedByOperatorId !== 'string' ||
-    publishedByOperatorId.length > 200 ||
+    typeof publishedByAccountId !== 'string' ||
+    publishedByAccountId.length > 200 ||
     typeof publishedByName !== 'string' ||
     publishedByName.length > 120 ||
     !boundedString(publishedAt, 100) ||
-    (trashedByOperatorId !== null && !boundedString(trashedByOperatorId, 200)) ||
+    (trashedByAccountId !== null && !boundedString(trashedByAccountId, 200)) ||
     (trashedByName !== null && !boundedString(trashedByName, 120)) ||
     (trashedAt !== null && !boundedString(trashedAt, 100)) ||
     (lifecycleState === 'active' &&
-      (trashedByOperatorId !== null || trashedByName !== null || trashedAt !== null)) ||
+      (trashedByAccountId !== null || trashedByName !== null || trashedAt !== null)) ||
     (lifecycleState === 'trashed' &&
-      (trashedByOperatorId === null || trashedByName === null || trashedAt === null))
+      (trashedByAccountId === null || trashedByName === null || trashedAt === null))
   ) {
     return null;
   }
@@ -414,10 +416,10 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     lifecycleState,
     displayTitle,
     revision: revision as number,
-    publishedByOperatorId,
+    publishedByAccountId,
     publishedByName,
     publishedAt,
-    trashedByOperatorId,
+    trashedByAccountId,
     trashedByName,
     trashedAt,
   };
@@ -846,6 +848,8 @@ export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAudit
     'migration-completed',
     'recovery-completed',
   ];
+  const accountId = value.accountId || value.operatorId;
+  const actorDisplayName = value.actorDisplayName || value.operatorName;
   if (
     !boundedString(value.id, 200) ||
     !boundedString(value.requestId, 128) ||
@@ -854,8 +858,8 @@ export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAudit
     !optionalBoundedString(value.fileName, 240) ||
     !optionalBoundedString(value.title, 240) ||
     !optionalBoundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
-    !boundedString(value.operatorId, 200) ||
-    !boundedString(value.operatorName, 120) ||
+    !boundedString(accountId, 200) ||
+    !boundedString(actorDisplayName, 120) ||
     !boundedString(value.occurredAt, 100)
   ) {
     return null;
@@ -868,8 +872,8 @@ export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAudit
     fileName: value.fileName,
     title: value.title,
     category: value.category,
-    operatorId: value.operatorId,
-    operatorName: value.operatorName,
+    accountId,
+    actorDisplayName,
     occurredAt: value.occurredAt,
   };
 }

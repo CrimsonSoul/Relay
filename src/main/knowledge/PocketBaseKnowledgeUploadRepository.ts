@@ -28,6 +28,7 @@ function escapeFilterValue(value: string): string {
 function batchRecord(value: KnowledgeUploadBatchRecord): KnowledgeUploadBatchRecord {
   return {
     ...value,
+    actorDisplayName: value.actorDisplayName || value.operatorName || '',
     fileCount: Number(value.fileCount),
     totalBytes: Number(value.totalBytes),
     revision: Number(value.revision),
@@ -37,6 +38,7 @@ function batchRecord(value: KnowledgeUploadBatchRecord): KnowledgeUploadBatchRec
 function uploadRecord(value: KnowledgeUploadManifestRecord): KnowledgeUploadManifestRecord {
   return {
     ...value,
+    actorDisplayName: value.actorDisplayName || value.operatorName || '',
     byteSize: Number(value.byteSize),
     chunkSize: Number(value.chunkSize),
     chunkCount: Number(value.chunkCount),

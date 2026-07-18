@@ -7,8 +7,10 @@ type ExpiredUpload = {
   id: string;
   requestId: string;
   fileName: string;
-  operatorId: string;
-  operatorName: string;
+  accountId: string;
+  actorDisplayName?: string;
+  operatorId?: string;
+  operatorName?: string;
   state: string;
 };
 
@@ -60,6 +62,7 @@ export class KnowledgeManagementCleanup {
   }
 
   private async recordExpiredUpload(upload: ExpiredUpload): Promise<void> {
+    const actorDisplayName = upload.actorDisplayName || upload.operatorName || '';
     await this.pb.collection(KNOWLEDGE_AUDIT_EVENTS_COLLECTION).create(
       {
         requestId: upload.requestId,
@@ -68,8 +71,10 @@ export class KnowledgeManagementCleanup {
         fileName: upload.fileName,
         title: '',
         category: '',
-        operatorId: upload.operatorId,
-        operatorName: upload.operatorName,
+        accountId: upload.accountId,
+        actorDisplayName,
+        operatorId: '',
+        operatorName: '',
         occurredAt: new Date(this.now()).toISOString(),
         details: { previousState: upload.state },
       },

@@ -18,6 +18,7 @@ import {
   normalizeKnowledgeUploadManifestView,
   normalizeKnowledgeUploadQueueView,
   normalizeKnowledgeDocumentRecord,
+  normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeSearchText,
 } from './knowledge';
@@ -168,10 +169,10 @@ describe('knowledge contracts', () => {
       lifecycleState: 'active',
       displayTitle: 'Runbook',
       revision: 1,
-      publishedByOperatorId: '',
+      publishedByAccountId: '',
       publishedByName: '',
       publishedAt: '2026-07-14T12:01:00.000Z',
-      trashedByOperatorId: null,
+      trashedByAccountId: null,
       trashedByName: null,
       trashedAt: null,
     });
@@ -201,6 +202,56 @@ describe('knowledge contracts', () => {
     expect(normalizeKnowledgeDocumentRecord({ ...managed, lifecycleState: 'deleted' })).toBeNull();
     expect(normalizeKnowledgeDocumentRecord({ ...managed, revision: -1 })).toBeNull();
     expect(normalizeKnowledgeDocumentRecord({ ...managed, displayTitle: '' })).toBeNull();
+  });
+
+  it('normalizes account attribution first while preserving legacy document rows', () => {
+    const legacy = normalizeKnowledgeDocumentRecord({
+      ...validRecord,
+      publishedByOperatorId: 'legacy-publisher',
+      publishedByName: 'Legacy Publisher',
+    });
+    expect(legacy).toMatchObject({
+      publishedByAccountId: 'legacy-publisher',
+      publishedByName: 'Legacy Publisher',
+    });
+    expect(legacy).not.toHaveProperty('publishedByOperatorId');
+
+    const current = normalizeKnowledgeDocumentRecord({
+      ...validRecord,
+      publishedByAccountId: 'account-publisher',
+      publishedByOperatorId: 'legacy-should-not-win',
+      publishedByName: 'Current Publisher',
+    });
+    expect(current).toMatchObject({ publishedByAccountId: 'account-publisher' });
+  });
+
+  it('normalizes current and historical audit attribution to account vocabulary', () => {
+    const base = {
+      id: 'audit-1',
+      requestId: 'request-1',
+      action: 'published',
+      targetId: 'document-1',
+      fileName: 'Runbook.pdf',
+      title: 'Runbook',
+      category: 'Operations',
+      occurredAt: '2026-07-15T12:00:00.000Z',
+    };
+    expect(
+      normalizeKnowledgeAuditEventView({
+        ...base,
+        accountId: 'account-current',
+        actorDisplayName: 'Current Publisher',
+        operatorId: 'legacy-should-not-win',
+        operatorName: 'Legacy Should Not Win',
+      }),
+    ).toMatchObject({ accountId: 'account-current', actorDisplayName: 'Current Publisher' });
+    expect(
+      normalizeKnowledgeAuditEventView({
+        ...base,
+        operatorId: 'legacy-publisher',
+        operatorName: 'Legacy Publisher',
+      }),
+    ).toMatchObject({ accountId: 'legacy-publisher', actorDisplayName: 'Legacy Publisher' });
   });
 
   it('drops malformed outline nodes without rejecting a readable document', () => {

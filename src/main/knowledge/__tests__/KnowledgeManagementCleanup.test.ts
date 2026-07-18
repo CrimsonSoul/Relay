@@ -22,8 +22,8 @@ describe('KnowledgeManagementCleanup', () => {
               id: 'upload-ready',
               requestId: 'request-ready',
               fileName: 'Runbook.pdf',
-              operatorId: 'operator-1',
-              operatorName: 'Ryan Bledsoe',
+              accountId: 'account-1',
+              actorDisplayName: 'Ryan Bledsoe',
               state: 'ready',
             },
             {
@@ -56,11 +56,51 @@ describe('KnowledgeManagementCleanup', () => {
         requestId: 'request-ready',
         action: 'upload-expired',
         fileName: 'Runbook.pdf',
-        operatorName: 'Ryan Bledsoe',
+        accountId: 'account-1',
+        actorDisplayName: 'Ryan Bledsoe',
+        operatorId: '',
+        operatorName: '',
       }),
       { requestKey: null },
     );
     expect(deleteUpload).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves historical upload attribution when recording expiry', async () => {
+    const createAudit = vi.fn(async () => ({}));
+    const collection = vi.fn((name: string) =>
+      name === KNOWLEDGE_UPLOADS_COLLECTION
+        ? {
+            getFullList: vi.fn(async () => [
+              {
+                id: 'legacy-upload',
+                requestId: 'legacy-request',
+                fileName: 'Legacy.pdf',
+                accountId: 'account-historical',
+                operatorId: 'legacy-roster-id',
+                operatorName: 'Legacy Publisher',
+                state: 'ready',
+              },
+            ]),
+            delete: vi.fn(),
+          }
+        : { getFullList: vi.fn(async () => []), create: createAudit, delete: vi.fn() },
+    );
+
+    await new KnowledgeManagementCleanup({
+      pb: { collection } as never,
+      now: () => Date.parse(NOW),
+    }).run();
+
+    expect(createAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'account-historical',
+        actorDisplayName: 'Legacy Publisher',
+        operatorId: '',
+        operatorName: '',
+      }),
+      { requestKey: null },
+    );
   });
 
   it('retains a full year of audit history and deletes only older events', async () => {

@@ -527,4 +527,105 @@ describe('RoleAccountManager', () => {
     expect(accountCollection.create).toHaveBeenCalledTimes(1);
     expect(stateCollection.update).toHaveBeenCalledTimes(1);
   });
+
+  it('rejects a rename queued behind an ownership transfer when the actor loses Owner authority', async () => {
+    let currentState = state();
+    const currentAccounts = new Map(accounts.map((entry) => [entry.id, entry]));
+    let releaseTransferTarget!: () => void;
+    let reportTransferTargetRead!: () => void;
+    const transferTargetRelease = new Promise<void>((resolve) => {
+      releaseTransferTarget = resolve;
+    });
+    const transferTargetRead = new Promise<void>((resolve) => {
+      reportTransferTargetRead = resolve;
+    });
+    let charlesReads = 0;
+
+    stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+    stateCollection.update.mockImplementation(
+      async (_id: string, data: Record<string, unknown>) => {
+        currentState = state({ ...data });
+        return currentState;
+      },
+    );
+    accountCollection.getOne.mockImplementation(async (id: string) => {
+      const current = currentAccounts.get(id)!;
+      if (id === 'account-charles' && ++charlesReads === 1) {
+        reportTransferTargetRead();
+        await transferTargetRelease;
+      }
+      return current;
+    });
+    accountCollection.update.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const updated = account({ ...currentAccounts.get(id), id, ...data });
+        currentAccounts.set(id, updated);
+        return updated;
+      },
+    );
+    const roleManager = manager();
+
+    const transfer = roleManager.transferOwnership({
+      actorAccountId: 'account-ryan',
+      accountId: 'account-charles',
+      expectedStateRevision: 4,
+    });
+    await transferTargetRead;
+    const rename = roleManager.updateDisplayName({
+      actorAccountId: 'account-ryan',
+      accountId: 'account-charles',
+      displayName: 'Renamed After Transfer',
+      expectedRevision: 1,
+    });
+    releaseTransferTarget();
+
+    const [transferResult, renameResult] = await Promise.allSettled([transfer, rename]);
+
+    expect(transferResult.status).toBe('fulfilled');
+    expect(renameResult).toMatchObject({
+      status: 'rejected',
+      reason: expect.objectContaining({
+        message: 'Only the Relay owner can manage administrators.',
+      }),
+    });
+    expect(currentState.ownerAccountId).toBe('account-charles');
+    expect(currentAccounts.get('account-charles')?.displayName).toBe('Charles Gibbs');
+    expect(accountCollection.update).not.toHaveBeenCalled();
+  });
+
+  it('serializes simultaneous renames so one account revision cannot commit twice', async () => {
+    const currentAccounts = new Map(accounts.map((entry) => [entry.id, entry]));
+
+    accountCollection.getOne.mockImplementation(async (id: string) => currentAccounts.get(id)!);
+    accountCollection.update.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const updated = account({ ...currentAccounts.get(id), id, ...data });
+        currentAccounts.set(id, updated);
+        return updated;
+      },
+    );
+    const roleManager = manager();
+
+    const results = await Promise.allSettled([
+      roleManager.updateDisplayName({
+        actorAccountId: 'account-ryan',
+        accountId: 'account-charles',
+        displayName: 'Charles One',
+        expectedRevision: 1,
+      }),
+      roleManager.updateDisplayName({
+        actorAccountId: 'account-ryan',
+        accountId: 'account-charles',
+        displayName: 'Charles Two',
+        expectedRevision: 1,
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.find(({ status }) => status === 'rejected')).toMatchObject({
+      reason: new RoleAccountConflictError(2),
+    });
+    expect(accountCollection.update).toHaveBeenCalledTimes(1);
+    expect(currentAccounts.get('account-charles')?.revision).toBe(2);
+  });
 });

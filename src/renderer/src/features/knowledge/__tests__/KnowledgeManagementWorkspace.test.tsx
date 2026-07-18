@@ -78,7 +78,7 @@ describe('KnowledgeManagementWorkspace', () => {
   it('presents the dedicated document, upload, trash, and audit workspace', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
-    expect(screen.getByRole('heading', { name: 'Manage knowledge base' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Manage Wiki' })).toBeInTheDocument();
     expect(
       screen.getByText(
         'Stage, review, publish, and recover PDF guides shared across the Relay team.',

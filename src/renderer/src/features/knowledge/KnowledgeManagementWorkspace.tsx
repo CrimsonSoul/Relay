@@ -239,7 +239,7 @@ export function KnowledgeManagementWorkspace({
       <header className="knowledge-management__header">
         <div>
           <span className="knowledge-tab__kicker">Protected publisher workspace</span>
-          <h1>Manage knowledge base</h1>
+          <h1>Manage Wiki</h1>
           <p>Stage, review, publish, and recover PDF guides shared across the Relay team.</p>
         </div>
         <div className="knowledge-management__header-actions">
@@ -777,10 +777,10 @@ export function KnowledgeManagementWorkspace({
                   <span className="knowledge-audit-row__mark" aria-hidden="true" />
                   <div>
                     <h2>{ACTION_LABELS[event.action]}</h2>
-                    <p>{event.title || event.fileName || event.category || 'Knowledge Base'}</p>
+                    <p>{event.title || event.fileName || event.category || 'Wiki'}</p>
                   </div>
                   <div>
-                    <strong>{event.operatorName}</strong>
+                    <strong>{event.actorDisplayName}</strong>
                     <span>{formatDate(event.occurredAt)}</span>
                   </div>
                 </article>

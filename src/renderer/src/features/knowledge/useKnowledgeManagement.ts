@@ -14,15 +14,15 @@ import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 
 const SAFE_ERRORS = {
-  unauthorized: 'Knowledge Base publisher access is required.',
+  unauthorized: 'Wiki publisher access is required.',
   locked: 'Publisher access is locked. Sign in again.',
-  offline: 'Knowledge Base management is unavailable while Relay is offline.',
-  'pairing-required': 'Pair this workstation before managing the Knowledge Base.',
-  'invalid-request': 'Relay rejected the Knowledge Base request.',
+  offline: 'Wiki management is unavailable while Relay is offline.',
+  'pairing-required': 'Pair this workstation before managing the Wiki.',
+  'invalid-request': 'Relay rejected the Wiki request.',
   expired: 'The request expired. Try again.',
   replayed: 'Relay could not safely repeat that request.',
   conflict: 'This item changed on the server. Review the refreshed information and try again.',
-  'server-error': 'Relay could not complete the Knowledge Base request.',
+  'server-error': 'Relay could not complete the Wiki request.',
 } as const;
 
 const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
@@ -79,7 +79,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
       }
       const normalized = normalizeKnowledgeManagementSnapshot(result.value);
       if (!normalized) {
-        setError('Relay returned an invalid Knowledge Base snapshot.');
+        setError('Relay returned an invalid Wiki snapshot.');
         return null;
       }
       return normalized;
@@ -221,7 +221,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         return null;
       }
       const normalized = normalizeAuditPage(result.value);
-      if (!normalized) setError('Relay returned an invalid Knowledge Base audit history.');
+      if (!normalized) setError('Relay returned an invalid Wiki audit history.');
       return normalized;
     },
     [submitCommand],

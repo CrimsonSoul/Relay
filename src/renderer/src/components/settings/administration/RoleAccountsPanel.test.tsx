@@ -149,6 +149,26 @@ describe('RoleAccountsPanel', () => {
     expect(password.value).toBe('');
   });
 
+  it('offers an unassigned retained Publisher for assignment without offering another account', () => {
+    const retainedPublisherSnapshot: RelayAdministrationSnapshot = {
+      ...snapshot,
+      accounts: snapshot.accounts.filter(({ accountId }) => accountId !== 'account-old-publisher'),
+      publisherAccountId: null,
+    };
+
+    render(
+      <RoleAccountsPanel
+        snapshot={retainedPublisherSnapshot}
+        execute={execute}
+        relayMode="client"
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Add Publisher' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'Tristan Bowles (@publisher)' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Assign Publisher' })).toBeVisible();
+  });
+
   it('focus-traps a reauthentication dialog and wipes its password when canceled', () => {
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
     fireEvent.change(screen.getByLabelText('Publisher account'), {

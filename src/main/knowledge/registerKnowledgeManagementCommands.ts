@@ -36,8 +36,9 @@ type KnowledgeUploadRecord = {
   requestId: string;
   accountId: string;
   deviceId: string;
-  operatorId: string;
-  operatorName: string;
+  actorDisplayName?: string;
+  operatorId?: string;
+  operatorName?: string;
   fileName: string;
   pdf: string;
   checksum: string;

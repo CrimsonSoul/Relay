@@ -145,10 +145,16 @@ export class RoleAccountManager {
     const actor = await this.getAccount(input.actorAccountId);
     this.assertPublisherManager(state, actor);
     this.assertRevision(state.assignmentVersion, input.expectedStateRevision);
+    const accounts = await this.listAccounts();
     if (state.publisherAccountId) {
       throw new Error('Assign or replace the current Publisher before creating another one.');
     }
-    const created = await this.createAccount(await this.listAccounts(), input, 'publisher');
+    if (accounts.some(({ storedRole }) => storedRole === 'publisher')) {
+      throw new Error(
+        'A retained Publisher account already exists. Assign or reactivate that account.',
+      );
+    }
+    const created = await this.createAccount(accounts, input, 'publisher');
     await this.commitCreatedAccount(created, () =>
       this.updateState(state, {
         publisherAccountId: created.id,
@@ -161,6 +167,12 @@ export class RoleAccountManager {
   async updateDisplayName(
     input: AccountRevisionInput & { displayName: string },
   ): Promise<RelayAdministrationSnapshot> {
+    return this.withAuthorityMutation(() => this.updateDisplayNameExclusive(input));
+  }
+
+  private async updateDisplayNameExclusive(
+    input: AccountRevisionInput & { displayName: string },
+  ): Promise<RelayAdministrationSnapshot> {
     const [state, actor, target] = await Promise.all([
       this.getState(),
       this.getAccount(input.actorAccountId),
@@ -171,9 +183,20 @@ export class RoleAccountManager {
     const displayName = normalizeRoleDisplayName(input.displayName);
     const error = getRoleDisplayNameError(displayName);
     if (error) throw new Error(error);
+    const [commitState, commitActor, commitTarget] = await Promise.all([
+      this.getState(),
+      this.getAccount(input.actorAccountId),
+      this.getAccount(input.accountId),
+    ]);
+    this.assertCanManageTarget(commitState, commitActor, commitTarget);
+    this.assertRevision(commitTarget.revision, input.expectedRevision);
     await this.pb
       .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-      .update(target.id, { displayName, revision: target.revision + 1 }, { requestKey: null });
+      .update(
+        commitTarget.id,
+        { displayName, revision: commitTarget.revision + 1 },
+        { requestKey: null },
+      );
     return this.snapshotReader.read({ accountId: input.actorAccountId });
   }
 

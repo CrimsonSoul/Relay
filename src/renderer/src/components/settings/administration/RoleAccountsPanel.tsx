@@ -350,7 +350,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
             Add Administrator
           </TactileButton>
         )}
-        {!publisherPointer && (
+        {publisherAccounts.length === 0 && (
           <TactileButton type="button" onClick={() => setCreateRole('publisher')}>
             Add Publisher
           </TactileButton>
@@ -492,7 +492,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       <div className="administration-callout role-accounts__publisher">
         <div>
           <strong>Publisher assignment</strong>
-          <span>Owner and Administrators can assign the single Knowledge Base Publisher.</span>
+          <span>Owner and Administrators can assign the single Wiki Publisher.</span>
         </div>
         <label className="administration-field">
           <span>Publisher account</span>

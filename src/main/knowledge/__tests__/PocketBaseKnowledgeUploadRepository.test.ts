@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  KnowledgeUploadBatchRecord,
   KnowledgeUploadChunkRecord,
   KnowledgeUploadManifestRecord,
 } from '../KnowledgeUploadCoordinator';
@@ -11,6 +12,7 @@ const upload: KnowledgeUploadManifestRecord = {
   batchId: 'batch-1',
   accountId: 'account-1',
   deviceId: 'device-1',
+  actorDisplayName: 'Ryan Bledsoe',
   operatorId: 'operator-1',
   operatorName: 'Ryan Bledsoe',
   fileName: 'Runbook.pdf',
@@ -33,7 +35,72 @@ const upload: KnowledgeUploadManifestRecord = {
   revision: 1,
 };
 
+const batch: KnowledgeUploadBatchRecord = {
+  id: 'batch-1',
+  requestId: 'batch-request-1',
+  accountId: 'account-1',
+  deviceId: 'device-1',
+  actorDisplayName: '',
+  operatorId: 'legacy-account',
+  operatorName: 'Legacy Publisher',
+  fileCount: 1,
+  totalBytes: 9,
+  state: 'active',
+  createdAt: '2026-07-15T20:00:00.000Z',
+  lastActivityAt: '2026-07-15T20:00:00.000Z',
+  expiresAt: '2026-07-22T20:00:00.000Z',
+  revision: 1,
+};
+
 describe('PocketBaseKnowledgeUploadRepository', () => {
+  it('normalizes historical batch actor snapshots without rewriting their rows', async () => {
+    const getOne = vi.fn(async () => batch);
+    const pb = {
+      collection: vi.fn(() => ({ getOne })),
+      files: { getToken: vi.fn(), getURL: vi.fn() },
+    };
+    const repository = new PocketBaseKnowledgeUploadRepository({ pb: pb as never });
+
+    await expect(repository.getBatch('batch-1')).resolves.toMatchObject({
+      accountId: 'account-1',
+      actorDisplayName: 'Legacy Publisher',
+    });
+  });
+
+  it('normalizes upload actor snapshots new-field-first with legacy fallback', async () => {
+    const getOne = vi.fn(async (id: string) =>
+      id === 'current'
+        ? {
+            ...upload,
+            id,
+            actorDisplayName: 'Current Publisher',
+            operatorId: 'legacy-should-not-win',
+            operatorName: 'Legacy Should Not Win',
+          }
+        : {
+            ...upload,
+            id,
+            actorDisplayName: '',
+            operatorId: 'legacy-account',
+            operatorName: 'Legacy Publisher',
+          },
+    );
+    const pb = {
+      collection: vi.fn(() => ({ getOne })),
+      files: { getToken: vi.fn(), getURL: vi.fn() },
+    };
+    const repository = new PocketBaseKnowledgeUploadRepository({ pb: pb as never });
+
+    await expect(repository.getUpload('current')).resolves.toMatchObject({
+      accountId: 'account-1',
+      actorDisplayName: 'Current Publisher',
+    });
+    await expect(repository.getUpload('legacy')).resolves.toMatchObject({
+      accountId: 'account-1',
+      actorDisplayName: 'Legacy Publisher',
+    });
+  });
+
   it('stores the assembled PDF as a protected PocketBase file form without a path', async () => {
     const update = vi.fn(async (_id: string, data: FormData) => ({
       ...upload,

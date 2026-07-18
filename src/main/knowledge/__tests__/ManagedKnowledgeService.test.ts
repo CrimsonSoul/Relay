@@ -35,10 +35,10 @@ function document(overrides: Record<string, unknown> = {}) {
     indexedAt: NOW,
     lifecycleState: 'active',
     revision: 3,
-    publishedByOperatorId: ACTOR.accountId,
+    publishedByAccountId: ACTOR.accountId,
     publishedByName: ACTOR.displayName,
     publishedAt: NOW,
-    trashedByOperatorId: '',
+    trashedByAccountId: '',
     trashedByName: '',
     trashedAt: '',
     created: NOW,
@@ -166,6 +166,11 @@ describe('ManagedKnowledgeService', () => {
       publishedByName: 'Ryan Bledsoe',
     });
     expect(documents.create).toHaveBeenCalledWith(expect.any(FormData), { requestKey: null });
+    const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
+    expect(publishForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
+    expect(publishForm.get('publishedByOperatorId')).toBe('');
+    expect(publishForm.get('trashedByAccountId')).toBe('');
+    expect(publishForm.get('trashedByOperatorId')).toBe('');
     expect(uploads.update).toHaveBeenCalledWith(
       'upload-1',
       { state: 'published', pdf: null },
@@ -175,10 +180,53 @@ describe('ManagedKnowledgeService', () => {
       expect.objectContaining({
         requestId: 'request-publish',
         action: 'published',
-        operatorName: 'Ryan Bledsoe',
+        accountId: ACTOR.accountId,
+        actorDisplayName: 'Ryan Bledsoe',
+        operatorId: '',
+        operatorName: '',
       }),
       { requestKey: null },
     );
+  });
+
+  it('reads current audit attribution first and falls back for historical events', async () => {
+    audits.getFullList.mockResolvedValueOnce([
+      {
+        id: 'audit-current',
+        requestId: 'request-current',
+        action: 'published',
+        targetId: 'document-1',
+        fileName: 'Runbook.pdf',
+        title: 'Runbook',
+        category: 'Operations',
+        accountId: ACTOR.accountId,
+        actorDisplayName: ACTOR.displayName,
+        operatorId: 'legacy-should-not-win',
+        operatorName: 'Legacy Should Not Win',
+        occurredAt: NOW,
+      },
+      {
+        id: 'audit-legacy',
+        requestId: 'request-legacy',
+        action: 'trashed',
+        targetId: 'document-1',
+        fileName: 'Runbook.pdf',
+        title: 'Runbook',
+        category: 'Operations',
+        operatorId: 'legacy-account',
+        operatorName: 'Legacy Publisher',
+        occurredAt: NOW,
+      },
+    ]);
+
+    await expect(
+      service().readAudit({ cursor: null, pageSize: 25, targetId: null }),
+    ).resolves.toMatchObject({
+      items: [
+        { accountId: ACTOR.accountId, actorDisplayName: ACTOR.displayName },
+        { accountId: 'legacy-account', actorDisplayName: 'Legacy Publisher' },
+      ],
+    });
   });
 
   it('replaces PDF bytes while preserving the stable document and relative-link filename', async () => {
@@ -201,6 +249,28 @@ describe('ManagedKnowledgeService', () => {
     expect(documents.update).toHaveBeenCalledWith('document-1', expect.any(FormData), {
       requestKey: null,
     });
+    const replacementForm = documents.update.mock.calls.at(-1)?.[1] as FormData;
+    expect(replacementForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
+    expect(replacementForm.get('publishedByOperatorId')).toBe('');
+  });
+
+  it('trashes with account attribution while leaving legacy identity blank', async () => {
+    await expect(
+      service().trash({
+        actor: ACTOR,
+        requestId: 'request-trash',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
+    ).resolves.toMatchObject({ lifecycleState: 'trashed', trashedByName: ACTOR.displayName });
+    expect(documents.update).toHaveBeenCalledWith(
+      'document-1',
+      expect.objectContaining({
+        trashedByAccountId: ACTOR.accountId,
+        trashedByOperatorId: '',
+      }),
+      { requestKey: null },
+    );
   });
 
   it('enforces optimistic revisions and canonicalizes cleared trash fields on restore', async () => {
@@ -235,13 +305,21 @@ describe('ManagedKnowledgeService', () => {
       trashedAt: null,
       revision: 4,
     });
+    expect(documents.update).toHaveBeenCalledWith(
+      'document-1',
+      expect.objectContaining({
+        trashedByAccountId: '',
+        trashedByOperatorId: '',
+      }),
+      { requestKey: null },
+    );
   });
 
   it('only permanently deletes a trashed document and preserves its audit record', async () => {
     documents.getOne.mockResolvedValueOnce(
       document({
         lifecycleState: 'trashed',
-        trashedByOperatorId: ACTOR.accountId,
+        trashedByAccountId: ACTOR.accountId,
         trashedByName: ACTOR.displayName,
         trashedAt: NOW,
       }),

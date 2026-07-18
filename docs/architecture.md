@@ -184,6 +184,8 @@ Clients subscribe to `knowledge_documents` metadata through the same realtime an
 
 Opened client PDFs are stored content-addressed at `<config data>/knowledge-cache/<sha256>.pdf`. Downloads are size-, signature-, and checksum-verified before atomic promotion. The cache is on demand, has a 2 GiB LRU budget, and retains unreferenced entries for at most 30 days. Cached documents remain available while disconnected; unopened documents show an offline-unavailable state. Knowledge metadata and PDF bytes stay on the configured Relay LAN path.
 
+New Wiki upload, document, and audit records attribute protected actions with account IDs and bounded actor display-name snapshots. Legacy operator-named attribution fields remain optional, read-only compatibility data for historical rows and are left blank by all new writes. Readers prefer the account fields and fall back to legacy values only when opening older records; role-account migration never rewrites Wiki history.
+
 The Wiki reader defaults to **Continuous** mode. It creates a stable shell for every page so the document has a real scroll range, but renders canvases only for the current page and a bounded overscan window. Intersection visibility updates the current-page indicator. **Single page** mode remains available from the reader toolbar. The mode preference is workstation-local, and switching modes or leaving the Wiki destination retains the open document, current page, zoom, and PDF lifetime rather than downloading or parsing the file again.
 
 Link annotations branch through Relay-owned navigation rather than PDF action execution:

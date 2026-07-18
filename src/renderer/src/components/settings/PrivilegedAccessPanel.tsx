@@ -434,8 +434,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
           Privileged access
         </h2>
         <p className="settings-description">
-          Sign in to administer Relay or publish Knowledge Base documents with a protected role
-          account.
+          Sign in to administer Relay or publish Wiki documents with a protected role account.
         </p>
       </header>
       {error && (

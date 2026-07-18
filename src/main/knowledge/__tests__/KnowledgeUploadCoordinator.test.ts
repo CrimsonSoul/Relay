@@ -218,7 +218,7 @@ function stageChunks(
 
 describe('KnowledgeUploadCoordinator', () => {
   it('admits one idempotent account-bound batch and file manifest', async () => {
-    const { capacity, coordinator } = createCoordinator();
+    const { capacity, coordinator, repository } = createCoordinator();
     const bytes = Buffer.from('%PDF-test');
 
     const first = await beginOneFile(coordinator, bytes);
@@ -229,6 +229,18 @@ describe('KnowledgeUploadCoordinator', () => {
     });
 
     expect(replay).toMatchObject({ id: first.batch.id, revision: 1 });
+    expect(repository.batches.get(first.batch.id)).toMatchObject({
+      accountId: publisher.accountId,
+      actorDisplayName: publisher.displayName,
+      operatorId: '',
+      operatorName: '',
+    });
+    expect(repository.uploads.get(first.upload.id)).toMatchObject({
+      accountId: publisher.accountId,
+      actorDisplayName: publisher.displayName,
+      operatorId: '',
+      operatorName: '',
+    });
     expect(capacity.assertBatch).toHaveBeenCalledOnce();
     await expect(
       coordinator.beginFile(

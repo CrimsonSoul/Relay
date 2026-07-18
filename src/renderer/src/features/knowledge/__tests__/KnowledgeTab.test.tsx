@@ -116,10 +116,10 @@ function document(id: string, title: string, category: string): KnowledgeDocumen
     lifecycleState: 'active',
     displayTitle: title,
     revision: 1,
-    publishedByOperatorId: '',
+    publishedByAccountId: '',
     publishedByName: '',
     publishedAt: '2026-07-14T12:00:00.000Z',
-    trashedByOperatorId: null,
+    trashedByAccountId: null,
     trashedByName: null,
     trashedAt: null,
     created: '2026-07-14T12:00:00.000Z',
@@ -527,6 +527,33 @@ describe('KnowledgeTab', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/every Relay operator/i)).toBeNull();
+  });
+
+  it('labels the populated publisher entry point Manage Wiki', () => {
+    privilegedAccessMocks.usePrivilegedAccess.mockReturnValue({
+      session: {
+        state: 'active',
+        accountId: 'account-publisher',
+        username: 'publisher',
+        displayName: 'Knowledge Publisher',
+        role: 'publisher',
+        capabilities: ['knowledge.manage'],
+        deviceId: 'device-1',
+        expiresAt: '2026-07-18T00:00:00.000Z',
+      },
+    });
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operations guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="server" />);
+
+    expect(screen.getByRole('button', { name: 'Manage Wiki' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage library' })).toBeNull();
   });
 
   it('distinguishes a failed first index from an ordinary empty library', async () => {

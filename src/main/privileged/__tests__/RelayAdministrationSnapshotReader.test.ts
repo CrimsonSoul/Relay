@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
+  normalizeRelayAdministrationSnapshot,
 } from '@shared/privilegedAccess';
 import { RelayAdministrationSnapshotReader } from '../RelayAdministrationSnapshotReader';
 
@@ -88,7 +89,7 @@ describe('RelayAdministrationSnapshotReader', () => {
     expect(JSON.stringify(snapshot)).not.toContain('tokenKey');
   });
 
-  it('keeps repeated unassign/create cycles bounded by omitting retired Publishers', async () => {
+  it('keeps a max-Administrator snapshot bounded while exposing the retained Publisher', async () => {
     const administrators = Array.from({ length: 10 }, (_, index) => ({
       id: index === 0 ? 'account-ryan' : `account-admin-${index}`,
       username: index === 0 ? 'ryan' : `admin-${index}`,
@@ -101,10 +102,10 @@ describe('RelayAdministrationSnapshotReader', () => {
       created: '2026-07-13T09:00:00.000Z',
       updated: '2026-07-15T10:00:00.000Z',
     }));
-    const retiredPublishers = Array.from({ length: 8 }, (_, index) => ({
-      id: `account-retired-publisher-${index}`,
-      username: `retired-publisher-${index}`,
-      displayName: `Retired Publisher ${index}`,
+    const retainedPublisher = {
+      id: 'account-publisher',
+      username: 'publisher',
+      displayName: 'Retained Publisher',
       storedRole: 'publisher' as const,
       active: false,
       mustChangePassword: true,
@@ -112,14 +113,6 @@ describe('RelayAdministrationSnapshotReader', () => {
       revision: 1,
       created: '2026-07-13T09:00:00.000Z',
       updated: '2026-07-15T10:00:00.000Z',
-    }));
-    const currentPublisher = {
-      ...retiredPublishers[0]!,
-      id: 'account-current-publisher',
-      username: 'current-publisher',
-      displayName: 'Current Publisher',
-      active: true,
-      mustChangePassword: false,
     };
     const collections = {
       [RELAY_PRIVILEGED_STATE_COLLECTION]: {
@@ -127,12 +120,12 @@ describe('RelayAdministrationSnapshotReader', () => {
           id: 'state-1',
           key: 'primary',
           ownerAccountId: 'account-ryan',
-          publisherAccountId: 'account-current-publisher',
+          publisherAccountId: '',
           assignmentVersion: 19,
         })),
       },
       [RELAY_PRIVILEGED_ACCOUNTS_COLLECTION]: {
-        getFullList: vi.fn(async () => [...administrators, ...retiredPublishers, currentPublisher]),
+        getFullList: vi.fn(async () => [...administrators, retainedPublisher]),
       },
     };
     const reader = new RelayAdministrationSnapshotReader({
@@ -145,10 +138,9 @@ describe('RelayAdministrationSnapshotReader', () => {
     const snapshot = await reader.read({ accountId: 'account-ryan' });
 
     expect(snapshot.accounts).toHaveLength(11);
-    expect(snapshot.accounts.map(({ accountId }) => accountId)).toContain(
-      'account-current-publisher',
-    );
-    expect(snapshot.accounts.some(({ accountId }) => accountId.includes('retired'))).toBe(false);
+    expect(snapshot.accounts.map(({ accountId }) => accountId)).toContain('account-publisher');
+    expect(snapshot.publisherAccountId).toBeNull();
+    expect(normalizeRelayAdministrationSnapshot(snapshot)).not.toBeNull();
   });
 
   it('keeps legacy accounts readable when auth autodates were previously absent', async () => {

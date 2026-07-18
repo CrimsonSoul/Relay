@@ -377,7 +377,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
           </div>
           {canManage && (
             <TactileButton size="sm" variant="primary" onClick={() => setManagementOpen(true)}>
-              Manage library
+              Manage Wiki
             </TactileButton>
           )}
         </div>

@@ -744,7 +744,10 @@ describe('ensureCollections', () => {
           values: ['active', 'trashed'],
         }),
         expect.objectContaining({ name: 'revision', type: 'number', required: false }),
-        expect.objectContaining({ name: 'publishedByOperatorId', type: 'text' }),
+        expect.objectContaining({ name: 'publishedByAccountId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'trashedByAccountId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'publishedByOperatorId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'trashedByOperatorId', type: 'text', required: false }),
         expect.objectContaining({ name: 'trashedAt', type: 'date' }),
         expect.objectContaining({ name: 'outline', type: 'json' }),
         expect.objectContaining({
@@ -811,6 +814,9 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'chunkSize', type: 'number', required: true }),
         expect.objectContaining({ name: 'chunkCount', type: 'number', required: true }),
         expect.objectContaining({ name: 'lastActivityAt', type: 'date', required: true }),
+        expect.objectContaining({ name: 'actorDisplayName', type: 'text', required: false }),
+        expect.objectContaining({ name: 'operatorId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'operatorName', type: 'text', required: false }),
         expect.objectContaining({ name: 'readyAt', type: 'date' }),
         expect.objectContaining({ name: 'expiresAt', type: 'date', required: true }),
       ]),
@@ -838,6 +844,9 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'fileCount', type: 'number', required: true }),
         expect.objectContaining({ name: 'totalBytes', type: 'number', required: true }),
         expect.objectContaining({ name: 'lastActivityAt', type: 'date', required: true }),
+        expect.objectContaining({ name: 'actorDisplayName', type: 'text', required: false }),
+        expect.objectContaining({ name: 'operatorId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'operatorName', type: 'text', required: false }),
         expect.objectContaining({ name: 'revision', type: 'number', required: false }),
       ]),
     );
@@ -908,6 +917,17 @@ describe('ensureCollections', () => {
       )?.[0] as { listRule: string | null; createRule: string | null } | undefined;
       expect(call).toMatchObject({ listRule: null, createRule: null });
     }
+    const auditCall = mockCreate.mock.calls.find(
+      (entry: unknown[]) => (entry[0] as { name: string }).name === 'knowledge_audit_events',
+    )?.[0] as { fields: Array<Record<string, unknown>> } | undefined;
+    expect(auditCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'accountId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'actorDisplayName', type: 'text', required: false }),
+        expect.objectContaining({ name: 'operatorId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'operatorName', type: 'text', required: false }),
+      ]),
+    );
   });
 
   it('patches an older upload schema before creating collections whose rules depend on it', async () => {

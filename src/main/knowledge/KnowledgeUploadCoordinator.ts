@@ -27,8 +27,9 @@ export type KnowledgeUploadBatchRecord = {
   requestId: string;
   accountId: string;
   deviceId: string;
-  operatorId: string;
-  operatorName: string;
+  actorDisplayName: string;
+  operatorId?: string;
+  operatorName?: string;
   fileCount: number;
   totalBytes: number;
   state: KnowledgeUploadBatchState;
@@ -44,8 +45,9 @@ export type KnowledgeUploadManifestRecord = {
   batchId: string;
   accountId: string;
   deviceId: string;
-  operatorId: string;
-  operatorName: string;
+  actorDisplayName: string;
+  operatorId?: string;
+  operatorName?: string;
   fileName: string;
   byteSize: number;
   checksum: string;
@@ -295,8 +297,9 @@ export class KnowledgeUploadCoordinator {
       ...input,
       accountId: actor.accountId,
       deviceId: actor.deviceId,
-      operatorId: actor.accountId,
-      operatorName: actor.displayName,
+      actorDisplayName: actor.displayName,
+      operatorId: '',
+      operatorName: '',
       state: 'active',
       createdAt: now,
       lastActivityAt: now,
@@ -330,8 +333,9 @@ export class KnowledgeUploadCoordinator {
       ...input,
       accountId: actor.accountId,
       deviceId: actor.deviceId,
-      operatorId: actor.accountId,
-      operatorName: actor.displayName,
+      actorDisplayName: actor.displayName,
+      operatorId: '',
+      operatorName: '',
       chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
       state: 'uploading',
       pdf: null,
