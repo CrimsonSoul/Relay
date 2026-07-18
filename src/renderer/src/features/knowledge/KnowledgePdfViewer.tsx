@@ -182,8 +182,12 @@ export function KnowledgePdfViewer({
     if (!pdf) return;
     const previousPageNumber = pageIndex;
     const nextPageNumber = pageIndex + 2;
-    if (previousPageNumber >= 1) pdf.getPage(previousPageNumber).catch(() => undefined);
-    if (nextPageNumber <= pdf.numPages) pdf.getPage(nextPageNumber).catch(() => undefined);
+    const warmPage = async (pageNumber: number) => {
+      const page = await pdf.getPage(pageNumber);
+      await page.getOperatorList({ intent: 'display' });
+    };
+    if (previousPageNumber >= 1) warmPage(previousPageNumber).catch(() => undefined);
+    if (nextPageNumber <= pdf.numPages) warmPage(nextPageNumber).catch(() => undefined);
   }, [pageIndex, pdf]);
 
   useEffect(() => {

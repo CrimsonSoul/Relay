@@ -76,11 +76,24 @@ export function KnowledgePdfPage({
     let renderedPage: PDFPageProxy | null = null;
     const work: Promise<unknown>[] = [];
     let cleanupQueued = false;
+    let pageFailure: unknown = null;
 
     const cleanupPage = () => {
       if (!renderedPage || cleanupQueued) return;
       cleanupQueued = true;
       void Promise.allSettled(work).then(() => renderedPage?.cleanup());
+    };
+
+    const cancelPageWork = () => {
+      renderTask?.cancel();
+      textLayer?.cancel();
+    };
+
+    const recordPageFailure = (workError: unknown) => {
+      if (pageFailure !== null) return;
+      pageFailure = workError;
+      cancelPageWork();
+      cleanupPage();
     };
 
     pdf
@@ -120,7 +133,10 @@ export function KnowledgePdfPage({
         work.push(canvasRender);
         const canvasRenderResult = canvasRender.then(
           () => ({ error: null }),
-          (renderError: unknown) => ({ error: renderError }),
+          (renderError: unknown) => {
+            if (!disposed && !isCancelledRender(renderError)) recordPageFailure(renderError);
+            return { error: renderError };
+          },
         );
 
         let annotationsPromise: ReturnType<PDFPageProxy['getAnnotations']>;
@@ -137,6 +153,7 @@ export function KnowledgePdfPage({
           annotationsPromise,
         ]);
         if (disposed) return;
+        if (pageFailure !== null) throw pageFailure;
 
         textLayer = new TextLayer({
           textContentSource: textContent,
@@ -145,8 +162,19 @@ export function KnowledgePdfPage({
         });
         const textRender = textLayer.render();
         work.push(textRender);
-        const [canvasResult] = await Promise.all([canvasRenderResult, textRender]);
+        const textRenderResult = textRender.then(
+          () => ({ error: null }),
+          (renderError: unknown) => {
+            if (!disposed && !isCancelledRender(renderError)) recordPageFailure(renderError);
+            return { error: renderError };
+          },
+        );
+        const [canvasResult, textResult] = await Promise.all([
+          canvasRenderResult,
+          textRenderResult,
+        ]);
         if (canvasResult.error !== null) throw canvasResult.error;
+        if (textResult.error !== null) throw textResult.error;
         if (disposed) return;
 
         if (targetTop !== null) {
@@ -171,7 +199,9 @@ export function KnowledgePdfPage({
         onStatus({ state: 'ready', pageIndex, width: viewport.width, height: viewport.height });
       })
       .catch((renderError: unknown) => {
-        if (disposed || isCancelledRender(renderError)) return;
+        const reportedError = pageFailure ?? renderError;
+        if (disposed || isCancelledRender(reportedError)) return;
+        recordPageFailure(reportedError);
         const message = 'Relay could not render this page.';
         setError(message);
         onStatus({ state: 'error', pageIndex, message });
@@ -179,8 +209,7 @@ export function KnowledgePdfPage({
 
     return () => {
       disposed = true;
-      renderTask?.cancel();
-      textLayer?.cancel();
+      cancelPageWork();
       cleanupPage();
     };
   }, [onStatus, pageIndex, pdf, render, retryKey, scale, targetTop, localRetryKey]);
@@ -203,9 +232,17 @@ export function KnowledgePdfPage({
         </>
       )}
       {render && error && (
-        <div className="knowledge-page__error" role="status">
+        <div
+          className="knowledge-page__error"
+          role="status"
+          aria-label={`Page ${pageIndex + 1} rendering error`}
+        >
           <p>{error}</p>
-          <button type="button" onClick={() => setLocalRetryKey((current) => current + 1)}>
+          <button
+            type="button"
+            aria-label={`Retry page ${pageIndex + 1}`}
+            onClick={() => setLocalRetryKey((current) => current + 1)}
+          >
             Retry page
           </button>
         </div>

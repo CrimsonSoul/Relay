@@ -19,7 +19,7 @@ type ContinuousPdfPageOptions = {
 type VisibilityState = Pick<ContinuousPdfPageVisibility, 'currentPageIndex' | 'renderPageIndices'>;
 
 const DEFAULT_OVERSCAN_PAGES = 2;
-const OBSERVER_THRESHOLDS = [0, 0.01, 0.25, 0.5, 0.75, 1];
+const OBSERVER_THRESHOLDS = Array.from({ length: 101 }, (_, index) => index / 100);
 
 function boundedPageCount(pageCount: number): number {
   return Number.isFinite(pageCount) ? Math.max(0, Math.floor(pageCount)) : 0;

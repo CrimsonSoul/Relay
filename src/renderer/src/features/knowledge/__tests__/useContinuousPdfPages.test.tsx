@@ -96,6 +96,14 @@ describe('useContinuousPdfPages', () => {
     expect(result.current.renderPageIndices.size).toBeLessThanOrEqual(5);
   });
 
+  it('uses dense intersection thresholds so clipped pages advance the render window', () => {
+    renderPages();
+
+    expect(IntersectionObserverDouble.instances[0].options?.threshold).toEqual(
+      Array.from({ length: 101 }, (_, index) => index / 100),
+    );
+  });
+
   it('chooses the smaller page index when intersection ratios are equal', () => {
     const { result } = renderPages({ initialPageIndex: 4 });
     const pages = registerPages(result.current.registerPage, 8);

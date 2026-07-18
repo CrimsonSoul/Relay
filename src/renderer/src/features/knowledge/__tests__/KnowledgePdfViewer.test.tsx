@@ -56,6 +56,7 @@ describe('KnowledgePdfViewer', () => {
   const getKnowledgePdf = vi.fn();
   const renderTask = { promise: Promise.resolve(), cancel: vi.fn() };
   const annotationMocks = new Map<number, ReturnType<typeof vi.fn>>();
+  const operatorListMocks = new Map<number, ReturnType<typeof vi.fn>>();
   const resolveUrl = vi.fn(
     (): KnowledgeResolvedLink => ({ kind: 'unavailable', reason: 'unsupported' }),
   );
@@ -76,11 +77,20 @@ describe('KnowledgePdfViewer', () => {
     return mock;
   }
 
+  function getOperatorList(pageNumber: number) {
+    let mock = operatorListMocks.get(pageNumber);
+    if (!mock) {
+      mock = vi.fn(async () => ({ fnArray: [], argsArray: [] }));
+      operatorListMocks.set(pageNumber, mock);
+    }
+    return mock;
+  }
+
   function page(pageNumber: number) {
     return {
       pageNumber,
       cleanup: vi.fn(),
-      getOperatorList: vi.fn(async () => ({ fnArray: [], argsArray: [] })),
+      getOperatorList: getOperatorList(pageNumber),
       getViewport: ({ scale }: { scale: number }) => ({
         width: 600 * scale,
         height: 800 * scale,
@@ -128,6 +138,7 @@ describe('KnowledgePdfViewer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     annotationMocks.clear();
+    operatorListMocks.clear();
     getPage.mockImplementation(async (pageNumber: number) => page(pageNumber));
     resolveUrl.mockReturnValue({ kind: 'unavailable', reason: 'unsupported' });
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
@@ -203,13 +214,14 @@ describe('KnowledgePdfViewer', () => {
   it('prefetches only the adjacent pages around the active single page', async () => {
     renderComponent();
 
-    await waitFor(() => expect(getPage).toHaveBeenCalledWith(2));
+    await waitFor(() => expect(getOperatorList(2)).toHaveBeenCalledWith({ intent: 'display' }));
     expect(getPage).not.toHaveBeenCalledWith(3);
+    expect(getOperatorList(3)).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
 
-    await waitFor(() => expect(getPage).toHaveBeenCalledWith(3));
-    expect(getPage).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(getOperatorList(3)).toHaveBeenCalledWith({ intent: 'display' }));
+    expect(getOperatorList(1)).toHaveBeenCalledWith({ intent: 'display' });
   });
 
   it('refreshes link geometry after zoom and page changes', async () => {

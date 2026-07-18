@@ -30,6 +30,14 @@ type LoadedPageMetrics = {
   values: readonly PageMetric[];
 };
 
+type NavigationRequest = {
+  pdf: PDFDocumentProxy;
+  activePageIndex: number;
+  targetPageIndex: number | undefined;
+  targetTop: number | null | undefined;
+  focusRequestKey: number;
+};
+
 const DEFAULT_PAGE_METRIC: PageMetric = { width: 612, height: 792 };
 const METADATA_CONCURRENCY = 4;
 
@@ -64,6 +72,9 @@ export const KnowledgeContinuousPdf = forwardRef<
   const pageCount = Math.max(0, Math.floor(pdf.numPages));
   const viewportRef = useRef<HTMLDivElement>(null);
   const previousFocusRequestKeyRef = useRef(focusRequestKey);
+  const scaleRef = useRef(scale);
+  const observedCurrentPageIndexRef = useRef(activePageIndex);
+  const previousNavigationRequestRef = useRef<NavigationRequest | null>(null);
   const defaultMetrics = useMemo(
     () => Array.from({ length: pageCount }, () => DEFAULT_PAGE_METRIC),
     [pageCount],
@@ -92,6 +103,8 @@ export const KnowledgeContinuousPdf = forwardRef<
       reducedMotion,
     },
   );
+  scaleRef.current = scale;
+  observedCurrentPageIndexRef.current = currentPageIndex;
 
   useImperativeHandle(ref, () => ({ scrollToPage }), [scrollToPage]);
 
@@ -143,27 +156,67 @@ export const KnowledgeContinuousPdf = forwardRef<
     Math.max(0, Math.floor(requestedPageIndex)),
     Math.max(0, pageCount - 1),
   );
-  const requestedMetricHeight = metrics[boundedRequestedPageIndex]?.height;
 
   useEffect(() => {
-    if (pageCount === 0) return;
-    const naturalOffset =
-      targetTop === null || targetTop === undefined || requestedMetricHeight === undefined
-        ? 0
-        : Math.max(0, requestedMetricHeight - targetTop) * scale;
-    scrollToPage(boundedRequestedPageIndex, naturalOffset);
+    const previousRequest = previousNavigationRequestRef.current;
+    const nextRequest: NavigationRequest = {
+      pdf,
+      activePageIndex: boundedRequestedPageIndex,
+      targetPageIndex,
+      targetTop,
+      focusRequestKey,
+    };
+    previousNavigationRequestRef.current = nextRequest;
+
+    const documentChanged = previousRequest?.pdf !== pdf;
+    const activePageChanged = previousRequest?.activePageIndex !== boundedRequestedPageIndex;
+    const targetChanged =
+      previousRequest?.targetPageIndex !== targetPageIndex ||
+      previousRequest?.targetTop !== targetTop;
+    const focusRequestChanged = previousRequest?.focusRequestKey !== focusRequestKey;
+    const observerFeedback =
+      previousRequest !== null &&
+      activePageChanged &&
+      !targetChanged &&
+      !focusRequestChanged &&
+      boundedRequestedPageIndex === observedCurrentPageIndexRef.current;
+    const isExternalRequest =
+      previousRequest === null ||
+      documentChanged ||
+      targetChanged ||
+      focusRequestChanged ||
+      (activePageChanged && !observerFeedback);
+
+    if (pageCount === 0 || !isExternalRequest) return;
+
+    let disposed = false;
+    const navigate = async () => {
+      let targetOffset = 0;
+      if (targetTop !== null && targetTop !== undefined) {
+        const page = await pdf.getPage(boundedRequestedPageIndex + 1);
+        if (disposed) return;
+        const viewport = page.getViewport({ scale: scaleRef.current });
+        const [, viewportY] = viewport.convertToViewportPoint(0, targetTop);
+        targetOffset = Math.max(0, viewportY);
+      }
+      if (!disposed) scrollToPage(boundedRequestedPageIndex, targetOffset);
+    };
+    navigate().catch(() => undefined);
 
     if (previousFocusRequestKeyRef.current !== focusRequestKey) {
       previousFocusRequestKeyRef.current = focusRequestKey;
       viewportRef.current?.focus();
     }
+    return () => {
+      disposed = true;
+    };
   }, [
     boundedRequestedPageIndex,
     focusRequestKey,
     pageCount,
-    requestedMetricHeight,
-    scale,
+    pdf,
     scrollToPage,
+    targetPageIndex,
     targetTop,
   ]);
 

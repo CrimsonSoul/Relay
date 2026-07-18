@@ -127,13 +127,16 @@ describe('KnowledgePdfPage', () => {
     getPage.mockRejectedValueOnce(new Error('corrupt page')).mockResolvedValueOnce(page);
     render(<KnowledgePdfPage {...props()} />);
 
-    expect(await screen.findByRole('button', { name: 'Retry page' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('status', { name: 'Page 1 rendering error' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry page 1' })).toBeInTheDocument();
     expect(onStatus).toHaveBeenCalledWith({
       state: 'error',
       pageIndex: 0,
       message: 'Relay could not render this page.',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Retry page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry page 1' }));
     await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(onStatus).toHaveBeenLastCalledWith({
@@ -143,6 +146,33 @@ describe('KnowledgePdfPage', () => {
         height: 800,
       }),
     );
+  });
+
+  it('cancels sibling work and defers cleanup when one page render task fails', async () => {
+    const canvasRender = deferred<void>();
+    const textRender = deferred<void>();
+    const renderTask = { promise: canvasRender.promise, cancel: vi.fn() };
+    const textLayer = { render: vi.fn(() => textRender.promise), cancel: vi.fn() };
+    renderPage.mockReset().mockReturnValue(renderTask);
+    TextLayerMock.mockImplementationOnce(function DeferredTextLayer() {
+      return textLayer as never;
+    });
+
+    render(<KnowledgePdfPage {...props({ pageIndex: 1 })} />);
+    await waitFor(() => expect(textLayer.render).toHaveBeenCalledOnce());
+
+    canvasRender.reject(new Error('canvas failed'));
+
+    await waitFor(() => expect(renderTask.cancel).toHaveBeenCalledOnce());
+    expect(textLayer.cancel).toHaveBeenCalledOnce();
+    expect(pageCleanup).not.toHaveBeenCalled();
+
+    textRender.resolve();
+    await waitFor(() => expect(pageCleanup).toHaveBeenCalledOnce());
+    expect(
+      await screen.findByRole('status', { name: 'Page 2 rendering error' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry page 2' })).toBeInTheDocument();
   });
 
   it('cancels in-flight canvas and text-layer work without reporting stale status', async () => {

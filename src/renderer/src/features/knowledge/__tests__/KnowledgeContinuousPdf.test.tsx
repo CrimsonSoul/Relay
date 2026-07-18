@@ -80,11 +80,22 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function createPdf(pageCount: number, overrides: Record<string, unknown> = {}) {
+function createPdf(
+  pageCount: number,
+  overrides: Record<string, unknown> = {},
+  convertToViewportPoint: (pageNumber: number, x: number, y: number, scale: number) => number[] = (
+    pageNumber,
+    _x,
+    y,
+    scale,
+  ) => [0, (800 + pageNumber - y) * scale],
+) {
   const getPage = vi.fn(async (pageNumber: number) => ({
-    getViewport: vi.fn(() => ({
+    getViewport: vi.fn(({ scale = 1 }: { scale?: number } = {}) => ({
       width: 600 + pageNumber,
       height: 800 + pageNumber,
+      convertToViewportPoint: (x: number, y: number) =>
+        convertToViewportPoint(pageNumber, x, y, scale),
     })),
   }));
   return {
@@ -232,6 +243,60 @@ describe('KnowledgeContinuousPdf', () => {
       />,
     );
     await waitFor(() => expect(scrollTo).toHaveBeenCalledOnce());
+  });
+
+  it('does not turn observer feedback, zoom, or late metrics into programmatic scrolling', async () => {
+    const { pdf } = createPdf(6);
+    const { container, rerender } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
+    const viewport = container.querySelector<HTMLElement>('.knowledge-continuous-pdf')!;
+    const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+    const scrollTo = vi.fn();
+    viewport.scrollTo = scrollTo;
+    Object.defineProperty(shells[3], 'offsetTop', { configurable: true, value: 900 });
+    Object.defineProperty(shells[4], 'offsetTop', { configurable: true, value: 1200 });
+
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: shells[0], intersectionRatio: 0 },
+        { target: shells[3], intersectionRatio: 0.37 },
+      ]);
+    });
+    rerender(<KnowledgeContinuousPdf {...props(pdf, { activePageIndex: 3 })} />);
+    await waitFor(() => expect(shells[3]).toHaveStyle({ width: '604px', minHeight: '804px' }));
+    rerender(<KnowledgeContinuousPdf {...props(pdf, { activePageIndex: 3, scale: 1.5 })} />);
+
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    rerender(<KnowledgeContinuousPdf {...props(pdf, { activePageIndex: 4, scale: 1.5 })} />);
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenLastCalledWith({ top: 1172, behavior: 'smooth' }),
+    );
+  });
+
+  it('uses the PDF viewport transform for rotated or cropped destination offsets', async () => {
+    const convertToViewportPoint = vi.fn(
+      (_pageNumber: number, _x: number, _y: number, scale: number) => [412 * scale, 137 * scale],
+    );
+    const { pdf } = createPdf(6, {}, convertToViewportPoint);
+    const { container, rerender } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
+    const viewport = container.querySelector<HTMLElement>('.knowledge-continuous-pdf')!;
+    const targetShell = container.querySelector<HTMLElement>('[data-page-index="4"]')!;
+    const scrollTo = vi.fn();
+    viewport.scrollTo = scrollTo;
+    Object.defineProperty(targetShell, 'offsetTop', { configurable: true, value: 1000 });
+
+    rerender(
+      <KnowledgeContinuousPdf
+        {...props(pdf, {
+          scale: 1.5,
+          target: { pageIndex: 4, top: 700 },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(convertToViewportPoint).toHaveBeenCalledWith(5, 0, 700, 1.5));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1177.5, behavior: 'smooth' });
   });
 
   it('recomputes shell dimensions at scale without reloading metadata or churning observers', async () => {
