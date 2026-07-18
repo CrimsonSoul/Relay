@@ -341,6 +341,7 @@ describe('RoleAccountMigration', () => {
           active: true,
           mustChangePassword: false,
           credentialVersion: 2,
+          passwordHash: 'paris-existing-hash',
         },
       ],
       relay_privileged_state: [
@@ -357,14 +358,66 @@ describe('RoleAccountMigration', () => {
 
     await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
     expect(fixture.record('relay_privileged_accounts', 'account-publisher')).toMatchObject({
-      username: 'paris.carlson',
+      username: 'paris',
       displayName: 'Paris Carlson',
       storedRole: 'publisher',
       legacyOperatorId: 'publisher-op',
+      active: true,
+      mustChangePassword: false,
+      credentialVersion: 2,
+      passwordHash: 'paris-existing-hash',
     });
     expect(fixture.record('relay_privileged_state', 'privileged-state')).toMatchObject({
       publisherAccountId: 'account-publisher',
     });
+  });
+
+  it('defers without writes when the fixed Paris username is already assigned', async () => {
+    const base = legacyFixture();
+    const fixture = legacyFixture({
+      relay_operators: [
+        ...base.records.get('relay_operators')!,
+        { id: 'other-admin-op', displayName: 'Other Administrator', active: true },
+        { id: 'publisher-op', displayName: 'Paris Carlson', active: true },
+      ],
+      relay_privileged_accounts: [
+        ...base.records.get('relay_privileged_accounts')!,
+        {
+          id: 'account-other-admin',
+          operatorId: 'other-admin-op',
+          role: 'admin',
+          username: 'PARIS',
+          active: true,
+          mustChangePassword: false,
+          credentialVersion: 1,
+        },
+        {
+          id: 'account-publisher',
+          operatorId: 'publisher-op',
+          role: 'publisher',
+          active: true,
+          mustChangePassword: false,
+          credentialVersion: 2,
+        },
+      ],
+      relay_privileged_state: [
+        {
+          id: 'privileged-state',
+          key: 'primary',
+          adminOperatorId: 'ryan-op',
+          adminOperatorIds: ['ryan-op', 'charles-op', 'other-admin-op'],
+          publisherOperatorId: 'publisher-op',
+          assignmentVersion: 8,
+        },
+      ],
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('paris username'),
+    });
+    expect(fixture.writes).toEqual([]);
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
   });
 
   it('defers without writes when multiple Publisher accounts conflict with the authoritative pointer', async () => {

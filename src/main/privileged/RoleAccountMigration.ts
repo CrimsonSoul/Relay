@@ -112,6 +112,7 @@ const HISTORICAL_SNAPSHOT_FIELDS: ReadonlyArray<{
 
 const RYAN_DISPLAY_NAME = 'Ryan Bledsoe';
 const CHARLES_DISPLAY_NAME = 'Charles Gibbs';
+const PARIS_DISPLAY_NAME = 'Paris Carlson';
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -244,6 +245,16 @@ type AuthorityAccounts = {
   operatorById: Map<string, LegacyOperatorRecord>;
 };
 
+function isParisPublisher(
+  account: MigrationAccountRecord,
+  authority: Pick<AuthorityAccounts, 'publisher' | 'operatorById'>,
+): boolean {
+  if (account.id !== authority.publisher?.id) return false;
+  const operatorId = accountLegacyOperatorId(account);
+  const operator = operatorId ? authority.operatorById.get(operatorId) : null;
+  return normalizedDisplayName(operator?.displayName) === PARIS_DISPLAY_NAME;
+}
+
 function primaryState(states: MigrationStateRecord[]): MigrationStateRecord | null {
   const primary = states.filter((state) => state.key === 'primary');
   return primary.length === 1 ? primary[0]! : null;
@@ -277,7 +288,7 @@ function resolveAuthorityOperators(
 
 function fixedUsernameCollision(
   accounts: MigrationAccountRecord[],
-  expectedUsername: 'ryan' | 'charles',
+  expectedUsername: string,
   target: MigrationAccountRecord,
 ): boolean {
   return accounts.some(
@@ -403,38 +414,54 @@ function resolveAuthorityAccounts(
   if (!administrators.some(({ id }) => id === fixedAccounts.ryan.id)) {
     administrators.unshift(fixedAccounts.ryan);
   }
-  return {
+  const resolvedAuthority: AuthorityAccounts = {
     ...fixedAccounts,
     publisher: publisher ?? null,
     administrators,
     operatorById,
   };
+  if (
+    publisher &&
+    isParisPublisher(publisher, resolvedAuthority) &&
+    fixedUsernameCollision(accounts, 'paris', publisher)
+  ) {
+    return { reason: 'The paris username is already assigned.' };
+  }
+  return resolvedAuthority;
 }
 
 function initialReservedUsernames(
   accounts: MigrationAccountRecord[],
-  authority: Pick<AuthorityAccounts, 'ryan' | 'charles'>,
+  authority: Pick<AuthorityAccounts, 'ryan' | 'charles' | 'publisher' | 'operatorById'>,
 ): Set<string> {
   const reserved = new Set<string>();
   for (const account of accounts) {
     if (nonEmptyString(account.username)) reserved.add(normalizeRoleUsername(account.username));
   }
-  for (const account of [authority.ryan, authority.charles]) {
+  const fixedAccounts = [authority.ryan, authority.charles];
+  if (authority.publisher && isParisPublisher(authority.publisher, authority)) {
+    fixedAccounts.push(authority.publisher);
+  }
+  for (const account of fixedAccounts) {
     if (nonEmptyString(account.username)) reserved.delete(normalizeRoleUsername(account.username));
   }
   reserved.add('ryan');
   reserved.add('charles');
+  if (authority.publisher && isParisPublisher(authority.publisher, authority)) {
+    reserved.add('paris');
+  }
   return reserved;
 }
 
 function usernameForAccount(
   account: MigrationAccountRecord,
   displayName: string,
-  authority: Pick<AuthorityAccounts, 'ryan' | 'charles'>,
+  authority: Pick<AuthorityAccounts, 'ryan' | 'charles' | 'publisher' | 'operatorById'>,
   reserved: Set<string>,
 ): string {
   if (account.id === authority.ryan.id) return 'ryan';
   if (account.id === authority.charles.id) return 'charles';
+  if (isParisPublisher(account, authority)) return 'paris';
   const current = nonEmptyString(account.username) ? normalizeRoleUsername(account.username) : null;
   if (current && getRoleUsernameError(current) === null) {
     reserved.delete(current);
