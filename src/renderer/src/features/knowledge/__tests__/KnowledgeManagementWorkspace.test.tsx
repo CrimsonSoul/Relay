@@ -17,11 +17,35 @@ describe('KnowledgeManagementWorkspace', () => {
       canManage: true,
       snapshot: {
         mode: 'managed',
+        categories: [
+          {
+            id: 'category-operations',
+            name: 'Operations',
+            normalizedName: 'operations',
+            sortOrder: 100,
+            systemKey: '',
+            revision: 1,
+            created: '2026-07-16T01:00:00.000Z',
+            updated: '2026-07-16T01:00:00.000Z',
+          },
+          {
+            id: 'category-uncategorized',
+            name: 'Uncategorized',
+            normalizedName: 'uncategorized',
+            sortOrder: 200,
+            systemKey: 'uncategorized',
+            revision: 1,
+            created: '2026-07-16T01:00:00.000Z',
+            updated: '2026-07-16T01:00:00.000Z',
+          },
+        ],
         documents: {
           items: [
             {
               id: 'document-1',
               category: 'Operations',
+              categoryId: 'category-operations',
+              documentType: 'sop',
               displayTitle: 'Checkout runbook',
               fileName: 'Runbook.pdf',
               byteSize: 1_024,
@@ -69,6 +93,12 @@ describe('KnowledgeManagementWorkspace', () => {
       setTitle: vi.fn(),
       setCategory: vi.fn(),
       renameCategory: vi.fn(),
+      createCategory: vi.fn(),
+      setCategoryName: vi.fn(),
+      setCategoryOrder: vi.fn(),
+      deleteCategory: vi.fn(),
+      setDocumentMetadata: vi.fn(async () => true),
+      assignDocumentCategories: vi.fn(async () => true),
       trash: vi.fn(),
       restore: vi.fn(),
       deletePermanently: vi.fn(),
@@ -87,11 +117,40 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.queryByText(/shared with every operator/i)).toBeNull();
     expect(screen.getByRole('button', { name: /Documents 1/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Uploads 0/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Categories 2/ })).toBeInTheDocument();
     expect(screen.getByText('Checkout runbook')).toBeInTheDocument();
     expect(screen.getByText('Runbook.pdf')).toBeInTheDocument();
     const trashButton = screen.getByRole('button', { name: 'Trash' });
     expect(trashButton).toHaveClass('tactile-button--danger');
     expect(trashButton).toHaveClass('knowledge-management__danger-outline');
+  });
+
+  it('edits categories and document classification from the management workspace', () => {
+    const setDocumentMetadata = vi.fn(async () => true);
+    useKnowledgeManagementMock.mockReturnValue({
+      ...useKnowledgeManagementMock(),
+      setDocumentMetadata,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    expect(screen.getByRole('heading', { name: 'Categories' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Document type'), {
+      target: { value: 'cheatsheet' },
+    });
+    fireEvent.change(screen.getByLabelText('Category'), {
+      target: { value: 'category-uncategorized' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(setDocumentMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'document-1', revision: 2 }),
+      'Checkout runbook',
+      'category-uncategorized',
+      'cheatsheet',
+    );
   });
 
   it('stages PDFs and loads audit history on demand', () => {

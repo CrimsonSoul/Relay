@@ -5,6 +5,8 @@ import {
   normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeUploadQueueView,
   type KnowledgeAuditEventView,
+  type KnowledgeCategoryRecord,
+  type KnowledgeDocumentType,
   type KnowledgeManagementSnapshot,
   type KnowledgePage,
   type KnowledgeUploadQueueView,
@@ -420,6 +422,89 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           expectedRevision: null,
         },
         `category:${from}`,
+      ),
+    createCategory: (name: string, afterCategoryId: string | null) =>
+      execute(
+        {
+          command: 'knowledge.category.create',
+          payload: { name, afterCategoryId },
+          expectedRevision: null,
+        },
+        'category:create',
+      ),
+    setCategoryName: (categoryId: string, name: string, expectedRevision: number) =>
+      execute(
+        {
+          command: 'knowledge.category.name.set',
+          payload: { categoryId, name, expectedRevision },
+          expectedRevision: null,
+        },
+        `category:name:${categoryId}`,
+      ),
+    setCategoryOrder: (categories: KnowledgeCategoryRecord[]) =>
+      execute(
+        {
+          command: 'knowledge.category.order.set',
+          payload: {
+            orderedCategoryIds: categories.map(({ id }) => id),
+            expectedRevisions: Object.fromEntries(
+              categories.map(({ id, revision }) => [id, revision]),
+            ),
+          },
+          expectedRevision: null,
+        },
+        'category:order',
+      ),
+    deleteCategory: (
+      categoryId: string,
+      replacementCategoryId: string,
+      expectedRevision: number,
+      expectedDocumentRevisions: Record<string, number>,
+    ) =>
+      execute(
+        {
+          command: 'knowledge.category.delete',
+          payload: {
+            categoryId,
+            replacementCategoryId,
+            expectedRevision,
+            expectedDocumentRevisions,
+          },
+          expectedRevision: null,
+        },
+        `category:delete:${categoryId}`,
+      ),
+    setDocumentMetadata: (
+      document: { id: string; revision: number },
+      title: string,
+      categoryId: string,
+      documentType: KnowledgeDocumentType,
+    ) =>
+      execute(
+        {
+          command: 'knowledge.document.metadata.set',
+          payload: {
+            documentId: document.id,
+            title,
+            categoryId,
+            documentType,
+            expectedRevision: document.revision,
+          },
+          expectedRevision: null,
+        },
+        `metadata:${document.id}`,
+      ),
+    assignDocumentCategories: (
+      categoryId: string,
+      documents: Array<{ documentId: string; expectedRevision: number }>,
+    ) =>
+      execute(
+        {
+          command: 'knowledge.documents.category.assign',
+          payload: { categoryId, documents },
+          expectedRevision: null,
+        },
+        'documents:category',
       ),
     trash: (payload: { documentId: string; expectedRevision: number }) =>
       execute(

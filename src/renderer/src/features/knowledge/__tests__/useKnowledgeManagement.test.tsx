@@ -8,6 +8,7 @@ vi.mock('../../../contexts/PrivilegedAccessContext', () => ({ usePrivilegedAcces
 const usePrivilegedAccessMock = vi.mocked(usePrivilegedAccess);
 const snapshot = {
   mode: 'managed',
+  categories: [],
   documents: { items: [], nextCursor: null },
   trash: { items: [], nextCursor: null },
   uploads: { items: [], nextCursor: null },
@@ -141,6 +142,41 @@ describe('useKnowledgeManagement', () => {
         documentId: 'document-1',
         expectedRevision: 7,
         reauthRequestId: 'proof-1',
+      },
+      expectedRevision: null,
+    });
+  });
+
+  it('sends stable category and document classification commands', async () => {
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    await act(() => result.current.createCategory('Network', null));
+    await act(() =>
+      result.current.setDocumentMetadata(
+        {
+          id: 'document-1',
+          revision: 3,
+        },
+        'Oracle guide',
+        'category-network',
+        'cheatsheet',
+      ),
+    );
+
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.category.create',
+      payload: { name: 'Network', afterCategoryId: null },
+      expectedRevision: null,
+    });
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.document.metadata.set',
+      payload: {
+        documentId: 'document-1',
+        title: 'Oracle guide',
+        categoryId: 'category-network',
+        documentType: 'cheatsheet',
+        expectedRevision: 3,
       },
       expectedRevision: null,
     });

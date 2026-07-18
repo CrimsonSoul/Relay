@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type {
   KnowledgeAuditAction,
+  KnowledgeDocumentType,
   KnowledgeManagementErrorCode,
   KnowledgeManagementDocumentView,
   KnowledgeManagementUploadView,
@@ -9,9 +10,11 @@ import type {
 } from '@shared/knowledge';
 import { TactileButton } from '../../components/TactileButton';
 import { useKnowledgeManagement } from './useKnowledgeManagement';
+import { KnowledgeCategoryManager } from './KnowledgeCategoryManager';
 
-type Section = 'documents' | 'uploads' | 'trash' | 'audit';
-type Draft = { title: string; category: string };
+type Section = 'documents' | 'categories' | 'uploads' | 'trash' | 'audit';
+type Draft = { title: string; categoryId: string; documentType: KnowledgeDocumentType };
+type UploadDraft = { title: string; category: string };
 
 const ACTION_LABELS: Record<KnowledgeAuditAction, string> = {
   'upload-validated': 'Validated upload',
@@ -20,6 +23,11 @@ const ACTION_LABELS: Record<KnowledgeAuditAction, string> = {
   'title-changed': 'Changed title',
   'category-changed': 'Moved document',
   'category-renamed': 'Renamed category',
+  'category-created': 'Created category',
+  'category-reordered': 'Reordered categories',
+  'category-deleted': 'Deleted category',
+  'document-type-changed': 'Changed document details',
+  'documents-reassigned': 'Reassigned documents',
   trashed: 'Moved to trash',
   restored: 'Restored document',
   deleted: 'Deleted permanently',
@@ -122,12 +130,16 @@ export function KnowledgeManagementWorkspace({
   const [section, setSection] = useState<Section>('documents');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<Draft>({ title: '', category: '' });
-  const [uploadDrafts, setUploadDrafts] = useState<Record<string, Draft>>({});
+  const [editDraft, setEditDraft] = useState<Draft>({
+    title: '',
+    categoryId: '',
+    documentType: 'sop',
+  });
+  const [uploadDrafts, setUploadDrafts] = useState<Record<string, UploadDraft>>({});
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [password, setPassword] = useState('');
-  const [categoryFrom, setCategoryFrom] = useState('');
-  const [categoryTo, setCategoryTo] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelBatchConfirmation, setCancelBatchConfirmation] = useState(false);
   const snapshot = management.snapshot;
@@ -146,13 +158,7 @@ export function KnowledgeManagementWorkspace({
     ['paused', 'paused-network'].includes(state),
   );
   const filteredDocuments = documents.filter((document) => matchesDocument(document, query));
-  const categories = useMemo(
-    () =>
-      [...new Set(documents.map(({ category }) => category))].toSorted((left, right) =>
-        left.localeCompare(right),
-      ),
-    [documents],
-  );
+  const categories = snapshot?.categories ?? [];
 
   const selectSection = (next: Section) => {
     setSection(next);
@@ -171,18 +177,30 @@ export function KnowledgeManagementWorkspace({
 
   const beginEdit = (document: KnowledgeManagementDocumentView) => {
     setEditingId(document.id);
-    setEditDraft({ title: document.displayTitle, category: document.category });
+    setEditDraft({
+      title: document.displayTitle,
+      categoryId:
+        document.categoryId ??
+        categories.find(
+          ({ normalizedName }) =>
+            normalizedName === document.category.trim().toLocaleLowerCase('en-US'),
+        )?.id ??
+        '',
+      documentType: document.documentType,
+    });
   };
 
   const saveEdit = async (document: KnowledgeManagementDocumentView) => {
-    let revision = document.revision;
-    if (editDraft.title.trim() !== document.displayTitle) {
-      if (!(await management.setTitle(document.id, revision, editDraft.title))) return;
-      revision += 1;
-    }
-    if (editDraft.category.trim() !== document.category) {
-      if (!(await management.setCategory(document.id, revision, editDraft.category))) return;
-    }
+    if (!editDraft.categoryId) return;
+    if (
+      !(await management.setDocumentMetadata(
+        document,
+        editDraft.title,
+        editDraft.categoryId,
+        editDraft.documentType,
+      ))
+    )
+      return;
     setEditingId(null);
   };
 
@@ -195,18 +213,6 @@ export function KnowledgeManagementWorkspace({
         ? `Replacement for ${document.displayTitle} queued. Use Replace existing when it is ready.`
         : 'PDFs queued. Each duplicate filename can replace its existing document when ready.',
     );
-  };
-
-  const renameCategory = async () => {
-    const revisions = Object.fromEntries(
-      documents
-        .filter(({ category }) => category === categoryFrom)
-        .map(({ id, revision }) => [id, revision]),
-    );
-    if (await management.renameCategory(categoryFrom, categoryTo, revisions)) {
-      setCategoryFrom('');
-      setCategoryTo('');
-    }
   };
 
   const publishUpload = async (upload: KnowledgeManagementUploadView) => {
@@ -224,8 +230,15 @@ export function KnowledgeManagementWorkspace({
     }
   };
 
+  const toggleDocumentSelection = (documentId: string, selected: boolean) => {
+    setSelectedDocumentIds((current) =>
+      selected ? [...current, documentId] : current.filter((id) => id !== documentId),
+    );
+  };
+
   const counts: Record<Section, number> = {
     documents: documents.length,
+    categories: categories.length,
     uploads: new Set([
       ...uploads.map(({ id }) => id),
       ...queueItems.map((item) => item.uploadId ?? item.id),
@@ -287,7 +300,7 @@ export function KnowledgeManagementWorkspace({
 
       <div className="knowledge-management__workspace">
         <nav className="knowledge-management__rail" aria-label="Knowledge management">
-          {(['documents', 'uploads', 'trash', 'audit'] as const).map((id) => (
+          {(['documents', 'categories', 'uploads', 'trash', 'audit'] as const).map((id) => (
             <button
               type="button"
               aria-current={section === id ? 'page' : undefined}
@@ -323,27 +336,36 @@ export function KnowledgeManagementWorkspace({
                 {categories.length > 0 && (
                   <div className="knowledge-management__category-tool">
                     <select
-                      aria-label="Category to rename"
-                      value={categoryFrom}
-                      onChange={(event) => setCategoryFrom(event.target.value)}
+                      aria-label="Bulk category"
+                      value={bulkCategoryId}
+                      onChange={(event) => setBulkCategoryId(event.target.value)}
                     >
-                      <option value="">Rename category…</option>
+                      <option value="">Move selected to…</option>
                       {categories.map((category) => (
-                        <option key={category}>{category}</option>
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
                       ))}
                     </select>
-                    <input
-                      aria-label="New category name"
-                      value={categoryTo}
-                      onChange={(event) => setCategoryTo(event.target.value)}
-                      placeholder="New name"
-                    />
                     <TactileButton
                       size="sm"
-                      disabled={!categoryFrom || !categoryTo.trim()}
-                      onClick={() => void renameCategory()}
+                      disabled={!bulkCategoryId || selectedDocumentIds.length === 0}
+                      loading={management.busy === 'documents:category'}
+                      onClick={() => {
+                        const selected = documents
+                          .filter(({ id }) => selectedDocumentIds.includes(id))
+                          .map(({ id, revision }) => ({
+                            documentId: id,
+                            expectedRevision: revision,
+                          }));
+                        void management
+                          .assignDocumentCategories(bulkCategoryId, selected)
+                          .then((changed) => {
+                            if (changed) setSelectedDocumentIds([]);
+                          });
+                      }}
                     >
-                      Rename
+                      Move {selectedDocumentIds.length || ''}
                     </TactileButton>
                   </div>
                 )}
@@ -355,8 +377,20 @@ export function KnowledgeManagementWorkspace({
                 {filteredDocuments.map((document) => (
                   <article className="knowledge-management-row" key={document.id}>
                     <div className="knowledge-management-row__identity">
+                      <label className="knowledge-management-row__select">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${document.displayTitle}`}
+                          checked={selectedDocumentIds.includes(document.id)}
+                          onChange={(event) =>
+                            toggleDocumentSelection(document.id, event.target.checked)
+                          }
+                        />
+                        <span>Select</span>
+                      </label>
                       <span className="knowledge-management-row__type">
-                        PDF · {document.pageCount} pages
+                        {document.documentType === 'cheatsheet' ? 'CHEATSHEET' : 'SOP'} ·{' '}
+                        {document.pageCount} pages
                       </span>
                       <h2>{document.displayTitle}</h2>
                       <p>{document.fileName}</p>
@@ -374,12 +408,37 @@ export function KnowledgeManagementWorkspace({
                         </label>
                         <label>
                           Category
-                          <input
-                            value={editDraft.category}
+                          <select
+                            value={editDraft.categoryId}
                             onChange={(event) =>
-                              setEditDraft((draft) => ({ ...draft, category: event.target.value }))
+                              setEditDraft((draft) => ({
+                                ...draft,
+                                categoryId: event.target.value,
+                              }))
                             }
-                          />
+                          >
+                            <option value="">Choose category</option>
+                            {categories.map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Document type
+                          <select
+                            value={editDraft.documentType}
+                            onChange={(event) =>
+                              setEditDraft((draft) => ({
+                                ...draft,
+                                documentType: event.target.value as KnowledgeDocumentType,
+                              }))
+                            }
+                          >
+                            <option value="sop">SOP guide</option>
+                            <option value="cheatsheet">Cheatsheet</option>
+                          </select>
                         </label>
                         <div>
                           <TactileButton size="sm" onClick={() => setEditingId(null)}>
@@ -388,6 +447,8 @@ export function KnowledgeManagementWorkspace({
                           <TactileButton
                             size="sm"
                             variant="primary"
+                            disabled={!editDraft.categoryId || !editDraft.title.trim()}
+                            loading={management.busy === `metadata:${document.id}`}
                             onClick={() => void saveEdit(document)}
                           >
                             Save changes
@@ -443,6 +504,18 @@ export function KnowledgeManagementWorkspace({
                 )}
               </div>
             </>
+          )}
+
+          {snapshot && section === 'categories' && (
+            <KnowledgeCategoryManager
+              categories={categories}
+              documents={documents}
+              busy={management.busy}
+              createCategory={management.createCategory}
+              setCategoryName={management.setCategoryName}
+              setCategoryOrder={management.setCategoryOrder}
+              deleteCategory={management.deleteCategory}
+            />
           )}
 
           {snapshot && section === 'uploads' && (
