@@ -11,18 +11,19 @@ accent color as the only active-state signal. All tokens live in
 
 ## Source Of Truth
 
-| File                                     | Purpose                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------- |
-| `src/renderer/src/styles/theme.css`      | Global color, spacing, typography, radius, z-index, and motion tokens |
-| `src/renderer/src/styles/components.css` | Shared button, input, shell, and layout styles                        |
-| `src/renderer/src/styles/utilities.css`  | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
-| `src/renderer/src/styles/modals.css`     | Modal layout and overlay styling                                      |
-| `src/renderer/src/styles/responsive.css` | Breakpoints and responsive behavior                                   |
-| `src/renderer/src/styles/animations.css` | Reusable animation helpers                                            |
-| `src/renderer/src/theme/accent.ts`       | Accent scheme definitions and runtime API                             |
-| `src/renderer/src/tabs/alerts.css`       | Alert composer and preview styles (email preview fenced — see below)  |
-| `src/renderer/src/tabs/notes/notes.css`  | Notes masonry, cards, and editor styles                               |
-| `src/renderer/src/tabs/cloud-status.css` | Provider summary cards and incident feed styles                       |
+| File                                                         | Purpose                                                               |
+| ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `src/renderer/src/styles/theme.css`                          | Global color, spacing, typography, radius, z-index, and motion tokens |
+| `src/renderer/src/styles/components.css`                     | Shared button, input, shell, and layout styles                        |
+| `src/renderer/src/styles/utilities.css`                      | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
+| `src/renderer/src/styles/modals.css`                         | Modal layout and overlay styling                                      |
+| `src/renderer/src/styles/responsive.css`                     | Breakpoints and responsive behavior                                   |
+| `src/renderer/src/styles/animations.css`                     | Reusable animation helpers                                            |
+| `src/renderer/src/theme/accent.ts`                           | Accent scheme definitions and runtime API                             |
+| `src/renderer/src/tabs/alerts.css`                           | Alert composer and preview styles (email preview fenced — see below)  |
+| `src/renderer/src/tabs/cloud-status.css`                     | Provider summary cards and incident feed styles                       |
+| `src/renderer/src/features/knowledge/knowledgeWorkspace.css` | Knowledge launcher and internal destination shell                     |
+| `src/renderer/src/features/knowledge/knowledge.css`          | Wiki library, management, and PDF reader                              |
 
 ---
 
@@ -321,7 +322,54 @@ pre-redesign baseline.
 
 ---
 
-## 11. Styling Rules
+## 11. Knowledge Workspace
+
+Knowledge is the single sidebar destination for the Wiki, Contacts, and Servers surfaces. The app
+header always identifies the outer route as `Relay / Knowledge`; the workspace's own navigation
+identifies the active inner destination.
+
+### Launcher
+
+- Launcher order and keyboard order are exactly **Wiki, Contacts, Servers**.
+- Each destination is a full-size real button with a Relay-native preview of its production
+  surface: library/reader for Wiki, directory/detail context for Contacts, and infrastructure/detail
+  context for Servers.
+- The three previews use the black canvas, sharp dividers, dense type, and one restrained accent
+  signal. They are not floating SaaS cards: no decorative shadow, gradient, glow, or excessive
+  rounding.
+- Counts are live when available and expose useful singular/plural accessible names. Unknown
+  counts remain explicit rather than displaying a misleading zero.
+- At desktop width the launcher uses three columns, then collapses to two and one without changing
+  DOM or focus order.
+
+### Retained destinations and contextual notes
+
+Wiki, Contacts, and Servers mount on first entry and remain retained when hidden. Returning to a
+destination preserves its selected document or record, filters, detail panel, and local scroll
+state. The internal navigation provides a clear Knowledge-home action plus direct destination
+buttons; all controls use real button semantics and visible focus states.
+
+Notes are contextual only. Contact and server detail panels may display and edit their attached
+notes and tags. There is no standalone Notes tab, masonry surface, or freeform-note design pattern.
+Dynatrace problem notes remain part of the Problems workflow and do not appear in Knowledge.
+
+### Wiki PDF reader
+
+The reader defaults to **Continuous** and exposes a toolbar toggle to **Single page**. Continuous
+mode reserves a stable shell for every page so the scrollbar represents the whole PDF, while only
+the current page and a bounded overscan window mount canvases. The page indicator follows the most
+visible page. Single mode renders one page and keeps the same navigation, zoom, link, retry, and
+focus behavior.
+
+The view-mode preference is local to the workstation. Switching mode or visiting another
+Knowledge destination must retain the current document and page without a second download or PDF
+parse. Internal PDF links stay inside the reader; approved HTTP(S) links use the system browser.
+Reader motion honors `prefers-reduced-motion`, and page-local failures use a polite live status with
+a retry action rather than replacing the entire document.
+
+---
+
+## 12. Styling Rules
 
 ### Do
 
@@ -356,7 +404,7 @@ Static design values must stay in CSS.
 
 ---
 
-## 12. Accessibility Baseline
+## 13. Accessibility Baseline
 
 - **Focus ring:** `box-shadow: 0 0 0 2px var(--color-accent-dim)` + accent border on
   all interactive elements via `:focus-visible`

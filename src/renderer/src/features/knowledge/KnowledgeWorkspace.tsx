@@ -50,26 +50,30 @@ const CONTENT_DESTINATIONS: ReadonlyArray<{
 function WorkspacePanel({
   destination,
   activeDestination,
+  retainEffects = false,
   children,
 }: Readonly<{
   destination: KnowledgeDestination;
   activeDestination: KnowledgeDestination;
+  retainEffects?: boolean;
   children: ReactNode;
 }>) {
   const isActive = destination === activeDestination;
-  return (
-    <Activity mode={isActive ? 'visible' : 'hidden'}>
-      <section
-        className="knowledge-workspace-shell__panel"
-        data-knowledge-panel
-        data-destination={destination}
-        data-state={isActive ? 'active' : 'retained'}
-        aria-label={destination === 'home' ? 'Knowledge home' : `${destination} workspace`}
-      >
-        {children}
-      </section>
-    </Activity>
+  const panel = (
+    <section
+      className="knowledge-workspace-shell__panel"
+      data-knowledge-panel
+      data-destination={destination}
+      data-state={isActive ? 'active' : 'retained'}
+      hidden={retainEffects && !isActive}
+      inert={retainEffects && !isActive ? true : undefined}
+      aria-label={destination === 'home' ? 'Knowledge home' : `${destination} workspace`}
+    >
+      {children}
+    </section>
   );
+  if (retainEffects) return panel;
+  return <Activity mode={isActive ? 'visible' : 'hidden'}>{panel}</Activity>;
 }
 
 function KnowledgeDestinationNav({
@@ -225,11 +229,11 @@ export function KnowledgeWorkspace({
         </WorkspacePanel>
 
         {mountedDestinations.has('wiki') && (
-          <WorkspacePanel destination="wiki" activeDestination={destination}>
+          <WorkspacePanel destination="wiki" activeDestination={destination} retainEffects>
             <DestinationBoundary label="Wiki" onHome={openHome}>
               <Suspense fallback={<TabFallback />}>
                 <WikiSurface
-                  active={active && destination === 'wiki'}
+                  active={active}
                   relayMode={relayMode}
                   onLibraryCountChange={setWikiCount}
                 />

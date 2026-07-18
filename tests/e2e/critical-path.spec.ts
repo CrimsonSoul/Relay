@@ -61,6 +61,8 @@ const TRISTAN_BOWLES = 'Tristan Bowles';
 const CHECKOUT_PROBLEM_ID = 'RELAY-DEMO-1001';
 const CHECKOUT_PROBLEM_TITLE = 'Checkout service availability below SLO';
 const KNOWLEDGE_CHUNK_BYTES = 4 * 1024 * 1024;
+const CONTINUOUS_READER_TITLE = 'Continuous reader validation';
+const CONTINUOUS_READER_PAGE_COUNT = 12;
 
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const makeTestPassphrase = () => ['test', crypto.randomUUID()].join('-');
@@ -141,7 +143,20 @@ const makeSuperuserPbClient = async (port: number) => {
 const seedKnowledgeLinkFixtures = async (port: number) => {
   const pb = await makeSuperuserPbClient(port);
   const timestamp = new Date().toISOString();
-  for (const fixture of createKnowledgeLinkFixtures()) {
+  const fixtures = [
+    ...createKnowledgeLinkFixtures(),
+    {
+      category: 'Reader validation',
+      fileName: `${CONTINUOUS_READER_TITLE}.pdf`,
+      title: CONTINUOUS_READER_TITLE,
+      pageCount: CONTINUOUS_READER_PAGE_COUNT,
+      data: buildKnowledgePdfFixture({
+        title: CONTINUOUS_READER_TITLE,
+        pageCount: CONTINUOUS_READER_PAGE_COUNT,
+      }),
+    },
+  ];
+  for (const fixture of fixtures) {
     const bytes = Uint8Array.from(fixture.data);
     const form = new FormData();
     form.set('sourceKey', `${fixture.category}/${fixture.fileName}`);
@@ -356,9 +371,74 @@ const hasContactDirect = async (port: number, email: string) => {
   return contacts.some((contact) => contact.email.toLowerCase() === email.toLowerCase());
 };
 
+const createServerDirect = async (port: number, name: string, ownerEmail: string) => {
+  const pb = await makePbClient(port);
+  await pb.collection('servers').create({
+    name,
+    businessArea: 'E2E Operations',
+    lob: 'Relay validation',
+    comment: 'Retained Knowledge workspace fixture',
+    owner: ownerEmail,
+    contact: ownerEmail,
+    os: 'Linux',
+  });
+};
+
+const createContextualNoteDirect = async (
+  port: number,
+  entityType: 'contact' | 'server',
+  entityKey: string,
+  note: string,
+) => {
+  const pb = await makePbClient(port);
+  await pb.collection('notes').create({
+    entityType,
+    entityKey: entityKey.toLowerCase(),
+    note,
+    tags: ['e2e', 'knowledge'],
+  });
+};
+
 const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) => {
   await window.getByTestId(testId).click();
   await expect(window.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumbLabel}`);
+};
+
+type KnowledgeDestinationLabel = 'Wiki' | 'Contacts' | 'Servers';
+
+const goToKnowledgeHome = async (targetWindow: Page) => {
+  await goToTab(targetWindow, 'sidebar-knowledge', 'Knowledge');
+  const home = targetWindow.getByRole('region', { name: 'Knowledge home' });
+  const homeButton = targetWindow.getByRole('button', { name: 'Knowledge home' });
+
+  await expect
+    .poll(async () => {
+      if (await home.isVisible()) return 'home';
+      if (await homeButton.isVisible()) return 'destination';
+      return 'loading';
+    })
+    .not.toBe('loading');
+
+  if (await homeButton.isVisible()) await homeButton.click();
+  await expect(home).toBeVisible();
+  return home;
+};
+
+const enterKnowledgeDestination = async (
+  targetWindow: Page,
+  destination: KnowledgeDestinationLabel,
+) => {
+  const home = await goToKnowledgeHome(targetWindow);
+  await home.getByRole('button', { name: new RegExp(`^Open ${destination},`) }).click();
+  const navigation = targetWindow.getByRole('navigation', { name: 'Knowledge destinations' });
+  await expect(navigation.getByRole('button', { name: destination, exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(
+    targetWindow.getByRole('region', { name: `${destination.toLowerCase()} workspace` }),
+  ).toBeVisible();
+  await expect(targetWindow.locator('.header-breadcrumb')).toContainText('Relay / Knowledge');
 };
 
 const openPrivilegedAccess = async (targetWindow: Page) => {
@@ -390,8 +470,8 @@ const getDynatraceAttribution = async (port: number, problemId: string, noteText
   };
 };
 
-const tryEnsurePeopleTabReady = async (window: Page) => {
-  await goToTab(window, 'sidebar-people', 'People');
+const tryEnsureContactsReady = async (window: Page) => {
+  await enterKnowledgeDestination(window, 'Contacts');
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const addContact = window.getByRole('button', { name: 'ADD CONTACT' });
@@ -402,7 +482,7 @@ const tryEnsurePeopleTabReady = async (window: Page) => {
     const reload = window.getByRole('button', { name: 'Reload' }).first();
     if (await reload.isVisible()) {
       await Promise.all([window.waitForLoadState('domcontentloaded'), reload.click()]);
-      await goToTab(window, 'sidebar-people', 'People');
+      await enterKnowledgeDestination(window, 'Contacts');
       continue;
     }
 
@@ -412,10 +492,15 @@ const tryEnsurePeopleTabReady = async (window: Page) => {
   return false;
 };
 
-const createContactFromPeople = async (window: Page, port: number, name: string, email: string) => {
-  const peopleReady = await tryEnsurePeopleTabReady(window);
+const createContactFromKnowledge = async (
+  window: Page,
+  port: number,
+  name: string,
+  email: string,
+) => {
+  const contactsReady = await tryEnsureContactsReady(window);
 
-  if (!peopleReady) {
+  if (!contactsReady) {
     await createContactDirect(port, name, email);
 
     await expect.poll(() => hasContactDirect(port, email)).toBe(true);
@@ -444,10 +529,10 @@ const createContactFromPeople = async (window: Page, port: number, name: string,
   return contactCard;
 };
 
-const deleteContactFromPeople = async (window: Page, port: number, email: string) => {
-  const peopleReady = await tryEnsurePeopleTabReady(window);
+const deleteContactFromKnowledge = async (window: Page, port: number, email: string) => {
+  const contactsReady = await tryEnsureContactsReady(window);
 
-  if (!peopleReady) {
+  if (!contactsReady) {
     await removeContactDirect(port, email);
 
     await expect.poll(() => hasContactDirect(port, email)).toBe(false);
@@ -567,6 +652,7 @@ test.describe('Vital Critical Path', () => {
     await launchServer();
     if (
       testInfo.title.includes('Knowledge PDF links') ||
+      testInfo.title.includes('continuous Wiki PDF') ||
       testInfo.title.includes('role accounts preserve')
     ) {
       await seedKnowledgeLinkFixtures(pbPort);
@@ -633,6 +719,138 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
   });
 
+  test('Knowledge launches Wiki, Contacts, and Servers in order and retains contextual state', async () => {
+    const suffix = uniqueSuffix();
+    const contactName = `Knowledge Contact ${suffix}`;
+    const contactEmail = `knowledge.contact.${suffix}@example.com`;
+    const contactNote = `Contact escalation context ${suffix}`;
+    const serverName = `knowledge-server-${suffix}`;
+    const serverNote = `Server recovery context ${suffix}`;
+
+    await createContactDirect(pbPort, contactName, contactEmail);
+    await createServerDirect(pbPort, serverName, contactEmail);
+    await createContextualNoteDirect(pbPort, 'contact', contactEmail, contactNote);
+    await createContextualNoteDirect(pbPort, 'server', serverName, serverNote);
+
+    const home = await goToKnowledgeHome(window);
+    const destinationButtons = home.getByRole('button', {
+      name: /^Open (?:Wiki|Contacts|Servers),/,
+    });
+    await expect(destinationButtons).toHaveCount(3);
+    expect(
+      await destinationButtons.evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('aria-label')?.split(',')[0]),
+      ),
+    ).toEqual(['Open Wiki', 'Open Contacts', 'Open Servers']);
+    await expect(window.getByTestId('sidebar-notes')).toHaveCount(0);
+    await expect(window.getByTestId('sidebar-people')).toHaveCount(0);
+    await expect(window.getByTestId('sidebar-servers')).toHaveCount(0);
+
+    await home.getByRole('button', { name: /^Open Wiki,/ }).click();
+    const destinationNavigation = window.getByRole('navigation', {
+      name: 'Knowledge destinations',
+    });
+    await expect(
+      destinationNavigation.getByRole('button', { name: 'Wiki', exact: true }),
+    ).toHaveAttribute('aria-current', 'page');
+
+    await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
+    const contactsWorkspace = window.getByRole('region', { name: 'contacts workspace' });
+    const contactRow = contactsWorkspace
+      .getByRole('button', { name: new RegExp(escapeRegExp(contactEmail), 'i') })
+      .first();
+    await expect(contactRow).toBeVisible();
+    await contactRow.click();
+    await expect(contactsWorkspace.locator('.detail-panel')).toContainText(contactName);
+    await expect(contactsWorkspace.locator('.detail-panel')).toContainText(contactNote);
+
+    await destinationNavigation.getByRole('button', { name: 'Servers', exact: true }).click();
+    const serversWorkspace = window.getByRole('region', { name: 'servers workspace' });
+    const serverRow = serversWorkspace
+      .getByRole('button', { name: new RegExp(escapeRegExp(serverName), 'i') })
+      .first();
+    await expect(serverRow).toBeVisible();
+    await serverRow.click();
+    await expect(serversWorkspace.locator('.detail-panel')).toContainText(serverName);
+    await expect(serversWorkspace.locator('.detail-panel')).toContainText(serverNote);
+
+    await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
+    await expect(contactsWorkspace.locator('.detail-panel')).toContainText(contactName);
+    await expect(contactsWorkspace.locator('.detail-panel')).toContainText(contactNote);
+    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Knowledge');
+  });
+
+  test('continuous Wiki PDF scrolls, tracks pages, bounds canvases, and retains reader state', async () => {
+    test.setTimeout(120_000);
+    const connectedClient = await launchConnectedClient();
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    connectedClient.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
+    await connectedClient
+      .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
+      .click();
+    await connectedClient
+      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
+      .click();
+    const viewer = connectedClient.getByRole('region', {
+      name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
+    });
+    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+    const continuousMode = viewer.getByRole('button', { name: 'View: Continuous' });
+    await expect(continuousMode).toHaveAttribute('aria-pressed', 'true');
+
+    const viewport = viewer.getByRole('region', { name: 'Continuous PDF pages' });
+    const pageShells = viewport.locator('.knowledge-page-shell');
+    await expect(pageShells).toHaveCount(CONTINUOUS_READER_PAGE_COUNT);
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollHeight > element.clientHeight))
+      .toBe(true);
+    await expect.poll(() => viewport.locator('canvas').count()).toBeGreaterThan(0);
+    expect(await viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
+
+    const targetPageIndex = 7;
+    await viewport.evaluate((element, pageIndex) => {
+      const shell = element.querySelector(`[data-page-index="${pageIndex}"]`);
+      if (!shell) throw new Error(`Missing page shell ${pageIndex}`);
+      element.scrollTop += shell.getBoundingClientRect().top - element.getBoundingClientRect().top;
+    }, targetPageIndex);
+    await expect(viewer).toContainText(
+      `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
+    );
+    await expect.poll(() => viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
+
+    await continuousMode.click();
+    const singleMode = viewer.getByRole('button', { name: 'View: Single page' });
+    await expect(singleMode).toHaveAttribute('aria-pressed', 'false');
+    await expect(viewer).toContainText(
+      `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
+    );
+
+    const destinationNavigation = connectedClient.getByRole('navigation', {
+      name: 'Knowledge destinations',
+    });
+    await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
+    await expect(connectedClient.getByRole('region', { name: 'contacts workspace' })).toBeVisible();
+    await destinationNavigation.getByRole('button', { name: 'Wiki', exact: true }).click();
+    await expect(singleMode).toBeVisible();
+    await expect(viewer).toContainText(
+      `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
+    );
+    await singleMode.click();
+    await expect(viewer.getByRole('button', { name: 'View: Continuous' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(viewer.getByRole('region', { name: 'Continuous PDF pages' })).toBeVisible();
+
+    expect(consoleErrors, `Renderer console errors:\n${consoleErrors.join('\n')}`).toEqual([]);
+    expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
+  });
+
   test('role accounts preserve username sign-in, owner boundaries, passwordless use, and offline reading', async () => {
     test.setTimeout(180_000);
     await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);
@@ -644,7 +862,7 @@ test.describe('Vital Critical Path', () => {
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
     await goToTab(connectedClient, 'sidebar-compose', 'Compose');
     await expect(connectedClient.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     await connectedClient
       .getByRole('treeitem', { name: 'Link navigation test', exact: true })
       .click();
@@ -720,7 +938,7 @@ test.describe('Vital Critical Path', () => {
       legacyRosterPresent: false,
     });
 
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     await connectedClient
       .getByRole('treeitem', { name: 'Link navigation test', exact: true })
       .click();
@@ -744,7 +962,7 @@ test.describe('Vital Critical Path', () => {
     connectedClient = await launchClient();
     connectionStatus = connectedClient.locator('[data-connection-state]').first();
     await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     await expect(
       connectedClient.getByRole('treeitem', { name: 'Link navigation test', exact: true }),
     ).toBeVisible();
@@ -814,7 +1032,7 @@ test.describe('Vital Critical Path', () => {
     const largeChunkCount = Math.ceil(fs.statSync(largePath).size / KNOWLEDGE_CHUNK_BYTES);
 
     await installKnowledgeDialogFixture([largePath, smallPath]);
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     await connectedClient
       .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
       .click();
@@ -872,7 +1090,7 @@ test.describe('Vital Critical Path', () => {
     await restartedAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(restartedAccess.getByText('Publisher', { exact: true })).toBeVisible();
 
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     await connectedClient
       .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
       .click();
@@ -926,7 +1144,7 @@ test.describe('Vital Critical Path', () => {
 
     const activePublisherAccess = await openPrivilegedAccess(connectedClient);
     await activePublisherAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     await connectedClient.getByRole('treeitem', { name: largeTitle, exact: true }).click();
     await expect(
       connectedClient.getByRole('region', { name: `${largeTitle} PDF viewer` }),
@@ -937,9 +1155,15 @@ test.describe('Vital Critical Path', () => {
     test.setTimeout(120_000);
     const connectedClient = await launchConnectedClient();
     const rendererLogs: string[] = [];
-    connectedClient.on('console', (message) => rendererLogs.push(message.text()));
+    const rendererErrors: string[] = [];
+    const pageErrors: string[] = [];
+    connectedClient.on('console', (message) => {
+      rendererLogs.push(message.text());
+      if (message.type() === 'error') rendererErrors.push(message.text());
+    });
+    connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
 
-    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
     const sourceDocument = connectedClient.getByRole('treeitem', {
       name: 'Link navigation test',
       exact: true,
@@ -951,6 +1175,8 @@ test.describe('Vital Critical Path', () => {
       name: 'Link navigation test PDF viewer',
     });
     await expect(sourceViewer).toContainText('Page 1 of 2');
+    await sourceViewer.getByRole('button', { name: 'View: Continuous' }).click();
+    await expect(sourceViewer.getByRole('button', { name: 'View: Single page' })).toBeVisible();
     await sourceViewer.getByRole('button', { name: 'Open linked location in this guide' }).click();
     await expect(sourceViewer).toContainText('Page 2 of 2');
     await expect(sourceDocument).toHaveAttribute('aria-current', 'page');
@@ -1026,6 +1252,8 @@ test.describe('Vital Critical Path', () => {
         ),
       )
       .toContain('https://example.com/relay-knowledge-test');
+    expect(rendererErrors, `Renderer console errors:\n${rendererErrors.join('\n')}`).toEqual([]);
+    expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
   });
 
   test('Dynatrace Problems tab opens without requiring a configured token', async () => {
@@ -1398,7 +1626,7 @@ test.describe('Vital Critical Path', () => {
     await goToTab(window, 'sidebar-on-call', 'On-Call');
     await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
 
-    await goToTab(window, 'sidebar-servers', 'Servers');
+    await enterKnowledgeDestination(window, 'Servers');
     await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
   });
 
@@ -1407,8 +1635,8 @@ test.describe('Vital Critical Path', () => {
     const name = `Vital Test ${suffix}`;
     const email = `vital.test.${suffix}@example.com`;
 
-    await createContactFromPeople(window, pbPort, name, email);
-    await deleteContactFromPeople(window, pbPort, email);
+    await createContactFromKnowledge(window, pbPort, name, email);
+    await deleteContactFromKnowledge(window, pbPort, email);
   });
 
   test('Vital 4: On-Call Management (Add/Rename/Remove Card)', async () => {
@@ -1462,7 +1690,7 @@ test.describe('Vital Critical Path', () => {
     const email = `composer.test.${suffix}@example.com`;
     const groupName = `Vital Group ${suffix}`;
 
-    const contactCard = await createContactFromPeople(window, pbPort, name, email);
+    const contactCard = await createContactFromKnowledge(window, pbPort, name, email);
     if (contactCard) {
       await rightClick(contactCard);
       await window.getByRole('menuitem', { name: 'Add to Composer' }).click();
@@ -1503,6 +1731,6 @@ test.describe('Vital Critical Path', () => {
       composePanel.getByRole('button', { name: new RegExp(escapeRegExp(groupName), 'i') }),
     ).toHaveCount(0);
 
-    await deleteContactFromPeople(window, pbPort, email);
+    await deleteContactFromKnowledge(window, pbPort, email);
   });
 });

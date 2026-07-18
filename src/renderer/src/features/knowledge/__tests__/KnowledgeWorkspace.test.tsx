@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
 import {
   acknowledgeKnowledgeDestinationOpen,
@@ -36,31 +36,42 @@ vi.mock('../KnowledgeHome', () => ({
   ),
 }));
 
-const surfaceMocks = vi.hoisted(() => ({ wikiShouldThrow: false }));
+const surfaceMocks = vi.hoisted(() => ({
+  wikiShouldThrow: false,
+  wikiEffectStarted: vi.fn(),
+  wikiEffectCleanedUp: vi.fn(),
+}));
 
 vi.mock('../../../utils/logger', () => ({
   loggers: { ui: { error: vi.fn() } },
 }));
 
-vi.mock('../KnowledgeTab', () => ({
-  KnowledgeTab: ({
-    active,
-    relayMode,
-    onLibraryCountChange,
-  }: {
-    active: boolean;
-    relayMode?: string;
-    onLibraryCountChange?: (count: number | null) => void;
-  }) => {
-    if (surfaceMocks.wikiShouldThrow) throw new Error('Wiki surface failed');
-    return (
-      <div data-testid="wiki-surface" data-active={active} data-relay-mode={relayMode}>
-        Wiki surface
-        <button onClick={() => onLibraryCountChange?.(3)}>Publish Wiki count</button>
-      </div>
-    );
-  },
-}));
+vi.mock('../KnowledgeTab', async () => {
+  const { useEffect } = await import('react');
+  return {
+    KnowledgeTab: ({
+      active,
+      relayMode,
+      onLibraryCountChange,
+    }: {
+      active: boolean;
+      relayMode?: string;
+      onLibraryCountChange?: (count: number | null) => void;
+    }) => {
+      useEffect(() => {
+        surfaceMocks.wikiEffectStarted();
+        return () => surfaceMocks.wikiEffectCleanedUp();
+      }, []);
+      if (surfaceMocks.wikiShouldThrow) throw new Error('Wiki surface failed');
+      return (
+        <div data-testid="wiki-surface" data-active={active} data-relay-mode={relayMode}>
+          Wiki surface
+          <button onClick={() => onLibraryCountChange?.(3)}>Publish Wiki count</button>
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock('../../../tabs/DirectoryTab', async () => {
   const { useState } = await import('react');
@@ -143,6 +154,11 @@ function visiblePanel() {
 }
 
 describe('KnowledgeWorkspace', () => {
+  beforeEach(() => {
+    surfaceMocks.wikiEffectStarted.mockClear();
+    surfaceMocks.wikiEffectCleanedUp.mockClear();
+  });
+
   afterEach(() => {
     acknowledgeKnowledgeDocumentOpen('pending-doc');
     acknowledgeKnowledgeDestinationOpen('wiki');
@@ -204,6 +220,24 @@ describe('KnowledgeWorkspace', () => {
       'aria-selected',
       'true',
     );
+  });
+
+  it('keeps Wiki effects alive while Contacts is the active retained destination', async () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    expect(await screen.findByTestId('wiki-surface')).toBeInTheDocument();
+    expect(surfaceMocks.wikiEffectStarted).toHaveBeenCalledOnce();
+    expect(surfaceMocks.wikiEffectCleanedUp).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Contacts' }));
+    expect(await screen.findByTestId('contacts-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('wiki-surface')).toHaveAttribute('data-active', 'true');
+    expect(surfaceMocks.wikiEffectCleanedUp).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wiki' }));
+    expect(await screen.findByTestId('wiki-surface')).toBeInTheDocument();
+    expect(surfaceMocks.wikiEffectStarted).toHaveBeenCalledOnce();
+    expect(surfaceMocks.wikiEffectCleanedUp).not.toHaveBeenCalled();
   });
 
   it('opens destinations requested by external navigation events', () => {

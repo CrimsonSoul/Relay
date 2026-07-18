@@ -50,7 +50,7 @@ IPC is reserved for operations the renderer should not perform directly, includi
 - Clipboard and file-system actions
 - Backup and restore
 - Offline cache reads and sync triggers
-- Knowledge Base PDF/status reads
+- Wiki PDF/status reads inside the Knowledge workspace
 - Privileged sign-in, pairing, session, and typed-command actions
 - Logging bridge events
 
@@ -162,7 +162,7 @@ An `Administration` area appears only during an Owner or Administrator session. 
 | Manage/assign the single Publisher account | Yes                                      | Yes                                      | No        | No           |
 | Rename or revoke paired devices            | Yes; revoke needs fresh reauthentication | Yes; revoke needs fresh reauthentication | No        | No           |
 | Replace approved Dynatrace settings        | Yes; token needs fresh reauthentication  | Yes; token needs fresh reauthentication  | No        | No           |
-| Manage Knowledge Base documents            | Yes                                      | Yes                                      | Yes       | No           |
+| Manage Wiki PDF documents                  | Yes                                      | Yes                                      | Yes       | No           |
 
 `administration.snapshot.read` returns only bounded public views: account IDs, usernames, display names, effective roles, account revisions, configured/not-configured credential state, device labels and fingerprint suffixes, and redacted setting summaries. Passwords, hashes, tokens, internal email values, public keys, private-key state, command envelopes, filesystem paths, and raw PocketBase errors are excluded.
 
@@ -172,9 +172,9 @@ The legacy roster migration is plan-before-commit and fail-closed. It preserves 
 
 Remote settings are intentionally limited to the Dynatrace environment URL, platform-token replacement, and alerting-profile filter. Relay connection paths, backup/restore selection, folder pickers, executables, and other filesystem-dependent operations remain local to the server PC.
 
-### Managed Knowledge Base
+### Managed Wiki Documents
 
-PocketBase on the Relay server is the sole Knowledge Base document authority. There is no administrator-managed source folder, watcher, or filesystem reconciliation path. Ordinary use is read-only. An Owner, Administrator, or the single designated Publisher can choose PDFs on the server PC or a paired work laptop and manage them through capability-checked privileged commands. Source files are limited to 50 MiB and 1,000 pages; batches are limited to 100 files.
+PocketBase on the Relay server is the sole authority for the Wiki destination's managed PDF library. The outer renderer destination is **Knowledge** and the document surface inside it is **Wiki**. There is no administrator-managed source folder, watcher, or filesystem reconciliation path. Ordinary use is read-only. An Owner, Administrator, or the single designated Publisher can choose PDFs on the server PC or a paired work laptop and manage them through capability-checked privileged commands. Source files are limited to 50 MiB and 1,000 pages; batches are limited to 100 files.
 
 The client main process inspects each selected regular PDF without exposing its path or bytes to the renderer. It builds a persistent upload queue, hashes and reads the file in bounded 4 MiB chunks, and revalidates the canonical path, file identity, size, modification time, signature, and checksum before transfer. At most two chunks are in flight. Retryable network failures use bounded exponential backoff; after eight attempts the item pauses for network recovery. The encrypted queue survives restart when Electron `safeStorage` is available. If the source moved or changed, the publisher must reselect the same unchanged PDF.
 
@@ -183,6 +183,8 @@ Upload manifests and chunks live in account- and device-bound PocketBase collect
 Clients subscribe to `knowledge_documents` metadata through the same realtime and offline snapshot path as other read models. PDF bytes do not ride the metadata stream: the renderer requests one validated document/checksum pair through trusted IPC, and the main process authenticates to the Relay server's protected file endpoint.
 
 Opened client PDFs are stored content-addressed at `<config data>/knowledge-cache/<sha256>.pdf`. Downloads are size-, signature-, and checksum-verified before atomic promotion. The cache is on demand, has a 2 GiB LRU budget, and retains unreferenced entries for at most 30 days. Cached documents remain available while disconnected; unopened documents show an offline-unavailable state. Knowledge metadata and PDF bytes stay on the configured Relay LAN path.
+
+The Wiki reader defaults to **Continuous** mode. It creates a stable shell for every page so the document has a real scroll range, but renders canvases only for the current page and a bounded overscan window. Intersection visibility updates the current-page indicator. **Single page** mode remains available from the reader toolbar. The mode preference is workstation-local, and switching modes or leaving the Wiki destination retains the open document, current page, zoom, and PDF lifetime rather than downloading or parsing the file again.
 
 Link annotations branch through Relay-owned navigation rather than PDF action execution:
 
@@ -223,11 +225,17 @@ The current primary tabs are:
 - Compose
 - Alerts
 - On-Call
-- Notes
 - Knowledge
-- Service Status
-- People
-- Servers
+- Status
+- Problems
+
+### Knowledge Workspace
+
+Knowledge is one retained top-level tab with four internal destinations: `home`, `wiki`, `contacts`, and `servers`. Its home is a full-size launcher ordered exactly **Wiki, Contacts, Servers**. Each destination is mounted on first use and then retained, so switching between them preserves document position, directory selection, filters, detail context, and other local UI state. The header breadcrumb remains `Relay / Knowledge`; an internal destination bar identifies Wiki, Contacts, or Servers and returns to the launcher.
+
+Command search and compatibility routes activate Knowledge first, then request the appropriate internal destination. Legacy People requests map to Contacts, legacy Servers requests map to Servers, and legacy Notes requests map to Compose. They do not restore removed top-level tabs.
+
+The standalone Notes feature has no renderer tab, route, service, cache/mutation path, import/export surface, or Data Manager entry. Contact and server notes remain contextual features inside their respective Knowledge destinations, backed by the managed `notes` collection. Dynatrace problem notes remain a separate operational record type.
 
 ### Hooks And Services
 
@@ -252,8 +260,7 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 | `bridge_history`                      | Compose history                                     |
 | `alert_history`                       | Saved alert cards                                   |
 | `alert_reminders`                     | Follow-up reminders from alerts                     |
-| `notes`                               | Notes attached to contacts and servers              |
-| `standalone_notes`                    | Freeform notes tab data                             |
+| `notes`                               | Context attached to contacts and servers            |
 | `oncall_dismissals`                   | On-call alert dismissals                            |
 | `oncall_board_settings`               | Board-level settings                                |
 | `client_presence`                     | Active client heartbeat records                     |
@@ -269,6 +276,8 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local workstation convenience and contains external URLs rather than shared operational data.
 
 `knowledge_documents` is server-owned: authenticated users can list/view records, but API create/update/delete rules are disabled. It is readable through Relay's metadata cache allowlist and deliberately excluded from writable-cache and offline-mutation allowlists.
+
+`standalone_notes` is not a managed runtime collection. An existing installation may still contain archived rows from the removed Notes tab; Relay deliberately does not patch, synchronize, import, export, seed, clear, or delete that collection. Keeping those rows inert makes rollback or an explicit future archival export possible without confusing them with the contextual `notes` collection.
 
 Privileged account, device, command, and pairing collections are not part of the ordinary Relay cache. The nonsecret authority singleton is readable by authenticated Relay clients for role labels, but only the server can mutate it. `relay_operators` is not a managed runtime collection; it may exist only as a legacy migration input and is deleted after successful account conversion.
 
