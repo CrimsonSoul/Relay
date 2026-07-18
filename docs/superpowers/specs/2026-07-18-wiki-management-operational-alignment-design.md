@@ -30,7 +30,8 @@ The current `.privileged-access__pairing-actions` flex row has `min-width: min(1
 
 Status and Problems remain the reference surfaces.
 
-- Use a flat app background with `gap: var(--space-4)` and `padding: var(--space-4) var(--space-5) 0` on the management root.
+- Use a flat app background with `gap: var(--space-4)` and `padding: var(--space-4) var(--space-5) var(--space-5)` on the management root.
+- Follow-up decision (2026-07-18): the later bottom-edge spacing requirement supersedes the original zero-bottom gutter; at `<= 820px`, retain `padding: var(--space-3)` on all sides.
 - Remove the decorative root gradient.
 - Use the shared operational heading treatment: the existing context label, `var(--text-2xl)` title, `var(--space-1)` title margin, zero display tracking, and `var(--leading-tight)` line height.
 - Remove the combined custom header-bottom padding and workspace top margin. The root's 16px section gap becomes the single separation between header and workspace.

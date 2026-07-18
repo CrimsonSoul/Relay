@@ -12,7 +12,8 @@
 
 - Preserve the four-section order: Documents, Uploads, Trash, Audit.
 - Preserve the 190px desktop rail and every existing management action and accessible name.
-- Use a flat app background, `gap: var(--space-4)`, and `padding: var(--space-4) var(--space-5) 0` on the management root.
+- Use a flat app background, `gap: var(--space-4)`, and `padding: var(--space-4) var(--space-5) var(--space-5)` on the management root.
+- Follow-up decision (2026-07-18): the later bottom-edge spacing requirement supersedes the original zero-bottom gutter; at `<= 820px`, retain `padding: var(--space-3)` on all sides.
 - Use `var(--text-2xl)`, `var(--space-1)`, zero display tracking, and `var(--leading-tight)` for the page title rhythm.
 - Use Relay's 2px radius, 40px controls, 8px control-group gaps, 16px major-group gaps, and 84px minimum document rows.
 - Keep the upload queue as the only accent-subtle emphasis surface and remove its gradient.
@@ -77,7 +78,7 @@ describe('Knowledge Management visual system', () => {
     const workspace = ruleBody(css, '.knowledge-management__workspace');
 
     expect(root).toContain('gap: var(--space-4);');
-    expect(root).toContain('padding: var(--space-4) var(--space-5) 0;');
+    expect(root).toContain('padding: var(--space-4) var(--space-5) var(--space-5);');
     expect(root).toContain('background: var(--color-bg-app);');
     expect(root).not.toContain('linear-gradient');
     expect(header).toContain('gap: var(--space-5);');
@@ -178,7 +179,7 @@ Update the matching selectors in `src/renderer/src/features/knowledge/knowledge.
   min-height: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5) 0;
+  padding: var(--space-4) var(--space-5) var(--space-5);
   color: var(--color-text-primary);
   background: var(--color-bg-app);
 }
