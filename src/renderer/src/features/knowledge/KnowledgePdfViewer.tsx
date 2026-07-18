@@ -136,6 +136,7 @@ export function KnowledgePdfViewer({
           pdf?.numPages ?? knowledgeDocument?.pageCount ?? 0,
         );
   const targetRequestKey = `${documentId ?? ''}:${focusRequestKey ?? ''}:${targetPageIndex ?? ''}:${targetTop ?? ''}`;
+  const previousTargetRef = useRef(target);
   const previousTargetRequestKeyRef = useRef(targetRequestKey);
   const previousViewModeRef = useRef(viewMode);
   const viewModeRef = useRef(viewMode);
@@ -239,7 +240,9 @@ export function KnowledgePdfViewer({
   }, [active, documentChecksum, documentId, retryKey]);
 
   useEffect(() => {
-    const isNewTargetRequest = previousTargetRequestKeyRef.current !== targetRequestKey;
+    const isNewTargetRequest =
+      previousTargetRef.current !== target ||
+      previousTargetRequestKeyRef.current !== targetRequestKey;
     const nextTarget =
       normalizedTargetPageIndex === undefined
         ? null
@@ -248,11 +251,12 @@ export function KnowledgePdfViewer({
       const pendingTarget = navigationTargetRef.current;
       if (!pendingTarget || viewerTargetsMatch(pendingTarget, nextTarget)) return;
     }
+    previousTargetRef.current = target;
     previousTargetRequestKeyRef.current = targetRequestKey;
     navigationTargetRef.current = nextTarget;
     issuedNavigationTargetRef.current = null;
     setNavigationTarget(nextTarget);
-  }, [normalizedTargetPageIndex, targetRequestKey, targetTop]);
+  }, [normalizedTargetPageIndex, target, targetRequestKey, targetTop]);
 
   useEffect(() => {
     if (!pdf || normalizedTargetPageIndex === undefined) return;
@@ -284,7 +288,7 @@ export function KnowledgePdfViewer({
 
   useEffect(() => {
     destinationRequestTokenRef.current += 1;
-  }, [active, documentChecksum, documentId, pdf, retryKey, target?.pageIndex, target?.top]);
+  }, [active, documentChecksum, documentId, pdf, retryKey, target]);
 
   useEffect(() => {
     const request = focusRequestRef.current;
@@ -469,6 +473,7 @@ export function KnowledgePdfViewer({
   const moveToPage = (nextPage: number) => {
     if (!pdf) return;
     destinationRequestTokenRef.current += 1;
+    pendingFocusRequestRef.current = undefined;
     const boundedPage = clampKnowledgePdfPageIndex(nextPage, pdf.numPages);
     if (navigationTargetRef.current) {
       navigationTargetRef.current = null;

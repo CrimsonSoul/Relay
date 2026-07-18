@@ -408,6 +408,62 @@ describe('KnowledgePdfViewer', () => {
     expect(await screen.findByLabelText('Page 3')).toBeVisible();
   });
 
+  it('rearms a fresh explicit target with the same page and offset only once', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const offsetTop = vi
+      .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+      .mockImplementation(function mockPageOffset(this: HTMLElement) {
+        const pageShellIndex = this.dataset.pageIndex;
+        return pageShellIndex === undefined ? 0 : Number(pageShellIndex) * 1000;
+      });
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const initialTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    const { container, rerender } = renderComponent({
+      target: initialTarget,
+      currentSection: 'Repeated target',
+    });
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 972, behavior: 'smooth' }));
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    act(() => IntersectionObserverDouble.instances[0].showPage(pages[1]));
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: pages[1], intersectionRatio: 0 },
+        { target: pages[2], intersectionRatio: 1 },
+      ]);
+    });
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: initialTarget, currentSection: 'Incidental rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    const repeatedTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Repeated target' })}
+      />,
+    );
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 972, behavior: 'smooth' }]]));
+    act(() => IntersectionObserverDouble.instances[0].showPage(pages[1]));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange.mock.calls).toEqual([[2], [1]]);
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Second incidental rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(destroy).not.toHaveBeenCalled();
+    offsetTop.mockRestore();
+  });
+
   it.each([
     ['fractional', 1.8, 1, 972],
     ['out-of-range', 8.7, 2, 1972],
@@ -1054,6 +1110,55 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(viewport).toHaveFocus());
     expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
     externalFocus.remove();
+  });
+
+  it('does not restore delayed target focus after manual navigation supersedes it', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const pageTwoText = deferred<{ items: never[]; styles: Record<string, never> }>();
+    const secondGetPage = vi.fn(async (pageNumber: number) => {
+      const loadedPage = page(pageNumber);
+      if (pageNumber === 2) loadedPage.getTextContent = vi.fn(() => pageTwoText.promise);
+      return loadedPage;
+    });
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(pdf()), destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(pdf({ getPage: secondGetPage })),
+        destroy: loadingDestroy,
+      } as never);
+    const { rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(3));
+
+    const nextDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Second guide',
+      sourceKey: 'General/Second.pdf',
+      fileName: 'Second.pdf',
+      pdf: 'Second.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: nextDocument,
+          target: { pageIndex: 1, top: null },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(5));
+
+    const nextPage = screen.getByRole('button', { name: 'Next page' });
+    nextPage.focus();
+    fireEvent.click(nextPage);
+    expect(nextPage).toHaveFocus();
+    await act(async () => {
+      pageTwoText.resolve({ items: [], styles: {} });
+      await pageTwoText.promise;
+    });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(6));
+
+    expect(nextPage).toHaveFocus();
   });
 
   it('does not transfer a pending cross-document focus request to an unrelated document', async () => {
