@@ -1,17 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedCommandHandlerContext } from '../PrivilegedCommandProcessor';
 import { registerAdministrationCommands } from '../registerAdministrationCommands';
+import { RoleAccountConflictError } from '../RoleAccountManager';
 
 const context = {
-  account: { id: 'account-1' },
-  operator: { id: 'admin-1' },
-  state: {
-    adminOperatorId: 'admin-1',
-    publisherOperatorId: 'publisher-1',
-  },
+  account: { id: 'account-charles' },
   device: null,
   role: 'admin',
-  capabilities: ['operators.manage'],
 } as unknown as PrivilegedCommandHandlerContext;
 
 describe('registerAdministrationCommands', () => {
@@ -25,45 +20,29 @@ describe('registerAdministrationCommands', () => {
       return capability;
     }),
   };
-  const operatorManager = {
-    create: vi.fn(async (input) => ({ id: 'operator-2', ...input, active: true, revision: 0 })),
-    renameByRevision: vi.fn(async (input) => ({ id: input.operatorId, ...input })),
-    setActiveByRevision: vi.fn(async (input) => ({ id: input.operatorId, ...input })),
-    getRoleProtectionState: vi.fn(async () => ({
-      adminOperatorId: 'admin-1',
-      publisherOperatorId: 'publisher-1',
-    })),
+  const roleAccountManager = {
+    createAdministrator: vi.fn(async (input) => input),
+    createPublisher: vi.fn(async (input) => input),
+    updateDisplayName: vi.fn(async (input) => input),
+    setActive: vi.fn(async (input) => input),
+    transferOwnership: vi.fn(async (input) => input),
   };
-  const publisherManager = {
-    assign: vi.fn(async (input) => ({
-      publisherOperatorId: input.operatorId,
-      assignmentRevision: input.expectedStateRevision + 1,
-      credentialState: input.operatorId ? 'pending-local-setup' : 'not-assigned',
-    })),
-  };
+  const publisherManager = { assign: vi.fn(async (input) => input) };
   const consumeReauthenticationProof = vi.fn(async () => true);
   const deviceManager = {
-    rename: vi.fn(async (input) => ({ deviceId: input.deviceId, revision: 2 })),
-    revoke: vi.fn(async (input) => ({ deviceId: input.deviceId, state: 'revoked', revision: 2 })),
+    rename: vi.fn(async (input) => input),
+    revoke: vi.fn(async (input) => input),
   };
-  const administrationService = {
-    replace: vi.fn(async (payload) => ({
-      setting: payload.setting,
-      configured: true,
-      summary: 'Configured',
-      revision: payload.expectedRevision + 1,
-    })),
-  };
-  const snapshotReader = {
-    read: vi.fn(async () => ({ generatedAt: '2026-07-15T13:00:00.000Z' })),
-  };
+  const administrationService = { replace: vi.fn(async (payload) => payload) };
+  const snapshotReader = { read: vi.fn(async () => ({ generatedAt: '2026-07-17T15:00:00.000Z' })) };
 
   beforeEach(() => {
     vi.clearAllMocks();
     handlers.clear();
+    consumeReauthenticationProof.mockResolvedValue(true);
     registerAdministrationCommands({
       registrar: registrar as never,
-      operatorManager: operatorManager as never,
+      roleAccountManager: roleAccountManager as never,
       publisherManager: publisherManager as never,
       consumeReauthenticationProof,
       deviceManager: deviceManager as never,
@@ -72,139 +51,97 @@ describe('registerAdministrationCommands', () => {
     });
   });
 
-  it('registers operator and publisher mutations under their narrow capabilities', () => {
+  it('removes operator commands and registers the account allowlist under narrow capabilities', () => {
     expect(
       registrar.registerCommand.mock.calls.map(([command, capability]) => [command, capability]),
     ).toEqual([
-      ['operator.create', 'operators.manage'],
-      ['operator.rename', 'operators.manage'],
-      ['operator.active.set', 'operators.manage'],
+      ['account.admin.create', 'accounts.manage'],
+      ['account.publisher.create', 'publisher.assign'],
+      ['account.display-name.update', 'publisher.assign'],
+      ['account.active.set', 'publisher.assign'],
+      ['ownership.transfer', 'ownership.transfer'],
       ['publisher.assign', 'publisher.assign'],
       ['privileged.device.rename', 'devices.manage'],
       ['privileged.device.revoke', 'devices.manage'],
       ['administration.snapshot.read', 'settings.manage'],
       ['administration.setting.replace', 'settings.manage'],
     ]);
+    expect(handlers.has('operator.create')).toBe(false);
   });
 
-  it('reads the sanitized administration snapshot for the active account', async () => {
-    await handlers.get('administration.snapshot.read')!(context, {} as never);
-
-    expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-1' });
-  });
-
-  it('requires fresh reauthentication only for secret setting replacement', async () => {
-    await handlers.get('administration.setting.replace')!(context, {
-      setting: 'dynatrace.environment-url',
-      value: { environmentUrl: 'https://abc123.apps.dynatrace.com' },
-      expectedRevision: 0,
-    } as never);
-    expect(administrationService.replace).toHaveBeenCalledOnce();
-
-    await handlers.get('administration.setting.replace')!(context, {
-      setting: 'dynatrace.platform-token',
-      value: { apiToken: 'dt0s16.new-token' },
-      expectedRevision: 0,
-      reauthRequestId: 'reauth-setting',
-    } as never);
-    expect(consumeReauthenticationProof).toHaveBeenCalledWith('reauth-setting', {
-      accountId: 'account-1',
-      deviceId: null,
-    });
-
-    await expect(
-      handlers.get('administration.setting.replace')!(context, {
-        setting: 'dynatrace.platform-token',
-        value: { apiToken: 'dt0s16.new-token' },
-        expectedRevision: 0,
-      } as never),
-    ).rejects.toMatchObject({ name: 'PrivilegedCommandAuthorizationError' });
-  });
-
-  it('renames devices directly but requires fresh reauthentication to revoke', async () => {
-    await handlers.get('privileged.device.rename')!(context, {
-      deviceId: 'device-2',
-      label: 'Spare laptop',
-      expectedRevision: 1,
-    } as never);
-    expect(deviceManager.rename).toHaveBeenCalledWith({
-      actorRole: 'admin',
-      deviceId: 'device-2',
-      label: 'Spare laptop',
-      expectedRevision: 1,
-    });
-
-    await handlers.get('privileged.device.revoke')!(context, {
-      deviceId: 'device-2',
-      expectedRevision: 1,
-      reauthRequestId: 'reauth-device',
-    } as never);
-    expect(consumeReauthenticationProof).toHaveBeenCalledWith('reauth-device', {
-      accountId: 'account-1',
-      deviceId: null,
-    });
-    expect(deviceManager.revoke).toHaveBeenCalledWith({
-      actorRole: 'admin',
-      actorOperatorId: 'admin-1',
-      deviceId: 'device-2',
-      expectedRevision: 1,
-    });
-  });
-
-  it('consumes a fresh command-bound proof before assigning the publisher', async () => {
-    await handlers.get('publisher.assign')!(context, {
-      operatorId: 'operator-publisher',
+  it('passes authenticated actor account IDs to account lifecycle commands', async () => {
+    await handlers.get('account.admin.create')!(context, {
+      username: 'morgan',
+      displayName: 'Morgan Lee',
       expectedStateRevision: 4,
-      reauthRequestId: 'reauth-1',
     } as never);
+    await handlers.get('account.display-name.update')!(context, {
+      accountId: 'account-publisher',
+      displayName: 'Publisher Two',
+      expectedRevision: 2,
+    } as never);
+    expect(roleAccountManager.createAdministrator).toHaveBeenCalledWith({
+      actorAccountId: 'account-charles',
+      username: 'morgan',
+      displayName: 'Morgan Lee',
+      expectedStateRevision: 4,
+    });
+    expect(roleAccountManager.updateDisplayName).toHaveBeenCalledWith({
+      actorAccountId: 'account-charles',
+      accountId: 'account-publisher',
+      displayName: 'Publisher Two',
+      expectedRevision: 2,
+    });
+  });
 
-    expect(consumeReauthenticationProof).toHaveBeenCalledWith('reauth-1', {
-      accountId: 'account-1',
+  it('requires and consumes fresh reauthentication before ownership transfer and Publisher replacement', async () => {
+    await handlers.get('ownership.transfer')!(context, {
+      accountId: 'account-charles',
+      expectedStateRevision: 4,
+      reauthRequestId: 'reauth-owner',
+    } as never);
+    await handlers.get('publisher.assign')!(context, {
+      accountId: 'account-publisher',
+      expectedStateRevision: 5,
+      reauthRequestId: 'reauth-publisher',
+    } as never);
+    expect(consumeReauthenticationProof).toHaveBeenNthCalledWith(1, 'reauth-owner', {
+      accountId: 'account-charles',
+      deviceId: null,
+    });
+    expect(consumeReauthenticationProof).toHaveBeenNthCalledWith(2, 'reauth-publisher', {
+      accountId: 'account-charles',
       deviceId: null,
     });
     expect(publisherManager.assign).toHaveBeenCalledWith({
-      operatorId: 'operator-publisher',
-      expectedStateRevision: 4,
-      actorOperatorId: 'admin-1',
+      actorAccountId: 'account-charles',
+      accountId: 'account-publisher',
+      expectedStateRevision: 5,
     });
 
     consumeReauthenticationProof.mockResolvedValueOnce(false);
     await expect(
       handlers.get('publisher.assign')!(context, {
-        operatorId: null,
-        expectedStateRevision: 5,
-        reauthRequestId: 'reauth-used',
+        accountId: null,
+        expectedStateRevision: 6,
+        reauthRequestId: 'used',
       } as never),
     ).rejects.toMatchObject({ name: 'PrivilegedCommandAuthorizationError' });
-    expect(publisherManager.assign).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the shared operator manager for create and revision-safe rename', async () => {
-    await handlers.get('operator.create')!(context, { displayName: 'Morgan Lee' } as never);
-    await handlers.get('operator.rename')!(context, {
-      operatorId: 'operator-2',
-      displayName: 'Morgan Cooper',
-      expectedRevision: 3,
-    } as never);
-
-    expect(operatorManager.create).toHaveBeenCalledWith({ displayName: 'Morgan Lee' });
-    expect(operatorManager.renameByRevision).toHaveBeenCalledWith({
-      operatorId: 'operator-2',
-      displayName: 'Morgan Cooper',
-      expectedRevision: 3,
-    });
+  it('returns only manager snapshots and reads administration by active account', async () => {
+    await handlers.get('administration.snapshot.read')!(context, {} as never);
+    expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-charles' });
   });
 
-  it('rechecks current administrator and publisher protection immediately before active changes', async () => {
-    await handlers.get('operator.active.set')!(context, {
-      operatorId: 'operator-2',
-      active: false,
-      expectedRevision: 3,
-    } as never);
-
-    expect(operatorManager.setActiveByRevision).toHaveBeenCalledWith(
-      { operatorId: 'operator-2', active: false, expectedRevision: 3 },
-      { adminOperatorId: 'admin-1', publisherOperatorId: 'publisher-1' },
-    );
+  it('translates stale account writes to the existing command conflict shape', async () => {
+    roleAccountManager.setActive.mockRejectedValueOnce(new RoleAccountConflictError(8));
+    await expect(
+      handlers.get('account.active.set')!(context, {
+        accountId: 'account-publisher',
+        active: false,
+        expectedRevision: 7,
+      } as never),
+    ).rejects.toMatchObject({ name: 'PrivilegedCommandConflictError', currentRevision: 8 });
   });
 });

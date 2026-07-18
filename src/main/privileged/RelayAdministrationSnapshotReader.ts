@@ -1,15 +1,14 @@
 import type PocketBase from 'pocketbase';
 import {
-  isPrivilegedAdministrator,
+  MAX_PRIVILEGED_ADMINISTRATORS,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayAdministrationSnapshot,
-  type RelayOperatorAdminView,
-  type RelayPrivilegedAccountAdminView,
   type RelayPrivilegedAccountRecord,
   type RelayPrivilegedStateRecord,
+  type RelayRoleAccountAdminView,
 } from '@shared/privilegedAccess';
-import { RELAY_OPERATORS_COLLECTION, type RelayOperatorRecord } from '@shared/operators';
+import { getEffectiveRole } from '@shared/roleAccounts';
 import type { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
 import type { RelayAdministrationService } from './RelayAdministrationService';
 
@@ -33,34 +32,23 @@ function canonicalTimestampOrNull(value: string | undefined): string | null {
   return value ? canonicalTimestamp(value) : null;
 }
 
-function operatorView(
-  operator: RelayOperatorRecord,
+function accountView(
+  account: RelayPrivilegedAccountRecord,
   state: RelayPrivilegedStateRecord,
-): RelayOperatorAdminView {
-  let role: RelayOperatorAdminView['role'] = null;
-  if (isPrivilegedAdministrator(state, operator.id)) role = 'admin';
-  else if (operator.id === state.publisherOperatorId) role = 'publisher';
-  return {
-    id: operator.id,
-    displayName: operator.displayName,
-    active: operator.active,
-    revision: Number.isInteger(operator.revision) ? operator.revision! : 0,
-    role,
-    created: canonicalTimestamp(operator.created),
-    updated: canonicalTimestamp(operator.updated),
-  };
-}
-
-function accountView(account: RelayPrivilegedAccountRecord): RelayPrivilegedAccountAdminView {
+): RelayRoleAccountAdminView {
   return {
     accountId: account.id,
-    operatorId: account.operatorId,
-    role: account.role,
+    username: account.username,
+    displayName: account.displayName,
+    storedRole: account.storedRole,
+    effectiveRole: getEffectiveRole(account, state),
     active: account.active,
     credentialState:
       account.active && !account.mustChangePassword ? 'configured' : 'not-configured',
     mustChangePassword: account.mustChangePassword,
     credentialVersion: account.credentialVersion,
+    revision: account.revision,
+    createdAt: canonicalTimestamp(account.created),
     updatedAt: canonicalTimestampOrNull(account.updated),
   };
 }
@@ -90,48 +78,46 @@ export class RelayAdministrationSnapshotReader {
   }
 
   async read(input: { accountId: string }): Promise<RelayAdministrationSnapshot> {
-    const [state, operators, privilegedAccounts, devices] = await Promise.all([
+    const [state, accounts] = await Promise.all([
       this.source('state', () =>
         this.pb
           .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
           .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null }),
-      ),
-      this.source('operators', () =>
-        this.pb
-          .collection(RELAY_OPERATORS_COLLECTION)
-          .getFullList<RelayOperatorRecord>({ requestKey: null }),
       ),
       this.source('accounts', () =>
         this.pb
           .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
           .getFullList<RelayPrivilegedAccountRecord>({ requestKey: null }),
       ),
-      this.source('devices', () =>
-        this.deviceManager.list({ role: 'admin', accountId: input.accountId }),
-      ),
     ]);
+    if (accounts.length > MAX_PRIVILEGED_ADMINISTRATORS + 1) {
+      throw new Error('Administration snapshot data is invalid.');
+    }
+    const actor = accounts.find(({ id }) => id === input.accountId);
+    const actorRole = actor ? getEffectiveRole(actor, state) : null;
+    if (!actor || !actor.active || !actorRole)
+      throw new Error('Administration account is unavailable.');
+    const devices = await this.source('devices', () =>
+      this.deviceManager.list({ role: actorRole, accountId: input.accountId }),
+    );
     try {
       return {
-        operators: operators.map((operator) => operatorView(operator, state)),
-        privilegedAccounts: privilegedAccounts
-          .map(accountView)
-          .sort((left, right) => left.role.localeCompare(right.role)),
+        accounts: accounts
+          .map((account) => accountView(account, state))
+          .sort((left, right) => {
+            if (left.accountId === state.ownerAccountId) return -1;
+            if (right.accountId === state.ownerAccountId) return 1;
+            return left.username.localeCompare(right.username);
+          }),
         devices,
         settings: this.administrationService.getSettingSummaries(),
-        adminOperatorId: state.adminOperatorId,
-        publisherOperatorId: state.publisherOperatorId || null,
+        ownerAccountId: state.ownerAccountId,
+        publisherAccountId: state.publisherAccountId || null,
         assignmentRevision: state.assignmentVersion,
         generatedAt: new Date(this.now()).toISOString(),
       };
     } catch {
       this.logger.warn('Administration snapshot data could not be normalized.', {
-        operatorsHaveDates: operators.every(
-          (operator) =>
-            Boolean(operator.created) &&
-            Boolean(operator.updated) &&
-            Number.isFinite(Date.parse(operator.created)) &&
-            Number.isFinite(Date.parse(operator.updated)),
-        ),
         source: 'normalization',
       });
       throw new Error('Administration snapshot data is invalid.');

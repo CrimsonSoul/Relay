@@ -1,9 +1,5 @@
 import type { PrivilegedCapability } from '@shared/privilegedAccess';
 import {
-  RelayOperatorConflictError,
-  type RelayOperatorManager,
-} from '../operators/RelayOperatorManager';
-import {
   PrivilegedCommandAuthorizationError,
   PrivilegedCommandConflictError,
   type PrivilegedCommandHandler,
@@ -22,6 +18,7 @@ import {
   type RelayAdministrationService,
 } from './RelayAdministrationService';
 import type { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
+import { RoleAccountConflictError, type RoleAccountManager } from './RoleAccountManager';
 
 type AdministrationRegistrar = {
   registerCommand<K extends RegisteredPrivilegedCommandName>(
@@ -30,17 +27,18 @@ type AdministrationRegistrar = {
     handler: PrivilegedCommandHandler<K>,
   ): void;
 };
-
-type OperatorAdministrationManager = Pick<
-  RelayOperatorManager,
-  'create' | 'renameByRevision' | 'setActiveByRevision' | 'getRoleProtectionState'
+type RoleAccountAdministrationManager = Pick<
+  RoleAccountManager,
+  | 'createAdministrator'
+  | 'createPublisher'
+  | 'updateDisplayName'
+  | 'setActive'
+  | 'transferOwnership'
 >;
-
 type PublisherAdministrationManager = Pick<PublisherAssignmentManager, 'assign'>;
 type DeviceAdministrationManager = Pick<PrivilegedDeviceManager, 'rename' | 'revoke'>;
 type AdministrationSettingService = Pick<RelayAdministrationService, 'replace'>;
 type AdministrationSnapshotReader = Pick<RelayAdministrationSnapshotReader, 'read'>;
-
 type ReauthenticationProofConsumer = (
   requestId: string,
   context: { accountId: string; deviceId: string | null },
@@ -48,7 +46,7 @@ type ReauthenticationProofConsumer = (
 
 export type RegisterAdministrationCommandsOptions = {
   registrar: AdministrationRegistrar;
-  operatorManager: OperatorAdministrationManager;
+  roleAccountManager: RoleAccountAdministrationManager;
   publisherManager?: PublisherAdministrationManager;
   deviceManager?: DeviceAdministrationManager;
   administrationService?: AdministrationSettingService;
@@ -57,16 +55,12 @@ export type RegisterAdministrationCommandsOptions = {
 };
 
 function translateConflict(error: unknown): never {
-  if (error instanceof RelayOperatorConflictError) {
-    throw new PrivilegedCommandConflictError(error.currentRevision);
-  }
-  if (error instanceof PublisherAssignmentConflictError) {
-    throw new PrivilegedCommandConflictError(error.currentRevision);
-  }
-  if (error instanceof PrivilegedDeviceConflictError) {
-    throw new PrivilegedCommandConflictError(error.currentRevision);
-  }
-  if (error instanceof RelaySettingConflictError) {
+  if (
+    error instanceof RoleAccountConflictError ||
+    error instanceof PublisherAssignmentConflictError ||
+    error instanceof PrivilegedDeviceConflictError ||
+    error instanceof RelaySettingConflictError
+  ) {
     throw new PrivilegedCommandConflictError(error.currentRevision);
   }
   throw error;
@@ -80,43 +74,71 @@ async function withConflictTranslation<T>(operation: () => Promise<T>): Promise<
   }
 }
 
+async function requireReauthentication(
+  consume: ReauthenticationProofConsumer | undefined,
+  requestId: string,
+  context: { account: { id: string }; device: { deviceId: string } | null },
+): Promise<void> {
+  const authorized =
+    consume &&
+    (await consume(requestId, {
+      accountId: context.account.id,
+      deviceId: context.device?.deviceId ?? null,
+    }));
+  if (!authorized) throw new PrivilegedCommandAuthorizationError();
+}
+
 export function registerAdministrationCommands({
   registrar,
-  operatorManager,
+  roleAccountManager,
   publisherManager,
   deviceManager,
   administrationService,
   snapshotReader,
   consumeReauthenticationProof,
 }: RegisterAdministrationCommandsOptions): void {
-  registrar.registerCommand('operator.create', 'operators.manage', (_context, payload) =>
-    operatorManager.create(payload),
+  registrar.registerCommand('account.admin.create', 'accounts.manage', (context, payload) =>
+    withConflictTranslation(() =>
+      roleAccountManager.createAdministrator({ actorAccountId: context.account.id, ...payload }),
+    ),
   );
-  registrar.registerCommand('operator.rename', 'operators.manage', (_context, payload) =>
-    withConflictTranslation(() => operatorManager.renameByRevision(payload)),
+  registrar.registerCommand('account.publisher.create', 'publisher.assign', (context, payload) =>
+    withConflictTranslation(() =>
+      roleAccountManager.createPublisher({ actorAccountId: context.account.id, ...payload }),
+    ),
+  );
+  registrar.registerCommand('account.display-name.update', 'publisher.assign', (context, payload) =>
+    withConflictTranslation(() =>
+      roleAccountManager.updateDisplayName({ actorAccountId: context.account.id, ...payload }),
+    ),
+  );
+  registrar.registerCommand('account.active.set', 'publisher.assign', (context, payload) =>
+    withConflictTranslation(() =>
+      roleAccountManager.setActive({ actorAccountId: context.account.id, ...payload }),
+    ),
   );
   registrar.registerCommand(
-    'operator.active.set',
-    'operators.manage',
-    async (_context, payload) => {
-      const protection = await operatorManager.getRoleProtectionState();
+    'ownership.transfer',
+    'ownership.transfer',
+    async (context, payload) => {
+      await requireReauthentication(consumeReauthenticationProof, payload.reauthRequestId, context);
       return withConflictTranslation(() =>
-        operatorManager.setActiveByRevision(payload, protection),
+        roleAccountManager.transferOwnership({
+          actorAccountId: context.account.id,
+          accountId: payload.accountId,
+          expectedStateRevision: payload.expectedStateRevision,
+        }),
       );
     },
   );
-  if (publisherManager && consumeReauthenticationProof) {
+  if (publisherManager) {
     registrar.registerCommand('publisher.assign', 'publisher.assign', async (context, payload) => {
-      const authorized = await consumeReauthenticationProof(payload.reauthRequestId, {
-        accountId: context.account.id,
-        deviceId: context.device?.deviceId ?? null,
-      });
-      if (!authorized) throw new PrivilegedCommandAuthorizationError();
+      await requireReauthentication(consumeReauthenticationProof, payload.reauthRequestId, context);
       return withConflictTranslation(() =>
         publisherManager.assign({
-          operatorId: payload.operatorId,
+          accountId: payload.accountId,
           expectedStateRevision: payload.expectedStateRevision,
-          actorOperatorId: context.operator.id,
+          actorAccountId: context.account.id,
         }),
       );
     });
@@ -132,17 +154,15 @@ export function registerAdministrationCommands({
         }),
       ),
     );
-  }
-  if (deviceManager && consumeReauthenticationProof) {
     registrar.registerCommand(
       'privileged.device.revoke',
       'devices.manage',
       async (context, payload) => {
-        const authorized = await consumeReauthenticationProof(payload.reauthRequestId, {
-          accountId: context.account.id,
-          deviceId: context.device?.deviceId ?? null,
-        });
-        if (!authorized) throw new PrivilegedCommandAuthorizationError();
+        await requireReauthentication(
+          consumeReauthenticationProof,
+          payload.reauthRequestId,
+          context,
+        );
         return withConflictTranslation(() =>
           deviceManager.revoke({
             actorRole: context.role,
@@ -155,24 +175,21 @@ export function registerAdministrationCommands({
     );
   }
   if (administrationService) {
-    if (snapshotReader) {
+    if (snapshotReader)
       registrar.registerCommand('administration.snapshot.read', 'settings.manage', (context) =>
         snapshotReader.read({ accountId: context.account.id }),
       );
-    }
     registrar.registerCommand(
       'administration.setting.replace',
       'settings.manage',
       async (context, payload) => {
         if (payload.setting === 'dynatrace.platform-token') {
-          if (!payload.reauthRequestId || !consumeReauthenticationProof) {
-            throw new PrivilegedCommandAuthorizationError();
-          }
-          const authorized = await consumeReauthenticationProof(payload.reauthRequestId, {
-            accountId: context.account.id,
-            deviceId: context.device?.deviceId ?? null,
-          });
-          if (!authorized) throw new PrivilegedCommandAuthorizationError();
+          if (!payload.reauthRequestId) throw new PrivilegedCommandAuthorizationError();
+          await requireReauthentication(
+            consumeReauthenticationProof,
+            payload.reauthRequestId,
+            context,
+          );
         }
         return withConflictTranslation(() => administrationService.replace(payload));
       },

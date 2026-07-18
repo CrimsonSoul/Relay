@@ -7,13 +7,18 @@ import {
   type RelayAdministrationSettingValueMap,
 } from './privilegedAccess';
 import {
+  getRoleDisplayNameError,
+  getRoleUsernameError,
+  normalizeRoleDisplayName,
+  normalizeRoleUsername,
+} from './roleAccounts';
+import {
   MAX_DYNATRACE_ALERTING_PROFILES,
   MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
   normalizeDynatraceEnvironmentUrl,
 } from './dynatraceProblems';
-import { getOperatorDisplayNameError, normalizeOperatorDisplayName } from './operators';
 import {
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -49,11 +54,25 @@ export type PrivilegedCommandPayloadMap = {
   'privileged.status.read': { clientVersion: string };
   'privileged.reauth.confirm': { authenticatedAt: string };
   'administration.snapshot.read': Record<string, never>;
-  'operator.create': { displayName: string };
-  'operator.rename': { operatorId: string; displayName: string; expectedRevision: number };
-  'operator.active.set': { operatorId: string; active: boolean; expectedRevision: number };
+  'account.admin.create': { username: string; displayName: string; expectedStateRevision: number };
+  'account.publisher.create': {
+    username: string;
+    displayName: string;
+    expectedStateRevision: number;
+  };
+  'account.display-name.update': {
+    accountId: string;
+    displayName: string;
+    expectedRevision: number;
+  };
+  'account.active.set': { accountId: string; active: boolean; expectedRevision: number };
+  'ownership.transfer': {
+    accountId: string;
+    expectedStateRevision: number;
+    reauthRequestId: string;
+  };
   'publisher.assign': {
-    operatorId: string | null;
+    accountId: string | null;
     expectedStateRevision: number;
     reauthRequestId: string;
   };
@@ -300,9 +319,11 @@ export function isPublicPrivilegedCommandName(
 const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'privileged.status.read',
   'administration.snapshot.read',
-  'operator.create',
-  'operator.rename',
-  'operator.active.set',
+  'account.admin.create',
+  'account.publisher.create',
+  'account.display-name.update',
+  'account.active.set',
+  'ownership.transfer',
   'publisher.assign',
   'privileged.device.rename',
   'privileged.device.revoke',
@@ -509,55 +530,74 @@ function normalizeReauthenticationPayload(
   return canonicalTimestamp(authenticatedAt) ? { authenticatedAt } : null;
 }
 
-function normalizeOperatorCreatePayload(
+function normalizeAccountCreatePayload(
   payload: Record<string, unknown>,
 ): NormalizedCommandPayload | null {
-  if (!hasExactKeys(payload, ['displayName']) || typeof payload.displayName !== 'string')
+  if (!hasExactKeys(payload, ['username', 'displayName', 'expectedStateRevision'])) return null;
+  if (
+    typeof payload.username !== 'string' ||
+    typeof payload.displayName !== 'string' ||
+    !nonNegativeInteger(payload.expectedStateRevision)
+  )
     return null;
-  const displayName = normalizeOperatorDisplayName(payload.displayName);
-  return getOperatorDisplayNameError(displayName) ? null : { displayName };
+  const username = normalizeRoleUsername(payload.username);
+  const displayName = normalizeRoleDisplayName(payload.displayName);
+  return getRoleUsernameError(username) || getRoleDisplayNameError(displayName)
+    ? null
+    : { username, displayName, expectedStateRevision: payload.expectedStateRevision };
 }
 
-function normalizeOperatorRenamePayload(
+function normalizeAccountDisplayNamePayload(
   payload: Record<string, unknown>,
 ): NormalizedCommandPayload | null {
-  if (!hasExactKeys(payload, ['operatorId', 'displayName', 'expectedRevision'])) return null;
-  const { operatorId, displayName: rawDisplayName, expectedRevision } = payload;
+  if (!hasExactKeys(payload, ['accountId', 'displayName', 'expectedRevision'])) return null;
+  const { accountId, displayName: rawDisplayName, expectedRevision } = payload;
   if (
-    !boundedIdentifier(operatorId, 200) ||
+    !boundedIdentifier(accountId, 200) ||
     typeof rawDisplayName !== 'string' ||
     !nonNegativeInteger(expectedRevision)
   ) {
     return null;
   }
-  const displayName = normalizeOperatorDisplayName(rawDisplayName);
-  return getOperatorDisplayNameError(displayName)
-    ? null
-    : { operatorId, displayName, expectedRevision };
+  const displayName = normalizeRoleDisplayName(rawDisplayName);
+  return getRoleDisplayNameError(displayName) ? null : { accountId, displayName, expectedRevision };
 }
 
-function normalizeOperatorActivePayload(
+function normalizeAccountActivePayload(
   payload: Record<string, unknown>,
 ): NormalizedCommandPayload | null {
-  if (!hasExactKeys(payload, ['operatorId', 'active', 'expectedRevision'])) return null;
-  const { operatorId, active, expectedRevision } = payload;
-  return boundedIdentifier(operatorId, 200) &&
+  if (!hasExactKeys(payload, ['accountId', 'active', 'expectedRevision'])) return null;
+  const { accountId, active, expectedRevision } = payload;
+  return boundedIdentifier(accountId, 200) &&
     typeof active === 'boolean' &&
     nonNegativeInteger(expectedRevision)
-    ? { operatorId, active, expectedRevision }
+    ? { accountId, active, expectedRevision }
+    : null;
+}
+
+function normalizeOwnershipTransferPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['accountId', 'expectedStateRevision', 'reauthRequestId']))
+    return null;
+  const { accountId, expectedStateRevision, reauthRequestId } = payload;
+  return boundedIdentifier(accountId, 200) &&
+    nonNegativeInteger(expectedStateRevision) &&
+    boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+    ? { accountId, expectedStateRevision, reauthRequestId }
     : null;
 }
 
 function normalizePublisherAssignmentPayload(
   payload: Record<string, unknown>,
 ): NormalizedCommandPayload | null {
-  if (!hasExactKeys(payload, ['operatorId', 'expectedStateRevision', 'reauthRequestId']))
+  if (!hasExactKeys(payload, ['accountId', 'expectedStateRevision', 'reauthRequestId']))
     return null;
-  const { operatorId, expectedStateRevision, reauthRequestId } = payload;
-  return (operatorId === null || boundedIdentifier(operatorId, 200)) &&
+  const { accountId, expectedStateRevision, reauthRequestId } = payload;
+  return (accountId === null || boundedIdentifier(accountId, 200)) &&
     nonNegativeInteger(expectedStateRevision) &&
     boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
-    ? { operatorId, expectedStateRevision, reauthRequestId }
+    ? { accountId, expectedStateRevision, reauthRequestId }
     : null;
 }
 
@@ -627,12 +667,15 @@ function normalizePayload(
       return normalizeReauthenticationPayload(payload);
     case 'administration.snapshot.read':
       return hasExactKeys(payload, []) ? {} : null;
-    case 'operator.create':
-      return normalizeOperatorCreatePayload(payload);
-    case 'operator.rename':
-      return normalizeOperatorRenamePayload(payload);
-    case 'operator.active.set':
-      return normalizeOperatorActivePayload(payload);
+    case 'account.admin.create':
+    case 'account.publisher.create':
+      return normalizeAccountCreatePayload(payload);
+    case 'account.display-name.update':
+      return normalizeAccountDisplayNamePayload(payload);
+    case 'account.active.set':
+      return normalizeAccountActivePayload(payload);
+    case 'ownership.transfer':
+      return normalizeOwnershipTransferPayload(payload);
     case 'publisher.assign':
       return normalizePublisherAssignmentPayload(payload);
     case 'privileged.device.rename':

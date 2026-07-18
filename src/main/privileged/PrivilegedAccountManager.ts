@@ -2,21 +2,21 @@ import type PocketBase from 'pocketbase';
 import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
-  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
-  type PrivilegedRole,
+  type EffectivePrivilegedRole,
   type RelayPrivilegedAccountRecord,
   type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
+import { getEffectiveRole } from '@shared/roleAccounts';
 import type { PrivilegedCredentialSetupInput, PrivilegedCredentialSetupView } from '@shared/ipc';
 
 type PrivilegedAccountManagerOptions = {
   pb: PocketBase;
   now?: () => number;
-  onCredentialChanged?: (operatorId: string) => void | Promise<void>;
+  onCredentialChanged?: (accountId: string) => void | Promise<void>;
 };
 
 function escapeFilter(value: string): string {
@@ -35,11 +35,14 @@ function validateCredential(input: PrivilegedCredentialSetupInput): void {
 
 function publicCredentialView(
   account: RelayPrivilegedAccountRecord,
+  role: EffectivePrivilegedRole,
 ): PrivilegedCredentialSetupView {
   return {
     accountId: account.id,
-    operatorId: account.operatorId,
-    role: account.role,
+    username: account.username,
+    displayName: account.displayName,
+    storedRole: account.storedRole,
+    role,
     credentialState: 'configured',
     credentialVersion: account.credentialVersion,
   };
@@ -48,7 +51,7 @@ function publicCredentialView(
 export class PrivilegedAccountManager {
   private readonly pb: PocketBase;
   private readonly now: () => number;
-  private readonly onCredentialChanged?: (operatorId: string) => void | Promise<void>;
+  private readonly onCredentialChanged?: (accountId: string) => void | Promise<void>;
 
   constructor(options: PrivilegedAccountManagerOptions) {
     this.pb = options.pb;
@@ -61,40 +64,33 @@ export class PrivilegedAccountManager {
   ): Promise<PrivilegedCredentialSetupView> {
     validateCredential(input);
     const state = await this.getState();
-    if (input.operatorId !== state.adminOperatorId) {
+    if (input.accountId !== state.ownerAccountId) {
       throw new Error('Initial administrator setup is not available.');
     }
-    const account = await this.getAccount(input.operatorId);
-    if (account.role !== 'admin' || account.active || !account.mustChangePassword) {
-      throw new Error('The Relay administrator credential is already configured.');
+    const account = await this.getAccount(input.accountId);
+    if (account.storedRole !== 'administrator' || account.active || !account.mustChangePassword) {
+      throw new Error('The Relay owner credential is already configured.');
     }
-    return this.replaceCredential(account, input, input.operatorId);
+    return this.replaceCredential(account, input, input.accountId, 'owner');
   }
 
   async setupCredential(
-    input: PrivilegedCredentialSetupInput & { actorOperatorId: string },
+    input: PrivilegedCredentialSetupInput & { actorAccountId: string },
   ): Promise<PrivilegedCredentialSetupView> {
     validateCredential(input);
     const state = await this.getState();
-    if (!isPrivilegedAdministrator(state, input.actorOperatorId)) {
-      throw new Error('Unauthorized privileged credential setup.');
-    }
-    const expectedRole = this.assignedRole(state, input.operatorId);
-    if (!expectedRole) throw new Error('Privileged credential setup is not available.');
-    const account = await this.getAccount(input.operatorId);
-    if (account.role !== expectedRole) {
-      throw new Error('Privileged credential setup is not available.');
-    }
-    return this.replaceCredential(account, input, input.actorOperatorId);
-  }
-
-  private assignedRole(
-    state: RelayPrivilegedStateRecord,
-    operatorId: string,
-  ): PrivilegedRole | null {
-    if (isPrivilegedAdministrator(state, operatorId)) return 'admin';
-    if (state.publisherOperatorId === operatorId) return 'publisher';
-    return null;
+    const [actor, target] = await Promise.all([
+      this.getAccount(input.actorAccountId),
+      this.getAccount(input.accountId),
+    ]);
+    const actorRole = getEffectiveRole(actor, state);
+    const targetRole = getEffectiveRole(target, state);
+    const canManageTarget =
+      actor.active &&
+      ((actorRole === 'owner' && targetRole !== null) ||
+        (actorRole === 'admin' && targetRole === 'publisher'));
+    if (!canManageTarget) throw new Error('Unauthorized privileged credential setup.');
+    return this.replaceCredential(target, input, input.actorAccountId, targetRole!);
   }
 
   private async getState(): Promise<RelayPrivilegedStateRecord> {
@@ -103,20 +99,19 @@ export class PrivilegedAccountManager {
       .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null });
   }
 
-  private async getAccount(operatorId: string): Promise<RelayPrivilegedAccountRecord> {
+  private async getAccount(accountId: string): Promise<RelayPrivilegedAccountRecord> {
     return this.pb
       .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-      .getFirstListItem<RelayPrivilegedAccountRecord>(`operatorId="${escapeFilter(operatorId)}"`, {
-        requestKey: null,
-      });
+      .getOne<RelayPrivilegedAccountRecord>(accountId, { requestKey: null });
   }
 
   private async replaceCredential(
     account: RelayPrivilegedAccountRecord,
     input: PrivilegedCredentialSetupInput,
-    actorOperatorId: string,
+    actorAccountId: string,
+    role: EffectivePrivilegedRole,
   ): Promise<PrivilegedCredentialSetupView> {
-    await this.revokeDevices(account.id, actorOperatorId);
+    await this.revokeDevices(account.id, actorAccountId);
     const updated = await this.pb
       .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
       .update<RelayPrivilegedAccountRecord>(
@@ -130,11 +125,11 @@ export class PrivilegedAccountManager {
         },
         { requestKey: null },
       );
-    await this.onCredentialChanged?.(account.operatorId);
-    return publicCredentialView(updated);
+    await this.onCredentialChanged?.(account.id);
+    return publicCredentialView(updated, role);
   }
 
-  private async revokeDevices(accountId: string, actorOperatorId: string): Promise<void> {
+  private async revokeDevices(accountId: string, actorAccountId: string): Promise<void> {
     const devices = await this.pb
       .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
       .getFullList<RelayPrivilegedDeviceRecord>({
@@ -148,7 +143,7 @@ export class PrivilegedAccountManager {
         {
           state: 'revoked',
           revokedAt,
-          revokedByOperatorId: actorOperatorId,
+          revokedByAccountId: actorAccountId,
           revision: device.revision + 1,
         },
         { requestKey: null },

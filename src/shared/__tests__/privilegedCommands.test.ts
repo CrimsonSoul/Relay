@@ -129,7 +129,10 @@ describe('privileged command validation', () => {
   it('keeps internal reauthentication commands out of the public command surface', () => {
     expect(isPublicPrivilegedCommandName('privileged.status.read')).toBe(true);
     expect(isPublicPrivilegedCommandName('administration.snapshot.read')).toBe(true);
-    expect(isPublicPrivilegedCommandName('operator.create')).toBe(true);
+    expect(isPublicPrivilegedCommandName('account.admin.create')).toBe(true);
+    expect(isPublicPrivilegedCommandName('account.publisher.create')).toBe(true);
+    expect(isPublicPrivilegedCommandName('ownership.transfer')).toBe(true);
+    expect(isPublicPrivilegedCommandName('operator.create')).toBe(false);
     expect(isPublicPrivilegedCommandName('publisher.assign')).toBe(true);
     expect(isPublicPrivilegedCommandName('administration.setting.replace')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.upload.batch.begin')).toBe(true);
@@ -231,15 +234,26 @@ describe('privileged command validation', () => {
 
   it.each([
     ['administration.snapshot.read', {}],
-    ['operator.create', { displayName: '  Jane   Operator ' }],
     [
-      'operator.rename',
-      { operatorId: 'operator-2', displayName: 'Jane Operator', expectedRevision: 3 },
+      'account.admin.create',
+      { username: ' JANE.OPERATOR ', displayName: '  Jane   Operator ', expectedStateRevision: 2 },
     ],
-    ['operator.active.set', { operatorId: 'operator-2', active: false, expectedRevision: 3 }],
+    [
+      'account.publisher.create',
+      { username: 'publisher', displayName: ' Knowledge Publisher ', expectedStateRevision: 2 },
+    ],
+    [
+      'account.display-name.update',
+      { accountId: 'account-2', displayName: 'Jane Operator', expectedRevision: 3 },
+    ],
+    ['account.active.set', { accountId: 'account-2', active: false, expectedRevision: 3 }],
+    [
+      'ownership.transfer',
+      { accountId: 'account-2', expectedStateRevision: 4, reauthRequestId: 'reauth-owner' },
+    ],
     [
       'publisher.assign',
-      { operatorId: 'operator-2', expectedStateRevision: 4, reauthRequestId: 'reauth-1' },
+      { accountId: 'account-2', expectedStateRevision: 4, reauthRequestId: 'reauth-1' },
     ],
     [
       'privileged.device.rename',
@@ -280,8 +294,12 @@ describe('privileged command validation', () => {
       NOW,
     );
     expect(result.ok).toBe(true);
-    if (result.ok && command === 'operator.create') {
-      expect(result.envelope.payload).toEqual({ displayName: 'Jane Operator' });
+    if (result.ok && command === 'account.admin.create') {
+      expect(result.envelope.payload).toEqual({
+        username: 'jane.operator',
+        displayName: 'Jane Operator',
+        expectedStateRevision: 2,
+      });
     }
     if (result.ok && command === 'privileged.device.rename') {
       expect(result.envelope.payload).toEqual({
@@ -294,13 +312,13 @@ describe('privileged command validation', () => {
 
   it.each([
     ['administration.snapshot.read', { unexpected: true }],
-    ['operator.create', { displayName: '' }],
-    ['operator.rename', { operatorId: 'operator-2', displayName: 'Jane', expectedRevision: -1 }],
-    ['operator.active.set', { operatorId: 'operator-2', active: 'false', expectedRevision: 3 }],
+    ['account.admin.create', { username: 'x', displayName: '', expectedStateRevision: 2 }],
     [
-      'publisher.assign',
-      { operatorId: 'operator-2', expectedStateRevision: 4, reauthRequestId: '' },
+      'account.display-name.update',
+      { accountId: 'account-2', displayName: 'Jane', expectedRevision: -1 },
     ],
+    ['account.active.set', { accountId: 'account-2', active: 'false', expectedRevision: 3 }],
+    ['publisher.assign', { accountId: 'account-2', expectedStateRevision: 4, reauthRequestId: '' }],
     [
       'privileged.device.rename',
       { deviceId: 'device-2', label: 'x'.repeat(81), expectedRevision: 2 },

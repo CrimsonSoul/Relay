@@ -4,77 +4,40 @@ import {
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayPrivilegedAccountRecord,
-  type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
-import { RELAY_OPERATORS_COLLECTION, type RelayOperatorRecord } from '@shared/operators';
 import {
   PublisherAssignmentConflictError,
   PublisherAssignmentManager,
 } from '../PublisherAssignmentManager';
 
-const NOW = '2026-07-16T00:00:00.000Z';
-
-function state(overrides: Partial<RelayPrivilegedStateRecord> = {}): RelayPrivilegedStateRecord {
-  return {
-    id: 'state-1',
-    key: 'primary',
-    adminOperatorId: 'operator-admin',
-    adminOperatorIds: ['operator-admin', 'operator-charles'],
-    publisherOperatorId: null,
-    assignmentVersion: 3,
-    rosterMigrationVersion: 1,
-    updatedByOperatorId: null,
-    updatedAt: NOW,
-    created: NOW,
-    updated: NOW,
-    ...overrides,
-  };
-}
-
-function operator(overrides: Partial<RelayOperatorRecord> = {}): RelayOperatorRecord {
-  return {
-    id: 'operator-publisher',
-    displayName: 'Morgan Lee',
-    active: true,
-    revision: 1,
-    created: NOW,
-    updated: NOW,
-    ...overrides,
-  };
-}
-
+const NOW = '2026-07-17T15:00:00.000Z';
 function account(
   overrides: Partial<RelayPrivilegedAccountRecord> = {},
 ): RelayPrivilegedAccountRecord {
   return {
-    id: 'account-publisher',
-    operatorId: 'operator-publisher',
-    role: 'publisher',
+    id: 'account-ryan',
+    username: 'ryan',
+    displayName: 'Ryan Bledsoe',
+    storedRole: 'administrator',
     active: true,
     mustChangePassword: false,
-    credentialVersion: 2,
+    credentialVersion: 1,
+    revision: 1,
     created: NOW,
     updated: NOW,
     ...overrides,
   };
 }
-
-function device(overrides: Partial<RelayPrivilegedDeviceRecord> = {}): RelayPrivilegedDeviceRecord {
+function state(overrides: Partial<RelayPrivilegedStateRecord> = {}): RelayPrivilegedStateRecord {
   return {
-    id: 'device-record',
-    accountId: 'account-publisher',
-    deviceId: 'device-1',
-    hostnameSnapshot: 'NOC-LT-01',
-    label: 'Work laptop',
-    publicKey: '{}',
-    fingerprint: 'a'.repeat(64),
-    state: 'active',
-    pairedAt: NOW,
-    lastUsedAt: NOW,
-    revokedAt: null,
-    revokedByOperatorId: null,
-    revision: 1,
+    id: 'state-1',
+    key: 'primary',
+    ownerAccountId: 'account-ryan',
+    publisherAccountId: null,
+    assignmentVersion: 3,
+    identityMigrationVersion: 1,
+    updatedByAccountId: null,
     created: NOW,
     updated: NOW,
     ...overrides,
@@ -82,205 +45,128 @@ function device(overrides: Partial<RelayPrivilegedDeviceRecord> = {}): RelayPriv
 }
 
 describe('PublisherAssignmentManager', () => {
-  const stateCollection = {
-    getFirstListItem: vi.fn(async () => state()),
-    update: vi.fn(async (_id: string, data: Record<string, unknown>) => state(data)),
-  };
-  const operatorCollection = { getOne: vi.fn(async () => operator()) };
+  const records = new Map([
+    ['account-ryan', account()],
+    [
+      'account-charles',
+      account({ id: 'account-charles', username: 'charles', displayName: 'Charles Gibbs' }),
+    ],
+    [
+      'account-publisher',
+      account({
+        id: 'account-publisher',
+        username: 'publisher',
+        displayName: 'Publisher',
+        storedRole: 'publisher',
+      }),
+    ],
+    [
+      'account-previous',
+      account({
+        id: 'account-previous',
+        username: 'previous',
+        displayName: 'Previous',
+        storedRole: 'publisher',
+        credentialVersion: 4,
+      }),
+    ],
+  ]);
+  const stateCollection = { getFirstListItem: vi.fn(async () => state()), update: vi.fn() };
   const accountCollection = {
-    getFirstListItem: vi.fn(async () => account()),
-    create: vi.fn(async (data: Record<string, unknown>) => account(data)),
-    update: vi.fn(async (id: string, data: Record<string, unknown>) => account({ id, ...data })),
+    getOne: vi.fn(async (id: string) => records.get(id)),
+    update: vi.fn(),
   };
-  const deviceCollection = {
-    getFullList: vi.fn(async () => [device()]),
-    update: vi.fn(async (id: string, data: Record<string, unknown>) => device({ id, ...data })),
-  };
+  const deviceCollection = { getFullList: vi.fn(async () => []), update: vi.fn() };
   const pb = {
     collection: vi.fn((name: string) => {
       if (name === RELAY_PRIVILEGED_STATE_COLLECTION) return stateCollection;
-      if (name === RELAY_OPERATORS_COLLECTION) return operatorCollection;
       if (name === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION) return accountCollection;
       if (name === RELAY_PRIVILEGED_DEVICES_COLLECTION) return deviceCollection;
       throw new Error(`Unexpected collection ${name}`);
     }),
   };
   const onAssignmentChanged = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
     stateCollection.getFirstListItem.mockResolvedValue(state());
-    operatorCollection.getOne.mockResolvedValue(operator());
-    accountCollection.getFirstListItem.mockResolvedValue(account());
-    deviceCollection.getFullList.mockResolvedValue([device()]);
+    accountCollection.getOne.mockImplementation(async (id: string) => records.get(id));
   });
-
-  function manager() {
-    return new PublisherAssignmentManager({
+  const manager = () =>
+    new PublisherAssignmentManager({
       pb: pb as never,
       now: () => Date.parse(NOW),
       onAssignmentChanged,
     });
-  }
 
-  it('assigns one active non-admin operator and leaves its credential pending local setup', async () => {
+  it.each(['account-ryan', 'account-charles'])(
+    'allows Owner or Administrator %s to assign Publisher by account ID',
+    async (actorAccountId) => {
+      await expect(
+        manager().assign({
+          actorAccountId,
+          accountId: 'account-publisher',
+          expectedStateRevision: 3,
+        }),
+      ).resolves.toEqual({
+        publisherAccountId: 'account-publisher',
+        assignmentRevision: 4,
+        credentialState: 'pending-local-setup',
+      });
+      expect(stateCollection.update).toHaveBeenCalledWith(
+        'state-1',
+        {
+          publisherAccountId: 'account-publisher',
+          assignmentVersion: 4,
+          updatedByAccountId: actorAccountId,
+          updatedAt: NOW,
+        },
+        { requestKey: null },
+      );
+    },
+  );
+
+  it('never converts an Administrator account into Publisher', async () => {
     await expect(
       manager().assign({
-        operatorId: 'operator-publisher',
+        actorAccountId: 'account-charles',
+        accountId: 'account-ryan',
         expectedStateRevision: 3,
-        actorOperatorId: 'operator-admin',
       }),
-    ).resolves.toEqual({
-      publisherOperatorId: 'operator-publisher',
-      assignmentRevision: 4,
-      credentialState: 'pending-local-setup',
-    });
-
-    expect(accountCollection.update).toHaveBeenCalledWith(
-      'account-publisher',
-      expect.objectContaining({
-        role: 'publisher',
-        active: false,
-        mustChangePassword: true,
-        credentialVersion: 3,
-        password: expect.any(String),
-        passwordConfirm: expect.any(String),
-      }),
-      { requestKey: null },
-    );
-    expect(stateCollection.update).toHaveBeenCalledWith(
-      'state-1',
-      {
-        publisherOperatorId: 'operator-publisher',
-        assignmentVersion: 4,
-        updatedByOperatorId: 'operator-admin',
-        updatedAt: NOW,
-      },
-      { requestKey: null },
-    );
+    ).rejects.toThrow(/Publisher account/i);
+    expect(accountCollection.update).not.toHaveBeenCalled();
   });
 
-  it('lets Charles perform the same publisher assignment as the owner', async () => {
-    await expect(
-      manager().assign({
-        operatorId: 'operator-publisher',
-        expectedStateRevision: 3,
-        actorOperatorId: 'operator-charles',
-      }),
-    ).resolves.toMatchObject({
-      publisherOperatorId: 'operator-publisher',
-      assignmentRevision: 4,
-    });
-  });
-
-  it('creates a pending publisher account when the operator has never held the role', async () => {
-    accountCollection.getFirstListItem.mockRejectedValue({ status: 404 });
-    await manager().assign({
-      operatorId: 'operator-publisher',
-      expectedStateRevision: 3,
-      actorOperatorId: 'operator-admin',
-    });
-
-    expect(accountCollection.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        operatorId: 'operator-publisher',
-        role: 'publisher',
-        active: false,
-        mustChangePassword: true,
-        credentialVersion: 0,
-      }),
-      { requestKey: null },
-    );
-  });
-
-  it('reassigns without two authoritative publishers and revokes the previous publisher', async () => {
+  it('replaces the singleton Publisher and disables only the previous Publisher account', async () => {
     stateCollection.getFirstListItem.mockResolvedValue(
-      state({ publisherOperatorId: 'operator-previous' }),
+      state({ publisherAccountId: 'account-previous' }),
     );
-    accountCollection.getFirstListItem.mockResolvedValueOnce(account()).mockResolvedValueOnce(
-      account({
-        id: 'account-previous',
-        operatorId: 'operator-previous',
-        credentialVersion: 4,
-      }),
-    );
-
     await manager().assign({
-      operatorId: 'operator-publisher',
+      actorAccountId: 'account-charles',
+      accountId: 'account-publisher',
       expectedStateRevision: 3,
-      actorOperatorId: 'operator-admin',
     });
-
-    expect(stateCollection.update).toHaveBeenCalledTimes(1);
-    expect(stateCollection.update).toHaveBeenCalledWith(
-      'state-1',
-      expect.objectContaining({ publisherOperatorId: 'operator-publisher' }),
-      { requestKey: null },
-    );
     expect(accountCollection.update).toHaveBeenCalledWith(
       'account-previous',
       expect.objectContaining({ active: false, mustChangePassword: true }),
       { requestKey: null },
     );
-    expect(onAssignmentChanged).toHaveBeenCalledWith(['operator-previous', 'operator-publisher']);
+    expect(onAssignmentChanged).toHaveBeenCalledWith(['account-previous', 'account-publisher']);
   });
 
-  it('permits removing the publisher entirely', async () => {
-    stateCollection.getFirstListItem.mockResolvedValue(
-      state({ publisherOperatorId: 'operator-previous' }),
-    );
-    accountCollection.getFirstListItem.mockResolvedValue(
-      account({ id: 'account-previous', operatorId: 'operator-previous' }),
-    );
-
+  it('returns the established conflict shape and rejects Publisher actors', async () => {
     await expect(
       manager().assign({
-        operatorId: null,
-        expectedStateRevision: 3,
-        actorOperatorId: 'operator-admin',
-      }),
-    ).resolves.toEqual({
-      publisherOperatorId: null,
-      assignmentRevision: 4,
-      credentialState: 'not-assigned',
-    });
-    expect(operatorCollection.getOne).not.toHaveBeenCalled();
-  });
-
-  it('rejects stale state, a disabled operator, and any administrator', async () => {
-    await expect(
-      manager().assign({
-        operatorId: 'operator-publisher',
+        actorAccountId: 'account-charles',
+        accountId: null,
         expectedStateRevision: 2,
-        actorOperatorId: 'operator-admin',
       }),
     ).rejects.toEqual(new PublisherAssignmentConflictError(3));
-
-    operatorCollection.getOne.mockResolvedValue(operator({ active: false }));
     await expect(
       manager().assign({
-        operatorId: 'operator-publisher',
+        actorAccountId: 'account-publisher',
+        accountId: null,
         expectedStateRevision: 3,
-        actorOperatorId: 'operator-admin',
       }),
-    ).rejects.toThrow(/active operator/i);
-
-    operatorCollection.getOne.mockResolvedValue(operator({ id: 'operator-admin' }));
-    await expect(
-      manager().assign({
-        operatorId: 'operator-admin',
-        expectedStateRevision: 3,
-        actorOperatorId: 'operator-admin',
-      }),
-    ).rejects.toThrow(/administrator/i);
-
-    operatorCollection.getOne.mockResolvedValue(operator({ id: 'operator-charles' }));
-    await expect(
-      manager().assign({
-        operatorId: 'operator-charles',
-        expectedStateRevision: 3,
-        actorOperatorId: 'operator-admin',
-      }),
-    ).rejects.toThrow(/administrator/i);
+    ).rejects.toThrow(/unauthorized/i);
   });
 });

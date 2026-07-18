@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
-  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
@@ -9,22 +8,22 @@ import {
   type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
-import { RELAY_OPERATORS_COLLECTION, type RelayOperatorRecord } from '@shared/operators';
+import { getEffectiveRole } from '@shared/roleAccounts';
 
 type PublisherAssignmentManagerOptions = {
   pb: PocketBase;
   now?: () => number;
-  onAssignmentChanged?: (operatorIds: string[]) => void | Promise<void>;
+  onAssignmentChanged?: (accountIds: string[]) => void | Promise<void>;
 };
 
 type PublisherAssignmentInput = {
-  operatorId: string | null;
+  accountId: string | null;
   expectedStateRevision: number;
-  actorOperatorId: string;
+  actorAccountId: string;
 };
 
 export type PublisherAssignmentResult = {
-  publisherOperatorId: string | null;
+  publisherAccountId: string | null;
   assignmentRevision: number;
   credentialState: 'pending-local-setup' | 'not-assigned' | 'unchanged';
 };
@@ -40,18 +39,10 @@ function escapeFilter(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 }
 
-function internalEmail(operatorId: string): string {
-  const identity = operatorId
-    .toLocaleLowerCase('en')
-    .replaceAll(/[^a-z0-9._-]/g, '-')
-    .slice(0, 120);
-  return `${identity}@relay.invalid`;
-}
-
 export class PublisherAssignmentManager {
   private readonly pb: PocketBase;
   private readonly now: () => number;
-  private readonly onAssignmentChanged?: (operatorIds: string[]) => void | Promise<void>;
+  private readonly onAssignmentChanged?: (accountIds: string[]) => void | Promise<void>;
 
   constructor(options: PublisherAssignmentManagerOptions) {
     this.pb = options.pb;
@@ -61,45 +52,53 @@ export class PublisherAssignmentManager {
 
   async assign(input: PublisherAssignmentInput): Promise<PublisherAssignmentResult> {
     const state = await this.getState();
-    if (!isPrivilegedAdministrator(state, input.actorOperatorId)) {
+    const actor = await this.getAccount(input.actorAccountId);
+    const actorRole = getEffectiveRole(actor, state);
+    if (!actor.active || (actorRole !== 'owner' && actorRole !== 'admin')) {
       throw new Error('Unauthorized publisher assignment.');
     }
     if (input.expectedStateRevision !== state.assignmentVersion) {
       throw new PublisherAssignmentConflictError(state.assignmentVersion);
     }
-    if (input.operatorId === state.publisherOperatorId) {
+    if (input.accountId === state.publisherAccountId) {
       return {
-        publisherOperatorId: input.operatorId,
+        publisherAccountId: input.accountId,
         assignmentRevision: state.assignmentVersion,
         credentialState: 'unchanged',
       };
     }
-    if (input.operatorId) await this.assertEligible(input.operatorId, state);
 
-    if (input.operatorId)
-      await this.preparePendingPublisher(input.operatorId, input.actorOperatorId);
+    const target = input.accountId ? await this.getAccount(input.accountId) : null;
+    if (target && target.storedRole !== 'publisher') {
+      throw new Error('Select a Publisher account for Knowledge Publisher.');
+    }
+    if (target) await this.preparePendingPublisher(target, input.actorAccountId);
+
     const nextRevision = state.assignmentVersion + 1;
     await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(
       state.id,
       {
-        publisherOperatorId: input.operatorId ?? '',
+        publisherAccountId: input.accountId ?? '',
         assignmentVersion: nextRevision,
-        updatedByOperatorId: input.actorOperatorId,
+        updatedByAccountId: input.actorAccountId,
         updatedAt: new Date(this.now()).toISOString(),
       },
       { requestKey: null },
     );
-    if (state.publisherOperatorId) {
-      await this.disablePublisher(state.publisherOperatorId, input.actorOperatorId);
+    if (state.publisherAccountId) {
+      await this.disablePublisher(
+        await this.getAccount(state.publisherAccountId),
+        input.actorAccountId,
+      );
     }
-    const changedOperators = [state.publisherOperatorId, input.operatorId].filter(
-      (operatorId): operatorId is string => Boolean(operatorId),
+    const changedAccounts = [state.publisherAccountId, input.accountId].filter(
+      (accountId): accountId is string => Boolean(accountId),
     );
-    await this.onAssignmentChanged?.([...new Set(changedOperators)]);
+    await this.onAssignmentChanged?.([...new Set(changedAccounts)]);
     return {
-      publisherOperatorId: input.operatorId,
+      publisherAccountId: input.accountId,
       assignmentRevision: nextRevision,
-      credentialState: input.operatorId ? 'pending-local-setup' : 'not-assigned',
+      credentialState: input.accountId ? 'pending-local-setup' : 'not-assigned',
     };
   }
 
@@ -109,49 +108,24 @@ export class PublisherAssignmentManager {
       .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null });
   }
 
-  private async assertEligible(
-    operatorId: string,
-    state: RelayPrivilegedStateRecord,
-  ): Promise<void> {
-    const operator = await this.pb
-      .collection(RELAY_OPERATORS_COLLECTION)
-      .getOne<RelayOperatorRecord>(operatorId, { requestKey: null });
-    if (!operator.active) throw new Error('Select an active operator for Knowledge Publisher.');
-    if (isPrivilegedAdministrator(state, operator.id)) {
-      throw new Error('The Relay administrator cannot also be Knowledge Publisher.');
-    }
+  private async getAccount(accountId: string): Promise<RelayPrivilegedAccountRecord> {
+    return this.pb
+      .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+      .getOne<RelayPrivilegedAccountRecord>(accountId, { requestKey: null });
   }
 
   private async preparePendingPublisher(
-    operatorId: string,
-    actorOperatorId: string,
+    account: RelayPrivilegedAccountRecord,
+    actorAccountId: string,
   ): Promise<void> {
-    const existing = await this.findAccount(operatorId);
+    await this.revokeDevices(account, actorAccountId);
     const credential = randomBytes(48).toString('base64url');
-    if (!existing) {
-      await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).create(
-        {
-          email: internalEmail(operatorId),
-          operatorId,
-          role: 'publisher',
-          active: false,
-          mustChangePassword: true,
-          credentialVersion: 0,
-          password: credential,
-          passwordConfirm: credential,
-        },
-        { requestKey: null },
-      );
-      return;
-    }
-    await this.revokeDevices(existing, actorOperatorId);
     await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).update(
-      existing.id,
+      account.id,
       {
-        role: 'publisher',
         active: false,
         mustChangePassword: true,
-        credentialVersion: existing.credentialVersion + 1,
+        credentialVersion: account.credentialVersion + 1,
         password: credential,
         passwordConfirm: credential,
       },
@@ -159,41 +133,31 @@ export class PublisherAssignmentManager {
     );
   }
 
-  private async disablePublisher(operatorId: string, actorOperatorId: string): Promise<void> {
-    const existing = await this.findAccount(operatorId);
-    if (!existing) return;
-    await this.revokeDevices(existing, actorOperatorId);
+  private async disablePublisher(
+    account: RelayPrivilegedAccountRecord,
+    actorAccountId: string,
+  ): Promise<void> {
+    if (account.storedRole !== 'publisher') {
+      throw new Error('The authoritative Publisher account is invalid.');
+    }
+    await this.revokeDevices(account, actorAccountId);
     const credential = randomBytes(48).toString('base64url');
     await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).update(
-      existing.id,
+      account.id,
       {
         active: false,
         mustChangePassword: true,
-        credentialVersion: existing.credentialVersion + 1,
+        credentialVersion: account.credentialVersion + 1,
         password: credential,
         passwordConfirm: credential,
       },
       { requestKey: null },
     );
-  }
-
-  private async findAccount(operatorId: string): Promise<RelayPrivilegedAccountRecord | null> {
-    try {
-      return await this.pb
-        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-        .getFirstListItem<RelayPrivilegedAccountRecord>(
-          `operatorId="${escapeFilter(operatorId)}"`,
-          { requestKey: null },
-        );
-    } catch (error) {
-      if ((error as { status?: number })?.status === 404) return null;
-      throw error;
-    }
   }
 
   private async revokeDevices(
     account: RelayPrivilegedAccountRecord,
-    actorOperatorId: string,
+    actorAccountId: string,
   ): Promise<void> {
     const devices = await this.pb
       .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
@@ -208,7 +172,7 @@ export class PublisherAssignmentManager {
         {
           state: 'revoked',
           revokedAt,
-          revokedByOperatorId: actorOperatorId,
+          revokedByAccountId: actorAccountId,
           revision: device.revision + 1,
         },
         { requestKey: null },
