@@ -2,19 +2,26 @@ import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
+  KNOWLEDGE_CATEGORIES_COLLECTION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_LIBRARY_STATE_COLLECTION,
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_MAX_COVER_BYTES,
   KNOWLEDGE_UPLOADS_COLLECTION,
+  compareKnowledgeCategories,
   compareKnowledgeDocuments,
+  knowledgeCategoryKey,
   normalizeKnowledgeAuditEventView,
+  normalizeKnowledgeCategoryName,
+  normalizeKnowledgeCategoryRecord,
   normalizeKnowledgeDocumentRecord,
   normalizeKnowledgeSearchText,
   type KnowledgeAuditAction,
   type KnowledgeAuditEventView,
+  type KnowledgeCategoryRecord,
   type KnowledgeDocumentRecord,
+  type KnowledgeDocumentType,
   type KnowledgeLibraryMode,
   type KnowledgeManagementDocumentView,
   type KnowledgeManagementSnapshot,
@@ -69,6 +76,8 @@ function documentView(document: KnowledgeDocumentRecord): KnowledgeManagementDoc
   return {
     id: document.id,
     category: document.category,
+    categoryId: document.categoryId,
+    documentType: document.documentType,
     displayTitle: document.displayTitle,
     fileName: document.fileName,
     byteSize: document.byteSize,
@@ -97,6 +106,8 @@ function uploadView(upload: StoredUploadRecord): KnowledgeManagementUploadView {
     progress,
     proposedTitle: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
     proposedCategory: upload.proposedCategory || 'General',
+    proposedCategoryId: upload.proposedCategoryId || null,
+    proposedDocumentType: upload.proposedDocumentType === 'cheatsheet' ? 'cheatsheet' : 'sop',
     pageCount:
       Number.isInteger(upload.pageCount) && Number(upload.pageCount) > 0
         ? Number(upload.pageCount)
@@ -174,8 +185,9 @@ export class ManagedKnowledgeService {
     pageSize: number;
   }): Promise<KnowledgeManagementSnapshot> {
     const pageSize = Math.min(input.pageSize, 25);
-    const [mode, documents, uploads] = await Promise.all([
+    const [mode, categories, documents, uploads] = await Promise.all([
       this.readMode(),
+      this.readCategories(),
       this.readDocuments(),
       this.pb.collection(KNOWLEDGE_UPLOADS_COLLECTION).getFullList<StoredUploadRecord>({
         filter: `accountId="${escapeFilter(input.accountId)}"`,
@@ -198,6 +210,7 @@ export class ManagedKnowledgeService {
     const uploadItems = sortedUploads.slice(uploadStart, uploadStart + pageSize);
     return {
       mode,
+      categories,
       documents: this.page(
         matches.filter(({ lifecycleState }) => lifecycleState === 'active'),
         input.cursor,
@@ -226,14 +239,16 @@ export class ManagedKnowledgeService {
     const upload = await this.readyUpload(input.uploadId, input.actor);
     await this.assertUniqueFilename(upload.fileName);
     const title = normalizedText(input.title, 240);
-    const category = normalizedText(input.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+    const category = await this.resolveOrCreateCategoryByName(input.category);
     const [bytes, coverBytes] = await Promise.all([
       this.readAndVerifyUpload(upload),
       this.readAndVerifyCover(upload),
     ]);
     const publishedAt = this.timestamp();
     const form = this.documentForm(upload, bytes, coverBytes, {
-      category,
+      category: category.name,
+      categoryId: category.id,
+      documentType: 'sop',
       title,
       fileName: upload.fileName,
       publishedAt,
@@ -244,7 +259,9 @@ export class ManagedKnowledgeService {
       requestKey: null,
     });
     const document = this.documentFromSaved(saved, upload, {
-      category,
+      category: category.name,
+      categoryId: category.id,
+      documentType: 'sop',
       title,
       fileName: upload.fileName,
       publishedAt,
@@ -271,14 +288,16 @@ export class ManagedKnowledgeService {
     ]);
     this.assertRevision(current, input.expectedRevision);
     const title = normalizedText(input.title, 240);
-    const category = normalizedText(input.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+    const category = await this.resolveOrCreateCategoryByName(input.category);
     const [bytes, coverBytes] = await Promise.all([
       this.readAndVerifyUpload(upload),
       this.readAndVerifyCover(upload),
     ]);
     const publishedAt = this.timestamp();
     const metadata = {
-      category,
+      category: category.name,
+      categoryId: category.id,
+      documentType: current.documentType,
       title,
       fileName: current.fileName,
       publishedAt,
@@ -354,6 +373,248 @@ export class ManagedKnowledgeService {
       );
     }
     await this.audit(input.requestId, 'category-renamed', null, input.actor, { from, to });
+    return changed;
+  }
+
+  async createCategory(input: {
+    actor: Actor;
+    requestId: string;
+    name: string;
+    afterCategoryId: string | null;
+  }): Promise<KnowledgeCategoryRecord> {
+    const name = normalizeKnowledgeCategoryName(
+      normalizedText(input.name, KNOWLEDGE_MAX_CATEGORY_LENGTH),
+    );
+    const categories = await this.readCategories();
+    this.assertUniqueCategoryName(categories, name);
+    const afterIndex = input.afterCategoryId
+      ? categories.findIndex(({ id }) => id === input.afterCategoryId)
+      : categories.length - 1;
+    if (input.afterCategoryId && afterIndex < 0)
+      throw new Error('Knowledge category is unavailable.');
+    const previousOrder = categories[afterIndex]?.sortOrder ?? 0;
+    const nextOrder = categories[afterIndex + 1]?.sortOrder ?? previousOrder + 200;
+    const saved = await this.pb.collection(KNOWLEDGE_CATEGORIES_COLLECTION).create(
+      {
+        name,
+        normalizedName: knowledgeCategoryKey(name),
+        sortOrder: Math.floor((previousOrder + nextOrder) / 2),
+        systemKey: '',
+        revision: 1,
+      },
+      { requestKey: null },
+    );
+    const category = normalizeKnowledgeCategoryRecord(saved);
+    if (!category) throw new Error('Knowledge category creation was invalid.');
+    await this.audit(input.requestId, 'category-created', null, input.actor, {
+      categoryId: category.id,
+      name: category.name,
+    });
+    return category;
+  }
+
+  async setCategoryName(input: {
+    actor: Actor;
+    requestId: string;
+    categoryId: string;
+    name: string;
+    expectedRevision: number;
+  }): Promise<KnowledgeCategoryRecord> {
+    const [current, categories] = await Promise.all([
+      this.getCategory(input.categoryId),
+      this.readCategories(),
+    ]);
+    this.assertCategoryRevision(current, input.expectedRevision);
+    const name = normalizeKnowledgeCategoryName(
+      normalizedText(input.name, KNOWLEDGE_MAX_CATEGORY_LENGTH),
+    );
+    this.assertUniqueCategoryName(categories, name, current.id);
+    const saved = await this.pb.collection(KNOWLEDGE_CATEGORIES_COLLECTION).update(
+      current.id,
+      {
+        name,
+        normalizedName: knowledgeCategoryKey(name),
+        revision: current.revision + 1,
+      },
+      { requestKey: null },
+    );
+    const category = normalizeKnowledgeCategoryRecord({ ...current, ...saved });
+    if (!category) throw new Error('Knowledge category update was invalid.');
+    const documents = (await this.readDocuments()).filter(
+      ({ categoryId }) => categoryId === current.id,
+    );
+    for (const document of documents) {
+      await this.patchKnownDocument(
+        {
+          actor: input.actor,
+          requestId: input.requestId,
+          documentId: document.id,
+          expectedRevision: document.revision,
+        },
+        document,
+        'category-renamed',
+        { category: name, sourceKey: sourceKey(name, document.fileName) },
+        false,
+      );
+    }
+    await this.audit(input.requestId, 'category-renamed', null, input.actor, {
+      categoryId: category.id,
+      from: current.name,
+      to: category.name,
+    });
+    return category;
+  }
+
+  async setCategoryOrder(input: {
+    actor: Actor;
+    requestId: string;
+    orderedCategoryIds: string[];
+    expectedRevisions: Record<string, number>;
+  }): Promise<KnowledgeCategoryRecord[]> {
+    const categories = await this.readCategories();
+    const currentIds = categories
+      .map(({ id }) => id)
+      .toSorted((left, right) => left.localeCompare(right));
+    const orderedIds = input.orderedCategoryIds.toSorted((left, right) =>
+      left.localeCompare(right),
+    );
+    if (
+      currentIds.length !== orderedIds.length ||
+      currentIds.some((id, index) => id !== orderedIds[index])
+    ) {
+      throw new Error('The complete Knowledge category order is required.');
+    }
+    for (const category of categories) {
+      this.assertCategoryRevision(category, input.expectedRevisions[category.id] ?? -1);
+    }
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    const updated: KnowledgeCategoryRecord[] = [];
+    for (const [index, id] of input.orderedCategoryIds.entries()) {
+      const current = byId.get(id)!;
+      const saved = await this.pb
+        .collection(KNOWLEDGE_CATEGORIES_COLLECTION)
+        .update(
+          id,
+          { sortOrder: (index + 1) * 100, revision: current.revision + 1 },
+          { requestKey: null },
+        );
+      const category = normalizeKnowledgeCategoryRecord({ ...current, ...saved });
+      if (!category) throw new Error('Knowledge category order update was invalid.');
+      updated.push(category);
+    }
+    await this.audit(input.requestId, 'category-reordered', null, input.actor, {
+      orderedCategoryIds: input.orderedCategoryIds,
+    });
+    return updated;
+  }
+
+  async deleteCategory(input: {
+    actor: Actor;
+    requestId: string;
+    categoryId: string;
+    replacementCategoryId: string;
+    expectedRevision: number;
+    expectedDocumentRevisions: Record<string, number>;
+  }): Promise<void> {
+    if (input.categoryId === input.replacementCategoryId) {
+      throw new Error('A different replacement category is required.');
+    }
+    const [current, replacement, documents] = await Promise.all([
+      this.getCategory(input.categoryId),
+      this.getCategory(input.replacementCategoryId),
+      this.readDocuments(),
+    ]);
+    this.assertCategoryRevision(current, input.expectedRevision);
+    if (current.systemKey === 'uncategorized') {
+      throw new Error('The fallback Knowledge category cannot be deleted.');
+    }
+    const affected = documents.filter(({ categoryId }) => categoryId === current.id);
+    for (const document of affected) {
+      this.assertRevision(document, input.expectedDocumentRevisions[document.id] ?? -1);
+    }
+    for (const document of affected) {
+      await this.patchKnownDocument(
+        {
+          actor: input.actor,
+          requestId: input.requestId,
+          documentId: document.id,
+          expectedRevision: document.revision,
+        },
+        document,
+        'documents-reassigned',
+        {
+          categoryId: replacement.id,
+          category: replacement.name,
+          sourceKey: sourceKey(replacement.name, document.fileName),
+        },
+        false,
+      );
+    }
+    await this.pb.collection(KNOWLEDGE_CATEGORIES_COLLECTION).delete(current.id, {
+      requestKey: null,
+    });
+    await this.audit(input.requestId, 'category-deleted', null, input.actor, {
+      categoryId: current.id,
+      replacementCategoryId: replacement.id,
+      documentIds: affected.map(({ id }) => id),
+    });
+  }
+
+  async setDocumentMetadata(input: {
+    actor: Actor;
+    requestId: string;
+    documentId: string;
+    title: string;
+    categoryId: string;
+    documentType: KnowledgeDocumentType;
+    expectedRevision: number;
+  }): Promise<KnowledgeManagementDocumentView> {
+    const [current, category] = await Promise.all([
+      this.getDocument(input.documentId),
+      this.getCategory(input.categoryId),
+    ]);
+    return this.patchKnownDocument(input, current, 'document-type-changed', {
+      displayTitle: normalizedText(input.title, 240),
+      categoryId: category.id,
+      category: category.name,
+      documentType: input.documentType,
+      sourceKey: sourceKey(category.name, current.fileName),
+    });
+  }
+
+  async assignDocumentCategories(input: {
+    actor: Actor;
+    requestId: string;
+    categoryId: string;
+    documents: Array<{ documentId: string; expectedRevision: number }>;
+  }): Promise<KnowledgeManagementDocumentView[]> {
+    const category = await this.getCategory(input.categoryId);
+    const changed: KnowledgeManagementDocumentView[] = [];
+    for (const item of input.documents) {
+      const document = await this.getDocument(item.documentId);
+      changed.push(
+        await this.patchKnownDocument(
+          {
+            actor: input.actor,
+            requestId: input.requestId,
+            documentId: item.documentId,
+            expectedRevision: item.expectedRevision,
+          },
+          document,
+          'documents-reassigned',
+          {
+            categoryId: category.id,
+            category: category.name,
+            sourceKey: sourceKey(category.name, document.fileName),
+          },
+          false,
+        ),
+      );
+    }
+    await this.audit(input.requestId, 'documents-reassigned', null, input.actor, {
+      categoryId: category.id,
+      documentIds: input.documents.map(({ documentId }) => documentId),
+    });
     return changed;
   }
 
@@ -438,6 +699,72 @@ export class ManagedKnowledgeService {
     return state.mode;
   }
 
+  private async readCategories(): Promise<KnowledgeCategoryRecord[]> {
+    const records = await this.pb.collection(KNOWLEDGE_CATEGORIES_COLLECTION).getFullList({
+      sort: 'sortOrder,name',
+      requestKey: null,
+    });
+    return records
+      .map(normalizeKnowledgeCategoryRecord)
+      .filter((record): record is KnowledgeCategoryRecord => record !== null)
+      .toSorted(compareKnowledgeCategories);
+  }
+
+  private async getCategory(id: string): Promise<KnowledgeCategoryRecord> {
+    const record = await this.pb
+      .collection(KNOWLEDGE_CATEGORIES_COLLECTION)
+      .getOne(id, { requestKey: null });
+    const category = normalizeKnowledgeCategoryRecord(record);
+    if (!category) throw new Error('Knowledge category is unavailable.');
+    return category;
+  }
+
+  private async resolveOrCreateCategoryByName(value: string): Promise<KnowledgeCategoryRecord> {
+    const name = normalizeKnowledgeCategoryName(
+      normalizedText(value, KNOWLEDGE_MAX_CATEGORY_LENGTH),
+    );
+    const categories = await this.readCategories();
+    const existing = categories.find(
+      ({ normalizedName }) => normalizedName === knowledgeCategoryKey(name),
+    );
+    if (existing) return existing;
+    const saved = await this.pb.collection(KNOWLEDGE_CATEGORIES_COLLECTION).create(
+      {
+        name,
+        normalizedName: knowledgeCategoryKey(name),
+        sortOrder: (categories.length + 1) * 100,
+        systemKey: '',
+        revision: 1,
+      },
+      { requestKey: null },
+    );
+    const category = normalizeKnowledgeCategoryRecord(saved);
+    if (!category) throw new Error('Knowledge category creation was invalid.');
+    return category;
+  }
+
+  private assertUniqueCategoryName(
+    categories: KnowledgeCategoryRecord[],
+    name: string,
+    excludingId?: string,
+  ): void {
+    const key = knowledgeCategoryKey(name);
+    if (
+      categories.some((category) => category.id !== excludingId && category.normalizedName === key)
+    ) {
+      throw new Error('A Knowledge category with this name already exists.');
+    }
+  }
+
+  private assertCategoryRevision(
+    category: KnowledgeCategoryRecord,
+    expectedRevision: number,
+  ): void {
+    if (category.revision !== expectedRevision) {
+      throw new ManagedKnowledgeConflictError(category.revision);
+    }
+  }
+
   private async readDocuments(): Promise<KnowledgeDocumentRecord[]> {
     const records = await this.pb
       .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
@@ -507,6 +834,8 @@ export class ManagedKnowledgeService {
     coverBytes: Uint8Array,
     metadata: {
       category: string;
+      categoryId: string;
+      documentType: KnowledgeDocumentType;
       title: string;
       fileName: string;
       publishedAt: string;
@@ -518,8 +847,8 @@ export class ManagedKnowledgeService {
     const values = {
       sourceKey: sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
-      categoryId: '',
-      documentType: 'sop',
+      categoryId: metadata.categoryId,
+      documentType: metadata.documentType,
       title: metadata.title,
       displayTitle: metadata.title,
       fileName: metadata.fileName,
@@ -562,6 +891,8 @@ export class ManagedKnowledgeService {
     upload: UploadRecord,
     metadata: {
       category: string;
+      categoryId: string;
+      documentType: KnowledgeDocumentType;
       title: string;
       fileName: string;
       publishedAt: string;
@@ -574,8 +905,8 @@ export class ManagedKnowledgeService {
       id: String(saved.id),
       sourceKey: sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
-      categoryId: null,
-      documentType: 'sop',
+      categoryId: metadata.categoryId,
+      documentType: metadata.documentType,
       title: metadata.title,
       displayTitle: metadata.title,
       fileName: metadata.fileName,

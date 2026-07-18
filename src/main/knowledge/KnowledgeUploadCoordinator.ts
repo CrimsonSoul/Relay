@@ -6,6 +6,7 @@ import {
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
   KNOWLEDGE_UPLOAD_RETENTION_MS,
   type KnowledgeManagementErrorCode,
+  type KnowledgeDocumentType,
   type KnowledgeOutlineNode,
   type KnowledgeOutlineSource,
   type KnowledgeUploadBatchState,
@@ -62,6 +63,8 @@ export type KnowledgeUploadManifestRecord = {
   outlineSource: KnowledgeOutlineSource | null;
   proposedTitle: string;
   proposedCategory: string;
+  proposedCategoryId: string | null;
+  proposedDocumentType: KnowledgeDocumentType;
   duplicateDocumentId: string | null;
   safeError: KnowledgeManagementErrorCode | null;
   lastActivityAt: string;
@@ -216,6 +219,8 @@ function manifestView(
     state: record.state,
     proposedTitle: record.proposedTitle,
     proposedCategory: record.proposedCategory,
+    proposedCategoryId: record.proposedCategoryId,
+    proposedDocumentType: record.proposedDocumentType,
     pageCount: record.pageCount,
     outline: record.outline,
     outlineSource: record.outlineSource,
@@ -352,6 +357,8 @@ export class KnowledgeUploadCoordinator {
       outlineSource: null,
       proposedTitle: '',
       proposedCategory: '',
+      proposedCategoryId: null,
+      proposedDocumentType: 'sop',
       duplicateDocumentId: null,
       safeError: null,
       lastActivityAt: now,
@@ -580,6 +587,8 @@ export class KnowledgeUploadCoordinator {
         outlineSource: extraction.outlineSource,
         proposedTitle: extraction.metadataTitle || upload.fileName.replace(/\.pdf$/i, ''),
         proposedCategory: upload.proposedCategory || 'General',
+        proposedCategoryId: upload.proposedCategoryId,
+        proposedDocumentType: upload.proposedDocumentType,
         duplicateDocumentId,
         safeError: null,
         lastActivityAt: now,

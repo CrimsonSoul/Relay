@@ -145,6 +145,8 @@ export type KnowledgeUploadManifestView = {
   state: Exclude<KnowledgeUploadState, 'validating'>;
   proposedTitle: string;
   proposedCategory: string;
+  proposedCategoryId: string | null;
+  proposedDocumentType: KnowledgeDocumentType;
   pageCount: number | null;
   outline: KnowledgeOutlineNode[];
   outlineSource: KnowledgeOutlineSource | null;
@@ -194,6 +196,8 @@ export type KnowledgeUploadView = {
   progress: number;
   proposedTitle: string;
   proposedCategory: string;
+  proposedCategoryId: string | null;
+  proposedDocumentType: KnowledgeDocumentType;
   pageCount: number | null;
   outline: KnowledgeOutlineNode[];
   outlineSource: KnowledgeOutlineSource | null;
@@ -672,6 +676,8 @@ export function normalizeKnowledgeUploadManifestView(
   const state = value.state as KnowledgeUploadManifestView['state'];
   const outlineSource = value.outlineSource as KnowledgeOutlineSource | null;
   const safeError = value.safeError as KnowledgeManagementErrorCode | null;
+  const proposedCategoryId = value.proposedCategoryId || null;
+  const proposedDocumentType = value.proposedDocumentType ?? 'sop';
   const chunkCount = value.chunkCount as number;
   const expectedChunkCount = Math.ceil((value.byteSize as number) / KNOWLEDGE_UPLOAD_CHUNK_BYTES);
   if (
@@ -689,6 +695,8 @@ export function normalizeKnowledgeUploadManifestView(
     value.proposedTitle.length > 240 ||
     typeof value.proposedCategory !== 'string' ||
     value.proposedCategory.length > KNOWLEDGE_MAX_CATEGORY_LENGTH ||
+    (proposedCategoryId !== null && !boundedIdentifier(proposedCategoryId, 200)) ||
+    (proposedDocumentType !== 'sop' && proposedDocumentType !== 'cheatsheet') ||
     (value.pageCount !== null &&
       (!Number.isInteger(value.pageCount) ||
         (value.pageCount as number) < 1 ||
@@ -731,6 +739,8 @@ export function normalizeKnowledgeUploadManifestView(
     state,
     proposedTitle: value.proposedTitle,
     proposedCategory: value.proposedCategory,
+    proposedCategoryId,
+    proposedDocumentType,
     pageCount: value.pageCount as number | null,
     outline,
     outlineSource,
@@ -890,6 +900,8 @@ export function normalizeKnowledgeManagementUploadView(
   const state = value.state as KnowledgeUploadState;
   const outlineSource = value.outlineSource as KnowledgeOutlineSource | null;
   const safeError = value.safeError as KnowledgeManagementErrorCode | null;
+  const proposedCategoryId = value.proposedCategoryId || null;
+  const proposedDocumentType = value.proposedDocumentType ?? 'sop';
   const validStates: KnowledgeUploadState[] = [
     'queued',
     'uploading',
@@ -916,6 +928,8 @@ export function normalizeKnowledgeManagementUploadView(
     value.proposedTitle.length > 240 ||
     typeof value.proposedCategory !== 'string' ||
     value.proposedCategory.length > KNOWLEDGE_MAX_CATEGORY_LENGTH ||
+    (proposedCategoryId !== null && !boundedIdentifier(proposedCategoryId, 200)) ||
+    (proposedDocumentType !== 'sop' && proposedDocumentType !== 'cheatsheet') ||
     (value.pageCount !== null && (!Number.isInteger(value.pageCount) || value.pageCount <= 0)) ||
     (outlineSource !== null && !['native', 'inferred', 'none'].includes(outlineSource)) ||
     !optionalBoundedString(value.duplicateDocumentId, 200) ||
@@ -938,6 +952,8 @@ export function normalizeKnowledgeManagementUploadView(
     progress: value.progress,
     proposedTitle: value.proposedTitle,
     proposedCategory: value.proposedCategory,
+    proposedCategoryId,
+    proposedDocumentType,
     pageCount: value.pageCount as number | null,
     outlineSource,
     duplicateDocumentId: value.duplicateDocumentId,

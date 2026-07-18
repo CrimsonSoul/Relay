@@ -45,6 +45,8 @@ function uploadRecord(value: KnowledgeUploadManifestRecord): KnowledgeUploadMani
     chunkCount: Number(value.chunkCount),
     pdf: value.pdf || null,
     cover: value.cover || null,
+    proposedCategoryId: value.proposedCategoryId || null,
+    proposedDocumentType: value.proposedDocumentType === 'cheatsheet' ? 'cheatsheet' : 'sop',
     pageCount:
       Number.isInteger(value.pageCount) && Number(value.pageCount) > 0
         ? Number(value.pageCount)

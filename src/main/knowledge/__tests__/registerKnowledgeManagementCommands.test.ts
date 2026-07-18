@@ -52,6 +52,12 @@ describe('registerKnowledgeManagementCommands', () => {
     setTitle: vi.fn(async () => ({ id: 'document-1' })),
     setCategory: vi.fn(async () => ({ id: 'document-1' })),
     renameCategory: vi.fn(async () => []),
+    createCategory: vi.fn(async () => ({ id: 'category-1' })),
+    setCategoryName: vi.fn(async () => ({ id: 'category-1' })),
+    setCategoryOrder: vi.fn(async () => [{ id: 'category-1' }]),
+    deleteCategory: vi.fn(async () => undefined),
+    setDocumentMetadata: vi.fn(async () => ({ id: 'document-1' })),
+    assignDocumentCategories: vi.fn(async () => [{ id: 'document-1' }]),
     trash: vi.fn(async () => ({ id: 'document-1' })),
     restore: vi.fn(async () => ({ id: 'document-1' })),
     deletePermanently: vi.fn(async () => ({ id: 'document-1', deleted: true as const })),
@@ -162,6 +168,12 @@ describe('registerKnowledgeManagementCommands', () => {
       'knowledge.document.title.set',
       'knowledge.document.category.set',
       'knowledge.category.rename',
+      'knowledge.category.create',
+      'knowledge.category.name.set',
+      'knowledge.category.order.set',
+      'knowledge.category.delete',
+      'knowledge.document.metadata.set',
+      'knowledge.documents.category.assign',
       'knowledge.document.trash',
       'knowledge.document.restore',
       'knowledge.document.delete',
@@ -182,6 +194,35 @@ describe('registerKnowledgeManagementCommands', () => {
       title: 'Runbook',
       category: 'Operations',
     });
+
+    await handlers.get('knowledge.category.create')!(
+      context as never,
+      { name: 'Network', afterCategoryId: null } as never,
+    );
+    expect(service.createCategory).toHaveBeenCalledWith({
+      actor: { accountId: 'account-admin', displayName: 'Ryan Bledsoe' },
+      requestId: 'command-request-1',
+      name: 'Network',
+      afterCategoryId: null,
+    });
+
+    await handlers.get('knowledge.document.metadata.set')!(
+      context as never,
+      {
+        documentId: 'document-1',
+        title: 'Oracle guide',
+        categoryId: 'category-1',
+        documentType: 'sop',
+        expectedRevision: 3,
+      } as never,
+    );
+    expect(service.setDocumentMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'command-request-1',
+        categoryId: 'category-1',
+        documentType: 'sop',
+      }),
+    );
   });
 
   it('registers all resumable commands with the current account, device, and request ID', async () => {

@@ -67,6 +67,12 @@ type KnowledgeManagementCommandOptions = {
     | 'setTitle'
     | 'setCategory'
     | 'renameCategory'
+    | 'createCategory'
+    | 'setCategoryName'
+    | 'setCategoryOrder'
+    | 'deleteCategory'
+    | 'setDocumentMetadata'
+    | 'assignDocumentCategories'
     | 'trash'
     | 'restore'
     | 'deletePermanently'
@@ -172,6 +178,8 @@ function uploadView(
     progress: error ? 0 : 100,
     proposedTitle: extraction?.metadataTitle ?? title,
     proposedCategory: 'General',
+    proposedCategoryId: null,
+    proposedDocumentType: 'sop',
     pageCount: extraction?.pageCount ?? null,
     outline: extraction?.outline ?? [],
     outlineSource: extraction?.outlineSource ?? null,
@@ -405,6 +413,106 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
           action: 'category-renamed',
           mutate: () =>
             options.service.renameCategory({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.category.create',
+    'knowledge.manage',
+    (context, payload) =>
+      coordinator.run({
+        requestId: context.requestId,
+        action: 'category-created',
+        mutate: () =>
+          options.service.createCategory({
+            actor: actor(context),
+            requestId: context.requestId,
+            ...payload,
+          }),
+      }),
+  );
+  options.registrar.registerCommand(
+    'knowledge.category.name.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'category-renamed',
+          mutate: () =>
+            options.service.setCategoryName({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.category.order.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'category-reordered',
+          mutate: () =>
+            options.service.setCategoryOrder({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.category.delete',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'category-deleted',
+          mutate: () =>
+            options.service.deleteCategory({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.metadata.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'document-type-changed',
+          mutate: () =>
+            options.service.setDocumentMetadata({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.documents.category.assign',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'documents-reassigned',
+          mutate: () =>
+            options.service.assignDocumentCategories({
               actor: actor(context),
               requestId: context.requestId,
               ...payload,

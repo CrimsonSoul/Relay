@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
+  KNOWLEDGE_CATEGORIES_COLLECTION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_LIBRARY_STATE_COLLECTION,
   KNOWLEDGE_UPLOADS_COLLECTION,
@@ -22,6 +23,8 @@ function document(overrides: Record<string, unknown> = {}) {
     id: 'document-1',
     sourceKey: 'Operations/Runbook.pdf',
     category: 'Operations',
+    categoryId: 'category-operations',
+    documentType: 'sop',
     title: 'Runbook',
     displayTitle: 'Runbook',
     fileName: 'Runbook.pdf',
@@ -77,6 +80,45 @@ function upload(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ManagedKnowledgeService', () => {
+  const categoryRecords = [
+    {
+      id: 'category-operations',
+      name: 'Operations',
+      normalizedName: 'operations',
+      sortOrder: 100,
+      systemKey: '',
+      revision: 2,
+      created: NOW,
+      updated: NOW,
+    },
+    {
+      id: 'category-uncategorized',
+      name: 'Uncategorized',
+      normalizedName: 'uncategorized',
+      sortOrder: 200,
+      systemKey: 'uncategorized',
+      revision: 1,
+      created: NOW,
+      updated: NOW,
+    },
+  ];
+  const categories = {
+    getFullList: vi.fn(async () => categoryRecords),
+    getOne: vi.fn(async (id: string) => categoryRecords.find((category) => category.id === id)),
+    create: vi.fn(async (value: Record<string, unknown>) => ({
+      id: 'category-new',
+      created: NOW,
+      updated: NOW,
+      ...value,
+    })),
+    update: vi.fn(async (id: string, value: Record<string, unknown>) => ({
+      ...(categoryRecords.find((category) => category.id === id) ?? categoryRecords[0]),
+      ...value,
+      id,
+      updated: NOW,
+    })),
+    delete: vi.fn(async () => true),
+  };
   const documents = {
     getFullList: vi.fn(async () => [] as Record<string, unknown>[]),
     getOne: vi.fn(async () => document()),
@@ -108,6 +150,7 @@ describe('ManagedKnowledgeService', () => {
   const pb = {
     collection: vi.fn((name: string) => {
       if (name === KNOWLEDGE_DOCUMENTS_COLLECTION) return documents;
+      if (name === KNOWLEDGE_CATEGORIES_COLLECTION) return categories;
       if (name === KNOWLEDGE_UPLOADS_COLLECTION) return uploads;
       if (name === KNOWLEDGE_AUDIT_EVENTS_COLLECTION) return audits;
       if (name === KNOWLEDGE_LIBRARY_STATE_COLLECTION) return libraryState;
@@ -119,6 +162,10 @@ describe('ManagedKnowledgeService', () => {
     vi.clearAllMocks();
     documents.getFullList.mockResolvedValue([]);
     documents.getOne.mockResolvedValue(document());
+    categories.getFullList.mockResolvedValue(categoryRecords);
+    categories.getOne.mockImplementation(async (id: string) =>
+      categoryRecords.find((category) => category.id === id),
+    );
     uploads.getOne.mockResolvedValue(upload());
   });
 
@@ -148,6 +195,10 @@ describe('ManagedKnowledgeService', () => {
       pageCount: null,
       outlineSource: null,
     });
+    expect(snapshot.categories.map(({ id }) => id)).toEqual([
+      'category-operations',
+      'category-uncategorized',
+    ]);
     expect(normalizeKnowledgeManagementSnapshot(snapshot)).not.toBeNull();
   });
 
@@ -171,6 +222,9 @@ describe('ManagedKnowledgeService', () => {
     expect(documents.create).toHaveBeenCalledWith(expect.any(FormData), { requestKey: null });
     const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
     expect(publishForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
+    expect(publishForm.get('categoryId')).toBe('category-operations');
+    expect(publishForm.get('category')).toBe('Operations');
+    expect(publishForm.get('documentType')).toBe('sop');
     expect(publishForm.get('cover')).toMatchObject({ type: 'image/png' });
     expect(publishForm.get('publishedByOperatorId')).toBe('');
     expect(publishForm.get('trashedByAccountId')).toBe('');
@@ -255,6 +309,8 @@ describe('ManagedKnowledgeService', () => {
     });
     const replacementForm = documents.update.mock.calls.at(-1)?.[1] as FormData;
     expect(replacementForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
+    expect(replacementForm.get('categoryId')).toBe('category-operations');
+    expect(replacementForm.get('documentType')).toBe('sop');
     expect(replacementForm.get('publishedByOperatorId')).toBe('');
   });
 
@@ -337,5 +393,103 @@ describe('ManagedKnowledgeService', () => {
       }),
     ).resolves.toEqual({ id: 'document-1', deleted: true });
     expect(audits.create).toHaveBeenCalledBefore(documents.delete);
+  });
+
+  it('creates categories while rejecting case-insensitive duplicate names', async () => {
+    await expect(
+      service().createCategory({
+        actor: ACTOR,
+        requestId: 'request-create-category',
+        name: 'Network',
+        afterCategoryId: 'category-operations',
+      }),
+    ).resolves.toMatchObject({ id: 'category-new', name: 'Network', revision: 1 });
+
+    await expect(
+      service().createCategory({
+        actor: ACTOR,
+        requestId: 'request-duplicate-category',
+        name: '  OPERATIONS  ',
+        afterCategoryId: null,
+      }),
+    ).rejects.toThrow(/already exists/i);
+    expect(audits.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'category-created' }),
+      { requestKey: null },
+    );
+  });
+
+  it('updates document title, category, type, and source key together', async () => {
+    await expect(
+      service().setDocumentMetadata({
+        actor: ACTOR,
+        requestId: 'request-metadata',
+        documentId: 'document-1',
+        title: 'Oracle quick reference',
+        categoryId: 'category-uncategorized',
+        documentType: 'cheatsheet',
+        expectedRevision: 3,
+      }),
+    ).resolves.toMatchObject({
+      displayTitle: 'Oracle quick reference',
+      categoryId: 'category-uncategorized',
+      category: 'Uncategorized',
+      documentType: 'cheatsheet',
+      revision: 4,
+    });
+    expect(documents.update).toHaveBeenCalledWith(
+      'document-1',
+      expect.objectContaining({
+        sourceKey: 'Uncategorized/Runbook.pdf',
+        documentType: 'cheatsheet',
+      }),
+      { requestKey: null },
+    );
+  });
+
+  it('reorders the complete category set with optimistic revisions', async () => {
+    await expect(
+      service().setCategoryOrder({
+        actor: ACTOR,
+        requestId: 'request-order',
+        orderedCategoryIds: ['category-uncategorized', 'category-operations'],
+        expectedRevisions: {
+          'category-operations': 2,
+          'category-uncategorized': 1,
+        },
+      }),
+    ).resolves.toHaveLength(2);
+    expect(categories.update).toHaveBeenCalledWith(
+      'category-uncategorized',
+      expect.objectContaining({ sortOrder: 100, revision: 2 }),
+      { requestKey: null },
+    );
+  });
+
+  it('reassigns documents before deleting a non-system category', async () => {
+    documents.getFullList.mockResolvedValueOnce([document()]);
+    await expect(
+      service().deleteCategory({
+        actor: ACTOR,
+        requestId: 'request-delete-category',
+        categoryId: 'category-operations',
+        replacementCategoryId: 'category-uncategorized',
+        expectedRevision: 2,
+        expectedDocumentRevisions: { 'document-1': 3 },
+      }),
+    ).resolves.toBeUndefined();
+    expect(documents.update).toHaveBeenCalledBefore(categories.delete);
+    expect(categories.delete).toHaveBeenCalledWith('category-operations', { requestKey: null });
+
+    await expect(
+      service().deleteCategory({
+        actor: ACTOR,
+        requestId: 'request-delete-fallback',
+        categoryId: 'category-uncategorized',
+        replacementCategoryId: 'category-operations',
+        expectedRevision: 1,
+        expectedDocumentRevisions: {},
+      }),
+    ).rejects.toThrow(/cannot be deleted/i);
   });
 });
