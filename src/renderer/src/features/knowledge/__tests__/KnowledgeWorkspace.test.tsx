@@ -218,7 +218,7 @@ describe('KnowledgeWorkspace', () => {
       within(navigation)
         .getAllByRole('button')
         .map((button) => button.textContent?.trim()),
-    ).toEqual(['←Knowledge home', 'Contacts', 'Servers', 'Wiki']);
+    ).toEqual(['←Knowledge home', 'Wiki', 'Contacts', 'Servers']);
   });
 
   it('retains Contacts selection after visiting Wiki', () => {

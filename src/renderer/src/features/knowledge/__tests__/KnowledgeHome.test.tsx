@@ -1,8 +1,27 @@
+import { readFileSync } from 'node:fs';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { KnowledgeHome } from '../KnowledgeHome';
 
+function cssBlock(css: string, selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? '';
+}
+
+function declaration(block: string, property: string): string | undefined {
+  return new RegExp(`${property}\\s*:\\s*([^;]+);`).exec(block)?.[1].trim();
+}
+
 describe('KnowledgeHome', () => {
+  it('uses square destination panels while keeping the monogram tiles subtly rounded', () => {
+    const css = readFileSync('src/renderer/src/features/knowledge/knowledgeWorkspace.css', 'utf8');
+
+    expect(declaration(cssBlock(css, '.knowledge-home__destination'), 'border-radius')).toBe('0');
+    expect(declaration(cssBlock(css, '.knowledge-home__destination-icon'), 'border-radius')).toBe(
+      '5px',
+    );
+  });
+
   it('renders Wiki, Contacts, and Servers in DOM and focus order', () => {
     const onOpen = vi.fn();
     render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={onOpen} />);

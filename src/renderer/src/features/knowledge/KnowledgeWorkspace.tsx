@@ -42,9 +42,9 @@ const CONTENT_DESTINATIONS: ReadonlyArray<{
   id: ContentDestination;
   label: string;
 }> = [
+  { id: 'wiki', label: 'Wiki' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'servers', label: 'Servers' },
-  { id: 'wiki', label: 'Wiki' },
 ];
 
 function WorkspacePanel({
