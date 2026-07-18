@@ -26,7 +26,6 @@ describe('Knowledge Management visual system', () => {
     const workspace = ruleBody(css, '.knowledge-management__workspace');
 
     expect(root).toContain('gap: var(--space-4);');
-    expect(root).toContain('padding: var(--space-4) var(--space-5) 0;');
     expect(root).toContain('background: var(--color-bg-app);');
     expect(root).not.toContain('linear-gradient');
     expect(header).toContain('gap: var(--space-5);');
@@ -38,6 +37,14 @@ describe('Knowledge Management visual system', () => {
     expect(workspace).toContain('grid-template-columns: 190px minmax(0, 1fr);');
     expect(workspace).toContain('margin-top: 0;');
     expect(workspace).toContain('box-shadow: none;');
+  });
+
+  it('keeps a desktop bottom gutter while preserving the mobile all-side gutter', () => {
+    const root = ruleBody(css, '.knowledge-management');
+    const mobileRoot = ruleBody(mediaBody(820), '.knowledge-management');
+
+    expect(root).toContain('padding: var(--space-4) var(--space-5) var(--space-5);');
+    expect(mobileRoot).toContain('padding: var(--space-3);');
   });
 
   it('uses flat selection, opaque tools, square controls, and compact rows', () => {
