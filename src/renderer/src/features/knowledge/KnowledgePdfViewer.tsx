@@ -1,23 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getDocument,
   GlobalWorkerOptions,
-  RenderingCancelledException,
-  TextLayer,
   type PDFDocumentLoadingTask,
   type PDFDocumentProxy,
-  type PDFPageProxy,
-  type RenderTask,
 } from 'pdfjs-dist/build/pdf.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
-import {
-  extractKnowledgeLinkItems,
-  KnowledgeLinkLayer,
-  type KnowledgeLinkItem,
-  type KnowledgePdfDestination,
-} from './KnowledgeLinkLayer';
+import type { KnowledgePdfDestination } from './KnowledgeLinkLayer';
 import type { KnowledgeResolvedLink } from './knowledgeLinkResolver';
+import { KnowledgePdfPage, type KnowledgePdfPageStatus } from './KnowledgePdfPage';
 import {
   resolveKnowledgePdfDestination,
   type KnowledgeViewerTarget,
@@ -35,12 +27,6 @@ type Props = {
   onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
   onDestinationChange: (target: KnowledgeViewerTarget) => void;
   onPageChange: (pageIndex: number) => void;
-};
-
-type KnowledgeLinkRender = {
-  pageIndex: number;
-  viewport: ReturnType<PDFPageProxy['getViewport']>;
-  items: KnowledgeLinkItem[];
 };
 
 type PendingFocusRequest = {
@@ -72,17 +58,6 @@ function viewerError(error: string): string {
   }
 }
 
-function isCancelledRender(error: unknown): boolean {
-  return (
-    error instanceof RenderingCancelledException ||
-    (error instanceof Error && error.name === 'RenderingCancelledException')
-  );
-}
-
-function scrollViewer(element: HTMLDivElement | null, options: ScrollToOptions): void {
-  if (typeof element?.scrollTo === 'function') element.scrollTo(options);
-}
-
 export function KnowledgePdfViewer({
   document: knowledgeDocument,
   active,
@@ -100,10 +75,7 @@ export function KnowledgePdfViewer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<KnowledgeViewerError | null>(null);
   const [retryKey, setRetryKey] = useState(0);
-  const [linkRender, setLinkRender] = useState<KnowledgeLinkRender | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const textLayerRef = useRef<HTMLDivElement>(null);
   const pdfIdentityRef = useRef<{
     pdf: PDFDocumentProxy;
     documentId: string;
@@ -116,6 +88,8 @@ export function KnowledgePdfViewer({
   const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
   const documentId = knowledgeDocument?.id;
   const documentChecksum = knowledgeDocument?.checksum;
+  const targetPageIndex = target?.pageIndex;
+  const targetTop = target?.top;
   const activeDocumentRef = useRef({ active, documentId, checksum: documentChecksum });
   activeDocumentRef.current = { active, documentId, checksum: documentChecksum };
 
@@ -257,168 +231,63 @@ export function KnowledgePdfViewer({
     }
   }, [documentChecksum, documentId, error, focusRequestKey, target]);
 
-  useEffect(() => {
-    setLinkRender(null);
-    const pdfIdentity = pdfIdentityRef.current;
-    if (
-      !pdf ||
-      !active ||
-      pdfIdentity?.pdf !== pdf ||
-      pdfIdentity.documentId !== documentId ||
-      pdfIdentity.checksum !== documentChecksum
-    ) {
-      return;
-    }
-    let disposed = false;
-    let renderTask: RenderTask | null = null;
-    let textLayer: TextLayer | null = null;
-    let renderedPage: PDFPageProxy | null = null;
-    let adjacentPage: PDFPageProxy | null = null;
+  const activateDestination = useCallback(
+    async (destination: KnowledgePdfDestination) => {
+      if (!pdf) return;
+      const requestToken = destinationRequestTokenRef.current + 1;
+      destinationRequestTokenRef.current = requestToken;
+      const sourceIdentity = pdfIdentityRef.current;
+      if (
+        sourceIdentity?.pdf !== pdf ||
+        sourceIdentity.documentId !== documentId ||
+        sourceIdentity.checksum !== documentChecksum
+      ) {
+        return;
+      }
+      const nextTarget = await resolveKnowledgePdfDestination(pdf, destination);
+      const currentIdentity = pdfIdentityRef.current;
+      const activeDocument = activeDocumentRef.current;
+      if (
+        destinationRequestTokenRef.current !== requestToken ||
+        currentIdentity?.pdf !== sourceIdentity.pdf ||
+        currentIdentity.generation !== sourceIdentity.generation ||
+        currentIdentity.documentId !== sourceIdentity.documentId ||
+        currentIdentity.checksum !== sourceIdentity.checksum ||
+        !activeDocument.active ||
+        activeDocument.documentId !== sourceIdentity.documentId ||
+        activeDocument.checksum !== sourceIdentity.checksum
+      ) {
+        return;
+      }
+      if (nextTarget) {
+        onDestinationChange(nextTarget);
+        return;
+      }
+      onActivateResolvedLink({ kind: 'unavailable', reason: 'unsupported' });
+    },
+    [documentChecksum, documentId, onActivateResolvedLink, onDestinationChange, pdf],
+  );
 
-    pdf
-      .getPage(pageIndex + 1)
-      .then(async (page) => {
-        if (disposed) return;
-        renderedPage = page;
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        const textContainer = textLayerRef.current;
-        if (!canvas || !textContainer) return;
-        const pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2);
-        canvas.width = Math.max(1, Math.floor(viewport.width * pixelRatio));
-        canvas.height = Math.max(1, Math.floor(viewport.height * pixelRatio));
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        textContainer.replaceChildren();
-        textContainer.style.width = `${viewport.width}px`;
-        textContainer.style.height = `${viewport.height}px`;
+  const handlePageStatus = useCallback(
+    (status: KnowledgePdfPageStatus) => {
+      if (status.state !== 'ready') return;
+      const pendingFocusRequest = pendingFocusRequestRef.current;
+      if (
+        pendingFocusRequest !== undefined &&
+        pendingFocusRequest.key === focusRequestKey &&
+        pendingFocusRequest.documentId === documentId &&
+        pendingFocusRequest.target.pageIndex === status.pageIndex &&
+        targetPageIndex === pendingFocusRequest.target.pageIndex &&
+        targetTop === pendingFocusRequest.target.top
+      ) {
+        viewportRef.current?.focus();
+        pendingFocusRequestRef.current = undefined;
+      }
+    },
+    [documentId, focusRequestKey, targetPageIndex, targetTop],
+  );
 
-        const context = canvas.getContext('2d');
-        if (!context) throw new Error('Canvas rendering is unavailable');
-        renderTask = page.render({
-          canvas,
-          canvasContext: context,
-          viewport,
-          annotationMode: 0,
-          transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
-        });
-        const canvasRenderResult = renderTask.promise.then(
-          () => ({ error: null }),
-          (renderError: unknown) => ({ error: renderError }),
-        );
-        let annotationsPromise: ReturnType<PDFPageProxy['getAnnotations']>;
-        try {
-          annotationsPromise = page.getAnnotations({ intent: 'display' }).catch(() => []);
-        } catch {
-          annotationsPromise = Promise.resolve([]);
-        }
-        const [textContent, annotations] = await Promise.all([
-          page.getTextContent(),
-          annotationsPromise,
-        ]);
-        if (disposed) return;
-        textLayer = new TextLayer({
-          textContentSource: textContent,
-          container: textContainer,
-          viewport,
-        });
-        const [canvasResult] = await Promise.all([canvasRenderResult, textLayer.render()]);
-        if (canvasResult.error !== null) throw canvasResult.error;
-        if (disposed) return;
-
-        if (target?.pageIndex === pageIndex && target.top !== null) {
-          const [, y] = viewport.convertToViewportPoint(0, target.top);
-          scrollViewer(viewportRef.current, { top: Math.max(0, y - 28), behavior: 'smooth' });
-        } else {
-          scrollViewer(viewportRef.current, { top: 0 });
-        }
-
-        setLinkRender({
-          pageIndex,
-          viewport,
-          items: extractKnowledgeLinkItems(annotations),
-        });
-
-        const pendingFocusRequest = pendingFocusRequestRef.current;
-        if (
-          pendingFocusRequest !== undefined &&
-          pendingFocusRequest.key === focusRequestKey &&
-          pendingFocusRequest.documentId === documentId &&
-          pendingFocusRequest.target.pageIndex === pageIndex &&
-          target?.pageIndex === pendingFocusRequest.target.pageIndex &&
-          target.top === pendingFocusRequest.target.top
-        ) {
-          viewportRef.current?.focus();
-          pendingFocusRequestRef.current = undefined;
-        }
-
-        const adjacentIndex = pageIndex + 1 < pdf.numPages ? pageIndex + 1 : pageIndex - 1;
-        if (adjacentIndex >= 0) {
-          pdf
-            .getPage(adjacentIndex + 1)
-            .then(async (pageToPreload) => {
-              if (disposed) {
-                pageToPreload.cleanup();
-                return;
-              }
-              adjacentPage = pageToPreload;
-              await pageToPreload.getOperatorList();
-            })
-            .catch(() => undefined);
-        }
-      })
-      .catch((renderError) => {
-        if (!disposed && !isCancelledRender(renderError)) {
-          setError({
-            message: 'Relay could not render this page.',
-            documentId: pdfIdentity.documentId,
-            checksum: pdfIdentity.checksum,
-          });
-        }
-      });
-
-    return () => {
-      disposed = true;
-      renderTask?.cancel();
-      textLayer?.cancel();
-      renderedPage?.cleanup();
-      adjacentPage?.cleanup();
-    };
-  }, [active, documentChecksum, documentId, focusRequestKey, pageIndex, pdf, scale, target]);
-
-  const activateDestination = async (destination: KnowledgePdfDestination) => {
-    if (!pdf) return;
-    const requestToken = destinationRequestTokenRef.current + 1;
-    destinationRequestTokenRef.current = requestToken;
-    const sourceIdentity = pdfIdentityRef.current;
-    if (
-      sourceIdentity?.pdf !== pdf ||
-      sourceIdentity.documentId !== documentId ||
-      sourceIdentity.checksum !== documentChecksum
-    ) {
-      return;
-    }
-    const nextTarget = await resolveKnowledgePdfDestination(pdf, destination);
-    const currentIdentity = pdfIdentityRef.current;
-    const activeDocument = activeDocumentRef.current;
-    if (
-      destinationRequestTokenRef.current !== requestToken ||
-      currentIdentity?.pdf !== sourceIdentity.pdf ||
-      currentIdentity.generation !== sourceIdentity.generation ||
-      currentIdentity.documentId !== sourceIdentity.documentId ||
-      currentIdentity.checksum !== sourceIdentity.checksum ||
-      !activeDocument.active ||
-      activeDocument.documentId !== sourceIdentity.documentId ||
-      activeDocument.checksum !== sourceIdentity.checksum
-    ) {
-      return;
-    }
-    if (nextTarget) {
-      onDestinationChange(nextTarget);
-      return;
-    }
-    onActivateResolvedLink({ kind: 'unavailable', reason: 'unsupported' });
-  };
+  const pageTargetTop = targetPageIndex === pageIndex ? (targetTop ?? null) : null;
 
   const moveToPage = (nextPage: number) => {
     if (!pdf) return;
@@ -516,20 +385,19 @@ export function KnowledgePdfViewer({
             </button>
           </div>
         )}
-        {!error && (
-          <div className="knowledge-page" hidden={!pdf}>
-            <canvas ref={canvasRef} aria-label={`Page ${pageIndex + 1}`} />
-            <div ref={textLayerRef} className="knowledge-page__text-layer textLayer" />
-            {linkRender?.pageIndex === pageIndex && (
-              <KnowledgeLinkLayer
-                items={linkRender.items}
-                viewport={linkRender.viewport}
-                resolveUrl={resolveUrl}
-                onActivateResolvedLink={onActivateResolvedLink}
-                onActivateDestination={(destination) => void activateDestination(destination)}
-              />
-            )}
-          </div>
+        {!error && pdf && (
+          <KnowledgePdfPage
+            pdf={pdf}
+            pageIndex={pageIndex}
+            scale={scale}
+            render={Boolean(pdf)}
+            targetTop={pageTargetTop}
+            retryKey={retryKey}
+            resolveUrl={resolveUrl}
+            onActivateResolvedLink={onActivateResolvedLink}
+            onActivateDestination={activateDestination}
+            onStatus={handlePageStatus}
+          />
         )}
       </div>
     </section>

@@ -575,13 +575,13 @@ describe('KnowledgePdfViewer', () => {
       documentId: 'doc-1',
       checksum: 'b'.repeat(64),
     });
-    expect(stalePage.cleanup).toHaveBeenCalledOnce();
     staleAnnotations.resolve([
       { subtype: 'Link', id: 'stale', rect: [10, 10, 30, 30], url: 'https://stale.example' },
     ]);
     await Promise.resolve();
     await Promise.resolve();
 
+    await waitFor(() => expect(stalePage.cleanup).toHaveBeenCalledOnce());
     expect(staleGetPage).toHaveBeenCalledOnce();
     expect(stalePage.getAnnotations).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: 'Open stale.example in browser' })).toBeNull();
