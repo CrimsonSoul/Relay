@@ -319,6 +319,29 @@ describe('AssemblerTab', () => {
     expect(screen.getByTestId('list-toolbar')).toBeInTheDocument();
   });
 
+  it('renders the approved Compose operational hierarchy', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('heading', { name: 'Bridge recipient assembly' })).toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: 'Compose actions' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
+    expect(screen.getByText('Ready · 0 selected')).toBeInTheDocument();
+  });
+
+  it('derives Compose header and pane counts from current recipients', () => {
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
+
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByText('Ready · 1 selected')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recipients' })).toHaveTextContent('1 selected');
+  });
+
   it('shows recipient count when there are recipients', () => {
     asmState = {
       ...baseAsm,
@@ -327,7 +350,7 @@ describe('AssemblerTab', () => {
     };
     render(<AssemblerTab {...defaultProps} />);
     expect(screen.getByText('Recipients')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('Ready · 1 selected')).toBeInTheDocument();
   });
 
   it('shows UNDO button when there are manual removes', () => {
@@ -353,7 +376,7 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('button', { name: /Reset/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Copy All/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Start Bridge/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Schedule Bridge/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Schedule$/i })).toBeDisabled();
     expect(screen.getByText('toggle-sort-dir')).toBeDisabled();
     expect(screen.getByText('sort-by-email')).toBeDisabled();
   });
@@ -369,10 +392,10 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('button', { name: /Reset/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Copy All/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Start Bridge/i })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Schedule Bridge/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Schedule$/i })).not.toBeDisabled();
   });
 
-  it('opens ScheduleBridgeModal with current recipients when Schedule Bridge is clicked', () => {
+  it('opens ScheduleBridgeModal with current recipients when Schedule is clicked', () => {
     asmState = {
       ...baseAsm,
       allRecipients: [{ email: 'a@example.com', source: 'group' }],
@@ -383,7 +406,7 @@ describe('AssemblerTab', () => {
     };
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByText('Schedule Bridge'));
+    fireEvent.click(screen.getByRole('button', { name: /^Schedule$/i }));
 
     expect(screen.getByTestId('schedule-bridge-modal')).toBeInTheDocument();
     expect(screen.getByText('Alice<a@example.com>')).toBeInTheDocument();

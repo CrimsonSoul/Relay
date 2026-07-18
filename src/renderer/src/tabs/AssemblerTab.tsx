@@ -179,28 +179,21 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     manualRemoves.length > 0;
 
   return (
-    <div className="tab-layout">
-      <div className="assembler-layout">
-        <AssemblerSidebar
-          groups={groups}
-          selectedGroupIds={selectedGroupIds}
-          actions={{
-            onToggleGroup,
-            onSaveGroup: saveGroup,
-            onUpdateGroup: updateGroup,
-            onDeleteGroup: deleteGroup,
-          }}
-          currentEmails={currentEmails}
-        />
-        <div className="tab-main-content">
-          <CollapsibleHeader isCollapsed={asm.isHeaderCollapsed}>
-            <div className="toolbar-title-group">
-              <span className="toolbar-title">Recipients</span>
-              {asm.allRecipients.length > 0 && (
-                <span className="toolbar-badge">{asm.allRecipients.length}</span>
-              )}
-            </div>
-            <div className="toolbar-sep" />
+    <div className="tab-layout assembler-tab">
+      <header className="assembler-page-header">
+        <div>
+          <div className="assembler-page-context">Compose</div>
+          <h2 className="assembler-page-title">Bridge recipient assembly</h2>
+        </div>
+        <div className="assembler-page-meta" role="status" aria-live="polite">
+          <span className="assembler-page-state-dot" aria-hidden="true" />
+          <span>Ready · {asm.allRecipients.length} selected</span>
+        </div>
+      </header>
+
+      <div className="assembler-command-bar" role="toolbar" aria-label="Compose actions">
+        <CollapsibleHeader isCollapsed={asm.isHeaderCollapsed}>
+          <div className="assembler-command-group assembler-command-group--utility">
             {manualRemoves.length > 0 && (
               <TactileButton
                 variant="ghost"
@@ -298,6 +291,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             >
               Copy All
             </TactileButton>
+          </div>
+          <div className="assembler-command-group assembler-command-group--workflow">
+            <span className="assembler-sort-label">Sort by</span>
             <ListToolbar
               sortDirection={asm.sortConfig.direction}
               onToggleSortDirection={() =>
@@ -370,11 +366,32 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                   </svg>
                 }
               >
-                Schedule Bridge
+                Schedule
               </TactileButton>
             </div>
-          </CollapsibleHeader>
+          </div>
+        </CollapsibleHeader>
+      </div>
 
+      <div className="assembler-layout assembler-workspace">
+        <section className="assembler-groups-pane" aria-label="Contact groups">
+          <AssemblerSidebar
+            groups={groups}
+            selectedGroupIds={selectedGroupIds}
+            actions={{
+              onToggleGroup,
+              onSaveGroup: saveGroup,
+              onUpdateGroup: updateGroup,
+              onDeleteGroup: deleteGroup,
+            }}
+            currentEmails={currentEmails}
+          />
+        </section>
+        <section className="tab-main-content assembler-recipients-pane" aria-label="Recipients">
+          <div className="assembler-pane-header">
+            <span>Recipients</span>
+            <span>{asm.allRecipients.length} selected</span>
+          </div>
           <div className="tab-list-container">
             <CompositionList
               log={asm.log}
@@ -383,7 +400,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               onOpenHistory={historyModal.open}
             />
           </div>
-        </div>
+        </section>
       </div>
 
       <StatusBar
