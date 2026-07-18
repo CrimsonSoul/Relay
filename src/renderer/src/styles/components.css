@@ -1972,15 +1972,21 @@ body.modal-open {
 }
 
 .privileged-access__pairing-actions {
-  display: flex;
-  min-width: min(100%, 420px);
-  align-items: flex-end;
-  justify-content: flex-end;
+  display: grid;
+  width: min(100%, 500px);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: var(--space-2);
+  margin-left: auto;
 }
 
 .privileged-access__pairing-actions .privileged-access__field {
-  min-width: min(100%, 260px);
+  min-width: 0;
+}
+
+.privileged-access__pairing-actions select {
+  width: 100%;
 }
 
 .privileged-access__challenge {
@@ -2418,9 +2424,10 @@ body.modal-open {
   }
 
   .privileged-access__pairing-actions {
+    width: 100%;
     min-width: 0;
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+    margin-left: 0;
   }
 }
 
