@@ -49,10 +49,44 @@ function lastAtOrBefore(
   boundaries: readonly number[],
   maximum: number,
   minimum: number,
+  predicate: (boundary: number) => boolean = () => true,
 ): number | null {
   for (let index = boundaries.length - 1; index >= 0; index -= 1) {
     const boundary = boundaries[index];
-    if (boundary <= maximum && boundary > minimum) return boundary;
+    if (boundary <= maximum && boundary > minimum && predicate(boundary)) return boundary;
+  }
+  return null;
+}
+
+function isSourceBoundary(
+  sourceRanges: ReturnType<typeof normalizeKnowledgeSearchTextWithRanges>['sourceRanges'],
+  offset: number,
+): boolean {
+  return (
+    offset === 0 ||
+    offset === sourceRanges.length ||
+    sourceRanges[offset - 1]!.end <= sourceRanges[offset]!.start
+  );
+}
+
+function sourceBoundaryAtOrBefore(
+  sourceRanges: ReturnType<typeof normalizeKnowledgeSearchTextWithRanges>['sourceRanges'],
+  maximum: number,
+  minimum: number,
+): number | null {
+  for (let offset = maximum; offset > minimum; offset -= 1) {
+    if (isSourceBoundary(sourceRanges, offset)) return offset;
+  }
+  return null;
+}
+
+function sourceBoundaryAtOrAfter(
+  sourceRanges: ReturnType<typeof normalizeKnowledgeSearchTextWithRanges>['sourceRanges'],
+  minimum: number,
+  maximum: number,
+): number | null {
+  for (let offset = minimum; offset <= maximum; offset += 1) {
+    if (isSourceBoundary(sourceRanges, offset)) return offset;
   }
   return null;
 }
@@ -71,39 +105,45 @@ function boundedEnd({
   const rawStart = sourceRanges[start]?.start ?? 0;
   const preferred = Math.min(text.length, start + TARGET_PASSAGE_LENGTH);
   const maximum = Math.min(text.length, start + KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT);
-  const candidates = [lastAtOrBefore(ends, preferred, start), lastAtOrBefore(ends, maximum, start)];
+  const validEnd = (candidate: number) =>
+    text[candidate - 1] !== ' ' &&
+    isSourceBoundary(sourceRanges, candidate) &&
+    (sourceRanges[candidate - 1]?.end ?? Number.POSITIVE_INFINITY) - rawStart <=
+      KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT;
+  const candidates = [
+    lastAtOrBefore(ends, preferred, start, validEnd),
+    lastAtOrBefore(ends, maximum, start, validEnd),
+  ];
   for (const candidate of candidates) {
-    if (
-      candidate !== null &&
-      (sourceRanges[candidate - 1]?.end ?? Number.POSITIVE_INFINITY) - rawStart <=
-        KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT
-    ) {
-      return candidate;
-    }
+    if (candidate !== null) return candidate;
   }
 
-  let end = maximum;
-  while (
-    end > start + 1 &&
-    (sourceRanges[end - 1]?.end ?? Number.POSITIVE_INFINITY) - rawStart >
-      KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT
-  ) {
-    end -= 1;
+  let end = sourceBoundaryAtOrBefore(sourceRanges, maximum, start);
+  while (end !== null && !validEnd(end)) {
+    end = sourceBoundaryAtOrBefore(sourceRanges, end - 1, start);
   }
-  return Math.max(start + 1, end);
+  return end ?? start;
 }
 
 function nextStart({
   start,
   end,
   starts,
+  sourceRanges,
 }: {
   start: number;
   end: number;
   starts: readonly number[];
+  sourceRanges: ReturnType<typeof normalizeKnowledgeSearchTextWithRanges>['sourceRanges'];
 }): number {
   const overlapStart = Math.max(start + 1, end - PASSAGE_OVERLAP);
-  return lastAtOrBefore(starts, overlapStart, start) ?? overlapStart;
+  return (
+    lastAtOrBefore(starts, overlapStart, start, (boundary) =>
+      isSourceBoundary(sourceRanges, boundary),
+    ) ??
+    sourceBoundaryAtOrBefore(sourceRanges, overlapStart, start) ??
+    sourceBoundaryAtOrAfter(sourceRanges, overlapStart, end)
+  );
 }
 
 export function buildKnowledgeSearchPassages(
@@ -142,7 +182,12 @@ export function buildKnowledgeSearchPassages(
         normalizedEnd,
       });
       if (normalizedEnd >= normalized.text.length) break;
-      normalizedStart = nextStart({ start: normalizedStart, end: normalizedEnd, starts });
+      normalizedStart = nextStart({
+        start: normalizedStart,
+        end: normalizedEnd,
+        starts,
+        sourceRanges: normalized.sourceRanges,
+      });
       passageNumber += 1;
     }
   }
