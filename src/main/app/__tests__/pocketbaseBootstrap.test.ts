@@ -170,6 +170,38 @@ describe('pocketbaseBootstrap', () => {
     );
   });
 
+  it('waits the full 250ms before retrying optional Wiki search storage', async () => {
+    vi.useFakeTimers();
+    mocks.ensureKnowledgeSearchCollections.mockRejectedValueOnce(
+      new Error('temporary search storage failure'),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    try {
+      const startup = startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\\\Users\\\\Relay\\\\data',
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(249);
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledTimes(2);
+      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns server startup after the fixed optional Wiki search storage deadline', async () => {
     vi.useFakeTimers();
     mocks.ensureKnowledgeSearchCollections.mockImplementation(
@@ -195,6 +227,46 @@ describe('pocketbaseBootstrap', () => {
       await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('contains a deferred optional Wiki search rejection after startup reaches its deadline', async () => {
+    vi.useFakeTimers();
+    let rejectOptionalBootstrap!: (reason?: unknown) => void;
+    mocks.ensureKnowledgeSearchCollections.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectOptionalBootstrap = reject;
+        }),
+    );
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason);
+    process.on('unhandledRejection', onUnhandledRejection);
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    try {
+      const startup = startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\\\Users\\\\Relay\\\\data',
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      rejectOptionalBootstrap(new Error('late optional bootstrap failure'));
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(unhandledRejections).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection);
       vi.useRealTimers();
     }
   });

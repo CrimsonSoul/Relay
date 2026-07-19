@@ -181,6 +181,87 @@ describe('ensureCollections', () => {
     );
   });
 
+  it('patches existing optional Wiki search storage without dropping existing fields', async () => {
+    mockGetFullList.mockResolvedValue([
+      { id: 'documents-id', name: 'knowledge_documents' },
+      { id: 'chunks-id', name: 'knowledge_search_chunks' },
+    ]);
+    mockGetOne
+      .mockResolvedValueOnce({
+        fields: [{ type: 'text', name: 'sourceKey', required: true, max: 512 }],
+        indexes: [],
+      })
+      .mockResolvedValueOnce({
+        fields: [
+          { type: 'text', name: 'legacyField', max: 40 },
+          {
+            type: 'relation',
+            name: 'documentId',
+            required: true,
+            maxSelect: 1,
+            cascadeDelete: false,
+            collectionId: 'documents-id',
+          },
+          { type: 'text', name: 'checksum', required: true, max: 64 },
+          { type: 'text', name: 'text', required: false, max: 3_200 },
+          { type: 'text', name: 'normalizedText', required: false, max: 3_200 },
+        ],
+        indexes: [],
+        listRule: null,
+        viewRule: null,
+        createRule: '@request.auth.id != ""',
+        updateRule: '@request.auth.id != ""',
+        deleteRule: '@request.auth.id != ""',
+      });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureKnowledgeSearchCollections(mockPb);
+
+    const chunkPatch = mockUpdate.mock.calls.find(([id]) => id === 'chunks-id')?.[1] as {
+      fields: Array<Record<string, unknown>>;
+      indexes: string[];
+      listRule: string | null;
+      viewRule: string | null;
+      createRule: string | null;
+      updateRule: string | null;
+      deleteRule: string | null;
+    };
+    expect(chunkPatch).toMatchObject({
+      indexes: [
+        'CREATE UNIQUE INDEX idx_knowledge_search_chunk_identity ON knowledge_search_chunks (documentId, checksum, pageNumber, passageNumber, indexVersion)',
+        'CREATE INDEX idx_knowledge_search_chunk_document ON knowledge_search_chunks (documentId, checksum, indexVersion)',
+      ],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(chunkPatch.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'legacyField', max: 40 }),
+        expect.objectContaining({ name: 'documentId', cascadeDelete: true }),
+        expect.objectContaining({ name: 'text', required: true, max: 1_600 }),
+        expect.objectContaining({ name: 'normalizedText', required: true, max: 1_600 }),
+      ]),
+    );
+  });
+
+  it('keeps optional Wiki search storage outside required collection bootstrap', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'chunks-id', name: 'knowledge_search_chunks' }]);
+    mockSuccessfulCollectionCreation();
+
+    await ensureCollections(mockPb);
+
+    expect(
+      mockCreate.mock.calls.some(
+        ([definition]) => (definition as { name?: string }).name === 'knowledge_search_chunks',
+      ),
+    ).toBe(false);
+    expect(mockGetOne).not.toHaveBeenCalledWith('chunks-id');
+    expect(mockUpdate).not.toHaveBeenCalledWith('chunks-id', expect.anything());
+  });
+
   it('seeds a managed Knowledge library state on a clean PocketBase server', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
