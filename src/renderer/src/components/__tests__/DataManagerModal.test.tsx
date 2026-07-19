@@ -61,22 +61,6 @@ vi.mock('../data-manager/DataManagerBackups', () => ({
   DataManagerBackups: () => <div data-testid="backups">Backups content</div>,
 }));
 
-vi.mock('../data-manager/SharedComponents', () => ({
-  TabButton: ({
-    children,
-    onClick,
-    active,
-  }: {
-    children: React.ReactNode;
-    onClick: () => void;
-    active: boolean;
-  }) => (
-    <button onClick={onClick} data-active={active}>
-      {children}
-    </button>
-  ),
-}));
-
 describe('DataManagerModal', () => {
   const onClose = vi.fn();
 
@@ -95,6 +79,26 @@ describe('DataManagerModal', () => {
   it('renders when isOpen is true', () => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     expect(screen.getByText('Data Manager')).toBeInTheDocument();
+  });
+
+  it('uses the wide shared shell and stable tab rail', () => {
+    render(<DataManagerModal isOpen onClose={onClose} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Data Manager' });
+    expect(dialog).toHaveAttribute('data-variant', 'wide');
+    expect(dialog.querySelector('.modal-tabs-generic')).not.toBeNull();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keys the active panel for the shared 160ms content transition', () => {
+    render(<DataManagerModal isOpen onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Import' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Import' })).toHaveAttribute(
+      'data-motion',
+      'panel',
+    );
   });
 
   it('shows the Overview tab by default', () => {
@@ -123,18 +127,28 @@ describe('DataManagerModal', () => {
     expect(screen.getByTestId('overview')).toBeInTheDocument();
   });
 
-  it('triggers export when export button is clicked', () => {
+  it('triggers export with the exact selected payload', async () => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Export'));
     fireEvent.click(screen.getByTestId('export-btn'));
-    expect(screen.getByTestId('export-btn')).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(mockExportData).toHaveBeenCalledWith({
+        format: 'json',
+        category: 'all',
+        includeMetadata: false,
+      });
+    });
   });
 
-  it('triggers import when import button is clicked', () => {
+  it('triggers import with the exact selected category', async () => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Import'));
     fireEvent.click(screen.getByTestId('import-btn'));
-    expect(screen.getByTestId('import-btn')).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(mockImportData).toHaveBeenCalledWith('contacts');
+    });
   });
 
   it('switches to Backups tab', () => {

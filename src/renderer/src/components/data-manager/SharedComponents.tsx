@@ -2,12 +2,19 @@ import React from 'react';
 import type { DataCategory, ExportFormat } from '@shared/ipc';
 
 export const TabButton: React.FC<{
+  id: string;
+  controls: string;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-}> = ({ active, onClick, children }) => (
+}> = ({ id, controls, active, onClick, children }) => (
   <button
+    id={id}
     type="button"
+    role="tab"
+    aria-selected={active}
+    aria-controls={controls}
+    tabIndex={active ? 0 : -1}
     onClick={onClick}
     className={`dm-tab-btn${active ? ' dm-tab-btn--active' : ''}`}
   >

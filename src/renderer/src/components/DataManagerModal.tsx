@@ -17,6 +17,10 @@ type Props = {
 
 type TabId = 'overview' | 'import' | 'export' | 'backups';
 
+const DATA_MANAGER_TABS: readonly TabId[] = ['overview', 'import', 'export', 'backups'];
+
+const getTabLabel = (tab: TabId) => tab[0].toUpperCase() + tab.slice(1);
+
 export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [exportCategory, setExportCategory] = useState<DataCategory>('all');
@@ -83,50 +87,65 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   };
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Data Manager" width="820px">
-      <div className="data-manager-body">
-        <div role="tablist" aria-label="Data Manager sections" className="data-manager-tablist">
-          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
-            Overview
-          </TabButton>
-          <TabButton active={activeTab === 'import'} onClick={() => setActiveTab('import')}>
-            Import
-          </TabButton>
-          <TabButton active={activeTab === 'export'} onClick={() => setActiveTab('export')}>
-            Export
-          </TabButton>
-          <TabButton active={activeTab === 'backups'} onClick={() => setActiveTab('backups')}>
-            Backups
-          </TabButton>
-        </div>
+  const tabs = (
+    <div role="tablist" aria-label="Data Manager sections" className="data-manager-tablist">
+      {DATA_MANAGER_TABS.map((tab) => (
+        <TabButton
+          key={tab}
+          id={`data-manager-tab-${tab}`}
+          controls={`data-manager-panel-${tab}`}
+          active={activeTab === tab}
+          onClick={() => setActiveTab(tab)}
+        >
+          {getTabLabel(tab)}
+        </TabButton>
+      ))}
+    </div>
+  );
 
-        <div role="tabpanel" aria-label={`${activeTab} panel`}>
-          {activeTab === 'overview' && <DataManagerOverview stats={stats} />}
-          {activeTab === 'import' && (
-            <DataManagerImport
-              importCategory={importCategory}
-              setImportCategory={setImportCategory}
-              importing={importing}
-              onImport={handleImport}
-              lastImportResult={lastImportResult}
-              onClearResult={clearLastImportResult}
-            />
-          )}
-          {activeTab === 'export' && (
-            <DataManagerExport
-              exportCategory={exportCategory}
-              setExportCategory={setExportCategory}
-              exportFormat={exportFormat}
-              setExportFormat={setExportFormat}
-              includeMetadata={includeMetadata}
-              setIncludeMetadata={setIncludeMetadata}
-              exporting={exporting}
-              onExport={handleExport}
-            />
-          )}
-          {activeTab === 'backups' && <DataManagerBackups />}
-        </div>
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Data Manager"
+      subtitle="Import, export, inspect, and protect Relay data."
+      variant="wide"
+      tabs={tabs}
+      bodyClassName="data-manager-body"
+    >
+      <div
+        key={activeTab}
+        id={`data-manager-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`data-manager-tab-${activeTab}`}
+        aria-label={getTabLabel(activeTab)}
+        data-motion="panel"
+        className="data-manager-panel"
+      >
+        {activeTab === 'overview' && <DataManagerOverview stats={stats} />}
+        {activeTab === 'import' && (
+          <DataManagerImport
+            importCategory={importCategory}
+            setImportCategory={setImportCategory}
+            importing={importing}
+            onImport={handleImport}
+            lastImportResult={lastImportResult}
+            onClearResult={clearLastImportResult}
+          />
+        )}
+        {activeTab === 'export' && (
+          <DataManagerExport
+            exportCategory={exportCategory}
+            setExportCategory={setExportCategory}
+            exportFormat={exportFormat}
+            setExportFormat={setExportFormat}
+            includeMetadata={includeMetadata}
+            setIncludeMetadata={setIncludeMetadata}
+            exporting={exporting}
+            onExport={handleExport}
+          />
+        )}
+        {activeTab === 'backups' && <DataManagerBackups />}
       </div>
     </Modal>
   );

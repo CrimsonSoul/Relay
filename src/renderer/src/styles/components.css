@@ -965,57 +965,76 @@ body.modal-open {
    Data Manager Shared Components
    =========================== */
 .dm-tab-btn {
-  padding: 10px 16px;
+  position: relative;
+  min-width: 104px;
+  padding: 0 var(--space-4);
   background: transparent;
-  border: none;
-  border-bottom: 1px solid transparent;
-  color: var(--color-text-secondary);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-tertiary);
   cursor: pointer;
-  font-size: var(--text-base);
-  font-weight: 600;
+  font-family: var(--font-family-base);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease;
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-bottom-color var(--transition-fast);
+}
+
+.dm-tab-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-hover-overlay);
 }
 
 .dm-tab-btn--active {
-  background: var(--color-bg-surface-elevated);
   border-bottom-color: var(--accent);
   color: var(--color-text-primary);
 }
 
+.dm-tab-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
 .dm-stat-card {
-  padding: 18px 22px;
-  background: var(--color-bg-surface-elevated);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  flex: 1;
-  min-width: 120px;
+  min-width: 0;
+  padding: var(--space-4);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
+}
+
+.dm-stat-card:last-child {
+  border-right: 0;
 }
 
 .dm-stat-count {
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-2xl);
-  font-weight: 600;
+  font-weight: var(--weight-bold);
   color: var(--color-text-primary);
   line-height: 1;
 }
 
 .dm-stat-label {
+  font-family: var(--font-family-base);
   font-size: var(--text-base);
   color: var(--color-text-secondary);
-  text-transform: capitalize;
   margin-top: 8px;
 }
 
 .dm-stat-updated {
+  font-family: var(--font-family-mono);
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
   margin-top: 8px;
 }
 
 .dm-select {
-  height: 40px;
+  height: 44px;
   padding: 0 48px 0 16px;
   background: transparent;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9' fill='none'%3E%3Cpath d='M1 1.5L7 7.5L13 1.5' stroke='%238A8A8A' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -2908,32 +2927,41 @@ body.modal-open {
    ============================================================================ */
 
 .data-manager-body {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+  padding: 0;
 }
 
 .data-manager-tablist {
   display: flex;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 10px;
+  align-items: stretch;
+  width: 100%;
+  height: 48px;
+  padding: 0 var(--space-5);
+}
+
+.modal-tabs-generic:has(.data-manager-tablist) {
+  padding: 0;
+}
+
+.data-manager-panel {
+  padding: var(--space-5);
 }
 
 .data-manager-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  gap: var(--space-4);
 }
 
 .data-manager-section-heading {
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .data-manager-section-description {
+  font-family: var(--font-family-base);
   font-size: var(--text-base);
   color: var(--color-text-secondary);
   line-height: 1.55;
@@ -2949,6 +2977,7 @@ body.modal-open {
   display: flex;
   align-items: center;
   gap: 10px;
+  font-family: var(--font-family-base);
   font-size: var(--text-base);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -3000,9 +3029,37 @@ body.modal-open {
    ============================================================================ */
 
 .data-manager-stats-row {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-block: 1px solid var(--color-border);
+}
+
+@media (max-width: 700px) {
+  .data-manager-tablist {
+    padding: 0 var(--space-4);
+  }
+
+  .dm-tab-btn {
+    min-width: 0;
+    flex: 1;
+    padding-inline: var(--space-2);
+  }
+
+  .data-manager-panel {
+    padding: var(--space-4);
+  }
+
+  .data-manager-stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dm-stat-card:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .dm-stat-card:nth-child(n + 3) {
+    border-top: 1px solid var(--color-border);
+  }
 }
 
 /* ============================================================================
@@ -3019,17 +3076,21 @@ body.modal-open {
 .dm-backup-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  border-block: 1px solid var(--color-border);
 }
 
 .dm-backup-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--color-bg-surface-elevated);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dm-backup-row:last-child {
+  border-bottom: 0;
 }
 
 .dm-backup-info {
@@ -3039,12 +3100,14 @@ body.modal-open {
 }
 
 .dm-backup-date {
+  font-family: var(--font-family-mono);
   font-size: var(--text-base);
   color: var(--color-text-primary);
   font-weight: 500;
 }
 
 .dm-backup-size {
+  font-family: var(--font-family-mono);
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
 }
@@ -3215,8 +3278,8 @@ body.modal-open {
 .dm-big-btn {
   justify-content: center;
   font-size: var(--text-base);
-  height: 56px;
-  min-width: 170px;
+  height: 44px;
+  min-width: 148px;
 }
 
 /* ============================================================================
