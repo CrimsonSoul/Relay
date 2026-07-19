@@ -7,7 +7,7 @@ import { setupKnowledgeHandlers } from './knowledgeHandlers';
 
 const trusted = vi.fn(() => true);
 vi.mock('electron', () => ({
-  ipcMain: { handle: vi.fn() },
+  ipcMain: { handle: vi.fn(), on: vi.fn() },
   shell: { openExternal: vi.fn() },
 }));
 vi.mock('../logger', () => ({
@@ -27,6 +27,7 @@ vi.mock('../utils/trustedSender', () => ({
 
 describe('knowledgeHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const listeners: Record<string, (...args: unknown[]) => unknown> = {};
   const getPdf = vi.fn();
   const service = { getPdf };
   const getCover = vi.fn();
@@ -64,6 +65,9 @@ describe('knowledgeHandlers', () => {
     cancelUpload,
     cancelBatch,
   };
+  const search = vi.fn();
+  const cancel = vi.fn();
+  const searchService = { search, cancel };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,12 +78,98 @@ describe('knowledgeHandlers', () => {
       handlers[channel] = handler as (...args: unknown[]) => unknown;
       return ipcMain;
     });
+    vi.mocked(ipcMain.on).mockImplementation((channel, listener) => {
+      listeners[channel] = listener as (...args: unknown[]) => unknown;
+      return ipcMain;
+    });
     setupKnowledgeHandlers(
       () => service as never,
       () => indexStatusService as never,
       () => uploadService as never,
       () => coverService as never,
+      () => searchService as never,
     );
+  });
+
+  it('validates and forwards a trusted search request without exposing storage filters', async () => {
+    const request = {
+      requestId: 'search-request-1',
+      query: '  failvoer ',
+      scope: { kind: 'all' },
+      categoryId: null,
+      documentType: null,
+      limit: 20,
+    };
+    search.mockResolvedValue({
+      ok: true,
+      requestId: request.requestId,
+      availability: 'ready',
+      normalizedQuery: 'failvoer',
+      results: [],
+    });
+
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toMatchObject({
+      ok: true,
+      normalizedQuery: 'failvoer',
+    });
+    expect(search).toHaveBeenCalledWith({ ...request, query: 'failvoer' });
+  });
+
+  it('returns stable typed errors for untrusted, malformed, absent, and throwing search services', async () => {
+    const request = {
+      requestId: 'search-request-1',
+      query: 'failover',
+      scope: { kind: 'all' },
+      categoryId: null,
+      documentType: null,
+      limit: 20,
+    };
+    trusted.mockReturnValueOnce(false);
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toEqual({
+      ok: false,
+      requestId: request.requestId,
+      error: 'invalid-query',
+    });
+    await expect(
+      handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, { ...request, filter: 'title ~ "secret"' }),
+    ).resolves.toEqual({ ok: false, requestId: request.requestId, error: 'invalid-query' });
+
+    setupKnowledgeHandlers(
+      () => null,
+      () => null,
+      () => null,
+      () => null,
+      () => null,
+    );
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toEqual({
+      ok: false,
+      requestId: request.requestId,
+      error: 'unavailable',
+    });
+
+    search.mockRejectedValueOnce(new Error('engine failed'));
+    setupKnowledgeHandlers(
+      () => null,
+      () => null,
+      () => null,
+      () => null,
+      () => searchService as never,
+    );
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toEqual({
+      ok: false,
+      requestId: request.requestId,
+      error: 'unavailable',
+    });
+  });
+
+  it('cancels only trusted requests with a strict request identifier', () => {
+    listeners[IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL]({}, 'search-request-1');
+    expect(cancel).toHaveBeenCalledWith('search-request-1');
+
+    listeners[IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL]({}, '../escape');
+    trusted.mockReturnValueOnce(false);
+    listeners[IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL]({}, 'search-request-2');
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   function getOpenWebLinkHandler(): (...args: unknown[]) => Promise<unknown> {

@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => ({
   setPrivilegedRuntime: vi.fn(),
   createProductionPrivilegedRuntime: vi.fn(),
   serverPbClient: { authStore: { isValid: true } },
+  restartKnowledgeSearchRuntime: vi.fn(),
 }));
 
 vi.mock('../appState', () => ({
@@ -112,6 +113,10 @@ vi.mock('../../knowledge/knowledgeRuntime', () => ({
   initializeKnowledgePdfService: mocks.initializeKnowledgePdfService,
 }));
 
+vi.mock('../../knowledge/knowledgeSearchRuntime', () => ({
+  restartKnowledgeSearchRuntime: mocks.restartKnowledgeSearchRuntime,
+}));
+
 vi.mock('../../privileged/privilegedRuntime', () => ({
   createProductionPrivilegedRuntime: mocks.createProductionPrivilegedRuntime,
 }));
@@ -137,6 +142,7 @@ describe('reconfigureRuntime', () => {
     mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
     mocks.startPocketBase.mockResolvedValue({ status: 'started', privilegedRuntimeReady: true });
+    mocks.restartKnowledgeSearchRuntime.mockResolvedValue(undefined);
     mocks.offlineCacheInstance.close.mockClear();
     mocks.pendingChangesInstance.close.mockClear();
     mocks.authWithPassword.mockResolvedValue({});
@@ -296,5 +302,17 @@ describe('reconfigureRuntime', () => {
     expect(mocks.setPendingChanges).not.toHaveBeenCalledWith(mocks.pendingChangesInstance);
     expect(mocks.setSyncManager).not.toHaveBeenCalledWith(mocks.syncManagerInstance);
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
+  });
+
+  it('restarts enhanced search best-effort before reloading without awaiting it on the critical path', async () => {
+    mocks.restartKnowledgeSearchRuntime.mockReturnValueOnce(new Promise(() => undefined));
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await expect(reconfigureRuntime('/Users/test/RelayData/data')).resolves.toBeUndefined();
+
+    expect(mocks.restartKnowledgeSearchRuntime).toHaveBeenCalledOnce();
+    expect(mocks.restartKnowledgeSearchRuntime.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.mainWindow.webContents.reloadIgnoringCache.mock.invocationCallOrder[0] as number,
+    );
   });
 });

@@ -49,6 +49,23 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:getCover', request);
   });
 
+  it('exposes only validated-request search and identifier-only cancellation methods', async () => {
+    const request = {
+      requestId: 'search-request-1',
+      query: 'failover',
+      scope: { kind: 'all' as const },
+      categoryId: null,
+      documentType: null,
+      limit: 20,
+    };
+
+    await api.searchKnowledge(request);
+    api.cancelKnowledgeSearch(request.requestId);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:search', request);
+    expect(electronMocks.send).toHaveBeenCalledWith('knowledge:searchCancel', request.requestId);
+  });
+
   it('exposes only selection, safe queue state, and identifier-based Knowledge controls', async () => {
     const callback = vi.fn();
     await api.selectAndQueueKnowledgePdfs();

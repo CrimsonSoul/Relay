@@ -24,6 +24,7 @@ import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusSer
 import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
 import type { KnowledgeCoverService } from './knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
+import type { KnowledgeSearchService } from './knowledge/KnowledgeSearchService';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
@@ -50,6 +51,7 @@ export function setupIpcHandlers(opts: {
   getKnowledgePdfService?: () => KnowledgePdfService | null;
   getKnowledgeCoverService?: () => KnowledgeCoverService | null;
   getKnowledgeUploadService?: () => KnowledgeUploadService | null;
+  getKnowledgeSearchService?: () => KnowledgeSearchService | null;
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
   subscribePrivilegedSessionChanged?: (
     listener: (view: PrivilegedSessionView) => void,
@@ -71,6 +73,7 @@ export function setupIpcHandlers(opts: {
     getKnowledgePdfService,
     getKnowledgeCoverService,
     getKnowledgeUploadService,
+    getKnowledgeSearchService,
     getPrivilegedRuntime,
     subscribePrivilegedSessionChanged,
     restartPb,
@@ -103,6 +106,7 @@ export function setupIpcHandlers(opts: {
       () => knowledgeIndexStatusService,
       getKnowledgeUploadService ?? (() => null),
       getKnowledgeCoverService ?? (() => null),
+      getKnowledgeSearchService ?? (() => null),
     ),
   );
 

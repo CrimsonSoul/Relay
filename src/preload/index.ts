@@ -156,6 +156,9 @@ const api: BridgeAPI = {
   getKnowledgePdf: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_PDF, request),
   getKnowledgeCover: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_COVER, request),
   getKnowledgeIndexStatus: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS),
+  searchKnowledge: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SEARCH, request),
+  cancelKnowledgeSearch: (requestId) =>
+    ipcRenderer.send(IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL, requestId),
   onKnowledgeIndexStatusChanged: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
       callback(status);

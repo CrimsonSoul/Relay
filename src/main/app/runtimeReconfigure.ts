@@ -24,6 +24,7 @@ import { startPocketBase } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
 import { createProductionPrivilegedRuntime } from '../privileged/privilegedRuntime';
+import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 
 function tryClose(db: { close(): void } | null, label: string): void {
   if (!db) return;
@@ -117,6 +118,10 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   if (config && privilegedRuntimeReady) {
     await rebuildPrivilegedRuntime(config, configDataDir);
   }
+
+  // Enhanced search owns only disposable derived state and must never delay
+  // runtime reconfiguration or the renderer reload.
+  void restartKnowledgeSearchRuntime();
 
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {

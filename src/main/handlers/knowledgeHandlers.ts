@@ -4,6 +4,8 @@ import {
   KnowledgeCoverRequestSchema,
   KnowledgePdfRequestSchema,
   KnowledgeUploadControlIdSchema,
+  KnowledgeSearchRequestIdSchema,
+  KnowledgeSearchRequestSchema,
 } from '@shared/ipcValidation';
 import type {
   KnowledgeCoverResult,
@@ -16,6 +18,11 @@ import type { KnowledgeIndexStatusService } from '../knowledge/KnowledgeIndexSta
 import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
+import type { KnowledgeSearchService } from '../knowledge/KnowledgeSearchService';
+import {
+  normalizeKnowledgeSearchResponse,
+  type KnowledgeSearchResponse,
+} from '@shared/knowledgeSearch';
 import { normalizeKnowledgeWebUrl } from '../knowledge/knowledgeWebLinks';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
@@ -41,6 +48,7 @@ export function setupKnowledgeHandlers(
   getIndexStatusService: () => KnowledgeIndexStatusService | null,
   getUploadService: () => KnowledgeUploadService | null = () => null,
   getCoverService: () => KnowledgeCoverService | null = () => null,
+  getSearchService: () => Pick<KnowledgeSearchService, 'search' | 'cancel'> | null = () => null,
 ): void {
   ipcMain.handle(
     IPC_CHANNELS.KNOWLEDGE_GET_PDF,
@@ -54,6 +62,46 @@ export function setupKnowledgeHandlers(
       return service ? service.getPdf(parsed.data) : { ok: false, error: 'not-found' };
     },
   );
+
+  ipcMain.handle(
+    IPC_CHANNELS.KNOWLEDGE_SEARCH,
+    async (event, request: unknown): Promise<KnowledgeSearchResponse> => {
+      const rawRequestId =
+        request && typeof request === 'object' && 'requestId' in request
+          ? (request as { requestId?: unknown }).requestId
+          : null;
+      const requestId = KnowledgeSearchRequestIdSchema.safeParse(rawRequestId).success
+        ? (rawRequestId as string)
+        : 'invalid';
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_SEARCH)) {
+        return { ok: false, requestId, error: 'invalid-query' };
+      }
+      const parsed = KnowledgeSearchRequestSchema.safeParse(request);
+      if (!parsed.success) return { ok: false, requestId, error: 'invalid-query' };
+      const service = getSearchService();
+      if (!service) return { ok: false, requestId: parsed.data.requestId, error: 'unavailable' };
+      try {
+        const response = normalizeKnowledgeSearchResponse(await service.search(parsed.data));
+        return (
+          response ?? {
+            ok: false,
+            requestId: parsed.data.requestId,
+            error: 'unavailable',
+          }
+        );
+      } catch {
+        loggers.ipc.warn('Enhanced Wiki search request failed');
+        return { ok: false, requestId: parsed.data.requestId, error: 'unavailable' };
+      }
+    },
+  );
+
+  ipcMain.on(IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL, (event, requestId: unknown) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL)) return;
+    const parsed = KnowledgeSearchRequestIdSchema.safeParse(requestId);
+    if (!parsed.success) return;
+    getSearchService()?.cancel(parsed.data);
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.KNOWLEDGE_GET_COVER,

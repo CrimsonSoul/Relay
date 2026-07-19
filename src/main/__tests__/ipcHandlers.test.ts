@@ -76,6 +76,7 @@ describe('setupIpcHandlers', () => {
     const getKnowledgePdfService = vi.fn();
     const getKnowledgeCoverService = vi.fn();
     const getKnowledgeUploadService = vi.fn();
+    const getKnowledgeSearchService = vi.fn();
     const getPbClient = vi.fn(() => null);
 
     setupIpcHandlers(
@@ -83,6 +84,7 @@ describe('setupIpcHandlers', () => {
         getKnowledgePdfService,
         getKnowledgeCoverService,
         getKnowledgeUploadService,
+        getKnowledgeSearchService,
         getPbClient,
       }),
     );
@@ -92,6 +94,7 @@ describe('setupIpcHandlers', () => {
       expect.any(Function),
       getKnowledgeUploadService,
       getKnowledgeCoverService,
+      getKnowledgeSearchService,
     );
     const getStatusService = mockSetupKnowledgeHandlers.mock.calls[0]?.[1];
     expect(getStatusService()).toEqual(

@@ -20,6 +20,7 @@ import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusMana
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
 import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
+import type { KnowledgeSearchService } from '../knowledge/KnowledgeSearchService';
 import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 
@@ -41,6 +42,7 @@ export interface AppState {
   knowledgePdfService: KnowledgePdfService | null;
   knowledgeCoverService: KnowledgeCoverService | null;
   knowledgeUploadService: KnowledgeUploadService | null;
+  knowledgeSearchService: KnowledgeSearchService | null;
   privilegedRuntime: PrivilegedRuntime | null;
 }
 
@@ -61,6 +63,7 @@ const state: AppState = {
   knowledgePdfService: null,
   knowledgeCoverService: null,
   knowledgeUploadService: null,
+  knowledgeSearchService: null,
   privilegedRuntime: null,
 };
 
@@ -117,6 +120,9 @@ export function getKnowledgeCoverService() {
 }
 export function getKnowledgeUploadService() {
   return state.knowledgeUploadService;
+}
+export function getKnowledgeSearchService() {
+  return state.knowledgeSearchService;
 }
 export function getPrivilegedRuntime() {
   return state.privilegedRuntime;
@@ -186,6 +192,10 @@ export function setKnowledgeCoverService(service: KnowledgeCoverService | null) 
 export function setKnowledgeUploadService(service: KnowledgeUploadService | null) {
   log.debug('appState.knowledgeUploadService changed');
   state.knowledgeUploadService = service;
+}
+export function setKnowledgeSearchService(service: KnowledgeSearchService | null) {
+  log.debug('appState.knowledgeSearchService changed');
+  state.knowledgeSearchService = service;
 }
 export function setPrivilegedRuntime(runtime: PrivilegedRuntime | null) {
   stopPrivilegedRuntimeSubscription?.();
@@ -286,6 +296,7 @@ export function setupIpc(
     getKnowledgePdfService: () => state.knowledgePdfService,
     getKnowledgeCoverService: () => state.knowledgeCoverService,
     getKnowledgeUploadService: () => state.knowledgeUploadService,
+    getKnowledgeSearchService: () => state.knowledgeSearchService,
     getPrivilegedRuntime: () => state.privilegedRuntime,
     subscribePrivilegedSessionChanged,
     restartPb,

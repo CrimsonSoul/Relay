@@ -20,6 +20,13 @@ import {
   normalizePrivilegedCommandPayload,
 } from './privilegedCommands';
 import { getRoleUsernameError, normalizeRoleUsername } from './roleAccounts';
+import {
+  KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
+  boundedSearchLimit,
+  isKnowledgeSearchQueryEligible,
+  normalizeKnowledgeSearchQuery,
+  type KnowledgeSearchRequest,
+} from './knowledgeSearch';
 
 // ==================== Size Limits ====================
 const MAX_NAME = 500;
@@ -51,6 +58,48 @@ export const KnowledgeUploadControlIdSchema = z
   .min(1)
   .max(MAX_ID)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+
+export const KnowledgeSearchRequestIdSchema = z
+  .string()
+  .min(1)
+  .max(MAX_ID)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+
+const KnowledgeSearchScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('all') }).strict(),
+  z
+    .object({
+      kind: z.literal('document'),
+      documentId: KnowledgeSearchRequestIdSchema,
+    })
+    .strict(),
+]);
+
+const KnowledgeSearchQuerySchema = z
+  .string()
+  .refine(
+    (value) => Array.from(value).length <= KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
+    'Knowledge search query is too long.',
+  )
+  .transform(normalizeKnowledgeSearchQuery)
+  .refine(isKnowledgeSearchQueryEligible, 'Knowledge search query is not eligible.');
+
+export const KnowledgeSearchRequestSchema = z
+  .object({
+    requestId: KnowledgeSearchRequestIdSchema,
+    query: KnowledgeSearchQuerySchema,
+    scope: KnowledgeSearchScopeSchema,
+    categoryId: KnowledgeSearchRequestIdSchema.nullable(),
+    documentType: z.enum(['sop', 'cheatsheet']).nullable(),
+    limit: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict()
+  .transform(
+    (input): KnowledgeSearchRequest => ({
+      ...input,
+      limit: boundedSearchLimit(input.scope, input.limit),
+    }),
+  );
 
 const privilegedPasswordSchema = z
   .string()

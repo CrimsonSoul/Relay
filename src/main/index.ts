@@ -65,6 +65,10 @@ import {
   createProductionPrivilegedRuntime,
   installPrivilegedE2EControl,
 } from './privileged/privilegedRuntime';
+import {
+  restartKnowledgeSearchRuntime,
+  stopKnowledgeSearchRuntime,
+} from './knowledge/knowledgeSearchRuntime';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -170,6 +174,7 @@ if (gotLock) {
       });
       void getKnowledgeUploadService()?.dispose();
       setKnowledgeUploadService(null);
+      void stopKnowledgeSearchRuntime();
       void getPrivilegedRuntime()?.dispose();
       setPrivilegedRuntime(null);
       setKnowledgePdfService(null);
@@ -292,6 +297,7 @@ if (gotLock) {
           );
         }
         startServerDataManagers();
+        void restartKnowledgeSearchRuntime();
         return true;
       };
 
@@ -374,6 +380,7 @@ if (gotLock) {
             { error: syncErr },
           );
         }
+        void restartKnowledgeSearchRuntime();
       }
 
       // Present the UI before optional privileged client initialization. A slow

@@ -6,6 +6,8 @@ import {
   KnowledgeUploadControlIdSchema,
   KnowledgePdfRequestSchema,
   KnowledgeCoverRequestSchema,
+  KnowledgeSearchRequestSchema,
+  KnowledgeSearchRequestIdSchema,
   PrivilegedLoginSchema,
   PrivilegedCredentialSetupSchema,
   PrivilegedPairingTargetAccountSchema,
@@ -164,6 +166,56 @@ describe('KnowledgeUploadControlIdSchema', () => {
       expect(KnowledgeUploadControlIdSchema.safeParse(value).success).toBe(false);
     },
   );
+});
+
+describe('KnowledgeSearchRequestSchema', () => {
+  const valid = {
+    requestId: 'search-request_1',
+    query: '  ＲＦ failover  ',
+    scope: { kind: 'all' as const },
+    categoryId: null,
+    documentType: null,
+    limit: 20,
+  };
+
+  it('strictly parses a bounded global request and normalizes query and limit', () => {
+    expect(KnowledgeSearchRequestSchema.parse(valid)).toEqual({
+      ...valid,
+      query: 'rf failover',
+    });
+  });
+
+  it('accepts a strict document scope and caps its limit at fifty', () => {
+    expect(
+      KnowledgeSearchRequestSchema.parse({
+        ...valid,
+        scope: { kind: 'document', documentId: 'document-1' },
+        categoryId: 'operations',
+        documentType: 'sop',
+        limit: 500,
+      }),
+    ).toMatchObject({ scope: { kind: 'document', documentId: 'document-1' }, limit: 50 });
+  });
+
+  it.each([
+    { ...valid, requestId: '../escape' },
+    { ...valid, requestId: 'a'.repeat(201) },
+    { ...valid, query: '😀'.repeat(121) },
+    { ...valid, query: 'the and of' },
+    { ...valid, scope: { kind: 'document', documentId: '../escape' } },
+    { ...valid, scope: { kind: 'all', documentId: 'unexpected' } },
+    { ...valid, categoryId: '../escape' },
+    { ...valid, documentType: 'pdf' },
+    { ...valid, limit: 0 },
+    { ...valid, filter: 'title ~ "secret"' },
+  ])('rejects malformed or renderer-controlled search payloads: %o', (value) => {
+    expect(KnowledgeSearchRequestSchema.safeParse(value).success).toBe(false);
+  });
+
+  it('shares the bounded identifier contract for cancellation', () => {
+    expect(KnowledgeSearchRequestIdSchema.parse('search-request_1')).toBe('search-request_1');
+    expect(KnowledgeSearchRequestIdSchema.safeParse('../escape').success).toBe(false);
+  });
 });
 
 describe('privileged IPC schemas', () => {

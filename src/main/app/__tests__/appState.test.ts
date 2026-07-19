@@ -63,6 +63,8 @@ import {
   setKnowledgePdfService,
   getKnowledgeUploadService,
   setKnowledgeUploadService,
+  getKnowledgeSearchService,
+  setKnowledgeSearchService,
   getPrivilegedRuntime,
   setPrivilegedRuntime,
   subscribePrivilegedSessionChanged,
@@ -94,6 +96,7 @@ beforeEach(() => {
   setSyncManager(null);
   setKnowledgePdfService(null);
   setKnowledgeUploadService(null);
+  setKnowledgeSearchService(null);
   setPrivilegedRuntime(null);
   resetDataRootCache();
 });
@@ -102,12 +105,15 @@ describe('appState getters/setters', () => {
   it('knowledge services getters/setters', () => {
     const pdfService = { getPdf: vi.fn() } as never;
     const uploadService = { snapshot: vi.fn() } as never;
+    const searchService = { search: vi.fn(), cancel: vi.fn() } as never;
 
     setKnowledgePdfService(pdfService);
     setKnowledgeUploadService(uploadService);
+    setKnowledgeSearchService(searchService);
 
     expect(getKnowledgePdfService()).toBe(pdfService);
     expect(getKnowledgeUploadService()).toBe(uploadService);
+    expect(getKnowledgeSearchService()).toBe(searchService);
   });
 
   it('owns the privileged runtime and relays only public session views', () => {
@@ -319,12 +325,15 @@ describe('setupIpc', () => {
 
   it('passes live knowledge service getters to setupIpcHandlers', () => {
     const pdfService = { getPdf: vi.fn() } as never;
+    const searchService = { search: vi.fn() } as never;
     setKnowledgePdfService(pdfService);
+    setKnowledgeSearchService(searchService);
 
     setupIpc();
 
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getKnowledgePdfService?.()).toBe(pdfService);
+    expect(options?.getKnowledgeSearchService?.()).toBe(searchService);
   });
 
   it('passes live privileged runtime and event getters to setupIpcHandlers', () => {

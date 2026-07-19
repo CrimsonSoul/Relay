@@ -21,6 +21,7 @@ import type {
   KnowledgeUploadQueueView,
   KnowledgeUploadSelectionResult,
 } from './knowledge';
+import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -506,6 +507,8 @@ export type BridgeAPI = {
   getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
   getKnowledgeCover: (request: KnowledgeCoverRequest) => Promise<KnowledgeCoverResult>;
   getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
+  searchKnowledge: (request: KnowledgeSearchRequest) => Promise<KnowledgeSearchResponse>;
+  cancelKnowledgeSearch: (requestId: string) => void;
   onKnowledgeIndexStatusChanged: (callback: (status: KnowledgeIndexStatus) => void) => () => void;
   openKnowledgeWebLink: (url: string) => Promise<KnowledgeOpenWebLinkResult>;
   selectAndQueueKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
@@ -645,6 +648,8 @@ export const IPC_CHANNELS = {
   KNOWLEDGE_GET_PDF: 'knowledge:getPdf',
   KNOWLEDGE_GET_COVER: 'knowledge:getCover',
   KNOWLEDGE_GET_INDEX_STATUS: 'knowledge:getIndexStatus',
+  KNOWLEDGE_SEARCH: 'knowledge:search',
+  KNOWLEDGE_SEARCH_CANCEL: 'knowledge:searchCancel',
   KNOWLEDGE_INDEX_STATUS_CHANGED: 'knowledge:indexStatusChanged',
   KNOWLEDGE_OPEN_WEB_LINK: 'knowledge:openWebLink',
   KNOWLEDGE_SELECT_AND_STAGE: 'knowledge:selectAndStage',
