@@ -111,6 +111,7 @@ function boundedEnd({
     (sourceRanges[candidate - 1]?.end ?? Number.POSITIVE_INFINITY) - rawStart <=
       KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT;
   const candidates = [
+    preferred === text.length && validEnd(text.length) ? text.length : null,
     lastAtOrBefore(ends, preferred, start, validEnd),
     lastAtOrBefore(ends, maximum, start, validEnd),
   ];

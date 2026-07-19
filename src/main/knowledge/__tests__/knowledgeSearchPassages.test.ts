@@ -42,6 +42,25 @@ describe('buildKnowledgeSearchPassages', () => {
     ]);
   });
 
+  it('emits one complete passage for short text ending in punctuation', () => {
+    const text = 'Reset the service safely.';
+
+    expect(
+      buildKnowledgeSearchPassages([{ pageNumber: 1, items: [{ str: text, hasEOL: false }] }], []),
+    ).toEqual([
+      {
+        pageNumber: 1,
+        passageNumber: 1,
+        headingId: null,
+        heading: null,
+        text,
+        normalizedText: 'reset the service safely.',
+        normalizedStart: 0,
+        normalizedEnd: text.length,
+      },
+    ]);
+  });
+
   it('keeps expanded compatibility graphemes whole at the maximum passage boundary', () => {
     const source = '\ufb03'.repeat(600);
     const passages = buildKnowledgeSearchPassages(
