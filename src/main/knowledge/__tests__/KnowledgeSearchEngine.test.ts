@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { KnowledgeSearchRequest } from '@shared/knowledgeSearch';
 import { normalizeKnowledgeSearchText } from '@shared/knowledgeSearch';
 import { KnowledgeSearchEngine } from '../KnowledgeSearchEngine';
@@ -491,6 +491,54 @@ describe('KnowledgeSearchEngine snapshot mutations', () => {
       });
     }
   });
+
+  it('rewrites shared metadata postings once per token during a document rename', () => {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'metadata-batch',
+      title: 'Legacy Procedure',
+      category: 'Operations',
+      categoryId: 'operations',
+    });
+    const chunks = Array.from({ length: 350 }, (_, index) =>
+      knowledgeSearchFixtureChunk(document, `unique passage ${index}`, {
+        id: `metadata-batch-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    let filterInstances: unknown[] = [];
+    let sortInstances: unknown[] = [];
+    let sharedPostingFilters = 0;
+    let sharedPostingSorts = 0;
+
+    try {
+      engine.upsertDocument({
+        ...document,
+        title: 'Modern Procedure',
+        displayTitle: 'Modern Procedure',
+        revision: 2,
+      });
+      filterInstances = [...filterSpy.mock.instances];
+      sortInstances = [...sortSpy.mock.instances];
+    } finally {
+      filterSpy.mockRestore();
+      sortSpy.mockRestore();
+    }
+
+    const isSharedPosting = (instance: unknown) =>
+      Array.isArray(instance) &&
+      instance.length > 0 &&
+      instance.every((value) => typeof value === 'string' && value.startsWith('metadata-batch-'));
+    sharedPostingFilters = filterInstances.filter(isSharedPosting).length;
+    sharedPostingSorts = sortInstances.filter(isSharedPosting).length;
+
+    expect(sharedPostingFilters).toBe(1);
+    expect(sharedPostingSorts).toBeLessThanOrEqual(1);
+  });
 });
 
 describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
@@ -542,6 +590,50 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
         normalizedStart: index * 100,
       }),
     );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    return engine;
+  }
+
+  function sparseSameLengthVocabularyEngine(): KnowledgeSearchEngine {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'same-length',
+      title: 'Sparse Vocabulary',
+      category: 'Operations',
+      categoryId: 'operations',
+    });
+    const chunks = Array.from({ length: 350 }, (_, index) => {
+      const first = String.fromCharCode(97 + Math.floor(index / (26 * 26)));
+      const second = String.fromCharCode(97 + (Math.floor(index / 26) % 26));
+      const third = String.fromCharCode(97 + (index % 26));
+      return knowledgeSearchFixtureChunk(document, `mnopq${first}${second}${third}`, {
+        id: `same-length-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      });
+    });
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    return engine;
+  }
+
+  function denseSameLengthVocabularyEngine(): KnowledgeSearchEngine {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'candidate-order',
+      title: 'Candidate Ordering',
+      category: 'Operations',
+      categoryId: 'operations',
+    });
+    const chunks = Array.from({ length: 350 }, (_, index) => {
+      const first = String.fromCharCode(97 + Math.floor(index / (26 * 26)));
+      const second = String.fromCharCode(97 + (Math.floor(index / 26) % 26));
+      const third = String.fromCharCode(97 + (index % 26));
+      return knowledgeSearchFixtureChunk(document, `xabc${first}${second}${third}q`, {
+        id: `candidate-order-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      });
+    });
     const engine = new KnowledgeSearchEngine();
     engine.replaceSnapshot([document], chunks);
     return engine;
@@ -642,6 +734,82 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
       }),
     ).rejects.toMatchObject({ name: 'SearchTimeoutError' });
     expect(deadlineStack).toContain('candidateChunkIds');
+  });
+
+  it('yields while traversing a large same-length vocabulary bucket', async () => {
+    let cancelled = false;
+    let cancellationStack = '';
+    setImmediate(() => {
+      cancelled = true;
+    });
+
+    await expect(
+      sparseSameLengthVocabularyEngine().search(request('zzzzzzzz'), {
+        deadline: Infinity,
+        isCancelled: () => {
+          if (cancelled) cancellationStack = new Error().stack ?? '';
+          return cancelled;
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'SearchCancelledError' });
+    expect(cancellationStack).toContain('vocabularyAtAllowedLengths');
+  });
+
+  it('checks deadlines while traversing a large same-length vocabulary bucket', async () => {
+    let reads = 0;
+    let deadlineStack = '';
+    await expect(
+      sparseSameLengthVocabularyEngine().search(request('zzzzzzzz'), {
+        get deadline() {
+          reads += 1;
+          if (reads === 2) deadlineStack = new Error().stack ?? '';
+          return reads === 1 ? Infinity : -Infinity;
+        },
+        isCancelled: () => false,
+      }),
+    ).rejects.toMatchObject({ name: 'SearchTimeoutError' });
+    expect(deadlineStack).toContain('vocabularyAtAllowedLengths');
+  });
+
+  it('yields while deterministically ordering a large fuzzy candidate set', async () => {
+    let cancelled = false;
+    let cancellationStack = '';
+    setImmediate(() => {
+      cancelled = true;
+    });
+
+    await expect(
+      denseSameLengthVocabularyEngine().search(request('zabcdefg'), {
+        deadline: Infinity,
+        isCancelled: () => {
+          const stack = new Error().stack ?? '';
+          if (cancelled && stack.includes('orderedFuzzyCandidates')) {
+            cancellationStack = stack;
+            return true;
+          }
+          return false;
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'SearchCancelledError' });
+    expect(cancellationStack).toContain('orderedFuzzyCandidates');
+  });
+
+  it('checks deadlines while deterministically ordering a large fuzzy candidate set', async () => {
+    let deadlineStack = '';
+    await expect(
+      denseSameLengthVocabularyEngine().search(request('zabcdefg'), {
+        get deadline() {
+          const stack = new Error().stack ?? '';
+          if (stack.includes('orderedFuzzyCandidates')) {
+            deadlineStack = stack;
+            return -Infinity;
+          }
+          return Infinity;
+        },
+        isCancelled: () => false,
+      }),
+    ).rejects.toMatchObject({ name: 'SearchTimeoutError' });
+    expect(deadlineStack).toContain('orderedFuzzyCandidates');
   });
 
   it.each(['vocabulary', 'passages'] as const)('checks deadlines during %s work', async (kind) => {

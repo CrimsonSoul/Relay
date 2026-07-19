@@ -408,43 +408,81 @@ function indexedChunkVocabulary(chunk: IndexedChunk): Set<string> {
   );
 }
 
-function addPosting(snapshot: SearchSnapshot, vocabularyToken: string, chunkId: string): void {
-  const postings = snapshot.exactPostings.get(vocabularyToken);
-  if (!postings) addVocabularyToken(snapshot, vocabularyToken);
-  snapshot.exactPostings.set(vocabularyToken, addSortedValue(postings, chunkId));
+function addPostingChanges(
+  changes: Map<string, Set<string>>,
+  vocabularyToken: string,
+  chunkId: string,
+): void {
+  const chunkIds = changes.get(vocabularyToken);
+  if (chunkIds) chunkIds.add(chunkId);
+  else changes.set(vocabularyToken, new Set([chunkId]));
 }
 
-function removePosting(snapshot: SearchSnapshot, vocabularyToken: string, chunkId: string): void {
-  const remaining = removeSortedValue(snapshot.exactPostings.get(vocabularyToken), chunkId);
-  if (remaining.length === 0) {
-    snapshot.exactPostings.delete(vocabularyToken);
-    removeVocabularyToken(snapshot, vocabularyToken);
-  } else {
-    snapshot.exactPostings.set(vocabularyToken, remaining);
+function applyPostingChanges(
+  snapshot: SearchSnapshot,
+  removals: ReadonlyMap<string, ReadonlySet<string>>,
+  additions: ReadonlyMap<string, ReadonlySet<string>>,
+): void {
+  for (const [token, removedChunkIds] of removals) {
+    const remaining = (snapshot.exactPostings.get(token) ?? []).filter(
+      (chunkId) => !removedChunkIds.has(chunkId),
+    );
+    if (remaining.length === 0) {
+      snapshot.exactPostings.delete(token);
+      removeVocabularyToken(snapshot, token);
+    } else {
+      snapshot.exactPostings.set(token, remaining);
+    }
+  }
+  for (const [token, addedChunkIds] of additions) {
+    const postings = snapshot.exactPostings.get(token);
+    if (!postings) addVocabularyToken(snapshot, token);
+    snapshot.exactPostings.set(token, [...(postings ?? []), ...addedChunkIds].sort(compareText));
   }
 }
 
-function replaceIndexedChunk(
+function recordIndexedChunkReplacement(
   snapshot: SearchSnapshot,
   chunkId: string,
   next: IndexedChunk | null,
-): IndexedChunk | null {
+  removals: Map<string, Set<string>>,
+  additions: Map<string, Set<string>>,
+): void {
   const previous = snapshot.chunksById.get(chunkId) ?? null;
   const previousVocabulary = previous ? indexedChunkVocabulary(previous) : new Set<string>();
   const nextVocabulary = next ? indexedChunkVocabulary(next) : new Set<string>();
   if (next) snapshot.chunksById.set(chunkId, next);
   else snapshot.chunksById.delete(chunkId);
   for (const token of previousVocabulary) {
-    if (!nextVocabulary.has(token)) removePosting(snapshot, token, chunkId);
+    if (!nextVocabulary.has(token)) addPostingChanges(removals, token, chunkId);
   }
   for (const token of nextVocabulary) {
-    if (!previousVocabulary.has(token)) addPosting(snapshot, token, chunkId);
+    if (!previousVocabulary.has(token)) addPostingChanges(additions, token, chunkId);
   }
-  return previous;
 }
 
-function removeIndexedChunk(snapshot: SearchSnapshot, chunkId: string): IndexedChunk | null {
-  return replaceIndexedChunk(snapshot, chunkId, null);
+function replaceIndexedChunks(
+  snapshot: SearchSnapshot,
+  replacements: ReadonlyMap<string, IndexedChunk | null>,
+): void {
+  const removals = new Map<string, Set<string>>();
+  const additions = new Map<string, Set<string>>();
+  for (const [chunkId, next] of replacements) {
+    recordIndexedChunkReplacement(snapshot, chunkId, next, removals, additions);
+  }
+  applyPostingChanges(snapshot, removals, additions);
+}
+
+function replaceIndexedChunk(
+  snapshot: SearchSnapshot,
+  chunkId: string,
+  next: IndexedChunk | null,
+): void {
+  replaceIndexedChunks(snapshot, new Map([[chunkId, next]]));
+}
+
+function removeIndexedChunk(snapshot: SearchSnapshot, chunkId: string): void {
+  replaceIndexedChunk(snapshot, chunkId, null);
 }
 
 function forkSnapshot(snapshot: SearchSnapshot): SearchSnapshot {
@@ -521,15 +559,16 @@ function upsertDocumentIncrementally(
   if (document) snapshot.documents.set(record.id, document);
   else snapshot.documents.delete(record.id);
   const nextChunksById = new Map(nextChunks.map((chunk) => [chunk.record.id, chunk]));
-  for (const chunkId of chunkIds) {
-    replaceIndexedChunk(snapshot, chunkId, nextChunksById.get(chunkId) ?? null);
-  }
+  replaceIndexedChunks(
+    snapshot,
+    new Map(chunkIds.map((chunkId) => [chunkId, nextChunksById.get(chunkId) ?? null])),
+  );
 }
 
 function removeDocumentIncrementally(snapshot: SearchSnapshot, documentId: string): void {
   const chunkIds = snapshot.chunkIdsByDocument.get(documentId) ?? [];
+  replaceIndexedChunks(snapshot, new Map(chunkIds.map((chunkId) => [chunkId, null])));
   for (const chunkId of chunkIds) {
-    removeIndexedChunk(snapshot, chunkId);
     snapshot.sourceChunks.delete(chunkId);
   }
   snapshot.chunkIdsByDocument.delete(documentId);
@@ -833,16 +872,21 @@ function collapseAndLimit(results: readonly ScoredResult[], request: KnowledgeSe
   return selected.map(({ result }) => result);
 }
 
-function vocabularyAtAllowedLengths(
+async function vocabularyAtAllowedLengths(
   queryToken: string,
   maximum: number,
   snapshot: SearchSnapshot,
-): Set<string> {
+  context: SearchContext,
+): Promise<Set<string>> {
   const vocabulary = new Set<string>();
   const queryLength = [...queryToken].length;
+  let operations = 0;
   for (let length = queryLength - maximum; length <= queryLength + maximum; length += 1) {
-    for (const candidate of snapshot.vocabularyByLength.get(length) ?? [])
+    for (const candidate of snapshot.vocabularyByLength.get(length) ?? []) {
       vocabulary.add(candidate);
+      operations += 1;
+      if (operations % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
+    }
   }
   return vocabulary;
 }
@@ -889,6 +933,65 @@ function fuzzyAcceptance(
   return distance <= maximum ? { distance, kind: 'fuzzy' } : null;
 }
 
+type FuzzyCandidate = [token: string, intersection: number];
+
+async function mergeFuzzyCandidateChunks(
+  left: readonly FuzzyCandidate[],
+  right: readonly FuzzyCandidate[],
+  context: SearchContext,
+): Promise<FuzzyCandidate[]> {
+  const merged: FuzzyCandidate[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length || rightIndex < right.length) {
+    const leftCandidate = left[leftIndex];
+    const rightCandidate = right[rightIndex];
+    if (
+      !rightCandidate ||
+      (leftCandidate && compareText(leftCandidate[0], rightCandidate[0]) <= 0)
+    ) {
+      merged.push(leftCandidate!);
+      leftIndex += 1;
+    } else {
+      merged.push(rightCandidate);
+      rightIndex += 1;
+    }
+    if (merged.length % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
+  }
+  return merged;
+}
+
+async function orderedFuzzyCandidates(
+  intersections: ReadonlyMap<string, number>,
+  context: SearchContext,
+): Promise<FuzzyCandidate[]> {
+  const chunks: FuzzyCandidate[][] = [];
+  let current: FuzzyCandidate[] = [];
+  for (const candidate of intersections) {
+    current.push(candidate);
+    if (current.length === CHECK_INTERVAL) {
+      chunks.push(current.toSorted(([left], [right]) => compareText(left, right)));
+      current = [];
+      await cooperativeCheckpoint(context);
+    }
+  }
+  if (current.length > 0) {
+    chunks.push(current.toSorted(([left], [right]) => compareText(left, right)));
+  }
+
+  let sortedChunks = chunks;
+  while (sortedChunks.length > 1) {
+    const mergedChunks: FuzzyCandidate[][] = [];
+    for (let index = 0; index < sortedChunks.length; index += 2) {
+      const left = sortedChunks[index]!;
+      const right = sortedChunks[index + 1];
+      mergedChunks.push(right ? await mergeFuzzyCandidateChunks(left, right, context) : left);
+    }
+    sortedChunks = mergedChunks;
+  }
+  return sortedChunks[0] ?? [];
+}
+
 async function acceptedVocabularyForToken(
   queryToken: string,
   snapshot: SearchSnapshot,
@@ -904,7 +1007,12 @@ async function acceptedVocabularyForToken(
   await addPrefixVocabularyCandidates(queryToken, snapshot, accepted, context);
 
   const queryTrigrams = trigrams(queryToken);
-  const allowedVocabulary = vocabularyAtAllowedLengths(queryToken, maximum, snapshot);
+  const allowedVocabulary = await vocabularyAtAllowedLengths(
+    queryToken,
+    maximum,
+    snapshot,
+    context,
+  );
   const intersectionCounts = await trigramIntersectionCounts(
     queryTrigrams,
     allowedVocabulary,
@@ -912,9 +1020,7 @@ async function acceptedVocabularyForToken(
     context,
   );
 
-  const candidates = [...intersectionCounts.entries()].sort(([left], [right]) =>
-    compareText(left, right),
-  );
+  const candidates = await orderedFuzzyCandidates(intersectionCounts, context);
   for (let index = 0; index < candidates.length; index += 1) {
     if ((index + 1) % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
     const [candidate, intersection] = candidates[index]!;
