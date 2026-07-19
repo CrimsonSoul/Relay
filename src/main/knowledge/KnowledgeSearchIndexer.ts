@@ -62,6 +62,12 @@ type SearchIndexPatch = {
   searchIndexError: KnowledgeDocumentRecord['searchIndexError'] | '';
 };
 
+type ActiveJob = {
+  documentId: string;
+  done: Promise<void>;
+  resolve: () => void;
+};
+
 function storageError(): Error {
   return new Error('search-storage-unavailable');
 }
@@ -98,12 +104,14 @@ export class KnowledgeSearchIndexer {
   private readonly readPdf: (document: KnowledgeDocumentRecord) => Promise<Uint8Array>;
   private readonly now: () => number;
   private readonly pending = new Set<string>();
-  private readonly cancelledActive = new Set<string>();
+  private readonly removedDocumentIds = new Set<string>();
+  private readonly removalOperations = new Set<Promise<void>>();
   private readonly idleWaiters = new Set<() => void>();
   private running = false;
   private disposed = false;
-  private activeDocumentId: string | null = null;
+  private activeJob: ActiveJob | null = null;
   private pumpPromise: Promise<void> | null = null;
+  private disposalPromise: Promise<void> | null = null;
 
   constructor(options: KnowledgeSearchIndexerOptions) {
     this.pb = options.pb as KnowledgeSearchStoragePort;
@@ -118,7 +126,9 @@ export class KnowledgeSearchIndexer {
       const documents = await this.readActiveDocuments();
       if (this.disposed) return;
       for (const document of documents) {
-        if (!this.isCurrent(document)) this.pending.add(document.id);
+        if (!this.removedDocumentIds.has(document.id) && !this.isCurrent(document)) {
+          this.pending.add(document.id);
+        }
       }
       this.kickPump();
     } catch (error) {
@@ -127,7 +137,13 @@ export class KnowledgeSearchIndexer {
   }
 
   enqueue(documentId: string): void {
-    if (this.disposed || !DOCUMENT_ID_PATTERN.test(documentId)) return;
+    if (
+      this.disposed ||
+      this.removedDocumentIds.has(documentId) ||
+      !DOCUMENT_ID_PATTERN.test(documentId)
+    ) {
+      return;
+    }
     this.pending.add(documentId);
     this.kickPump();
   }
@@ -136,21 +152,38 @@ export class KnowledgeSearchIndexer {
     this.enqueue(documentId);
   }
 
-  async remove(documentId: string): Promise<void> {
-    if (!DOCUMENT_ID_PATTERN.test(documentId)) return;
+  remove(documentId: string): Promise<void> {
+    if (this.disposed || !DOCUMENT_ID_PATTERN.test(documentId)) return Promise.resolve();
+    this.removedDocumentIds.add(documentId);
     this.pending.delete(documentId);
-    if (this.activeDocumentId === documentId) this.cancelledActive.add(documentId);
+    const operation = this.removePermanently(documentId);
+    this.removalOperations.add(operation);
+    void operation.then(() => {
+      this.removalOperations.delete(operation);
+      this.resolveIdleWaiters();
+    });
+    return operation;
+  }
+
+  private async removePermanently(documentId: string): Promise<void> {
     try {
+      const active = this.activeJob;
+      if (active?.documentId === documentId) await active.done;
       await this.deleteChunks(documentId, () => true, false);
     } catch (error) {
       loggers.main.warn('Wiki search chunk removal is unavailable', { error });
     }
   }
 
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
+  dispose(): Promise<void> {
+    if (this.disposalPromise) return this.disposalPromise;
     this.disposed = true;
     this.pending.clear();
+    this.disposalPromise = this.finishDisposal();
+    return this.disposalPromise;
+  }
+
+  private async finishDisposal(): Promise<void> {
     try {
       await this.extractor.stop();
     } catch (error) {
@@ -161,11 +194,14 @@ export class KnowledgeSearchIndexer {
     } catch {
       // pump() contains per-document failures; this only protects the public boundary.
     }
+    await Promise.allSettled([...this.removalOperations]);
     this.resolveIdleWaiters();
   }
 
   whenIdleForTest(): Promise<void> {
-    if (!this.running && this.pending.size === 0) return Promise.resolve();
+    if (!this.running && this.pending.size === 0 && this.removalOperations.size === 0) {
+      return Promise.resolve();
+    }
     return new Promise((resolve) => this.idleWaiters.add(resolve));
   }
 
@@ -173,7 +209,7 @@ export class KnowledgeSearchIndexer {
     if (this.running || this.disposed) return;
     const pump = this.pump();
     this.pumpPromise = pump;
-    void pump.finally(() => {
+    void pump.then(() => {
       if (this.pumpPromise === pump) this.pumpPromise = null;
     });
   }
@@ -186,14 +222,19 @@ export class KnowledgeSearchIndexer {
         const documentId = this.pending.values().next().value as string | undefined;
         if (!documentId) break;
         this.pending.delete(documentId);
-        this.activeDocumentId = documentId;
+        let resolveActive!: () => void;
+        const done = new Promise<void>((resolve) => {
+          resolveActive = resolve;
+        });
+        const activeJob = { documentId, done, resolve: resolveActive };
+        this.activeJob = activeJob;
         try {
           await this.processDocument(documentId);
         } catch (error) {
           loggers.main.warn('Wiki search document indexing failed', { documentId, error });
         } finally {
-          this.cancelledActive.delete(documentId);
-          this.activeDocumentId = null;
+          activeJob.resolve();
+          if (this.activeJob === activeJob) this.activeJob = null;
         }
       }
     } finally {
@@ -204,6 +245,7 @@ export class KnowledgeSearchIndexer {
 
   private async processDocument(documentId: string): Promise<void> {
     let jobChecksum: string | null = null;
+    let stagingStarted = false;
     try {
       const document = await this.readActiveDocument(documentId);
       if (!document || this.isCurrent(document) || this.isCancelled(documentId)) return;
@@ -233,17 +275,17 @@ export class KnowledgeSearchIndexer {
       if (this.isCancelled(documentId)) return;
 
       const indexedAt = new Date(this.now()).toISOString();
+      stagingStarted = true;
       await this.createChunks(document, passages, indexedAt);
       if (this.isCancelled(documentId)) {
-        this.startCleanup(
-          documentId,
-          (chunk) =>
-            chunk.checksum === jobChecksum && chunk.indexVersion === KNOWLEDGE_SEARCH_INDEX_VERSION,
-        );
+        await this.cleanupJobChunks(documentId, jobChecksum);
         return;
       }
       await this.verifyManifest(document, passages);
-      if (this.isCancelled(documentId)) return;
+      if (this.isCancelled(documentId)) {
+        await this.cleanupJobChunks(documentId, jobChecksum);
+        return;
+      }
 
       const activated = await this.patchIfCurrent(documentId, jobChecksum, {
         searchIndexState: 'ready',
@@ -253,23 +295,30 @@ export class KnowledgeSearchIndexer {
         searchIndexError: '',
       });
       if (!activated) {
-        this.startCleanup(
-          documentId,
-          (chunk) =>
-            chunk.checksum === jobChecksum && chunk.indexVersion === KNOWLEDGE_SEARCH_INDEX_VERSION,
-        );
+        await this.cleanupJobChunks(documentId, jobChecksum);
         return;
       }
 
-      this.startCleanup(
+      await this.deleteChunks(
         documentId,
         (chunk) =>
           chunk.checksum !== jobChecksum || chunk.indexVersion !== KNOWLEDGE_SEARCH_INDEX_VERSION,
+        false,
       );
     } catch (error) {
-      if (this.isCancelled(documentId) || jobChecksum === null) return;
-      await this.markFailed(documentId, jobChecksum, searchIndexError(error));
+      await this.handleJobFailure(documentId, jobChecksum, stagingStarted, error);
     }
+  }
+
+  private async handleJobFailure(
+    documentId: string,
+    checksum: string | null,
+    stagingStarted: boolean,
+    error: unknown,
+  ): Promise<void> {
+    if (stagingStarted && checksum !== null) await this.cleanupJobChunks(documentId, checksum);
+    if (this.isCancelled(documentId) || checksum === null) return;
+    await this.markFailed(documentId, checksum, searchIndexError(error));
   }
 
   private async readActiveDocuments(): Promise<KnowledgeDocumentRecord[]> {
@@ -304,7 +353,7 @@ export class KnowledgeSearchIndexer {
   }
 
   private isCancelled(documentId: string): boolean {
-    return this.disposed || this.cancelledActive.has(documentId);
+    return this.disposed || this.removedDocumentIds.has(documentId);
   }
 
   private async patchIfCurrent(
@@ -313,7 +362,7 @@ export class KnowledgeSearchIndexer {
     patch: SearchIndexPatch,
   ): Promise<boolean> {
     const current = await this.readActiveDocument(documentId);
-    if (!current || current.checksum !== checksum || this.disposed) return false;
+    if (!current || current.checksum !== checksum || this.isCancelled(documentId)) return false;
     await this.storageCall(() =>
       this.pb
         .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
@@ -329,7 +378,7 @@ export class KnowledgeSearchIndexer {
   ): Promise<void> {
     try {
       const current = await this.readActiveDocument(documentId);
-      if (!current || current.checksum !== checksum || this.disposed) return;
+      if (!current || current.checksum !== checksum || this.isCancelled(documentId)) return;
       await this.storageCall(() =>
         this.pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).update(
           documentId,
@@ -445,13 +494,13 @@ export class KnowledgeSearchIndexer {
     }
   }
 
-  private startCleanup(
-    documentId: string,
-    predicate: (chunk: KnowledgeSearchChunkRecord) => boolean,
-  ): void {
-    void this.deleteChunks(documentId, predicate, false).catch((error) => {
-      loggers.main.warn('Wiki search chunk cleanup is unavailable', { documentId, error });
-    });
+  private async cleanupJobChunks(documentId: string, checksum: string): Promise<void> {
+    await this.deleteChunks(
+      documentId,
+      (chunk) =>
+        chunk.checksum === checksum && chunk.indexVersion === KNOWLEDGE_SEARCH_INDEX_VERSION,
+      false,
+    );
   }
 
   private async readProtectedPdf(document: KnowledgeDocumentRecord): Promise<Uint8Array> {
@@ -481,7 +530,7 @@ export class KnowledgeSearchIndexer {
   }
 
   private resolveIdleWaiters(): void {
-    if (this.running || this.pending.size > 0) return;
+    if (this.running || this.pending.size > 0 || this.removalOperations.size > 0) return;
     for (const resolve of this.idleWaiters) resolve();
     this.idleWaiters.clear();
   }

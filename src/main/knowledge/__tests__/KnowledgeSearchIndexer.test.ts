@@ -63,6 +63,29 @@ function document(
 
 type ChunkCreate = Omit<KnowledgeSearchChunkRecord, 'id' | 'created' | 'updated'>;
 
+type StorageGate = { entered: () => void; wait: Promise<void> };
+
+function controlledGate(): {
+  entered: Promise<void>;
+  release: () => void;
+  hook: StorageGate;
+} {
+  let markEntered!: () => void;
+  let release!: () => void;
+  return {
+    entered: new Promise<void>((resolve) => {
+      markEntered = resolve;
+    }),
+    release: () => release(),
+    hook: {
+      entered: () => markEntered(),
+      wait: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    },
+  };
+}
+
 class FakeSearchStorage implements KnowledgeSearchStoragePort {
   readonly documents = new Map<string, KnowledgeDocumentRecord>();
   readonly chunks = new Map<string, KnowledgeSearchChunkRecord>();
@@ -74,7 +97,12 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
   chunkListError: Error | null = null;
   deleteError: Error | null = null;
   partialBatchWrites: number | null = null;
+  failBatchNumber: number | null = null;
+  chunkListGate: ({ call: number } & StorageGate) | null = null;
+  batchSendGate: ({ batch: number } & StorageGate) | null = null;
+  chunkDeleteGate: StorageGate | null = null;
   private nextChunkId = 1;
+  private chunkListCalls = 0;
 
   constructor(documents: readonly KnowledgeDocumentRecord[]) {
     for (const record of documents) this.documents.set(record.id, structuredClone(record));
@@ -112,6 +140,11 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
       return {
         getFullList: async () => {
           if (this.chunkListError) throw this.chunkListError;
+          this.chunkListCalls += 1;
+          if (this.chunkListGate?.call === this.chunkListCalls) {
+            this.chunkListGate.entered();
+            await this.chunkListGate.wait;
+          }
           return [...this.chunks.values()].map((record) => structuredClone(record));
         },
         getOne: async (id: string) => {
@@ -123,6 +156,10 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
         delete: async (id: string) => {
           if (this.deleteError) throw this.deleteError;
           const record = this.chunks.get(id);
+          if (record && this.chunkDeleteGate) {
+            this.chunkDeleteGate.entered();
+            await this.chunkDeleteGate.wait;
+          }
           if (record) this.chunkDeletes.push(structuredClone(record));
           this.chunks.delete(id);
           return true;
@@ -142,6 +179,12 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
       },
       send: async () => {
         this.batchSizes.push(creates.length);
+        const batchNumber = this.batchSizes.length;
+        if (this.batchSendGate?.batch === batchNumber) {
+          this.batchSendGate.entered();
+          await this.batchSendGate.wait;
+        }
+        if (this.failBatchNumber === batchNumber) throw new Error('batch-write-failed');
         const writeCount = this.partialBatchWrites ?? creates.length;
         for (const create of creates.slice(0, writeCount)) {
           this.chunkCreates.push(structuredClone(create));
@@ -508,6 +551,47 @@ describe('KnowledgeSearchIndexer', () => {
     });
   });
 
+  it('finishes activated cleanup before a queued replacement can publish its manifest', async () => {
+    const current = document();
+    const replacementBytes = pdf('serializedreplacement');
+    const bytesByDocument = new Map([[current.id, pdf(current.id)]]);
+    const { indexer, storage, processedDocumentIds } = createHarness({
+      documents: [current],
+      bytesByDocument,
+    });
+    const cleanupList = controlledGate();
+    storage.chunkListGate = { call: 3, ...cleanupList.hook };
+
+    indexer.enqueue(current.id);
+    await cleanupList.entered;
+    const activated = storage.documents.get(current.id)!;
+    storage.documents.set(current.id, {
+      ...activated,
+      checksum: checksum(replacementBytes),
+      byteSize: replacementBytes.byteLength,
+      revision: activated.revision + 1,
+    });
+    bytesByDocument.set(current.id, replacementBytes);
+    indexer.enqueue(current.id);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    cleanupList.release();
+    await indexer.whenIdleForTest();
+    await settleHousekeeping();
+
+    const replacementManifest = [...storage.chunks.values()].filter(
+      (chunk) =>
+        chunk.documentId === current.id &&
+        chunk.checksum === checksum(replacementBytes) &&
+        chunk.indexVersion === KNOWLEDGE_SEARCH_INDEX_VERSION,
+    );
+    expect(processedDocumentIds).toEqual([current.id, current.id]);
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'ready',
+      searchIndexChecksum: checksum(replacementBytes),
+    });
+    expect(replacementManifest).toHaveLength(1);
+  });
+
   it('rejects a partial manifest and preserves the previous ready checksum', async () => {
     const current = document('replacement', {
       searchIndexState: 'ready',
@@ -551,6 +635,56 @@ describe('KnowledgeSearchIndexer', () => {
     expect(storage.documents.get(current.id)).toMatchObject({ searchIndexState: 'ready' });
   });
 
+  it('removes earlier new-checksum batches before failing a later batch', async () => {
+    const oldChecksum = 'e'.repeat(64);
+    const current = document('batchfailure', {
+      pageCount: 101,
+      searchIndexState: 'ready',
+      searchIndexChecksum: oldChecksum,
+      searchIndexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      searchIndexedAt: '2026-07-18T10:00:00.000Z',
+    });
+    const pages = new Map([
+      [
+        current.id,
+        Array.from({ length: 101 }, (_, index) => extractedPage(index + 1, `Page ${index + 1}`)),
+      ],
+    ]);
+    const { indexer, storage } = createHarness({ documents: [current], pagesByDocument: pages });
+    storage.failBatchNumber = 2;
+    storage.chunks.set('old-chunk', {
+      id: 'old-chunk',
+      documentId: current.id,
+      checksum: oldChecksum,
+      pageNumber: 1,
+      passageNumber: 1,
+      headingId: null,
+      heading: null,
+      text: 'Old ready content',
+      normalizedText: 'old ready content',
+      normalizedStart: 0,
+      normalizedEnd: 17,
+      indexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      indexedAt: '2026-07-18T10:00:00.000Z',
+      created: '2026-07-18T10:00:00.000Z',
+      updated: '2026-07-18T10:00:00.000Z',
+    });
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+
+    expect(storage.batchSizes).toEqual([100, 1]);
+    expect(
+      [...storage.chunks.values()].filter((chunk) => chunk.checksum === current.checksum),
+    ).toEqual([]);
+    expect(storage.chunks.get('old-chunk')).toMatchObject({ checksum: oldChecksum });
+    expect(storage.documentUpdates.at(-1)).toMatchObject({
+      searchIndexState: 'failed',
+      searchIndexChecksum: oldChecksum,
+      searchIndexError: 'storage-unavailable',
+    });
+  });
+
   it('deletes old chunks only after activation and contains cleanup failures', async () => {
     const current = document('replacement', {
       searchIndexState: 'ready',
@@ -590,6 +724,54 @@ describe('KnowledgeSearchIndexer', () => {
     await expect(indexer.remove(current.id)).resolves.toBeUndefined();
   });
 
+  it('preserves a newly activated manifest when best-effort old cleanup fails', async () => {
+    const oldChecksum = 'f'.repeat(64);
+    const current = document('cleanupfailure', {
+      searchIndexState: 'ready',
+      searchIndexChecksum: oldChecksum,
+      searchIndexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      searchIndexedAt: '2026-07-18T10:00:00.000Z',
+    });
+    const { indexer, storage } = createHarness({ documents: [current] });
+    storage.chunks.set('old-chunk', {
+      id: 'old-chunk',
+      documentId: current.id,
+      checksum: oldChecksum,
+      pageNumber: 1,
+      passageNumber: 1,
+      headingId: null,
+      heading: null,
+      text: 'Old ready content',
+      normalizedText: 'old ready content',
+      normalizedStart: 0,
+      normalizedEnd: 17,
+      indexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      indexedAt: '2026-07-18T10:00:00.000Z',
+      created: '2026-07-18T10:00:00.000Z',
+      updated: '2026-07-18T10:00:00.000Z',
+    });
+    storage.deleteError = new Error('cleanup-offline');
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+
+    const activatedManifest = [...storage.chunks.values()].filter(
+      (chunk) =>
+        chunk.documentId === current.id &&
+        chunk.checksum === current.checksum &&
+        chunk.indexVersion === KNOWLEDGE_SEARCH_INDEX_VERSION,
+    );
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'ready',
+      searchIndexChecksum: current.checksum,
+      searchIndexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      searchIndexError: null,
+    });
+    expect(activatedManifest).toHaveLength(1);
+    expect(storage.chunks.get('old-chunk')).toMatchObject({ checksum: oldChecksum });
+    expect(storage.documentUpdates.at(-1)).not.toMatchObject({ searchIndexState: 'failed' });
+  });
+
   it('contains permanent removal failures and rejects invalid identifiers', async () => {
     const current = document();
     const { indexer, storage, extractor } = createHarness({ documents: [current] });
@@ -601,6 +783,50 @@ describe('KnowledgeSearchIndexer', () => {
     await indexer.whenIdleForTest();
 
     expect(extractor.extractSearchPages).not.toHaveBeenCalled();
+  });
+
+  it('permanently suppresses enqueue, retry, and backfill after removal starts', async () => {
+    const current = document('tombstoned');
+    const { indexer, extractor, storage } = createHarness({ documents: [current] });
+
+    await indexer.remove(current.id);
+    indexer.enqueue(current.id);
+    indexer.retry(current.id);
+    await indexer.start();
+    await indexer.whenIdleForTest();
+
+    expect(extractor.extractSearchPages).not.toHaveBeenCalled();
+    expect(storage.chunkCreates).toEqual([]);
+  });
+
+  it('does not resolve removal while an active batch can still create chunks', async () => {
+    const current = document('removecreate');
+    const { indexer, storage } = createHarness({ documents: [current] });
+    const batchSend = controlledGate();
+    storage.batchSendGate = { batch: 1, ...batchSend.hook };
+
+    indexer.enqueue(current.id);
+    await batchSend.entered;
+    let removalResolved = false;
+    const removal = indexer.remove(current.id).then(() => {
+      removalResolved = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resolvedBeforeCreateFinished = removalResolved;
+    batchSend.release();
+    await removal;
+    await indexer.whenIdleForTest();
+    const mutationsAtResolution =
+      storage.chunkCreates.length + storage.chunkDeletes.length + storage.documentUpdates.length;
+    await settleHousekeeping();
+
+    expect(resolvedBeforeCreateFinished).toBe(false);
+    expect([...storage.chunks.values()].filter((chunk) => chunk.documentId === current.id)).toEqual(
+      [],
+    );
+    expect(
+      storage.chunkCreates.length + storage.chunkDeletes.length + storage.documentUpdates.length,
+    ).toBe(mutationsAtResolution);
   });
 
   it('does not recreate derived chunks when permanent removal races active extraction', async () => {
@@ -654,5 +880,77 @@ describe('KnowledgeSearchIndexer', () => {
       expect.objectContaining({ searchIndexState: 'ready' }),
     );
     expect(() => indexer.enqueue(active.id)).not.toThrow();
+  });
+
+  it('does not resolve disposal while cancelled create cleanup can still delete chunks', async () => {
+    const current = document('disposecreate');
+    const { indexer, storage } = createHarness({ documents: [current] });
+    const batchSend = controlledGate();
+    const chunkDelete = controlledGate();
+    storage.batchSendGate = { batch: 1, ...batchSend.hook };
+    storage.chunkDeleteGate = chunkDelete.hook;
+
+    indexer.enqueue(current.id);
+    await batchSend.entered;
+    let disposalResolved = false;
+    const disposal = indexer.dispose().then(() => {
+      disposalResolved = true;
+    });
+    batchSend.release();
+    await chunkDelete.entered;
+    await Promise.resolve();
+    const resolvedBeforeCleanupFinished = disposalResolved;
+    chunkDelete.release();
+    await disposal;
+    const mutationsAtResolution =
+      storage.chunkCreates.length + storage.chunkDeletes.length + storage.documentUpdates.length;
+    await settleHousekeeping();
+
+    expect(resolvedBeforeCleanupFinished).toBe(false);
+    expect(storage.chunks.size).toBe(0);
+    expect(
+      storage.chunkCreates.length + storage.chunkDeletes.length + storage.documentUpdates.length,
+    ).toBe(mutationsAtResolution);
+  });
+
+  it('waits for an in-flight removal delete before disposal resolves', async () => {
+    const current = document('disposeduringremove');
+    const { indexer, storage } = createHarness({ documents: [current] });
+    storage.chunks.set('existing-chunk', {
+      id: 'existing-chunk',
+      documentId: current.id,
+      checksum: current.checksum,
+      pageNumber: 1,
+      passageNumber: 1,
+      headingId: null,
+      heading: null,
+      text: 'Existing content',
+      normalizedText: 'existing content',
+      normalizedStart: 0,
+      normalizedEnd: 16,
+      indexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      indexedAt: '2026-07-18T10:00:00.000Z',
+      created: '2026-07-18T10:00:00.000Z',
+      updated: '2026-07-18T10:00:00.000Z',
+    });
+    const chunkDelete = controlledGate();
+    storage.chunkDeleteGate = chunkDelete.hook;
+
+    const removal = indexer.remove(current.id);
+    await chunkDelete.entered;
+    let disposalResolved = false;
+    const disposal = indexer.dispose().then(() => {
+      disposalResolved = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resolvedBeforeRemovalFinished = disposalResolved;
+    chunkDelete.release();
+    await Promise.all([removal, disposal]);
+    const deletesAtResolution = storage.chunkDeletes.length;
+    await settleHousekeeping();
+
+    expect(resolvedBeforeRemovalFinished).toBe(false);
+    expect(storage.chunkDeletes).toHaveLength(1);
+    expect(storage.chunkDeletes).toHaveLength(deletesAtResolution);
   });
 });
