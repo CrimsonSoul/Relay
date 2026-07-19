@@ -220,6 +220,25 @@ describe('knowledge contracts', () => {
     });
   });
 
+  it('requires canonical timestamps for ready search-index metadata', () => {
+    const ready = {
+      ...validRecord,
+      searchIndexState: 'ready',
+      searchIndexChecksum: 'a'.repeat(64),
+      searchIndexVersion: 1,
+      searchIndexedAt: '2026-07-19T18:00:00.000Z',
+      searchIndexError: null,
+    };
+
+    expect(normalizeKnowledgeDocumentRecord(ready)).not.toBeNull();
+    expect(
+      normalizeKnowledgeDocumentRecord({
+        ...ready,
+        searchIndexedAt: '2026-02-30T18:00:00.000Z',
+      }),
+    ).toBeNull();
+  });
+
   it('normalizes stable categories and document presentation metadata', () => {
     expect(
       normalizeKnowledgeCategoryRecord({

@@ -1,4 +1,4 @@
-import type { KnowledgeSearchIndexState } from './knowledgeSearch';
+import { isKnowledgeSearchTimestamp, type KnowledgeSearchIndexState } from './knowledgeSearch';
 
 export const KNOWLEDGE_DOCUMENTS_COLLECTION = 'knowledge_documents';
 export const KNOWLEDGE_CATEGORIES_COLLECTION = 'knowledge_categories';
@@ -391,7 +391,7 @@ function normalizeKnowledgeSearchIndexMetadata(
       (typeof searchIndexChecksum !== 'string' || !SHA256_PATTERN.test(searchIndexChecksum))) ||
     !Number.isInteger(searchIndexVersion) ||
     (searchIndexVersion as number) < 0 ||
-    (searchIndexedAt !== null && !boundedString(searchIndexedAt, 100)) ||
+    (searchIndexedAt !== null && !isKnowledgeSearchTimestamp(searchIndexedAt)) ||
     ![null, 'no-searchable-text', 'extraction-failed', 'storage-unavailable'].includes(
       searchIndexError as KnowledgeSearchIndexError | null,
     ) ||

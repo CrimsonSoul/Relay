@@ -6,10 +6,50 @@ import {
   isKnowledgeSearchQueryEligible,
   normalizeKnowledgeSearchChunkRecord,
   normalizeKnowledgeSearchQuery,
+  normalizeKnowledgeSearchResult,
   normalizeKnowledgeSearchTextWithRanges,
   normalizeKnowledgeSearchRequest,
   normalizeKnowledgeSearchResponse,
 } from './knowledgeSearch';
+
+const validChunk = {
+  id: 'chunk1',
+  documentId: 'document1',
+  checksum: 'a'.repeat(64),
+  pageNumber: 1,
+  passageNumber: 1,
+  headingId: null,
+  heading: null,
+  text: 'RF failover procedure',
+  normalizedText: 'rf failover procedure',
+  normalizedStart: 0,
+  normalizedEnd: 21,
+  indexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+  indexedAt: '2026-07-19T18:00:00.000Z',
+  created: '2026-07-19T18:00:00.000Z',
+  updated: '2026-07-19T18:00:00.000Z',
+};
+
+const validResult = {
+  id: 'chunk1',
+  documentId: 'document1',
+  checksum: 'a'.repeat(64),
+  title: 'Runbook',
+  fileName: 'Runbook.pdf',
+  category: 'Operations',
+  categoryId: null,
+  documentType: 'sop',
+  headingId: null,
+  heading: null,
+  pageIndex: 0,
+  passageNumber: 1,
+  excerpt: 'RF failover procedure',
+  matchKind: 'exact',
+  highlightText: 'failover',
+  normalizedStart: 0,
+  normalizedEnd: 8,
+  score: 1,
+};
 
 describe('knowledge search contracts', () => {
   it('normalizes compatibility characters, composed Unicode, case, and whitespace', () => {
@@ -76,6 +116,21 @@ describe('knowledge search contracts', () => {
     ).toMatchObject({ pageNumber: 1, passageNumber: 1, normalizedStart: 0 });
   });
 
+  it('accepts canonical chunk timestamps and rejects impossible calendar dates', () => {
+    expect(normalizeKnowledgeSearchChunkRecord(validChunk)).not.toBeNull();
+    expect(
+      normalizeKnowledgeSearchChunkRecord({
+        ...validChunk,
+        indexedAt: '2026-02-30T18:00:00.000Z',
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects falsy non-string chunk heading metadata', () => {
+    expect(normalizeKnowledgeSearchChunkRecord({ ...validChunk, headingId: false })).toBeNull();
+    expect(normalizeKnowledgeSearchChunkRecord({ ...validChunk, heading: 0 })).toBeNull();
+  });
+
   it('rejects unknown versions and invalid ranges', () => {
     expect(
       normalizeKnowledgeSearchChunkRecord({
@@ -132,5 +187,31 @@ describe('knowledge search contracts', () => {
         ],
       }),
     ).toBeNull();
+  });
+
+  it('bounds highlights by Unicode code points rather than UTF-16 code units', () => {
+    expect(
+      normalizeKnowledgeSearchResponse({
+        ok: true,
+        requestId: 'request1',
+        availability: 'ready',
+        normalizedQuery: 'failover',
+        results: [{ ...validResult, highlightText: '😀'.repeat(100) }],
+      }),
+    ).not.toBeNull();
+    expect(
+      normalizeKnowledgeSearchResponse({
+        ok: true,
+        requestId: 'request1',
+        availability: 'ready',
+        normalizedQuery: 'failover',
+        results: [{ ...validResult, highlightText: '😀'.repeat(121) }],
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects falsy non-string result heading metadata', () => {
+    expect(normalizeKnowledgeSearchResult({ ...validResult, headingId: false })).toBeNull();
+    expect(normalizeKnowledgeSearchResult({ ...validResult, heading: 0 })).toBeNull();
   });
 });

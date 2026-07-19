@@ -118,8 +118,9 @@ function boundedString(value: unknown, maximum: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maximum;
 }
 
-function boundedNullableString(value: unknown, maximum: number): value is string | null {
-  return value === null || boundedString(value, maximum);
+function normalizeNullableHeading(value: unknown, maximum: number): string | null | undefined {
+  if (value === null || value === '') return null;
+  return boundedString(value, maximum) ? value : undefined;
 }
 
 function boundedIdentifier(value: unknown): value is string {
@@ -130,16 +131,23 @@ function isChecksum(value: unknown): value is string {
   return typeof value === 'string' && SHA256_PATTERN.test(value);
 }
 
-function isTimestamp(value: unknown): value is string {
+export function isKnowledgeSearchTimestamp(value: unknown): value is string {
   return (
     boundedString(value, 100) &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) &&
-    !Number.isNaN(Date.parse(value))
+    !Number.isNaN(Date.parse(value)) &&
+    new Date(value).toISOString() === value
   );
 }
 
 function codePointLength(value: string): number {
   return Array.from(value).length;
+}
+
+function boundedCodePointString(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === 'string' && codePointLength(value) > 0 && codePointLength(value) <= maximum
+  );
 }
 
 function isPositiveInteger(value: unknown): value is number {
@@ -205,8 +213,8 @@ export function normalizeKnowledgeSearchChunkRecord(
   value: unknown,
 ): KnowledgeSearchChunkRecord | null {
   if (!isRecord(value)) return null;
-  const headingId = value.headingId || null;
-  const heading = value.heading || null;
+  const headingId = normalizeNullableHeading(value.headingId, 200);
+  const heading = normalizeNullableHeading(value.heading, 240);
 
   if (
     !boundedIdentifier(value.id) ||
@@ -214,8 +222,8 @@ export function normalizeKnowledgeSearchChunkRecord(
     !isChecksum(value.checksum) ||
     !isPositiveInteger(value.pageNumber) ||
     !isPositiveInteger(value.passageNumber) ||
-    !boundedNullableString(headingId, 200) ||
-    !boundedNullableString(heading, 240) ||
+    headingId === undefined ||
+    heading === undefined ||
     !boundedString(value.text, KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT) ||
     !boundedString(value.normalizedText, KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT) ||
     value.normalizedText !== normalizeKnowledgeSearchText(value.text) ||
@@ -225,9 +233,9 @@ export function normalizeKnowledgeSearchChunkRecord(
     (value.normalizedEnd as number) - (value.normalizedStart as number) !==
       (value.normalizedText as string).length ||
     value.indexVersion !== KNOWLEDGE_SEARCH_INDEX_VERSION ||
-    !isTimestamp(value.indexedAt) ||
-    !isTimestamp(value.created) ||
-    !isTimestamp(value.updated)
+    !isKnowledgeSearchTimestamp(value.indexedAt) ||
+    !isKnowledgeSearchTimestamp(value.created) ||
+    !isKnowledgeSearchTimestamp(value.updated)
   ) {
     return null;
   }
@@ -289,8 +297,8 @@ export function normalizeKnowledgeSearchRequest(value: unknown): KnowledgeSearch
 
 export function normalizeKnowledgeSearchResult(value: unknown): KnowledgeSearchResult | null {
   if (!isRecord(value)) return null;
-  const headingId = value.headingId || null;
-  const heading = value.heading || null;
+  const headingId = normalizeNullableHeading(value.headingId, 200);
+  const heading = normalizeNullableHeading(value.heading, 240);
 
   if (
     !boundedIdentifier(value.id) ||
@@ -301,14 +309,13 @@ export function normalizeKnowledgeSearchResult(value: unknown): KnowledgeSearchR
     !boundedString(value.category, 120) ||
     (value.categoryId !== null && !boundedIdentifier(value.categoryId)) ||
     (value.documentType !== 'sop' && value.documentType !== 'cheatsheet') ||
-    !boundedNullableString(headingId, 200) ||
-    !boundedNullableString(heading, 240) ||
+    headingId === undefined ||
+    heading === undefined ||
     !isNonNegativeInteger(value.pageIndex) ||
     !isPositiveInteger(value.passageNumber) ||
     !boundedString(value.excerpt, KNOWLEDGE_SEARCH_MAX_EXCERPT_TEXT) ||
     !SEARCH_MATCH_KINDS.includes(value.matchKind as KnowledgeSearchMatchKind) ||
-    !boundedString(value.highlightText, KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS) ||
-    codePointLength(value.highlightText) > KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS ||
+    !boundedCodePointString(value.highlightText, KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS) ||
     !isNonNegativeInteger(value.normalizedStart) ||
     !isPositiveInteger(value.normalizedEnd) ||
     (value.normalizedEnd as number) <= (value.normalizedStart as number) ||
