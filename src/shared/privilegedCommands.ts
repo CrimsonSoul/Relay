@@ -154,6 +154,7 @@ export type PrivilegedCommandPayloadMap = {
   };
   'knowledge.document.trash': { documentId: string; expectedRevision: number };
   'knowledge.document.restore': { documentId: string; expectedRevision: number };
+  'knowledge.document.search-index.retry': { documentId: string };
   'knowledge.document.delete': {
     documentId: string;
     expectedRevision: number;
@@ -379,6 +380,7 @@ const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'knowledge.documents.category.assign',
   'knowledge.document.trash',
   'knowledge.document.restore',
+  'knowledge.document.search-index.retry',
   'knowledge.document.delete',
   'knowledge.audit.read',
 ]);
@@ -989,6 +991,10 @@ function normalizePayload(
     case 'knowledge.document.restore':
       return hasExactKeys(payload, ['documentId', 'expectedRevision'])
         ? normalizeKnowledgeDocumentRevision(payload)
+        : null;
+    case 'knowledge.document.search-index.retry':
+      return hasExactKeys(payload, ['documentId']) && boundedIdentifier(payload.documentId, 200)
+        ? { documentId: payload.documentId }
         : null;
     case 'knowledge.document.delete': {
       if (!hasExactKeys(payload, ['documentId', 'expectedRevision', 'reauthRequestId']))

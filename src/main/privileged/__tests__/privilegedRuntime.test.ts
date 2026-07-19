@@ -10,6 +10,7 @@ import {
   PrivilegedRuntime,
   installPrivilegedE2EControl,
   resolveProductionPairingTarget,
+  startKnowledgeSearchIndexerBestEffort,
   type PrivilegedClientTransport,
 } from '../privilegedRuntime';
 
@@ -624,6 +625,25 @@ describe('resolveProductionPairingTarget', () => {
     await expect(resolveProductionPairingTarget(pb as never, 'account-charles')).resolves.toBe(
       true,
     );
+  });
+});
+
+describe('server Wiki search indexer lifecycle', () => {
+  it('starts backfill without awaiting it and contains a rejected startup', async () => {
+    const pending = deferred<void>();
+    const start = vi.fn(() => pending.promise);
+
+    expect(() => startKnowledgeSearchIndexerBestEffort({ start })).not.toThrow();
+    expect(start).toHaveBeenCalledOnce();
+
+    pending.resolve();
+    await pending.promise;
+
+    const rejectedStart = vi.fn(async () => {
+      throw new Error('search-storage-unavailable');
+    });
+    expect(() => startKnowledgeSearchIndexerBestEffort({ start: rejectedStart })).not.toThrow();
+    await vi.waitFor(() => expect(rejectedStart).toHaveBeenCalledOnce());
   });
 });
 

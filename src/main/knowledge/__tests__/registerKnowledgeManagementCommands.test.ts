@@ -12,6 +12,7 @@ const context = {
 
 describe('registerKnowledgeManagementCommands', () => {
   const handlers = new Map<string, (context: never, payload: never) => Promise<unknown>>();
+  const capabilities = new Map<string, string>();
   const upload = {
     id: 'upload-1',
     requestId: 'request-1',
@@ -73,15 +74,23 @@ describe('registerKnowledgeManagementCommands', () => {
     cancelBatch: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
   };
+  const searchIndexer = {
+    enqueue: vi.fn(),
+    retry: vi.fn(),
+    remove: vi.fn(async () => undefined),
+    dispose: vi.fn(async () => undefined),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
     handlers.clear();
+    capabilities.clear();
     registerKnowledgeManagementCommands({
       registrar: {
         registerCommand: vi.fn((command, capability, handler) => {
           expect(capability).toBe('knowledge.manage');
           handlers.set(command, handler as never);
+          capabilities.set(command, capability);
         }),
       },
       pb: pb as never,
@@ -90,6 +99,7 @@ describe('registerKnowledgeManagementCommands', () => {
       extractor: { extract, stop },
       readUploadPdf,
       uploadCoordinator: uploadCoordinator as never,
+      searchIndexer,
     });
   });
 
@@ -177,6 +187,7 @@ describe('registerKnowledgeManagementCommands', () => {
       'knowledge.document.trash',
       'knowledge.document.restore',
       'knowledge.document.delete',
+      'knowledge.document.search-index.retry',
       'knowledge.audit.read',
     ]);
 
@@ -223,6 +234,144 @@ describe('registerKnowledgeManagementCommands', () => {
         documentType: 'sop',
       }),
     );
+  });
+
+  it('queues indexing only after a successful publication', async () => {
+    await handlers.get('knowledge.document.publish')!(
+      context as never,
+      { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
+    );
+    expect(searchIndexer.enqueue).toHaveBeenCalledWith('document-1');
+
+    service.publish.mockRejectedValueOnce(new Error('publication-failed'));
+    await expect(
+      handlers.get('knowledge.document.publish')!(
+        context as never,
+        { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
+      ),
+    ).rejects.toThrow('publication-failed');
+    expect(searchIndexer.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers retry with the existing Wiki management capability', async () => {
+    expect(capabilities.get('knowledge.document.search-index.retry')).toBe('knowledge.manage');
+
+    await expect(
+      handlers.get('knowledge.document.search-index.retry')!(
+        context as never,
+        { documentId: 'document-1' } as never,
+      ),
+    ).resolves.toEqual({ documentId: 'document-1', queued: true });
+    expect(searchIndexer.retry).toHaveBeenCalledWith('document-1');
+  });
+
+  it.each([
+    [
+      'knowledge.document.replace',
+      {
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 2,
+        title: 'Oracle SOP',
+        category: 'Access',
+      },
+      'enqueue',
+    ],
+    ['knowledge.document.restore', { documentId: 'document-1', expectedRevision: 2 }, 'enqueue'],
+  ] as const)(
+    '%s queues indexing only after the mutation succeeds',
+    async (command, payload, method) => {
+      await handlers.get(command)!(context as never, payload as never);
+      expect(searchIndexer[method]).toHaveBeenCalledWith('document-1');
+
+      const serviceMethod =
+        command === 'knowledge.document.replace' ? service.replace : service.restore;
+      serviceMethod.mockRejectedValueOnce(new Error('mutation-failed'));
+      await expect(handlers.get(command)!(context as never, payload as never)).rejects.toThrow(
+        'mutation-failed',
+      );
+      expect(searchIndexer[method]).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('awaits permanent chunk removal after authoritative document deletion succeeds', async () => {
+    let finishRemoval!: () => void;
+    searchIndexer.remove.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRemoval = resolve;
+        }),
+    );
+
+    let settled = false;
+    const deletion = handlers.get('knowledge.document.delete')!(
+      context as never,
+      {
+        documentId: 'document-1',
+        expectedRevision: 3,
+        reauthRequestId: 'reauth-delete',
+      } as never,
+    ).then((value) => {
+      settled = true;
+      return value;
+    });
+    await vi.waitFor(() => expect(searchIndexer.remove).toHaveBeenCalledWith('document-1'));
+    expect(service.deletePermanently).toHaveBeenCalledBefore(searchIndexer.remove);
+    expect(settled).toBe(false);
+
+    finishRemoval();
+    await expect(deletion).resolves.toEqual({ id: 'document-1', deleted: true });
+  });
+
+  it('does not remove chunks when permanent document deletion fails', async () => {
+    service.deletePermanently.mockRejectedValueOnce(new Error('deletion-failed'));
+
+    await expect(
+      handlers.get('knowledge.document.delete')!(
+        context as never,
+        {
+          documentId: 'document-1',
+          expectedRevision: 3,
+          reauthRequestId: 'reauth-delete',
+        } as never,
+      ),
+    ).rejects.toThrow('deletion-failed');
+    expect(searchIndexer.remove).not.toHaveBeenCalled();
+  });
+
+  it('does not physically remove trashed chunks or re-extract metadata-only changes', async () => {
+    await handlers.get('knowledge.document.trash')!(
+      context as never,
+      { documentId: 'document-1', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.document.title.set')!(
+      context as never,
+      { documentId: 'document-1', title: 'Oracle SOP', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.document.category.set')!(
+      context as never,
+      { documentId: 'document-1', category: 'Access', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.document.metadata.set')!(
+      context as never,
+      {
+        documentId: 'document-1',
+        title: 'Oracle SOP',
+        categoryId: 'category-1',
+        documentType: 'sop',
+        expectedRevision: 2,
+      } as never,
+    );
+    await handlers.get('knowledge.documents.category.assign')!(
+      context as never,
+      {
+        categoryId: 'category-1',
+        documents: [{ documentId: 'document-1', expectedRevision: 2 }],
+      } as never,
+    );
+
+    expect(searchIndexer.enqueue).not.toHaveBeenCalled();
+    expect(searchIndexer.remove).not.toHaveBeenCalled();
   });
 
   it('registers all resumable commands with the current account, device, and request ID', async () => {

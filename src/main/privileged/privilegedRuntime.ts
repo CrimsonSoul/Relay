@@ -72,6 +72,7 @@ import { KnowledgeMutationCoordinator } from '../knowledge/KnowledgeMutationCoor
 import { KnowledgeUploadCapacity } from '../knowledge/KnowledgeUploadCapacity';
 import { KnowledgeUploadCoordinator } from '../knowledge/KnowledgeUploadCoordinator';
 import { KnowledgeExtractorWorker } from '../knowledge/KnowledgeExtractorWorker';
+import { KnowledgeSearchIndexer } from '../knowledge/KnowledgeSearchIndexer';
 import { PocketBaseKnowledgeUploadRepository } from '../knowledge/PocketBaseKnowledgeUploadRepository';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
@@ -602,6 +603,14 @@ export type ProductionPrivilegedRuntimeOptions = {
   > | null;
 };
 
+export function startKnowledgeSearchIndexerBestEffort(
+  searchIndexer: Pick<KnowledgeSearchIndexer, 'start'>,
+): void {
+  void searchIndexer.start().catch((error) => {
+    loggers.main.warn('Wiki search indexer startup failed', { error });
+  });
+}
+
 type ProductionAdministrationRegistrar = Pick<PrivilegedCommandProcessor, 'registerCommand'>;
 
 export function registerProductionAdministrationCommands(options: {
@@ -734,6 +743,8 @@ export async function createProductionPrivilegedRuntime(
     onAuthorityChanged: (accountIds) => runtime?.handleAuthorityChanged(accountIds),
   });
   const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
+  const searchIndexer = new KnowledgeSearchIndexer({ pb: options.serverClient });
+  startKnowledgeSearchIndexerBestEffort(searchIndexer);
   const knowledgeUploadRepository = new PocketBaseKnowledgeUploadRepository({
     pb: options.serverClient,
   });
@@ -752,6 +763,7 @@ export async function createProductionPrivilegedRuntime(
     service: managedKnowledgeService,
     coordinator: new KnowledgeMutationCoordinator(),
     uploadCoordinator: knowledgeUploadCoordinator,
+    searchIndexer,
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });
@@ -764,8 +776,15 @@ export async function createProductionPrivilegedRuntime(
   runtime = new PrivilegedRuntime({
     additionalDisposable: {
       dispose: async () => {
-        await serverQueue.dispose();
-        await knowledgeCommands.dispose();
+        try {
+          await serverQueue.dispose();
+        } finally {
+          try {
+            await knowledgeCommands.dispose();
+          } finally {
+            await searchIndexer.dispose();
+          }
+        }
       },
     },
     authClient,

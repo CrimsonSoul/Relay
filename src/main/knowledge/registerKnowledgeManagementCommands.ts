@@ -19,6 +19,7 @@ import {
 } from '../privileged/PrivilegedCommandProcessor';
 import { KnowledgeExtractorWorker } from './KnowledgeExtractorWorker';
 import { KnowledgeMutationCoordinator } from './KnowledgeMutationCoordinator';
+import type { KnowledgeSearchIndexer } from './KnowledgeSearchIndexer';
 import {
   ManagedKnowledgeConflictError,
   type ManagedKnowledgeService,
@@ -83,6 +84,7 @@ type KnowledgeManagementCommandOptions = {
     KnowledgeUploadCoordinator,
     'beginBatch' | 'beginFile' | 'status' | 'finalize' | 'cancelFile' | 'cancelBatch' | 'dispose'
   >;
+  searchIndexer?: Pick<KnowledgeSearchIndexer, 'enqueue' | 'retry' | 'remove' | 'dispose'>;
   consumeReauthenticationProof?: (
     requestId: string,
     context: { accountId: string; deviceId: string | null },
@@ -340,8 +342,8 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
   options.registrar.registerCommand(
     'knowledge.document.publish',
     'knowledge.manage',
-    (context, payload) =>
-      coordinator.run({
+    async (context, payload) => {
+      const result = await coordinator.run({
         requestId: context.requestId,
         action: 'published',
         mutate: () =>
@@ -350,13 +352,16 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
             requestId: context.requestId,
             ...payload,
           }),
-      }),
+      });
+      options.searchIndexer?.enqueue(result.id);
+      return result;
+    },
   );
   options.registrar.registerCommand(
     'knowledge.document.replace',
     'knowledge.manage',
-    (context, payload) =>
-      translateConflict(() =>
+    async (context, payload) => {
+      const result = await translateConflict(() =>
         coordinator.run({
           requestId: context.requestId,
           action: 'replaced',
@@ -367,7 +372,10 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
               ...payload,
             }),
         }),
-      ),
+      );
+      options.searchIndexer?.enqueue(result.id);
+      return result;
+    },
   );
   options.registrar.registerCommand(
     'knowledge.document.title.set',
@@ -540,8 +548,8 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
   options.registrar.registerCommand(
     'knowledge.document.restore',
     'knowledge.manage',
-    (context, payload) =>
-      translateConflict(() =>
+    async (context, payload) => {
+      const result = await translateConflict(() =>
         coordinator.run({
           requestId: context.requestId,
           action: 'restored',
@@ -552,7 +560,10 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
               ...payload,
             }),
         }),
-      ),
+      );
+      options.searchIndexer?.enqueue(result.id);
+      return result;
+    },
   );
   options.registrar.registerCommand(
     'knowledge.document.delete',
@@ -564,7 +575,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
         deviceId: context.device?.deviceId ?? null,
       });
       if (!authorized) throw new PrivilegedCommandAuthorizationError();
-      return translateConflict(() =>
+      const result = await translateConflict(() =>
         coordinator.run({
           requestId: context.requestId,
           action: 'deleted',
@@ -577,6 +588,16 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
             }),
         }),
       );
+      await options.searchIndexer?.remove(payload.documentId);
+      return result;
+    },
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.search-index.retry',
+    'knowledge.manage',
+    async (_context, payload) => {
+      options.searchIndexer?.retry(payload.documentId);
+      return { documentId: payload.documentId, queued: Boolean(options.searchIndexer) };
     },
   );
   options.registrar.registerCommand(

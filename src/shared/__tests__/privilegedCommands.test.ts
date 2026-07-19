@@ -148,7 +148,32 @@ describe('privileged command validation', () => {
     expect(isPublicPrivilegedCommandName('knowledge.category.delete')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.document.metadata.set')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.documents.category.assign')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.document.search-index.retry')).toBe(true);
     expect(isPublicPrivilegedCommandName('privileged.reauth.confirm')).toBe(false);
+  });
+
+  it('normalizes search-index retry with an exact bounded document identifier payload', () => {
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
+        documentId: 'document_1',
+      }),
+    ).toEqual({ documentId: 'document_1' });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
+        documentId: 'document_1',
+        expectedRevision: 2,
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
+        documentId: '',
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
+        documentId: 'x'.repeat(201),
+      }),
+    ).toBeNull();
   });
 
   it('normalizes stable category and document metadata commands', () => {
