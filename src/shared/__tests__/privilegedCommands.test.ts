@@ -170,6 +170,19 @@ describe('privileged command validation', () => {
       }),
     ).toBeNull();
     expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {}),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
+        documentId: 42,
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
+        documentId: 'document with spaces',
+      }),
+    ).toBeNull();
+    expect(
       normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {
         documentId: 'x'.repeat(201),
       }),

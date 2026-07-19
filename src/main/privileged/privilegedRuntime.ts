@@ -606,9 +606,11 @@ export type ProductionPrivilegedRuntimeOptions = {
 export function startKnowledgeSearchIndexerBestEffort(
   searchIndexer: Pick<KnowledgeSearchIndexer, 'start'>,
 ): void {
-  void searchIndexer.start().catch((error) => {
-    loggers.main.warn('Wiki search indexer startup failed', { error });
-  });
+  void Promise.resolve()
+    .then(() => searchIndexer.start())
+    .catch((error) => {
+      loggers.main.warn('Wiki search indexer startup failed', { error });
+    });
 }
 
 type ProductionAdministrationRegistrar = Pick<PrivilegedCommandProcessor, 'registerCommand'>;
@@ -744,7 +746,6 @@ export async function createProductionPrivilegedRuntime(
   });
   const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
   const searchIndexer = new KnowledgeSearchIndexer({ pb: options.serverClient });
-  startKnowledgeSearchIndexerBestEffort(searchIndexer);
   const knowledgeUploadRepository = new PocketBaseKnowledgeUploadRepository({
     pb: options.serverClient,
   });
@@ -797,5 +798,6 @@ export async function createProductionPrivilegedRuntime(
       resolveProductionPairingTarget(options.serverClient!, targetAccountId),
     resolveAccountIdentity,
   });
+  startKnowledgeSearchIndexerBestEffort(searchIndexer);
   return runtime;
 }

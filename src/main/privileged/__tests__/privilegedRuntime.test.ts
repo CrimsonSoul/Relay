@@ -6,13 +6,34 @@ import type {
 } from '@shared/privilegedAccess';
 import { KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION } from '@shared/knowledge';
 import { canonicalPrivilegedSigningBytes } from '@shared/privilegedCommands';
+import { KnowledgeSearchIndexer } from '../../knowledge/KnowledgeSearchIndexer';
+import { KnowledgeUploadCoordinator } from '../../knowledge/KnowledgeUploadCoordinator';
+import { loggers } from '../../logger';
+import { PrivilegedServerQueue } from '../PrivilegedPocketBaseTransport';
 import {
   PrivilegedRuntime,
+  createProductionPrivilegedRuntime,
   installPrivilegedE2EControl,
   resolveProductionPairingTarget,
   startKnowledgeSearchIndexerBestEffort,
   type PrivilegedClientTransport,
 } from '../privilegedRuntime';
+
+const productionRuntimeMocks = vi.hoisted(() => ({
+  knowledgeCommandOptions: null as { searchIndexer?: unknown } | null,
+}));
+
+vi.mock('../../knowledge/registerKnowledgeManagementCommands', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../knowledge/registerKnowledgeManagementCommands')>();
+  return {
+    ...actual,
+    registerKnowledgeManagementCommands: vi.fn((options: { searchIndexer?: unknown }) => {
+      productionRuntimeMocks.knowledgeCommandOptions = options;
+      return actual.registerKnowledgeManagementCommands(options as never);
+    }),
+  };
+});
 
 const USERNAME = 'ryan';
 const ACCOUNT_ID = 'account-admin';
@@ -629,12 +650,23 @@ describe('resolveProductionPairingTarget', () => {
 });
 
 describe('server Wiki search indexer lifecycle', () => {
+  const serverClient = {
+    collection: vi.fn(() => ({})),
+    files: {},
+  };
+
+  afterEach(() => {
+    productionRuntimeMocks.knowledgeCommandOptions = null;
+    vi.restoreAllMocks();
+  });
+
   it('starts backfill without awaiting it and contains a rejected startup', async () => {
+    vi.spyOn(loggers.main, 'warn').mockImplementation(() => undefined);
     const pending = deferred<void>();
     const start = vi.fn(() => pending.promise);
 
     expect(() => startKnowledgeSearchIndexerBestEffort({ start })).not.toThrow();
-    expect(start).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
 
     pending.resolve();
     await pending.promise;
@@ -644,6 +676,107 @@ describe('server Wiki search indexer lifecycle', () => {
     });
     expect(() => startKnowledgeSearchIndexerBestEffort({ start: rejectedStart })).not.toThrow();
     await vi.waitFor(() => expect(rejectedStart).toHaveBeenCalledOnce());
+
+    const throwingStart = vi.fn(() => {
+      throw new Error('synchronous-start-failed');
+    });
+    expect(() =>
+      startKnowledgeSearchIndexerBestEffort({ start: throwingStart as never }),
+    ).not.toThrow();
+    await vi.waitFor(() => expect(throwingStart).toHaveBeenCalledOnce());
+  });
+
+  it('does not start the indexer when upload runtime construction fails', async () => {
+    const indexerStart = vi
+      .spyOn(KnowledgeSearchIndexer.prototype, 'start')
+      .mockResolvedValue(undefined);
+    vi.spyOn(KnowledgeUploadCoordinator.prototype, 'start').mockRejectedValue(
+      new Error('upload-start-failed'),
+    );
+
+    await expect(
+      createProductionPrivilegedRuntime({
+        config: { mode: 'server', port: 8090 } as never,
+        dataDir: '/Users/test/RelayData/data',
+        serverClient: serverClient as never,
+      }),
+    ).rejects.toThrow('upload-start-failed');
+    expect(indexerStart).not.toHaveBeenCalled();
+  });
+
+  it('does not start the indexer when server queue construction fails', async () => {
+    const indexerStart = vi
+      .spyOn(KnowledgeSearchIndexer.prototype, 'start')
+      .mockResolvedValue(undefined);
+    vi.spyOn(KnowledgeUploadCoordinator.prototype, 'start').mockResolvedValue(undefined);
+    vi.spyOn(PrivilegedServerQueue.prototype, 'start').mockRejectedValue(
+      new Error('server-queue-start-failed'),
+    );
+
+    await expect(
+      createProductionPrivilegedRuntime({
+        config: { mode: 'server', port: 8090 } as never,
+        dataDir: '/Users/test/RelayData/data',
+        serverClient: serverClient as never,
+      }),
+    ).rejects.toThrow('server-queue-start-failed');
+    expect(indexerStart).not.toHaveBeenCalled();
+  });
+
+  it('starts, injects, and disposes the same runtime-owned indexer instance', async () => {
+    vi.spyOn(KnowledgeUploadCoordinator.prototype, 'start').mockResolvedValue(undefined);
+    const uploadDispose = vi
+      .spyOn(KnowledgeUploadCoordinator.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+    vi.spyOn(PrivilegedServerQueue.prototype, 'start').mockResolvedValue(undefined);
+    const queueDispose = vi
+      .spyOn(PrivilegedServerQueue.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+    const indexerStart = vi
+      .spyOn(KnowledgeSearchIndexer.prototype, 'start')
+      .mockResolvedValue(undefined);
+    const indexerDispose = vi
+      .spyOn(KnowledgeSearchIndexer.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+
+    const runtime = await createProductionPrivilegedRuntime({
+      config: { mode: 'server', port: 8090 } as never,
+      dataDir: '/Users/test/RelayData/data',
+      serverClient: serverClient as never,
+    });
+    const startedIndexer = indexerStart.mock.instances[0];
+    expect(productionRuntimeMocks.knowledgeCommandOptions?.searchIndexer).toBe(startedIndexer);
+
+    await runtime.dispose();
+
+    expect(indexerDispose).toHaveBeenCalledOnce();
+    expect(indexerDispose.mock.instances[0]).toBe(startedIndexer);
+    expect(queueDispose).toHaveBeenCalledBefore(uploadDispose);
+    expect(uploadDispose).toHaveBeenCalledBefore(indexerDispose);
+  });
+
+  it('still awaits indexer disposal when an earlier server resource disposal fails', async () => {
+    vi.spyOn(KnowledgeUploadCoordinator.prototype, 'start').mockResolvedValue(undefined);
+    const uploadDispose = vi
+      .spyOn(KnowledgeUploadCoordinator.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+    vi.spyOn(PrivilegedServerQueue.prototype, 'start').mockResolvedValue(undefined);
+    vi.spyOn(PrivilegedServerQueue.prototype, 'dispose').mockRejectedValue(
+      new Error('queue-dispose-failed'),
+    );
+    vi.spyOn(KnowledgeSearchIndexer.prototype, 'start').mockResolvedValue(undefined);
+    const indexerDispose = vi
+      .spyOn(KnowledgeSearchIndexer.prototype, 'dispose')
+      .mockResolvedValue(undefined);
+    const runtime = await createProductionPrivilegedRuntime({
+      config: { mode: 'server', port: 8090 } as never,
+      dataDir: '/Users/test/RelayData/data',
+      serverClient: serverClient as never,
+    });
+
+    await expect(runtime.dispose()).rejects.toThrow('queue-dispose-failed');
+    expect(uploadDispose).toHaveBeenCalledOnce();
+    expect(indexerDispose).toHaveBeenCalledOnce();
   });
 });
 
