@@ -142,6 +142,44 @@ describe('KnowledgeSearchEngine ranking', () => {
     expect((await engine.search(request('BG'), context())).results).toHaveLength(0);
   });
 
+  it('enforces the 3-to-4 and 7-to-8 fuzzy edit boundaries', async () => {
+    const examples = [
+      ['three-prefix', 'cats'],
+      ['four-one-edit', 'cuts'],
+      ['four-two-edits', 'cuds'],
+      ['seven-one-edit', 'netwrok'],
+      ['seven-two-edits', 'netxxrk'],
+      ['eight-two-edits', 'netxxrks'],
+    ] as const;
+    const documents = examples.map(([id]) =>
+      knowledgeSearchFixtureDocument({
+        id,
+        title: 'Edit Boundary',
+        category: 'Operations',
+        categoryId: 'operations',
+      }),
+    );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot(
+      documents,
+      examples.map(([id, text], index) =>
+        knowledgeSearchFixtureChunk(documents[index]!, text, { id }),
+      ),
+    );
+
+    expect((await engine.search(request('cat'), context())).results).toEqual([]);
+    expect((await engine.search(request('cats'), context())).results.map(({ id }) => id)).toEqual([
+      'three-prefix',
+      'four-one-edit',
+    ]);
+    expect(
+      (await engine.search(request('network'), context())).results.map(({ id }) => id),
+    ).toEqual(['seven-one-edit']);
+    expect(
+      (await engine.search(request('networks'), context())).results.map(({ id }) => id),
+    ).toEqual(['eight-two-edits', 'seven-one-edit']);
+  });
+
   it('keeps exact title and heading matches in the exact tier while highlighting passage text', async () => {
     const document = knowledgeSearchFixtureDocument({ id: 'metadata', title: 'Carrier Recovery' });
     const headingDocument = knowledgeSearchFixtureDocument({
@@ -320,6 +358,50 @@ describe('KnowledgeSearchEngine snapshot mutations', () => {
     ).toThrow(/normalizedText/u);
   });
 
+  it('leaves the published snapshot intact when an incremental chunk is invalid', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'atomic', title: 'Atomic' });
+    const chunk = knowledgeSearchFixtureChunk(document, 'stable target passage');
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], [chunk]);
+
+    expect(() => engine.upsertChunk({ ...chunk, normalizedText: 'invalid' })).toThrow(
+      /normalizedText/u,
+    );
+    expect((await engine.search(request('stable target'), context())).results).toHaveLength(1);
+  });
+
+  it('updates only affected metadata postings and retires stale checksums', async () => {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'metadata-update',
+      title: 'Legacy Procedure',
+      category: 'Operations',
+      categoryId: 'operations',
+    });
+    const chunk = knowledgeSearchFixtureChunk(document, 'neutral body content');
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], [chunk]);
+
+    engine.upsertDocument({
+      ...document,
+      title: 'Modern Procedure',
+      displayTitle: 'Modern Procedure',
+      revision: 2,
+    });
+    expect((await engine.search(request('legacy procedure'), context())).results).toEqual([]);
+    expect((await engine.search(request('modern procedure'), context())).results).toHaveLength(1);
+
+    const nextChecksum = 'b'.repeat(64);
+    engine.upsertDocument({
+      ...document,
+      checksum: nextChecksum,
+      searchIndexChecksum: nextChecksum,
+      revision: 3,
+    });
+    expect((await engine.search(request('neutral body'), context())).results).toEqual([]);
+    engine.upsertChunk({ ...chunk, checksum: nextChecksum });
+    expect((await engine.search(request('neutral body'), context())).results).toHaveLength(1);
+  });
+
   it('uses an immutable query snapshot while concurrent mutations publish a new snapshot', async () => {
     const base = knowledgeSearchFixtureDocument({ id: 'base', title: 'Base' });
     const vocabulary = Array.from({ length: 250 }, (_, index) => {
@@ -366,6 +448,49 @@ describe('KnowledgeSearchEngine snapshot mutations', () => {
       excerpt: 'Original target passage',
     });
   });
+
+  it('normalizes only affected chunks during representative sequential mutations', () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'incremental', title: 'Incremental' });
+    const chunks = Array.from({ length: 1_000 }, (_, index) =>
+      knowledgeSearchFixtureChunk(document, `target passage ${index}`, {
+        id: `incremental-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    const updates = Array.from({ length: 50 }, (_, index) =>
+      knowledgeSearchFixtureChunk(document, `updated target passage ${index}`, {
+        id: `incremental-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const OriginalSegmenter = Intl.Segmenter;
+    let normalizationPasses = 0;
+    class CountingSegmenter extends OriginalSegmenter {
+      constructor(...args: ConstructorParameters<typeof Intl.Segmenter>) {
+        normalizationPasses += 1;
+        super(...args);
+      }
+    }
+    Object.defineProperty(Intl, 'Segmenter', { configurable: true, value: CountingSegmenter });
+
+    try {
+      for (const update of updates) engine.upsertChunk(update);
+      expect(normalizationPasses).toBe(100);
+
+      normalizationPasses = 0;
+      engine.upsertDocument({ ...document, displayTitle: 'Incremental Updated', revision: 2 });
+      expect(normalizationPasses).toBe(3);
+    } finally {
+      Object.defineProperty(Intl, 'Segmenter', {
+        configurable: true,
+        value: OriginalSegmenter,
+      });
+    }
+  });
 });
 
 describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
@@ -379,6 +504,43 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
           : `target passage ${index}`,
         { id: `${kind}-${index}`, passageNumber: index + 1, normalizedStart: index * 100 },
       ),
+    );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    return engine;
+  }
+
+  function commonPrefixEngine(): KnowledgeSearchEngine {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'common-prefix',
+      title: 'Common Prefix',
+    });
+    const chunks = Array.from({ length: 350 }, (_, index) => {
+      const first = String.fromCharCode(97 + Math.floor(index / (26 * 26)));
+      const second = String.fromCharCode(97 + (Math.floor(index / 26) % 26));
+      const third = String.fromCharCode(97 + (index % 26));
+      return knowledgeSearchFixtureChunk(document, `common${first}${second}${third}`, {
+        id: `common-prefix-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      });
+    });
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    return engine;
+  }
+
+  function commonPostingEngine(): KnowledgeSearchEngine {
+    const document = knowledgeSearchFixtureDocument({
+      id: 'common-posting',
+      title: 'Common Posting',
+    });
+    const chunks = Array.from({ length: 350 }, (_, index) =>
+      knowledgeSearchFixtureChunk(document, 'rf target', {
+        id: `common-posting-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
     );
     const engine = new KnowledgeSearchEngine();
     engine.replaceSnapshot([document], chunks);
@@ -410,6 +572,76 @@ describe('KnowledgeSearchEngine cooperative cancellation and deadlines', () => {
         isCancelled: () => cancelled,
       }),
     ).rejects.toMatchObject({ name: 'SearchCancelledError' });
+  });
+
+  it('yields during large common-prefix vocabulary expansion', async () => {
+    let cancelled = false;
+    let cancellationStack = '';
+    setImmediate(() => {
+      cancelled = true;
+    });
+
+    await expect(
+      commonPrefixEngine().search(request('common'), {
+        deadline: Infinity,
+        isCancelled: () => {
+          if (cancelled) cancellationStack = new Error().stack ?? '';
+          return cancelled;
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'SearchCancelledError' });
+    expect(cancellationStack).toContain('addPrefixVocabularyCandidates');
+  });
+
+  it('checks deadlines during large common-prefix vocabulary expansion', async () => {
+    let reads = 0;
+    let deadlineStack = '';
+    await expect(
+      commonPrefixEngine().search(request('common'), {
+        get deadline() {
+          reads += 1;
+          if (reads === 2) deadlineStack = new Error().stack ?? '';
+          return reads === 1 ? Infinity : -Infinity;
+        },
+        isCancelled: () => false,
+      }),
+    ).rejects.toMatchObject({ name: 'SearchTimeoutError' });
+    expect(deadlineStack).toContain('addPrefixVocabularyCandidates');
+  });
+
+  it('yields while expanding a large exact posting', async () => {
+    let cancelled = false;
+    let cancellationStack = '';
+    setImmediate(() => {
+      cancelled = true;
+    });
+
+    await expect(
+      commonPostingEngine().search(request('rf'), {
+        deadline: Infinity,
+        isCancelled: () => {
+          if (cancelled) cancellationStack = new Error().stack ?? '';
+          return cancelled;
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'SearchCancelledError' });
+    expect(cancellationStack).toContain('candidateChunkIds');
+  });
+
+  it('checks deadlines while expanding a large exact posting', async () => {
+    let reads = 0;
+    let deadlineStack = '';
+    await expect(
+      commonPostingEngine().search(request('rf'), {
+        get deadline() {
+          reads += 1;
+          if (reads === 2) deadlineStack = new Error().stack ?? '';
+          return reads === 1 ? Infinity : -Infinity;
+        },
+        isCancelled: () => false,
+      }),
+    ).rejects.toMatchObject({ name: 'SearchTimeoutError' });
+    expect(deadlineStack).toContain('candidateChunkIds');
   });
 
   it.each(['vocabulary', 'passages'] as const)('checks deadlines during %s work', async (kind) => {

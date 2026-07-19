@@ -49,15 +49,15 @@ type IndexedChunk = {
 };
 
 type SearchSnapshot = {
-  sourceDocuments: ReadonlyMap<string, KnowledgeDocumentRecord>;
-  sourceChunks: ReadonlyMap<string, KnowledgeSearchChunkRecord>;
-  documents: ReadonlyMap<string, IndexedDocument>;
-  chunks: readonly IndexedChunk[];
-  chunksById: ReadonlyMap<string, IndexedChunk>;
-  exactPostings: ReadonlyMap<string, readonly string[]>;
-  vocabularyByLength: ReadonlyMap<number, readonly string[]>;
-  vocabularyByTrigram: ReadonlyMap<string, readonly string[]>;
-  vocabularyPrefixes: ReadonlyMap<string, readonly string[]>;
+  sourceDocuments: Map<string, KnowledgeDocumentRecord>;
+  sourceChunks: Map<string, KnowledgeSearchChunkRecord>;
+  documents: Map<string, IndexedDocument>;
+  chunksById: Map<string, IndexedChunk>;
+  chunkIdsByDocument: Map<string, readonly string[]>;
+  exactPostings: Map<string, readonly string[]>;
+  vocabularyByLength: Map<number, readonly string[]>;
+  vocabularyByTrigram: Map<string, readonly string[]>;
+  vocabularyPrefixes: Map<string, readonly string[]>;
 };
 
 type TokenAcceptance = {
@@ -172,8 +172,8 @@ function emptySnapshot(): SearchSnapshot {
     sourceDocuments: new Map(),
     sourceChunks: new Map(),
     documents: new Map(),
-    chunks: [],
     chunksById: new Map(),
+    chunkIdsByDocument: new Map(),
     exactPostings: new Map(),
     vocabularyByLength: new Map(),
     vocabularyByTrigram: new Map(),
@@ -207,20 +207,44 @@ function metadataTokens(document: IndexedDocument): IndexedToken[] {
   return [...document.fields.title, ...document.fields.category, ...document.fields.fileName];
 }
 
+function createIndexedDocument(record: KnowledgeDocumentRecord): IndexedDocument {
+  return {
+    record,
+    fields: {
+      title: tokens(normalizeKnowledgeSearchText(record.displayTitle || record.title)),
+      category: tokens(normalizeKnowledgeSearchText(record.category)),
+      fileName: tokens(normalizeKnowledgeSearchText(record.fileName)),
+    },
+  };
+}
+
+function createIndexedChunk(
+  record: KnowledgeSearchChunkRecord,
+  document: IndexedDocument,
+): IndexedChunk | null {
+  if (record.checksum !== document.record.checksum) return null;
+  const normalized = normalizeKnowledgeSearchTextWithRanges(record.text);
+  if (normalized.text !== record.normalizedText) {
+    throw new Error(`Knowledge search chunk ${record.id} normalizedText does not match text`);
+  }
+  return {
+    record,
+    document,
+    sourceRanges: normalized.sourceRanges,
+    fields: {
+      heading: tokens(normalizeKnowledgeSearchText(record.heading ?? '')),
+      passage: tokens(record.normalizedText),
+    },
+  };
+}
+
 function indexDocuments(
   sourceDocuments: ReadonlyMap<string, KnowledgeDocumentRecord>,
 ): Map<string, IndexedDocument> {
   const documents = new Map<string, IndexedDocument>();
   for (const record of sourceDocuments.values()) {
     if (record.lifecycleState !== 'active') continue;
-    documents.set(record.id, {
-      record,
-      fields: {
-        title: tokens(normalizeKnowledgeSearchText(record.displayTitle || record.title)),
-        category: tokens(normalizeKnowledgeSearchText(record.category)),
-        fileName: tokens(normalizeKnowledgeSearchText(record.fileName)),
-      },
-    });
+    documents.set(record.id, createIndexedDocument(record));
   }
   return documents;
 }
@@ -232,20 +256,9 @@ function indexChunks(
   const indexedChunks: IndexedChunk[] = [];
   for (const record of sourceChunks.values()) {
     const document = documents.get(record.documentId);
-    if (!document || record.checksum !== document.record.checksum) continue;
-    const normalized = normalizeKnowledgeSearchTextWithRanges(record.text);
-    if (normalized.text !== record.normalizedText) {
-      throw new Error(`Knowledge search chunk ${record.id} normalizedText does not match text`);
-    }
-    indexedChunks.push({
-      record,
-      document,
-      sourceRanges: normalized.sourceRanges,
-      fields: {
-        heading: tokens(normalizeKnowledgeSearchText(record.heading ?? '')),
-        passage: tokens(record.normalizedText),
-      },
-    });
+    if (!document) continue;
+    const indexed = createIndexedChunk(record, document);
+    if (indexed) indexedChunks.push(indexed);
   }
   indexedChunks.sort(
     (left, right) =>
@@ -312,10 +325,239 @@ function buildSnapshot(
     sourceDocuments: immutableDocuments,
     sourceChunks: immutableChunks,
     documents,
-    chunks: indexedChunks,
     chunksById: new Map(indexedChunks.map((chunk) => [chunk.record.id, chunk])),
+    chunkIdsByDocument: groupChunkIdsByDocument(immutableChunks.values()),
     ...buildVocabularyIndexes(indexedChunks),
   };
+}
+
+function groupChunkIdsByDocument(
+  chunks: Iterable<KnowledgeSearchChunkRecord>,
+): Map<string, readonly string[]> {
+  const grouped = new Map<string, string[]>();
+  for (const chunk of chunks) {
+    const existing = grouped.get(chunk.documentId);
+    if (existing) existing.push(chunk.id);
+    else grouped.set(chunk.documentId, [chunk.id]);
+  }
+  for (const ids of grouped.values()) ids.sort(compareText);
+  return grouped;
+}
+
+function addSortedValue(values: readonly string[] | undefined, value: string): readonly string[] {
+  if (values?.includes(value)) return values;
+  return [...(values ?? []), value].sort(compareText);
+}
+
+function removeSortedValue(
+  values: readonly string[] | undefined,
+  value: string,
+): readonly string[] {
+  return values?.filter((candidate) => candidate !== value) ?? [];
+}
+
+function addVocabularyToken(snapshot: SearchSnapshot, vocabularyToken: string): void {
+  const tokenCharacters = [...vocabularyToken];
+  snapshot.vocabularyByLength.set(
+    tokenCharacters.length,
+    addSortedValue(snapshot.vocabularyByLength.get(tokenCharacters.length), vocabularyToken),
+  );
+  for (const trigram of trigrams(vocabularyToken)) {
+    snapshot.vocabularyByTrigram.set(
+      trigram,
+      addSortedValue(snapshot.vocabularyByTrigram.get(trigram), vocabularyToken),
+    );
+  }
+  if (allowedEdits(vocabularyToken) === 0) return;
+  for (let prefixLength = 4; prefixLength < tokenCharacters.length; prefixLength += 1) {
+    const prefix = tokenCharacters.slice(0, prefixLength).join('');
+    snapshot.vocabularyPrefixes.set(
+      prefix,
+      addSortedValue(snapshot.vocabularyPrefixes.get(prefix), vocabularyToken),
+    );
+  }
+}
+
+function removeListEntry<Key>(map: Map<Key, readonly string[]>, key: Key, value: string): void {
+  const remaining = removeSortedValue(map.get(key), value);
+  if (remaining.length === 0) map.delete(key);
+  else map.set(key, remaining);
+}
+
+function removeVocabularyToken(snapshot: SearchSnapshot, vocabularyToken: string): void {
+  const tokenCharacters = [...vocabularyToken];
+  removeListEntry(snapshot.vocabularyByLength, tokenCharacters.length, vocabularyToken);
+  for (const trigram of trigrams(vocabularyToken)) {
+    removeListEntry(snapshot.vocabularyByTrigram, trigram, vocabularyToken);
+  }
+  if (allowedEdits(vocabularyToken) === 0) return;
+  for (let prefixLength = 4; prefixLength < tokenCharacters.length; prefixLength += 1) {
+    removeListEntry(
+      snapshot.vocabularyPrefixes,
+      tokenCharacters.slice(0, prefixLength).join(''),
+      vocabularyToken,
+    );
+  }
+}
+
+function indexedChunkVocabulary(chunk: IndexedChunk): Set<string> {
+  return new Set(
+    [...metadataTokens(chunk.document), ...chunk.fields.heading, ...chunk.fields.passage].map(
+      ({ value }) => value,
+    ),
+  );
+}
+
+function addPosting(snapshot: SearchSnapshot, vocabularyToken: string, chunkId: string): void {
+  const postings = snapshot.exactPostings.get(vocabularyToken);
+  if (!postings) addVocabularyToken(snapshot, vocabularyToken);
+  snapshot.exactPostings.set(vocabularyToken, addSortedValue(postings, chunkId));
+}
+
+function removePosting(snapshot: SearchSnapshot, vocabularyToken: string, chunkId: string): void {
+  const remaining = removeSortedValue(snapshot.exactPostings.get(vocabularyToken), chunkId);
+  if (remaining.length === 0) {
+    snapshot.exactPostings.delete(vocabularyToken);
+    removeVocabularyToken(snapshot, vocabularyToken);
+  } else {
+    snapshot.exactPostings.set(vocabularyToken, remaining);
+  }
+}
+
+function replaceIndexedChunk(
+  snapshot: SearchSnapshot,
+  chunkId: string,
+  next: IndexedChunk | null,
+): IndexedChunk | null {
+  const previous = snapshot.chunksById.get(chunkId) ?? null;
+  const previousVocabulary = previous ? indexedChunkVocabulary(previous) : new Set<string>();
+  const nextVocabulary = next ? indexedChunkVocabulary(next) : new Set<string>();
+  if (next) snapshot.chunksById.set(chunkId, next);
+  else snapshot.chunksById.delete(chunkId);
+  for (const token of previousVocabulary) {
+    if (!nextVocabulary.has(token)) removePosting(snapshot, token, chunkId);
+  }
+  for (const token of nextVocabulary) {
+    if (!previousVocabulary.has(token)) addPosting(snapshot, token, chunkId);
+  }
+  return previous;
+}
+
+function removeIndexedChunk(snapshot: SearchSnapshot, chunkId: string): IndexedChunk | null {
+  return replaceIndexedChunk(snapshot, chunkId, null);
+}
+
+function forkSnapshot(snapshot: SearchSnapshot): SearchSnapshot {
+  return {
+    sourceDocuments: new Map(snapshot.sourceDocuments),
+    sourceChunks: new Map(snapshot.sourceChunks),
+    documents: new Map(snapshot.documents),
+    chunksById: new Map(snapshot.chunksById),
+    chunkIdsByDocument: new Map(snapshot.chunkIdsByDocument),
+    exactPostings: new Map(snapshot.exactPostings),
+    vocabularyByLength: new Map(snapshot.vocabularyByLength),
+    vocabularyByTrigram: new Map(snapshot.vocabularyByTrigram),
+    vocabularyPrefixes: new Map(snapshot.vocabularyPrefixes),
+  };
+}
+
+function setChunkDocumentMembership(
+  snapshot: SearchSnapshot,
+  documentId: string,
+  chunkId: string,
+  present: boolean,
+): void {
+  const ids = present
+    ? addSortedValue(snapshot.chunkIdsByDocument.get(documentId), chunkId)
+    : removeSortedValue(snapshot.chunkIdsByDocument.get(documentId), chunkId);
+  if (ids.length === 0) snapshot.chunkIdsByDocument.delete(documentId);
+  else snapshot.chunkIdsByDocument.set(documentId, ids);
+}
+
+function existingIndexedChunks(
+  snapshot: SearchSnapshot,
+  chunkIds: readonly string[],
+): Map<string, IndexedChunk> {
+  return new Map(
+    chunkIds.flatMap((id) => {
+      const chunk = snapshot.chunksById.get(id);
+      return chunk ? [[id, chunk] as const] : [];
+    }),
+  );
+}
+
+function nextIndexedChunksForDocument(
+  snapshot: SearchSnapshot,
+  chunkIds: readonly string[],
+  previousChunks: ReadonlyMap<string, IndexedChunk>,
+  document: IndexedDocument | null,
+): IndexedChunk[] {
+  if (!document) return [];
+  const indexedChunks: IndexedChunk[] = [];
+  for (const chunkId of chunkIds) {
+    const source = snapshot.sourceChunks.get(chunkId);
+    if (!source || source.checksum !== document.record.checksum) continue;
+    const previous = previousChunks.get(chunkId);
+    const indexed =
+      previous?.record === source
+        ? { ...previous, document }
+        : createIndexedChunk(source, document);
+    if (indexed) indexedChunks.push(indexed);
+  }
+  return indexedChunks;
+}
+
+function upsertDocumentIncrementally(
+  snapshot: SearchSnapshot,
+  input: KnowledgeDocumentRecord,
+): void {
+  const record = structuredClone(input);
+  const chunkIds = snapshot.chunkIdsByDocument.get(record.id) ?? [];
+  const previousChunks = existingIndexedChunks(snapshot, chunkIds);
+  const document = record.lifecycleState === 'active' ? createIndexedDocument(record) : null;
+  const nextChunks = nextIndexedChunksForDocument(snapshot, chunkIds, previousChunks, document);
+
+  snapshot.sourceDocuments.set(record.id, record);
+  if (document) snapshot.documents.set(record.id, document);
+  else snapshot.documents.delete(record.id);
+  const nextChunksById = new Map(nextChunks.map((chunk) => [chunk.record.id, chunk]));
+  for (const chunkId of chunkIds) {
+    replaceIndexedChunk(snapshot, chunkId, nextChunksById.get(chunkId) ?? null);
+  }
+}
+
+function removeDocumentIncrementally(snapshot: SearchSnapshot, documentId: string): void {
+  const chunkIds = snapshot.chunkIdsByDocument.get(documentId) ?? [];
+  for (const chunkId of chunkIds) {
+    removeIndexedChunk(snapshot, chunkId);
+    snapshot.sourceChunks.delete(chunkId);
+  }
+  snapshot.chunkIdsByDocument.delete(documentId);
+  snapshot.documents.delete(documentId);
+  snapshot.sourceDocuments.delete(documentId);
+}
+
+function upsertChunkIncrementally(
+  snapshot: SearchSnapshot,
+  input: KnowledgeSearchChunkRecord,
+): void {
+  const record = structuredClone(input);
+  const previousSource = snapshot.sourceChunks.get(record.id);
+  const document = snapshot.documents.get(record.documentId);
+  const indexed = document ? createIndexedChunk(record, document) : null;
+  if (previousSource && previousSource.documentId !== record.documentId) {
+    setChunkDocumentMembership(snapshot, previousSource.documentId, record.id, false);
+  }
+  snapshot.sourceChunks.set(record.id, record);
+  setChunkDocumentMembership(snapshot, record.documentId, record.id, true);
+  replaceIndexedChunk(snapshot, record.id, indexed);
+}
+
+function removeChunkIncrementally(snapshot: SearchSnapshot, chunkId: string): void {
+  const source = snapshot.sourceChunks.get(chunkId);
+  removeIndexedChunk(snapshot, chunkId);
+  snapshot.sourceChunks.delete(chunkId);
+  if (source) setChunkDocumentMembership(snapshot, source.documentId, chunkId, false);
 }
 
 function checkContext(context: SearchContext): void {
@@ -659,9 +901,7 @@ async function acceptedVocabularyForToken(
   const maximum = allowedEdits(queryToken);
   if (maximum === 0) return accepted;
 
-  for (const prefixCandidate of snapshot.vocabularyPrefixes.get(queryToken) ?? []) {
-    accepted.set(prefixCandidate, { distance: 0, kind: 'prefix' });
-  }
+  await addPrefixVocabularyCandidates(queryToken, snapshot, accepted, context);
 
   const queryTrigrams = trigrams(queryToken);
   const allowedVocabulary = vocabularyAtAllowedLengths(queryToken, maximum, snapshot);
@@ -684,6 +924,19 @@ async function acceptedVocabularyForToken(
   return accepted;
 }
 
+async function addPrefixVocabularyCandidates(
+  queryToken: string,
+  snapshot: SearchSnapshot,
+  accepted: Map<string, VocabularyAcceptance>,
+  context: SearchContext,
+): Promise<void> {
+  const candidates = snapshot.vocabularyPrefixes.get(queryToken) ?? [];
+  for (let index = 0; index < candidates.length; index += 1) {
+    accepted.set(candidates[index]!, { distance: 0, kind: 'prefix' });
+    if ((index + 1) % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
+  }
+}
+
 type QueryVocabulary = ReadonlyMap<string, ReadonlyMap<string, VocabularyAcceptance>>;
 
 async function buildQueryVocabulary(
@@ -698,17 +951,21 @@ async function buildQueryVocabulary(
   return vocabulary;
 }
 
-function candidateChunkIds(
+async function candidateChunkIds(
   queryTokens: readonly string[],
   vocabulary: QueryVocabulary,
   snapshot: SearchSnapshot,
-): Set<string> {
+  context: SearchContext,
+): Promise<Set<string>> {
   let candidates: Set<string> | null = null;
+  let postingCandidates = 0;
   for (const queryToken of queryTokens) {
     const tokenCandidates = new Set<string>();
     for (const vocabularyToken of vocabulary.get(queryToken)!.keys()) {
       for (const chunkId of snapshot.exactPostings.get(vocabularyToken) ?? []) {
         tokenCandidates.add(chunkId);
+        postingCandidates += 1;
+        if (postingCandidates % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
       }
     }
     if (candidates === null) candidates = tokenCandidates;
@@ -756,6 +1013,13 @@ async function scoreCandidates(
 
 export class KnowledgeSearchEngine {
   private snapshot: SearchSnapshot = emptySnapshot();
+  private readonly activeSnapshots = new Map<SearchSnapshot, number>();
+
+  private writableSnapshot(): SearchSnapshot {
+    const activeReaders = this.activeSnapshots.get(this.snapshot) ?? 0;
+    if (activeReaders > 0) this.snapshot = forkSnapshot(this.snapshot);
+    return this.snapshot;
+  }
 
   replaceSnapshot(
     documents: readonly KnowledgeDocumentRecord[],
@@ -768,31 +1032,19 @@ export class KnowledgeSearchEngine {
   }
 
   upsertDocument(document: KnowledgeDocumentRecord): void {
-    const documents = new Map(this.snapshot.sourceDocuments);
-    documents.set(document.id, document);
-    this.snapshot = buildSnapshot(documents, this.snapshot.sourceChunks);
+    upsertDocumentIncrementally(this.writableSnapshot(), document);
   }
 
   removeDocument(documentId: string): void {
-    const documents = new Map(this.snapshot.sourceDocuments);
-    const chunks = new Map(this.snapshot.sourceChunks);
-    documents.delete(documentId);
-    for (const [chunkId, chunk] of chunks) {
-      if (chunk.documentId === documentId) chunks.delete(chunkId);
-    }
-    this.snapshot = buildSnapshot(documents, chunks);
+    removeDocumentIncrementally(this.writableSnapshot(), documentId);
   }
 
   upsertChunk(chunk: KnowledgeSearchChunkRecord): void {
-    const chunks = new Map(this.snapshot.sourceChunks);
-    chunks.set(chunk.id, chunk);
-    this.snapshot = buildSnapshot(this.snapshot.sourceDocuments, chunks);
+    upsertChunkIncrementally(this.writableSnapshot(), chunk);
   }
 
   removeChunk(chunkId: string): void {
-    const chunks = new Map(this.snapshot.sourceChunks);
-    chunks.delete(chunkId);
-    this.snapshot = buildSnapshot(this.snapshot.sourceDocuments, chunks);
+    removeChunkIncrementally(this.writableSnapshot(), chunkId);
   }
 
   async search(
@@ -800,41 +1052,48 @@ export class KnowledgeSearchEngine {
     context: { deadline: number; isCancelled: () => boolean },
   ): Promise<Extract<KnowledgeSearchResponse, { ok: true }>> {
     const snapshot = this.snapshot;
-    checkContext(context);
-    const normalizedQuery = normalizeKnowledgeSearchText(request.query);
-    const allQueryTokens = tokens(normalizedQuery).map(({ value }) => value);
-    const contentQueryTokens = allQueryTokens.filter((token) => !FUNCTION_WORDS.has(token));
-    if (contentQueryTokens.length === 0) {
+    this.activeSnapshots.set(snapshot, (this.activeSnapshots.get(snapshot) ?? 0) + 1);
+    try {
+      checkContext(context);
+      const normalizedQuery = normalizeKnowledgeSearchText(request.query);
+      const allQueryTokens = tokens(normalizedQuery).map(({ value }) => value);
+      const contentQueryTokens = allQueryTokens.filter((token) => !FUNCTION_WORDS.has(token));
+      if (contentQueryTokens.length === 0) {
+        return {
+          ok: true,
+          requestId: request.requestId,
+          availability: 'ready',
+          normalizedQuery,
+          results: [],
+        };
+      }
+
+      const vocabulary = await buildQueryVocabulary(contentQueryTokens, snapshot, context);
+      const candidates = candidateChunks(
+        await candidateChunkIds(contentQueryTokens, vocabulary, snapshot, context),
+        snapshot,
+        request,
+      );
+      const scored = await scoreCandidates(
+        candidates,
+        allQueryTokens,
+        contentQueryTokens,
+        vocabulary,
+        context,
+      );
+      checkContext(context);
+
       return {
         ok: true,
         requestId: request.requestId,
         availability: 'ready',
         normalizedQuery,
-        results: [],
+        results: collapseAndLimit(scored, request),
       };
+    } finally {
+      const remainingReaders = (this.activeSnapshots.get(snapshot) ?? 1) - 1;
+      if (remainingReaders === 0) this.activeSnapshots.delete(snapshot);
+      else this.activeSnapshots.set(snapshot, remainingReaders);
     }
-
-    const vocabulary = await buildQueryVocabulary(contentQueryTokens, snapshot, context);
-    const candidates = candidateChunks(
-      candidateChunkIds(contentQueryTokens, vocabulary, snapshot),
-      snapshot,
-      request,
-    );
-    const scored = await scoreCandidates(
-      candidates,
-      allQueryTokens,
-      contentQueryTokens,
-      vocabulary,
-      context,
-    );
-    checkContext(context);
-
-    return {
-      ok: true,
-      requestId: request.requestId,
-      availability: 'ready',
-      normalizedQuery,
-      results: collapseAndLimit(scored, request),
-    };
   }
 }
