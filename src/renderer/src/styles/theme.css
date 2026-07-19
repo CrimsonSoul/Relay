@@ -170,12 +170,12 @@
 
   /* Operational silk motion */
   --motion-duration-instant: 100ms;
-  --motion-duration-control: 140ms;
-  --motion-duration-state: 160ms;
-  --motion-duration-layer-enter: 220ms;
+  --motion-duration-control: 160ms;
+  --motion-duration-state: 240ms;
+  --motion-duration-layer-enter: 300ms;
   --motion-duration-layer-exit: 160ms;
-  --motion-duration-structure: 240ms;
-  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-duration-structure: 320ms;
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Compatibility aliases for existing controls. */
   --transition-micro: var(--motion-duration-instant) var(--motion-ease-out);

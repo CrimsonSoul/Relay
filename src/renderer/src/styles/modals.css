@@ -159,7 +159,7 @@
   box-shadow: var(--shadow-sm);
   font-family: var(--font-family-base);
   transform-origin: center center;
-  transform: translateY(10px) scale(0.985);
+  transform: translateY(14px) scale(0.99);
   opacity: 0;
   position: relative;
   overflow: hidden;
