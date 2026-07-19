@@ -95,8 +95,28 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Schedule Bridge" width="440px">
-      <form onSubmit={handleSubmit}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Schedule Bridge"
+      variant="standard"
+      footer={
+        <>
+          <TactileButton type="button" onClick={onClose}>
+            Cancel
+          </TactileButton>
+          <TactileButton
+            type="submit"
+            form={`${fieldId}-form`}
+            loading={isSubmitting}
+            variant="primary"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Invite'}
+          </TactileButton>
+        </>
+      }
+    >
+      <form id={`${fieldId}-form`} className="schedule-bridge-form" onSubmit={handleSubmit}>
         <div className="schedule-bridge-field">
           <label htmlFor={`${fieldId}-start`} className="schedule-bridge-label">
             Date &amp; Time
@@ -156,15 +176,6 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
             placeholder="you@example.com"
           />
           {emailError && <div className="schedule-bridge-error">{emailError}</div>}
-        </div>
-
-        <div className="schedule-bridge-actions">
-          <TactileButton type="button" onClick={onClose}>
-            Cancel
-          </TactileButton>
-          <TactileButton type="submit" disabled={isSubmitting} variant="primary">
-            {isSubmitting ? 'Creating...' : 'Create Invite'}
-          </TactileButton>
         </div>
       </form>
     </Modal>

@@ -437,20 +437,20 @@ export const DirectoryTab: React.FC<Props> = ({
           hasNotes={!!getContactNote(dir.contextMenu.contact.email)}
         />
       )}
-      {dir.groupSelectorContact && (
-        <Modal
-          isOpen={true}
-          onClose={() => dir.setGroupSelectorContact(null)}
-          title="Manage Groups"
-          width="400px"
-        >
+      <Modal
+        isOpen={Boolean(dir.groupSelectorContact)}
+        onClose={() => dir.setGroupSelectorContact(null)}
+        title="Manage Groups"
+        variant="confirmation"
+      >
+        {dir.groupSelectorContact && (
           <GroupSelector
             contact={dir.groupSelectorContact}
             groups={groups}
             onClose={() => dir.setGroupSelectorContact(null)}
           />
-        </Modal>
-      )}
+        )}
+      </Modal>
 
       <NotesModal
         isOpen={!!notesContact}

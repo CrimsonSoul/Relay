@@ -10,16 +10,28 @@ vi.mock('../../../components/Modal', () => ({
     isOpen,
     title,
     children,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
-    title?: string;
+    title?: React.ReactNode;
     children: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
   }) =>
     isOpen
-      ? React.createElement('div', { 'data-testid': 'modal' }, [
+      ? React.createElement(
+          'div',
+          { 'data-testid': 'modal', role: 'dialog', 'data-variant': variant },
           React.createElement('h2', { key: 'title' }, title),
           React.createElement('div', { key: 'body' }, children),
-        ])
+          footer &&
+            React.createElement(
+              'footer',
+              { key: 'footer', className: 'modal-footer-generic' },
+              footer,
+            ),
+        )
       : null,
 }));
 
@@ -61,6 +73,8 @@ describe('ScheduleBridgeModal', () => {
     expect(screen.getByLabelText(/duration/i)).toHaveValue('60');
     expect(screen.getByLabelText(/subject/i)).toHaveValue('6/12 – Bridge');
     expect(screen.getByLabelText(/your email/i)).toHaveValue('me@test.com');
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+    expect(screen.getByRole('dialog').querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('does not render when closed', () => {

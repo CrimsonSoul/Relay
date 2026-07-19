@@ -188,14 +188,16 @@ vi.mock('../../components/Modal', () => ({
     onClose,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     onClose: () => void;
     children: React.ReactNode;
     title: string;
+    variant?: string;
   }) =>
     isOpen ? (
-      <div data-testid="modal">
+      <div data-testid="modal" data-variant={variant}>
         <span>{title}</span>
         <button onClick={onClose}>close-modal</button>
         {children}
@@ -596,6 +598,7 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
     fireEvent.click(screen.getByText('Manage Groups'));
     expect(screen.getByTestId('modal')).toBeInTheDocument();
+    expect(screen.getByTestId('modal')).toHaveAttribute('data-variant', 'confirmation');
     expect(screen.getByTestId('group-selector')).toBeInTheDocument();
   });
 

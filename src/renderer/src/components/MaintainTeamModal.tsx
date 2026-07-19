@@ -90,7 +90,23 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="960px">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Edit Card: ${teamName}`}
+      variant="large"
+      bodyClassName="modal-body-generic--nested-scroll"
+      footer={
+        <>
+          <TactileButton variant="secondary" onClick={onClose}>
+            Cancel
+          </TactileButton>
+          <TactileButton variant="primary" onClick={handleSave}>
+            Save Changes
+          </TactileButton>
+        </>
+      }
+    >
       <div className="maintain-team-body">
         <div className="maintain-team-scroll">
           <DndContext
@@ -118,14 +134,6 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
             onClick={handleAddRow}
           >
             + Add Row
-          </TactileButton>
-        </div>
-        <div className="maintain-team-footer">
-          <TactileButton variant="secondary" onClick={onClose}>
-            Cancel
-          </TactileButton>
-          <TactileButton variant="primary" onClick={handleSave}>
-            Save Changes
           </TactileButton>
         </div>
       </div>

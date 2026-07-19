@@ -434,11 +434,21 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
+  }) =>
+    isOpen ? (
+      <div data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+        {footer}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/StatusBar', () => ({
@@ -1184,6 +1194,10 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('PIN TEMPLATE'));
     expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Pin Template')).toHaveAttribute(
+      'data-variant',
+      'confirmation',
+    );
     expect(screen.getByLabelText('Template name')).toBeInTheDocument();
   });
 

@@ -8,11 +8,18 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+  }) =>
+    isOpen ? (
+      <div role="dialog" data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/TactileButton', () => ({
@@ -88,6 +95,7 @@ describe('AlertReminderManagerModal', () => {
     });
 
     expect(screen.getByTestId('modal-Alarms')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'wide');
     expect(screen.getByText('Soon reminder')).toBeInTheDocument();
     expect(screen.getByText('Short note')).toBeInTheDocument();
     expect(screen.getByText('Snoozed reminder')).toBeInTheDocument();

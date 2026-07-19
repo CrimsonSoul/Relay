@@ -8,24 +8,34 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
+  }) =>
+    isOpen ? (
+      <div role="dialog" data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+        {footer && <footer className="modal-footer-generic">{footer}</footer>}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/TactileButton', () => ({
   TactileButton: ({
     children,
     onClick,
-    type,
-  }: {
+    loading: _loading,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     children: React.ReactNode;
-    onClick?: () => void;
-    type?: 'submit' | 'button';
+    loading?: boolean;
   }) => (
-    <button type={type ?? 'button'} onClick={onClick}>
+    <button type={props.type ?? 'button'} onClick={onClick} {...props}>
       {children}
     </button>
   ),
@@ -75,6 +85,8 @@ describe('AlertReminderModal', () => {
     );
 
     expect(screen.getByLabelText('Title')).toHaveValue('POS outage');
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+    expect(screen.getByRole('dialog').querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('validates that the selected time is in the future', () => {

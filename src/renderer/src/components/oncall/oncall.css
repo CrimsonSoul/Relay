@@ -599,27 +599,21 @@
 
 .maintain-team-body {
   display: flex;
+  min-height: 0;
   flex-direction: column;
   height: 65vh;
 }
 
 .maintain-team-scroll {
+  min-height: 0;
   flex: 1;
-  overflow-y: overlay;
+  overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 8px 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.maintain-team-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--color-border);
 }
 
 /* ============================================================================

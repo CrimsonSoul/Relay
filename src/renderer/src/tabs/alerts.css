@@ -1490,17 +1490,9 @@
   gap: 12px;
 }
 
-.pin-template-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
-.alert-reminder-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.modal-dialog-generic .alert-reminder-form {
+  display: grid;
+  gap: var(--space-4);
 }
 
 .alert-reminder-note {
@@ -1518,15 +1510,9 @@
   font-size: var(--text-sm);
 }
 
-.alert-reminder-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 2px;
-}
-
 .alert-reminder-manager {
   display: flex;
+  min-height: 0;
   flex-direction: column;
   gap: 14px;
 }
@@ -1576,6 +1562,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  overscroll-behavior: contain;
 }
 
 /* Ink rows: edge-rail grammar, no boxed sub-cards. Pending rows carry a

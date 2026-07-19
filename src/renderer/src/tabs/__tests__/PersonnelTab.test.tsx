@@ -184,9 +184,10 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
 
     expect(screen.getByText('Add New Card')).toBeDefined();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
   });
 
-  it('closes the Add New Card modal when Cancel is clicked', () => {
+  it('closes the Add New Card modal when Cancel is clicked', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
@@ -196,10 +197,10 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.click(screen.getByText('Cancel'));
 
     // Modal should be closed after Cancel
-    expect(screen.queryByText('Add New Card')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
   });
 
-  it('submits the Add Card form on Enter key', () => {
+  it('submits the Add Card form on Enter key', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
@@ -209,7 +210,7 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     // Modal should close after successful submission
-    expect(screen.queryByText('Add New Card')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
   });
 
   it('does not submit the Add Card form on Enter when name is blank', () => {
@@ -225,7 +226,7 @@ describe('PersonnelTab — Add Card modal', () => {
     expect(screen.getByText('Add New Card')).toBeDefined();
   });
 
-  it('submits via the Add Card button click', () => {
+  it('submits via the Add Card button click', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
@@ -239,7 +240,7 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.click(modalAddBtn);
 
     // Modal should close after successful submission
-    expect(screen.queryByText('Add New Card')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
   });
 
   it('does not submit via Add Card button when name is blank', () => {

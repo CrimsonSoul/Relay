@@ -470,25 +470,12 @@ export const PersonnelTab: React.FC<{
       </DndContext>
 
       <Modal
-        isOpen={!!renamingTeam}
+        isOpen={Boolean(renamingTeam)}
         onClose={() => setRenamingTeam(null)}
+        variant="confirmation"
         title="Rename Card"
-        width="400px"
-      >
-        <div className="modal-form-body">
-          <Input
-            value={renamingTeam?.new || ''}
-            onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && renamingTeam) {
-                void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() =>
-                  setRenamingTeam(null),
-                );
-              }
-            }}
-          />
-          <div className="modal-form-actions">
+        footer={
+          <>
             <TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>
               Cancel
             </TactileButton>
@@ -504,15 +491,49 @@ export const PersonnelTab: React.FC<{
             >
               Rename
             </TactileButton>
-          </div>
+          </>
+        }
+      >
+        <div className="modal-form-body">
+          <Input
+            value={renamingTeam?.new || ''}
+            onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && renamingTeam) {
+                void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() =>
+                  setRenamingTeam(null),
+                );
+              }
+            }}
+          />
         </div>
       </Modal>
 
       <Modal
         isOpen={addTeamModal.isOpen}
         onClose={addTeamModal.close}
+        variant="standard"
         title="Add New Card"
-        width="400px"
+        footer={
+          <>
+            <TactileButton variant="secondary" onClick={addTeamModal.close}>
+              Cancel
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              onClick={() => {
+                if (newTeamName.trim()) {
+                  void handleAddTeam(newTeamName.trim());
+                  setNewTeamName('');
+                  addTeamModal.close();
+                }
+              }}
+            >
+              Add Card
+            </TactileButton>
+          </>
+        }
       >
         <div className="modal-form-body">
           <Input
@@ -528,37 +549,22 @@ export const PersonnelTab: React.FC<{
               }
             }}
           />
-          <div className="modal-form-actions">
-            <TactileButton variant="secondary" onClick={() => addTeamModal.close()}>
-              Cancel
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              onClick={() => {
-                if (newTeamName.trim()) {
-                  void handleAddTeam(newTeamName.trim());
-                  setNewTeamName('');
-                  addTeamModal.close();
-                }
-              }}
-            >
-              Add Card
-            </TactileButton>
-          </div>
         </div>
       </Modal>
 
-      {confirmDelete && (
-        <ConfirmModal
-          isOpen={!!confirmDelete}
-          onClose={() => setConfirmDelete(null)}
-          onConfirm={confirmDelete.onConfirm}
-          title="Remove Card"
-          message={`Are you sure you want to remove the card "${confirmDelete.team}"? This will delete all members in this card.`}
-          confirmLabel="Remove"
-          isDanger
-        />
-      )}
+      <ConfirmModal
+        isOpen={Boolean(confirmDelete)}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => confirmDelete?.onConfirm()}
+        title="Remove Card"
+        message={
+          confirmDelete
+            ? `Are you sure you want to remove the card "${confirmDelete.team}"? This will delete all members in this card.`
+            : ''
+        }
+        confirmLabel="Remove"
+        isDanger
+      />
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}

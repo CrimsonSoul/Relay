@@ -937,8 +937,22 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
       <Modal
         isOpen={pinPromptModal.isOpen}
         onClose={pinPromptModal.close}
+        variant="confirmation"
         title="Pin Template"
-        width="400px"
+        footer={
+          <>
+            <TactileButton variant="ghost" size="sm" onClick={pinPromptModal.close}>
+              CANCEL
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              size="sm"
+              onClick={() => void handlePinTemplateConfirm()}
+            >
+              PIN
+            </TactileButton>
+          </>
+        }
       >
         <div className="pin-template-form">
           <label className="alerts-field-label" htmlFor="pin-template-name">
@@ -956,18 +970,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
             }}
             autoFocus
           />
-          <div className="pin-template-actions">
-            <TactileButton variant="ghost" size="sm" onClick={pinPromptModal.close}>
-              CANCEL
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              size="sm"
-              onClick={() => void handlePinTemplateConfirm()}
-            >
-              PIN
-            </TactileButton>
-          </div>
         </div>
       </Modal>
 

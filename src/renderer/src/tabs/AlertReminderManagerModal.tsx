@@ -142,7 +142,7 @@ export function AlertReminderManagerModal({
   const [showCompleted, setShowCompleted] = useState(false);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Alarms" width="640px">
+    <Modal isOpen={isOpen} onClose={onClose} title="Alarms" variant="wide">
       <div className="alert-reminder-manager">
         <div className="alert-reminder-manager-toolbar">
           <label className="alert-reminder-manager-toggle">

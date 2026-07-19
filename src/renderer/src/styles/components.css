@@ -2833,12 +2833,6 @@ body.modal-open {
   gap: 16px;
 }
 
-.modal-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 /* ============================================================================
    Delete Confirmation Modal
    ============================================================================ */

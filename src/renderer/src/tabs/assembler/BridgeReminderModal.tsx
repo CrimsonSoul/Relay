@@ -14,10 +14,13 @@ export const BridgeReminderModal: React.FC<BridgeReminderModalProps> = ({
   onConfirm,
 }) => {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Meeting Recording" width="400px">
-      <div className="bridge-reminder-body">
-        <div className="bridge-reminder-message">Please ensure meeting recording is enabled.</div>
-        <div className="bridge-reminder-actions">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Meeting Recording"
+      variant="confirmation"
+      footer={
+        <>
           <TactileButton onClick={onClose}>Cancel</TactileButton>
           <TactileButton
             onClick={() => {
@@ -28,7 +31,11 @@ export const BridgeReminderModal: React.FC<BridgeReminderModalProps> = ({
           >
             I Understand
           </TactileButton>
-        </div>
+        </>
+      }
+    >
+      <div className="bridge-reminder-body">
+        <div className="bridge-reminder-message">Please ensure meeting recording is enabled.</div>
       </div>
     </Modal>
   );

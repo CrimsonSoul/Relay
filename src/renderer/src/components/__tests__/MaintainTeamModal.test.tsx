@@ -55,6 +55,9 @@ describe('MaintainTeamModal', () => {
       />,
     );
     expect(screen.getByText('Edit Card: Alpha')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'large');
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('renders initial rows', () => {

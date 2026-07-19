@@ -53,11 +53,18 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+  }) =>
+    isOpen ? (
+      <div data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/TactileButton', () => ({
@@ -386,6 +393,10 @@ describe('DirectoryTab', () => {
 
     render(<DirectoryTab contacts={[contact]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('modal-Manage Groups')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Manage Groups')).toHaveAttribute(
+      'data-variant',
+      'confirmation',
+    );
     expect(screen.getByTestId('group-selector')).toBeInTheDocument();
   });
 

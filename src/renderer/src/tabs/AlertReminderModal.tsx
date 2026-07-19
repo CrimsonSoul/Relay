@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
@@ -46,6 +46,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
   mode = 'schedule',
   reminder = null,
 }) => {
+  const formId = useId();
   const isEditing = mode === 'edit' && reminder !== null;
   const defaultTitle = useMemo(
     () => (isEditing ? reminder.title : draft.subject.trim() || 'Send alert'),
@@ -124,9 +125,20 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={isEditing ? 'Edit Alarm' : 'Schedule Alarm'}
-      width="440px"
+      variant="standard"
+      footer={
+        <>
+          <TactileButton variant="ghost" size="sm" onClick={onClose}>
+            CANCEL
+          </TactileButton>
+          <TactileButton variant="primary" size="sm" type="submit" form={formId} loading={saving}>
+            {isEditing ? 'SAVE' : 'SCHEDULE'}
+          </TactileButton>
+        </>
+      }
     >
       <form
+        id={formId}
         className="alert-reminder-form"
         aria-label={isEditing ? 'Edit alarm' : 'Schedule alarm'}
         onSubmit={(event) => void handleSubmit(event)}
@@ -176,15 +188,6 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
         </div>
 
         {error && <div className="alert-reminder-error">{error}</div>}
-
-        <div className="alert-reminder-actions">
-          <TactileButton variant="ghost" size="sm" onClick={onClose}>
-            CANCEL
-          </TactileButton>
-          <TactileButton variant="primary" size="sm" type="submit" loading={saving}>
-            {isEditing ? 'SAVE' : 'SCHEDULE'}
-          </TactileButton>
-        </div>
       </form>
     </Modal>
   );

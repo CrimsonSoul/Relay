@@ -484,9 +484,7 @@ export function MainApp({
 
         <ErrorBoundary fallback={errorFallback}>
           <Suspense fallback={null}>
-            {dataManagerModal.isOpen && (
-              <DataManagerModal isOpen={dataManagerModal.isOpen} onClose={dataManagerModal.close} />
-            )}
+            <DataManagerModal isOpen={dataManagerModal.isOpen} onClose={dataManagerModal.close} />
           </Suspense>
         </ErrorBoundary>
 

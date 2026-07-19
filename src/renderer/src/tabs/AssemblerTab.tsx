@@ -537,20 +537,20 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             />
           );
         })()}
-      {groupSelectorEmail && (
-        <Modal
-          isOpen={true}
-          onClose={() => setGroupSelectorEmail(null)}
-          title="Manage Groups"
-          width="400px"
-        >
+      <Modal
+        isOpen={Boolean(groupSelectorEmail)}
+        onClose={() => setGroupSelectorEmail(null)}
+        title="Manage Groups"
+        variant="confirmation"
+      >
+        {groupSelectorEmail && (
           <GroupSelector
             contact={{ email: groupSelectorEmail }}
             groups={groups}
             onClose={() => setGroupSelectorEmail(null)}
           />
-        </Modal>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };
