@@ -7,7 +7,10 @@ import { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { getPocketBaseBinaryName, getPocketBaseBinaryPath } from '../pocketbase/binaryPath';
 import { BackupManager } from '../pocketbase/BackupManager';
 import { RetentionManager } from '../pocketbase/RetentionManager';
-import { ensureCollections } from '../pocketbase/CollectionBootstrap';
+import {
+  ensureCollections,
+  ensureKnowledgeSearchCollections,
+} from '../pocketbase/CollectionBootstrap';
 import {
   getPbProcess,
   setPbProcess,
@@ -26,9 +29,51 @@ const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
 const APP_USER_ENSURE_ATTEMPTS = 3;
 const APP_USER_ENSURE_RETRY_MS = 750;
+const OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS = 2;
+const OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS = 250;
+const OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS = 3_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withDeadline<T>(operation: Promise<T>, deadlineMs: number): Promise<T> {
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineTimer = setTimeout(
+      () => reject(new Error(`Optional Wiki search storage exceeded its ${deadlineMs}ms deadline`)),
+      deadlineMs,
+    );
+  });
+
+  return Promise.race([operation, deadline]).finally(() => {
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+  });
+}
+
+async function retryOptionalSearchBootstrap(
+  operation: () => Promise<void>,
+  options: { attempts: number; delayMs: number },
+): Promise<void> {
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    for (let attempt = 1; attempt <= options.attempts; attempt++) {
+      try {
+        await operation();
+        return;
+      } catch (error) {
+        if (attempt === options.attempts) throw error;
+        await new Promise<void>((resolve) => {
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            resolve();
+          }, options.delayMs);
+        });
+      }
+    }
+  } finally {
+    if (retryTimer) clearTimeout(retryTimer);
+  }
 }
 
 /**
@@ -235,6 +280,18 @@ const doStartPocketBase = async (
     await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
     const collections = await ensureCollections(pb);
     setPbClient(pb);
+
+    try {
+      await withDeadline(
+        retryOptionalSearchBootstrap(() => ensureKnowledgeSearchCollections(pb), {
+          attempts: OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS,
+          delayMs: OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS,
+        }),
+        OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS,
+      );
+    } catch (error) {
+      loggers.pocketbase.warn('Optional Wiki search storage is unavailable', { error });
+    }
 
     // Advertise on the LAN so client setup can discover this server (best-effort).
     if (serverConfig.bindHost === '0.0.0.0') {

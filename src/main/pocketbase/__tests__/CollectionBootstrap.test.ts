@@ -73,7 +73,7 @@ const mockPb = {
   createBatch: mockCreateBatch,
 } as never;
 
-import { ensureCollections } from '../CollectionBootstrap';
+import { ensureCollections, ensureKnowledgeSearchCollections } from '../CollectionBootstrap';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -149,6 +149,38 @@ function mockSuccessfulCollectionCreation(): void {
 }
 
 describe('ensureCollections', () => {
+  it('creates optional Wiki search storage with authenticated read rules', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
+    mockGetOne.mockResolvedValue({ fields: [], indexes: [] });
+    mockSuccessfulCollectionCreation();
+    mockUpdate.mockResolvedValue({});
+
+    await ensureKnowledgeSearchCollections(mockPb);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'knowledge_search_chunks',
+        listRule: '@request.auth.id != ""',
+        viewRule: '@request.auth.id != ""',
+        createRule: null,
+        updateRule: null,
+        deleteRule: null,
+      }),
+    );
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'documents-id',
+      expect.objectContaining({
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: 'searchIndexState' }),
+          expect.objectContaining({ name: 'searchIndexChecksum' }),
+          expect.objectContaining({ name: 'searchIndexVersion' }),
+          expect.objectContaining({ name: 'searchIndexedAt' }),
+          expect.objectContaining({ name: 'searchIndexError' }),
+        ]),
+      }),
+    );
+  });
+
   it('seeds a managed Knowledge library state on a clean PocketBase server', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();

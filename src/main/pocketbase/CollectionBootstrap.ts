@@ -36,6 +36,10 @@ import {
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
   KNOWLEDGE_UPLOADS_COLLECTION,
 } from '@shared/knowledge';
+import {
+  KNOWLEDGE_SEARCH_CHUNKS_COLLECTION,
+  KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT,
+} from '@shared/knowledgeSearch';
 import { loggers } from '../logger';
 import { RoleAccountMigration } from '../privileged/RoleAccountMigration';
 import { migrateKnowledgeCategories } from '../knowledge/KnowledgeCategoryMigration';
@@ -179,6 +183,10 @@ const KNOWLEDGE_UPLOAD_CHUNK_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)';
 const KNOWLEDGE_LIBRARY_STATE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_library_state_key ON knowledge_library_state (key)';
+const KNOWLEDGE_SEARCH_CHUNK_UNIQUE_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_search_chunk_identity ON knowledge_search_chunks (documentId, checksum, pageNumber, passageNumber, indexVersion)';
+const KNOWLEDGE_SEARCH_CHUNK_DOCUMENT_INDEX =
+  'CREATE INDEX idx_knowledge_search_chunk_document ON knowledge_search_chunks (documentId, checksum, indexVersion)';
 
 const DEFAULT_AUTH_RULES: CollectionRules = {
   listRule: AUTH_RULE,
@@ -204,6 +212,26 @@ const ACTIVE_KNOWLEDGE_RULES: CollectionRules = {
   updateRule: null,
   deleteRule: null,
 };
+
+const KNOWLEDGE_SEARCH_DOCUMENT_STATUS_FIELDS: FieldDef[] = [
+  {
+    type: 'select',
+    name: 'searchIndexState',
+    required: false,
+    values: ['pending', 'ready', 'failed'],
+    maxSelect: 1,
+  },
+  { type: 'text', name: 'searchIndexChecksum', required: false, max: 64 },
+  { type: 'number', name: 'searchIndexVersion', required: false },
+  { type: 'date', name: 'searchIndexedAt', required: false },
+  {
+    type: 'select',
+    name: 'searchIndexError',
+    required: false,
+    values: ['no-searchable-text', 'extraction-failed', 'storage-unavailable'],
+    maxSelect: 1,
+  },
+];
 
 const KNOWLEDGE_UPLOAD_ACCOUNT_RULE =
   '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id';
@@ -300,6 +328,32 @@ function relation(name: string, targetCollectionName: string, required: boolean)
     targetCollectionName,
   };
 }
+
+const KNOWLEDGE_SEARCH_CHUNK_DEFINITION: CollectionDef = {
+  name: KNOWLEDGE_SEARCH_CHUNKS_COLLECTION,
+  type: 'base',
+  fields: [
+    { ...relation('documentId', KNOWLEDGE_DOCUMENTS_COLLECTION, true), cascadeDelete: true },
+    { type: 'text', name: 'checksum', required: true, max: 64 },
+    { type: 'number', name: 'pageNumber', required: true },
+    { type: 'number', name: 'passageNumber', required: true },
+    { type: 'text', name: 'headingId', max: 200 },
+    { type: 'text', name: 'heading', max: 240 },
+    { type: 'text', name: 'text', required: true, max: KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT },
+    {
+      type: 'text',
+      name: 'normalizedText',
+      required: true,
+      max: KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT,
+    },
+    { type: 'number', name: 'normalizedStart', required: false },
+    { type: 'number', name: 'normalizedEnd', required: true },
+    { type: 'number', name: 'indexVersion', required: true },
+    { type: 'date', name: 'indexedAt', required: true },
+  ],
+  indexes: [KNOWLEDGE_SEARCH_CHUNK_UNIQUE_INDEX, KNOWLEDGE_SEARCH_CHUNK_DOCUMENT_INDEX],
+  rules: SERVER_OWNED_RULES,
+};
 
 const PRIVILEGED_ACCOUNT_FINAL_DEFINITION: CollectionDef = {
   name: RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
@@ -1057,7 +1111,10 @@ const COLLECTIONS: CollectionDef[] = [
   },
 ];
 
-const KNOWN_NAMES = new Set(COLLECTIONS.map((c) => c.name));
+const KNOWN_NAMES = new Set([
+  ...COLLECTIONS.map((c) => c.name),
+  KNOWLEDGE_SEARCH_CHUNKS_COLLECTION,
+]);
 
 function managedFieldsForDefinition(definition: CollectionDef): FieldDef[] {
   return definition.type === 'auth'
@@ -1444,6 +1501,50 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
     );
   }
   return staleCols.length;
+}
+
+/**
+ * Ensure derived Wiki search storage without making it part of the required
+ * PocketBase bootstrap. Callers intentionally treat failures as best-effort.
+ */
+export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<void> {
+  let allCols: Array<{ id: string; name: string }>;
+  try {
+    allCols = await pb.collections.getFullList();
+  } catch (err) {
+    logger.error('Failed to list collections for optional Wiki search storage', { error: err });
+    throw new Error('Failed to list PocketBase collections for optional Wiki search storage', {
+      cause: err,
+    });
+  }
+
+  const documents = allCols.find(({ name }) => name === KNOWLEDGE_DOCUMENTS_COLLECTION);
+  if (!documents) {
+    throw new Error('Cannot bootstrap optional Wiki search storage without knowledge_documents');
+  }
+
+  try {
+    const existing = (await pb.collections.getOne(documents.id)) as unknown as ExistingCollection;
+    const reconciled = reconcileManagedFields(
+      existing.fields ?? [],
+      KNOWLEDGE_SEARCH_DOCUMENT_STATUS_FIELDS,
+    );
+    if (reconciled.added.length > 0 || reconciled.changed.length > 0) {
+      await pb.collections.update(documents.id, { fields: reconciled.fields });
+      logger.info(
+        `Patched optional Wiki search fields on ${KNOWLEDGE_DOCUMENTS_COLLECTION} (+${reconciled.added.map((field) => field.name).join(', ')})`,
+      );
+    }
+  } catch (err) {
+    logger.error('Failed to patch optional Wiki search document fields', { error: err });
+    throw new Error('Failed to patch optional Wiki search document fields', { cause: err });
+  }
+
+  const existing = new Set(allCols.map(({ name }) => name));
+  const collectionIds = new Map(allCols.map(({ id, name }) => [name, id]));
+  await ensureManagedCollections(pb, existing, allCols, collectionIds, [
+    KNOWLEDGE_SEARCH_CHUNK_DEFINITION,
+  ]);
 }
 
 /**

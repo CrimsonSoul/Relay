@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     execFileSync: vi.fn(),
     existsSync: vi.fn(() => false),
     ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
+    ensureKnowledgeSearchCollections: vi.fn().mockResolvedValue(undefined),
     startAdvertising: vi.fn(),
     stopAdvertising: vi.fn(),
     requestAppRelaunch: vi.fn(),
@@ -97,6 +98,7 @@ vi.mock('../../pocketbase/RetentionManager', () => ({
 
 vi.mock('../../pocketbase/CollectionBootstrap', () => ({
   ensureCollections: mocks.ensureCollections,
+  ensureKnowledgeSearchCollections: mocks.ensureKnowledgeSearchCollections,
 }));
 
 vi.mock('../../utils/broadcastToAllWindows', () => ({
@@ -138,6 +140,63 @@ describe('pocketbaseBootstrap', () => {
     mocks.backup.mockResolvedValue(undefined);
     mocks.backupIfDue.mockResolvedValue(null);
     mocks.ensureCollections.mockResolvedValue({ privilegedRuntimeReady: true });
+    mocks.ensureKnowledgeSearchCollections.mockResolvedValue(undefined);
+  });
+
+  it('keeps server startup successful when optional Wiki search storage rejects', async () => {
+    mocks.ensureKnowledgeSearchCollections.mockRejectedValue(
+      new Error('search storage unavailable'),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\\\Users\\\\Relay\\\\data',
+      ),
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+
+    expect(mocks.ensureCollections).toHaveBeenCalledOnce();
+    expect(mocks.setPbClient).toHaveBeenCalledOnce();
+    expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledTimes(2);
+    expect(mocks.loggers.pocketbase.warn).toHaveBeenCalledWith(
+      'Optional Wiki search storage is unavailable',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it('returns server startup after the fixed optional Wiki search storage deadline', async () => {
+    vi.useFakeTimers();
+    mocks.ensureKnowledgeSearchCollections.mockImplementation(
+      () => new Promise<void>(() => undefined),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    try {
+      const startup = startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\\\Users\\\\Relay\\\\data',
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('checks whether the daily automatic backup is due before retention cleanup', async () => {
