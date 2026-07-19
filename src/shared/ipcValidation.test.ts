@@ -201,6 +201,7 @@ describe('KnowledgeSearchRequestSchema', () => {
     { ...valid, requestId: '../escape' },
     { ...valid, requestId: 'a'.repeat(201) },
     { ...valid, query: '😀'.repeat(121) },
+    { ...valid, query: '\uFDFA'.repeat(8) },
     { ...valid, query: 'the and of' },
     { ...valid, scope: { kind: 'document', documentId: '../escape' } },
     { ...valid, scope: { kind: 'all', documentId: 'unexpected' } },

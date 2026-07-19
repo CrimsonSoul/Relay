@@ -21,9 +21,9 @@ import {
 } from './privilegedCommands';
 import { getRoleUsernameError, normalizeRoleUsername } from './roleAccounts';
 import {
-  KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
   boundedSearchLimit,
   isKnowledgeSearchQueryEligible,
+  isKnowledgeSearchQueryWithinCodePointLimit,
   normalizeKnowledgeSearchQuery,
   type KnowledgeSearchRequest,
 } from './knowledgeSearch';
@@ -77,11 +77,9 @@ const KnowledgeSearchScopeSchema = z.discriminatedUnion('kind', [
 
 const KnowledgeSearchQuerySchema = z
   .string()
-  .refine(
-    (value) => Array.from(value).length <= KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
-    'Knowledge search query is too long.',
-  )
+  .refine(isKnowledgeSearchQueryWithinCodePointLimit, 'Knowledge search query is too long.')
   .transform(normalizeKnowledgeSearchQuery)
+  .refine(isKnowledgeSearchQueryWithinCodePointLimit, 'Knowledge search query is too long.')
   .refine(isKnowledgeSearchQueryEligible, 'Knowledge search query is not eligible.');
 
 export const KnowledgeSearchRequestSchema = z

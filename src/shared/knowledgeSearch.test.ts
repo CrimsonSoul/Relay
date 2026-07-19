@@ -94,6 +94,25 @@ describe('knowledge search contracts', () => {
     ).toBeNull();
   });
 
+  it('bounds both raw and NFKC-normalized request queries without expansion bypasses', () => {
+    const expandingCompatibilityQuery = '\uFDFA'.repeat(8);
+
+    expect([...expandingCompatibilityQuery]).toHaveLength(8);
+    expect([...normalizeKnowledgeSearchQuery(expandingCompatibilityQuery)].length).toBeGreaterThan(
+      KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
+    );
+    expect(
+      normalizeKnowledgeSearchRequest({
+        requestId: 'request1',
+        query: expandingCompatibilityQuery,
+        scope: { kind: 'all' },
+        categoryId: null,
+        documentType: null,
+        limit: 20,
+      }),
+    ).toBeNull();
+  });
+
   it('accepts zero-based page offsets and one-based page and passage numbers', () => {
     expect(
       normalizeKnowledgeSearchChunkRecord({
@@ -124,6 +143,25 @@ describe('knowledge search contracts', () => {
         indexedAt: '2026-02-30T18:00:00.000Z',
       }),
     ).toBeNull();
+  });
+
+  it('rejects unsafe integer chunk coordinates and result offsets', () => {
+    const unsafeInteger = Number.MAX_SAFE_INTEGER + 1;
+
+    expect(
+      normalizeKnowledgeSearchChunkRecord({ ...validChunk, pageNumber: unsafeInteger }),
+    ).toBeNull();
+    expect(
+      normalizeKnowledgeSearchChunkRecord({ ...validChunk, passageNumber: unsafeInteger }),
+    ).toBeNull();
+    expect(
+      normalizeKnowledgeSearchChunkRecord({
+        ...validChunk,
+        normalizedStart: unsafeInteger,
+        normalizedEnd: unsafeInteger + 2,
+      }),
+    ).toBeNull();
+    expect(normalizeKnowledgeSearchResult({ ...validResult, pageIndex: unsafeInteger })).toBeNull();
   });
 
   it('rejects falsy non-string chunk heading metadata', () => {

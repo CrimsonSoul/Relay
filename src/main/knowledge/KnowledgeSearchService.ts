@@ -27,6 +27,7 @@ import { KnowledgeSearchEngine } from './KnowledgeSearchEngine';
 const SEARCH_DEADLINE_MS = 1_000;
 const RECONCILIATION_INTERVAL_MS = 60_000;
 const RECONCILIATION_DEADLINE_MS = 5_000;
+const UNSUBSCRIBE_DEADLINE_MS = 1_000;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 30_000;
 const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = KNOWLEDGE_MAX_PAGES * 16;
@@ -37,7 +38,10 @@ type SearchEnginePort = Pick<
   'replaceSnapshot' | 'upsertDocument' | 'removeDocument' | 'upsertChunk' | 'removeChunk' | 'search'
 >;
 
-type SearchCachePort = Pick<OfflineCache, 'readCollection' | 'writeCollection' | 'updateRecord'>;
+type SearchCachePort = Pick<
+  OfflineCache,
+  'readCollection' | 'writeCollection' | 'updateRecord' | 'hasUsableCacheFor'
+>;
 
 type SearchLimits = {
   maxChunks: number;
@@ -60,7 +64,10 @@ type RealtimeEvent = {
 
 type RealtimeCollection = {
   getFullList(options?: Record<string, unknown>): Promise<unknown[]>;
-  subscribe(topic: string, callback: (event: RealtimeEvent) => void): Promise<() => void>;
+  subscribe(
+    topic: string,
+    callback: (event: RealtimeEvent) => void,
+  ): Promise<() => void | Promise<void>>;
 };
 
 type SearchPocketBase = {
@@ -68,7 +75,10 @@ type SearchPocketBase = {
   realtime?: { onDisconnect?: ((activeSubscriptions: string[]) => void) | null };
 };
 
-type ActiveSearch = { rejectCancellation: () => void };
+type ActiveSearch = { cancelled: boolean; rejectCancellation: () => void };
+type BufferedRealtimeEvent = { kind: 'document' | 'chunk'; event: RealtimeEvent };
+type EventBuffer = { epoch: number; events: BufferedRealtimeEvent[] };
+type Reconciliation = { epoch: number; promise: Promise<void> };
 
 class SearchCancelledError extends Error {
   constructor() {
@@ -100,6 +110,19 @@ function eligibleDocument(document: KnowledgeDocumentRecord): boolean {
     document.searchIndexState === 'ready' &&
     document.searchIndexChecksum === document.checksum &&
     document.searchIndexVersion === KNOWLEDGE_SEARCH_INDEX_VERSION
+  );
+}
+
+function eligibleChunk(
+  chunk: KnowledgeSearchChunkRecord,
+  document: KnowledgeDocumentRecord | undefined,
+): boolean {
+  return (
+    document !== undefined &&
+    eligibleDocument(document) &&
+    chunk.checksum === document.checksum &&
+    chunk.indexVersion === document.searchIndexVersion &&
+    chunk.pageNumber <= document.pageCount
   );
 }
 
@@ -171,11 +194,7 @@ function parseSnapshot(
   );
   const eligibleChunks = [...chunkMap.values()].filter((chunk) => {
     const document = eligibleDocuments.get(chunk.documentId);
-    return (
-      document !== undefined &&
-      chunk.checksum === document.checksum &&
-      chunk.indexVersion === document.searchIndexVersion
-    );
+    return eligibleChunk(chunk, document);
   });
 
   return {
@@ -184,6 +203,43 @@ function parseSnapshot(
     documents: [...eligibleDocuments.values()],
     chunks: eligibleChunks,
   };
+}
+
+function replaySnapshotEvents(
+  snapshot: Snapshot,
+  events: readonly BufferedRealtimeEvent[],
+  limits: SearchLimits,
+): Snapshot | null {
+  const documents = new Map(snapshot.cachedDocuments.map((document) => [document.id, document]));
+  const chunks = new Map(snapshot.cachedChunks.map((chunk) => [chunk.id, chunk]));
+  for (const buffered of events) {
+    if (!applySnapshotEvent(documents, chunks, buffered)) return null;
+  }
+  return parseSnapshot([...documents.values()], [...chunks.values()], limits);
+}
+
+function applySnapshotEvent(
+  documents: Map<string, KnowledgeDocumentRecord>,
+  chunks: Map<string, KnowledgeSearchChunkRecord>,
+  buffered: BufferedRealtimeEvent,
+): boolean {
+  const recordId = safeRecordId(buffered.event.record);
+  if (buffered.event.action === 'delete') {
+    if (recordId === 'unknown' || recordId === 'invalid') return true;
+    if (buffered.kind === 'document') documents.delete(recordId);
+    else chunks.delete(recordId);
+    return true;
+  }
+  if (buffered.kind === 'document') {
+    const document = normalizeKnowledgeDocumentRecord(buffered.event.record);
+    if (!document) return false;
+    documents.set(document.id, document);
+    return true;
+  }
+  const chunk = normalizeKnowledgeSearchChunkRecord(buffered.event.record);
+  if (!chunk) return false;
+  chunks.set(chunk.id, chunk);
+  return true;
 }
 
 function rejectedAfter(
@@ -209,6 +265,7 @@ function rejectedAfter(
 
 export type KnowledgeSearchServiceOptions = {
   cache?: SearchCachePort | null;
+  cacheIdentity?: string | null;
   engine?: SearchEnginePort;
   now?: () => number;
   monotonicNow?: () => number;
@@ -217,29 +274,36 @@ export type KnowledgeSearchServiceOptions = {
 
 export class KnowledgeSearchService {
   private readonly cache: SearchCachePort | null;
+  private readonly cacheIdentity: string | null;
   private readonly engine: SearchEnginePort;
   private readonly now: () => number;
   private readonly monotonicNow: () => number;
   private readonly limits: SearchLimits;
   private readonly documents = new Map<string, KnowledgeDocumentRecord>();
   private readonly chunks = new Map<string, KnowledgeSearchChunkRecord>();
-  private readonly cancelled = new Set<string>();
   private readonly activeSearches = new Map<string, ActiveSearch>();
   private readonly chunkCountByDocument = new Map<string, number>();
   private readonly chunkBytesByDocument = new Map<string, number>();
   private totalChunkBytes = 0;
   private availability: KnowledgeSearchAvailability | null = null;
   private pb: SearchPocketBase | null = null;
-  private unsubscribers: Array<() => void> = [];
-  private previousOnDisconnect: ((subscriptions: string[]) => void) | null = null;
+  private unsubscribers: Array<() => void | Promise<void>> = [];
+  private disconnectOwner: {
+    pb: SearchPocketBase;
+    handler: (subscriptions: string[]) => void;
+    previous: ((subscriptions: string[]) => void) | null;
+  } | null = null;
   private reconciliationTimer: ReturnType<typeof setInterval> | null = null;
-  private reconciliation: Promise<void> | null = null;
+  private reconciliation: Reconciliation | null = null;
+  private eventBuffer: EventBuffer | null = null;
+  private connectionEpoch = 0;
   private failureCount = 0;
   private circuitOpenUntil = 0;
   private disposed = false;
 
   constructor(options: KnowledgeSearchServiceOptions = {}) {
     this.cache = options.cache ?? null;
+    this.cacheIdentity = options.cacheIdentity ?? null;
     this.engine = options.engine ?? new KnowledgeSearchEngine();
     this.now = options.now ?? Date.now;
     this.monotonicNow = options.monotonicNow ?? (() => performance.now());
@@ -260,23 +324,33 @@ export class KnowledgeSearchService {
 
   async connect(pb: PocketBase): Promise<void> {
     if (this.disposed) return;
+    const epoch = ++this.connectionEpoch;
     await this.stopSubscriptions();
-    this.pb = pb as unknown as SearchPocketBase;
+    const nextPb = pb as unknown as SearchPocketBase;
+    if (!this.isCurrent(epoch)) return;
+    this.pb = nextPb;
+    this.eventBuffer = { epoch, events: [] };
     let subscriptionDeadline: ReturnType<typeof rejectedAfter> | null = null;
     try {
-      await this.replaceFromPocketBase(this.pb);
       subscriptionDeadline = rejectedAfter(
         RECONCILIATION_DEADLINE_MS,
         new Error('subscription-timeout'),
       );
-      await Promise.race([this.subscribe(this.pb), subscriptionDeadline.promise]);
+      await Promise.race([this.subscribe(nextPb, epoch), subscriptionDeadline.promise]);
+      subscriptionDeadline.cancel();
+      subscriptionDeadline = null;
+      await this.synchronizeSnapshot(nextPb, epoch);
+      if (!this.isCurrentConnection(epoch, nextPb)) return;
       this.scheduleReconciliation();
       this.availability = 'ready';
       this.resetFailures();
     } catch {
-      await this.stopSubscriptions();
-      if (this.cache) this.hydrateFromCache();
-      this.recordFailure('connect-failed');
+      if (this.isCurrentConnection(epoch, nextPb)) {
+        this.flushBufferedEvents(epoch);
+        await this.stopSubscriptions();
+        if (!this.availability) this.hydrateFromCache();
+        if (this.isCurrent(epoch)) this.recordFailure('connect-failed');
+      }
     } finally {
       subscriptionDeadline?.cancel();
     }
@@ -293,21 +367,27 @@ export class KnowledgeSearchService {
       return { ok: false, requestId: request.requestId, error: 'unavailable' };
     }
 
-    if (this.activeSearches.has(request.requestId)) this.cancel(request.requestId);
+    const previous = this.activeSearches.get(request.requestId);
+    if (previous) {
+      previous.cancelled = true;
+      previous.rejectCancellation();
+    }
     const timeout = rejectedAfter(SEARCH_DEADLINE_MS, new SearchTimeoutError());
     let rejectCancellation: ((error: Error) => void) | null = null;
     const cancellation = new Promise<never>((_resolve, reject) => {
       rejectCancellation = reject;
     });
-    this.activeSearches.set(request.requestId, {
+    const operation: ActiveSearch = {
+      cancelled: false,
       rejectCancellation: () => rejectCancellation?.(new SearchCancelledError()),
-    });
+    };
+    this.activeSearches.set(request.requestId, operation);
 
     try {
       const result = await Promise.race([
         this.engine.search(request, {
           deadline: this.monotonicNow() + SEARCH_DEADLINE_MS,
-          isCancelled: () => this.cancelled.has(request.requestId),
+          isCancelled: () => operation.cancelled,
         }),
         timeout.promise,
         cancellation,
@@ -337,24 +417,27 @@ export class KnowledgeSearchService {
       return { ok: false, requestId: request.requestId, error: 'unavailable' };
     } finally {
       timeout.cancel();
-      this.cancelled.delete(request.requestId);
-      this.activeSearches.delete(request.requestId);
+      if (this.activeSearches.get(request.requestId) === operation) {
+        this.activeSearches.delete(request.requestId);
+      }
     }
   }
 
   cancel(requestId: string): void {
     const active = this.activeSearches.get(requestId);
     if (!active) return;
-    this.cancelled.add(requestId);
+    active.cancelled = true;
     active.rejectCancellation();
   }
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.connectionEpoch += 1;
     this.availability = null;
-    for (const [requestId, active] of this.activeSearches) {
-      this.cancelled.add(requestId);
+    this.eventBuffer = null;
+    for (const active of this.activeSearches.values()) {
+      active.cancelled = true;
       active.rejectCancellation();
     }
     await this.stopSubscriptions();
@@ -367,8 +450,9 @@ export class KnowledgeSearchService {
   }
 
   private hydrateFromCache(): void {
-    if (!this.cache) return;
+    if (!this.cache || !this.cacheIdentity) return;
     try {
+      if (!this.cache.hasUsableCacheFor(this.cacheIdentity)) return;
       const snapshot = parseSnapshot(
         this.cache.readCollection(KNOWLEDGE_DOCUMENTS_COLLECTION),
         this.cache.readCollection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION),
@@ -382,7 +466,7 @@ export class KnowledgeSearchService {
     }
   }
 
-  private async replaceFromPocketBase(pb: SearchPocketBase): Promise<void> {
+  private async synchronizeSnapshot(pb: SearchPocketBase, epoch: number): Promise<void> {
     const fetch = Promise.all([
       pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getFullList({ requestKey: null }),
       pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
@@ -390,8 +474,16 @@ export class KnowledgeSearchService {
     const deadline = rejectedAfter(RECONCILIATION_DEADLINE_MS, new Error('refresh-timeout'));
     try {
       const [rawDocuments, rawChunks] = await Promise.race([fetch, deadline.promise]);
-      const snapshot = parseSnapshot(rawDocuments, rawChunks, this.limits);
-      if (!snapshot) throw new Error('invalid-snapshot');
+      if (!this.isCurrentConnection(epoch, pb)) return;
+      const initialSnapshot = parseSnapshot(rawDocuments, rawChunks, this.limits);
+      const buffer = this.eventBuffer;
+      if (!initialSnapshot || !buffer || buffer.epoch !== epoch) {
+        throw new Error('invalid-snapshot');
+      }
+      const snapshot = replaySnapshotEvents(initialSnapshot, buffer.events, this.limits);
+      if (!snapshot) throw new Error('invalid-realtime-replay');
+      if (!this.isCurrentConnection(epoch, pb)) return;
+      this.eventBuffer = null;
       this.publishSnapshot(snapshot);
       this.writeSnapshotToCache(snapshot);
     } finally {
@@ -411,8 +503,9 @@ export class KnowledgeSearchService {
   }
 
   private writeSnapshotToCache(snapshot: Snapshot): void {
-    if (!this.cache) return;
+    if (!this.cache || !this.cacheIdentity) return;
     try {
+      if (!this.cache.hasUsableCacheFor(this.cacheIdentity)) return;
       this.cache.writeCollection(
         KNOWLEDGE_DOCUMENTS_COLLECTION,
         snapshot.cachedDocuments as unknown as Record<string, unknown>[],
@@ -428,30 +521,59 @@ export class KnowledgeSearchService {
     }
   }
 
-  private async subscribe(pb: SearchPocketBase): Promise<void> {
+  private async subscribe(pb: SearchPocketBase, epoch: number): Promise<void> {
     const documentUnsubscribe = await pb
       .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
-      .subscribe('*', (event) => this.handleDocumentEvent(event));
-    if (this.disposed || this.pb !== pb) {
-      await documentUnsubscribe();
+      .subscribe('*', (event) => this.routeRealtimeEvent('document', event, epoch));
+    if (!this.isCurrentConnection(epoch, pb)) {
+      void this.invokeUnsubscriber(documentUnsubscribe);
       return;
     }
     this.unsubscribers.push(documentUnsubscribe);
     const chunkUnsubscribe = await pb
       .collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION)
-      .subscribe('*', (event) => this.handleChunkEvent(event));
-    if (this.disposed || this.pb !== pb) {
-      await chunkUnsubscribe();
+      .subscribe('*', (event) => this.routeRealtimeEvent('chunk', event, epoch));
+    if (!this.isCurrentConnection(epoch, pb)) {
+      void this.invokeUnsubscriber(chunkUnsubscribe);
       return;
     }
     this.unsubscribers.push(chunkUnsubscribe);
 
     if (pb.realtime) {
-      this.previousOnDisconnect = pb.realtime.onDisconnect ?? null;
-      pb.realtime.onDisconnect = (subscriptions) => {
-        this.previousOnDisconnect?.(subscriptions);
-        if (subscriptions.length > 0) void this.reconcile();
+      const previous = pb.realtime.onDisconnect ?? null;
+      const handler = (subscriptions: string[]) => {
+        previous?.(subscriptions);
+        if (subscriptions.length > 0 && this.isCurrentConnection(epoch, pb)) {
+          void this.reconcile();
+        }
       };
+      this.disconnectOwner = { pb, handler, previous };
+      pb.realtime.onDisconnect = handler;
+    }
+  }
+
+  private routeRealtimeEvent(
+    kind: BufferedRealtimeEvent['kind'],
+    event: RealtimeEvent,
+    epoch: number,
+  ): void {
+    if (!this.isCurrent(epoch)) return;
+    if (this.eventBuffer?.epoch === epoch) {
+      this.eventBuffer.events.push({ kind, event });
+      return;
+    }
+    if (kind === 'document') this.handleDocumentEvent(event);
+    else this.handleChunkEvent(event);
+  }
+
+  private flushBufferedEvents(epoch: number): void {
+    const buffer = this.eventBuffer;
+    if (!buffer || buffer.epoch !== epoch) return;
+    this.eventBuffer = null;
+    for (const buffered of buffer.events) {
+      if (!this.isCurrent(epoch)) return;
+      if (buffered.kind === 'document') this.handleDocumentEvent(buffered.event);
+      else this.handleChunkEvent(buffered.event);
     }
   }
 
@@ -485,16 +607,24 @@ export class KnowledgeSearchService {
       return;
     }
     this.engine.upsertDocument(document);
-    if (!previous || !eligibleDocument(previous) || previous.checksum !== document.checksum) {
-      for (const chunk of this.chunks.values()) {
-        if (
-          chunk.documentId === document.id &&
-          chunk.checksum === document.checksum &&
-          chunk.indexVersion === document.searchIndexVersion
-        ) {
-          this.engine.upsertChunk(chunk);
-        }
-      }
+    this.refreshDocumentChunks(document, previous);
+  }
+
+  private refreshDocumentChunks(
+    document: KnowledgeDocumentRecord,
+    previous: KnowledgeDocumentRecord | undefined,
+  ): void {
+    const eligibilityChanged =
+      !previous ||
+      !eligibleDocument(previous) ||
+      previous.checksum !== document.checksum ||
+      previous.searchIndexVersion !== document.searchIndexVersion ||
+      previous.pageCount !== document.pageCount;
+    if (!eligibilityChanged) return;
+    for (const chunk of this.chunks.values()) {
+      if (chunk.documentId !== document.id) continue;
+      if (eligibleChunk(chunk, document)) this.engine.upsertChunk(chunk);
+      else this.engine.removeChunk(chunk.id);
     }
   }
 
@@ -532,12 +662,7 @@ export class KnowledgeSearchService {
       chunk as unknown as Record<string, unknown>,
     );
     const document = this.documents.get(chunk.documentId);
-    if (
-      document &&
-      eligibleDocument(document) &&
-      chunk.checksum === document.checksum &&
-      chunk.indexVersion === document.searchIndexVersion
-    ) {
+    if (eligibleChunk(chunk, document)) {
       this.engine.upsertChunk(chunk);
     } else {
       this.engine.removeChunk(chunk.id);
@@ -606,8 +731,9 @@ export class KnowledgeSearchService {
     action: 'create' | 'update' | 'delete',
     record: Record<string, unknown>,
   ): void {
-    if (!this.cache) return;
+    if (!this.cache || !this.cacheIdentity) return;
     try {
+      if (!this.cache.hasUsableCacheFor(this.cacheIdentity)) return;
       this.cache.updateRecord(collection, action, record);
     } catch {
       knowledgeLogger().warn('Wiki search cache update failed', { reason: 'cache-update-failed' });
@@ -622,39 +748,65 @@ export class KnowledgeSearchService {
 
   private reconcile(): Promise<void> {
     if (this.disposed || !this.pb) return Promise.resolve();
-    this.reconciliation ??= this.replaceFromPocketBase(this.pb)
+    const pb = this.pb;
+    const epoch = this.connectionEpoch;
+    if (this.reconciliation?.epoch === epoch) return this.reconciliation.promise;
+    this.eventBuffer = { epoch, events: [] };
+    const promise = this.synchronizeSnapshot(pb, epoch)
       .then(() => {
+        if (!this.isCurrentConnection(epoch, pb)) return;
         this.availability = 'ready';
         this.resetFailures();
       })
-      .catch(() => this.recordFailure('reconciliation-failed'))
+      .catch(() => {
+        if (!this.isCurrentConnection(epoch, pb)) return;
+        this.flushBufferedEvents(epoch);
+        this.recordFailure('reconciliation-failed');
+      })
       .finally(() => {
-        this.reconciliation = null;
+        if (this.reconciliation?.epoch === epoch) this.reconciliation = null;
       });
-    return this.reconciliation;
+    this.reconciliation = { epoch, promise };
+    return promise;
   }
 
   private async stopSubscriptions(): Promise<void> {
     if (this.reconciliationTimer) clearInterval(this.reconciliationTimer);
     this.reconciliationTimer = null;
     const pb = this.pb;
-    if (pb?.realtime && pb.realtime.onDisconnect) {
-      pb.realtime.onDisconnect = this.previousOnDisconnect;
+    const disconnectOwner = this.disconnectOwner;
+    if (
+      disconnectOwner?.pb.realtime &&
+      disconnectOwner.pb.realtime.onDisconnect === disconnectOwner.handler
+    ) {
+      disconnectOwner.pb.realtime.onDisconnect = disconnectOwner.previous;
     }
-    this.previousOnDisconnect = null;
+    this.disconnectOwner = null;
+    if (this.eventBuffer?.epoch === this.connectionEpoch) this.eventBuffer = null;
     const unsubscribers = this.unsubscribers.splice(0);
-    await Promise.all(
-      unsubscribers.map(async (unsubscribe) => {
-        try {
-          await unsubscribe();
-        } catch {
-          knowledgeLogger().warn('Wiki search unsubscribe failed', {
-            reason: 'unsubscribe-failed',
-          });
-        }
-      }),
-    );
-    this.pb = null;
+    if (this.pb === pb) this.pb = null;
+    await Promise.all(unsubscribers.map((unsubscribe) => this.invokeUnsubscriber(unsubscribe)));
+  }
+
+  private async invokeUnsubscriber(unsubscribe: () => void | Promise<void>): Promise<void> {
+    const deadline = rejectedAfter(UNSUBSCRIBE_DEADLINE_MS, new Error('unsubscribe-timeout'));
+    try {
+      await Promise.race([Promise.resolve().then(unsubscribe), deadline.promise]);
+    } catch {
+      knowledgeLogger().warn('Wiki search unsubscribe failed', {
+        reason: 'unsubscribe-failed',
+      });
+    } finally {
+      deadline.cancel();
+    }
+  }
+
+  private isCurrent(epoch: number): boolean {
+    return !this.disposed && this.connectionEpoch === epoch;
+  }
+
+  private isCurrentConnection(epoch: number, pb: SearchPocketBase): boolean {
+    return this.isCurrent(epoch) && this.pb === pb;
   }
 
   private circuitOpen(): boolean {

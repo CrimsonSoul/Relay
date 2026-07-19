@@ -140,22 +140,30 @@ export function isKnowledgeSearchTimestamp(value: unknown): value is string {
   );
 }
 
-function codePointLength(value: string): number {
-  return Array.from(value).length;
+function hasAtMostCodePoints(value: string, maximum: number): boolean {
+  let count = 0;
+  const iterator = value[Symbol.iterator]();
+  while (!iterator.next().done) {
+    count += 1;
+    if (count > maximum) return false;
+  }
+  return true;
+}
+
+export function isKnowledgeSearchQueryWithinCodePointLimit(value: string): boolean {
+  return hasAtMostCodePoints(value, KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS);
 }
 
 function boundedCodePointString(value: unknown, maximum: number): value is string {
-  return (
-    typeof value === 'string' && codePointLength(value) > 0 && codePointLength(value) <= maximum
-  );
+  return typeof value === 'string' && value.length > 0 && hasAtMostCodePoints(value, maximum);
 }
 
 function isPositiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && (value as number) > 0;
+  return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
-  return Number.isInteger(value) && (value as number) >= 0;
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 export function normalizeKnowledgeSearchTextWithRanges(value: string): {
@@ -260,12 +268,17 @@ export function normalizeKnowledgeSearchChunkRecord(
 }
 
 export function normalizeKnowledgeSearchRequest(value: unknown): KnowledgeSearchRequest | null {
-  if (!isRecord(value) || !boundedIdentifier(value.requestId) || typeof value.query !== 'string') {
+  if (
+    !isRecord(value) ||
+    !boundedIdentifier(value.requestId) ||
+    typeof value.query !== 'string' ||
+    !isKnowledgeSearchQueryWithinCodePointLimit(value.query)
+  ) {
     return null;
   }
   const query = normalizeKnowledgeSearchQuery(value.query);
   if (
-    codePointLength(value.query) > KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS ||
+    !isKnowledgeSearchQueryWithinCodePointLimit(query) ||
     !isKnowledgeSearchQueryEligible(query) ||
     !isRecord(value.scope) ||
     !isPositiveInteger(value.limit) ||
@@ -363,8 +376,8 @@ export function normalizeKnowledgeSearchResponse(value: unknown): KnowledgeSearc
   if (
     !SEARCH_AVAILABILITY.includes(value.availability as KnowledgeSearchAvailability) ||
     typeof value.normalizedQuery !== 'string' ||
+    !isKnowledgeSearchQueryWithinCodePointLimit(value.normalizedQuery) ||
     value.normalizedQuery !== normalizeKnowledgeSearchQuery(value.normalizedQuery) ||
-    codePointLength(value.normalizedQuery) > KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS ||
     !Array.isArray(value.results) ||
     value.results.length > KNOWLEDGE_SEARCH_DOCUMENT_LIMIT
   ) {

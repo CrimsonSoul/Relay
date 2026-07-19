@@ -44,8 +44,17 @@ function createService() {
   return service;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe('knowledge search runtime', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
     mocks.serviceInstances.length = 0;
@@ -78,12 +87,17 @@ describe('knowledge search runtime', () => {
     expect(service.start).toHaveBeenCalledWith(null);
     expect(mocks.authWithPassword).toHaveBeenCalledWith(RELAY_APP_USER_EMAIL, 'client-secret', {
       requestKey: null,
+      signal: expect.any(AbortSignal),
     });
     expect(service.start.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.authWithPassword.mock.invocationCallOrder[0] as number,
     );
     expect(service.connect).toHaveBeenCalledWith(expect.anything());
     expect(mocks.setKnowledgeSearchService).toHaveBeenCalledWith(service);
+    expect(mocks.KnowledgeSearchService).toHaveBeenCalledWith({
+      cache: { kind: 'cache' },
+      cacheIdentity: 'https://relay.example.com',
+    });
   });
 
   it('reuses the existing superuser PocketBase client in server mode', async () => {
@@ -94,6 +108,7 @@ describe('knowledge search runtime', () => {
 
     expect(mocks.serviceInstances[0]!.start).toHaveBeenCalledWith({ kind: 'server-client' });
     expect(mocks.PocketBase).not.toHaveBeenCalled();
+    expect(mocks.KnowledgeSearchService).toHaveBeenCalledWith({ cache: null });
   });
 
   it.each(['startup', 'authentication', 'connection'] as const)(
@@ -155,5 +170,132 @@ describe('knowledge search runtime', () => {
     await expect(stopKnowledgeSearchRuntime()).resolves.toBeUndefined();
     expect(mocks.setKnowledgeSearchService).toHaveBeenCalledWith(null);
     expect(mocks.warn).toHaveBeenCalled();
+  });
+
+  it('invalidates ownership synchronously when restart or stop is requested', async () => {
+    const previous = createService();
+    mocks.getKnowledgeSearchService.mockReturnValue(previous);
+    mocks.getAppConfig.mockReturnValue(null);
+    const { restartKnowledgeSearchRuntime, stopKnowledgeSearchRuntime } =
+      await import('./knowledgeSearchRuntime');
+
+    const restart = restartKnowledgeSearchRuntime();
+    expect(mocks.setKnowledgeSearchService).toHaveBeenCalledWith(null);
+    expect(previous.dispose).toHaveBeenCalledOnce();
+    await restart;
+
+    mocks.setKnowledgeSearchService.mockClear();
+    const stop = stopKnowledgeSearchRuntime();
+    expect(mocks.setKnowledgeSearchService).toHaveBeenCalledWith(null);
+    await stop;
+  });
+
+  it('bounds hung authentication so stop and a later restart are not pinned', async () => {
+    vi.useFakeTimers();
+    let authenticationSignal: AbortSignal | undefined;
+    mocks.getAppConfig.mockReturnValue({
+      load: () => ({
+        mode: 'client',
+        serverUrl: 'https://relay.example.com',
+        secret: 'client-secret',
+      }),
+    });
+    mocks.authWithPassword.mockImplementationOnce(
+      (_email: string, _secret: string, options: { signal: AbortSignal }) => {
+        authenticationSignal = options.signal;
+        return new Promise(() => undefined);
+      },
+    );
+    const { restartKnowledgeSearchRuntime, stopKnowledgeSearchRuntime } =
+      await import('./knowledgeSearchRuntime');
+
+    const restart = restartKnowledgeSearchRuntime();
+    await vi.waitFor(() => expect(mocks.authWithPassword).toHaveBeenCalledOnce());
+    const stop = stopKnowledgeSearchRuntime();
+    expect(mocks.setKnowledgeSearchService).toHaveBeenLastCalledWith(null);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await expect(restart).resolves.toBeUndefined();
+    await expect(stop).resolves.toBeUndefined();
+    expect(authenticationSignal?.aborted).toBe(true);
+  });
+
+  it('contains a throwing config load inside the best-effort restart boundary', async () => {
+    mocks.getAppConfig.mockReturnValue({
+      load: () => {
+        throw new Error('config unavailable');
+      },
+    });
+    const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
+
+    await expect(restartKnowledgeSearchRuntime()).resolves.toBeUndefined();
+
+    expect(mocks.warn).toHaveBeenCalledWith(
+      'Enhanced Wiki search is unavailable',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it('bounds a hung service disposal so reconfiguration can continue', async () => {
+    vi.useFakeTimers();
+    const previous = createService();
+    previous.dispose.mockImplementationOnce(() => new Promise(() => undefined));
+    mocks.getKnowledgeSearchService.mockReturnValue(previous);
+    mocks.getAppConfig.mockReturnValue(null);
+    const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
+
+    const restart = restartKnowledgeSearchRuntime();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await expect(restart).resolves.toBeUndefined();
+  });
+
+  it('does not restore an older restart generation after a newer request owns the lifecycle', async () => {
+    const firstStart = deferred<void>();
+    const firstService = createService();
+    firstService.start.mockImplementationOnce(() => firstStart.promise);
+    const secondService = createService();
+    mocks.KnowledgeSearchService.mockImplementationOnce(function FirstKnowledgeSearchService() {
+      return firstService;
+    }).mockImplementationOnce(function SecondKnowledgeSearchService() {
+      return secondService;
+    });
+    mocks.getAppConfig.mockReturnValue({ load: () => ({ mode: 'server' }) });
+    const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
+
+    const firstRestart = restartKnowledgeSearchRuntime();
+    await vi.waitFor(() => expect(firstService.start).toHaveBeenCalledOnce());
+    const secondRestart = restartKnowledgeSearchRuntime();
+    firstStart.resolve();
+    await Promise.all([firstRestart, secondRestart]);
+
+    expect(mocks.setKnowledgeSearchService).toHaveBeenLastCalledWith(secondService);
+  });
+
+  it('invokes disposal immediately to unblock a service owned by an earlier lifecycle turn', async () => {
+    const firstStart = deferred<void>();
+    const firstService = createService();
+    firstService.start.mockImplementationOnce(() => firstStart.promise);
+    firstService.dispose.mockImplementationOnce(() => {
+      firstStart.resolve();
+      return Promise.resolve();
+    });
+    const secondService = createService();
+    mocks.KnowledgeSearchService.mockImplementationOnce(function FirstKnowledgeSearchService() {
+      return firstService;
+    }).mockImplementationOnce(function SecondKnowledgeSearchService() {
+      return secondService;
+    });
+    mocks.getAppConfig.mockReturnValue({ load: () => ({ mode: 'server' }) });
+    const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
+
+    const firstRestart = restartKnowledgeSearchRuntime();
+    await vi.waitFor(() => expect(firstService.start).toHaveBeenCalledOnce());
+    mocks.getKnowledgeSearchService.mockReturnValue(firstService);
+    const secondRestart = restartKnowledgeSearchRuntime();
+
+    expect(firstService.dispose).toHaveBeenCalledOnce();
+    await Promise.all([firstRestart, secondRestart]);
+    expect(mocks.setKnowledgeSearchService).toHaveBeenLastCalledWith(secondService);
   });
 });
