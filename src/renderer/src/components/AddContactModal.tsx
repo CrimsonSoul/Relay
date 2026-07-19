@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Modal } from './Modal';
 import { Contact } from '@shared/ipc';
 import { Input } from './Input';
@@ -21,6 +21,7 @@ export const AddContactModal: React.FC<Props> = ({
   initialEmail = '',
   editContact,
 }) => {
+  const formId = useId();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -66,8 +67,25 @@ export const AddContactModal: React.FC<Props> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={editContact ? 'Edit Contact' : 'Add Contact'}>
-      <form onSubmit={handleSubmit}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={editContact ? 'Edit Contact' : 'Add Contact'}
+      variant="standard"
+      footer={
+        <>
+          <TactileButton type="button" onClick={onClose}>
+            Cancel
+          </TactileButton>
+          <TactileButton type="submit" form={formId} loading={isSubmitting} variant="primary">
+            {isSubmitting && 'Saving...'}
+            {!isSubmitting && editContact && 'Update Contact'}
+            {!isSubmitting && !editContact && 'Create Contact'}
+          </TactileButton>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} className="modal-form-body">
         <div className="add-contact-field">
           <Input
             label="Full Name"
@@ -112,17 +130,6 @@ export const AddContactModal: React.FC<Props> = ({
             onBlur={handlePhoneBlur}
             placeholder="e.g. (555) 123-4567"
           />
-        </div>
-
-        <div className="add-contact-actions">
-          <TactileButton type="button" onClick={onClose}>
-            Cancel
-          </TactileButton>
-          <TactileButton type="submit" disabled={isSubmitting} variant="primary">
-            {isSubmitting && 'Saving...'}
-            {!isSubmitting && editContact && 'Update Contact'}
-            {!isSubmitting && !editContact && 'Create Contact'}
-          </TactileButton>
         </div>
       </form>
     </Modal>

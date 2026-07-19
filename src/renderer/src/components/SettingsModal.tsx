@@ -100,15 +100,15 @@ function SettingsShell({
   onSectionChange,
   children,
 }: Readonly<SettingsShellProps>) {
-  if (!isOpen) return null;
-
   if (presentation === 'modal') {
     return (
-      <Modal isOpen onClose={onClose} title="Settings" width="420px">
+      <Modal isOpen={isOpen} onClose={onClose} title="Settings" variant="standard">
         {children}
       </Modal>
     );
   }
+
+  if (!isOpen) return null;
 
   return (
     <section className="settings-page" aria-labelledby="settings-page-title">

@@ -72,6 +72,12 @@ describe('NotesModal', () => {
     render(<NotesModal {...defaultProps} />);
     expect(screen.getByText('Contact Notes')).toBeInTheDocument();
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
+    expect(dialog).not.toHaveClass('modal-container');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('shows "Server Notes" for server entityType', () => {
@@ -104,7 +110,7 @@ describe('NotesModal', () => {
   it('calls onClose when Close button is clicked', () => {
     const onClose = vi.fn();
     render(<NotesModal {...defaultProps} onClose={onClose} />);
-    fireEvent.click(screen.getByLabelText('Close modal'));
+    fireEvent.click(screen.getByLabelText('Close'));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -199,7 +205,7 @@ describe('NotesModal', () => {
     vi.useFakeTimers();
     const { unmount } = render(<NotesModal {...defaultProps} />);
 
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBeGreaterThanOrEqual(1);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });

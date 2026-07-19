@@ -13,6 +13,11 @@ describe('ShortcutsModal', () => {
     render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
+    expect(dialog).not.toHaveClass('shortcuts-modal');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
     expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
   });
 

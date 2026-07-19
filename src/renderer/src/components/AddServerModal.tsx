@@ -85,7 +85,25 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={serverToEdit ? 'Edit Server' : 'Add Server'}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={serverToEdit ? 'Edit Server' : 'Add Server'}
+      variant="standard"
+      footer={
+        <>
+          <TactileButton onClick={onClose}>Cancel</TactileButton>
+          <TactileButton
+            onClick={handleSubmit}
+            loading={isSubmitting}
+            disabled={!formData.name}
+            variant="primary"
+          >
+            {isSubmitting ? 'Saving...' : 'Save Server'}
+          </TactileButton>
+        </>
+      }
+    >
       <div className="add-server-form">
         <Input
           label="Server Name (Required)"
@@ -143,11 +161,6 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
         />
 
         {submitError && <div className="add-server-error">{submitError}</div>}
-        <div className="add-server-actions">
-          <TactileButton onClick={handleSubmit} disabled={isSubmitting || !formData.name}>
-            {isSubmitting ? 'Saving...' : 'Save Server'}
-          </TactileButton>
-        </div>
       </div>
     </Modal>
   );

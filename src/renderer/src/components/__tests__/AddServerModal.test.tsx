@@ -25,6 +25,11 @@ describe('AddServerModal', () => {
   it('renders with title Add Server when no serverToEdit', () => {
     render(<AddServerModal isOpen={true} onClose={vi.fn()} />);
     expect(screen.getByText('Add Server')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('renders with title Edit Server when serverToEdit provided', () => {

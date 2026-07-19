@@ -77,23 +77,14 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
-      width="400px"
+      variant="confirmation"
       dismissible={!isConfirming}
       dialogProps={{
         'aria-busy': isConfirming,
         'aria-describedby': confirmationError ? `${messageId} ${errorId}` : messageId,
       }}
-    >
-      <div className="confirm-modal-body">
-        <div id={messageId} className="confirm-modal-message">
-          {message}
-        </div>
-        {confirmationError && (
-          <div id={errorId} className="confirm-modal-error" role="alert" aria-live="assertive">
-            {confirmationError}
-          </div>
-        )}
-        <div className="confirm-modal-actions">
+      footer={
+        <>
           <TactileButton variant="secondary" onClick={onClose} disabled={isConfirming}>
             {cancelLabel}
           </TactileButton>
@@ -104,7 +95,18 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           >
             {confirmLabel}
           </TactileButton>
+        </>
+      }
+    >
+      <div className="confirm-modal-body">
+        <div id={messageId} className="confirm-modal-message">
+          {message}
         </div>
+        {confirmationError && (
+          <div id={errorId} className="confirm-modal-error" role="alert" aria-live="assertive">
+            {confirmationError}
+          </div>
+        )}
       </div>
     </Modal>
   );

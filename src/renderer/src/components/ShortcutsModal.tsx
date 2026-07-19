@@ -45,82 +45,28 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      bare
-      overlayClassName="shortcuts-modal-overlay"
-      dialogClassName="shortcuts-modal"
-      dialogProps={{
-        'aria-labelledby': 'shortcuts-modal-title',
-      }}
+      title="Keyboard Shortcuts"
+      variant="standard"
+      bodyClassName="shortcuts-modal-content"
+      footer={
+        <span className="shortcuts-modal-hint">
+          Press <kbd className="shortcuts-modal-kbd">Esc</kbd> to close
+        </span>
+      }
     >
-      <div className="shortcuts-modal-header">
-        <div className="shortcuts-modal-header-left">
-          <div className="shortcuts-modal-icon-box">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
-              <path d="M6 8h.001" />
-              <path d="M10 8h.001" />
-              <path d="M14 8h.001" />
-              <path d="M18 8h.001" />
-              <path d="M8 12h.001" />
-              <path d="M12 12h.001" />
-              <path d="M16 12h.001" />
-              <path d="M7 16h10" />
-            </svg>
+      {shortcuts.map((section) => (
+        <section key={section.category} className="shortcuts-modal-category">
+          <h3 className="shortcuts-modal-category-title">{section.category}</h3>
+          <div className="shortcuts-modal-items">
+            {section.items.map((item) => (
+              <div key={item.keys} className="shortcuts-modal-item">
+                <span className="shortcuts-modal-item-desc">{item.description}</span>
+                <kbd className="shortcuts-modal-key">{item.keys}</kbd>
+              </div>
+            ))}
           </div>
-          <div id="shortcuts-modal-title" className="shortcuts-modal-title">
-            Keyboard Shortcuts
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="shortcuts-modal-close-btn"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="shortcuts-modal-content">
-        {shortcuts.map((section) => (
-          <div key={section.category} className="shortcuts-modal-category">
-            <div className="shortcuts-modal-category-title">{section.category}</div>
-            <div className="shortcuts-modal-items">
-              {section.items.map((item) => (
-                <div key={item.keys} className="shortcuts-modal-item">
-                  <span className="shortcuts-modal-item-desc">{item.description}</span>
-                  <span className="shortcuts-modal-key">{item.keys}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="shortcuts-modal-footer">
-        Press <kbd className="shortcuts-modal-kbd">Esc</kbd> to close
-      </div>
+        </section>
+      ))}
     </Modal>
   );
 };

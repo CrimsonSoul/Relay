@@ -30,6 +30,11 @@ describe('ConfirmModal', () => {
     );
     expect(screen.getByText('Delete item')).toBeInTheDocument();
     expect(screen.getByText('Are you sure you want to delete this?')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'confirmation');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('shows default button labels', () => {
@@ -121,6 +126,7 @@ describe('ConfirmModal', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Deactivate' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
     expect(screen.queryByLabelText('Close')).toBeNull();
     expect(screen.queryByLabelText('Close modal backdrop')).toBeNull();
 

@@ -9,15 +9,17 @@ vi.mock('../Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
+    title?: React.ReactNode;
+    variant?: string;
   }) =>
     isOpen
       ? React.createElement(
           'div',
-          { role: 'dialog' },
+          { role: 'dialog', 'data-variant': variant },
           title && React.createElement('h2', null, title),
           children,
         )
@@ -108,7 +110,7 @@ describe('SettingsModal', () => {
 
   it('renders modal when open', () => {
     render(<SettingsModal {...defaultProps} />);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
   });
 
   it('renders focused sections when used as the Settings page', () => {
