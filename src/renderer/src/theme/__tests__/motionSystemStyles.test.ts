@@ -11,6 +11,10 @@ const componentsCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
   'utf8',
 );
+const modalsCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/styles/modals.css'),
+  'utf8',
+);
 
 function cssVar(name: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -78,5 +82,21 @@ describe('Operational silk motion system', () => {
     expect(componentsCss).toMatch(
       /\.group-selector-checkbox\s*{[^}]*background-color var\(--transition-fast\)/,
     );
+  });
+
+  it('uses the shared square modal geometry and state-driven layer motion', () => {
+    expect(modalsCss).toContain(".modal-dialog-generic[data-variant='confirmation']");
+    expect(modalsCss).toContain('--modal-width: 400px;');
+    expect(modalsCss).toContain('--modal-width: 560px;');
+    expect(modalsCss).toContain('--modal-width: 820px;');
+    expect(modalsCss).toContain('--modal-width: 960px;');
+    expect(modalsCss).toMatch(/\.modal-dialog-generic\s*{[^}]*border-radius:\s*2px/);
+    expect(modalsCss).toMatch(/\.modal-dialog-generic\s*{[^}]*box-shadow:\s*var\(--shadow-sm\)/);
+    expect(modalsCss).toMatch(
+      /\.modal-dialog-generic\s*{[^}]*font-family:\s*var\(--font-family-base\)/,
+    );
+    expect(modalsCss).toContain('translateY(10px) scale(0.985)');
+    expect(modalsCss).not.toContain('.modal-accent-line');
+    expect(modalsCss).not.toContain('backdrop-filter');
   });
 });
