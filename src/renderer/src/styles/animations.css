@@ -1,18 +1,4 @@
 /* Animations - Smooth Motion Design */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.15s ease-out forwards;
-}
-
 /* Panel entrance — fade + slight rise (tab switches) */
 @keyframes relay-panel-in {
   from {

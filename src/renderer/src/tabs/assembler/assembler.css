@@ -391,7 +391,7 @@
   margin: 0 auto;
   padding: 32px;
   color: var(--color-text-tertiary);
-  animation: fadeIn 0.2s ease-out;
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
 .composition-list-empty-icon {

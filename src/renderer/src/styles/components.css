@@ -288,7 +288,7 @@ input.tactile-input.tactile-input:focus {
   font-style: italic;
   flex-direction: column;
   gap: 8px;
-  animation: fadeIn 0.2s ease-out;
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
 .tab-empty-state-icon {
@@ -1822,7 +1822,7 @@ body.modal-open {
 }
 
 .privileged-access__code {
-  font-family: var(--font-mono);
+  font-family: var(--font-family-mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -1933,7 +1933,7 @@ body.modal-open {
 .privileged-access__challenge dd {
   margin: var(--space-1) 0 0;
   color: var(--color-text-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-family-mono);
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
@@ -2080,7 +2080,7 @@ body.modal-open {
 .administration-panel__metric {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
+  font-family: var(--font-family-mono);
   font-size: var(--text-xs);
 }
 

@@ -23,6 +23,9 @@ const knowledgeWorkspaceCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledgeWorkspace.css'),
   'utf8',
 );
+const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
+  dependencies: Record<string, string>;
+};
 
 function cssVar(name: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -108,6 +111,24 @@ describe('Operational silk motion system', () => {
   it('does not stagger operational lists', () => {
     expect(animationCss).not.toContain('.stagger-children');
     expect(animationCss).not.toContain('.animate-card-entrance');
+  });
+
+  it('uses canonical font tokens and removes superseded motion helpers', () => {
+    const rendererCss = [themeCss, animationCss, componentsCss, modalsCss].join('\n');
+    expect(rendererCss).not.toContain('var(--font-mono)');
+    expect(modalsCss).toMatch(
+      /\.modal-dialog-generic\s*{[^}]*font-family:\s*var\(--font-family-base\)/,
+    );
+    expect(animationCss).not.toContain('.animate-fade-in');
+    expect(animationCss).not.toContain('.animate-scale-in');
+    expect(animationCss).not.toContain('@keyframes scaleIn');
+    expect(animationCss).not.toContain('@keyframes cardEntrance');
+  });
+
+  it('installs one UI family and one technical family', () => {
+    expect(packageJson.dependencies).not.toHaveProperty('@fontsource/ibm-plex-mono');
+    expect(packageJson.dependencies).toHaveProperty('@fontsource/ibm-plex-sans');
+    expect(packageJson.dependencies).toHaveProperty('@fontsource/jetbrains-mono');
   });
 
   it('uses the shared square modal geometry and state-driven layer motion', () => {

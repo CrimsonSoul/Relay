@@ -168,6 +168,13 @@
     transform var(--motion-duration-layer-exit) var(--motion-ease-out);
 }
 
+.modal-title-generic,
+.modal-subtitle-generic,
+.modal-body-generic,
+.modal-footer-generic {
+  font-family: var(--font-family-base);
+}
+
 .modal-dialog-generic[data-variant='confirmation'] {
   --modal-width: 400px;
 }
