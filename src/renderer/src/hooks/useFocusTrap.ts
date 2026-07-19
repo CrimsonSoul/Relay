@@ -3,7 +3,15 @@ import { useEffect, useRef, useCallback } from 'react';
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: boolean = true) {
+type FocusTrapOptions = Readonly<{
+  restoreOnDeactivate?: boolean;
+  restoreWhen?: boolean;
+}>;
+
+export function useFocusTrap<T extends HTMLElement = HTMLElement>(
+  isActive: boolean = true,
+  { restoreOnDeactivate = true, restoreWhen = false }: FocusTrapOptions = {},
+) {
   const containerRef = useRef<T>(null);
   const previousActiveElement = useRef<Element | null>(null);
   const focusRestored = useRef(false);
@@ -11,16 +19,23 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
   // Store/restore focus as the trap toggles, not only on mount/unmount.
   useEffect(() => {
     if (isActive) {
-      previousActiveElement.current = document.activeElement;
+      if (previousActiveElement.current === null || focusRestored.current) {
+        previousActiveElement.current = document.activeElement;
+      }
       focusRestored.current = false;
       return;
     }
 
-    if (!focusRestored.current && previousActiveElement.current instanceof HTMLElement) {
+    const shouldRestore = restoreWhen || (restoreOnDeactivate && !isActive);
+    if (
+      shouldRestore &&
+      !focusRestored.current &&
+      previousActiveElement.current instanceof HTMLElement
+    ) {
       previousActiveElement.current.focus();
       focusRestored.current = true;
     }
-  }, [isActive]);
+  }, [isActive, restoreOnDeactivate, restoreWhen]);
 
   // Fallback restoration for true unmount cases.
   useEffect(() => {
