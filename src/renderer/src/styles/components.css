@@ -17,7 +17,8 @@
   transition:
     background var(--transition-fast),
     color var(--transition-fast),
-    border-color var(--transition-fast);
+    border-color var(--transition-fast),
+    transform var(--transition-micro);
   outline: none;
   user-select: none;
   white-space: nowrap;
@@ -29,8 +30,9 @@
   background: var(--color-bg-card-hover);
 }
 
-.tactile-button:active {
+.tactile-button:active:not(:disabled) {
   background: var(--color-active-overlay);
+  transform: scale(0.985);
 }
 
 .tactile-button:focus-visible {
@@ -151,7 +153,11 @@ input.tactile-input.tactile-input {
   border-radius: 2px;
   color: var(--color-text-primary);
   font-size: var(--text-base);
-  transition: border-color var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
   padding-left: 16px;
   padding-right: 44px;
   outline: none;
@@ -753,9 +759,7 @@ input.tactile-input.tactile-input:focus {
 
 .tab-panel--active {
   display: flex;
-  /* display:none -> flex restarts the animation, so every tab switch
-     replays the fade + rise */
-  animation: panel-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
 /* ===========================
@@ -1022,6 +1026,10 @@ body.modal-open {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .group-selector-checkbox--checked {

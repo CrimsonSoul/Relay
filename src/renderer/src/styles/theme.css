@@ -168,13 +168,20 @@
   --z-command-palette: 10002;
   --z-critical: 20000;
 
-  /* Transitions */
-  --transition-fast: 0.12s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-smooth: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-bouncy: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  --transition-premium: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-micro: 0.1s ease-out;
+  /* Operational silk motion */
+  --motion-duration-instant: 100ms;
+  --motion-duration-control: 140ms;
+  --motion-duration-state: 160ms;
+  --motion-duration-layer-enter: 220ms;
+  --motion-duration-layer-exit: 160ms;
+  --motion-duration-structure: 240ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Compatibility aliases for existing controls. */
+  --transition-micro: var(--motion-duration-instant) var(--motion-ease-out);
+  --transition-fast: var(--motion-duration-control) var(--motion-ease-out);
+  --transition-base: var(--motion-duration-state) var(--motion-ease-out);
+  --transition-smooth: var(--motion-duration-structure) var(--motion-ease-out);
 
   /* Layout */
   --sidebar-width-collapsed: 136px;
