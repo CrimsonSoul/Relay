@@ -749,6 +749,10 @@
   margin-top: 12px;
 }
 
+.alerts-branding-details[open] .alerts-branding-grid {
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
+}
+
 .alerts-field {
   display: flex;
   flex-direction: column;
@@ -1036,7 +1040,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: background 0.3s;
+  transition: background var(--transition-base);
   background: var(--email-banner);
 }
 

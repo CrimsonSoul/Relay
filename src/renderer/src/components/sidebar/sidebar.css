@@ -15,7 +15,7 @@
   cursor: pointer;
   position: relative;
   border-radius: 0;
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
 }
 
 .sidebar-app-icon:hover {
@@ -54,9 +54,9 @@
   justify-content: center;
   background: transparent;
   transition:
-    color 0.2s,
-    background-color 0.2s,
-    border-color 0.2s;
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
   user-select: none;
   border: none;
   width: 100%;
@@ -90,19 +90,17 @@
   overflow: hidden;
   border: 1px solid transparent;
   transition:
-    color 0.2s,
-    background-color 0.2s,
-    border-color 0.2s;
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
   color: var(--item-text);
   background: var(--item-bg);
   border-color: var(--item-border);
 }
 
-/* Active: colored wash + size bump for clarity */
+/* Active: stable geometry with an accent wash and rail. */
 .sidebar-item--active .sidebar-item-label {
   border-color: currentColor;
-  padding: 10px 14px 10px 18px;
-  font-size: var(--text-sm);
 }
 
 .sidebar-item--active .sidebar-item-label::after {
@@ -117,7 +115,6 @@
 
 .sidebar-item--active .sidebar-item-accent {
   opacity: 1;
-  width: 5px;
 }
 
 .sidebar-item-accent {
@@ -129,9 +126,8 @@
   border-radius: 10px 0 0 10px;
   opacity: 0.7;
   transition:
-    opacity 0.25s ease,
-    width 0.25s ease,
-    background-color 0.2s ease;
+    opacity var(--transition-fast),
+    background-color var(--transition-fast);
   background: var(--item-fill);
 }
 
@@ -229,8 +225,8 @@
   position: relative;
   color: var(--color-text-quaternary);
   transition:
-    color 0.15s,
-    border-color 0.15s;
+    color var(--transition-fast),
+    border-color var(--transition-fast);
   border-radius: 0;
   outline: none;
   overflow: hidden;
@@ -254,7 +250,7 @@
   width: 18px;
   height: 18px;
   opacity: 0.6;
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
 }
 
 .sidebar-button-icon svg {
@@ -278,7 +274,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: calc(var(--sidebar-button-width) - 24px);
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
   line-height: 1.1;
 }
 

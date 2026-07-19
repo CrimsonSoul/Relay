@@ -77,53 +77,6 @@
   animation: spin 1s linear infinite;
 }
 
-/* Card entrance — staggered reveal (fade + slight rise, ink style) */
-@keyframes cardEntrance {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-card-entrance {
-  animation: cardEntrance 0.3s ease-out backwards;
-}
-
-/* Stagger children delays — 30ms steps, capped at the 8th child so a full
-   board settles in under ~550ms. */
-.stagger-children > *:nth-child(1) {
-  animation-delay: 0ms;
-}
-.stagger-children > *:nth-child(2) {
-  animation-delay: 30ms;
-}
-.stagger-children > *:nth-child(3) {
-  animation-delay: 60ms;
-}
-.stagger-children > *:nth-child(4) {
-  animation-delay: 90ms;
-}
-.stagger-children > *:nth-child(5) {
-  animation-delay: 120ms;
-}
-.stagger-children > *:nth-child(6) {
-  animation-delay: 150ms;
-}
-.stagger-children > *:nth-child(7) {
-  animation-delay: 180ms;
-}
-.stagger-children > *:nth-child(8) {
-  animation-delay: 210ms;
-}
-.stagger-children > *:nth-child(n + 9) {
-  animation-delay: 210ms;
-}
-
 /* Breathing pulse for live indicators — opacity only, floor at 0.45 */
 @keyframes breathe {
   0%,
@@ -134,6 +87,17 @@
   50% {
     opacity: 0.45;
   }
+}
+
+.data-manager-import-result,
+.administration-feedback,
+.alert-reminder-manager-error,
+.knowledge-viewer-state--error {
+  transition:
+    opacity var(--transition-base),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 /* ===========================
@@ -155,5 +119,12 @@
   [data-motion]::before,
   [data-motion]::after {
     animation: none !important;
+  }
+
+  .status-bar-live-dot,
+  .popout-alert-indicator,
+  .team-row-active-indicator {
+    opacity: 1;
+    animation: none;
   }
 }

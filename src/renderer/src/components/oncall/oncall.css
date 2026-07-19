@@ -13,7 +13,7 @@
   border-bottom: 1px solid var(--color-border);
   padding: 8px 10px;
   border-radius: 0;
-  transition: background 0.2s;
+  transition: background var(--transition-fast);
 }
 
 .sortable-edit-row-grid:hover {
@@ -70,8 +70,8 @@
   height: 24px;
   border-radius: 2px;
   transition:
-    opacity 0.2s,
-    background 0.2s;
+    opacity var(--transition-fast),
+    background var(--transition-fast);
   flex-shrink: 0;
   background: transparent;
   border: none;
@@ -123,7 +123,7 @@
   align-items: center;
   justify-content: center;
   pointer-events: all;
-  transition: opacity 0.3s ease;
+  transition: opacity var(--transition-smooth);
 }
 
 .popout-drag-overlay-inner {
@@ -204,7 +204,7 @@
 .team-row {
   padding: var(--oncall-row-padding-y) 12px;
   border-bottom: 1px solid var(--color-border-subtle);
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
   position: relative;
   container-type: inline-size;
 }
@@ -224,7 +224,7 @@
   background: var(--accent-subtle);
   box-shadow: inset 3px 0 0 var(--accent);
   /* the wash eases in when the rotation flips (rail snaps — by design) */
-  transition: background-color 0.2s ease;
+  transition: background-color var(--transition-base);
 }
 
 .team-row--primary {
@@ -369,7 +369,7 @@
   border: none;
   padding: 0;
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -699,8 +699,8 @@
   padding-left: 12px;
   overflow: hidden;
   transition:
-    background-color 0.2s,
-    border-color 0.2s;
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .card-surface.team-card-body:hover {

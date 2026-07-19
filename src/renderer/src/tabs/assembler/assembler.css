@@ -72,7 +72,7 @@
   border-right: 1px solid var(--color-border);
   border-radius: 0;
   background-color: transparent;
-  animation: detailPanelFadeIn 0.2s ease-out;
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
 .assembler-sidebar-groups {

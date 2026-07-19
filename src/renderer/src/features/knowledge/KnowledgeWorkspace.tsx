@@ -65,6 +65,7 @@ function WorkspacePanel({
       data-knowledge-panel
       data-destination={destination}
       data-state={isActive ? 'active' : 'retained'}
+      data-motion={isActive ? 'panel' : undefined}
       hidden={retainEffects && !isActive}
       inert={retainEffects && !isActive ? true : undefined}
       aria-label={destination === 'home' ? 'Knowledge home' : `${destination} workspace`}

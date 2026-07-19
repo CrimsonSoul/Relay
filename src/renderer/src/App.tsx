@@ -86,7 +86,11 @@ export function RetainedTabPanel({
   children,
 }: PropsWithChildren<Readonly<{ active: boolean }>>) {
   return (
-    <div className={getTabPanelClassName(active)}>
+    <div
+      className={getTabPanelClassName(active)}
+      data-motion={active ? 'panel' : undefined}
+      data-state={active ? 'active' : 'retained'}
+    >
       <Activity mode={active ? 'visible' : 'hidden'}>{children}</Activity>
     </div>
   );

@@ -9,7 +9,7 @@
   flex-direction: column;
   border-left: 1px solid var(--color-border);
   background-color: transparent;
-  animation: detailPanelFadeIn 0.2s ease-out;
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
   overflow: hidden;
   margin-left: 16px;
 }

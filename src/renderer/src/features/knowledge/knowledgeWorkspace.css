@@ -69,8 +69,8 @@
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .knowledge-home__destination:hover {
@@ -254,6 +254,10 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
+}
+
+.knowledge-workspace-shell__panel[data-state='active'] {
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
 }
 
 /* The approved Contacts and Servers screens share one dense directory frame. */

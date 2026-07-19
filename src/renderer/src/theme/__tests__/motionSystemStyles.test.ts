@@ -15,6 +15,14 @@ const modalsCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/modals.css'),
   'utf8',
 );
+const knowledgeCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
+  'utf8',
+);
+const knowledgeWorkspaceCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledgeWorkspace.css'),
+  'utf8',
+);
 
 function cssVar(name: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -51,7 +59,7 @@ describe('Operational silk motion system', () => {
     expect(animationCss).toContain('@keyframes relay-panel-in');
     expect(animationCss).toContain('transform: translateY(4px);');
     expect(animationCss).toContain('@keyframes relay-popover-in');
-    expect(animationCss).toContain('transform: translateY(-4px);');
+    expect(animationCss).toContain('translate: 0 -4px;');
     expect(animationCss).toContain('@keyframes relay-toast-in');
     expect(animationCss).toContain('transform: translateX(8px);');
     expect(animationCss).toContain("[data-motion='popover']");
@@ -62,7 +70,7 @@ describe('Operational silk motion system', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration:\s*0\.01ms !important/,
     );
     expect(animationCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*transform:\s*none !important/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none !important/,
     );
     expect(animationCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*scroll-behavior:\s*auto !important/,
@@ -82,6 +90,24 @@ describe('Operational silk motion system', () => {
     expect(componentsCss).toMatch(
       /\.group-selector-checkbox\s*{[^}]*background-color var\(--transition-fast\)/,
     );
+  });
+
+  it('uses shared state and structure tokens in Knowledge', () => {
+    expect(knowledgeWorkspaceCss).toMatch(
+      /\.knowledge-workspace-shell__panel\[data-state='active'\][\s\S]*relay-panel-in var\(--motion-duration-state\)/,
+    );
+    expect(knowledgeCss).toMatch(
+      /\.knowledge-drawer\s*{[\s\S]*transform var\(--motion-duration-structure\) var\(--motion-ease-out\)/,
+    );
+    expect(knowledgeCss).toMatch(
+      /\.knowledge-drawer-backdrop\s*{[\s\S]*opacity var\(--motion-duration-state\) var\(--motion-ease-out\)/,
+    );
+    expect(knowledgeCss).not.toMatch(/\.knowledge-page[^}]*animation:/);
+  });
+
+  it('does not stagger operational lists', () => {
+    expect(animationCss).not.toContain('.stagger-children');
+    expect(animationCss).not.toContain('.animate-card-entrance');
   });
 
   it('uses the shared square modal geometry and state-driven layer motion', () => {

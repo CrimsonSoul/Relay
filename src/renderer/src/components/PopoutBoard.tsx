@@ -212,7 +212,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
           gridRef.current = node;
           if (animationParent) animationParent.current = node;
         }}
-        className={`oncall-masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
+        className={`oncall-masonry${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         aria-label="On-Call Teams"
       >
         {teamColumns.map((column, colIdx) => (
@@ -220,7 +220,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
             {column.map((teamId) => {
               const teamName = teamIdToName.get(teamId) || teamId;
               return (
-                <li key={teamId} className="oncall-masonry-item animate-card-entrance">
+                <li key={teamId} className="oncall-masonry-item">
                   <TeamCard
                     team={teamName}
                     index={teams.indexOf(teamId)}

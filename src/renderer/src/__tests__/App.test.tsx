@@ -961,6 +961,11 @@ describe('RetainedTabPanel', () => {
 
     expect(container.querySelectorAll('.tab-panel--active')).toHaveLength(1);
     expect(container.querySelector('.tab-panel--active')).toHaveTextContent('Notes');
+    expect(container.querySelector('.tab-panel--active')).toHaveAttribute('data-state', 'active');
+    expect(container.querySelector('.tab-panel:not(.tab-panel--active)')).toHaveAttribute(
+      'data-state',
+      'retained',
+    );
   });
 
   it('preserves local state while cleaning up hidden effects', () => {

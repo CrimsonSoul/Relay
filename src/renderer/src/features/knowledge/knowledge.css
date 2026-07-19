@@ -598,9 +598,9 @@
   letter-spacing: 0.03em;
   cursor: pointer;
   transition:
-    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .knowledge-library-toggle svg {
@@ -644,6 +644,10 @@
   flex-direction: column;
   border-right: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-bg-surface) 92%, var(--color-bg-app));
+  transition:
+    opacity var(--motion-duration-structure) var(--motion-ease-out),
+    transform var(--motion-duration-structure) var(--motion-ease-out),
+    visibility 0s linear var(--motion-duration-structure);
 }
 
 .knowledge-drawer__heading {
@@ -671,6 +675,10 @@
   background: var(--color-bg-surface-2);
   line-height: 1;
   cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .knowledge-drawer__collapse {
@@ -1027,9 +1035,9 @@
   font-weight: var(--weight-bold);
   cursor: pointer;
   transition:
-    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .knowledge-viewer__controls button:hover:not(:disabled),
@@ -2388,8 +2396,8 @@
     cursor: default;
     pointer-events: none;
     transition:
-      opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
-      visibility 0s linear 180ms;
+      opacity var(--motion-duration-state) var(--motion-ease-out),
+      visibility 0s linear var(--motion-duration-state);
   }
 
   .knowledge-workspace[data-library-collapsed] .knowledge-drawer {
@@ -2404,11 +2412,13 @@
     border-right: 1px solid var(--color-border-strong);
     border-bottom: 0;
     visibility: hidden;
+    opacity: 0;
     transform: translateX(-100%);
     pointer-events: none;
     transition:
-      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
-      visibility 0s linear 200ms;
+      opacity var(--motion-duration-structure) var(--motion-ease-out),
+      transform var(--motion-duration-structure) var(--motion-ease-out),
+      visibility 0s linear var(--motion-duration-structure);
   }
 
   .knowledge-workspace[data-library-drawer='open'] .knowledge-drawer-backdrop {
@@ -2420,6 +2430,7 @@
 
   .knowledge-workspace[data-library-drawer='open'] .knowledge-drawer {
     visibility: visible;
+    opacity: 1;
     transform: translateX(0);
     pointer-events: auto;
     transition-delay: 0s;

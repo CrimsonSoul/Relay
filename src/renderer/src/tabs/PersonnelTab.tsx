@@ -433,7 +433,7 @@ export const PersonnelTab: React.FC<{
               gridRef.current = node;
               if (animationParent) animationParent.current = node;
             }}
-            className="oncall-masonry stagger-children"
+            className="oncall-masonry"
             aria-label="Sortable On-Call Teams"
           >
             {teamColumns.map((column, colIdx) => (
@@ -441,7 +441,7 @@ export const PersonnelTab: React.FC<{
                 {column.map((teamId) => {
                   const teamName = teamIdToName.get(teamId) || teamId;
                   return (
-                    <li key={teamId} className="oncall-masonry-item animate-card-entrance">
+                    <li key={teamId} className="oncall-masonry-item">
                       <SortableTeamCard
                         id={teamId}
                         team={teamName}
