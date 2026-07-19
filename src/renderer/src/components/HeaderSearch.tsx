@@ -331,7 +331,12 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
 
       {showDropdown &&
         createPortal(
-          <div className="search-dropdown" id="header-search-dropdown" style={dropdownStyle}>
+          <div
+            className="search-dropdown"
+            id="header-search-dropdown"
+            style={dropdownStyle}
+            data-motion="popover"
+          >
             {/* Custom combobox dropdown requires ARIA roles - no semantic HTML equivalent */}
             <ul ref={resultsRef} className="search-dropdown-results" role="listbox">
               {/* NOSONAR */}

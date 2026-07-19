@@ -128,6 +128,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
           <div
             ref={dropdownRef}
             className="combobox-dropdown"
+            data-motion="popover"
             style={{
               position: 'fixed',
               top: dropdownPos.top,

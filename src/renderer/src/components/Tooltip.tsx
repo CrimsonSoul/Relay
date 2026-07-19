@@ -134,6 +134,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
         createPortal(
           <div
             className="tooltip-popup"
+            data-motion="popover"
             style={{
               top: coords.top,
               left: coords.left,

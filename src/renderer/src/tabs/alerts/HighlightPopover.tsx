@@ -74,7 +74,12 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
       </Tooltip>
 
       {isOpen && (
-        <div className="alerts-hl-popover" role="menu" aria-label="Highlight options">
+        <div
+          className="alerts-hl-popover"
+          role="menu"
+          aria-label="Highlight options"
+          data-motion="popover"
+        >
           {HIGHLIGHTS.map((h) => (
             <button
               key={h.type}

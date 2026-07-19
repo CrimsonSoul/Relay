@@ -47,7 +47,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
       />
       <div
         ref={menuRef}
-        className="context-menu animate-scale-in"
+        className="context-menu"
+        data-motion="popover"
         role="menu"
         tabIndex={-1}
         style={{ top: y, left: x }}

@@ -120,14 +120,20 @@ describe('ToastProvider', () => {
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Temporary')).toBeInTheDocument();
 
-    await act(async () => {
-      vi.advanceTimersByTime(4001);
-    });
+    await act(async () => vi.advanceTimersByTime(4000));
+
+    expect(screen.getByText('Temporary').closest('.toast')).toHaveAttribute(
+      'data-state',
+      'closing',
+    );
+    await act(async () => vi.advanceTimersByTime(159));
+    expect(screen.getByText('Temporary')).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(1));
 
     expect(screen.queryByText('Temporary')).toBeNull();
   });
 
-  it('removes toast when dismiss button is clicked', () => {
+  it('removes toast when dismiss button is clicked', async () => {
     render(
       <ToastProvider>
         <ToastTrigger message="Dismissable" type="info" />
@@ -136,7 +142,28 @@ describe('ToastProvider', () => {
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Dismissable')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Dismiss notification'));
+    expect(screen.getByText('Dismissable').closest('.toast')).toHaveAttribute(
+      'data-state',
+      'closing',
+    );
+    await act(async () => vi.advanceTimersByTime(160));
     expect(screen.queryByText('Dismissable')).toBeNull();
+  });
+
+  it('keeps a dismissed toast mounted in closing state for its exit', async () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Saved" type="success" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+
+    expect(screen.getByText('Saved').closest('.toast')).toHaveAttribute('data-state', 'closing');
+    await act(async () => vi.advanceTimersByTime(159));
+    expect(screen.getByText('Saved')).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(screen.queryByText('Saved')).toBeNull();
   });
 
   it('supports a custom title, duration, and dismissing action', async () => {
@@ -151,6 +178,12 @@ describe('ToastProvider', () => {
     expect(screen.getByText('New Dynatrace problem')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open Problems' }));
     expect(onAction).toHaveBeenCalledOnce();
+    expect(screen.getByText('New problem').closest('.toast')).toHaveAttribute(
+      'data-state',
+      'closing',
+    );
+
+    await act(async () => vi.advanceTimersByTime(160));
     expect(screen.queryByText('New problem')).not.toBeInTheDocument();
 
     await act(async () => {

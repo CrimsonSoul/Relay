@@ -157,6 +157,7 @@ export const WorldClock: React.FC = () => {
             <div
               ref={popoverRef}
               className="world-clock-popover"
+              data-motion="popover"
               style={{ top: popoverPos.top, left: popoverPos.left }}
             >
               {secondaryZoneItems}

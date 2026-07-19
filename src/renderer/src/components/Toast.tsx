@@ -24,6 +24,7 @@ interface ToastMessage {
   id: string;
   message: string;
   type: ToastType;
+  state: 'open' | 'closing';
   options?: ToastOptions;
 }
 
@@ -69,21 +70,32 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  const finalizeToastRemoval = useCallback((id: string) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
     const timeout = timeoutsRef.current.get(id);
-    if (timeout) {
-      clearTimeout(timeout);
-      timeoutsRef.current.delete(id);
-    }
+    if (timeout) globalThis.clearTimeout(timeout);
+    timeoutsRef.current.delete(id);
   }, []);
+
+  const removeToast = useCallback(
+    (id: string) => {
+      setToasts((current) =>
+        current.map((toast) => (toast.id === id ? { ...toast, state: 'closing' } : toast)),
+      );
+      const existing = timeoutsRef.current.get(id);
+      if (existing) globalThis.clearTimeout(existing);
+      const exit = globalThis.setTimeout(() => finalizeToastRemoval(id), 160);
+      timeoutsRef.current.set(id, exit);
+    },
+    [finalizeToastRemoval],
+  );
 
   const showToast = useCallback(
     (message: string, type: ToastType, options?: ToastOptions) => {
       const id = globalThis.crypto.randomUUID();
-      setToasts((prev) => [...prev, { id, message, type, options }]);
+      setToasts((prev) => [...prev, { id, message, type, state: 'open', options }]);
 
-      const timeout = setTimeout(() => {
+      const timeout = globalThis.setTimeout(() => {
         removeToast(id);
       }, options?.durationMs ?? 4000);
       timeoutsRef.current.set(id, timeout);
@@ -95,7 +107,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const timeouts = timeoutsRef.current;
     return () => {
       timeouts.forEach((timeout) => {
-        clearTimeout(timeout);
+        globalThis.clearTimeout(timeout);
       });
       timeouts.clear();
     };
@@ -108,7 +120,12 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       {children}
       <div className="toast-container" aria-label="Notifications">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast toast-${toast.type} toast-slide-up`}>
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.type}`}
+            data-motion="toast"
+            data-state={toast.state}
+          >
             {toast.type === 'error' ? (
               <div className="toast-content" role="alert" aria-live="assertive">
                 <div className="toast-title">

@@ -343,7 +343,6 @@
   display: flex;
   flex-direction: column;
   transform-origin: top center;
-  animation: scaleIn 0.15s ease-out;
 }
 
 .search-dropdown-context {
