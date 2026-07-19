@@ -232,6 +232,10 @@ describe('DynatraceProblemsTab', () => {
 
     expect(screen.getByText('pos62term3.freedomroads.local')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Alerting profiles/i }));
+    expect(screen.getByRole('dialog', { name: 'Alerting profile filter' })).toHaveAttribute(
+      'data-variant',
+      'standard',
+    );
     const paymentsProfile = await screen.findByRole('checkbox', {
       name: 'Payments Production',
     });

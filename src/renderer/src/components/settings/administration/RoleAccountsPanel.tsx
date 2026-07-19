@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import {
   getRoleDisplayNameError,
   getRoleUsernameError,
@@ -7,8 +7,9 @@ import {
   type EffectivePrivilegedRole,
 } from '@shared/roleAccounts';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
-import { useFocusTrap } from '../../../hooks/useFocusTrap';
+import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
+import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationPanelProps } from './types';
 
@@ -52,7 +53,7 @@ function ReauthenticationDialog({
   onConfirm,
   onClose,
 }: Readonly<{
-  action: ReauthenticationAction;
+  action: ReauthenticationAction | null;
   busy: boolean;
   error: string | null;
   currentAccountName: string;
@@ -60,7 +61,8 @@ function ReauthenticationDialog({
   onClose: () => void;
 }>) {
   const [password, setPassword] = useState('');
-  const dialogRef = useFocusTrap<HTMLFormElement>(true);
+  const formId = useId();
+  const retainedAction = useRetainedValue(action);
 
   useEffect(() => () => setPassword(''), []);
 
@@ -76,54 +78,60 @@ function ReauthenticationDialog({
     await onConfirm(submittedPassword);
   };
 
-  const publisherChange = action.kind === 'publisher';
+  const publisherChange = retainedAction?.kind === 'publisher';
   const title = publisherChange ? 'Confirm Publisher change' : 'Confirm ownership transfer';
 
   return (
-    <div className="administration-dialog-backdrop">
-      <form
-        ref={dialogRef}
-        className="administration-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="role-account-reauth-title"
-        onSubmit={(event) => void submit(event)}
-      >
-        <div className="settings-section-heading">Protected role change</div>
-        <h4 id="role-account-reauth-title">{title}</h4>
-        <p>
-          {publisherChange
-            ? 'Publisher sessions and paired devices may be revoked when this assignment changes.'
-            : `Ownership will move from ${currentAccountName} to ${action.account.displayName}. Sessions for the current and incoming Owner accounts will lock.`}
-        </p>
-        <label className="administration-field">
-          <span>Password</span>
-          <input
-            type="password"
-            className="tactile-input"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            minLength={12}
-            maxLength={128}
-            required
-          />
-        </label>
-        {error && (
-          <div className="administration-feedback administration-feedback--error" role="alert">
-            {error}
-          </div>
-        )}
-        <div className="administration-actions">
-          <TactileButton type="submit" variant="primary" loading={busy}>
-            {publisherChange ? 'Confirm Publisher change' : 'Transfer ownership'}
-          </TactileButton>
-          <TactileButton type="button" onClick={close}>
+    <Modal
+      isOpen={action !== null}
+      onClose={close}
+      title={title}
+      subtitle="Protected role change"
+      variant="standard"
+      dismissible={!busy}
+      footer={
+        <>
+          <TactileButton type="button" variant="secondary" onClick={close} disabled={busy}>
             Cancel
           </TactileButton>
-        </div>
-      </form>
-    </div>
+          <TactileButton type="submit" form={formId} variant="primary" loading={busy}>
+            {publisherChange ? 'Confirm Publisher change' : 'Transfer ownership'}
+          </TactileButton>
+        </>
+      }
+    >
+      {retainedAction ? (
+        <form
+          id={formId}
+          className="administration-dialog-form"
+          onSubmit={(event) => void submit(event)}
+        >
+          <p>
+            {publisherChange
+              ? 'Publisher sessions and paired devices may be revoked when this assignment changes.'
+              : `Ownership will move from ${currentAccountName} to ${retainedAction.account.displayName}. Sessions for the current and incoming Owner accounts will lock.`}
+          </p>
+          <label className="administration-field">
+            <span>Password</span>
+            <input
+              type="password"
+              className="tactile-input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              minLength={12}
+              maxLength={128}
+              required
+            />
+          </label>
+          {error ? (
+            <div className="administration-feedback administration-feedback--error" role="alert">
+              {error}
+            </div>
+          ) : null}
+        </form>
+      ) : null}
+    </Modal>
   );
 }
 
@@ -606,18 +614,14 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         </div>
       )}
 
-      {reauthAction && (
-        <ReauthenticationDialog
-          action={reauthAction}
-          busy={busy === 'reauthenticate'}
-          error={dialogError ?? accessError}
-          currentAccountName={
-            session.state === 'active' ? session.displayName : 'the current Owner'
-          }
-          onConfirm={confirmReauthentication}
-          onClose={closeReauthentication}
-        />
-      )}
+      <ReauthenticationDialog
+        action={reauthAction}
+        busy={busy === 'reauthenticate'}
+        error={dialogError ?? accessError}
+        currentAccountName={session.state === 'active' ? session.displayName : 'the current Owner'}
+        onConfirm={confirmReauthentication}
+        onClose={closeReauthentication}
+      />
     </section>
   );
 }

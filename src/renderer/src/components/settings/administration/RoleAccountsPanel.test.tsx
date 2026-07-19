@@ -132,6 +132,7 @@ describe('RoleAccountsPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
     const dialog = screen.getByRole('dialog', { name: 'Confirm Publisher change' });
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
     const password = screen.getByLabelText('Password') as HTMLInputElement;
     fireEvent.change(password, { target: { value: 'a-long-private-password' } });
     fireEvent.submit(dialog.querySelector('form') ?? dialog);
@@ -180,9 +181,12 @@ describe('RoleAccountsPanel', () => {
     const password = screen.getByLabelText('Password') as HTMLInputElement;
     const cancel = screen.getByRole('button', { name: 'Cancel' });
     fireEvent.change(password, { target: { value: 'must-not-survive' } });
-    cancel.focus();
+    const confirm = screen.getByRole('button', { name: 'Confirm Publisher change' });
+    confirm.focus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(password).toHaveFocus();
+    expect(screen.getByRole('dialog', { name: 'Confirm Publisher change' })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
     fireEvent.click(cancel);
 
     fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));

@@ -176,6 +176,77 @@ describe('AdministrationSettings', () => {
     expect(screen.getByRole('heading', { name: 'Relay & Dynatrace' })).toBeVisible();
   });
 
+  it('uses the shared confirmation shell for paired-device revocation', () => {
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        devices: [
+          {
+            id: 'device-record-1',
+            deviceId: 'device-1',
+            accountId: 'account-owner',
+            username: 'ryan',
+            displayName: 'Ryan Bledsoe',
+            label: 'NOC workstation',
+            hostname: 'noc-01',
+            state: 'active',
+            lastSeenAt: '2026-07-15T20:00:00.000Z',
+            fingerprintSuffix: 'ABCD',
+            revision: 1,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute: vi.fn(),
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Devices' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+
+    expect(screen.getByRole('dialog', { name: 'Revoke NOC workstation?' })).toHaveAttribute(
+      'data-variant',
+      'confirmation',
+    );
+  });
+
+  it('uses the shared standard shell for platform-token replacement', () => {
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.platform-token',
+            configured: true,
+            summary: 'Configured',
+            revision: 1,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute: vi.fn(),
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Replacement platform token'), {
+      target: { value: 'replacement-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review token replacement' }));
+
+    expect(
+      screen.getByRole('dialog', { name: 'Confirm platform token replacement' }),
+    ).toHaveAttribute('data-variant', 'standard');
+  });
+
   it('labels the navigation and current panel with matching accessible identities', () => {
     const { container } = render(<AdministrationSettings relayMode="client" />);
 

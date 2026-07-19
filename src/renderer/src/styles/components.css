@@ -1984,8 +1984,7 @@ body.modal-open {
 }
 
 .administration-settings__header h2,
-.administration-panel__header h3,
-.administration-dialog h4 {
+.administration-panel__header h3 {
   margin: var(--space-1) 0 0;
   color: var(--color-text-primary);
   line-height: var(--leading-tight);
@@ -1997,7 +1996,6 @@ body.modal-open {
 
 .administration-settings__header p,
 .administration-panel__header p,
-.administration-dialog p,
 .administration-setting p {
   margin: var(--space-2) 0 0;
   color: var(--color-text-secondary);
@@ -2315,27 +2313,16 @@ body.modal-open {
   overflow-wrap: anywhere;
 }
 
-.administration-dialog-backdrop {
-  position: fixed;
-  z-index: 2500;
-  inset: 0;
+.administration-dialog-form {
   display: grid;
-  place-items: center;
-  padding: var(--space-5);
-  background: rgb(0 0 0 / 72%);
+  gap: var(--space-4);
 }
 
-.administration-dialog {
-  display: flex;
-  width: min(520px, 100%);
-  max-height: calc(100vh - 48px);
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-bg-surface);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 60%);
-  overflow: auto;
+.administration-dialog-form p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 @media (max-width: 600px) {

@@ -138,23 +138,8 @@
    ============================================================================ */
 
 .bridge-history-content {
-  padding: 24px;
-  min-width: 480px;
-  max-width: 600px;
-}
-
-.bridge-history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.bridge-history-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-text-primary);
+  display: grid;
+  gap: var(--space-4);
 }
 
 .bridge-history-empty {
@@ -177,10 +162,8 @@
 }
 
 .bridge-history-list {
-  max-height: 400px;
-  overflow-y: overlay;
-  margin: 0 -24px;
-  padding: 0 24px;
+  margin: 0 calc(var(--space-5) * -1);
+  padding: 0 var(--space-5);
 }
 
 /* Ink rows: edge-rail grammar only (no boxes, no dividers fighting the rail).
@@ -264,14 +247,6 @@
   background: transparent;
   border: 1px solid var(--color-border-strong);
   color: var(--color-text-secondary);
-}
-
-.bridge-history-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border-subtle);
 }
 
 /* ============================================================================

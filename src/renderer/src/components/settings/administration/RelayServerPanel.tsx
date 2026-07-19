@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
+import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationPanelProps } from './types';
 
@@ -22,6 +23,7 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const tokenFormId = useId();
 
   useEffect(
     () => () => {
@@ -90,6 +92,12 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
       setTokenConfirming(false);
       setFeedback('Dynatrace platform token replaced.');
     }
+  };
+
+  const closeTokenConfirmation = () => {
+    setPassword('');
+    setPlatformToken('');
+    setTokenConfirming(false);
   };
 
   return (
@@ -199,49 +207,55 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
         </div>
       )}
 
-      {tokenConfirming && (
-        <div className="administration-dialog-backdrop">
-          <form
-            className="administration-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="token-confirm-title"
-            onSubmit={(event) => void replaceToken(event)}
-          >
-            <div className="settings-section-heading">Secret replacement</div>
-            <h4 id="token-confirm-title">Confirm platform token replacement</h4>
-            <p>Relay will discard the prior token after the replacement is accepted.</p>
-            <label className="administration-field">
-              <span>Administrator password</span>
-              <input
-                autoFocus
-                type="password"
-                className="tactile-input"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={12}
-                maxLength={128}
-                required
-              />
-            </label>
-            <div className="administration-actions">
-              <TactileButton type="submit" variant="primary" loading={busy === 'reauthenticate'}>
-                Replace token
-              </TactileButton>
-              <TactileButton
-                type="button"
-                onClick={() => {
-                  setPassword('');
-                  setPlatformToken('');
-                  setTokenConfirming(false);
-                }}
-              >
-                Cancel
-              </TactileButton>
-            </div>
-          </form>
-        </div>
-      )}
+      <Modal
+        isOpen={tokenConfirming}
+        onClose={closeTokenConfirmation}
+        title="Confirm platform token replacement"
+        subtitle="Secret replacement"
+        variant="standard"
+        dismissible={busy !== 'reauthenticate'}
+        footer={
+          <>
+            <TactileButton
+              type="button"
+              variant="secondary"
+              onClick={closeTokenConfirmation}
+              disabled={busy === 'reauthenticate'}
+            >
+              Cancel
+            </TactileButton>
+            <TactileButton
+              type="submit"
+              form={tokenFormId}
+              variant="primary"
+              loading={busy === 'reauthenticate'}
+            >
+              Replace token
+            </TactileButton>
+          </>
+        }
+      >
+        <form
+          id={tokenFormId}
+          className="administration-dialog-form"
+          onSubmit={(event) => void replaceToken(event)}
+        >
+          <p>Relay will discard the prior token after the replacement is accepted.</p>
+          <label className="administration-field">
+            <span>Administrator password</span>
+            <input
+              autoFocus
+              type="password"
+              className="tactile-input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              minLength={12}
+              maxLength={128}
+              required
+            />
+          </label>
+        </form>
+      </Modal>
     </section>
   );
 }

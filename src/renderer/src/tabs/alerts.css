@@ -5,22 +5,8 @@
    ========================================================================= */
 
 .alert-history-content {
-  padding: 20px;
-  width: min(720px, calc(100vw - 72px));
-}
-
-.alert-history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-
-.alert-history-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
+  display: grid;
+  gap: var(--space-4);
 }
 
 .alert-history-toolbar {
@@ -28,7 +14,6 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
 }
 
 .alert-history-search {
@@ -86,10 +71,8 @@
 }
 
 .alert-history-list {
-  max-height: min(560px, calc(100vh - 260px));
-  overflow-y: overlay;
-  margin: 0 -20px;
-  padding: 0 20px 2px;
+  margin: 0 calc(var(--space-5) * -1);
+  padding: 0 var(--space-5) 2px;
 }
 
 .alert-history-section {
@@ -332,39 +315,9 @@
   padding-top: 0;
 }
 
-.alert-history-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-/* --- Label Editor Overlay (floating surface — keeps its elevated box) --- */
-
-.alert-history-label-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--color-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.alert-history-label-editor {
-  background: var(--color-bg-surface-elevated);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
-  box-shadow: var(--shadow-lg);
-  padding: 20px;
-  min-width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .alert-history-label-editor-label {
+  display: block;
+  margin-bottom: var(--space-2);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
   font-weight: 800;
@@ -374,6 +327,7 @@
 }
 
 .alert-history-label-input {
+  width: 100%;
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
   padding: 8px 12px;
@@ -387,12 +341,6 @@
 
 .alert-history-label-input:focus {
   border-color: var(--accent);
-}
-
-.alert-history-label-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 /* ==========================================================================

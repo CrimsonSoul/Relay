@@ -258,57 +258,17 @@
 }
 
 .dt-profile-picker {
-  position: fixed;
-  z-index: var(--z-popover);
-  display: flex;
-  max-height: min(610px, calc(100vh - 32px));
-  flex-direction: column;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 3px;
-  background: var(--color-bg-surface-2);
-  box-shadow: 0 6px 8px rgb(0 0 0 / 32%);
-  color: var(--color-text-primary);
-}
-
-.dt-profile-picker__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
   gap: var(--space-3);
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
 }
 
-.dt-profile-picker__header > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.dt-profile-picker__header strong {
-  font-size: var(--text-sm);
-}
-
-.dt-profile-picker__header span,
 .dt-profile-picker__bulk-actions span {
   color: var(--color-text-tertiary);
   font-size: var(--text-2xs);
 }
 
-.dt-profile-picker__header button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: var(--text-lg);
-}
-
 .dt-profile-picker__search {
-  padding: var(--space-3) var(--space-4);
+  padding: 0;
 }
 
 .dt-profile-picker__search input {
@@ -333,11 +293,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-3);
+  padding: 0;
 }
 
-.dt-profile-picker__bulk-actions button,
-.dt-profile-picker__footer button {
+.dt-profile-picker__bulk-actions button {
   padding: 0;
   border: 0;
   background: transparent;
@@ -359,6 +318,7 @@
 
 .dt-profile-picker__list {
   min-height: 112px;
+  max-height: 320px;
   overflow-y: auto;
   border-block: 1px solid var(--color-border);
 }
@@ -405,25 +365,8 @@
 }
 
 .dt-profile-picker__retention-note {
-  padding: var(--space-3) var(--space-4);
+  padding: 0;
   line-height: 1.45;
-}
-
-.dt-profile-picker__footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-4);
-}
-
-.dt-profile-picker__footer .dt-profile-picker__save {
-  min-height: 34px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  background: var(--accent);
-  color: var(--on-accent);
 }
 
 .dt-profile-picker button:disabled {

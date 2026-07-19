@@ -114,7 +114,7 @@ export function HistoryModal<T extends BaseHistoryEntry>({
   extraContent,
   toolbar,
   width,
-}: HistoryModalProps<T>): React.ReactElement | null {
+}: HistoryModalProps<T>): React.ReactElement {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -151,8 +151,6 @@ export function HistoryModal<T extends BaseHistoryEntry>({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   const renderEntryButton = (entry: T) => (
     <button
       type="button"
@@ -179,46 +177,48 @@ export function HistoryModal<T extends BaseHistoryEntry>({
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} width={width} bare>
-      <div className={`${classPrefix}-content`}>
-        <div className={`${classPrefix}-header`}>
-          <h2 className={`${classPrefix}-title`}>{title}</h2>
-          {history.length > 0 && (
-            <TactileButton variant="ghost" size="sm" onClick={() => setIsClearConfirmOpen(true)}>
-              Clear All
-            </TactileButton>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={title}
+      variant="large"
+      width={width}
+      bodyClassName={`${classPrefix}-content`}
+      headerActions={
+        history.length > 0 ? (
+          <TactileButton variant="ghost" size="sm" onClick={() => setIsClearConfirmOpen(true)}>
+            Clear All
+          </TactileButton>
+        ) : null
+      }
+      footer={
+        <TactileButton variant="secondary" onClick={onClose}>
+          Close
+        </TactileButton>
+      }
+    >
+      {toolbar}
+
+      {history.length === 0 ? (
+        <div className={`${classPrefix}-empty`}>
+          <div className={`${classPrefix}-empty-icon`}>{'\u2205'}</div>
+          <p className={`${classPrefix}-empty-text`}>{emptyText}</p>
+        </div>
+      ) : (
+        <div className={`${classPrefix}-list`}>
+          {enablePinnedSections ? (
+            <>
+              {pinned.length > 0 && renderSection('pinned', pinnedSectionLabel, pinned)}
+              {recent.length > 0 &&
+                (pinned.length > 0
+                  ? renderSection('recent', recentSectionLabel, recent)
+                  : recent.map(renderEntryButton))}
+            </>
+          ) : (
+            history.map(renderEntryButton)
           )}
         </div>
-
-        {toolbar}
-
-        {history.length === 0 ? (
-          <div className={`${classPrefix}-empty`}>
-            <div className={`${classPrefix}-empty-icon`}>{'\u2205'}</div>
-            <p className={`${classPrefix}-empty-text`}>{emptyText}</p>
-          </div>
-        ) : (
-          <div className={`${classPrefix}-list`}>
-            {enablePinnedSections ? (
-              <>
-                {pinned.length > 0 && renderSection('pinned', pinnedSectionLabel, pinned)}
-                {recent.length > 0 &&
-                  (pinned.length > 0
-                    ? renderSection('recent', recentSectionLabel, recent)
-                    : recent.map(renderEntryButton))}
-              </>
-            ) : (
-              history.map(renderEntryButton)
-            )}
-          </div>
-        )}
-
-        <div className={`${classPrefix}-footer`}>
-          <TactileButton variant="secondary" size="sm" onClick={onClose}>
-            Close
-          </TactileButton>
-        </div>
-      </div>
+      )}
 
       {extraContent}
 

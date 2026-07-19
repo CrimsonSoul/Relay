@@ -1,5 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
@@ -14,7 +13,9 @@ import {
   type DynatraceProblemSyncRecord,
 } from '@shared/dynatraceProblems';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { Modal } from '../components/Modal';
 import { TabFallback } from '../components/TabFallback';
+import { TactileButton } from '../components/TactileButton';
 import { useToast } from '../components/Toast';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
 import {
@@ -206,13 +207,8 @@ function AlertingProfilePicker({
   onCancel,
   onSave,
 }: Readonly<AlertingProfilePickerProps>) {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [position, setPosition] = useState({ left: 16, top: 80, width: 380 });
   const selected = useMemo(() => new Set(selectedProfiles), [selectedProfiles]);
   const visibleProfiles = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -224,41 +220,8 @@ function AlertingProfilePicker({
   const closeWithoutSaving = useCallback(() => {
     setOpen(false);
     setQuery('');
-    onCancelRef.current();
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const updatePosition = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = Math.min(380, window.innerWidth - 32);
-      setPosition({
-        left: Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16)),
-        top: Math.min(rect.bottom + 8, window.innerHeight - 180),
-        width,
-      });
-    };
-    updatePosition();
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      closeWithoutSaving();
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeWithoutSaving();
-    };
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [closeWithoutSaving, open]);
+    onCancel();
+  }, [onCancel]);
 
   const toggleProfile = (profile: string) => {
     const next = new Set(selected);
@@ -274,7 +237,6 @@ function AlertingProfilePicker({
   return (
     <>
       <button
-        ref={triggerRef}
         type="button"
         className={`dt-problems__profile-trigger${filterConfigured ? ' dt-problems__profile-trigger--configured' : ''}`}
         aria-haspopup="dialog"
@@ -288,82 +250,72 @@ function AlertingProfilePicker({
           <path d="m7 10 5 5 5-5" stroke="currentColor" strokeWidth="2" />
         </svg>
       </button>
-      {open &&
-        createPortal(
-          <div
-            ref={panelRef}
-            role="dialog"
-            aria-label="Alerting profile filter"
-            className="dt-profile-picker"
-            style={position}
-          >
-            <div className="dt-profile-picker__header">
-              <div>
-                <strong>Retained alerting profiles</strong>
-                <span>{profiles.length} available from Dynatrace</span>
-              </div>
-              <button type="button" onClick={closeWithoutSaving} aria-label="Close profile filter">
-                ×
-              </button>
-            </div>
-            <label className="dt-profile-picker__search">
-              <span className="sr-only">Search alerting profiles</span>
+      <Modal
+        isOpen={open}
+        onClose={closeWithoutSaving}
+        title="Alerting profile filter"
+        subtitle={`${profiles.length} available from Dynatrace`}
+        variant="standard"
+        bodyClassName="dt-profile-picker"
+        footer={
+          canSave ? (
+            <>
+              <TactileButton variant="secondary" onClick={closeWithoutSaving} disabled={saving}>
+                Cancel
+              </TactileButton>
+              <TactileButton
+                variant="primary"
+                disabled={selectedProfiles.length === 0 || saving}
+                loading={saving}
+                onClick={() => void onSave().then((saved) => saved && setOpen(false))}
+              >
+                Save retention filter
+              </TactileButton>
+            </>
+          ) : undefined
+        }
+      >
+        <label className="dt-profile-picker__search">
+          <span className="sr-only">Search alerting profiles</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Find an alerting profile"
+            autoFocus
+          />
+        </label>
+        <div className="dt-profile-picker__bulk-actions">
+          <button type="button" onClick={() => onChange(profiles)} disabled={!canSave}>
+            Select all
+          </button>
+          <button type="button" onClick={() => onChange([])} disabled={!canSave}>
+            Clear
+          </button>
+          <span>{selectedProfiles.length} selected</span>
+        </div>
+        <div className="dt-profile-picker__list" role="group" aria-label="Alerting profiles">
+          {visibleProfiles.map((profile) => (
+            <label className="dt-profile-picker__option" key={profile}>
               <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Find an alerting profile"
-                autoFocus
+                type="checkbox"
+                checked={selected.has(profile)}
+                onChange={() => toggleProfile(profile)}
+                disabled={!canSave}
               />
+              <span>{profile}</span>
             </label>
-            <div className="dt-profile-picker__bulk-actions">
-              <button type="button" onClick={() => onChange(profiles)} disabled={!canSave}>
-                Select all
-              </button>
-              <button type="button" onClick={() => onChange([])} disabled={!canSave}>
-                Clear
-              </button>
-              <span>{selectedProfiles.length} selected</span>
-            </div>
-            <div className="dt-profile-picker__list" role="group" aria-label="Alerting profiles">
-              {visibleProfiles.map((profile) => (
-                <label className="dt-profile-picker__option" key={profile}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(profile)}
-                    onChange={() => toggleProfile(profile)}
-                    disabled={!canSave}
-                  />
-                  <span>{profile}</span>
-                </label>
-              ))}
-              {visibleProfiles.length === 0 && (
-                <div className="dt-profile-picker__empty">No profiles match this search.</div>
-              )}
-            </div>
-            <div className="dt-profile-picker__retention-note">
-              {canSave
-                ? 'Saving removes excluded problem records, local dispositions, and notes from Relay.'
-                : 'Profile retention is managed on the Relay server.'}
-            </div>
-            {canSave && (
-              <div className="dt-profile-picker__footer">
-                <button type="button" onClick={closeWithoutSaving} disabled={saving}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="dt-profile-picker__save"
-                  disabled={selectedProfiles.length === 0 || saving}
-                  onClick={() => void onSave().then((saved) => saved && setOpen(false))}
-                >
-                  {saving ? 'Saving and pruning…' : 'Save retention filter'}
-                </button>
-              </div>
-            )}
-          </div>,
-          document.body,
-        )}
+          ))}
+          {visibleProfiles.length === 0 && (
+            <div className="dt-profile-picker__empty">No profiles match this search.</div>
+          )}
+        </div>
+        <div className="dt-profile-picker__retention-note">
+          {canSave
+            ? 'Saving removes excluded problem records, local dispositions, and notes from Relay.'
+            : 'Profile retention is managed on the Relay server.'}
+        </div>
+      </Modal>
     </>
   );
 }

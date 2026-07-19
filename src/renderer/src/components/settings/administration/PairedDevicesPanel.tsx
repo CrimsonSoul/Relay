@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
+import { useRetainedValue } from '../../../hooks/useRetainedValue';
+import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationPanelProps } from './types';
 
@@ -11,9 +13,11 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
   const [label, setLabel] = useState('');
   const [revokeId, setRevokeId] = useState<string | null>(null);
   const [password, setPassword] = useState('');
+  const revokeFormId = useId();
 
   useEffect(() => () => setPassword(''), []);
   const revokeTarget = snapshot.devices.find((device) => device.deviceId === revokeId) ?? null;
+  const retainedRevokeTarget = useRetainedValue(revokeTarget);
 
   const rename = async (deviceId: string, expectedRevision: number) => {
     const result = await execute({
@@ -40,6 +44,11 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
       expectedRevision: null,
     });
     if (result.ok) setRevokeId(null);
+  };
+
+  const closeRevokeDialog = () => {
+    setPassword('');
+    setRevokeId(null);
   };
 
   return (
@@ -116,48 +125,55 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
         ))}
       </div>
 
-      {revokeTarget && (
-        <div className="administration-dialog-backdrop">
-          <form
-            className="administration-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="device-revoke-title"
-            onSubmit={(event) => void revoke(event)}
-          >
-            <div className="settings-section-heading">Device trust</div>
-            <h4 id="device-revoke-title">Revoke {revokeTarget.label}?</h4>
-            <p>Protected commands from this workstation will stop immediately.</p>
-            <label className="administration-field">
-              <span>Administrator password</span>
-              <input
-                autoFocus
-                type="password"
-                className="tactile-input"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={12}
-                maxLength={128}
-                required
-              />
-            </label>
-            <div className="administration-actions">
-              <TactileButton type="submit" variant="danger" loading={busy === 'reauthenticate'}>
-                Revoke device
-              </TactileButton>
-              <TactileButton
-                type="button"
-                onClick={() => {
-                  setPassword('');
-                  setRevokeId(null);
-                }}
-              >
-                Cancel
-              </TactileButton>
-            </div>
-          </form>
-        </div>
-      )}
+      <Modal
+        isOpen={revokeId !== null}
+        onClose={closeRevokeDialog}
+        title={`Revoke ${retainedRevokeTarget?.label ?? 'paired workstation'}?`}
+        subtitle="Device trust"
+        variant="confirmation"
+        dismissible={busy !== 'reauthenticate'}
+        footer={
+          <>
+            <TactileButton
+              type="button"
+              variant="secondary"
+              onClick={closeRevokeDialog}
+              disabled={busy === 'reauthenticate'}
+            >
+              Cancel
+            </TactileButton>
+            <TactileButton
+              type="submit"
+              form={revokeFormId}
+              variant="danger"
+              loading={busy === 'reauthenticate'}
+            >
+              Revoke device
+            </TactileButton>
+          </>
+        }
+      >
+        <form
+          id={revokeFormId}
+          className="administration-dialog-form"
+          onSubmit={(event) => void revoke(event)}
+        >
+          <p>Protected commands from this workstation will stop immediately.</p>
+          <label className="administration-field">
+            <span>Administrator password</span>
+            <input
+              autoFocus
+              type="password"
+              className="tactile-input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              minLength={12}
+              maxLength={128}
+              required
+            />
+          </label>
+        </form>
+      </Modal>
     </section>
   );
 }
