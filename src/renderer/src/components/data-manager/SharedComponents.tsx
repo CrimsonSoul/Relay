@@ -30,7 +30,7 @@ export const StatCard: React.FC<{
   <div className="dm-stat-card">
     <div className="dm-stat-count">{count}</div>
     <div className="dm-stat-label">{label}</div>
-    {lastUpdated && lastUpdated > 0 && (
+    {typeof lastUpdated === 'number' && lastUpdated > 0 && (
       <div className="dm-stat-updated">Updated {new Date(lastUpdated).toLocaleDateString()}</div>
     )}
   </div>

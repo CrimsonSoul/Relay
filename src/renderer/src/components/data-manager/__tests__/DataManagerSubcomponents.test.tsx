@@ -28,6 +28,7 @@ describe('DataManagerOverview', () => {
     expect(screen.getByText('7')).toBeInTheDocument();
     expect(screen.getByText('15')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
   });
 
   it('renders label names for each stat category', () => {
