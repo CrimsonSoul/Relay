@@ -2,13 +2,21 @@ import { Worker } from 'node:worker_threads';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
+import type { KnowledgeSearchExtractedPage } from './knowledgeSearchExtraction';
 
 type WorkerMessage =
-  | { id: number; ok: true; result: KnowledgeExtractionResult }
-  | { id: number; ok: false; error: string };
+  | { id: number; kind: 'metadata'; ok: true; result: KnowledgeExtractionResult }
+  | { id: number; kind: 'search'; ok: true; result: KnowledgeSearchExtractedPage[] }
+  | { id: number; kind: 'metadata' | 'search'; ok: false; error: string };
+
+type WorkerKind = WorkerMessage['kind'];
+type WorkerResult = KnowledgeExtractionResult | KnowledgeSearchExtractedPage[];
 
 type WorkerLike = {
-  postMessage(message: { id: number; data: ArrayBuffer }, transferList: ArrayBuffer[]): void;
+  postMessage(
+    message: { id: number; kind: WorkerKind; data: ArrayBuffer },
+    transferList: ArrayBuffer[],
+  ): void;
   on(event: 'message', listener: (message: WorkerMessage) => void): WorkerLike;
   on(event: 'error', listener: (error: Error) => void): WorkerLike;
   on(event: 'exit', listener: (code: number) => void): WorkerLike;
@@ -17,8 +25,9 @@ type WorkerLike = {
 
 type ExtractionJob = {
   id: number;
+  kind: WorkerKind;
   data: ArrayBuffer;
-  resolve: (result: KnowledgeExtractionResult) => void;
+  resolve: (result: WorkerResult) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout> | null;
 };
@@ -52,6 +61,14 @@ export class KnowledgeExtractorWorker {
   }
 
   extract(data: Uint8Array): Promise<KnowledgeExtractionResult> {
+    return this.enqueue('metadata', data) as Promise<KnowledgeExtractionResult>;
+  }
+
+  extractSearchPages(data: Uint8Array): Promise<KnowledgeSearchExtractedPage[]> {
+    return this.enqueue('search', data) as Promise<KnowledgeSearchExtractedPage[]>;
+  }
+
+  private enqueue(kind: WorkerKind, data: Uint8Array): Promise<WorkerResult> {
     if (this.stopped) return Promise.reject(new Error('extractor-stopped'));
     const copy = data.slice();
     const buffer = copy.buffer.slice(
@@ -60,7 +77,7 @@ export class KnowledgeExtractorWorker {
     ) as ArrayBuffer;
 
     return new Promise((resolve, reject) => {
-      this.queue.push({ id: this.nextId++, data: buffer, resolve, reject, timeout: null });
+      this.queue.push({ id: this.nextId++, kind, data: buffer, resolve, reject, timeout: null });
       this.pump();
     });
   }
@@ -97,11 +114,16 @@ export class KnowledgeExtractorWorker {
       void this.terminateWorker(worker);
       this.pump();
     }, this.timeoutMs);
-    worker.postMessage({ id: job.id, data: job.data }, [job.data]);
+    worker.postMessage({ id: job.id, kind: job.kind, data: job.data }, [job.data]);
   }
 
   private handleMessage(worker: WorkerLike, message: WorkerMessage): void {
-    if (worker !== this.worker || message.id !== this.current?.id) return;
+    if (
+      worker !== this.worker ||
+      message.id !== this.current?.id ||
+      message.kind !== this.current?.kind
+    )
+      return;
     const job = this.takeCurrent();
     if (!job) return;
     if (message.ok) job.resolve(message.result);
