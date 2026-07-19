@@ -25,8 +25,8 @@ import {
   normalizeKnowledgeCategoryRecord,
   normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
-  normalizeKnowledgeSearchText,
 } from './knowledge';
+import { normalizeKnowledgeSearchText } from './knowledgeSearch';
 import { IPC_CHANNELS } from './ipc';
 
 const validRecord = {
@@ -200,6 +200,23 @@ describe('knowledge contracts', () => {
       trashedByAccountId: null,
       trashedByName: null,
       trashedAt: null,
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
+    });
+  });
+
+  it('keeps legacy documents valid with pending search-index defaults', () => {
+    const legacy = normalizeKnowledgeDocumentRecord(validRecord);
+
+    expect(legacy).toMatchObject({
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
     });
   });
 
@@ -346,8 +363,8 @@ describe('knowledge contracts', () => {
     ).toBeNull();
   });
 
-  it('normalizes search text case and diacritics', () => {
-    expect(normalizeKnowledgeSearchText('  Résolution ÉTAPES  ')).toBe('resolution etapes');
+  it('normalizes search text case while preserving diacritics', () => {
+    expect(normalizeKnowledgeSearchText('  Résolution ÉTAPES  ')).toBe('résolution étapes');
   });
 
   it('normalizes metadata-only management snapshots without exposing PDF fields', () => {
@@ -366,6 +383,7 @@ describe('knowledge contracts', () => {
     expect(snapshot?.documents.items[0]).toMatchObject({
       id: document.id,
       displayTitle: document.title,
+      searchIndexState: 'pending',
     });
     expect(snapshot?.documents.items[0]).not.toHaveProperty('pdf');
     expect(snapshot?.documents.items[0]).not.toHaveProperty('outline');

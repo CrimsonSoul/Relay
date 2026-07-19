@@ -1,3 +1,5 @@
+import type { KnowledgeSearchIndexState } from './knowledgeSearch';
+
 export const KNOWLEDGE_DOCUMENTS_COLLECTION = 'knowledge_documents';
 export const KNOWLEDGE_CATEGORIES_COLLECTION = 'knowledge_categories';
 export const KNOWLEDGE_UPLOAD_BATCHES_COLLECTION = 'knowledge_upload_batches';
@@ -38,6 +40,10 @@ export type KnowledgeOutlineSource = 'native' | 'inferred' | 'none';
 export type KnowledgeLifecycleState = 'active' | 'trashed';
 export type KnowledgeLibraryMode = 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
 export type KnowledgeDocumentType = 'sop' | 'cheatsheet';
+export type KnowledgeSearchIndexError =
+  | 'no-searchable-text'
+  | 'extraction-failed'
+  | 'storage-unavailable';
 
 export type KnowledgeCategoryRecord = {
   id: string;
@@ -79,6 +85,11 @@ export type KnowledgeDocumentRecord = ManagedKnowledgeFields & {
   outlineSource: KnowledgeOutlineSource;
   sourceModifiedAt: string;
   indexedAt: string;
+  searchIndexState: KnowledgeSearchIndexState;
+  searchIndexChecksum: string | null;
+  searchIndexVersion: number;
+  searchIndexedAt: string | null;
+  searchIndexError: KnowledgeSearchIndexError | null;
   created: string;
   updated: string;
 };
@@ -262,6 +273,11 @@ export type KnowledgeManagementDocumentView = Pick<
   | 'publishedAt'
   | 'trashedByName'
   | 'trashedAt'
+  | 'searchIndexState'
+  | 'searchIndexChecksum'
+  | 'searchIndexVersion'
+  | 'searchIndexedAt'
+  | 'searchIndexError'
   | 'updated'
 >;
 
@@ -349,6 +365,49 @@ function boundedString(value: unknown, max: number): value is string {
 
 function boundedIdentifier(value: unknown, max: number): value is string {
   return boundedString(value, max) && IDENTIFIER_PATTERN.test(value);
+}
+
+type KnowledgeSearchIndexMetadata = Pick<
+  KnowledgeDocumentRecord,
+  | 'searchIndexState'
+  | 'searchIndexChecksum'
+  | 'searchIndexVersion'
+  | 'searchIndexedAt'
+  | 'searchIndexError'
+>;
+
+function normalizeKnowledgeSearchIndexMetadata(
+  value: Record<string, unknown>,
+): KnowledgeSearchIndexMetadata | null {
+  const searchIndexState = value.searchIndexState ?? 'pending';
+  const searchIndexChecksum = value.searchIndexChecksum ?? null;
+  const searchIndexVersion = value.searchIndexVersion ?? 0;
+  const searchIndexedAt = value.searchIndexedAt ?? null;
+  const searchIndexError = value.searchIndexError ?? null;
+
+  if (
+    !['pending', 'ready', 'failed'].includes(String(searchIndexState)) ||
+    (searchIndexChecksum !== null &&
+      (typeof searchIndexChecksum !== 'string' || !SHA256_PATTERN.test(searchIndexChecksum))) ||
+    !Number.isInteger(searchIndexVersion) ||
+    (searchIndexVersion as number) < 0 ||
+    (searchIndexedAt !== null && !boundedString(searchIndexedAt, 100)) ||
+    ![null, 'no-searchable-text', 'extraction-failed', 'storage-unavailable'].includes(
+      searchIndexError as KnowledgeSearchIndexError | null,
+    ) ||
+    (searchIndexState === 'ready' &&
+      (searchIndexChecksum === null || searchIndexVersion === 0 || searchIndexedAt === null))
+  ) {
+    return null;
+  }
+
+  return {
+    searchIndexState: searchIndexState as KnowledgeSearchIndexState,
+    searchIndexChecksum: searchIndexChecksum as string | null,
+    searchIndexVersion: searchIndexVersion as number,
+    searchIndexedAt: searchIndexedAt as string | null,
+    searchIndexError: searchIndexError as KnowledgeSearchIndexError | null,
+  };
 }
 
 function normalizeOutlineNode(value: unknown): KnowledgeOutlineNode | null {
@@ -447,6 +506,7 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
   const categoryId = rawCategoryId || null;
   const documentType = rawDocumentType ?? 'sop';
   const cover = rawCover || null;
+  const searchIndex = normalizeKnowledgeSearchIndexMetadata(value);
 
   if (
     !boundedString(id, 200) ||
@@ -471,7 +531,8 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     !boundedString(sourceModifiedAt, 100) ||
     !boundedString(indexedAt, 100) ||
     !boundedString(created, 100) ||
-    !boundedString(updated, 100)
+    !boundedString(updated, 100) ||
+    searchIndex === null
   ) {
     return null;
   }
@@ -519,6 +580,7 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     outlineSource: outlineSource as KnowledgeOutlineSource,
     sourceModifiedAt,
     indexedAt,
+    ...searchIndex,
     created,
     updated,
     lifecycleState,
@@ -849,6 +911,7 @@ export function normalizeKnowledgeManagementDocumentView(
   const trashedAt = value.trashedAt || null;
   const categoryId = value.categoryId || null;
   const documentType = value.documentType ?? 'sop';
+  const searchIndex = normalizeKnowledgeSearchIndexMetadata(value);
   if (
     !boundedString(value.id, 200) ||
     !boundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
@@ -870,7 +933,8 @@ export function normalizeKnowledgeManagementDocumentView(
     (trashedAt !== null && !boundedString(trashedAt, 100)) ||
     !boundedString(value.updated, 100) ||
     (lifecycleState === 'active' && (trashedByName !== null || trashedAt !== null)) ||
-    (lifecycleState === 'trashed' && (trashedByName === null || trashedAt === null))
+    (lifecycleState === 'trashed' && (trashedByName === null || trashedAt === null)) ||
+    searchIndex === null
   ) {
     return null;
   }
@@ -889,6 +953,7 @@ export function normalizeKnowledgeManagementDocumentView(
     publishedAt: value.publishedAt,
     trashedByName,
     trashedAt,
+    ...searchIndex,
     updated: value.updated,
   };
 }
