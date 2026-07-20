@@ -48,17 +48,40 @@ function request(query: string, requestId = 'request-1'): KnowledgeSearchRequest
 function cacheWith(
   documents: unknown[] = [],
   chunks: unknown[] = [],
-  usableServerIdentity: string | null = SERVER_URL,
+  searchServerIdentity: string | null = SERVER_URL,
 ) {
-  return {
+  let cachedDocuments = documents;
+  let cachedChunks = chunks;
+  let dedicatedIdentity = searchServerIdentity;
+  let globalIdentity = searchServerIdentity;
+  const cache = {
     readCollection: vi.fn((collection: string) =>
-      collection === KNOWLEDGE_DOCUMENTS_COLLECTION ? documents : chunks,
+      collection === KNOWLEDGE_DOCUMENTS_COLLECTION ? cachedDocuments : cachedChunks,
     ),
-    writeCollection: vi.fn(),
+    writeCollection: vi.fn((collection: string, records: unknown[]) => {
+      if (collection === KNOWLEDGE_DOCUMENTS_COLLECTION) cachedDocuments = records;
+      else cachedChunks = records;
+      return true;
+    }),
     updateRecord: vi.fn(() => true),
-    hasUsableCacheFor: vi.fn((serverIdentity: string) => serverIdentity === usableServerIdentity),
+    hasUsableCacheFor: vi.fn((serverIdentity: string) => serverIdentity === globalIdentity),
     setUsableCacheMarker: vi.fn(),
+    hasKnowledgeSearchSnapshotFor: vi.fn(
+      (serverIdentity: string) => serverIdentity === dedicatedIdentity,
+    ),
+    clearKnowledgeSearchSnapshotMarker: vi.fn(() => {
+      dedicatedIdentity = null;
+      return true;
+    }),
+    setKnowledgeSearchSnapshotMarker: vi.fn((serverIdentity: string) => {
+      dedicatedIdentity = serverIdentity;
+      return true;
+    }),
+    setGlobalIdentity(serverIdentity: string | null) {
+      globalIdentity = serverIdentity;
+    },
   };
+  return cache;
 }
 
 type RealtimeHandler = (event: { action: string; record: Record<string, unknown> }) => unknown;
@@ -143,7 +166,7 @@ describe('KnowledgeSearchService', () => {
 
     await service.start(null);
 
-    expect(cache.hasUsableCacheFor).toHaveBeenCalledWith(SERVER_URL);
+    expect(cache.hasKnowledgeSearchSnapshotFor).toHaveBeenCalledWith(SERVER_URL);
     expect(cache.readCollection).not.toHaveBeenCalled();
     await expect(service.search(request('failover'))).resolves.toMatchObject({
       ok: false,
@@ -265,41 +288,106 @@ describe('KnowledgeSearchService', () => {
     expect(cache.writeCollection).toHaveBeenCalledWith(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION, [
       validChunk,
     ]);
+    expect(cache.clearKnowledgeSearchSnapshotMarker).toHaveBeenCalledOnce();
+    expect(cache.setKnowledgeSearchSnapshotMarker).toHaveBeenCalledWith(SERVER_URL);
     expect(cache.setUsableCacheMarker).not.toHaveBeenCalled();
+    expect(cache.clearKnowledgeSearchSnapshotMarker.mock.invocationCallOrder[0]).toBeLessThan(
+      cache.writeCollection.mock.invocationCallOrder[0] as number,
+    );
+    expect(cache.writeCollection.mock.invocationCallOrder[1]).toBeLessThan(
+      cache.setKnowledgeSearchSnapshotMarker.mock.invocationCallOrder[0] as number,
+    );
     await expect(service.search(request('failover'))).resolves.toMatchObject({
       ok: true,
       availability: 'ready',
     });
   });
 
-  it('does not overwrite server A cache or promote its marker while connected to server B', async () => {
+  it('keeps stale server A search rows untrusted after the global marker moves to B', async () => {
     const cache = cacheWith([readyDocument], [validChunk], 'https://server-a.example.com');
     const serverBDocument = { ...readyDocument, title: 'Server B document' };
-    const network = pbWith([serverBDocument], [validChunk]);
+    const network = pbWith([], []);
+    const serverBDocuments = deferred<unknown[]>();
+    const serverBChunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => serverBDocuments.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => serverBChunks.promise);
     const serverBService = new KnowledgeSearchService({
       cache: cache as never,
       cacheIdentity: 'https://server-b.example.com',
     });
 
-    await serverBService.start(network.pb as never);
+    const connecting = serverBService.start(network.pb as never);
+    await vi.waitFor(() => expect(network.documentCollection.getFullList).toHaveBeenCalledOnce());
+    cache.setGlobalIdentity('https://server-b.example.com');
 
-    expect(cache.hasUsableCacheFor).toHaveBeenCalledWith('https://server-b.example.com');
+    const prematureRestart = new KnowledgeSearchService({
+      cache: cache as never,
+      cacheIdentity: 'https://server-b.example.com',
+    });
+    cache.readCollection.mockClear();
+    await prematureRestart.start(null);
+    expect(cache.readCollection).not.toHaveBeenCalled();
+    await expect(
+      prematureRestart.search(request('failover', 'premature-b')),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'unavailable',
+    });
+    await prematureRestart.dispose();
+
+    serverBDocuments.resolve([serverBDocument]);
+    serverBChunks.resolve([validChunk]);
+    await connecting;
+
     expect(cache.setUsableCacheMarker).not.toHaveBeenCalled();
-    expect(cache.writeCollection).not.toHaveBeenCalled();
+    expect(cache.clearKnowledgeSearchSnapshotMarker).toHaveBeenCalledOnce();
+    expect(cache.setKnowledgeSearchSnapshotMarker).toHaveBeenCalledWith(
+      'https://server-b.example.com',
+    );
     await serverBService.dispose();
 
-    const serverAEngine = {
+    const hydratedServerBEngine = {
       replaceSnapshot: vi.fn(),
       search: vi.fn(),
     };
-    const serverAService = new KnowledgeSearchService({
+    const hydratedServerBService = new KnowledgeSearchService({
       cache: cache as never,
-      cacheIdentity: 'https://server-a.example.com',
-      engine: serverAEngine as never,
+      cacheIdentity: 'https://server-b.example.com',
+      engine: hydratedServerBEngine as never,
     });
-    await serverAService.start(null);
-    expect(serverAEngine.replaceSnapshot).toHaveBeenCalledWith([readyDocument], [validChunk]);
-    await serverAService.dispose();
+    await hydratedServerBService.start(null);
+    expect(hydratedServerBEngine.replaceSnapshot).toHaveBeenCalledWith(
+      [expect.objectContaining({ title: 'Server B document' })],
+      [validChunk],
+    );
+    await hydratedServerBService.dispose();
+  });
+
+  it('leaves the dedicated marker invalid when the second snapshot collection write fails', async () => {
+    const cache = cacheWith([readyDocument], [validChunk], SERVER_URL);
+    cache.writeCollection.mockImplementationOnce(() => true).mockImplementationOnce(() => false);
+    const service = new KnowledgeSearchService({
+      cache: cache as never,
+      cacheIdentity: SERVER_URL,
+    });
+
+    await service.start(pbWith([readyDocument], [validChunk]).pb as never);
+
+    expect(cache.clearKnowledgeSearchSnapshotMarker).toHaveBeenCalledOnce();
+    expect(cache.setKnowledgeSearchSnapshotMarker).not.toHaveBeenCalled();
+    cache.readCollection.mockClear();
+    const restarted = new KnowledgeSearchService({
+      cache: cache as never,
+      cacheIdentity: SERVER_URL,
+    });
+    await restarted.start(null);
+    expect(cache.readCollection).not.toHaveBeenCalled();
+    await expect(restarted.search(request('failover', 'partial-write'))).resolves.toMatchObject({
+      ok: false,
+      error: 'unavailable',
+    });
+    await service.dispose();
+    await restarted.dispose();
   });
 
   it('rejects NFKC-expanded over-limit queries before engine work or circuit accounting', async () => {
@@ -458,6 +546,174 @@ describe('KnowledgeSearchService', () => {
       ok: true,
       results: [],
     });
+  });
+
+  it('fails closed on buffered event-count overflow and permits a later reconciliation', async () => {
+    const network = pbWith([readyDocument], [validChunk]);
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(async (searchRequest: KnowledgeSearchRequest) => ({
+        ok: true as const,
+        requestId: searchRequest.requestId,
+        availability: 'ready' as const,
+        normalizedQuery: normalizeKnowledgeSearchText(searchRequest.query),
+        results: [],
+      })),
+    };
+    const service = new KnowledgeSearchService({
+      engine: engine as never,
+      bufferLimits: { maxUniqueEvents: 1, maxRetainedBytes: 100_000 },
+    });
+    await service.start(network.pb as never);
+    engine.replaceSnapshot.mockClear();
+
+    const documents = deferred<unknown[]>();
+    const chunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => documents.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => chunks.promise);
+    network.disconnect();
+    await vi.waitFor(() => expect(network.documentCollection.getFullList).toHaveBeenCalledTimes(2));
+
+    network.emitDocument('update', readyDocument);
+    network.emitDocument(
+      'update',
+      knowledgeSearchFixtureDocument({ id: 'document2', title: 'Second document' }),
+    );
+    documents.resolve([readyDocument]);
+    chunks.resolve([validChunk]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(engine.replaceSnapshot).not.toHaveBeenCalled();
+    await expect(service.search(request('failover', 'after-overflow'))).resolves.toMatchObject({
+      ok: false,
+      error: 'unavailable',
+    });
+    expect(engine.search).not.toHaveBeenCalled();
+    const recoveredDocument = { ...readyDocument, title: 'Recovered snapshot' };
+    network.documentCollection.getFullList.mockResolvedValueOnce([recoveredDocument]);
+    network.chunkCollection.getFullList.mockResolvedValueOnce([validChunk]);
+    network.disconnect();
+    await vi.waitFor(() => expect(engine.replaceSnapshot).toHaveBeenCalledOnce());
+    expect(engine.replaceSnapshot).toHaveBeenCalledWith([recoveredDocument], [validChunk]);
+    await expect(service.search(request('failover', 'after-recovery'))).resolves.toMatchObject({
+      ok: true,
+    });
+    await service.dispose();
+  });
+
+  it('fails closed when one normalized buffered event exceeds the retained-byte bound', async () => {
+    const network = pbWith([], []);
+    const documents = deferred<unknown[]>();
+    const chunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => documents.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => chunks.promise);
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(),
+    };
+    const service = new KnowledgeSearchService({
+      engine: engine as never,
+      bufferLimits: { maxUniqueEvents: 10, maxRetainedBytes: 64 },
+    });
+    const startup = service.start(network.pb as never);
+    await vi.waitFor(() => expect(network.documentCollection.getFullList).toHaveBeenCalledOnce());
+
+    network.emitDocument('update', readyDocument);
+    documents.resolve([]);
+    chunks.resolve([]);
+    await startup;
+
+    expect(engine.replaceSnapshot).not.toHaveBeenCalled();
+    await service.dispose();
+  });
+
+  it('coalesces repeated same-record updates and replays them in last-update order', async () => {
+    const network = pbWith([readyDocument], [validChunk]);
+    const documents = deferred<unknown[]>();
+    const chunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => documents.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => chunks.promise);
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(),
+    };
+    const service = new KnowledgeSearchService({
+      engine: engine as never,
+      bufferLimits: { maxUniqueEvents: 1, maxRetainedBytes: 10_000 },
+    });
+    const startup = service.start(network.pb as never);
+    await vi.waitFor(() => expect(network.documentCollection.getFullList).toHaveBeenCalledOnce());
+
+    for (let revision = 1; revision <= 100; revision += 1) {
+      network.emitDocument('update', {
+        ...readyDocument,
+        title: `Buffered title ${revision}`,
+      });
+    }
+    documents.resolve([readyDocument]);
+    chunks.resolve([validChunk]);
+    await startup;
+
+    expect(engine.replaceSnapshot).toHaveBeenCalledWith(
+      [expect.objectContaining({ title: 'Buffered title 100' })],
+      [validChunk],
+    );
+    await service.dispose();
+  });
+
+  it('ignores callbacks from a failed connection even when its unsubscribers never settle', async () => {
+    vi.useFakeTimers();
+    const cache = cacheWith([], [], SERVER_URL);
+    const network = pbWith([], []);
+    network.documentCollection.getFullList.mockRejectedValueOnce(new Error('snapshot failed'));
+    network.unsubscribeDocuments.mockImplementation(() => new Promise(() => undefined));
+    network.unsubscribeChunks.mockImplementation(() => new Promise(() => undefined));
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(),
+    };
+    const service = new KnowledgeSearchService({
+      cache: cache as never,
+      cacheIdentity: SERVER_URL,
+      engine: engine as never,
+    });
+
+    const startup = service.start(network.pb as never);
+    await vi.waitFor(() => expect(network.unsubscribeDocuments).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(1_000);
+    await startup;
+    engine.upsertDocument.mockClear();
+    engine.removeDocument.mockClear();
+    engine.upsertChunk.mockClear();
+    engine.removeChunk.mockClear();
+    cache.updateRecord.mockClear();
+
+    network.emitDocument('update', readyDocument);
+    network.emitChunk('update', validChunk);
+
+    expect(engine.upsertDocument).not.toHaveBeenCalled();
+    expect(engine.removeDocument).not.toHaveBeenCalled();
+    expect(engine.upsertChunk).not.toHaveBeenCalled();
+    expect(engine.removeChunk).not.toHaveBeenCalled();
+    expect(cache.updateRecord).not.toHaveBeenCalled();
+    expect(network.pb.realtime.onDisconnect).toBeNull();
+    await service.dispose();
   });
 
   it('buffers delete, trash, and metadata updates racing a reconciliation snapshot', async () => {

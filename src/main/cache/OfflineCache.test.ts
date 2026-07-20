@@ -232,6 +232,29 @@ describe('OfflineCache', () => {
     expect(cache.getUsableCacheMarker()).toBeNull();
   });
 
+  it('tracks Wiki search snapshot trust independently by normalized server identity', () => {
+    const serverUrl = ['HTTPS', '://Relay.Example.com/'].join('');
+
+    expect(cache.hasKnowledgeSearchSnapshotFor(serverUrl)).toBe(false);
+    expect(cache.setKnowledgeSearchSnapshotMarker(serverUrl)).toBe(true);
+    expect(cache.hasKnowledgeSearchSnapshotFor('https://relay.example.com')).toBe(true);
+    expect(cache.hasUsableCacheFor(serverUrl)).toBe(false);
+
+    expect(cache.clearKnowledgeSearchSnapshotMarker()).toBe(true);
+    expect(cache.hasKnowledgeSearchSnapshotFor(serverUrl)).toBe(false);
+  });
+
+  it('clears both global and Wiki search snapshot markers with cached data', () => {
+    const serverUrl = 'https://relay.example.com';
+    cache.setUsableCacheMarker(serverUrl, 100, 200);
+    cache.setKnowledgeSearchSnapshotMarker(serverUrl);
+
+    cache.clear();
+
+    expect(cache.hasUsableCacheFor(serverUrl)).toBe(false);
+    expect(cache.hasKnowledgeSearchSnapshotFor(serverUrl)).toBe(false);
+  });
+
   it('does not store update records without a non-empty string id', () => {
     cache.updateRecord('contacts', 'create', { name: 'NoId' });
     cache.updateRecord('contacts', 'create', { id: '', name: 'BlankId' });

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { loggers } from '../logger';
 
 const logger = loggers.sync;
+const KNOWLEDGE_SEARCH_SNAPSHOT_MARKER_KEY = 'knowledge-search-snapshot';
 type CacheMutationAction = 'create' | 'update' | 'delete';
 
 export interface UsableCacheMarker {
@@ -82,7 +83,7 @@ export class OfflineCache {
     return typeof id === 'string' && id.trim().length > 0 ? id : null;
   }
 
-  writeCollection(collection: string, records: Record<string, unknown>[]): void;
+  writeCollection(collection: string, records: Record<string, unknown>[]): boolean;
   writeCollection(
     collection: string,
     signature: string,
@@ -92,7 +93,7 @@ export class OfflineCache {
     collection: string,
     signatureOrRecords: string | Record<string, unknown>[],
     snapshotRecords?: Record<string, unknown>[],
-  ): boolean | void {
+  ): boolean {
     try {
       const signature = typeof signatureOrRecords === 'string' ? signatureOrRecords : null;
       const records =
@@ -131,7 +132,7 @@ export class OfflineCache {
       return true;
     } catch (err) {
       logger.error('Failed to write collection to cache', { collection, error: err });
-      if (typeof signatureOrRecords === 'string') return false;
+      return false;
     }
   }
 
@@ -318,6 +319,42 @@ export class OfflineCache {
 
   hasUsableCacheFor(serverUrl: string): boolean {
     return this.getUsableCacheMarker()?.serverIdentity === normalizeServerIdentity(serverUrl);
+  }
+
+  setKnowledgeSearchSnapshotMarker(serverIdentity: string): boolean {
+    try {
+      this.db
+        .prepare('INSERT OR REPLACE INTO offline_meta (key, value) VALUES (?, ?)')
+        .run(KNOWLEDGE_SEARCH_SNAPSHOT_MARKER_KEY, normalizeServerIdentity(serverIdentity));
+      return true;
+    } catch (error) {
+      logger.error('Failed to set Wiki search snapshot marker', { error });
+      return false;
+    }
+  }
+
+  clearKnowledgeSearchSnapshotMarker(): boolean {
+    try {
+      this.db
+        .prepare('DELETE FROM offline_meta WHERE key = ?')
+        .run(KNOWLEDGE_SEARCH_SNAPSHOT_MARKER_KEY);
+      return true;
+    } catch (error) {
+      logger.error('Failed to clear Wiki search snapshot marker', { error });
+      return false;
+    }
+  }
+
+  hasKnowledgeSearchSnapshotFor(serverIdentity: string): boolean {
+    try {
+      const row = this.db
+        .prepare('SELECT value FROM offline_meta WHERE key = ?')
+        .get(KNOWLEDGE_SEARCH_SNAPSHOT_MARKER_KEY) as { value: string } | undefined;
+      return row?.value === normalizeServerIdentity(serverIdentity);
+    } catch (error) {
+      logger.warn('Failed to read Wiki search snapshot marker', { error });
+      return false;
+    }
   }
 
   clear(): void {

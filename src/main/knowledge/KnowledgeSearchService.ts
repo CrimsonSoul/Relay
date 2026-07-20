@@ -32,6 +32,8 @@ const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 30_000;
 const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = KNOWLEDGE_MAX_PAGES * 16;
 const DEFAULT_MAX_TEXT_BYTES_PER_DOCUMENT = KNOWLEDGE_MAX_PDF_BYTES;
+const DEFAULT_MAX_BUFFERED_UNIQUE_EVENTS = 10_000;
+const DEFAULT_MAX_BUFFERED_EVENT_BYTES = 16 * 1024 * 1024;
 
 type SearchEnginePort = Pick<
   KnowledgeSearchEngine,
@@ -40,7 +42,12 @@ type SearchEnginePort = Pick<
 
 type SearchCachePort = Pick<
   OfflineCache,
-  'readCollection' | 'writeCollection' | 'updateRecord' | 'hasUsableCacheFor'
+  | 'readCollection'
+  | 'writeCollection'
+  | 'updateRecord'
+  | 'hasKnowledgeSearchSnapshotFor'
+  | 'clearKnowledgeSearchSnapshotMarker'
+  | 'setKnowledgeSearchSnapshotMarker'
 >;
 
 type SearchLimits = {
@@ -48,6 +55,11 @@ type SearchLimits = {
   maxTextBytes: number;
   maxChunksPerDocument: number;
   maxTextBytesPerDocument: number;
+};
+
+type RealtimeBufferLimits = {
+  maxUniqueEvents: number;
+  maxRetainedBytes: number;
 };
 
 type Snapshot = {
@@ -76,8 +88,18 @@ type SearchPocketBase = {
 };
 
 type ActiveSearch = { cancelled: boolean; rejectCancellation: () => void };
-type BufferedRealtimeEvent = { kind: 'document' | 'chunk'; event: RealtimeEvent };
-type EventBuffer = { epoch: number; events: BufferedRealtimeEvent[] };
+type BufferedRealtimeEvent =
+  | { kind: 'document'; action: 'delete'; id: string }
+  | { kind: 'document'; action: 'upsert'; id: string; record: KnowledgeDocumentRecord }
+  | { kind: 'chunk'; action: 'delete'; id: string }
+  | { kind: 'chunk'; action: 'upsert'; id: string; record: KnowledgeSearchChunkRecord };
+type BufferedEventEntry = { event: BufferedRealtimeEvent; bytes: number };
+type EventBuffer = {
+  epoch: number;
+  events: Map<string, BufferedEventEntry>;
+  retainedBytes: number;
+  failureReason: 'event-count-limit' | 'event-byte-limit' | 'invalid-event' | null;
+};
 type Reconciliation = { epoch: number; promise: Promise<void> };
 
 class SearchCancelledError extends Error {
@@ -207,13 +229,13 @@ function parseSnapshot(
 
 function replaySnapshotEvents(
   snapshot: Snapshot,
-  events: readonly BufferedRealtimeEvent[],
+  events: Iterable<BufferedEventEntry>,
   limits: SearchLimits,
 ): Snapshot | null {
   const documents = new Map(snapshot.cachedDocuments.map((document) => [document.id, document]));
   const chunks = new Map(snapshot.cachedChunks.map((chunk) => [chunk.id, chunk]));
-  for (const buffered of events) {
-    if (!applySnapshotEvent(documents, chunks, buffered)) return null;
+  for (const { event } of events) {
+    applySnapshotEvent(documents, chunks, event);
   }
   return parseSnapshot([...documents.values()], [...chunks.values()], limits);
 }
@@ -222,24 +244,41 @@ function applySnapshotEvent(
   documents: Map<string, KnowledgeDocumentRecord>,
   chunks: Map<string, KnowledgeSearchChunkRecord>,
   buffered: BufferedRealtimeEvent,
-): boolean {
-  const recordId = safeRecordId(buffered.event.record);
-  if (buffered.event.action === 'delete') {
-    if (recordId === 'unknown' || recordId === 'invalid') return true;
-    if (buffered.kind === 'document') documents.delete(recordId);
-    else chunks.delete(recordId);
-    return true;
+): void {
+  if (buffered.action === 'delete') {
+    if (buffered.kind === 'document') documents.delete(buffered.id);
+    else chunks.delete(buffered.id);
+    return;
   }
   if (buffered.kind === 'document') {
-    const document = normalizeKnowledgeDocumentRecord(buffered.event.record);
-    if (!document) return false;
-    documents.set(document.id, document);
-    return true;
+    documents.set(buffered.id, buffered.record);
+    return;
   }
-  const chunk = normalizeKnowledgeSearchChunkRecord(buffered.event.record);
-  if (!chunk) return false;
-  chunks.set(chunk.id, chunk);
-  return true;
+  chunks.set(buffered.id, buffered.record);
+}
+
+function normalizeRealtimeEvent(
+  kind: BufferedRealtimeEvent['kind'],
+  event: RealtimeEvent,
+): BufferedRealtimeEvent | null {
+  if (event.action === 'delete') {
+    const id = safeRecordId(event.record);
+    if (id === 'unknown' || id === 'invalid') return null;
+    return { kind, action: 'delete', id };
+  }
+  if (event.action !== 'create' && event.action !== 'update') return null;
+  if (kind === 'document') {
+    const record = normalizeKnowledgeDocumentRecord(event.record);
+    return record ? { kind, action: 'upsert', id: record.id, record } : null;
+  }
+  const record = normalizeKnowledgeSearchChunkRecord(event.record);
+  return record ? { kind, action: 'upsert', id: record.id, record } : null;
+}
+
+function bufferedEventBytes(event: BufferedRealtimeEvent): number {
+  const identityBytes = Buffer.byteLength(event.id, 'utf8') + 16;
+  if (event.action === 'delete') return identityBytes;
+  return identityBytes + Buffer.byteLength(JSON.stringify(event.record), 'utf8');
 }
 
 function rejectedAfter(
@@ -270,6 +309,7 @@ export type KnowledgeSearchServiceOptions = {
   now?: () => number;
   monotonicNow?: () => number;
   limits?: Partial<SearchLimits>;
+  bufferLimits?: Partial<RealtimeBufferLimits>;
 };
 
 export class KnowledgeSearchService {
@@ -279,6 +319,7 @@ export class KnowledgeSearchService {
   private readonly now: () => number;
   private readonly monotonicNow: () => number;
   private readonly limits: SearchLimits;
+  private readonly bufferLimits: RealtimeBufferLimits;
   private readonly documents = new Map<string, KnowledgeDocumentRecord>();
   private readonly chunks = new Map<string, KnowledgeSearchChunkRecord>();
   private readonly activeSearches = new Map<string, ActiveSearch>();
@@ -314,6 +355,10 @@ export class KnowledgeSearchService {
       maxTextBytesPerDocument:
         options.limits?.maxTextBytesPerDocument ?? DEFAULT_MAX_TEXT_BYTES_PER_DOCUMENT,
     };
+    this.bufferLimits = {
+      maxUniqueEvents: options.bufferLimits?.maxUniqueEvents ?? DEFAULT_MAX_BUFFERED_UNIQUE_EVENTS,
+      maxRetainedBytes: options.bufferLimits?.maxRetainedBytes ?? DEFAULT_MAX_BUFFERED_EVENT_BYTES,
+    };
   }
 
   async start(pb: PocketBase | null): Promise<void> {
@@ -329,7 +374,7 @@ export class KnowledgeSearchService {
     const nextPb = pb as unknown as SearchPocketBase;
     if (!this.isCurrent(epoch)) return;
     this.pb = nextPb;
-    this.eventBuffer = { epoch, events: [] };
+    this.eventBuffer = this.createEventBuffer(epoch);
     let subscriptionDeadline: ReturnType<typeof rejectedAfter> | null = null;
     try {
       subscriptionDeadline = rejectedAfter(
@@ -452,7 +497,7 @@ export class KnowledgeSearchService {
   private hydrateFromCache(): void {
     if (!this.cache || !this.cacheIdentity) return;
     try {
-      if (!this.cache.hasUsableCacheFor(this.cacheIdentity)) return;
+      if (!this.cache.hasKnowledgeSearchSnapshotFor(this.cacheIdentity)) return;
       const snapshot = parseSnapshot(
         this.cache.readCollection(KNOWLEDGE_DOCUMENTS_COLLECTION),
         this.cache.readCollection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION),
@@ -477,10 +522,10 @@ export class KnowledgeSearchService {
       if (!this.isCurrentConnection(epoch, pb)) return;
       const initialSnapshot = parseSnapshot(rawDocuments, rawChunks, this.limits);
       const buffer = this.eventBuffer;
-      if (!initialSnapshot || !buffer || buffer.epoch !== epoch) {
+      if (!initialSnapshot || !buffer || buffer.epoch !== epoch || buffer.failureReason !== null) {
         throw new Error('invalid-snapshot');
       }
-      const snapshot = replaySnapshotEvents(initialSnapshot, buffer.events, this.limits);
+      const snapshot = replaySnapshotEvents(initialSnapshot, buffer.events.values(), this.limits);
       if (!snapshot) throw new Error('invalid-realtime-replay');
       if (!this.isCurrentConnection(epoch, pb)) return;
       this.eventBuffer = null;
@@ -505,15 +550,22 @@ export class KnowledgeSearchService {
   private writeSnapshotToCache(snapshot: Snapshot): void {
     if (!this.cache || !this.cacheIdentity) return;
     try {
-      if (!this.cache.hasUsableCacheFor(this.cacheIdentity)) return;
-      this.cache.writeCollection(
+      if (!this.cache.clearKnowledgeSearchSnapshotMarker()) return;
+      const documentsWritten = this.cache.writeCollection(
         KNOWLEDGE_DOCUMENTS_COLLECTION,
         snapshot.cachedDocuments as unknown as Record<string, unknown>[],
       );
-      this.cache.writeCollection(
+      const chunksWritten = this.cache.writeCollection(
         KNOWLEDGE_SEARCH_CHUNKS_COLLECTION,
         snapshot.cachedChunks as unknown as Record<string, unknown>[],
       );
+      if (!documentsWritten || !chunksWritten) {
+        knowledgeLogger().warn('Wiki search cache persistence failed', {
+          reason: 'cache-write-incomplete',
+        });
+        return;
+      }
+      this.cache.setKnowledgeSearchSnapshotMarker(this.cacheIdentity);
     } catch {
       knowledgeLogger().warn('Wiki search cache persistence failed', {
         reason: 'cache-write-failed',
@@ -524,7 +576,7 @@ export class KnowledgeSearchService {
   private async subscribe(pb: SearchPocketBase, epoch: number): Promise<void> {
     const documentUnsubscribe = await pb
       .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
-      .subscribe('*', (event) => this.routeRealtimeEvent('document', event, epoch));
+      .subscribe('*', (event) => this.routeRealtimeEvent('document', event, epoch, pb));
     if (!this.isCurrentConnection(epoch, pb)) {
       void this.invokeUnsubscriber(documentUnsubscribe);
       return;
@@ -532,7 +584,7 @@ export class KnowledgeSearchService {
     this.unsubscribers.push(documentUnsubscribe);
     const chunkUnsubscribe = await pb
       .collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION)
-      .subscribe('*', (event) => this.routeRealtimeEvent('chunk', event, epoch));
+      .subscribe('*', (event) => this.routeRealtimeEvent('chunk', event, epoch, pb));
     if (!this.isCurrentConnection(epoch, pb)) {
       void this.invokeUnsubscriber(chunkUnsubscribe);
       return;
@@ -556,45 +608,103 @@ export class KnowledgeSearchService {
     kind: BufferedRealtimeEvent['kind'],
     event: RealtimeEvent,
     epoch: number,
+    pb: SearchPocketBase,
   ): void {
-    if (!this.isCurrent(epoch)) return;
-    if (this.eventBuffer?.epoch === epoch) {
-      this.eventBuffer.events.push({ kind, event });
+    if (!this.isCurrentConnection(epoch, pb)) return;
+    const normalized = normalizeRealtimeEvent(kind, event);
+    if (!normalized) {
+      this.rejectRealtimeEvent(epoch, kind, event);
       return;
     }
-    if (kind === 'document') this.handleDocumentEvent(event);
-    else this.handleChunkEvent(event);
+    if (this.eventBuffer?.epoch === epoch) {
+      this.retainBufferedEvent(this.eventBuffer, normalized);
+      return;
+    }
+    this.applyRealtimeEvent(normalized);
   }
 
   private flushBufferedEvents(epoch: number): void {
     const buffer = this.eventBuffer;
     if (!buffer || buffer.epoch !== epoch) return;
     this.eventBuffer = null;
-    for (const buffered of buffer.events) {
+    if (buffer.failureReason) return;
+    for (const { event } of buffer.events.values()) {
       if (!this.isCurrent(epoch)) return;
-      if (buffered.kind === 'document') this.handleDocumentEvent(buffered.event);
-      else this.handleChunkEvent(buffered.event);
+      this.applyRealtimeEvent(event);
     }
   }
 
-  private handleDocumentEvent(event: RealtimeEvent): void {
-    const recordId = safeRecordId(event.record);
+  private createEventBuffer(epoch: number): EventBuffer {
+    return {
+      epoch,
+      events: new Map(),
+      retainedBytes: 0,
+      failureReason: null,
+    };
+  }
+
+  private rejectRealtimeEvent(
+    epoch: number,
+    kind: BufferedRealtimeEvent['kind'],
+    event: RealtimeEvent,
+  ): void {
+    if (this.eventBuffer?.epoch === epoch) {
+      this.failEventBuffer(this.eventBuffer, 'invalid-event');
+      return;
+    }
+    knowledgeLogger().warn('Skipped invalid Wiki search realtime event', {
+      kind,
+      recordId: safeRecordId(event.record),
+      reason: 'invalid-event',
+    });
+    void this.reconcile();
+  }
+
+  private retainBufferedEvent(buffer: EventBuffer, event: BufferedRealtimeEvent): void {
+    if (buffer.failureReason) return;
+    const key = `${event.kind}:${event.id}`;
+    const previous = buffer.events.get(key);
+    const bytes = bufferedEventBytes(event);
+    const nextCount = buffer.events.size + (previous ? 0 : 1);
+    const nextBytes = buffer.retainedBytes - (previous?.bytes ?? 0) + bytes;
+    if (nextCount > this.bufferLimits.maxUniqueEvents) {
+      this.failEventBuffer(buffer, 'event-count-limit');
+      return;
+    }
+    if (nextBytes > this.bufferLimits.maxRetainedBytes) {
+      this.failEventBuffer(buffer, 'event-byte-limit');
+      return;
+    }
+    buffer.events.delete(key);
+    buffer.events.set(key, { event, bytes });
+    buffer.retainedBytes = nextBytes;
+  }
+
+  private failEventBuffer(
+    buffer: EventBuffer,
+    reason: NonNullable<EventBuffer['failureReason']>,
+  ): void {
+    if (buffer.failureReason) return;
+    buffer.events.clear();
+    buffer.retainedBytes = 0;
+    buffer.failureReason = reason;
+    this.availability = null;
+    knowledgeLogger().warn('Rejected Wiki search realtime buffer', { reason });
+  }
+
+  private applyRealtimeEvent(event: BufferedRealtimeEvent): void {
+    if (event.kind === 'document') this.handleDocumentEvent(event);
+    else this.handleChunkEvent(event);
+  }
+
+  private handleDocumentEvent(event: Extract<BufferedRealtimeEvent, { kind: 'document' }>): void {
     if (event.action === 'delete') {
-      if (recordId === 'unknown' || recordId === 'invalid') return;
-      this.documents.delete(recordId);
-      this.engine.removeDocument(recordId);
-      this.cacheUpdate(KNOWLEDGE_DOCUMENTS_COLLECTION, 'delete', { id: recordId });
+      this.documents.delete(event.id);
+      this.engine.removeDocument(event.id);
+      this.cacheUpdate(KNOWLEDGE_DOCUMENTS_COLLECTION, 'delete', { id: event.id });
       return;
     }
-    const document = normalizeKnowledgeDocumentRecord(event.record);
-    if (!document) {
-      knowledgeLogger().warn('Skipped invalid Wiki search document event', {
-        documentId: recordId,
-        reason: 'invalid-record',
-      });
-      void this.reconcile();
-      return;
-    }
+    const document = event.record;
     const previous = this.documents.get(document.id);
     this.documents.set(document.id, document);
     this.cacheUpdate(
@@ -628,24 +738,14 @@ export class KnowledgeSearchService {
     }
   }
 
-  private handleChunkEvent(event: RealtimeEvent): void {
-    const recordId = safeRecordId(event.record);
+  private handleChunkEvent(event: Extract<BufferedRealtimeEvent, { kind: 'chunk' }>): void {
     if (event.action === 'delete') {
-      if (recordId === 'unknown' || recordId === 'invalid') return;
-      this.deleteStoredChunk(recordId);
-      this.engine.removeChunk(recordId);
-      this.cacheUpdate(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION, 'delete', { id: recordId });
+      this.deleteStoredChunk(event.id);
+      this.engine.removeChunk(event.id);
+      this.cacheUpdate(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION, 'delete', { id: event.id });
       return;
     }
-    const chunk = normalizeKnowledgeSearchChunkRecord(event.record);
-    if (!chunk) {
-      knowledgeLogger().warn('Skipped invalid Wiki search chunk event', {
-        chunkId: recordId,
-        reason: 'invalid-record',
-      });
-      void this.reconcile();
-      return;
-    }
+    const chunk = event.record;
     const previous = this.chunks.get(chunk.id);
     if (!this.canStoreChunk(chunk, previous)) {
       knowledgeLogger().warn('Rejected oversized Wiki search realtime chunk', {
@@ -733,7 +833,7 @@ export class KnowledgeSearchService {
   ): void {
     if (!this.cache || !this.cacheIdentity) return;
     try {
-      if (!this.cache.hasUsableCacheFor(this.cacheIdentity)) return;
+      if (!this.cache.hasKnowledgeSearchSnapshotFor(this.cacheIdentity)) return;
       this.cache.updateRecord(collection, action, record);
     } catch {
       knowledgeLogger().warn('Wiki search cache update failed', { reason: 'cache-update-failed' });
@@ -751,7 +851,7 @@ export class KnowledgeSearchService {
     const pb = this.pb;
     const epoch = this.connectionEpoch;
     if (this.reconciliation?.epoch === epoch) return this.reconciliation.promise;
-    this.eventBuffer = { epoch, events: [] };
+    this.eventBuffer = this.createEventBuffer(epoch);
     const promise = this.synchronizeSnapshot(pb, epoch)
       .then(() => {
         if (!this.isCurrentConnection(epoch, pb)) return;
