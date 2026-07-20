@@ -69,6 +69,72 @@ function textItem(str: string, x: number, y: number, size: number, fontName = 'B
 }
 
 describe('inferKnowledgeOutline', () => {
+  it('uses horizontal geometry to preserve real spaces without splitting adjacent text runs', () => {
+    const splitWord = textItem('Completing Oracle Request Tic', 60, 700, 18, 'Heading-Bold');
+    const splitWordEnd = (splitWord.transform[4] ?? 0) + splitWord.width;
+    const hyphenPrefix = textItem(
+      'Standard operating procedures and step',
+      60,
+      620,
+      18,
+      'Heading-Bold',
+    );
+    const firstHyphenX = (hyphenPrefix.transform[4] ?? 0) + hyphenPrefix.width;
+    const firstHyphen = textItem('-', firstHyphenX, 620, 18, 'Heading-Bold');
+    const by = textItem('by', firstHyphenX + firstHyphen.width, 620, 18, 'Heading-Bold');
+    const secondHyphen = textItem(
+      '-',
+      firstHyphenX + firstHyphen.width + by.width,
+      620,
+      18,
+      'Heading-Bold',
+    );
+    const finalStep = textItem(
+      'step',
+      firstHyphenX + firstHyphen.width + by.width + secondHyphen.width,
+      620,
+      18,
+      'Heading-Bold',
+    );
+    const spacedPrefix = textItem('Routine', 60, 540, 18, 'Heading-Bold');
+
+    const result = inferKnowledgeOutline([
+      {
+        pageIndex: 0,
+        height: 800,
+        items: [
+          splitWord,
+          textItem('kets', splitWordEnd, 700, 18, 'Heading-Bold'),
+          hyphenPrefix,
+          firstHyphen,
+          by,
+          secondHyphen,
+          finalStep,
+          spacedPrefix,
+          textItem(
+            'Checks',
+            (spacedPrefix.transform[4] ?? 0) + spacedPrefix.width + 6,
+            540,
+            18,
+            'Heading-Bold',
+          ),
+          textItem(
+            'This paragraph supplies enough ordinary body text to establish the predominant font size for the document.',
+            60,
+            460,
+            10,
+          ),
+        ],
+      },
+    ]);
+
+    expect(result.map(({ label }) => label)).toEqual([
+      'Completing Oracle Request Tickets',
+      'Standard operating procedures and step-by-step',
+      'Routine Checks',
+    ]);
+  });
+
   it('infers two heading levels and removes repeated margins, page numbers, and body lines', () => {
     const pages: KnowledgeTextPage[] = [
       {

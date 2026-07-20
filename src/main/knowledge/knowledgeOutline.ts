@@ -142,6 +142,32 @@ function itemFontSize(item: KnowledgeTextItem): number {
   return Math.max(verticalScale, horizontalScale);
 }
 
+function joinLineItems(items: KnowledgeTextItem[]): string {
+  let text = '';
+  let previous: KnowledgeTextItem | null = null;
+
+  for (const item of items) {
+    const value = item.str.trim().replace(/\s+/g, ' ');
+    if (!value) continue;
+
+    if (previous === null) {
+      text = value;
+      previous = item;
+      continue;
+    }
+
+    const previousRight = (previous.transform[4] ?? 0) + previous.width;
+    const gap = (item.transform[4] ?? 0) - previousRight;
+    const referenceSize = Math.min(itemFontSize(previous), itemFontSize(item));
+    const hasExplicitSpace = /\s$/.test(previous.str) || /^\s/.test(item.str);
+    const hasVisualWordGap = referenceSize > 0 && gap > referenceSize * 0.12;
+    text += `${hasExplicitSpace || hasVisualWordGap ? ' ' : ''}${value}`;
+    previous = item;
+  }
+
+  return text;
+}
+
 function groupPageLines(page: KnowledgeTextPage): KnowledgeTextLine[] {
   const sorted = page.items
     .filter((item) => item.str.trim() && item.transform.length >= 6)
@@ -166,11 +192,7 @@ function groupPageLines(page: KnowledgeTextPage): KnowledgeTextLine[] {
       (left, right) => (left.transform[4] ?? 0) - (right.transform[4] ?? 0),
     );
     return {
-      text: ordered
-        .map((item) => item.str.trim())
-        .filter(Boolean)
-        .join(' ')
-        .replace(/\s+/g, ' '),
+      text: joinLineItems(ordered),
       pageIndex: page.pageIndex,
       top: ordered[0]?.transform[5] ?? 0,
       fontSize: Math.max(...ordered.map(itemFontSize)),
