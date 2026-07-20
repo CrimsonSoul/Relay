@@ -384,9 +384,10 @@
   flex: 1;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: var(--space-3);
   padding: var(--space-6) var(--space-5);
+  overflow-y: auto;
   text-align: center;
 }
 

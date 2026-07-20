@@ -262,7 +262,8 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: 'Open AWS on X' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open Claude on Downdetector' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Claude on Downdetector' }));
+    expect(openExternal).toHaveBeenCalledWith('https://downdetector.com/status/claude-ai/');
     expect(screen.queryByRole('button', { name: 'Open Claude on X' })).not.toBeInTheDocument();
   });
 
