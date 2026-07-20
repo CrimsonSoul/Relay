@@ -29,7 +29,7 @@ describe('KnowledgeHome', () => {
     expect(screen.getAllByRole('heading')).toHaveLength(1);
     expect(
       screen.getByRole('heading', {
-        name: 'Get Connected To The People, Systems, And Guidance You Need — All In One Place',
+        name: 'Get connected to the people, systems, and guidance you need — all in one place.',
       }),
     ).toBeInTheDocument();
     expect(screen.getByText('Knowledge workspace')).toBeInTheDocument();

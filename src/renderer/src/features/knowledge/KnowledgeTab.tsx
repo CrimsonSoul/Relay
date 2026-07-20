@@ -806,17 +806,6 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
                 <KnowledgeIcon />
                 <span>{sidebarMode === 'contents' ? 'Contents' : 'Library'}</span>
               </button>
-              <button
-                type="button"
-                className="knowledge-reader-search-toggle"
-                aria-label="Search this guide"
-                onClick={openContentsSearch}
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m16 16 4 4" />
-                </svg>
-              </button>
             </>
           }
           resolveUrl={resolveUrl}

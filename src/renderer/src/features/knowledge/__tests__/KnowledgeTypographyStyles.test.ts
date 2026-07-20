@@ -154,6 +154,7 @@ describe('Knowledge and directory semantic typography', () => {
     expect(knowledgeCss).toMatch(
       /@container knowledge-reader \(max-width: 900px\)[\s\S]*?\.knowledge-drawer\s*\{[\s\S]*?width:\s*min\(320px, calc\(100% - 52px\)\);/,
     );
+    expect(knowledgeCss).not.toContain('.knowledge-reader-search-toggle');
     expect(ruleBody(knowledgeCss, '.knowledge-drawer__collapse')).toContain('display: grid;');
     expect(knowledgeCss).not.toMatch(/\.knowledge-viewer__toolbar\s*\{[^}]*padding-top:\s*46px;/s);
     expect(knowledgeCss).not.toMatch(

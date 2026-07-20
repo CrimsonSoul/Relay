@@ -523,6 +523,7 @@ describe('KnowledgeTab', () => {
 
     const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
     const libraryToggle = screen.getByRole('button', { name: 'Wiki reader sidebar' });
+    expect(screen.queryByRole('button', { name: 'Search this guide' })).not.toBeInTheDocument();
     expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
     expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
 
