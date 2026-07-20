@@ -68,7 +68,67 @@ function textItem(str: string, x: number, y: number, size: number, fontName = 'B
   return { str, transform: [size, 0, 0, size, x, y], width: str.length * size * 0.5, fontName };
 }
 
+function contentsRow(label: string, pageNumber: number, y: number) {
+  return [
+    textItem(label, 60, y, 12),
+    textItem('................................', 330, y, 12),
+    textItem('................................', 403, y, 12),
+    textItem(String(pageNumber), 550, y, 12),
+  ];
+}
+
 describe('inferKnowledgeOutline', () => {
+  it('prefers a credible Contents page over cover text and typography candidates', () => {
+    const sections = [
+      ['Purpose, Scope, and Responsibilities', 3],
+      ['Understanding Oracle Terms and Tickets', 4],
+      ['Different Oracle Tickets Explained', 5],
+      ['How to Open and Set Up Oracle', 8],
+      ['Completing Oracle “Add” Request Tickets', 14],
+    ] as const;
+    const pages: KnowledgeTextPage[] = Array.from({ length: 14 }, (_, pageIndex) => ({
+      pageIndex,
+      height: 800,
+      items: [],
+    }));
+    pages[0]?.items.push(
+      textItem('Camping World NOC Team', 60, 650, 22, 'Cover-Bold'),
+      textItem('SOP Manuals', 60, 600, 36),
+      textItem('Oracle', 60, 520, 48, 'Cover-Bold'),
+      textItem('Standard operating procedures and step-by-step', 60, 260, 18, 'Cover-Bold'),
+      textItem('Maintained by the operations team', 60, 180, 12),
+    );
+    pages[1]?.items.push(textItem('Contents', 60, 700, 16, 'Heading-Bold'));
+    sections.forEach(([label, pageNumber], index) => {
+      pages[1]?.items.push(...contentsRow(label, pageNumber, 650 - index * 24));
+      pages[pageNumber - 1]?.items.push(
+        textItem(label, 60, 700, 20, 'Heading-Bold'),
+        textItem(
+          `This paragraph contains the ordinary operating details for section ${pageNumber}.`,
+          60,
+          650,
+          10,
+        ),
+      );
+    });
+
+    expect(
+      inferKnowledgeOutline(pages).map(({ label, level, pageIndex, top }) => ({
+        label,
+        level,
+        page: pageIndex + 1,
+        top,
+      })),
+    ).toEqual(
+      sections.map(([label, page]) => ({
+        label,
+        level: 1,
+        page,
+        top: 700,
+      })),
+    );
+  });
+
   it('uses horizontal geometry to preserve real spaces without splitting adjacent text runs', () => {
     const splitWord = textItem('Completing Oracle Request Tic', 60, 700, 18, 'Heading-Bold');
     const splitWordEnd = (splitWord.transform[4] ?? 0) + splitWord.width;
@@ -133,6 +193,86 @@ describe('inferKnowledgeOutline', () => {
       'Standard operating procedures and step-by-step',
       'Routine Checks',
     ]);
+  });
+
+  it('omits a multi-treatment cover when no credible Contents page exists', () => {
+    const pages: KnowledgeTextPage[] = [
+      {
+        pageIndex: 0,
+        height: 800,
+        items: [
+          textItem('Operations Team', 60, 680, 22, 'Cover-Bold'),
+          textItem('SOP Manual', 60, 620, 36),
+          textItem('Oracle', 60, 520, 48, 'Cover-Bold'),
+          textItem('Standard operating procedures', 60, 260, 18, 'Cover-Bold'),
+          textItem('Prepared by the operations team', 60, 180, 12),
+        ],
+      },
+      {
+        pageIndex: 1,
+        height: 800,
+        items: [
+          textItem('Overview', 60, 700, 20, 'Heading-Bold'),
+          textItem(
+            'This paragraph explains the ordinary operating procedure and establishes the body size.',
+            60,
+            650,
+            10,
+          ),
+        ],
+      },
+      {
+        pageIndex: 2,
+        height: 800,
+        items: [
+          textItem('Resolution', 60, 700, 20, 'Heading-Bold'),
+          textItem(
+            'This paragraph explains the final recovery procedure using the same ordinary body size.',
+            60,
+            650,
+            10,
+          ),
+        ],
+      },
+    ];
+
+    expect(inferKnowledgeOutline(pages).map(({ label }) => label)).toEqual([
+      'Overview',
+      'Resolution',
+    ]);
+  });
+
+  it('rejects borderline bold body lines that are not visually isolated', () => {
+    const result = inferKnowledgeOutline([
+      {
+        pageIndex: 0,
+        height: 800,
+        items: [
+          textItem(
+            'This paragraph introduces the operational sequence with ordinary body text for the procedure.',
+            60,
+            720,
+            10,
+          ),
+          textItem('Verify the current state before continuing', 60, 700, 11, 'Body-Bold'),
+          textItem(
+            'This paragraph continues the same sequence immediately after the emphasized body sentence.',
+            60,
+            680,
+            10,
+          ),
+          textItem('Recovery procedure', 60, 600, 13, 'Heading-Bold'),
+          textItem(
+            'This paragraph begins the recovery section after a deliberate visual break in the document.',
+            60,
+            550,
+            10,
+          ),
+        ],
+      },
+    ]);
+
+    expect(result.map(({ label }) => label)).toEqual(['Recovery procedure']);
   });
 
   it('infers two heading levels and removes repeated margins, page numbers, and body lines', () => {
