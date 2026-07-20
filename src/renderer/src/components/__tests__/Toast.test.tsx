@@ -33,6 +33,60 @@ const ActionToastTrigger: React.FC<{ onAction: () => void }> = ({ onAction }) =>
   );
 };
 
+const OperationalToastTrigger: React.FC<{ onAction?: () => void }> = ({ onAction = () => {} }) => {
+  const { showToast } = useToast();
+  return (
+    <>
+      <button
+        onClick={() =>
+          showToast('AWS outage', 'error', {
+            title: 'Cloud outage',
+            durationMs: 4_000,
+            delivery: 'cloud-outage',
+          })
+        }
+      >
+        Cloud
+      </button>
+      <button
+        onClick={() =>
+          showToast('Dynatrace one', 'error', {
+            title: 'New Dynatrace problem',
+            durationMs: 8_000,
+            delivery: 'dynatrace-problem',
+          })
+        }
+      >
+        Dynatrace one
+      </button>
+      <button
+        onClick={() =>
+          showToast('Dynatrace two', 'warning', {
+            title: 'New Dynatrace problem',
+            durationMs: 8_000,
+            delivery: 'dynatrace-problem',
+          })
+        }
+      >
+        Dynatrace two
+      </button>
+      <button
+        onClick={() =>
+          showToast('Dynatrace action', 'error', {
+            title: 'New Dynatrace problem',
+            durationMs: 8_000,
+            delivery: 'dynatrace-problem',
+            action: { label: 'Open Problems', onClick: onAction },
+          })
+        }
+      >
+        Dynatrace action
+      </button>
+      <button onClick={() => showToast('Contact saved', 'success')}>Routine</button>
+    </>
+  );
+};
+
 describe('ToastProvider', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -109,6 +163,100 @@ describe('ToastProvider', () => {
     fireEvent.click(trigger);
     const toasts = screen.getAllByText('First');
     expect(toasts.length).toBe(2);
+  });
+
+  it('queues cloud outages until the active Dynatrace problem closes', async () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+
+    expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(screen.getByText('AWS outage')).toBeInTheDocument();
+  });
+
+  it('preempts a visible cloud outage and restarts its full duration after Dynatrace', async () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    await act(async () => vi.advanceTimersByTime(1_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+    expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(screen.getByText('AWS outage')).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(3_999));
+    expect(screen.getByText('AWS outage')).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(161));
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+  });
+
+  it('keeps Dynatrace FIFO ahead of queued cloud outages', async () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace two' }));
+
+    expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('Dynatrace two', { selector: '.toast-message' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(screen.getByText('Dynatrace two', { selector: '.toast-message' })).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(screen.getByText('AWS outage')).toBeInTheDocument();
+  });
+
+  it('renders routine toasts below the active operational toast', () => {
+    const { container } = render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Routine' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+
+    expect(
+      Array.from(container.querySelectorAll('.toast-message')).map((node) => node.textContent),
+    ).toEqual(['Dynatrace one', 'Contact saved']);
+  });
+
+  it('advances the operational queue after an action and manual dismissal', async () => {
+    const onAction = vi.fn();
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger onAction={onAction} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace action' }));
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Problems' }));
+    await act(async () => vi.advanceTimersByTime(160));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(screen.getByText('AWS outage')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+    await act(async () => vi.advanceTimersByTime(160));
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
   });
 
   it('auto-removes toast after 4 seconds', async () => {
