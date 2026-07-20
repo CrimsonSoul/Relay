@@ -3,13 +3,13 @@ import type { RecordModel } from 'pocketbase';
 import {
   CLOUD_STATUS_PROVIDERS,
   type CloudStatusData,
-  type CloudStatusItem,
   type CloudStatusSnapshotRecord,
 } from '@shared/ipc';
 import { ErrorCategory } from '@shared/logging';
 import { getErrorMessage } from '@shared/types';
 import { secureStorage } from '../utils/secureStorage';
 import { loggers } from '../utils/logger';
+import { getCurrentCloudOutages } from '../utils/cloudStatus';
 import type { ShowToast } from '../components/Toast';
 import { useCollection } from './useCollection';
 
@@ -24,14 +24,6 @@ type CollectionCloudStatusSnapshot = CloudStatusSnapshotRecord & RecordModel;
 
 function providerLabel(provider: string): string {
   return CLOUD_STATUS_PROVIDERS[provider as keyof typeof CLOUD_STATUS_PROVIDERS]?.label ?? provider;
-}
-
-function getAllItems(data: CloudStatusData): CloudStatusItem[] {
-  return Object.values(data.providers).flat();
-}
-
-function getOutages(data: CloudStatusData): CloudStatusItem[] {
-  return getAllItems(data).filter((item) => item.severity === 'error');
 }
 
 function toStatusData(record: CloudStatusSnapshotRecord): CloudStatusData {
@@ -55,7 +47,7 @@ export function useAppCloudStatus(showToast: ShowToast) {
 
   const processNewEvents = useCallback(
     (data: CloudStatusData) => {
-      const outages = getOutages(data);
+      const outages = getCurrentCloudOutages(data);
       const currentOutageIds = new Set(outages.map((item) => item.id));
       if (!baselineEstablishedRef.current) {
         activeOutageIdsRef.current = currentOutageIds;
@@ -91,7 +83,9 @@ export function useAppCloudStatus(showToast: ShowToast) {
     const cached = secureStorage.getItemSync<CacheEntry>(CACHE_KEY);
     if (!cached?.data?.providers) return;
     cacheRestoredRef.current = true;
-    activeOutageIdsRef.current = new Set(getOutages(cached.data).map((item) => item.id));
+    activeOutageIdsRef.current = new Set(
+      getCurrentCloudOutages(cached.data).map((item) => item.id),
+    );
     baselineEstablishedRef.current = true;
     setStatusData(cached.data);
   }, []);

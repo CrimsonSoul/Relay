@@ -57,7 +57,7 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
     provider: 'aws',
     title: 'S3 outage',
     description: '',
-    pubDate: '2026-07-10T18:00:00.000Z',
+    pubDate: '2026-07-20T17:00:00.000Z',
     link: '',
     severity: 'error',
     ...overrides,
@@ -87,6 +87,7 @@ describe('useAppCloudStatus', () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime('2026-07-20T18:00:00.000Z');
     vi.clearAllMocks();
     resetStorage();
     collectionState.data = [];
@@ -262,6 +263,31 @@ describe('useAppCloudStatus', () => {
     const { result } = renderHook(() => useAppCloudStatus(showToast));
 
     await waitFor(() => expect(result.current.statusData).toEqual(cached));
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not restore stale outage ids from cache', async () => {
+    const stale = item({ id: 'incident-1', pubDate: '2026-07-10T17:00:00.000Z' });
+    secureStorageMock.setItemSync('cached_cloud_status', {
+      fetchedAt: Date.now(),
+      data: status([stale]),
+    });
+    collectionState.data = [snapshot(status([item({ id: 'incident-1' })]))];
+
+    renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+  });
+
+  it('does not toast when a stale error arrives after the baseline', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([item({ pubDate: '2026-07-10T17:00:00.000Z' })]))];
+    rerender();
+
+    await act(async () => Promise.resolve());
     expect(showToast).not.toHaveBeenCalled();
   });
 
