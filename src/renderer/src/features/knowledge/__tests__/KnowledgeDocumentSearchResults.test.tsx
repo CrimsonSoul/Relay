@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -6,6 +8,11 @@ import type {
 } from '../knowledgeDocumentSearch';
 import { KnowledgeDocumentSearchResults } from '../KnowledgeDocumentSearchResults';
 import type { KnowledgeDocumentSearchDisplayResult } from '../useKnowledgeDocumentSearch';
+
+const knowledgeStyles = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
+  'utf8',
+);
 
 function panelMatch(index: number): KnowledgeDocumentSearchMatch {
   return {
@@ -169,5 +176,130 @@ describe('KnowledgeDocumentSearchResults', () => {
     expect(screen.getByText('Close match')).toBeInTheDocument();
     expect(screen.getByText('Full-text close matches are unavailable.')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Page 3/ })).not.toHaveTextContent('Close match');
+  });
+
+  it('keeps the active result visible as arrow navigation advances', () => {
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      'scrollIntoView',
+    );
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const currentSnapshot = snapshot({
+      results: Array.from({ length: 12 }, (_, index) => panelMatch(index)),
+    });
+    const results = displayResults(currentSnapshot);
+    const props = {
+      snapshot: currentSnapshot,
+      results,
+      enhancedUnavailable: false,
+      onActivate: vi.fn(),
+      onPrevious: vi.fn(),
+      onNext: vi.fn(),
+    };
+
+    try {
+      const { rerender } = render(
+        <KnowledgeDocumentSearchResults {...props} activeResultIndex={0} />,
+      );
+      scrollIntoView.mockClear();
+      rerender(<KnowledgeDocumentSearchResults {...props} activeResultIndex={8} />);
+
+      expect(screen.getAllByRole('option')[8]).toHaveAttribute('aria-selected', 'true');
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    } finally {
+      if (originalScrollIntoView) {
+        Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
+      } else {
+        delete (Element.prototype as { scrollIntoView?: typeof scrollIntoView }).scrollIntoView;
+      }
+    }
+  });
+
+  it('returns the result list to its true top when navigation reaches the first match', () => {
+    const scrollTo = vi.fn();
+    const scrollIntoView = vi.fn();
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      'scrollIntoView',
+    );
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: scrollTo,
+    });
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const currentSnapshot = snapshot({
+      results: Array.from({ length: 12 }, (_, index) => panelMatch(index)),
+    });
+    const results = displayResults(currentSnapshot);
+    const props = {
+      snapshot: currentSnapshot,
+      results,
+      enhancedUnavailable: false,
+      onActivate: vi.fn(),
+      onPrevious: vi.fn(),
+      onNext: vi.fn(),
+    };
+
+    try {
+      const { rerender } = render(
+        <div className="knowledge-drawer__scroll">
+          <KnowledgeDocumentSearchResults {...props} activeResultIndex={8} />
+        </div>,
+      );
+      scrollTo.mockClear();
+      scrollIntoView.mockClear();
+      rerender(
+        <div className="knowledge-drawer__scroll">
+          <KnowledgeDocumentSearchResults {...props} activeResultIndex={0} />
+        </div>,
+      );
+
+      expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      if (originalScrollTo) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
+      } else {
+        delete (HTMLElement.prototype as { scrollTo?: typeof scrollTo }).scrollTo;
+      }
+      if (originalScrollIntoView) {
+        Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
+      } else {
+        delete (Element.prototype as { scrollIntoView?: typeof scrollIntoView }).scrollIntoView;
+      }
+    }
+  });
+
+  it('pins match navigation above the scrolling result rows', () => {
+    const currentSnapshot = snapshot();
+    const { container } = render(
+      <KnowledgeDocumentSearchResults
+        snapshot={currentSnapshot}
+        results={displayResults(currentSnapshot)}
+        enhancedUnavailable={false}
+        activeResultIndex={0}
+        onActivate={vi.fn()}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+      />,
+    );
+
+    const controls = container.querySelector('.knowledge-document-search__controls');
+    expect(controls).toContainElement(screen.getByRole('button', { name: 'Previous match' }));
+    expect(controls).toContainElement(screen.getByRole('button', { name: 'Next match' }));
+    expect(knowledgeStyles).toMatch(
+      /\.knowledge-document-search__controls\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/s,
+    );
+    expect(knowledgeStyles).toMatch(
+      /\.knowledge-document-search__controls\s*\{[^}]*--knowledge-search-controls-bg:[^;]+;[^}]*box-shadow:\s*0\s+-4px\s+0\s+var\(--knowledge-search-controls-bg\);/s,
+    );
   });
 });

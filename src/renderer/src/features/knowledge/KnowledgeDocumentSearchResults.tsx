@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { KnowledgeDocumentSearchSnapshot } from './knowledgeDocumentSearch';
 import type { KnowledgeDocumentSearchDisplayResult } from './useKnowledgeDocumentSearch';
 
@@ -115,28 +115,49 @@ export function KnowledgeDocumentSearchResults({
 }: Readonly<Props>) {
   const hasResults = results.length > 0;
   const localResults = results.filter((result) => result.source === 'local-exact');
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const activeResultId = results[activeResultIndex]?.id ?? null;
+
+  useLayoutEffect(() => {
+    if (!activeResultId) return;
+    const scrollContainer = resultsRef.current?.closest<HTMLElement>('.knowledge-drawer__scroll');
+    if (activeResultIndex === 0 && scrollContainer) {
+      if (typeof scrollContainer.scrollTo === 'function') {
+        scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        scrollContainer.scrollTop = 0;
+      }
+      return;
+    }
+    resultsRef.current
+      ?.querySelector<HTMLElement>('button[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeResultId, activeResultIndex]);
+
   return (
     <section className="knowledge-document-search" aria-label="Search results">
-      <div className="knowledge-document-search__status" role="status" aria-live="polite">
-        {statusLabel(snapshot, results.length)}
-      </div>
-      <div className="knowledge-document-search__navigation" aria-label="Match navigation">
-        <button
-          type="button"
-          aria-label="Previous match"
-          disabled={!hasResults}
-          onClick={onPrevious}
-        >
-          ↑
-        </button>
-        <span>
-          {activeResultIndex >= 0
-            ? `${activeResultIndex + 1} of ${results.length}`
-            : `${results.length} matches`}
-        </span>
-        <button type="button" aria-label="Next match" disabled={!hasResults} onClick={onNext}>
-          ↓
-        </button>
+      <div className="knowledge-document-search__controls">
+        <div className="knowledge-document-search__status" role="status" aria-live="polite">
+          {statusLabel(snapshot, results.length)}
+        </div>
+        <div className="knowledge-document-search__navigation" aria-label="Match navigation">
+          <button
+            type="button"
+            aria-label="Previous match"
+            disabled={!hasResults}
+            onClick={onPrevious}
+          >
+            ↑
+          </button>
+          <span>
+            {activeResultIndex >= 0
+              ? `${activeResultIndex + 1} of ${results.length}`
+              : `${results.length} matches`}
+          </span>
+          <button type="button" aria-label="Next match" disabled={!hasResults} onClick={onNext}>
+            ↓
+          </button>
+        </div>
       </div>
       {snapshot.state === 'partial' && (
         <p className="knowledge-document-search__partial">
@@ -149,7 +170,12 @@ export function KnowledgeDocumentSearchResults({
           Full-text close matches are unavailable.
         </p>
       )}
-      <div className="knowledge-document-search__results" role="listbox" aria-label="Matches">
+      <div
+        ref={resultsRef}
+        className="knowledge-document-search__results"
+        role="listbox"
+        aria-label="Matches"
+      >
         <KnowledgeDocumentSearchResultRows
           results={localResults}
           activeResultIndex={activeResultIndex}
