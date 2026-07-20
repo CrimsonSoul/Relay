@@ -41,7 +41,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [initialSetupOpen, setInitialSetupOpen] = useState(false);
-  const [initialAccountId, setInitialAccountId] = useState('');
+  const [initialUsername, setInitialUsername] = useState('');
   const [initialPassword, setInitialPassword] = useState('');
   const [initialPasswordConfirm, setInitialPasswordConfirm] = useState('');
   const [setupFeedback, setSetupFeedback] = useState<string | null>(null);
@@ -111,6 +111,12 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     setInitialSetupOpen(false);
   };
 
+  const openInitialSetup = () => {
+    clearError();
+    setSetupFeedback(null);
+    setInitialSetupOpen(true);
+  };
+
   const handleInitialSetup = async (event: FormSubmitEvent) => {
     event.preventDefault();
     setSetupFeedback(null);
@@ -121,7 +127,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     const passwordToUse = initialPassword;
     try {
       const result = await globalThis.api?.setupInitialAdministratorCredential({
-        accountId: initialAccountId.trim(),
+        username: initialUsername.trim(),
         password: passwordToUse,
         passwordConfirm: initialPasswordConfirm,
       });
@@ -361,18 +367,18 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
               <span>Available only on this Relay server PC. Relay has no default password.</span>
             </div>
             {!initialSetupOpen ? (
-              <TactileButton type="button" onClick={() => setInitialSetupOpen(true)}>
+              <TactileButton type="button" onClick={openInitialSetup}>
                 Set initial Owner password
               </TactileButton>
             ) : (
               <form className="privileged-access__form" onSubmit={handleInitialSetup}>
                 <div className="privileged-access__field-grid">
                   <label className="privileged-access__field">
-                    <span>Owner account ID</span>
+                    <span>Owner username</span>
                     <input
                       className="input"
-                      value={initialAccountId}
-                      onChange={(event) => setInitialAccountId(event.target.value)}
+                      value={initialUsername}
+                      onChange={(event) => setInitialUsername(event.target.value)}
                       autoComplete="off"
                       required
                     />

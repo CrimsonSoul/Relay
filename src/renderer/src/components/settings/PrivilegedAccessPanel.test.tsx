@@ -35,6 +35,7 @@ describe('PrivilegedAccessPanel', () => {
   const login = vi.fn().mockResolvedValue(true);
   const completePairing = vi.fn().mockResolvedValue(true);
   const createPairingChallenge = vi.fn().mockResolvedValue(null);
+  const clearError = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,7 +81,7 @@ describe('PrivilegedAccessPanel', () => {
       createPairingChallenge,
       completePairing,
       pairingChallenge: null,
-      clearError: vi.fn(),
+      clearError,
     });
   });
 
@@ -163,7 +164,7 @@ describe('PrivilegedAccessPanel', () => {
     await waitFor(() => expect(createPairingChallenge).toHaveBeenCalledWith('account-publisher'));
   });
 
-  it('offers server-local first-owner credential setup by account ID without operator selection', async () => {
+  it('offers server-local first-owner credential setup by username without exposing account IDs', async () => {
     const setupInitialAdministratorCredential = vi.fn().mockResolvedValue({
       ok: true,
       value: { accountId: 'account-ryan', username: 'ryan' },
@@ -172,8 +173,10 @@ describe('PrivilegedAccessPanel', () => {
     render(<PrivilegedAccessPanel relayMode="server" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
-    fireEvent.change(screen.getByLabelText('Owner account ID'), {
-      target: { value: 'account-ryan' },
+    expect(clearError).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText('Owner account ID')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Owner username'), {
+      target: { value: 'Ryan' },
     });
     fireEvent.change(screen.getByLabelText('New Owner password'), {
       target: { value: 'a-new-owner-password' },
@@ -185,7 +188,7 @@ describe('PrivilegedAccessPanel', () => {
 
     await waitFor(() =>
       expect(setupInitialAdministratorCredential).toHaveBeenCalledWith({
-        accountId: 'account-ryan',
+        username: 'Ryan',
         password: 'a-new-owner-password',
         passwordConfirm: 'a-new-owner-password',
       }),
