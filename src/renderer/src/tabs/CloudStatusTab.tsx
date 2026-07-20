@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
   CLOUD_STATUS_PROVIDERS,
+  downdetectorUrl,
   type CloudStatusData,
   type CloudStatusItem,
   type CloudStatusProvider,
@@ -86,23 +87,40 @@ function sortProviders(
   });
 }
 
-function openProviderStatus(provider: CloudStatusProvider): void {
-  void globalThis.api?.openExternal(CLOUD_STATUS_PROVIDERS[provider].statusUrl);
-}
-
-const ProviderStatusAction: React.FC<{
-  provider: CloudStatusProvider;
-  className: string;
-}> = ({ provider, className }) => (
-  <button
-    type="button"
-    className={className}
-    onClick={() => openProviderStatus(provider)}
-    aria-label={`Open ${providerLabel(provider)} status page`}
-  >
-    <span aria-hidden="true">↗</span>
-  </button>
-);
+const ProviderActions: React.FC<{ provider: CloudStatusProvider }> = ({ provider }) => {
+  const config = CLOUD_STATUS_PROVIDERS[provider];
+  return (
+    <div className="cloud-status-provider__actions">
+      <button
+        type="button"
+        onClick={() => void globalThis.api?.openExternal(config.statusUrl)}
+        aria-label={`Open ${providerLabel(provider)} official status page`}
+      >
+        Status
+      </button>
+      {config.twitterHandle && (
+        <button
+          type="button"
+          onClick={() => void globalThis.api?.openExternal(`https://x.com/${config.twitterHandle}`)}
+          aria-label={`Open ${providerLabel(provider)} on X`}
+        >
+          @{config.twitterHandle}
+        </button>
+      )}
+      {config.downdetectorSlug && (
+        <button
+          type="button"
+          onClick={() =>
+            void globalThis.api?.openExternal(downdetectorUrl(config.downdetectorSlug))
+          }
+          aria-label={`Open ${providerLabel(provider)} on Downdetector`}
+        >
+          Downdetector
+        </button>
+      )}
+    </div>
+  );
+};
 
 const ProviderRow: React.FC<{
   provider: CloudStatusProvider;
@@ -123,7 +141,7 @@ const ProviderRow: React.FC<{
       <span className={`cloud-status-provider__state cloud-status-provider__state--${posture}`}>
         {postureLabel(posture)}
       </span>
-      <ProviderStatusAction provider={provider} className="cloud-status-provider__source" />
+      <ProviderActions provider={provider} />
     </article>
   );
 };
@@ -135,23 +153,21 @@ const ProviderChip: React.FC<{
 }> = ({ provider, hasOutage, hasFeedError }) => {
   const posture = providerPosture(hasOutage, hasFeedError);
   return (
-    <button
-      type="button"
+    <article
       className={`cloud-status-provider-chip cloud-status-provider-chip--${posture}`}
-      onClick={() => openProviderStatus(provider)}
-      aria-label={`Open ${providerLabel(provider)} status page - ${postureLabel(posture)}`}
+      aria-label={`${providerLabel(provider)} - ${postureLabel(posture)}`}
     >
-      <ProviderIcon provider={provider} size={15} />
-      <span className="cloud-status-provider-chip__name">{providerLabel(provider)}</span>
+      <span className="cloud-status-provider-chip__identity">
+        <ProviderIcon provider={provider} size={15} />
+        <span className="cloud-status-provider-chip__name">{providerLabel(provider)}</span>
+      </span>
       <span
         className={`cloud-status-provider-chip__state cloud-status-provider-chip__state--${posture}`}
       >
         {postureLabel(posture)}
       </span>
-      <span className="cloud-status-provider-chip__arrow" aria-hidden="true">
-        ↗
-      </span>
-    </button>
+      <ProviderActions provider={provider} />
+    </article>
   );
 };
 

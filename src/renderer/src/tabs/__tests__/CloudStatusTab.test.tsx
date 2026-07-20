@@ -90,9 +90,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByRole('heading', { name: 'External outages' })).toBeInTheDocument();
     expect(screen.getByText('No reported outages')).toBeInTheDocument();
     expect(screen.getByText('10 monitored providers')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Open AWS status page - No outage' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'AWS - No outage' })).toBeInTheDocument();
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
@@ -103,9 +101,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('No reported outages from available feeds')).toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
     expect(screen.getByText('Some provider feeds are unavailable.')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Open GitHub status page - Unknown' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'GitHub - Unknown' })).toBeInTheDocument();
   });
 
   it('refreshes manually and disables refresh while loading', () => {
@@ -244,16 +240,30 @@ describe('CloudStatusTab', () => {
     expect(openExternal).toHaveBeenCalledWith('https://health.aws.amazon.com/incident/1');
   });
 
-  it('keeps only official provider status actions', () => {
+  it('opens provider Status, X, and Downdetector actions in the outage layout', () => {
     const data = makeStatusData({
       providers: { ...emptyProviders, aws: [makeItem()] },
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open AWS status page' }));
-    expect(openExternal).toHaveBeenCalledWith('https://status.aws.amazon.com/');
-    expect(screen.queryByText('@AWSCloud')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Downdetector/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open AWS official status page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open AWS on X' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open AWS on Downdetector' }));
+
+    expect(openExternal).toHaveBeenNthCalledWith(1, 'https://status.aws.amazon.com/');
+    expect(openExternal).toHaveBeenNthCalledWith(2, 'https://x.com/AWSCloud');
+    expect(openExternal).toHaveBeenNthCalledWith(
+      3,
+      'https://downdetector.com/status/aws-amazon-web-services/',
+    );
+  });
+
+  it('keeps separate all-clear actions and omits unavailable X accounts', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Open AWS on X' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Claude on Downdetector' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Claude on X' })).not.toBeInTheDocument();
   });
 
   it('removes historical feed controls and hidden severity labels', () => {
