@@ -10,6 +10,7 @@ import { ProviderIcon } from '../components/icons/ProviderIcons';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { Tooltip } from '../components/Tooltip';
+import { getCurrentCloudOutages } from '../utils/cloudStatus';
 
 type ProviderPosture = 'outage' | 'unknown' | 'clear';
 
@@ -51,8 +52,8 @@ function stripHtml(html: string): string {
   return new DOMParser().parseFromString(decoded, 'text/html').body.textContent ?? '';
 }
 
-function providerPosture(items: CloudStatusItem[], hasFeedError: boolean): ProviderPosture {
-  if (items.some((item) => item.severity === 'error')) return 'outage';
+function providerPosture(hasOutage: boolean, hasFeedError: boolean): ProviderPosture {
+  if (hasOutage) return 'outage';
   if (hasFeedError) return 'unknown';
   return 'clear';
 }
@@ -75,16 +76,12 @@ function outageCountLabel(count: number): string {
 
 function sortProviders(
   providers: readonly CloudStatusProvider[],
-  statusData: CloudStatusData | null,
+  outageProviders: ReadonlySet<CloudStatusProvider>,
   errorProviders: ReadonlySet<CloudStatusProvider>,
 ): CloudStatusProvider[] {
   return [...providers].sort((a, b) => {
-    const aRank = postureRank(
-      providerPosture(statusData?.providers[a] ?? [], errorProviders.has(a)),
-    );
-    const bRank = postureRank(
-      providerPosture(statusData?.providers[b] ?? [], errorProviders.has(b)),
-    );
+    const aRank = postureRank(providerPosture(outageProviders.has(a), errorProviders.has(a)));
+    const bRank = postureRank(providerPosture(outageProviders.has(b), errorProviders.has(b)));
     return aRank - bRank || providers.indexOf(a) - providers.indexOf(b);
   });
 }
@@ -109,10 +106,10 @@ const ProviderStatusAction: React.FC<{
 
 const ProviderRow: React.FC<{
   provider: CloudStatusProvider;
-  items: CloudStatusItem[];
+  hasOutage: boolean;
   hasFeedError: boolean;
-}> = ({ provider, items, hasFeedError }) => {
-  const posture = providerPosture(items, hasFeedError);
+}> = ({ provider, hasOutage, hasFeedError }) => {
+  const posture = providerPosture(hasOutage, hasFeedError);
   return (
     <article className={`cloud-status-provider cloud-status-provider--${posture}`}>
       <span
@@ -133,10 +130,10 @@ const ProviderRow: React.FC<{
 
 const ProviderChip: React.FC<{
   provider: CloudStatusProvider;
-  items: CloudStatusItem[];
+  hasOutage: boolean;
   hasFeedError: boolean;
-}> = ({ provider, items, hasFeedError }) => {
-  const posture = providerPosture(items, hasFeedError);
+}> = ({ provider, hasOutage, hasFeedError }) => {
+  const posture = providerPosture(hasOutage, hasFeedError);
   return (
     <button
       type="button"
@@ -249,7 +246,7 @@ const FeedUnavailableNotice: React.FC<{
 type StatusWorkspaceProps = {
   outages: CloudStatusItem[];
   providerOrder: CloudStatusProvider[];
-  statusData: CloudStatusData | null;
+  outageProviders: ReadonlySet<CloudStatusProvider>;
   errorProviders: ReadonlySet<CloudStatusProvider>;
   snapshotUnavailable: boolean;
 };
@@ -257,7 +254,7 @@ type StatusWorkspaceProps = {
 const OutageWorkspace: React.FC<StatusWorkspaceProps> = ({
   outages,
   providerOrder,
-  statusData,
+  outageProviders,
   errorProviders,
 }) => (
   <div className="cloud-status__workspace">
@@ -271,7 +268,7 @@ const OutageWorkspace: React.FC<StatusWorkspaceProps> = ({
           <ProviderRow
             key={provider}
             provider={provider}
-            items={statusData?.providers[provider] ?? []}
+            hasOutage={outageProviders.has(provider)}
             hasFeedError={errorProviders.has(provider)}
           />
         ))}
@@ -293,7 +290,7 @@ const OutageWorkspace: React.FC<StatusWorkspaceProps> = ({
 
 const AllClearWorkspace: React.FC<Omit<StatusWorkspaceProps, 'outages'>> = ({
   providerOrder,
-  statusData,
+  outageProviders,
   errorProviders,
   snapshotUnavailable,
 }) => {
@@ -321,7 +318,7 @@ const AllClearWorkspace: React.FC<Omit<StatusWorkspaceProps, 'outages'>> = ({
               <ProviderChip
                 key={provider}
                 provider={provider}
-                items={statusData?.providers[provider] ?? []}
+                hasOutage={outageProviders.has(provider)}
                 hasFeedError={errorProviders.has(provider)}
               />
             ))}
@@ -351,20 +348,19 @@ export const CloudStatusTab: React.FC<{
       ),
     [statusData],
   );
-  const allItems = useMemo(
-    () => (statusData ? Object.values(statusData.providers).flat() : []),
-    [statusData],
-  );
   const outages = useMemo(
     () =>
-      allItems
-        .filter((item) => item.severity === 'error')
-        .toSorted((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()),
-    [allItems],
+      statusData
+        ? getCurrentCloudOutages(statusData).toSorted(
+            (a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime(),
+          )
+        : [],
+    [statusData],
   );
+  const outageProviders = useMemo(() => new Set(outages.map((item) => item.provider)), [outages]);
   const providerOrder = useMemo(
-    () => sortProviders(CLOUD_STATUS_PROVIDER_ORDER, statusData, errorProviders),
-    [errorProviders, statusData],
+    () => sortProviders(CLOUD_STATUS_PROVIDER_ORDER, outageProviders, errorProviders),
+    [errorProviders, outageProviders],
   );
 
   if (!statusData && loading) return <TabFallback />;
@@ -426,7 +422,7 @@ export const CloudStatusTab: React.FC<{
       <StatusWorkspace
         outages={outages}
         providerOrder={providerOrder}
-        statusData={statusData}
+        outageProviders={outageProviders}
         errorProviders={errorProviders}
         snapshotUnavailable={snapshotUnavailable}
       />

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
@@ -60,9 +60,13 @@ describe('CloudStatusTab', () => {
   const openExternal = vi.fn();
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-07-20T18:00:00.000Z');
     vi.clearAllMocks();
     globalThis.api = { openExternal } as never;
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it('shows the loading fallback when no snapshot is available', () => {
     render(<CloudStatusTab statusData={null} loading={true} refetch={vi.fn()} />);
@@ -170,6 +174,34 @@ describe('CloudStatusTab', () => {
 
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
     expect(screen.getByText('2 active outages')).toBeInTheDocument();
+  });
+
+  it('does not display or count stale error records as active outages', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [
+          makeItem({
+            id: 'stale',
+            title: 'Old AWS outage',
+            pubDate: '2026-04-30T07:25:54.000Z',
+          }),
+        ],
+        github: [makeItem({ id: 'current', provider: 'github', title: 'Current GitHub outage' })],
+      },
+    });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
+    expect(screen.getByText('Current GitHub outage')).toBeInTheDocument();
+    expect(screen.getByText('1 active outage')).toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name'))
+        .slice(0, 2)
+        .map((node) => node.textContent),
+    ).toEqual(['GitHub', 'AWS']);
   });
 
   it('orders outage providers before unknown and clear providers', () => {
