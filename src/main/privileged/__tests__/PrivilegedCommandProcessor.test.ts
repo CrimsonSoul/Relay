@@ -526,7 +526,7 @@ describe('PrivilegedCommandProcessor', () => {
       role: 'admin' as const,
       capabilities: [...ADMIN_PRIVILEGED_CAPABILITIES],
       deviceId: null,
-      expiresAt: new Date(NOW + 60_000).toISOString(),
+      expiresAt: null,
     };
 
     await expect(

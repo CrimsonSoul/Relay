@@ -9,6 +9,7 @@ import { BackupManager } from '../pocketbase/BackupManager';
 import { RetentionManager } from '../pocketbase/RetentionManager';
 import {
   ensureCollections,
+  ensureKnowledgeBatchApi,
   ensureKnowledgeSearchCollections,
 } from '../pocketbase/CollectionBootstrap';
 import {
@@ -278,6 +279,7 @@ const doStartPocketBase = async (
     const PocketBase = (await import('pocketbase')).default;
     const pb = new PocketBase(localUrl);
     await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
+    await ensureKnowledgeBatchApi(pb);
     const collections = await ensureCollections(pb);
     setPbClient(pb);
 

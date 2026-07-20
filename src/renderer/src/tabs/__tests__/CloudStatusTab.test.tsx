@@ -89,7 +89,7 @@ describe('CloudStatusTab', () => {
       <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
     );
 
-    expect(screen.getByRole('heading', { name: 'External outages' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'External Outages' })).toBeInTheDocument();
     expect(screen.getByText('No reported outages')).toBeInTheDocument();
     expect(screen.getByText('10 monitored providers')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'AWS - No outage' })).toBeInTheDocument();

@@ -54,7 +54,6 @@ describe('setupPrivilegedAccessHandlers', () => {
       getView: vi.fn(() => signedOutView()),
       login: vi.fn(async () => ({ ...signedOutView(), state: 'active' as const })),
       logout: vi.fn(async () => undefined),
-      lock: vi.fn(() => undefined),
       reauthenticate: vi.fn(async () => ({
         proofId: 'proof-1',
         expiresAt: '2026-07-15T12:05:00.000Z',
@@ -110,7 +109,6 @@ describe('setupPrivilegedAccessHandlers', () => {
       IPC_CHANNELS.PRIVILEGED_GET_SESSION,
       IPC_CHANNELS.PRIVILEGED_LOGIN,
       IPC_CHANNELS.PRIVILEGED_LOGOUT,
-      IPC_CHANNELS.PRIVILEGED_LOCK,
       IPC_CHANNELS.PRIVILEGED_REAUTHENTICATE,
       IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE,
       IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING,
@@ -132,7 +130,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       );
     }
     expect(runtime.login).not.toHaveBeenCalled();
-    expect(assertTrustedIpcSender).toHaveBeenCalledTimes(10);
+    expect(assertTrustedIpcSender).toHaveBeenCalledTimes(9);
   });
 
   it('strictly validates login and returns generic credential errors', async () => {
@@ -240,7 +238,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       role: 'owner',
       capabilities: ['settings.manage'],
       deviceId: null,
-      expiresAt: '2026-07-15T23:15:00.000Z',
+      expiresAt: null,
     });
     await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, input)).resolves.toMatchObject({
       ok: true,
@@ -274,7 +272,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       role: 'owner',
       capabilities: ['privileged.status.read', 'not-real'],
       deviceId: 'device-1',
-      expiresAt: '2026-07-15T12:15:00.000Z',
+      expiresAt: null,
       token: 'must-not-broadcast',
     });
 
@@ -286,7 +284,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       role: 'owner',
       capabilities: ['privileged.status.read'],
       deviceId: 'device-1',
-      expiresAt: '2026-07-15T12:15:00.000Z',
+      expiresAt: null,
     });
     expect(JSON.stringify(broadcast.mock.calls)).not.toContain('must-not-broadcast');
   });

@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
     setPbClient: vi.fn(),
     execFileSync: vi.fn(),
     existsSync: vi.fn(() => false),
+    ensureKnowledgeBatchApi: vi.fn().mockResolvedValue(undefined),
     ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
     ensureKnowledgeSearchCollections: vi.fn().mockResolvedValue(undefined),
     startAdvertising: vi.fn(),
@@ -97,6 +98,7 @@ vi.mock('../../pocketbase/RetentionManager', () => ({
 }));
 
 vi.mock('../../pocketbase/CollectionBootstrap', () => ({
+  ensureKnowledgeBatchApi: mocks.ensureKnowledgeBatchApi,
   ensureCollections: mocks.ensureCollections,
   ensureKnowledgeSearchCollections: mocks.ensureKnowledgeSearchCollections,
 }));
@@ -139,6 +141,7 @@ describe('pocketbaseBootstrap', () => {
     mocks.pbProcess.start.mockResolvedValue(undefined);
     mocks.backup.mockResolvedValue(undefined);
     mocks.backupIfDue.mockResolvedValue(null);
+    mocks.ensureKnowledgeBatchApi.mockResolvedValue(undefined);
     mocks.ensureCollections.mockResolvedValue({ privilegedRuntimeReady: true });
     mocks.ensureKnowledgeSearchCollections.mockResolvedValue(undefined);
   });
@@ -166,6 +169,30 @@ describe('pocketbaseBootstrap', () => {
     expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledTimes(2);
     expect(mocks.loggers.pocketbase.warn).toHaveBeenCalledWith(
       'Optional Wiki search storage is unavailable',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it('stops startup when the required PocketBase batch API cannot be enabled', async () => {
+    mocks.ensureKnowledgeBatchApi.mockRejectedValue(new Error('batch API unavailable'));
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\\\Users\\\\Relay\\\\data',
+      ),
+    ).resolves.toEqual({ status: 'failed' });
+
+    expect(mocks.ensureCollections).not.toHaveBeenCalled();
+    expect(mocks.ensureKnowledgeSearchCollections).not.toHaveBeenCalled();
+    expect(mocks.loggers.pocketbase.error).toHaveBeenCalledWith(
+      'Failed to start PocketBase',
       expect.objectContaining({ error: expect.any(Error) }),
     );
   });

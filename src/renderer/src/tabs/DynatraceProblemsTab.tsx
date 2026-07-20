@@ -985,7 +985,7 @@ export const DynatraceProblemsTab: React.FC<{
       <div className="dt-problems__header">
         <div>
           <div className="dt-problems__context">Dynatrace Problems</div>
-          <h2 className="dt-problems__title">Local response queue</h2>
+          <h2 className="dt-problems__title">Local Response Queue</h2>
         </div>
         <div className="dt-problems__sync-meta">
           <span

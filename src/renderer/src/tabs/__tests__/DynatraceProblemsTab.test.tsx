@@ -96,7 +96,7 @@ describe('DynatraceProblemsTab', () => {
   it('shows the unaddressed queue and selected problem context', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
 
-    expect(screen.getByRole('heading', { name: 'Local response queue' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Local Response Queue' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /^All/i })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Unaddressed\s*1/i })).toHaveAttribute(
       'aria-selected',

@@ -1497,15 +1497,15 @@ function finiteNumber(value: unknown, fallback: number, minimum: number): number
   return typeof value === 'number' && Number.isFinite(value) && value >= minimum ? value : fallback;
 }
 
-async function ensureKnowledgeSearchBatchApi(pb: PocketBase): Promise<void> {
+export async function ensureKnowledgeBatchApi(pb: PocketBase): Promise<void> {
   let settings: Record<string, unknown>;
   try {
     settings = await pb.settings.getAll({ requestKey: null });
   } catch (err) {
-    logger.error('Failed to read PocketBase batch settings for optional Wiki search', {
+    logger.error('Failed to read required PocketBase batch settings', {
       error: err,
     });
-    throw new Error('Failed to read PocketBase batch settings for optional Wiki search', {
+    throw new Error('Failed to read required PocketBase batch settings', {
       cause: err,
     });
   }
@@ -1545,12 +1545,12 @@ async function ensureKnowledgeSearchBatchApi(pb: PocketBase): Promise<void> {
     // Send only the complete nested batch value. PocketBase requires maxRequests
     // and timeout, while unrelated application settings must remain untouched.
     await pb.settings.update({ batch }, { requestKey: null });
-    logger.info('Enabled PocketBase batch API for optional Wiki search indexing');
+    logger.info('Enabled required PocketBase batch API');
   } catch (err) {
-    logger.error('Failed to enable PocketBase batch API for optional Wiki search', {
+    logger.error('Failed to enable required PocketBase batch API', {
       error: err,
     });
-    throw new Error('Failed to enable PocketBase batch API for optional Wiki search', {
+    throw new Error('Failed to enable required PocketBase batch API', {
       cause: err,
     });
   }
@@ -1575,7 +1575,7 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
  * PocketBase bootstrap. Callers intentionally treat failures as best-effort.
  */
 export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<void> {
-  await ensureKnowledgeSearchBatchApi(pb);
+  await ensureKnowledgeBatchApi(pb);
 
   let allCols: Array<{ id: string; name: string }>;
   try {

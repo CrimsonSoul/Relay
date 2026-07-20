@@ -4,7 +4,6 @@ import {
   MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
   MAX_PRIVILEGED_HOSTNAME_LENGTH,
   OWNER_PRIVILEGED_CAPABILITIES,
-  PRIVILEGED_SESSION_IDLE_MS,
   PUBLISHER_PRIVILEGED_CAPABILITIES,
   getPrivilegedCapabilities,
   isPrivilegedRole,
@@ -54,8 +53,7 @@ describe('privileged access contracts', () => {
     );
   });
 
-  it('uses the approved session and device limits', () => {
-    expect(PRIVILEGED_SESSION_IDLE_MS).toBe(15 * 60 * 1_000);
+  it('uses the approved device limits', () => {
     expect(MAX_PRIVILEGED_DEVICE_LABEL_LENGTH).toBe(80);
     expect(MAX_PRIVILEGED_HOSTNAME_LENGTH).toBe(255);
   });
@@ -69,7 +67,7 @@ describe('privileged access contracts', () => {
       role: 'owner',
       capabilities: ['accounts.manage', 'accounts.manage', 'arbitrary.manage', 'knowledge.manage'],
       deviceId: 'device-1',
-      expiresAt: '2026-07-15T22:00:00.000Z',
+      expiresAt: null,
       email: 'account-ryan@relay.invalid',
       token: 'must-not-survive',
       privateKey: 'must-not-survive',
@@ -84,10 +82,29 @@ describe('privileged access contracts', () => {
       role: 'owner',
       capabilities: ['accounts.manage', 'knowledge.manage'],
       deviceId: 'device-1',
-      expiresAt: '2026-07-15T22:00:00.000Z',
+      expiresAt: null,
     });
     expect(JSON.stringify(normalized)).not.toContain('relay.invalid');
     expect(JSON.stringify(normalized)).not.toContain('must-not-survive');
+  });
+
+  it('accepts non-expiring active sessions and rejects the retired locked state', () => {
+    const active = {
+      state: 'active',
+      accountId: 'account-ryan',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
+      capabilities: ['privileged.status.read'],
+      deviceId: 'device-1',
+      expiresAt: null,
+    };
+
+    expect(normalizePrivilegedSessionView(active)).toMatchObject({
+      state: 'active',
+      expiresAt: null,
+    });
+    expect(normalizePrivilegedSessionView({ ...active, state: 'locked' })).toBeNull();
   });
 
   it('rejects inconsistent active session projections', () => {

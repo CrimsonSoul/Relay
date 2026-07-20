@@ -21,7 +21,7 @@ const view = {
   role: 'admin' as const,
   capabilities: ['knowledge.manage' as const],
   deviceId: 'device-1',
-  expiresAt: '2026-07-16T02:00:00.000Z',
+  expiresAt: null,
 };
 
 const createdAt = '2026-07-16T01:00:00.000Z';
@@ -176,8 +176,8 @@ describe('KnowledgeUploadService', () => {
     expect(exposed).not.toContain('%PDF-');
     expect(store.current().entries[0]?.source.canonicalPath).toBe('/private/work/First.pdf');
 
-    service.handleSessionChanged({ ...view, expiresAt: '2026-07-16T02:15:00.000Z' });
-    service.handleSessionChanged({ ...view, expiresAt: '2026-07-16T02:30:00.000Z' });
+    service.handleSessionChanged(view);
+    service.handleSessionChanged(view);
 
     releasePlan();
     await service.whenIdle();

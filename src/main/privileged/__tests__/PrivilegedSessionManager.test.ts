@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_PRIVILEGED_CAPABILITIES,
   OWNER_PRIVILEGED_CAPABILITIES,
-  PRIVILEGED_SESSION_IDLE_MS,
   type RelayPrivilegedAccountRecord,
 } from '@shared/privilegedAccess';
 import {
@@ -92,7 +91,7 @@ describe('PrivilegedSessionManager', () => {
       role: 'owner',
       capabilities: expect.arrayContaining(ADMIN_PRIVILEGED_CAPABILITIES),
       deviceId: 'device-work-laptop',
-      expiresAt: new Date(START_TIME + PRIVILEGED_SESSION_IDLE_MS).toISOString(),
+      expiresAt: null,
     });
     expect(JSON.stringify(view)).not.toContain(PASSWORD);
     expect(authClient.authenticate).toHaveBeenCalledWith(USERNAME, PASSWORD);
@@ -108,40 +107,18 @@ describe('PrivilegedSessionManager', () => {
     expect(manager.getView()).toMatchObject({ state: 'active', username: 'ryan' });
   });
 
-  it('locks exactly after 15 minutes of privileged inactivity', async () => {
+  it('keeps an authenticated session active without an idle timeout', async () => {
     const manager = createManager();
     await manager.login({ username: USERNAME, password: PASSWORD });
 
-    await vi.advanceTimersByTimeAsync(PRIVILEGED_SESSION_IDLE_MS - 1);
-    expect(manager.getView().state).toBe('active');
-
-    await vi.advanceTimersByTimeAsync(1);
-    expect(manager.getView()).toMatchObject({ state: 'locked', expiresAt: null });
-    expect(authClient.clear).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(30 * 24 * 60 * 60 * 1_000);
+    expect(manager.getView()).toMatchObject({ state: 'active', expiresAt: null });
+    expect(authClient.clear).not.toHaveBeenCalled();
   });
 
-  it('refreshes the idle deadline only for privileged activity', async () => {
+  it('supports explicit sign out and app-close disposal', async () => {
     const manager = createManager();
     await manager.login({ username: USERNAME, password: PASSWORD });
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1_000);
-
-    manager.recordPrivilegedActivity();
-    const refreshedExpiry = new Date(
-      START_TIME + 10 * 60 * 1_000 + PRIVILEGED_SESSION_IDLE_MS,
-    ).toISOString();
-    expect(manager.getView().expiresAt).toBe(refreshedExpiry);
-
-    // Ordinary Relay use does not call recordPrivilegedActivity and cannot extend this deadline.
-    await vi.advanceTimersByTimeAsync(PRIVILEGED_SESSION_IDLE_MS);
-    expect(manager.getView().state).toBe('locked');
-  });
-
-  it('supports explicit lock, logout, and app-close disposal', async () => {
-    const manager = createManager();
-    await manager.login({ username: USERNAME, password: PASSWORD });
-
-    manager.lock();
-    expect(manager.getView().state).toBe('locked');
 
     await manager.logout();
     expect(manager.getView().state).toBe('signed-out');
@@ -149,10 +126,10 @@ describe('PrivilegedSessionManager', () => {
     await manager.login({ username: USERNAME, password: PASSWORD });
     manager.dispose();
     expect(manager.getView().state).toBe('signed-out');
-    expect(authClient.clear).toHaveBeenCalledTimes(3);
+    expect(authClient.clear).toHaveBeenCalledTimes(2);
   });
 
-  it('locks on account disablement, replacement, username change, or credential replacement', async () => {
+  it('signs out on account disablement, replacement, username change, or credential replacement', async () => {
     const cases: Array<RelayPrivilegedAccountRecord | null> = [
       accountRecord({ active: false }),
       accountRecord({ id: 'replacement-account' }),
@@ -165,7 +142,7 @@ describe('PrivilegedSessionManager', () => {
       const manager = createManager();
       await manager.login({ username: USERNAME, password: PASSWORD });
       manager.handleAccountChanged(changedAccount);
-      expect(manager.getView().state).toBe('locked');
+      expect(manager.getView().state).toBe('signed-out');
     }
   });
 
@@ -175,7 +152,7 @@ describe('PrivilegedSessionManager', () => {
 
     manager.handleAuthorityChanged(['account-charles', 'account-admin']);
 
-    expect(manager.getView().state).toBe('locked');
+    expect(manager.getView().state).toBe('signed-out');
     expect(authClient.clear).toHaveBeenCalledOnce();
   });
 
@@ -199,11 +176,11 @@ describe('PrivilegedSessionManager', () => {
       accountId: 'account-admin',
       capabilities: [],
       deviceId: null,
-      expiresAt: new Date(START_TIME + PRIVILEGED_SESSION_IDLE_MS).toISOString(),
+      expiresAt: null,
     });
 
-    await vi.advanceTimersByTimeAsync(PRIVILEGED_SESSION_IDLE_MS);
-    expect(manager.getView().state).toBe('locked');
+    await vi.advanceTimersByTimeAsync(30 * 24 * 60 * 60 * 1_000);
+    expect(manager.getView().state).toBe('pairing-required');
   });
 
   it('activates the authenticated account only after a paired device is bound', async () => {
@@ -289,20 +266,30 @@ describe('PrivilegedSessionManager', () => {
     });
   });
 
-  it('rejects reauthentication after lock or when the fresh account no longer matches', async () => {
+  it('signs out when reauthentication confirmation cannot be completed', async () => {
     const manager = createManager();
     await manager.login({ username: USERNAME, password: PASSWORD });
-    manager.lock();
+    confirmReauthentication.mockRejectedValueOnce(new Error('confirmation unavailable'));
 
-    await expect(manager.reauthenticate(PASSWORD)).rejects.toMatchObject({ code: 'locked' });
+    await expect(manager.reauthenticate(PASSWORD)).rejects.toMatchObject({ code: 'unauthorized' });
+    expect(manager.getView().state).toBe('signed-out');
+    expect(authClient.clear).toHaveBeenCalledOnce();
+  });
+
+  it('rejects reauthentication after sign out or when the fresh account no longer matches', async () => {
+    const manager = createManager();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+    await manager.logout();
+
+    await expect(manager.reauthenticate(PASSWORD)).rejects.toMatchObject({ code: 'unauthorized' });
 
     await manager.login({ username: USERNAME, password: PASSWORD });
     authClient.reauthenticate.mockResolvedValueOnce(accountRecord({ id: 'replacement-account' }));
     await expect(manager.reauthenticate(PASSWORD)).rejects.toMatchObject({ code: 'unauthorized' });
-    expect(manager.getView().state).toBe('locked');
+    expect(manager.getView().state).toBe('signed-out');
   });
 
-  it('locks immediately when the fresh password authentication fails', async () => {
+  it('signs out immediately when the fresh password authentication fails', async () => {
     const manager = createManager();
     await manager.login({ username: USERNAME, password: PASSWORD });
     authClient.reauthenticate.mockRejectedValueOnce(new Error('invalid credentials'));
@@ -310,7 +297,7 @@ describe('PrivilegedSessionManager', () => {
     await expect(manager.reauthenticate(PASSWORD)).rejects.toThrow(
       'Unable to authorize this privileged account.',
     );
-    expect(manager.getView().state).toBe('locked');
+    expect(manager.getView().state).toBe('signed-out');
     expect(authClient.clear).toHaveBeenCalledOnce();
   });
 });

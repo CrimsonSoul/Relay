@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  KnowledgeAuditAction,
-  KnowledgeDocumentType,
-  KnowledgeManagementErrorCode,
-  KnowledgeManagementDocumentView,
-  KnowledgeManagementUploadView,
-  KnowledgeUploadQueueItemState,
-  KnowledgeUploadQueueItemView,
+import {
+  knowledgeCategoryKey,
+  type KnowledgeAuditAction,
+  type KnowledgeCategoryRecord,
+  type KnowledgeDocumentType,
+  type KnowledgeManagementErrorCode,
+  type KnowledgeManagementDocumentView,
+  type KnowledgeManagementUploadView,
+  type KnowledgeUploadQueueItemState,
+  type KnowledgeUploadQueueItemView,
 } from '@shared/knowledge';
 import { TactileButton } from '../../components/TactileButton';
 import { SearchInput } from '../../components/SearchInput';
@@ -18,6 +20,8 @@ type Draft = { title: string; categoryId: string; documentType: KnowledgeDocumen
 type DraftErrors = Partial<Record<'title' | 'categoryId', string>>;
 type UploadDraft = { title: string; category: string };
 type RetryFocusIntent = { documentId: string; operationId: number; settled: boolean };
+
+const NEW_CATEGORY_VALUE = '__new_category__';
 
 const ACTION_LABELS: Record<KnowledgeAuditAction, string> = {
   'upload-validated': 'Validated upload',
@@ -110,6 +114,11 @@ function effectiveQueueState(
 ): KnowledgeUploadQueueItemState {
   const serverState = uploads.find(({ id }) => id === item.uploadId)?.state;
   return serverState ?? item.state;
+}
+
+function selectedUploadCategory(categories: KnowledgeCategoryRecord[], selectedId: string): string {
+  if (selectedId === NEW_CATEGORY_VALUE) return '';
+  return categories.find(({ id }) => id === selectedId)?.name ?? '';
 }
 
 function matchesDocument(document: KnowledgeManagementDocumentView, query: string): boolean {
@@ -379,7 +388,7 @@ export function KnowledgeManagementWorkspace({
         <div className="knowledge-management__access-lost" role="alert">
           <span className="knowledge-tab__kicker">Protected access required</span>
           <h2>Publisher access ended</h2>
-          <p>Sign in again from Settings to continue managing the Wiki.</p>
+          <p>{management.error ?? 'Sign in again from Settings to continue managing the Wiki.'}</p>
         </div>
       </div>
     );
@@ -455,7 +464,7 @@ export function KnowledgeManagementWorkspace({
 
         <div
           ref={sectionContentRef}
-          className="knowledge-management__content"
+          className={`knowledge-management__content${section === 'audit' ? ' knowledge-management__content--audit' : ''}`}
           tabIndex={-1}
           aria-label={`${section[0]!.toUpperCase()}${section.slice(1)} management section`}
         >
@@ -545,7 +554,7 @@ export function KnowledgeManagementWorkspace({
                           <span>Select</span>
                         </label>
                         <span className="knowledge-management-row__type">
-                          {document.documentType === 'cheatsheet' ? 'CHEATSHEET' : 'SOP'} ·{' '}
+                          {document.documentType === 'cheatsheet' ? 'QUICK GUIDE' : 'SOP MANUAL'} ·{' '}
                           {document.pageCount} pages
                         </span>
                       </div>
@@ -653,8 +662,8 @@ export function KnowledgeManagementWorkspace({
                               }))
                             }
                           >
-                            <option value="sop">SOP guide</option>
-                            <option value="cheatsheet">Cheatsheet</option>
+                            <option value="sop">SOP Manual</option>
+                            <option value="cheatsheet">Quick Guide</option>
                           </select>
                         </label>
                         <div>
@@ -902,6 +911,9 @@ export function KnowledgeManagementWorkspace({
                   title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
                   category: upload.proposedCategory || 'General',
                 };
+                const selectedCategory = categories.find(
+                  ({ normalizedName }) => normalizedName === knowledgeCategoryKey(draft.category),
+                );
                 const duplicate = documents.find(({ id }) => id === upload.duplicateDocumentId);
                 return (
                   <article
@@ -933,16 +945,41 @@ export function KnowledgeManagementWorkspace({
                       </label>
                       <label>
                         Category
-                        <input
-                          value={draft.category}
-                          onChange={(event) =>
+                        <select
+                          value={selectedCategory?.id ?? NEW_CATEGORY_VALUE}
+                          onChange={(event) => {
+                            const category = selectedUploadCategory(categories, event.target.value);
                             setUploadDrafts((current) => ({
                               ...current,
-                              [upload.id]: { ...draft, category: event.target.value },
-                            }))
-                          }
-                        />
+                              [upload.id]: {
+                                ...draft,
+                                category,
+                              },
+                            }));
+                          }}
+                        >
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                          <option value={NEW_CATEGORY_VALUE}>Create new category…</option>
+                        </select>
                       </label>
+                      {!selectedCategory && (
+                        <label>
+                          New category name
+                          <input
+                            value={draft.category}
+                            onChange={(event) =>
+                              setUploadDrafts((current) => ({
+                                ...current,
+                                [upload.id]: { ...draft, category: event.target.value },
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
                     </div>
                     <div className="knowledge-management-row__actions">
                       {upload.duplicateDocumentId && (
@@ -954,7 +991,7 @@ export function KnowledgeManagementWorkspace({
                         <TactileButton
                           size="sm"
                           variant="primary"
-                          disabled={upload.state !== 'ready'}
+                          disabled={upload.state !== 'ready' || !draft.category.trim()}
                           loading={management.busy === `replace:${duplicate.id}`}
                           onClick={() =>
                             void management.replace(
@@ -972,7 +1009,11 @@ export function KnowledgeManagementWorkspace({
                         <TactileButton
                           size="sm"
                           variant="primary"
-                          disabled={upload.state !== 'ready' || Boolean(upload.duplicateDocumentId)}
+                          disabled={
+                            upload.state !== 'ready' ||
+                            Boolean(upload.duplicateDocumentId) ||
+                            !draft.category.trim()
+                          }
                           loading={management.busy === `publish:${upload.id}`}
                           onClick={() => void publishUpload(upload)}
                         >

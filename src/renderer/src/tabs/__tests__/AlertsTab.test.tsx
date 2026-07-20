@@ -514,7 +514,7 @@ describe('AlertsTab', () => {
   it('renders the approved Alerts operational hierarchy', () => {
     render(<AlertsTab />);
 
-    expect(screen.getByRole('heading', { name: 'Operational alert composer' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Operational Alert Utility' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Alert actions' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Alert definition' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
@@ -667,9 +667,9 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
   });
 
-  it('renders status bar with Alert Composer label', () => {
+  it('renders status bar with Alert Utility label', () => {
     render(<AlertsTab />);
-    expect(screen.getByText('Alert Composer')).toBeInTheDocument();
+    expect(screen.getByText('Alert Utility')).toBeInTheDocument();
   });
 
   it('does not show history modal by default', () => {

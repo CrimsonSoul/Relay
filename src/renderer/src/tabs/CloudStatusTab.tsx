@@ -408,7 +408,7 @@ export const CloudStatusTab: React.FC<{
       <header className="cloud-status__header">
         <div>
           <div className="cloud-status__context">Service status</div>
-          <h2 className="cloud-status__title">External outages</h2>
+          <h2 className="cloud-status__title">External Outages</h2>
         </div>
         <div className="cloud-status__meta">
           <span>{updatedLabel}</span>

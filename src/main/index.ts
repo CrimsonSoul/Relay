@@ -61,10 +61,7 @@ import {
 } from './knowledge/knowledgeRuntime';
 import { KnowledgeUploadQueueStore } from './knowledge/KnowledgeUploadQueueStore';
 import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
-import {
-  createProductionPrivilegedRuntime,
-  installPrivilegedE2EControl,
-} from './privileged/privilegedRuntime';
+import { createProductionPrivilegedRuntime } from './privileged/privilegedRuntime';
 import {
   restartKnowledgeSearchRuntime,
   stopKnowledgeSearchRuntime,
@@ -145,8 +142,6 @@ if (gotLock) {
     let stopMemoryHeartbeat: (() => void) | null = null;
     let stopKnowledgeUploadSession: (() => void) | null = null;
     let cleanupComplete = false;
-    const cleanupPrivilegedE2EControl = installPrivilegedE2EControl(getPrivilegedRuntime);
-
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
       cleanupComplete = true;
@@ -157,7 +152,6 @@ if (gotLock) {
       cleanupMaintenance = null;
       stopMemoryHeartbeat?.();
       stopMemoryHeartbeat = null;
-      cleanupPrivilegedE2EControl();
       stopKnowledgeUploadSession?.();
       stopKnowledgeUploadSession = null;
       getDynatraceProblemsManager()?.stop();

@@ -183,7 +183,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
       <header className="assembler-page-header">
         <div>
           <div className="assembler-page-context">Compose</div>
-          <h2 className="assembler-page-title">Bridge recipient assembly</h2>
+          <h2 className="assembler-page-title">Bridge Recipient Assembly</h2>
         </div>
         <div className="assembler-page-meta" role="status" aria-live="polite">
           <span className="assembler-page-state-dot" aria-hidden="true" />

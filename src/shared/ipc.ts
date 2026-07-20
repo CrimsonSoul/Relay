@@ -430,7 +430,6 @@ export type BridgeAPI = {
     input: PrivilegedLoginInput,
   ) => Promise<PrivilegedIpcResult<PrivilegedSessionView>>;
   logoutPrivileged: () => Promise<PrivilegedSessionView>;
-  lockPrivileged: () => Promise<PrivilegedSessionView>;
   reauthenticatePrivileged: (
     input: PrivilegedReauthenticationInput,
   ) => Promise<PrivilegedIpcResult<PrivilegedReauthenticationProof>>;
@@ -602,7 +601,6 @@ export const IPC_CHANNELS = {
   PRIVILEGED_GET_SESSION: 'privileged:getSession',
   PRIVILEGED_LOGIN: 'privileged:login',
   PRIVILEGED_LOGOUT: 'privileged:logout',
-  PRIVILEGED_LOCK: 'privileged:lock',
   PRIVILEGED_REAUTHENTICATE: 'privileged:reauthenticate',
   PRIVILEGED_CREATE_PAIRING_CHALLENGE: 'privileged:createPairingChallenge',
   PRIVILEGED_COMPLETE_PAIRING: 'privileged:completePairing',

@@ -28,7 +28,7 @@ const session = (
   role: state === 'active' ? role : null,
   capabilities: state === 'active' ? ['privileged.status.read'] : [],
   deviceId: state === 'active' ? 'device-1' : null,
-  expiresAt: state === 'active' ? '2026-07-15T20:15:00.000Z' : null,
+  expiresAt: null,
 });
 
 describe('PrivilegedAccessPanel', () => {
@@ -77,7 +77,6 @@ describe('PrivilegedAccessPanel', () => {
       error: null,
       login,
       logout: vi.fn(),
-      lock: vi.fn(),
       createPairingChallenge,
       completePairing,
       pairingChallenge: null,
@@ -144,6 +143,18 @@ describe('PrivilegedAccessPanel', () => {
     if (role === 'publisher') {
       expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
     }
+  });
+
+  it('keeps active access until sign out and does not offer Lock', () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      ...mockUsePrivilegedAccess(),
+      session: session('active', 'owner'),
+    });
+    render(<PrivilegedAccessPanel relayMode="server" />);
+
+    expect(screen.getByText('Active until you sign out')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Lock' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeVisible();
   });
 
   it('creates a pairing challenge for active role accounts by account ID', async () => {

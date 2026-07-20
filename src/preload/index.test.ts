@@ -122,7 +122,6 @@ describe('preload Knowledge web link bridge', () => {
     await api.getPrivilegedSession();
     await api.loginPrivileged(login);
     await api.logoutPrivileged();
-    await api.lockPrivileged();
     await api.reauthenticatePrivileged(reauthentication);
     await api.createPrivilegedPairingChallenge('account-publisher');
     await api.completePrivilegedPairing(pairing);
@@ -145,7 +144,6 @@ describe('preload Knowledge web link bridge', () => {
         ['privileged:getSession'],
         ['privileged:login', login],
         ['privileged:logout'],
-        ['privileged:lock'],
         ['privileged:reauthenticate', reauthentication],
         ['privileged:createPairingChallenge', 'account-publisher'],
         ['privileged:completePairing', pairing],
@@ -159,6 +157,7 @@ describe('preload Knowledge web link bridge', () => {
   it('does not expose retired roster management methods', () => {
     const bridge = api as unknown as Record<string, unknown>;
 
+    expect(bridge.lockPrivileged).toBeUndefined();
     expect(bridge.createRelayOperator).toBeUndefined();
     expect(bridge.renameRelayOperator).toBeUndefined();
     expect(bridge.setRelayOperatorActive).toBeUndefined();

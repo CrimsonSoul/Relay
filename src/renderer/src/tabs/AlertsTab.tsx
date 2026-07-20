@@ -627,7 +627,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
       <header className="alerts-page-header">
         <div>
           <div className="alerts-page-context">Alerts</div>
-          <h2 className="alerts-page-title">Operational alert composer</h2>
+          <h2 className="alerts-page-title">Operational Alert Utility</h2>
         </div>
         <div className="alerts-page-meta" role="status" aria-live="polite">
           <span className="alerts-page-state-dot" aria-hidden="true" />
@@ -642,7 +642,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               variant="secondary"
               className="alerts-utility-action"
               onClick={handleClear}
-              tooltip="Reset alert composer"
+              tooltip="Reset alert utility"
               icon={
                 <svg
                   width="14"
@@ -970,7 +970,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         </div>
       </Modal>
 
-      <StatusBar left={<StatusBarLive />} right={<span>Alert Composer</span>} />
+      <StatusBar left={<StatusBarLive />} right={<span>Alert Utility</span>} />
     </div>
   );
 };

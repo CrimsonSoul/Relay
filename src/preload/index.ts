@@ -60,7 +60,6 @@ const api: BridgeAPI = {
   getPrivilegedSession: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_GET_SESSION),
   loginPrivileged: (input) => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, input),
   logoutPrivileged: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGOUT),
-  lockPrivileged: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOCK),
   reauthenticatePrivileged: (input) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_REAUTHENTICATE, input),
   createPrivilegedPairingChallenge: (targetAccountId) =>

@@ -138,7 +138,7 @@ describe('KnowledgeManagementWorkspace', () => {
       .getByRole('checkbox', { name: 'Select Checkout runbook' })
       .closest('.knowledge-management-row__eyebrow');
     expect(documentEyebrow).not.toBeNull();
-    expect(within(documentEyebrow as HTMLElement).getByText(/SOP · 4 pages/i)).toBeVisible();
+    expect(within(documentEyebrow as HTMLElement).getByText(/SOP MANUAL · 4 pages/i)).toBeVisible();
     const trashButton = screen.getByRole('button', { name: 'Trash' });
     expect(trashButton).toHaveClass('tactile-button--danger');
     expect(trashButton).toHaveClass('knowledge-management__danger-outline');
@@ -436,11 +436,15 @@ describe('KnowledgeManagementWorkspace', () => {
       ...useKnowledgeManagementMock(),
       canManage: false,
       snapshot: null,
+      error: 'Password confirmation was not accepted. Try again.',
     });
 
     render(<KnowledgeManagementWorkspace onExit={onExit} />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('Publisher access ended');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Password confirmation was not accepted. Try again.',
+    );
     expect(screen.queryByRole('button', { name: 'Add PDFs' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Return to library' }));
     expect(onExit).toHaveBeenCalledOnce();
@@ -482,6 +486,131 @@ describe('KnowledgeManagementWorkspace', () => {
 
     expect(stagePdfs).toHaveBeenCalledOnce();
     expect(readAudit).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText('Audit management section')).toHaveClass(
+      'knowledge-management__content--audit',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+    expect(screen.getByLabelText('Documents management section')).not.toHaveClass(
+      'knowledge-management__content--audit',
+    );
+  });
+
+  it('publishes an upload into an existing category selected from the category list', () => {
+    const publish = vi.fn(async () => true);
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        categories: [
+          ...current.snapshot!.categories,
+          {
+            id: 'category-site-ops',
+            name: 'Site Ops',
+            normalizedName: 'site ops',
+            sortOrder: 300,
+            systemKey: '',
+            revision: 1,
+            created: '2026-07-16T01:00:00.000Z',
+            updated: '2026-07-16T01:00:00.000Z',
+          },
+          {
+            id: 'category-sentinel-name',
+            name: '__new_category__',
+            normalizedName: '__new_category__',
+            sortOrder: 400,
+            systemKey: '',
+            revision: 1,
+            created: '2026-07-16T01:00:00.000Z',
+            updated: '2026-07-16T01:00:00.000Z',
+          },
+        ],
+        uploads: {
+          nextCursor: null,
+          items: [
+            {
+              id: 'upload-1',
+              requestId: 'request-1',
+              fileName: 'Escalation.pdf',
+              byteSize: 1_024,
+              checksum: 'b'.repeat(64),
+              state: 'ready',
+              progress: 100,
+              proposedTitle: 'Escalation guide',
+              proposedCategory: 'Site   Ops',
+              pageCount: 4,
+              outlineSource: 'native',
+              outlineCount: 3,
+              duplicateDocumentId: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 1,
+            },
+          ],
+        },
+      },
+      publish,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    const category = screen.getByRole('combobox', { name: 'Category' });
+    expect(category).toHaveValue('category-site-ops');
+    expect(screen.queryByRole('textbox', { name: 'New category name' })).not.toBeInTheDocument();
+    expect(within(category).getByRole('option', { name: 'Operations' })).toBeInTheDocument();
+    expect(within(category).getByRole('option', { name: 'Uncategorized' })).toBeInTheDocument();
+    fireEvent.change(category, { target: { value: 'category-sentinel-name' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', '__new_category__');
+  });
+
+  it('keeps new-category creation available from upload review', () => {
+    const publish = vi.fn(async () => true);
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        uploads: {
+          nextCursor: null,
+          items: [
+            {
+              id: 'upload-1',
+              requestId: 'request-1',
+              fileName: 'Escalation.pdf',
+              byteSize: 1_024,
+              checksum: 'b'.repeat(64),
+              state: 'ready',
+              progress: 100,
+              proposedTitle: 'Escalation guide',
+              proposedCategory: 'Operations',
+              pageCount: 4,
+              outlineSource: 'native',
+              outlineCount: 3,
+              duplicateDocumentId: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 1,
+            },
+          ],
+        },
+      },
+      publish,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Category' }), {
+      target: { value: '__new_category__' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'New category name' }), {
+      target: { value: 'Network' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', 'Network');
   });
 
   it('presents aggregate and per-file controls for a resumable VPN upload', () => {

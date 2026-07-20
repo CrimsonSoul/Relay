@@ -279,7 +279,7 @@ export function KnowledgeReaderSidebarBody({
         {mode === 'contents' ? (
           <span>
             {selectedDocument.pageCount} pages ·{' '}
-            {selectedDocument.documentType === 'sop' ? 'SOP guide' : 'Cheatsheet'}
+            {selectedDocument.documentType === 'sop' ? 'SOP Manual' : 'Quick Guide'}
           </span>
         ) : (
           <span>

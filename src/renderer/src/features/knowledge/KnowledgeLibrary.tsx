@@ -46,9 +46,9 @@ function KnowledgeCoverCatalog({
   return (
     <>
       {catalog.sopGroups.length > 0 && (
-        <section className="knowledge-catalog__sops" aria-labelledby="sop-guides-title">
+        <section className="knowledge-catalog__sops" aria-labelledby="sop-manuals-title">
           <div className="knowledge-catalog__section-heading">
-            <h2 id="sop-guides-title">SOP guides</h2>
+            <h2 id="sop-manuals-title">SOP Manuals</h2>
             <span>Complete procedures</span>
           </div>
           {catalog.sopGroups.map((group) => (
@@ -76,9 +76,9 @@ function KnowledgeCoverCatalog({
       )}
 
       {catalog.cheatsheets.length > 0 && (
-        <section className="knowledge-catalog__cheatsheets" aria-labelledby="cheatsheets-title">
+        <section className="knowledge-catalog__cheatsheets" aria-labelledby="quick-guides-title">
           <div className="knowledge-catalog__section-heading">
-            <h2 id="cheatsheets-title">Cheatsheets</h2>
+            <h2 id="quick-guides-title">Quick Guides</h2>
             <span>Fast reference</span>
           </div>
           <div className="knowledge-cheatsheet-list">
@@ -251,8 +251,8 @@ export function KnowledgeLibrary({
             }
           >
             <option value="all">All types</option>
-            <option value="sop">SOP guides</option>
-            <option value="cheatsheet">Cheatsheets</option>
+            <option value="sop">SOP Manuals</option>
+            <option value="cheatsheet">Quick Guides</option>
           </select>
         </label>
         <label>

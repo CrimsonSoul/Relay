@@ -42,7 +42,6 @@ export interface PrivilegedAccessRuntime {
   getView(): PrivilegedSessionView;
   login(input: { username: string; password: string }): Promise<PrivilegedSessionView>;
   logout(): Promise<void>;
-  lock(): void;
   reauthenticate(password: string): Promise<PrivilegedReauthenticationProof>;
   createPairingChallenge(targetAccountId: string): Promise<PrivilegedPairingChallengeView>;
   completePairing(input: {
@@ -138,14 +137,6 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     const runtime = getRuntime();
     if (!runtime) return publicView(null);
     await runtime.logout();
-    return publicView(runtime.getView());
-  });
-
-  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_LOCK, (event) => {
-    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_LOCK)) return failure('unauthorized');
-    const runtime = getRuntime();
-    if (!runtime) return publicView(null);
-    runtime.lock();
     return publicView(runtime.getView());
   });
 

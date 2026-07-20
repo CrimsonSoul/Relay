@@ -19,7 +19,7 @@ type Props = {
 const UNAVAILABLE_MESSAGE = 'Full-text search unavailable. Showing title and section matches.';
 
 function documentTypeLabel(documentType: KnowledgeDocumentRecord['documentType']): string {
-  return documentType === 'cheatsheet' ? 'Cheatsheet' : 'SOP guide';
+  return documentType === 'cheatsheet' ? 'Quick Guide' : 'SOP Manual';
 }
 
 function ResultCover({ document }: Readonly<{ document: KnowledgeDocumentRecord }>) {

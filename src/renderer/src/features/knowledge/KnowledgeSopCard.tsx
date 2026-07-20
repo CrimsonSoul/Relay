@@ -21,7 +21,7 @@ export function KnowledgeSopCard({
           <img src={cover.url} alt="" onLoad={cover.onImageLoad} onError={cover.onImageError} />
         ) : (
           <div className="knowledge-sop-card__fallback" aria-hidden="true">
-            <span>{cover.state === 'loading' ? 'Loading cover' : 'SOP guide'}</span>
+            <span>{cover.state === 'loading' ? 'Loading cover' : 'SOP Manual'}</span>
             <strong>{document.displayTitle.slice(0, 1)}</strong>
           </div>
         )}

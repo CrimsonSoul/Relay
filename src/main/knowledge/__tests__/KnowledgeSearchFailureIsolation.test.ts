@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => {
     authWithPassword,
     fallbackCollection,
     pbProcess,
+    ensureKnowledgeBatchApi: vi.fn().mockResolvedValue(undefined),
     ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
     ensureKnowledgeSearchCollections: vi.fn().mockResolvedValue(undefined),
     getAppConfig: vi.fn(),
@@ -119,6 +120,7 @@ vi.mock('../../pocketbase/RetentionManager', () => ({
   }),
 }));
 vi.mock('../../pocketbase/CollectionBootstrap', () => ({
+  ensureKnowledgeBatchApi: mocks.ensureKnowledgeBatchApi,
   ensureCollections: mocks.ensureCollections,
   ensureKnowledgeSearchCollections: mocks.ensureKnowledgeSearchCollections,
 }));
@@ -759,6 +761,7 @@ const faultCases: ReadonlyArray<{ name: FaultName; expectedOk: boolean }> = [
 
 afterEach(() => {
   vi.useRealTimers();
+  mocks.ensureKnowledgeBatchApi.mockReset().mockResolvedValue(undefined);
   mocks.ensureKnowledgeSearchCollections.mockReset().mockResolvedValue(undefined);
   mocks.ensureCollections.mockReset().mockResolvedValue({ privilegedRuntimeReady: true });
   mocks.authWithPassword.mockReset().mockResolvedValue({});

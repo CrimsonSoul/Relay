@@ -98,7 +98,7 @@ describe('KnowledgePassageResultList', () => {
     expect(screen.getByText('Document text')).toBeVisible();
     expect(screen.getByText('Failover procedure')).toBeVisible();
     expect(screen.getAllByText('Page 7')).toHaveLength(2);
-    expect(screen.getAllByText('SOP guide').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('SOP Manual').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Close match')).toHaveLength(1);
   });
 

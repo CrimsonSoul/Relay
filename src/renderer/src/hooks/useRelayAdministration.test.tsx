@@ -20,7 +20,7 @@ const activeSession: PrivilegedSessionView = {
   role: 'admin',
   capabilities: ['settings.manage', 'publisher.assign'],
   deviceId: 'device-1',
-  expiresAt: '2026-07-15T22:00:00.000Z',
+  expiresAt: null,
 };
 
 const snapshot: RelayAdministrationSnapshot = {

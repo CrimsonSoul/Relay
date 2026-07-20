@@ -25,7 +25,7 @@ const active: PrivilegedSessionView = {
   role: 'owner',
   capabilities: ['privileged.status.read', 'accounts.manage'],
   deviceId: 'device-1',
-  expiresAt: '2026-07-15T20:15:00.000Z',
+  expiresAt: null,
 };
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -45,7 +45,6 @@ describe('PrivilegedAccessProvider', () => {
       getPrivilegedSession: vi.fn().mockResolvedValue(signedOut),
       loginPrivileged: vi.fn().mockResolvedValue({ ok: true, value: active }),
       logoutPrivileged: vi.fn().mockResolvedValue(signedOut),
-      lockPrivileged: vi.fn().mockResolvedValue({ ...active, state: 'locked' }),
       createPrivilegedPairingChallenge: vi.fn().mockResolvedValue({
         ok: true,
         value: {
@@ -71,6 +70,7 @@ describe('PrivilegedAccessProvider', () => {
 
     act(() => eventListener?.(active));
     expect(result.current.session).toEqual(active);
+    expect('lock' in result.current).toBe(false);
   });
 
   it('authenticates with username and password without reading operator selection', async () => {

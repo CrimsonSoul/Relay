@@ -22,7 +22,6 @@ export const RELAY_PRIVILEGED_COMMANDS_COLLECTION = 'relay_privileged_commands';
 export const RELAY_PRIVILEGED_PAIRING_CHALLENGES_COLLECTION = 'relay_privileged_pairing_challenges';
 export const RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION = 'relay_privileged_pairing_requests';
 
-export const PRIVILEGED_SESSION_IDLE_MS = 15 * 60 * 1_000;
 export const MAX_PRIVILEGED_DEVICE_LABEL_LENGTH = 80;
 export const MAX_PRIVILEGED_HOSTNAME_LENGTH = 255;
 export const MIN_PRIVILEGED_PASSWORD_LENGTH = 12;
@@ -98,12 +97,7 @@ export type RelayPrivilegedDeviceRecord = {
   updated: string;
 };
 
-export type PrivilegedSessionState =
-  | 'signed-out'
-  | 'pairing-required'
-  | 'active'
-  | 'locked'
-  | 'offline';
+export type PrivilegedSessionState = 'signed-out' | 'pairing-required' | 'active' | 'offline';
 
 export type PrivilegedSessionView = {
   state: PrivilegedSessionState;
@@ -196,7 +190,6 @@ const SESSION_STATES = new Set<PrivilegedSessionState>([
   'signed-out',
   'pairing-required',
   'active',
-  'locked',
   'offline',
 ]);
 
@@ -272,10 +265,11 @@ export function normalizePrivilegedSessionView(value: unknown): PrivilegedSessio
       username === null ||
       displayName === null ||
       role === null ||
-      expiresAt === null)
+      expiresAt !== null)
   ) {
     return null;
   }
+  if (state === 'pairing-required' && expiresAt !== null) return null;
   if (
     (username !== null && getRoleUsernameError(username) !== null) ||
     (displayName !== null && getRoleDisplayNameError(displayName) !== null)

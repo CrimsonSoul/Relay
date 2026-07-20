@@ -13,7 +13,6 @@ import { PrivilegedServerQueue } from '../PrivilegedPocketBaseTransport';
 import {
   PrivilegedRuntime,
   createProductionPrivilegedRuntime,
-  installPrivilegedE2EControl,
   resolveProductionPairingTarget,
   startKnowledgeSearchIndexerBestEffort,
   type PrivilegedClientTransport,
@@ -207,7 +206,7 @@ describe('PrivilegedRuntime', () => {
     ).toBe(true);
   });
 
-  it('locks a remote owner promptly when ownership transfers', async () => {
+  it('signs out a remote owner promptly when ownership transfers', async () => {
     const runtime = createClientRuntime({
       resolveAccountIdentity: vi.fn(async () => ({ assigned: true, role: 'owner' })),
     });
@@ -218,10 +217,10 @@ describe('PrivilegedRuntime', () => {
       state: { ...state, ownerAccountId: 'account-charles', assignmentVersion: 2 },
     });
 
-    expect(runtime.getView()).toMatchObject({ state: 'locked', role: 'owner' });
+    expect(runtime.getView()).toMatchObject({ state: 'signed-out', role: null });
   });
 
-  it('locks a replaced remote Publisher while leaving an unrelated administrator usable', async () => {
+  it('signs out a replaced remote Publisher while leaving an unrelated administrator usable', async () => {
     const publisherAccount = {
       ...account,
       id: 'account-publisher',
@@ -238,7 +237,7 @@ describe('PrivilegedRuntime', () => {
       account: publisherAccount,
       state: { ...state, publisherAccountId: 'account-new-publisher', assignmentVersion: 2 },
     });
-    expect(publisherRuntime.getView()).toMatchObject({ state: 'locked', role: 'publisher' });
+    expect(publisherRuntime.getView()).toMatchObject({ state: 'signed-out', role: null });
 
     const unrelatedAdmin = {
       ...account,
@@ -256,7 +255,7 @@ describe('PrivilegedRuntime', () => {
     expect(adminRuntime.getView()).toMatchObject({ state: 'active', role: 'admin' });
   });
 
-  it('locks after a remote authorization failure proves the projected authority is stale', async () => {
+  it('signs out after a remote authorization failure proves the projected authority is stale', async () => {
     const runtime = createClientRuntime();
     await runtime.login({ username: USERNAME, password: PASSWORD });
     submitCommand.mockResolvedValueOnce({
@@ -272,7 +271,7 @@ describe('PrivilegedRuntime', () => {
         expectedRevision: null,
       }),
     ).resolves.toMatchObject({ ok: false, error: 'unauthorized' });
-    expect(runtime.getView().state).toBe('locked');
+    expect(runtime.getView().state).toBe('signed-out');
     expect(stopAuthorityMonitor).toHaveBeenCalledOnce();
   });
 
@@ -777,35 +776,5 @@ describe('server Wiki search indexer lifecycle', () => {
     await expect(runtime.dispose()).rejects.toThrow('queue-dispose-failed');
     expect(uploadDispose).toHaveBeenCalledOnce();
     expect(indexerDispose).toHaveBeenCalledOnce();
-  });
-});
-
-describe('installPrivilegedE2EControl', () => {
-  afterEach(() => {
-    delete process.env.RELAY_E2E_PRIVILEGED_FIXTURES;
-    delete (globalThis as typeof globalThis & { __relayE2EPrivileged?: unknown })
-      .__relayE2EPrivileged;
-  });
-
-  it('installs a main-process-only inactivity control behind the explicit E2E flag', () => {
-    process.env.RELAY_E2E_PRIVILEGED_FIXTURES = '1';
-    const runtime = {
-      getView: vi.fn(() => ({ state: 'locked' })),
-      lock: vi.fn(),
-    };
-
-    const cleanup = installPrivilegedE2EControl(() => runtime as never);
-    const fixture = (
-      globalThis as typeof globalThis & {
-        __relayE2EPrivileged?: { simulateInactivity(): { state: string } | null };
-      }
-    ).__relayE2EPrivileged;
-
-    expect(fixture?.simulateInactivity()).toEqual({ state: 'locked' });
-    expect(runtime.lock).toHaveBeenCalledOnce();
-    cleanup();
-    expect(
-      (globalThis as typeof globalThis & { __relayE2EPrivileged?: unknown }).__relayE2EPrivileged,
-    ).toBeUndefined();
   });
 });

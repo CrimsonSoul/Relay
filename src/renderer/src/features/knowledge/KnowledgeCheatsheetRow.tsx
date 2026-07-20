@@ -15,7 +15,7 @@ export function KnowledgeCheatsheetRow({
       onClick={() => onOpen(document.id)}
     >
       <span className="knowledge-cheatsheet-row__mark" aria-hidden="true">
-        QS
+        QG
       </span>
       <span className="knowledge-cheatsheet-row__copy">
         <strong>{document.displayTitle}</strong>

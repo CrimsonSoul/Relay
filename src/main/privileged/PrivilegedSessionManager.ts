@@ -1,7 +1,6 @@
 import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
-  PRIVILEGED_SESSION_IDLE_MS,
   getPrivilegedCapabilities,
   type PrivilegedRole,
   type PrivilegedSessionView,
@@ -13,7 +12,7 @@ import type { PrivilegedAuthClient } from './PrivilegedPocketBaseClient';
 
 export const PRIVILEGED_REAUTH_PROOF_MS = 5 * 60 * 1_000;
 
-export type PrivilegedSessionErrorCode = 'invalid-input' | 'locked' | 'offline' | 'unauthorized';
+export type PrivilegedSessionErrorCode = 'invalid-input' | 'offline' | 'unauthorized';
 
 export class PrivilegedSessionError extends Error {
   constructor(readonly code: PrivilegedSessionErrorCode) {
@@ -51,9 +50,7 @@ export interface PrivilegedSessionManagerService {
   login(input: { username: string; password: string }): Promise<PrivilegedSessionView>;
   reauthenticate(password: string): Promise<{ proofId: string; expiresAt: string }>;
   activatePairedDevice(deviceId: string): PrivilegedSessionView;
-  recordPrivilegedActivity(): void;
-  lock(): void;
-  logout(): Promise<void>;
+  logout(): void;
   dispose(): void;
 }
 
@@ -72,8 +69,6 @@ function messageForSessionError(code: PrivilegedSessionErrorCode): string {
   switch (code) {
     case 'invalid-input':
       return 'The privileged sign-in request is invalid.';
-    case 'locked':
-      return 'Privileged access is locked. Sign in again to continue.';
     case 'offline':
       return 'Privileged access is unavailable while Relay is offline.';
     case 'unauthorized':
@@ -137,7 +132,6 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   private readonly onViewChanged?: (view: PrivilegedSessionView) => void;
   private view = publicCopy(SIGNED_OUT_VIEW);
   private account: RelayPrivilegedAccountRecord | null = null;
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
 
   constructor(options: PrivilegedSessionManagerOptions) {
@@ -156,8 +150,6 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     this.assertNotDisposed();
     const username = validateUsername(input.username);
     validatePassword(input.password);
-    this.clearTimer();
-
     let account: RelayPrivilegedAccountRecord;
     try {
       account = await this.authClient.authenticate(username, input.password);
@@ -196,7 +188,6 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
         deviceId: null,
         expiresAt: null,
       });
-      this.refreshIdleDeadline();
       return this.getView();
     }
 
@@ -215,7 +206,6 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       deviceId: authorization.deviceId,
       expiresAt: null,
     });
-    this.refreshIdleDeadline();
     return this.getView();
   }
 
@@ -223,17 +213,17 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     this.assertNotDisposed();
     validatePassword(password);
     const account = this.account;
-    if (this.view.state !== 'active' || !account) throw new PrivilegedSessionError('locked');
+    if (this.view.state !== 'active' || !account) throw new PrivilegedSessionError('unauthorized');
 
     let refreshed: RelayPrivilegedAccountRecord;
     try {
       refreshed = await this.authClient.reauthenticate(account.username, password);
     } catch {
-      this.lock();
+      this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
     }
     if (!isSameAccount(account, refreshed)) {
-      this.lock();
+      this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
     }
 
@@ -241,11 +231,11 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     try {
       authorization = await this.resolveAuthorization(refreshed);
     } catch {
-      this.lock();
+      this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
     }
     if (!authorization.assigned || !authorization.role || authorization.role !== this.view.role) {
-      this.lock();
+      this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
     }
     this.account = refreshed;
@@ -258,19 +248,24 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
 
     const authenticatedAtMs = this.now();
     const authenticatedAt = new Date(authenticatedAtMs).toISOString();
-    const result = await this.confirmReauthentication({
-      accountId: account.id,
-      username: refreshed.username,
-      displayName: refreshed.displayName,
-      role: authorization.role,
-      deviceId: this.view.deviceId,
-      authenticatedAt,
-    });
-    if (result.requestId.length === 0 || result.requestId.length > 128) {
-      this.lock();
+    let result: { requestId: string };
+    try {
+      result = await this.confirmReauthentication({
+        accountId: account.id,
+        username: refreshed.username,
+        displayName: refreshed.displayName,
+        role: authorization.role,
+        deviceId: this.view.deviceId,
+        authenticatedAt,
+      });
+    } catch {
+      this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
     }
-    this.recordPrivilegedActivity();
+    if (result.requestId.length === 0 || result.requestId.length > 128) {
+      this.invalidateSession();
+      throw new PrivilegedSessionError('unauthorized');
+    }
     return {
       proofId: result.requestId,
       expiresAt: new Date(authenticatedAtMs + PRIVILEGED_REAUTH_PROOF_MS).toISOString(),
@@ -294,40 +289,16 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       }),
       deviceId: normalizedDeviceId,
     });
-    this.refreshIdleDeadline();
     return this.getView();
   }
 
-  recordPrivilegedActivity(): void {
-    if (this.disposed || (this.view.state !== 'active' && this.view.state !== 'pairing-required')) {
-      return;
-    }
-    this.refreshIdleDeadline();
-  }
-
-  lock(): void {
-    if (this.disposed || this.view.state === 'signed-out') return;
-    this.clearTimer();
-    this.authClient.clear();
-    this.setView({
-      ...this.view,
-      state: 'locked',
-      capabilities: [],
-      expiresAt: null,
-    });
-  }
-
-  async logout(): Promise<void> {
+  logout(): void {
     if (this.disposed) return;
-    this.clearTimer();
-    this.authClient.clear();
-    this.clearIdentity();
-    this.setView(SIGNED_OUT_VIEW);
+    this.invalidateSession();
   }
 
   dispose(): void {
     if (this.disposed) return;
-    this.clearTimer();
     this.authClient.clear();
     this.clearIdentity();
     this.view = publicCopy(SIGNED_OUT_VIEW);
@@ -337,7 +308,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   handleAccountChanged(changedAccount: RelayPrivilegedAccountRecord | null): void {
     if (!this.account || this.view.state === 'signed-out') return;
     if (!isSameAccount(this.account, changedAccount)) {
-      this.lock();
+      this.invalidateSession();
       return;
     }
     this.account = changedAccount;
@@ -347,7 +318,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   }
 
   handleAuthorityChanged(accountIds: readonly string[]): void {
-    if (this.account && accountIds.includes(this.account.id)) this.lock();
+    if (this.account && accountIds.includes(this.account.id)) this.invalidateSession();
   }
 
   handleAuthoritySnapshot(
@@ -356,30 +327,21 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   ): void {
     if (!this.account || this.view.state === 'signed-out') return;
     this.handleAccountChanged(changedAccount);
-    if (!this.account || this.view.state === 'locked') return;
+    if (!this.account) return;
     const role = getEffectiveRole(this.account, state);
-    if (!this.account.active || !role || role !== this.view.role) this.lock();
+    if (!this.account.active || !role || role !== this.view.role) this.invalidateSession();
   }
 
   handleDisconnect(): void {
     if (this.disposed) return;
-    this.clearTimer();
     this.authClient.clear();
     this.setView({ ...this.view, state: 'offline', capabilities: [], expiresAt: null });
   }
 
-  private refreshIdleDeadline(): void {
-    this.clearTimer();
-    const expiresAtMs = this.now() + PRIVILEGED_SESSION_IDLE_MS;
-    this.setView({ ...this.view, expiresAt: new Date(expiresAtMs).toISOString() });
-    this.idleTimer = setTimeout(() => this.lock(), PRIVILEGED_SESSION_IDLE_MS);
-    this.idleTimer.unref?.();
-  }
-
-  private clearTimer(): void {
-    if (!this.idleTimer) return;
-    clearTimeout(this.idleTimer);
-    this.idleTimer = null;
+  private invalidateSession(): void {
+    this.authClient.clear();
+    this.clearIdentity();
+    this.setView(SIGNED_OUT_VIEW);
   }
 
   private clearIdentity(): void {
@@ -399,7 +361,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   }
 
   private assertNotDisposed(): void {
-    if (this.disposed) throw new PrivilegedSessionError('locked');
+    if (this.disposed) throw new PrivilegedSessionError('unauthorized');
   }
 }
 

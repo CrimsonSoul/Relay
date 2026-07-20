@@ -666,10 +666,15 @@ export class ManagedKnowledgeService {
     this.assertRevision(current, input.expectedRevision);
     if (current.lifecycleState !== 'trashed')
       throw new Error('Only trashed documents can be deleted.');
-    await this.audit(input.requestId, 'deleted', current, input.actor);
-    await this.pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).delete(current.id, {
-      requestKey: null,
-    });
+    const batch = this.pb.createBatch();
+    batch
+      .collection(KNOWLEDGE_AUDIT_EVENTS_COLLECTION)
+      .create(this.auditRecord(input.requestId, 'deleted', current, input.actor));
+    batch.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).delete(current.id);
+    const results = await batch.send({ requestKey: null });
+    if (results.length !== 2 || results.some(({ status }) => status < 200 || status >= 300)) {
+      throw new Error('Permanent document deletion did not commit.');
+    }
     return { id: current.id, deleted: true };
   }
 
@@ -865,6 +870,11 @@ export class ManagedKnowledgeService {
       outlineSource: upload.outlineSource,
       sourceModifiedAt: metadata.publishedAt,
       indexedAt: metadata.publishedAt,
+      searchIndexState: 'pending',
+      searchIndexChecksum: '',
+      searchIndexVersion: 0,
+      searchIndexedAt: '',
+      searchIndexError: '',
       lifecycleState: 'active',
       revision: metadata.revision,
       publishedByAccountId: metadata.actor.accountId,
@@ -925,6 +935,11 @@ export class ManagedKnowledgeService {
       outlineSource: upload.outlineSource ?? 'none',
       sourceModifiedAt: metadata.publishedAt,
       indexedAt: metadata.publishedAt,
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
       lifecycleState: 'active',
       revision: metadata.revision,
       publishedByAccountId: metadata.actor.accountId,
@@ -1008,23 +1023,32 @@ export class ManagedKnowledgeService {
     actor: Actor,
     details: Record<string, unknown> = {},
   ): Promise<void> {
-    await this.pb.collection(KNOWLEDGE_AUDIT_EVENTS_COLLECTION).create(
-      {
-        requestId,
-        action,
-        targetId: document?.id ?? '',
-        fileName: document?.fileName ?? '',
-        title: document?.displayTitle ?? '',
-        category: document?.category ?? '',
-        accountId: actor.accountId,
-        actorDisplayName: actor.displayName,
-        operatorId: '',
-        operatorName: '',
-        occurredAt: this.timestamp(),
-        details,
-      },
-      { requestKey: null },
-    );
+    await this.pb
+      .collection(KNOWLEDGE_AUDIT_EVENTS_COLLECTION)
+      .create(this.auditRecord(requestId, action, document, actor, details), { requestKey: null });
+  }
+
+  private auditRecord(
+    requestId: string,
+    action: KnowledgeAuditAction,
+    document: KnowledgeDocumentRecord | null,
+    actor: Actor,
+    details: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      requestId,
+      action,
+      targetId: document?.id ?? '',
+      fileName: document?.fileName ?? '',
+      title: document?.displayTitle ?? '',
+      category: document?.category ?? '',
+      accountId: actor.accountId,
+      actorDisplayName: actor.displayName,
+      operatorId: '',
+      operatorName: '',
+      occurredAt: this.timestamp(),
+      details,
+    };
   }
 
   private timestamp(): string {

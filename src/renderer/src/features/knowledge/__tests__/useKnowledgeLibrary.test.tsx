@@ -39,7 +39,18 @@ describe('useKnowledgeLibrary', () => {
     useCollectionMock.mockImplementation((name) => ({
       data:
         name === 'knowledge_documents'
-          ? ([validRecord(), { ...validRecord(), id: 'bad', checksum: 'not-a-checksum' }] as never)
+          ? ([
+              validRecord(),
+              {
+                ...validRecord(),
+                id: 'trashed',
+                lifecycleState: 'trashed',
+                trashedByAccountId: 'publisher',
+                trashedByName: 'Paris',
+                trashedAt: '2026-07-20T12:00:00.000Z',
+              },
+              { ...validRecord(), id: 'bad', checksum: 'not-a-checksum' },
+            ] as never)
           : ([
               {
                 id: 'category-general',

@@ -54,11 +54,14 @@ describe('Knowledge Management visual system', () => {
 
   it('keeps content unclipped, actions wrapped, and one visible field focus ring', () => {
     const content = ruleBody(css, '.knowledge-management__content');
+    const auditContent = ruleBody(css, '.knowledge-management__content--audit');
     const actions = ruleBody(css, '.knowledge-management-row__actions');
     const focus = ruleBody(css, '.knowledge-management :is(input, select, textarea):focus-visible');
 
     expect(content).toContain('overflow: visible;');
     expect(content).not.toContain('overflow: hidden;');
+    expect(auditContent).toContain('overflow-y: auto;');
+    expect(auditContent).toContain('overscroll-behavior: contain;');
     expect(actions).toContain('flex-wrap: wrap;');
     expect(focus).toContain('outline: 2px solid var(--accent-bright);');
     expect(focus).toContain('outline-offset: 1px;');

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeManagementSnapshot } from '@shared/knowledge';
+import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { useKnowledgeManagement } from '../useKnowledgeManagement';
@@ -24,7 +25,7 @@ const publisherSession = {
   role: 'publisher' as const,
   capabilities: ['privileged.status.read', 'knowledge.manage'],
   deviceId: 'device-1',
-  expiresAt: '2026-07-19T23:00:00.000Z',
+  expiresAt: null,
 };
 
 function deferred<T>() {
@@ -101,7 +102,7 @@ function okSnapshot(value: KnowledgeManagementSnapshot): PrivilegedCommandResult
 }
 
 describe('useKnowledgeManagement', () => {
-  let currentSession = publisherSession;
+  let currentSession: PrivilegedSessionView = publisherSession;
   let queueListener: ((queue: unknown) => void) | null = null;
   const uploadQueue = {
     restartRecovery: false,
@@ -264,6 +265,45 @@ describe('useKnowledgeManagement', () => {
     expect(result.current.error).toBe('The request expired. Try again.');
   });
 
+  it('checks later document pages when confirming an ambiguous search retry', async () => {
+    const failed = snapshotWithSearchState('failed');
+    const firstPage = {
+      ...snapshot,
+      documents: { items: [], nextCursor: 'documents-page-2' },
+    } satisfies KnowledgeManagementSnapshot;
+    const laterPage = {
+      ...snapshot,
+      documents: {
+        items: [snapshotWithSearchState('ready').documents.items[0]!],
+        nextCursor: null,
+      },
+    } satisfies KnowledgeManagementSnapshot;
+    let snapshotReads = 0;
+    submitCommand.mockImplementation(async (input) => {
+      if (input.command === 'knowledge.document.search-index.retry') {
+        return { ok: false, requestId: 'retry-later-page', error: 'expired' };
+      }
+      const cursor = input.command === 'knowledge.snapshot.read' ? input.payload.cursor : null;
+      snapshotReads += 1;
+      if (snapshotReads === 1) return okSnapshot(failed);
+      return okSnapshot(cursor === 'documents-page-2' ? laterPage : firstPage);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(failed));
+
+    let retried = false;
+    await act(async () => {
+      retried = await result.current.retrySearchIndex('document-1');
+    });
+
+    expect(retried).toBe(true);
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.snapshot.read',
+      payload: { query: '', cursor: 'documents-page-2', pageSize: 100 },
+      expectedRevision: null,
+    });
+  });
+
   it('uses existing capability and error translation for search retry', async () => {
     currentSession = { ...publisherSession, capabilities: ['privileged.status.read'] };
     const { result, rerender } = renderHook(() => useKnowledgeManagement());
@@ -282,7 +322,7 @@ describe('useKnowledgeManagement', () => {
     await act(async () => {
       expect(await result.current.retrySearchIndex('document-1')).toBe(false);
     });
-    expect(result.current.error).toBe('Publisher access is locked. Sign in again.');
+    expect(result.current.error).toBe('Publisher access is signed out. Sign in again.');
   });
 
   it('rejects a late search retry result from a stale management identity', async () => {
@@ -308,17 +348,225 @@ describe('useKnowledgeManagement', () => {
     expect(result.current.snapshot).toBeNull();
   });
 
-  it('treats an ambiguous publish as success when the authoritative snapshot proves it', async () => {
+  it('treats a post-commit server error as success when the authoritative snapshot proves it', async () => {
     const onLibraryChanged = vi.fn();
+    const firstPage = {
+      ...snapshot,
+      documents: { items: [], nextCursor: 'documents-page-2' },
+      uploads: { items: [], nextCursor: 'uploads-page-2' },
+    } satisfies KnowledgeManagementSnapshot;
+    const documentPage = snapshotWithTitle('Runbook');
+    const uploadPage = {
+      ...snapshot,
+      uploads: {
+        items: [
+          {
+            id: 'upload-1',
+            requestId: 'publish-1',
+            fileName: 'Runbook.pdf',
+            byteSize: 1_024,
+            checksum: 'a'.repeat(64),
+            state: 'published' as const,
+            progress: 100,
+            proposedTitle: 'Runbook',
+            proposedCategory: 'Operations',
+            pageCount: 4,
+            outlineSource: 'native' as const,
+            outlineCount: 3,
+            duplicateDocumentId: null,
+            safeError: null,
+            expiresAt: '2026-07-23T01:00:00.000Z',
+            revision: 2,
+          },
+        ],
+        nextCursor: null,
+      },
+    } satisfies KnowledgeManagementSnapshot;
+    submitCommand.mockImplementation(async (input) => {
+      if (input.command === 'knowledge.document.publish') {
+        return { ok: false, requestId: 'publish-1', error: 'server-error' };
+      }
+      if (input.command === 'knowledge.audit.read') {
+        return {
+          ok: true,
+          requestId: 'audit-read-1',
+          value: {
+            items: [
+              {
+                id: 'audit-1',
+                requestId: 'publish-1',
+                action: 'published',
+                targetId: 'document-1',
+                fileName: 'Runbook.pdf',
+                title: 'Runbook',
+                category: 'Operations',
+                accountId: 'account-publisher',
+                actorDisplayName: 'Paris',
+                occurredAt: '2026-07-19T12:00:00.000Z',
+              },
+            ],
+            nextCursor: null,
+          },
+        };
+      }
+      const cursor = input.command === 'knowledge.snapshot.read' ? input.payload.cursor : null;
+      if (cursor === 'documents-page-2') return okSnapshot(documentPage);
+      if (cursor === 'uploads-page-2') return okSnapshot(uploadPage);
+      return okSnapshot(firstPage);
+    });
     const { result } = renderHook(() => useKnowledgeManagement(onLibraryChanged));
-    await waitFor(() => expect(result.current.snapshot).not.toBeNull());
-    submitCommand
-      .mockResolvedValueOnce({ ok: false, requestId: 'publish-1', error: 'expired' })
-      .mockResolvedValueOnce(okSnapshot(snapshotWithTitle('Runbook')));
+    await waitFor(() => expect(result.current.snapshot).toEqual(firstPage));
 
     let changed = false;
     await act(async () => {
       changed = await result.current.publish('upload-1', 'Runbook', 'Operations');
+    });
+
+    expect(changed).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(onLibraryChanged).toHaveBeenCalledOnce();
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.snapshot.read',
+      payload: { query: '', cursor: 'uploads-page-2', pageSize: 100 },
+      expectedRevision: null,
+    });
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.audit.read',
+      payload: { cursor: null, pageSize: 25, targetId: null },
+      expectedRevision: null,
+    });
+  });
+
+  it('keeps a post-commit publish error visible when its audit event is missing', async () => {
+    const authoritative = {
+      ...snapshotWithTitle('Runbook'),
+      uploads: {
+        items: [
+          {
+            id: 'upload-1',
+            requestId: 'publish-missing-audit',
+            fileName: 'Runbook.pdf',
+            byteSize: 1_024,
+            checksum: 'a'.repeat(64),
+            state: 'published' as const,
+            progress: 100,
+            proposedTitle: 'Runbook',
+            proposedCategory: 'Operations',
+            pageCount: 4,
+            outlineSource: 'native' as const,
+            outlineCount: 3,
+            duplicateDocumentId: null,
+            safeError: null,
+            expiresAt: '2026-07-23T01:00:00.000Z',
+            revision: 2,
+          },
+        ],
+        nextCursor: null,
+      },
+    } satisfies KnowledgeManagementSnapshot;
+    submitCommand.mockImplementation(async (input) => {
+      if (input.command === 'knowledge.document.publish') {
+        return { ok: false, requestId: 'publish-missing-audit', error: 'server-error' };
+      }
+      if (input.command === 'knowledge.audit.read') {
+        return {
+          ok: true,
+          requestId: 'audit-read-empty',
+          value: { items: [], nextCursor: null },
+        };
+      }
+      return okSnapshot(authoritative);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toMatchObject(authoritative));
+
+    let published = true;
+    await act(async () => {
+      published = await result.current.publish('upload-1', 'Runbook', 'Operations');
+    });
+
+    expect(published).toBe(false);
+    expect(result.current.error).toBe('Relay could not complete the Wiki request.');
+  });
+
+  it('requires audit proof before confirming other post-commit Wiki mutations', async () => {
+    const before = snapshotWithTitle('Runbook');
+    const updated = snapshotWithTitle('Updated runbook');
+    const after = {
+      ...updated,
+      documents: {
+        ...updated.documents,
+        items: updated.documents.items.map((document) => ({ ...document, revision: 3 })),
+      },
+    };
+    let snapshotReads = 0;
+    submitCommand.mockImplementation(async (input) => {
+      if (input.command === 'knowledge.document.title.set') {
+        return { ok: false, requestId: 'title-missing-audit', error: 'server-error' };
+      }
+      if (input.command === 'knowledge.audit.read') {
+        return {
+          ok: true,
+          requestId: 'audit-read-empty',
+          value: { items: [], nextCursor: null },
+        };
+      }
+      snapshotReads += 1;
+      return okSnapshot(snapshotReads === 1 ? before : after);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(before));
+
+    let changed = true;
+    await act(async () => {
+      changed = await result.current.setTitle('document-1', 2, 'Updated runbook');
+    });
+
+    expect(changed).toBe(false);
+    expect(result.current.error).toBe('Relay could not complete the Wiki request.');
+  });
+
+  it('uses exact audit proof to confirm an audited mutation outside the first snapshot page', async () => {
+    const firstPage = {
+      ...snapshot,
+      documents: { items: [], nextCursor: 'documents-page-2' },
+    } satisfies KnowledgeManagementSnapshot;
+    const onLibraryChanged = vi.fn();
+    submitCommand.mockImplementation(async (input) => {
+      if (input.command === 'knowledge.document.title.set') {
+        return { ok: false, requestId: 'title-later-page', error: 'server-error' };
+      }
+      if (input.command === 'knowledge.audit.read') {
+        return {
+          ok: true,
+          requestId: 'audit-read-title',
+          value: {
+            items: [
+              {
+                id: 'audit-title',
+                requestId: 'title-later-page',
+                action: 'title-changed',
+                targetId: 'document-later',
+                fileName: 'Runbook.pdf',
+                title: 'Updated runbook',
+                category: 'Operations',
+                accountId: 'account-publisher',
+                actorDisplayName: 'Paris',
+                occurredAt: '2026-07-19T12:00:00.000Z',
+              },
+            ],
+            nextCursor: null,
+          },
+        };
+      }
+      return okSnapshot(firstPage);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement(onLibraryChanged));
+    await waitFor(() => expect(result.current.snapshot).toEqual(firstPage));
+
+    let changed = false;
+    await act(async () => {
+      changed = await result.current.setTitle('document-later', 2, 'Updated runbook');
     });
 
     expect(changed).toBe(true);
@@ -403,6 +651,75 @@ describe('useKnowledgeManagement', () => {
         expectedRevision: 7,
         reauthRequestId: 'proof-1',
       },
+      expectedRevision: null,
+    });
+  });
+
+  it('preserves permanent-delete password feedback when reauthentication signs out', async () => {
+    reauthenticate.mockResolvedValueOnce(null);
+    const { result, rerender } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    let deleted = true;
+    await act(async () => {
+      deleted = await result.current.deletePermanently('document-1', 7, 'wrong-password');
+    });
+
+    currentSession = {
+      state: 'signed-out',
+      accountId: null,
+      username: null,
+      displayName: null,
+      role: null,
+      capabilities: [],
+      deviceId: null,
+      expiresAt: null,
+    };
+    rerender();
+
+    expect(deleted).toBe(false);
+    expect(result.current.canManage).toBe(false);
+    expect(result.current.error).toBe('Password confirmation was not accepted. Try again.');
+    expect(submitCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'knowledge.document.delete' }),
+    );
+  });
+
+  it('checks later trash pages before rejecting a post-commit delete error', async () => {
+    const firstPage = {
+      ...snapshot,
+      trash: { items: [], nextCursor: 'trash-page-2' },
+    } satisfies KnowledgeManagementSnapshot;
+    const target = {
+      ...snapshotWithTitle('Later page document').documents.items[0]!,
+      lifecycleState: 'trashed' as const,
+      trashedByName: 'Paris',
+      trashedAt: '2026-07-19T12:00:00.000Z',
+    };
+    const laterPage = {
+      ...snapshot,
+      trash: { items: [target], nextCursor: null },
+    } satisfies KnowledgeManagementSnapshot;
+    submitCommand.mockImplementation(async (input) => {
+      if (input.command === 'knowledge.document.delete') {
+        return { ok: false, requestId: 'delete-1', error: 'server-error' };
+      }
+      const cursor = input.command === 'knowledge.snapshot.read' ? input.payload.cursor : null;
+      return okSnapshot(cursor === 'trash-page-2' ? laterPage : firstPage);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(firstPage));
+
+    let deleted = true;
+    await act(async () => {
+      deleted = await result.current.deletePermanently('document-1', 2, 'secret');
+    });
+
+    expect(deleted).toBe(false);
+    expect(result.current.error).toBe('Relay could not complete the Wiki request.');
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.snapshot.read',
+      payload: { query: '', cursor: 'trash-page-2', pageSize: 100 },
       expectedRevision: null,
     });
   });

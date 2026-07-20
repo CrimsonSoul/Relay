@@ -144,10 +144,21 @@ describe('ManagedKnowledgeService', () => {
     getFullList: vi.fn(async () => []),
     create: vi.fn(async (value) => ({ id: 'audit-1', ...value })),
   };
+  const batchDocuments = { delete: vi.fn() };
+  const batchAudits = { create: vi.fn() };
+  const batch = {
+    collection: vi.fn((name: string) => {
+      if (name === KNOWLEDGE_DOCUMENTS_COLLECTION) return batchDocuments;
+      if (name === KNOWLEDGE_AUDIT_EVENTS_COLLECTION) return batchAudits;
+      throw new Error(`Unexpected batch collection ${name}`);
+    }),
+    send: vi.fn(async () => [{ status: 200 }, { status: 204 }]),
+  };
   const libraryState = {
     getFirstListItem: vi.fn(async () => ({ mode: 'managed' })),
   };
   const pb = {
+    createBatch: vi.fn(() => batch),
     collection: vi.fn((name: string) => {
       if (name === KNOWLEDGE_DOCUMENTS_COLLECTION) return documents;
       if (name === KNOWLEDGE_CATEGORIES_COLLECTION) return categories;
@@ -167,6 +178,7 @@ describe('ManagedKnowledgeService', () => {
       categoryRecords.find((category) => category.id === id),
     );
     uploads.getOne.mockResolvedValue(upload());
+    batch.send.mockResolvedValue([{ status: 200 }, { status: 204 }]);
   });
 
   function service() {
@@ -219,6 +231,11 @@ describe('ManagedKnowledgeService', () => {
       lifecycleState: 'active',
       revision: 1,
       publishedByName: 'Ryan Bledsoe',
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
     });
     expect(documents.create).toHaveBeenCalledWith(expect.any(FormData), { requestKey: null });
     const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
@@ -226,6 +243,8 @@ describe('ManagedKnowledgeService', () => {
     expect(publishForm.get('categoryId')).toBe('category-operations');
     expect(publishForm.get('category')).toBe('Operations');
     expect(publishForm.get('documentType')).toBe('sop');
+    expect(publishForm.get('searchIndexState')).toBe('pending');
+    expect(publishForm.get('searchIndexVersion')).toBe('0');
     expect(publishForm.get('cover')).toMatchObject({ type: 'image/png' });
     expect(publishForm.get('publishedByOperatorId')).toBe('');
     expect(publishForm.get('trashedByAccountId')).toBe('');
@@ -304,6 +323,11 @@ describe('ManagedKnowledgeService', () => {
       fileName: 'Runbook.pdf',
       displayTitle: 'Runbook revised',
       revision: 4,
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
     });
     expect(documents.update).toHaveBeenCalledWith('document-1', expect.any(FormData), {
       requestKey: null,
@@ -312,6 +336,8 @@ describe('ManagedKnowledgeService', () => {
     expect(replacementForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
     expect(replacementForm.get('categoryId')).toBe('category-operations');
     expect(replacementForm.get('documentType')).toBe('sop');
+    expect(replacementForm.get('searchIndexState')).toBe('pending');
+    expect(replacementForm.get('searchIndexVersion')).toBe('0');
     expect(replacementForm.get('publishedByOperatorId')).toBe('');
   });
 
@@ -376,7 +402,7 @@ describe('ManagedKnowledgeService', () => {
     );
   });
 
-  it('only permanently deletes a trashed document and preserves its audit record', async () => {
+  it('atomically deletes a trashed document with its permanent-deletion audit record', async () => {
     documents.getOne.mockResolvedValueOnce(
       document({
         lifecycleState: 'trashed',
@@ -393,7 +419,43 @@ describe('ManagedKnowledgeService', () => {
         expectedRevision: 3,
       }),
     ).resolves.toEqual({ id: 'document-1', deleted: true });
-    expect(audits.create).toHaveBeenCalledBefore(documents.delete);
+    expect(batchAudits.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'request-delete',
+        action: 'deleted',
+        targetId: 'document-1',
+      }),
+    );
+    expect(batchDocuments.delete).toHaveBeenCalledWith('document-1');
+    expect(batch.send).toHaveBeenCalledWith({ requestKey: null });
+    expect(audits.create).not.toHaveBeenCalled();
+    expect(documents.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects a permanent deletion when its transactional batch does not fully commit', async () => {
+    documents.getOne.mockResolvedValueOnce(
+      document({
+        lifecycleState: 'trashed',
+        trashedByAccountId: ACTOR.accountId,
+        trashedByName: ACTOR.displayName,
+        trashedAt: NOW,
+      }),
+    );
+    batch.send.mockResolvedValueOnce([{ status: 200 }, { status: 500 }]);
+
+    await expect(
+      service().deletePermanently({
+        actor: ACTOR,
+        requestId: 'request-delete-failed',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
+    ).rejects.toThrow('Permanent document deletion did not commit.');
+
+    expect(batchAudits.create).toHaveBeenCalledOnce();
+    expect(batchDocuments.delete).toHaveBeenCalledOnce();
+    expect(audits.create).not.toHaveBeenCalled();
+    expect(documents.delete).not.toHaveBeenCalled();
   });
 
   it('creates categories while rejecting case-insensitive duplicate names', async () => {

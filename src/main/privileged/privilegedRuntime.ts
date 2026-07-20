@@ -126,38 +126,6 @@ export type PrivilegedRuntimeOptions = {
 
 type SessionListener = (view: PrivilegedSessionView) => void;
 
-type PrivilegedE2EControl = {
-  simulateInactivity(): PrivilegedSessionView | null;
-};
-
-export function installPrivilegedE2EControl(
-  getRuntime: () => Pick<PrivilegedRuntime, 'getView' | 'lock'> | null,
-): () => void {
-  if (process.env.NODE_ENV !== 'test' || process.env.RELAY_E2E_PRIVILEGED_FIXTURES !== '1') {
-    return () => undefined;
-  }
-  const scope = globalThis as typeof globalThis & {
-    __relayE2EPrivileged?: PrivilegedE2EControl;
-  };
-  const control: PrivilegedE2EControl = {
-    simulateInactivity: () => {
-      const runtime = getRuntime();
-      if (!runtime) return null;
-      runtime.lock();
-      return runtime.getView();
-    },
-  };
-  Object.defineProperty(scope, '__relayE2EPrivileged', {
-    configurable: true,
-    enumerable: false,
-    value: control,
-    writable: false,
-  });
-  return () => {
-    if (scope.__relayE2EPrivileged === control) delete scope.__relayE2EPrivileged;
-  };
-}
-
 function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -255,24 +223,19 @@ export class PrivilegedRuntime {
       try {
         await this.startAuthorityMonitoring(view.accountId!);
       } catch (error) {
-        this.sessionManager.lock();
+        this.sessionManager.logout();
         throw error;
       }
     }
     const current = this.getView();
-    if (current.state === 'locked') throw runtimeError('unauthorized');
     if (current.state === 'offline') throw runtimeError('offline');
     return current;
   }
 
   async logout(): Promise<void> {
-    await this.stopAuthorityMonitoring();
-    await this.sessionManager.logout();
-  }
-
-  lock(): void {
-    void this.stopAuthorityMonitoring();
-    this.sessionManager.lock();
+    const monitoringStop = this.stopAuthorityMonitoring();
+    this.sessionManager.logout();
+    await monitoringStop;
   }
 
   async reauthenticate(password: string): Promise<PrivilegedReauthenticationProof> {
@@ -284,7 +247,7 @@ export class PrivilegedRuntime {
       try {
         await this.startAuthorityMonitoring(view.accountId);
       } catch (error) {
-        this.sessionManager.lock();
+        this.sessionManager.logout();
         throw error;
       }
     }
@@ -350,7 +313,7 @@ export class PrivilegedRuntime {
     this.assertAvailable();
     const view = this.getView();
     if (view.state !== 'active' || !view.accountId || !view.displayName || !view.role) {
-      return Promise.resolve({ ok: false, error: 'locked' });
+      return Promise.resolve({ ok: false, error: 'unauthorized' });
     }
     if (this.mode === 'server') {
       return this.submitLocal(input.command, input.payload, input.expectedRevision);
@@ -484,7 +447,7 @@ export class PrivilegedRuntime {
     command: K,
     payload: PrivilegedCommandPayloadMap[K],
     expectedRevision: number | null,
-    recordActivity = true,
+    invalidateOnUnauthorized = true,
   ): Promise<PrivilegedCommandResult> {
     const issuedAtMs = this.now();
     const payloadHash = sha256(canonicalizePrivilegedValue(payload));
@@ -506,15 +469,13 @@ export class PrivilegedRuntime {
     const bytes = canonicalPrivilegedSigningBytes(envelope);
     envelope.signature = await this.deviceStore.sign(identity.accountId, deviceId, bytes);
     const result = await this.clientTransport!.submitCommand(envelope, sha256(bytes));
-    if (result.ok && recordActivity) {
-      this.sessionManager.recordPrivilegedActivity();
-    } else if (
-      recordActivity &&
+    if (
+      invalidateOnUnauthorized &&
       !result.ok &&
       result.error === 'unauthorized' &&
       this.getView().state === 'active'
     ) {
-      this.lock();
+      void this.logout();
     }
     return result;
   }
@@ -586,7 +547,7 @@ export class PrivilegedRuntime {
   }
 
   private assertAvailable(): void {
-    if (this.disposed) throw runtimeError('locked');
+    if (this.disposed) throw runtimeError('unauthorized');
   }
 }
 

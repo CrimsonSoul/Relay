@@ -124,7 +124,7 @@ export function setupIpcHandlers(opts: {
           pb,
           onCredentialChanged: (accountId) => {
             const runtime = getPrivilegedRuntime?.();
-            if (runtime?.getView().accountId === accountId) runtime.lock();
+            if (runtime?.getView().accountId === accountId) void runtime.logout();
           },
         });
       },

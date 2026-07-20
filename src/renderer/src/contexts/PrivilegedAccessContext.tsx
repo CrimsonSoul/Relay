@@ -35,7 +35,7 @@ const OFFLINE_SESSION: PrivilegedSessionView = {
   state: 'offline',
 };
 
-type BusyAction = 'login' | 'logout' | 'lock' | 'reauthenticate' | 'pair' | 'challenge' | 'command';
+type BusyAction = 'login' | 'logout' | 'reauthenticate' | 'pair' | 'challenge' | 'command';
 
 export type PrivilegedAccessContextValue = {
   session: PrivilegedSessionView;
@@ -46,7 +46,6 @@ export type PrivilegedAccessContextValue = {
   clearError: () => void;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
-  lock: () => Promise<void>;
   reauthenticate: (password: string) => Promise<PrivilegedReauthenticationProof | null>;
   createPairingChallenge: (
     targetAccountId: string,
@@ -61,7 +60,7 @@ const ERROR_MESSAGES = {
   'invalid-input': 'Check the information and try again.',
   'invalid-credentials': 'The username or password was not accepted.',
   unauthorized: 'This account is not authorized for that action.',
-  locked: 'Privileged access is locked. Sign in again.',
+  locked: 'Privileged access is signed out. Sign in again.',
   offline: 'Privileged access is unavailable offline.',
   'pairing-required': 'This workstation must be paired before privileged access can continue.',
   'invalid-request': 'Relay rejected the protected request.',
@@ -160,20 +159,6 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
     setPairingChallenge(null);
     try {
       const nextView = await globalThis.api?.logoutPrivileged();
-      setSession(normalizeOr(nextView, SIGNED_OUT_SESSION));
-    } catch {
-      setSession(SIGNED_OUT_SESSION);
-    } finally {
-      setBusy(null);
-    }
-  }, []);
-
-  const lock = useCallback(async () => {
-    setBusy('lock');
-    setError(null);
-    setPairingChallenge(null);
-    try {
-      const nextView = await globalThis.api?.lockPrivileged();
       setSession(normalizeOr(nextView, SIGNED_OUT_SESSION));
     } catch {
       setSession(SIGNED_OUT_SESSION);
@@ -293,7 +278,6 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       clearError,
       login,
       logout,
-      lock,
       reauthenticate,
       createPairingChallenge,
       completePairing,
@@ -306,7 +290,6 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       createPairingChallenge,
       error,
       loading,
-      lock,
       login,
       logout,
       pairingChallenge,

@@ -9,7 +9,7 @@ import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 
 const SAFE_ERRORS = {
   unauthorized: 'Owner or Administrator access is required.',
-  locked: 'Privileged access is locked. Sign in again.',
+  locked: 'Privileged access is signed out. Sign in again.',
   offline: 'Administration is unavailable while Relay is offline.',
   'pairing-required': 'Pair this workstation before using administration.',
   'invalid-request': 'Relay rejected the administration request.',

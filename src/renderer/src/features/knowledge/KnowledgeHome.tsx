@@ -131,7 +131,7 @@ export function KnowledgeHome({
       <header className="knowledge-home__header">
         <span className="knowledge-home__kicker">Knowledge workspace</span>
         <h1 id="knowledge-home-title">
-          Find the people, systems, and guidance behind every response.
+          Get Connected To The People, Systems, And Guidance You Need — All In One Place
         </h1>
         <p>
           Open a directory below. Each workspace stays focused while sharing one dependable place in

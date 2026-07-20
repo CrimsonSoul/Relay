@@ -235,14 +235,14 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="server" />);
-    expect(screen.getByRole('heading', { name: 'SOP guides' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
     expect(screen.queryByText(/Viewer:/)).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'Open Operator guide' })[0]!);
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
     expect(latestViewerProps).toHaveProperty('searchNavigationRequest', null);
     expect(latestViewerProps).toHaveProperty('searchMatches', []);
     fireEvent.click(screen.getByRole('button', { name: 'Back to Wiki' }));
-    expect(screen.getByRole('heading', { name: 'SOP guides' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
   });
 
   it('opens a catalog passage result at its requested page', () => {
@@ -861,7 +861,7 @@ describe('KnowledgeTab', () => {
         role: 'publisher',
         capabilities: ['knowledge.manage'],
         deviceId: 'device-1',
-        expiresAt: '2026-07-18T00:00:00.000Z',
+        expiresAt: null,
       },
     });
     useKnowledgeLibraryMock.mockReturnValue({
@@ -892,7 +892,7 @@ describe('KnowledgeTab', () => {
         role: 'publisher',
         capabilities: ['knowledge.manage'],
         deviceId: 'device-1',
-        expiresAt: '2026-07-18T00:00:00.000Z',
+        expiresAt: null,
       },
     });
     useKnowledgeLibraryMock.mockReturnValue({
@@ -919,7 +919,7 @@ describe('KnowledgeTab', () => {
         role: 'publisher',
         capabilities: ['knowledge.manage'],
         deviceId: 'device-1',
-        expiresAt: '2026-07-19T23:00:00.000Z',
+        expiresAt: null,
       },
     });
     useKnowledgeLibraryMock.mockReturnValue({
@@ -1566,7 +1566,7 @@ describe('KnowledgeTab', () => {
     rerender(<KnowledgeTab active relayMode="client" />);
 
     await waitFor(() => expect(refetch).toHaveBeenCalledOnce());
-    expect(await screen.findByRole('heading', { name: 'SOP guides' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
     expect(screen.queryByText(/Lane recovery.*removed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Viewer: Operator guide/)).not.toBeInTheDocument();
   });

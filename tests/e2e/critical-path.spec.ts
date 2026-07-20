@@ -1123,12 +1123,20 @@ test.describe('Vital Critical Path', () => {
 
   test('Knowledge management audit workflow loads and paginates retained activity', async () => {
     await seedKnowledgeAuditFixtures(27);
-    const { content, rail } = await openOwnerKnowledgeManagement();
+    const { content, rail, root } = await openOwnerKnowledgeManagement();
 
     await rail.getByRole('button', { name: /^Audit 0$/ }).click();
     const auditRows = content.locator('.knowledge-audit-row');
     await expect(auditRows).toHaveCount(25);
     await expect(rail.getByRole('button', { name: /^Audit 25$/ })).toBeVisible();
+    await expect(content).toHaveCSS('overflow-y', 'auto');
+    await expect
+      .poll(() => content.evaluate((element) => element.scrollHeight > element.clientHeight))
+      .toBe(true);
+    const rootScrollTop = await root.evaluate((element) => element.scrollTop);
+    await content.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+    await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await root.evaluate((element) => element.scrollTop)).toBe(rootScrollTop);
     const loadMore = window.getByRole('button', { name: 'Load more activity', exact: true });
     await expect(loadMore).toBeVisible();
     await loadMore.click();

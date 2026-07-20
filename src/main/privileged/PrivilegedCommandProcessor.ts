@@ -373,9 +373,7 @@ export class PrivilegedCommandProcessor {
       context.session.accountId !== input.accountId ||
       !context.session.displayName ||
       context.session.role === null ||
-      context.session.deviceId !== null ||
-      context.session.expiresAt === null ||
-      Date.parse(context.session.expiresAt) <= this.now()
+      context.session.deviceId !== null
     ) {
       return errorResult('unauthorized', safeRequestId(requestId));
     }

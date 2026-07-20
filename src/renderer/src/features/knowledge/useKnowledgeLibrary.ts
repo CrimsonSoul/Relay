@@ -31,7 +31,10 @@ export function useKnowledgeLibrary(): {
     () =>
       documentCollection.data
         .map(normalizeKnowledgeDocumentRecord)
-        .filter((document): document is KnowledgeDocumentRecord => document !== null),
+        .filter(
+          (document): document is KnowledgeDocumentRecord =>
+            document !== null && document.lifecycleState === 'active',
+        ),
     [documentCollection.data],
   );
   const categories = useMemo(

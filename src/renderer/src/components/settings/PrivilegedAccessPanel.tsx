@@ -34,7 +34,6 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     clearError,
     login,
     logout,
-    lock,
     createPairingChallenge,
     completePairing,
   } = usePrivilegedAccess();
@@ -215,7 +214,6 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
 
     if (session.state === 'active' && session.role && session.displayName && session.username) {
       const canPair = session.role === 'owner' || session.role === 'admin';
-      const expiry = formatExpiry(session.expiresAt);
       const challengeTarget = pairingTargets.find(
         ({ accountId }) => accountId === pairingChallenge?.accountId,
       );
@@ -228,14 +226,9 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
               </span>
               <strong>{session.displayName}</strong>
               <span>@{session.username}</span>
-              <span>
-                {expiry ? `Locks after inactivity · session expires ${expiry}` : 'Active session'}
-              </span>
+              <span>Active until you sign out</span>
             </div>
             <div className="privileged-access__actions">
-              <TactileButton type="button" onClick={() => void lock()} disabled={busy !== null}>
-                Lock
-              </TactileButton>
               <TactileButton type="button" onClick={() => void logout()} disabled={busy !== null}>
                 Sign out
               </TactileButton>
@@ -309,14 +302,11 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
       );
     }
 
-    const locked = session.state === 'locked';
     return (
       <div className="privileged-access__form">
         <form className="privileged-access__form" onSubmit={handleLogin}>
           <div className="privileged-access__state">
-            <strong>
-              {locked ? 'Privileged access is locked' : 'Sign in for protected actions'}
-            </strong>
+            <strong>Sign in for protected actions</strong>
             <span>Use your protected Relay account credentials.</span>
           </div>
           <div className="privileged-access__field-grid">
@@ -356,7 +346,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
           </div>
           <div className="privileged-access__actions">
             <TactileButton type="submit" variant="primary" loading={busy === 'login'}>
-              {locked ? 'Unlock' : 'Sign in'}
+              Sign in
             </TactileButton>
           </div>
         </form>

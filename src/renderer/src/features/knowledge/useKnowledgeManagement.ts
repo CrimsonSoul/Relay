@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import {
+  knowledgeCategoryKey,
   normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeUploadQueueView,
@@ -17,7 +18,7 @@ import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 
 const SAFE_ERRORS = {
   unauthorized: 'Wiki publisher access is required.',
-  locked: 'Publisher access is locked. Sign in again.',
+  locked: 'Publisher access is signed out. Sign in again.',
   offline: 'Wiki management is unavailable while Relay is offline.',
   'pairing-required': 'Pair this workstation before managing the Wiki.',
   'invalid-request': 'Relay rejected the Wiki request.',
@@ -34,6 +35,8 @@ const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
   acknowledgedBytes: 0,
   items: [],
 };
+
+const REAUTHENTICATION_ERROR = 'Password confirmation was not accepted. Try again.';
 
 function commandError(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
   return SAFE_ERRORS[result.error];
@@ -55,6 +58,7 @@ type SnapshotRead =
   | { snapshot: null; error: string };
 
 type MutationConfirmation = (snapshot: KnowledgeManagementSnapshot) => boolean;
+type ConfirmationCollection = 'documents' | 'trash' | 'uploads';
 type DocumentAssignment = { documentId: string; expectedRevision: number };
 
 function confirmsDocumentAssignments(
@@ -156,7 +160,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     setAuditEvents([]);
     setAuditNextCursor(null);
     setUploadQueue(EMPTY_UPLOAD_QUEUE);
-    setError(null);
+    setError((current) => (canManage || current !== REAUTHENTICATION_ERROR ? null : current));
     if (canManage) void refresh();
   }, [canManage, refresh, session.accountId]);
 
@@ -193,26 +197,102 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     return () => window.clearInterval(timer);
   }, [canManage, refresh, refreshUploadQueue, snapshot?.uploads.items, uploadQueue.items]);
 
+  const confirmAuditRequest = useCallback(
+    async (requestId: string, expectedIdentity: string | null): Promise<boolean> => {
+      const seenCursors = new Set<string>();
+      let cursor: string | null = null;
+      do {
+        const result = await submitCommand({
+          command: 'knowledge.audit.read',
+          payload: { cursor, pageSize: 25, targetId: null },
+          expectedRevision: null,
+        });
+        if (managementIdentityRef.current !== expectedIdentity || !result.ok) return false;
+        const page = normalizeAuditPage(result.value);
+        if (!page) return false;
+        if (page.items.some((event) => event.requestId === requestId)) return true;
+        cursor = page.nextCursor;
+        if (cursor && seenCursors.has(cursor)) return false;
+        if (cursor) seenCursors.add(cursor);
+      } while (cursor);
+      return false;
+    },
+    [submitCommand],
+  );
+
+  const readConfirmationSnapshot = useCallback(
+    async (
+      initial: KnowledgeManagementSnapshot,
+      collections: ConfirmationCollection[],
+      expectedIdentity: string | null,
+    ): Promise<KnowledgeManagementSnapshot | null> => {
+      let authoritative = initial;
+      for (const collection of collections) {
+        const seenCursors = new Set<string>();
+        const seenIds = new Set(authoritative[collection].items.map(({ id }) => id));
+        let cursor = authoritative[collection].nextCursor;
+        while (cursor) {
+          if (seenCursors.has(cursor)) return null;
+          seenCursors.add(cursor);
+          const next = await readSnapshot(cursor);
+          if (
+            !next.snapshot ||
+            !mountedRef.current ||
+            managementIdentityRef.current !== expectedIdentity
+          ) {
+            return null;
+          }
+          authoritative = {
+            ...authoritative,
+            [collection]: {
+              items: [
+                ...authoritative[collection].items,
+                ...next.snapshot[collection].items.filter(({ id }) => !seenIds.has(id)),
+              ],
+              nextCursor: next.snapshot[collection].nextCursor,
+            },
+          };
+          for (const { id } of next.snapshot[collection].items) seenIds.add(id);
+          cursor = next.snapshot[collection].nextCursor;
+        }
+      }
+      return authoritative;
+    },
+    [readSnapshot],
+  );
+
   const confirmMutation = useCallback(
     async (
       predicate: MutationConfirmation | undefined,
       expectedIdentity: string | null,
+      collections: ConfirmationCollection[] = [],
+      requestId: string | null = null,
+      requireAudit = false,
     ): Promise<boolean> => {
       if (!predicate || !canManage || managementIdentityRef.current !== expectedIdentity) {
         return false;
       }
-      const authoritative = await readSnapshot(null);
+      const initial = await readSnapshot(null);
       if (
-        !authoritative.snapshot ||
+        !initial.snapshot ||
         !mountedRef.current ||
         managementIdentityRef.current !== expectedIdentity
       ) {
         return false;
       }
-      setSnapshot(authoritative.snapshot);
-      return predicate(authoritative.snapshot);
+      const authoritative = await readConfirmationSnapshot(
+        initial.snapshot,
+        collections,
+        expectedIdentity,
+      );
+      if (!authoritative) return false;
+      setSnapshot(authoritative);
+      if (requireAudit) {
+        return requestId !== null && (await confirmAuditRequest(requestId, expectedIdentity));
+      }
+      return predicate(authoritative);
     },
-    [canManage, readSnapshot],
+    [canManage, confirmAuditRequest, readConfirmationSnapshot, readSnapshot],
   );
 
   const execute = useCallback(
@@ -220,6 +300,8 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
       request: PublicPrivilegedCommandRequest,
       busyKey: string,
       confirmation?: MutationConfirmation,
+      confirmationCollections?: ConfirmationCollection[],
+      requireAudit = true,
     ): Promise<boolean> => {
       if (!canManage) return false;
       const expectedIdentity = managementIdentity;
@@ -230,8 +312,14 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         if (managementIdentityRef.current !== expectedIdentity) return false;
         if (!result.ok) {
           if (
-            ['expired', 'replayed', 'conflict'].includes(result.error) &&
-            (await confirmMutation(confirmation, expectedIdentity))
+            ['expired', 'replayed', 'conflict', 'server-error'].includes(result.error) &&
+            (await confirmMutation(
+              confirmation,
+              expectedIdentity,
+              confirmationCollections,
+              result.requestId ?? null,
+              requireAudit,
+            ))
           ) {
             setError(null);
             await Promise.all([refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
@@ -243,7 +331,15 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         await Promise.all([refresh(), refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
         return true;
       } catch {
-        if (await confirmMutation(confirmation, expectedIdentity)) {
+        if (
+          await confirmMutation(
+            confirmation,
+            expectedIdentity,
+            confirmationCollections,
+            null,
+            requireAudit,
+          )
+        ) {
           setError(null);
           await Promise.all([refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
           return true;
@@ -389,9 +485,13 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
   const deletePermanently = useCallback(
     async (documentId: string, expectedRevision: number, password: string): Promise<boolean> => {
       setBusy(`delete:${documentId}`);
+      setError(null);
       const proof = await reauthenticate(password);
       setBusy(null);
-      if (!proof) return false;
+      if (!proof) {
+        setError(REAUTHENTICATION_ERROR);
+        return false;
+      }
       return execute(
         {
           command: 'knowledge.document.delete',
@@ -402,6 +502,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         (authoritative) =>
           !authoritative.documents.items.some(({ id }) => id === documentId) &&
           !authoritative.trash.items.some(({ id }) => id === documentId),
+        ['documents', 'trash'],
       );
     },
     [execute, reauthenticate],
@@ -482,6 +583,8 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           authoritative.documents.items.some(
             (document) => document.id === documentId && document.searchIndexState !== 'failed',
           ),
+        ['documents'],
+        false,
       ),
     publish: (uploadId: string, title: string, category: string) =>
       execute(
@@ -492,13 +595,17 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         },
         `publish:${uploadId}`,
         (authoritative) =>
-          !authoritative.uploads.items.some(({ id }) => id === uploadId) &&
+          !authoritative.uploads.items.some(
+            ({ id, state }) => id === uploadId && state !== 'published',
+          ) &&
           authoritative.documents.items.some(
             (document) =>
               document.lifecycleState === 'active' &&
-              document.displayTitle === title &&
-              document.category === category,
+              document.displayTitle === title.trim().replace(/\s+/g, ' ') &&
+              knowledgeCategoryKey(document.category) === knowledgeCategoryKey(category),
           ),
+        ['documents', 'uploads'],
+        true,
       ),
     replace: (
       uploadId: string,
@@ -515,14 +622,18 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         },
         `replace:${documentId}`,
         (authoritative) =>
-          !authoritative.uploads.items.some(({ id }) => id === uploadId) &&
+          !authoritative.uploads.items.some(
+            ({ id, state }) => id === uploadId && state !== 'published',
+          ) &&
           authoritative.documents.items.some(
             (document) =>
               document.id === documentId &&
               document.revision > expectedRevision &&
-              document.displayTitle === title &&
-              document.category === category,
+              document.displayTitle === title.trim().replace(/\s+/g, ' ') &&
+              knowledgeCategoryKey(document.category) === knowledgeCategoryKey(category),
           ),
+        ['documents', 'uploads'],
+        true,
       ),
     setTitle: (documentId: string, expectedRevision: number, title: string) =>
       execute(

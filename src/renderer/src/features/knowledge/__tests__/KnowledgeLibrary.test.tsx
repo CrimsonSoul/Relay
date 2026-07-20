@@ -142,12 +142,12 @@ describe('KnowledgeLibrary', () => {
     );
 
     expect(screen.queryByRole('heading', { name: 'Recently updated' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'SOP guides' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Cheatsheets' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Quick Guides' })).toBeInTheDocument();
     expect(
       screen
-        .getByRole('heading', { name: 'SOP guides' })
-        .compareDocumentPosition(screen.getByRole('heading', { name: 'Cheatsheets' })) &
+        .getByRole('heading', { name: 'SOP Manuals' })
+        .compareDocumentPosition(screen.getByRole('heading', { name: 'Quick Guides' })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: /Open Oracle quick reference/ })).toHaveTextContent(
@@ -155,6 +155,9 @@ describe('KnowledgeLibrary', () => {
     );
     expect(screen.getByRole('button', { name: /Open Oracle quick reference/ })).toHaveTextContent(
       '12p',
+    );
+    expect(screen.getByRole('button', { name: /Open Oracle quick reference/ })).toHaveTextContent(
+      'QG',
     );
     expect(screen.getAllByRole('button', { name: /Open Oracle SOP Manual/ })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: /Open Oracle SOP Manual/ }));
@@ -180,12 +183,12 @@ describe('KnowledgeLibrary', () => {
 
     expect(screen.getByRole('list', { name: 'Wiki search results' })).toBeVisible();
     expect(screen.getByText('Page 7')).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'SOP guides' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'SOP Manuals' })).not.toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: '' } });
 
-    expect(screen.getByRole('heading', { name: 'SOP guides' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Cheatsheets' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'SOP Manuals' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Quick Guides' })).toBeVisible();
     expect(screen.queryByRole('list', { name: 'Wiki search results' })).not.toBeInTheDocument();
   });
 

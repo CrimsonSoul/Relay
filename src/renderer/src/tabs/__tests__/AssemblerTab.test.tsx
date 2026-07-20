@@ -326,7 +326,7 @@ describe('AssemblerTab', () => {
   it('renders the approved Compose operational hierarchy', () => {
     render(<AssemblerTab {...defaultProps} />);
 
-    expect(screen.getByRole('heading', { name: 'Bridge recipient assembly' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Bridge Recipient Assembly' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Compose actions' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
