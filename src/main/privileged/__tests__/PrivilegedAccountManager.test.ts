@@ -86,6 +86,12 @@ describe('PrivilegedAccountManager', () => {
   ]);
   const accountCollection = {
     getOne: vi.fn(async (id: string) => records.get(id)),
+    getFirstListItem: vi.fn(async (filter: string) => {
+      const username = /^username="([^"]+)"$/.exec(filter)?.[1];
+      const record = [...records.values()].find((value) => value.username === username);
+      if (!record) throw new Error('Account not found.');
+      return record;
+    }),
     update: vi.fn(async (id: string, data: Record<string, unknown>) =>
       account({ ...records.get(id), id, ...data }),
     ),
@@ -116,13 +122,13 @@ describe('PrivilegedAccountManager', () => {
       onCredentialChanged,
     });
 
-  it('configures the pending initial Owner by account ID', async () => {
-    accountCollection.getOne.mockResolvedValueOnce(
+  it('configures the pending initial Owner by normalized username', async () => {
+    accountCollection.getFirstListItem.mockResolvedValueOnce(
       account({ active: false, mustChangePassword: true }),
     );
     await expect(
       manager().setupInitialAdministrator({
-        accountId: 'account-ryan',
+        username: '  RyAn ',
         password: PASSWORD,
         passwordConfirm: PASSWORD,
       }),
@@ -132,6 +138,36 @@ describe('PrivilegedAccountManager', () => {
       role: 'owner',
       credentialVersion: 2,
     });
+    expect(accountCollection.getFirstListItem).toHaveBeenCalledWith('username="ryan"', {
+      requestKey: null,
+    });
+  });
+
+  it('rejects an unknown or non-Owner username without changing credentials', async () => {
+    await expect(
+      manager().setupInitialAdministrator({
+        username: 'unknown',
+        password: PASSWORD,
+        passwordConfirm: PASSWORD,
+      }),
+    ).rejects.toThrow();
+
+    accountCollection.getFirstListItem.mockResolvedValueOnce(
+      account({
+        id: 'account-charles',
+        username: 'charles',
+        active: false,
+        mustChangePassword: true,
+      }),
+    );
+    await expect(
+      manager().setupInitialAdministrator({
+        username: 'charles',
+        password: PASSWORD,
+        passwordConfirm: PASSWORD,
+      }),
+    ).rejects.toThrow(/not available/i);
+    expect(accountCollection.update).not.toHaveBeenCalled();
   });
 
   it('allows the Owner to configure an Administrator and an Administrator to configure only Publisher', async () => {
@@ -185,7 +221,7 @@ describe('PrivilegedAccountManager', () => {
     const password = 'x'.repeat(MIN_PRIVILEGED_PASSWORD_LENGTH - 1);
     await expect(
       manager().setupInitialAdministrator({
-        accountId: 'account-ryan',
+        username: 'ryan',
         password,
         passwordConfirm: password,
       }),

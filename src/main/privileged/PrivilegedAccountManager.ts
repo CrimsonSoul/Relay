@@ -10,8 +10,12 @@ import {
   type RelayPrivilegedDeviceRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
-import { getEffectiveRole } from '@shared/roleAccounts';
-import type { PrivilegedCredentialSetupInput, PrivilegedCredentialSetupView } from '@shared/ipc';
+import { getEffectiveRole, normalizeRoleUsername } from '@shared/roleAccounts';
+import type {
+  PrivilegedCredentialSetupInput,
+  PrivilegedCredentialSetupView,
+  PrivilegedInitialOwnerSetupInput,
+} from '@shared/ipc';
 
 type PrivilegedAccountManagerOptions = {
   pb: PocketBase;
@@ -23,7 +27,12 @@ function escapeFilter(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 }
 
-function validateCredential(input: PrivilegedCredentialSetupInput): void {
+type PrivilegedPasswordSetupInput = {
+  password: string;
+  passwordConfirm: string;
+};
+
+function validateCredential(input: PrivilegedPasswordSetupInput): void {
   if (
     input.password.length < MIN_PRIVILEGED_PASSWORD_LENGTH ||
     input.password.length > MAX_PRIVILEGED_PASSWORD_LENGTH ||
@@ -60,18 +69,18 @@ export class PrivilegedAccountManager {
   }
 
   async setupInitialAdministrator(
-    input: PrivilegedCredentialSetupInput,
+    input: PrivilegedInitialOwnerSetupInput,
   ): Promise<PrivilegedCredentialSetupView> {
     validateCredential(input);
     const state = await this.getState();
-    if (input.accountId !== state.ownerAccountId) {
+    const account = await this.getAccountByUsername(input.username);
+    if (account.id !== state.ownerAccountId) {
       throw new Error('Initial administrator setup is not available.');
     }
-    const account = await this.getAccount(input.accountId);
     if (account.storedRole !== 'administrator' || account.active || !account.mustChangePassword) {
       throw new Error('The Relay owner credential is already configured.');
     }
-    return this.replaceCredential(account, input, input.accountId, 'owner');
+    return this.replaceCredential(account, input, account.id, 'owner');
   }
 
   async setupCredential(
@@ -105,9 +114,19 @@ export class PrivilegedAccountManager {
       .getOne<RelayPrivilegedAccountRecord>(accountId, { requestKey: null });
   }
 
+  private async getAccountByUsername(username: string): Promise<RelayPrivilegedAccountRecord> {
+    const normalizedUsername = normalizeRoleUsername(username);
+    return this.pb
+      .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+      .getFirstListItem<RelayPrivilegedAccountRecord>(
+        `username="${escapeFilter(normalizedUsername)}"`,
+        { requestKey: null },
+      );
+  }
+
   private async replaceCredential(
     account: RelayPrivilegedAccountRecord,
-    input: PrivilegedCredentialSetupInput,
+    input: PrivilegedPasswordSetupInput,
     actorAccountId: string,
     role: EffectivePrivilegedRole,
   ): Promise<PrivilegedCredentialSetupView> {
