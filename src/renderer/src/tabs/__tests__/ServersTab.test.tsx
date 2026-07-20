@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { Server, Contact } from '@shared/ipc';
 
@@ -65,7 +65,9 @@ vi.mock('../../components/CollapsibleHeader', () => ({
 }));
 
 vi.mock('../../components/ListToolbar', () => ({
-  ListToolbar: () => <div data-testid="list-toolbar" />,
+  ListToolbar: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="list-toolbar">{children}</div>
+  ),
 }));
 
 vi.mock('../../components/ListFilters', () => ({
@@ -170,6 +172,16 @@ describe('ServersTab', () => {
   it('renders ADD SERVER button', () => {
     render(<ServersTab servers={[]} contacts={[]} />);
     expect(screen.getByText('ADD SERVER')).toBeInTheDocument();
+  });
+
+  it('provides an independent local server filter', () => {
+    render(<ServersTab servers={[]} contacts={[]} />);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter servers' }), {
+      target: { value: 'payments' },
+    });
+
+    expect(mockUseServers).toHaveBeenLastCalledWith([], [], 'payments');
   });
 
   it('renders status bar with showing count', () => {

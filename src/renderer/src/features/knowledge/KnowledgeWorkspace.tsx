@@ -8,7 +8,9 @@ import {
   acknowledgeKnowledgeDestinationOpen,
   getPendingKnowledgeDestinationOpen,
   isKnowledgeContentDestination,
+  loadLastKnowledgeDestination,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
+  persistLastKnowledgeDestination,
   type KnowledgeDestination,
 } from './knowledgeWorkspaceNavigation';
 import {
@@ -34,6 +36,7 @@ export type KnowledgeWorkspaceProps = Readonly<{
   servers: Server[];
   relayMode?: PublicRelayConfig['mode'];
   onAddToAssembler: (contact: Contact) => void;
+  onDestinationChange?: (destination: KnowledgeDestination) => void;
 }>;
 
 type ContentDestination = Exclude<KnowledgeDestination, 'home'>;
@@ -92,8 +95,11 @@ function KnowledgeDestinationNav({
         onClick={() => onOpen('home')}
         aria-label="Knowledge home"
       >
-        <span aria-hidden="true">←</span>
-        Knowledge home
+        <span className="knowledge-workspace-shell__home-back" aria-hidden="true">
+          ←
+        </span>
+        <span className="knowledge-workspace-shell__home-context">{'Knowledge '}</span>
+        home
       </button>
       <span className="knowledge-workspace-shell__navigation-divider" aria-hidden="true" />
       {CONTENT_DESTINATIONS.map(({ id, label }) => (
@@ -166,14 +172,22 @@ export function KnowledgeWorkspace({
   servers,
   relayMode,
   onAddToAssembler,
+  onDestinationChange,
 }: KnowledgeWorkspaceProps) {
   const initialDestination: KnowledgeDestination =
-    (getPendingKnowledgeDocumentOpen() && 'wiki') || getPendingKnowledgeDestinationOpen() || 'home';
+    (getPendingKnowledgeDocumentOpen() && 'wiki') ||
+    getPendingKnowledgeDestinationOpen() ||
+    loadLastKnowledgeDestination();
   const [destination, setDestination] = useState<KnowledgeDestination>(initialDestination);
   const [mountedDestinations, setMountedDestinations] = useState(
     () => new Set<KnowledgeDestination>(['home', initialDestination]),
   );
   const [wikiCount, setWikiCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    persistLastKnowledgeDestination(destination);
+    onDestinationChange?.(destination);
+  }, [destination, onDestinationChange]);
 
   const open = useCallback((next: KnowledgeDestination) => {
     setMountedDestinations((current) => {

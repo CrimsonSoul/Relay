@@ -21,6 +21,7 @@ import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { SearchInput } from '../components/SearchInput';
 
 type Props = {
   contacts: Contact[];
@@ -61,7 +62,8 @@ export const DirectoryTab: React.FC<Props> = ({
   servers = [],
   onAddToAssembler,
 }) => {
-  const dir = useDirectory(contacts, groups, onAddToAssembler);
+  const [searchQuery, setSearchQuery] = useState('');
+  const dir = useDirectory(contacts, groups, onAddToAssembler, searchQuery);
   const listRef = useListRef();
   const listContainerRef = useRef<HTMLDivElement>(null);
   const { getContactNote, setContactNote } = useNotesContext();
@@ -278,7 +280,18 @@ export const DirectoryTab: React.FC<Props> = ({
                   key: key as 'name' | 'email' | 'title' | 'phone',
                 }))
               }
-            />
+            >
+              <div className="directory-search-control scoped-search-control">
+                <SearchInput
+                  type="search"
+                  aria-label="Filter contacts"
+                  placeholder="Filter contacts"
+                  className="scoped-search-input"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+            </ListToolbar>
             <TactileButton
               variant="primary"
               className="btn-collapsible"

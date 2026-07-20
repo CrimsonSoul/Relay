@@ -16,6 +16,7 @@ import { useServers } from '../hooks/useServers';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { SearchInput } from '../components/SearchInput';
 
 interface ServersTabProps {
   servers: Server[];
@@ -79,7 +80,8 @@ const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirt
 });
 
 export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
-  const h = useServers(servers, contacts);
+  const [searchQuery, setSearchQuery] = useState('');
+  const h = useServers(servers, contacts, searchQuery);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -235,7 +237,18 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               onSortKeyChange={(key) =>
                 h.setSortKey(key as 'name' | 'businessArea' | 'lob' | 'owner' | 'os')
               }
-            />
+            >
+              <div className="directory-search-control scoped-search-control">
+                <SearchInput
+                  type="search"
+                  aria-label="Filter servers"
+                  placeholder="Filter servers"
+                  className="scoped-search-input"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+            </ListToolbar>
             <TactileButton
               onClick={h.openAddModal}
               variant="primary"

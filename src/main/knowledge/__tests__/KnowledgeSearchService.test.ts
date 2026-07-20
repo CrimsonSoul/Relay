@@ -303,6 +303,33 @@ describe('KnowledgeSearchService', () => {
     });
   });
 
+  it('hydrates PocketBase space-separated timestamps into exact and fuzzy search results', async () => {
+    const pocketBaseDocument = {
+      ...readyDocument,
+      searchIndexedAt: '2026-07-19 12:00:00.000Z',
+    };
+    const pocketBaseChunk = {
+      ...validChunk,
+      indexedAt: '2026-07-19 12:00:00.000Z',
+      created: '2026-07-19 12:00:00.000Z',
+      updated: '2026-07-19 12:00:00.000Z',
+    };
+    const service = new KnowledgeSearchService();
+
+    await service.start(pbWith([pocketBaseDocument], [pocketBaseChunk]).pb as never);
+
+    await expect(service.search(request('failover'))).resolves.toMatchObject({
+      ok: true,
+      availability: 'ready',
+      results: [expect.objectContaining({ documentId: readyDocument.id, matchKind: 'exact' })],
+    });
+    await expect(service.search(request('failvoer'))).resolves.toMatchObject({
+      ok: true,
+      availability: 'ready',
+      results: [expect.objectContaining({ documentId: readyDocument.id, matchKind: 'fuzzy' })],
+    });
+  });
+
   it('keeps stale server A search rows untrusted after the global marker moves to B', async () => {
     const cache = cacheWith([readyDocument], [validChunk], 'https://server-a.example.com');
     const serverBDocument = { ...readyDocument, title: 'Server B document' };

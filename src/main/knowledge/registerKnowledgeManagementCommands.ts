@@ -4,6 +4,7 @@ import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_UPLOADS_COLLECTION,
+  type KnowledgeManagementDocumentView,
   type KnowledgeManagementErrorCode,
   type KnowledgeUploadView,
 } from '@shared/knowledge';
@@ -12,6 +13,7 @@ import type {
   PrivilegedCommandHandler,
   RegisteredPrivilegedCommandName,
 } from '../privileged/PrivilegedCommandProcessor';
+import { loggers } from '../logger';
 import {
   PrivilegedCommandAuthorizationError,
   PrivilegedCommandConflictError,
@@ -84,7 +86,10 @@ type KnowledgeManagementCommandOptions = {
     KnowledgeUploadCoordinator,
     'beginBatch' | 'beginFile' | 'status' | 'finalize' | 'cancelFile' | 'cancelBatch' | 'dispose'
   >;
-  searchIndexer?: Pick<KnowledgeSearchIndexer, 'enqueue' | 'retry' | 'remove' | 'dispose'>;
+  searchIndexer?: Pick<
+    KnowledgeSearchIndexer,
+    'enqueue' | 'recordTriggerFailure' | 'retry' | 'remove' | 'dispose'
+  >;
   consumeReauthenticationProof?: (
     requestId: string,
     context: { accountId: string; deviceId: string | null },
@@ -161,6 +166,49 @@ function safeError(error: unknown): KnowledgeManagementErrorCode {
   if (message === 'page-limit') return 'too-many-pages';
   if (message === 'extraction-timeout') return 'extraction-timeout';
   return 'validation-failed';
+}
+
+function observeBestEffort(operation: () => unknown, onFailure: () => void): void {
+  let result: unknown;
+  try {
+    result = operation();
+  } catch {
+    onFailure();
+    return;
+  }
+  void Promise.resolve(result).catch(onFailure);
+}
+
+function enqueueSearchIndexBestEffort(
+  searchIndexer: Pick<KnowledgeSearchIndexer, 'enqueue' | 'recordTriggerFailure'> | undefined,
+  document: Pick<KnowledgeManagementDocumentView, 'id' | 'checksum' | 'revision'>,
+): void {
+  if (!searchIndexer) return;
+  const { id: documentId, checksum: expectedChecksum, revision: expectedRevision } = document;
+
+  const logStatusFailure = () => {
+    loggers.main.warn('Wiki search failure status could not be recorded', {
+      documentId,
+      reason: 'status-update-rejected',
+    });
+  };
+  const recordFailure = () => {
+    loggers.main.warn('Wiki search indexing trigger failed', {
+      documentId,
+      reason: 'trigger-rejected',
+    });
+    observeBestEffort(
+      () =>
+        searchIndexer.recordTriggerFailure({
+          documentId,
+          expectedChecksum,
+          expectedRevision,
+        }),
+      logStatusFailure,
+    );
+  };
+
+  observeBestEffort(() => searchIndexer.enqueue(documentId), recordFailure);
 }
 
 function uploadView(
@@ -353,7 +401,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
             ...payload,
           }),
       });
-      options.searchIndexer?.enqueue(result.id);
+      enqueueSearchIndexBestEffort(options.searchIndexer, result);
       return result;
     },
   );
@@ -373,7 +421,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
             }),
         }),
       );
-      options.searchIndexer?.enqueue(result.id);
+      enqueueSearchIndexBestEffort(options.searchIndexer, result);
       return result;
     },
   );
@@ -561,7 +609,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
             }),
         }),
       );
-      options.searchIndexer?.enqueue(result.id);
+      enqueueSearchIndexBestEffort(options.searchIndexer, result);
       return result;
     },
   );

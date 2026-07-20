@@ -272,6 +272,29 @@ describe('KnowledgeSearchEngine ranking', () => {
     );
   });
 
+  it('does not apply the global per-document cap to an open-document search', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'open-guide', title: 'Open Guide' });
+    const chunks = [0, 100, 200, 300, 400].map((normalizedStart, index) =>
+      knowledgeSearchFixtureChunk(document, `target procedure ${index + 1}`, {
+        id: `open-guide-passage-${index + 1}`,
+        passageNumber: index + 1,
+        normalizedStart,
+      }),
+    );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+
+    const response = await engine.search(
+      request('target', {
+        scope: { kind: 'document', documentId: document.id },
+        limit: 50,
+      }),
+      context(),
+    );
+
+    expect(response.results.map(({ id }) => id)).toEqual(chunks.map(({ id }) => id));
+  });
+
   it('applies document, category, document-type, and result-limit filters', async () => {
     const engine = relevanceEngine();
     const all = await engine.search(request('recovery'), context());

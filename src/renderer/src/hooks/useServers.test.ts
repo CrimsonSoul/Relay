@@ -2,20 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { Server, Contact } from '@shared/ipc';
 
-// Mock dependencies
-vi.mock('../contexts/SearchContext', () => ({
-  useSearchContext: vi.fn(() => ({ debouncedQuery: '' })),
-}));
-
 vi.mock('../services/serverService', () => ({
   deleteServer: vi.fn(() => Promise.resolve()),
 }));
 
 import { useServers } from './useServers';
-import { useSearchContext } from '../contexts/SearchContext';
 import { deleteServer as pbDeleteServer } from '../services/serverService';
 
-const mockedUseSearchContext = vi.mocked(useSearchContext);
 const mockedPbDeleteServer = vi.mocked(pbDeleteServer);
 
 function makeServer(overrides: Partial<Server> = {}): Server {
@@ -48,16 +41,6 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
 describe('useServers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedUseSearchContext.mockReturnValue({
-      debouncedQuery: '',
-      query: '',
-      setQuery: vi.fn(),
-      isSearchFocused: false,
-      setIsSearchFocused: vi.fn(),
-      searchInputRef: { current: null },
-      focusSearch: vi.fn(),
-      clearSearch: vi.fn(),
-    });
   });
 
   // --- contactLookup branches ---
@@ -89,23 +72,12 @@ describe('useServers', () => {
 
   // --- filteredServers search + sort branches ---
 
-  it('filters servers by debouncedSearch', () => {
-    mockedUseSearchContext.mockReturnValue({
-      debouncedQuery: 'server-a',
-      query: 'server-a',
-      setQuery: vi.fn(),
-      isSearchFocused: false,
-      setIsSearchFocused: vi.fn(),
-      searchInputRef: { current: null },
-      focusSearch: vi.fn(),
-      clearSearch: vi.fn(),
-    });
-
+  it('filters servers by its explicit local query', () => {
     const servers = [
       makeServer({ name: 'server-a', _searchString: 'server-a' }),
       makeServer({ name: 'server-b', _searchString: 'server-b' }),
     ];
-    const { result } = renderHook(() => useServers(servers, []));
+    const { result } = renderHook(() => useServers(servers, [], 'server-a'));
 
     expect(result.current.filteredServers).toHaveLength(1);
     expect(result.current.filteredServers[0].name).toBe('server-a');

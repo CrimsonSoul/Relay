@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acknowledgeKnowledgeDestinationOpen,
   getPendingKnowledgeDestinationOpen,
+  KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY,
+  loadLastKnowledgeDestination,
   normalizeLegacyTabRequest,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
+  persistLastKnowledgeDestination,
   requestKnowledgeDestinationOpen,
 } from '../knowledgeWorkspaceNavigation';
 
@@ -33,6 +36,22 @@ describe('knowledge workspace navigation', () => {
     requestKnowledgeDestinationOpen('stale-destination' as never);
 
     expect(getPendingKnowledgeDestinationOpen()).toBe('contacts');
+  });
+
+  it('falls back to Knowledge home when no valid destination is stored', () => {
+    const storage = { getItem: vi.fn(() => 'broken'), setItem: vi.fn() };
+
+    expect(loadLastKnowledgeDestination(storage)).toBe('home');
+  });
+
+  it('stores only content destinations and keeps explicit home from erasing the last choice', () => {
+    const storage = { getItem: vi.fn(() => null), setItem: vi.fn() };
+
+    persistLastKnowledgeDestination('wiki', storage);
+    persistLastKnowledgeDestination('home', storage);
+
+    expect(storage.setItem).toHaveBeenCalledOnce();
+    expect(storage.setItem).toHaveBeenCalledWith(KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY, 'wiki');
   });
 
   it.each([

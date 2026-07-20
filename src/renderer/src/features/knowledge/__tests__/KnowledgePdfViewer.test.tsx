@@ -1,12 +1,19 @@
 import { Activity, useState } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { getDocument, TextLayer } from 'pdfjs-dist/build/pdf.mjs';
 import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
+import type { KnowledgeDocumentSearchMatch } from '../knowledgeDocumentSearch';
 import type { KnowledgeViewerTarget } from '../knowledgePdfDestination';
 import { KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY } from '../knowledgePdfViewMode';
+import type { KnowledgePdfPageProps } from '../KnowledgePdfPage';
 import { KnowledgePdfViewer } from '../KnowledgePdfViewer';
+import type { KnowledgeSearchNavigationRequest } from '../useKnowledgeDocumentSearch';
+
+const pageHarness = vi.hoisted(() => ({
+  callbacks: new Map<number, NonNullable<KnowledgePdfPageProps['onActiveSearchHighlightReady']>>(),
+}));
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf-worker.js' }));
 vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
@@ -18,6 +25,19 @@ vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
     return { render: vi.fn(async () => undefined), cancel: vi.fn() };
   }),
 }));
+vi.mock('../KnowledgePdfPage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../KnowledgePdfPage')>();
+  const ActualKnowledgePdfPage = actual.KnowledgePdfPage;
+  return {
+    ...actual,
+    KnowledgePdfPage: (props: KnowledgePdfPageProps) => {
+      if (props.onActiveSearchHighlightReady) {
+        pageHarness.callbacks.set(props.pageIndex, props.onActiveSearchHighlightReady);
+      }
+      return <ActualKnowledgePdfPage {...props} />;
+    },
+  };
+});
 
 const getDocumentMock = vi.mocked(getDocument);
 const TextLayerMock = vi.mocked(TextLayer);
@@ -86,6 +106,33 @@ function record(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDocu
     updated: '2026-07-14T12:00:00.000Z',
     ...overrides,
   };
+}
+
+function searchResult(
+  overrides: Partial<KnowledgeDocumentSearchMatch> = {},
+): KnowledgeDocumentSearchMatch {
+  return {
+    id: '0:0:0',
+    pageIndex: 0,
+    matchIndex: 0,
+    snippet: 'Reset the lane service',
+    sectionLabel: 'Recovery',
+    normalizedStart: 0,
+    normalizedEnd: 22,
+    textItemRange: { start: 0, end: 0 },
+    domRange: {
+      start: { itemIndex: 0, itemOffset: 0 },
+      end: { itemIndex: 0, itemOffset: 22 },
+    },
+    ...overrides,
+  };
+}
+
+function searchRequest(
+  key: number,
+  result: KnowledgeDocumentSearchMatch,
+): KnowledgeSearchNavigationRequest {
+  return { key, result };
 }
 
 describe('KnowledgePdfViewer', () => {
@@ -171,8 +218,31 @@ describe('KnowledgePdfViewer', () => {
     return render(<KnowledgePdfViewer {...viewerProps(overrides)} />);
   }
 
+  function viewOptionsTrigger() {
+    return screen.getByRole('button', { name: /^View options:/ });
+  }
+
+  function selectPdfViewMode(label: 'Continuous scrolling' | 'Single page') {
+    fireEvent.click(viewOptionsTrigger());
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'View options' })).getByRole('button', {
+        name: label,
+      }),
+    );
+  }
+
+  function fitPdfWidth() {
+    fireEvent.click(viewOptionsTrigger());
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'View options' })).getByRole('button', {
+        name: 'Fit width',
+      }),
+    );
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
+    pageHarness.callbacks.clear();
     localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, 'single');
     IntersectionObserverDouble.instances.splice(0);
     vi.stubGlobal('IntersectionObserver', IntersectionObserverDouble);
@@ -205,11 +275,249 @@ describe('KnowledgePdfViewer', () => {
     } as never);
   });
 
+  it.each(['continuous', 'single'] as const)(
+    'navigates a search result to its exact highlight in %s mode',
+    async (mode) => {
+      localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, mode);
+      const result = searchResult({ pageIndex: 2, id: '2:40:0' });
+      const request = searchRequest(7, result);
+      renderComponent({ searchNavigationRequest: request, searchMatches: [result] });
+
+      expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+      await waitFor(() => expect(pageHarness.callbacks.has(2)).toBe(true));
+      const viewport =
+        mode === 'continuous'
+          ? screen.getByRole('region', { name: 'Continuous PDF pages' })
+          : document.querySelector<HTMLDivElement>('.knowledge-viewer__viewport');
+      expect(viewport).not.toBeNull();
+      const pageShell = document.querySelector<HTMLElement>('[data-page-index="2"]');
+      if (pageShell) {
+        Object.defineProperty(pageShell, 'offsetTop', { configurable: true, value: 1000 });
+      }
+
+      act(() => pageHarness.callbacks.get(2)?.(result.id, 2, 360));
+
+      expect(viewport?.scrollTo).toHaveBeenCalledWith(
+        expect.objectContaining({ behavior: 'smooth' }),
+      );
+      expect(onPageChange).toHaveBeenCalledWith(2);
+      expect(onDestinationChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it('ignores a stale exact-highlight callback after a newer search request wins', async () => {
+    const staleResult = searchResult({ pageIndex: 1, id: '1:12:0' });
+    const currentResult = searchResult({ pageIndex: 2, id: '2:40:0' });
+    const { rerender } = renderComponent({
+      searchNavigationRequest: searchRequest(7, staleResult),
+      searchMatches: [staleResult],
+    });
+    await screen.findByText('Page 2 of 3');
+    await waitFor(() => expect(pageHarness.callbacks.has(1)).toBe(true));
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          searchNavigationRequest: searchRequest(8, currentResult),
+          searchMatches: [currentResult],
+        })}
+      />,
+    );
+    await screen.findByText('Page 3 of 3');
+    await waitFor(() => expect(pageHarness.callbacks.has(2)).toBe(true));
+
+    act(() => pageHarness.callbacks.get(1)?.(staleResult.id, 1, 180));
+    expect(onPageChange).not.toHaveBeenCalledWith(1);
+
+    act(() => pageHarness.callbacks.get(2)?.(currentResult.id, 2, 360));
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it('does not let observer feedback consume pending exact search navigation', async () => {
+    localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, 'continuous');
+    const result = searchResult({ pageIndex: 2, id: '2:40:0' });
+    const { container } = renderComponent({
+      searchNavigationRequest: searchRequest(7, result),
+      searchMatches: [result],
+    });
+    await screen.findByText('Page 3 of 3');
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
+
+    act(() =>
+      IntersectionObserverDouble.instances[0].emit([
+        { target: pages[2], intersectionRatio: 0 },
+        { target: pages[1], intersectionRatio: 1 },
+      ]),
+    );
+    expect(onPageChange).not.toHaveBeenCalledWith(1);
+
+    await waitFor(() => expect(pageHarness.callbacks.has(2)).toBe(true));
+    act(() => pageHarness.callbacks.get(2)?.(result.id, 2, 360));
+    expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
   it('labels the empty destination as the Wiki reader', () => {
     renderComponent({ document: null });
 
     expect(screen.getByText('Wiki reader')).toBeInTheDocument();
     expect(screen.queryByText('Focus reader')).not.toBeInTheDocument();
+  });
+
+  it('resets zoom to 100 percent for each newly opened document', async () => {
+    const nextDocument = record({ id: 'doc-2', checksum: 'b'.repeat(64) });
+    const view = renderComponent();
+    await screen.findByText('100%');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('115%')).toBeInTheDocument();
+
+    view.rerender(<KnowledgePdfViewer {...viewerProps({ document: nextDocument })} />);
+
+    expect(await screen.findByText('100%')).toBeInTheDocument();
+  });
+
+  it('clears viewer errors and pending navigation when the document identity changes', async () => {
+    const nextDocument = record({ id: 'doc-2', checksum: 'b'.repeat(64) });
+    getKnowledgePdf.mockResolvedValueOnce({ ok: false, error: 'download-failed' });
+    const view = renderComponent({
+      target: { pageIndex: 2, top: 650 },
+      searchNavigationRequest: searchRequest(7, searchResult({ pageIndex: 2 })),
+    });
+    expect(await screen.findByText('Unable to open this guide')).toBeInTheDocument();
+
+    view.rerender(<KnowledgePdfViewer {...viewerProps({ document: nextDocument })} />);
+
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    expect(screen.queryByText('Unable to open this guide')).not.toBeInTheDocument();
+  });
+
+  it('publishes only the active PDF generation and clears it before replacement', async () => {
+    const onPdfSessionChange = vi.fn();
+    const replacementLoad = deferred<ReturnType<typeof pdf>>();
+    const firstPdf = pdf();
+    const replacementPdf = pdf({ destroy: vi.fn(async () => undefined) });
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(firstPdf), destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({ promise: replacementLoad.promise, destroy: loadingDestroy } as never);
+    const { rerender } = renderComponent({ onPdfSessionChange });
+
+    await waitFor(() =>
+      expect(onPdfSessionChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pdf: firstPdf,
+          documentId: 'doc-1',
+          checksum: 'a'.repeat(64),
+          generation: 1,
+        }),
+      ),
+    );
+    onPdfSessionChange.mockClear();
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: record({ checksum: 'b'.repeat(64) }),
+          onPdfSessionChange,
+        })}
+      />,
+    );
+
+    expect(onPdfSessionChange).toHaveBeenCalledWith(null);
+    expect(onPdfSessionChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ checksum: 'b'.repeat(64) }),
+    );
+
+    replacementLoad.resolve(replacementPdf);
+    await waitFor(() =>
+      expect(onPdfSessionChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          pdf: replacementPdf,
+          documentId: 'doc-1',
+          checksum: 'b'.repeat(64),
+          generation: 2,
+        }),
+      ),
+    );
+  });
+
+  it('never publishes a late PDF session from a superseded load', async () => {
+    const onPdfSessionChange = vi.fn();
+    const staleLoad = deferred<ReturnType<typeof pdf>>();
+    const currentPdf = pdf({ destroy: vi.fn(async () => undefined) });
+    const stalePdf = pdf({ destroy: vi.fn(async () => undefined) });
+    getDocumentMock
+      .mockReturnValueOnce({ promise: staleLoad.promise, destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(currentPdf),
+        destroy: loadingDestroy,
+      } as never);
+    const { rerender } = renderComponent({ onPdfSessionChange });
+    await waitFor(() => expect(getDocumentMock).toHaveBeenCalledOnce());
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: record({ checksum: 'b'.repeat(64) }),
+          onPdfSessionChange,
+        })}
+      />,
+    );
+    await waitFor(() =>
+      expect(onPdfSessionChange).toHaveBeenCalledWith(
+        expect.objectContaining({ pdf: currentPdf, checksum: 'b'.repeat(64) }),
+      ),
+    );
+
+    staleLoad.resolve(stalePdf);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onPdfSessionChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ pdf: stalePdf, checksum: 'a'.repeat(64) }),
+    );
+  });
+
+  it('groups the compact reader controls and exposes secondary options from View', async () => {
+    renderComponent({ toolbarLeading: <button type="button">Back to Wiki</button> });
+
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to Wiki' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Page navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Zoom controls' })).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+
+    const viewButton = screen.getByRole('button', { name: 'View options: Single page' });
+    expect(viewButton).toHaveTextContent('View');
+    fireEvent.click(viewButton);
+
+    const options = screen.getByRole('dialog', { name: 'View options' });
+    expect(within(options).getByRole('button', { name: 'Fit width' })).toBeInTheDocument();
+    expect(within(options).getByRole('button', { name: 'Continuous scrolling' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(within(options).getByRole('button', { name: 'Single page' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('dismisses View options with Escape or an outside pointer action', async () => {
+    renderComponent();
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+
+    const trigger = viewOptionsTrigger();
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'View options' })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'View options' })).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'View options' })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'View options' })).not.toBeInTheDocument();
   });
 
   afterEach(() => {
@@ -220,13 +528,13 @@ describe('KnowledgePdfViewer', () => {
     vi.restoreAllMocks();
   });
 
-  it('defaults to a pressed Continuous control and tracks the most visible page', async () => {
+  it('defaults to Continuous view and tracks the most visible page', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     const { container } = renderComponent();
 
-    expect(await screen.findByRole('button', { name: 'View: Continuous' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+    expect(await screen.findByRole('button', { name: 'View options: Continuous' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
     );
     expect(screen.getByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
@@ -240,25 +548,26 @@ describe('KnowledgePdfViewer', () => {
     expect(onPageChange).toHaveBeenLastCalledWith(2);
   });
 
-  it('keeps the uniquely named mode control focused while its pressed state and name change', async () => {
+  it('returns focus to the uniquely named View trigger after changing page flow', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     renderComponent();
 
-    const continuousMode = await screen.findByRole('button', { name: 'View: Continuous' });
-    expect(screen.getAllByRole('button', { name: /^View:/ })).toHaveLength(1);
-    continuousMode.focus();
-    fireEvent.click(continuousMode);
-
-    const singleMode = await screen.findByRole('button', { name: 'View: Single page' });
-    expect(singleMode).toHaveAttribute('aria-pressed', 'false');
-    expect(singleMode).toHaveFocus();
-
-    fireEvent.click(singleMode);
-    const restoredContinuousMode = await screen.findByRole('button', {
-      name: 'View: Continuous',
+    const continuousView = await screen.findByRole('button', {
+      name: 'View options: Continuous',
     });
-    expect(restoredContinuousMode).toHaveAttribute('aria-pressed', 'true');
-    expect(restoredContinuousMode).toHaveFocus();
+    continuousView.focus();
+    selectPdfViewMode('Single page');
+
+    const singleView = await screen.findByRole('button', {
+      name: 'View options: Single page',
+    });
+    await waitFor(() => expect(singleView).toHaveFocus());
+
+    selectPdfViewMode('Continuous scrolling');
+    const restoredContinuousView = await screen.findByRole('button', {
+      name: 'View options: Continuous',
+    });
+    await waitFor(() => expect(restoredContinuousView).toHaveFocus());
   });
 
   it('reads a cached offline PDF in Continuous and Single without another fetch or load', async () => {
@@ -273,12 +582,11 @@ describe('KnowledgePdfViewer', () => {
 
     expect(await screen.findByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
     expect(screen.getByLabelText('Page 1')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    selectPdfViewMode('Single page');
 
-    expect(await screen.findByRole('button', { name: 'View: Single page' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(
+      await screen.findByRole('button', { name: 'View options: Single page' }),
+    ).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByLabelText('Page 1')).toBeVisible();
     expect(screen.queryByText(/not cached on this laptop/i)).not.toBeInTheDocument();
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
@@ -300,7 +608,7 @@ describe('KnowledgePdfViewer', () => {
     });
 
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
-    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 129.5, behavior: 'auto' }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 122, behavior: 'auto' }));
   });
 
   it('switches modes on the shared current page without refetching or destroying the PDF', async () => {
@@ -314,12 +622,11 @@ describe('KnowledgePdfViewer', () => {
     act(() => IntersectionObserverDouble.instances[0].showPage(pageTwo!));
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    selectPdfViewMode('Single page');
 
-    expect(await screen.findByRole('button', { name: 'View: Single page' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(
+      await screen.findByRole('button', { name: 'View options: Single page' }),
+    ).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByLabelText('Page 2')).toBeVisible();
     expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('single');
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
@@ -328,11 +635,11 @@ describe('KnowledgePdfViewer', () => {
 
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0 }));
     scrollTo.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'View: Single page' }));
+    selectPdfViewMode('Continuous scrolling');
 
-    expect(await screen.findByRole('button', { name: 'View: Continuous' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+    expect(await screen.findByRole('button', { name: 'View options: Continuous' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
     );
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
     await waitFor(() =>
@@ -362,7 +669,7 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalled());
 
     scrollTo.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'View: Single page' }));
+    selectPdfViewMode('Continuous scrolling');
 
     expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
     await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 1972, behavior: 'smooth' }]]));
@@ -455,12 +762,12 @@ describe('KnowledgePdfViewer', () => {
     expect(getAnnotations(2)).toHaveBeenCalledTimes(1);
     expect(onPageChange).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View: Single page' }));
+    selectPdfViewMode('Continuous scrolling');
     await waitFor(() =>
       expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })),
     );
     scrollTo.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    selectPdfViewMode('Single page');
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
     await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 0 }]]));
     expect(getAnnotations(2)).toHaveBeenCalledTimes(3);
@@ -509,7 +816,7 @@ describe('KnowledgePdfViewer', () => {
       />,
     );
 
-    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 329.5, behavior: 'smooth' }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 322, behavior: 'smooth' }));
     expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
 
     act(() => {
@@ -523,7 +830,7 @@ describe('KnowledgePdfViewer', () => {
     expect(onPageChange).toHaveBeenCalledTimes(1);
     expect(onPageChange).toHaveBeenLastCalledWith(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    selectPdfViewMode('Single page');
     expect(await screen.findByLabelText('Page 2')).toBeVisible();
   });
 
@@ -571,7 +878,7 @@ describe('KnowledgePdfViewer', () => {
     expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
     expect(onPageChange).toHaveBeenCalledTimes(1);
     expect(onPageChange).toHaveBeenLastCalledWith(2);
-    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    selectPdfViewMode('Single page');
     expect(await screen.findByLabelText('Page 3')).toBeVisible();
   });
 
@@ -672,7 +979,7 @@ describe('KnowledgePdfViewer', () => {
       expect(screen.getByText(`Page ${nextPageIndex + 1} of 3`)).toBeInTheDocument();
       expect(onPageChange).toHaveBeenCalledTimes(1);
       expect(onPageChange).toHaveBeenLastCalledWith(nextPageIndex);
-      fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+      selectPdfViewMode('Single page');
       expect(await screen.findByLabelText(`Page ${nextPageIndex + 1}`)).toBeVisible();
       offsetTop.mockRestore();
     },
@@ -688,17 +995,17 @@ describe('KnowledgePdfViewer', () => {
 
     expect(await screen.findByText('Current section · Recovery procedure')).toBeInTheDocument();
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
-    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 129.5, behavior: 'smooth' }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 122, behavior: 'smooth' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
-    expect(screen.getByText('120%')).toBeInTheDocument();
+    expect(screen.getByText('115%')).toBeInTheDocument();
 
     const continuousViewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
     Object.defineProperty(continuousViewport, 'clientWidth', { configurable: true, value: 648 });
-    fireEvent.click(screen.getByRole('button', { name: 'Fit width' }));
+    fitPdfWidth();
     await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    selectPdfViewMode('Single page');
     expect(await screen.findByLabelText('Page 2')).toBeVisible();
     expect(container.querySelectorAll('.knowledge-page')).toHaveLength(1);
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
@@ -795,23 +1102,24 @@ describe('KnowledgePdfViewer', () => {
     const pageOneLink = await screen.findByRole('button', {
       name: 'Open relay.example in browser',
     });
-    expect(pageOneLink).toHaveStyle({ left: '10.5px', width: '21px' });
+    expect(pageOneLink).toHaveStyle({ left: '10px', width: '20px' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Open relay.example in browser' })).toHaveStyle({
-        left: '12px',
-        width: '24px',
+        left: '11.5px',
+        width: '23px',
       }),
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Open relay.example in browser' })).toHaveStyle({
-        left: '36px',
-        width: '24px',
-      }),
-    );
+    await waitFor(() => {
+      const pageTwoLink = screen.getByRole('button', {
+        name: 'Open relay.example in browser',
+      });
+      expect(pageTwoLink).toHaveStyle({ left: '34.5px' });
+      expect(Number.parseFloat(pageTwoLink.style.width)).toBeCloseTo(23);
+    });
     expect(getAnnotations(1)).toHaveBeenCalledTimes(2);
     expect(getAnnotations(2)).toHaveBeenCalledOnce();
   });

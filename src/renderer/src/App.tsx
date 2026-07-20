@@ -45,11 +45,15 @@ import {
   ON_CALL_FONT_SCALE_STORAGE_KEY,
   setOnCallFontScale,
 } from './theme/onCallDisplay';
-import { requestKnowledgeDocumentOpen } from './features/knowledge/knowledgeNavigation';
+import {
+  requestKnowledgeDocumentOpen,
+  type KnowledgeOpenRequest,
+} from './features/knowledge/knowledgeNavigation';
 import {
   normalizeLegacyTabRequest,
   requestKnowledgeDestinationOpen,
   type KnowledgeContentDestination,
+  type KnowledgeDestination,
 } from './features/knowledge/knowledgeWorkspaceNavigation';
 
 // Lazy-load helper for named exports
@@ -80,6 +84,24 @@ const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} 
 const getTabPanelClassName = (active: boolean) => `tab-panel${active ? ' tab-panel--active' : ''}`;
 const STARTUP_CONNECTION_TIMEOUT_MS = 20_000;
 const RETIRED_LOCAL_SELECTION_KEY = ['relay', 'selectedOperatorId'].join('.');
+
+function getPreferredSearchResultType(
+  activeTab: string,
+  knowledgeDestination: KnowledgeDestination,
+): 'contact' | 'server' | 'knowledge' | undefined {
+  if (activeTab !== 'Knowledge') return undefined;
+
+  switch (knowledgeDestination) {
+    case 'contacts':
+      return 'contact';
+    case 'servers':
+      return 'server';
+    case 'wiki':
+      return 'knowledge';
+    default:
+      return undefined;
+  }
+}
 
 export function RetainedTabPanel({
   active,
@@ -174,12 +196,14 @@ export function MainApp({
     handleRemoveManual,
     handleToggleGroup,
   } = useAppAssembler();
+  const [knowledgeDestination, setKnowledgeDestination] = useState<KnowledgeDestination>('home');
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
   const handleTabRequest = useCallback(
     (requestedTab: string) => {
       const normalized = normalizeLegacyTabRequest(requestedTab);
       if (normalized.knowledgeDestination) {
+        setKnowledgeDestination(normalized.knowledgeDestination);
         requestKnowledgeDestinationOpen(normalized.knowledgeDestination);
       }
       setActiveTab(normalized.tab);
@@ -188,14 +212,16 @@ export function MainApp({
   );
   const handleOpenKnowledgeDestination = useCallback(
     (destination: KnowledgeContentDestination) => {
+      setKnowledgeDestination(destination);
       requestKnowledgeDestinationOpen(destination);
       setActiveTab('Knowledge');
     },
     [setActiveTab],
   );
   const handleOpenKnowledgeDocument = useCallback(
-    (documentId: string, headingId?: string) => {
-      requestKnowledgeDocumentOpen(documentId, headingId);
+    (request: KnowledgeOpenRequest) => {
+      setKnowledgeDestination('wiki');
+      requestKnowledgeDocumentOpen(request);
       requestKnowledgeDestinationOpen('wiki');
       setActiveTab('Knowledge');
     },
@@ -353,6 +379,7 @@ export function MainApp({
             <div className="header-search-container">
               <HeaderSearch
                 activeTab={activeTab}
+                preferredResultType={getPreferredSearchResultType(activeTab, knowledgeDestination)}
                 contacts={data.contacts}
                 servers={data.servers}
                 groups={data.groups}
@@ -426,6 +453,7 @@ export function MainApp({
                       servers={data.servers}
                       relayMode={relayConfig?.mode}
                       onAddToAssembler={handleAddToAssembler}
+                      onDestinationChange={setKnowledgeDestination}
                     />
                   </Suspense>
                 </ErrorBoundary>

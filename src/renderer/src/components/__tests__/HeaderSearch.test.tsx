@@ -1,6 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type {
+  KnowledgeSearchRequest,
+  KnowledgeSearchResponse,
+  KnowledgeSearchResult,
+} from '@shared/knowledgeSearch';
 import { HeaderSearch, type HeaderSearchActions } from '../HeaderSearch';
 
 // --- Mocks ---
@@ -36,11 +41,22 @@ vi.mock('../../features/knowledge/useKnowledgeLibrary', () => ({
   useKnowledgeLibrary: () => ({ documents: [] }),
 }));
 
+const { mockKnowledgeBoundaryError } = vi.hoisted(() => ({
+  mockKnowledgeBoundaryError: vi.fn(),
+}));
+vi.mock('../../utils/logger', () => ({
+  loggers: { ui: { error: mockKnowledgeBoundaryError } },
+}));
+
+let mockKnowledgeIconFailure = false;
 vi.mock('../command-palette/CommandIcons', () => ({
   ContactIcon: ({ name }: { name: string }) => <span data-testid="contact-icon">{name}</span>,
   GroupIcon: () => <span data-testid="group-icon" />,
   ServerIcon: () => <span data-testid="server-icon" />,
-  KnowledgeIcon: () => <span data-testid="knowledge-icon" />,
+  KnowledgeIcon: () => {
+    if (mockKnowledgeIconFailure) throw new TypeError('passage render failure');
+    return <span data-testid="knowledge-icon" />;
+  },
   ActionIcon: ({ type }: { type: string }) => <span data-testid="action-icon">{type}</span>,
 }));
 
@@ -61,6 +77,55 @@ const defaultProps = {
   actions: defaultActions,
 };
 
+const makePassageResult = (
+  overrides: Partial<KnowledgeSearchResult> = {},
+): KnowledgeSearchResult => ({
+  id: 'passage-1',
+  documentId: 'kb-2',
+  checksum: 'b'.repeat(64),
+  title: 'Oracle SOP Manual',
+  fileName: 'Oracle SOP Manual.pdf',
+  category: 'Database',
+  categoryId: 'database',
+  documentType: 'sop',
+  headingId: 'failover',
+  heading: 'Failover procedure',
+  pageIndex: 3,
+  passageNumber: 1,
+  excerpt: 'Use the standby listener before promoting the database.',
+  matchKind: 'fuzzy',
+  highlightText: 'failover',
+  normalizedStart: 48,
+  normalizedEnd: 56,
+  score: 0.91,
+  ...overrides,
+});
+
+const successResponse = (
+  request: KnowledgeSearchRequest,
+  results: KnowledgeSearchResult[],
+): KnowledgeSearchResponse => ({
+  ok: true,
+  requestId: request.requestId,
+  availability: 'ready',
+  normalizedQuery: request.query,
+  results,
+});
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
+const settlePassageSearch = async () => {
+  await act(async () => vi.advanceTimersByTimeAsync(200));
+};
+
 // Stub scrollIntoView (not available in jsdom)
 Element.prototype.scrollIntoView = vi.fn();
 
@@ -71,17 +136,24 @@ describe('HeaderSearch', () => {
     mockSearchContext.isSearchFocused = false;
     mockSearchContext.searchInputRef = { current: null };
     mockSearchResults.length = 0;
+    mockKnowledgeIconFailure = false;
+    globalThis.api = {
+      ...globalThis.api,
+      platform: 'darwin',
+      searchKnowledge: vi.fn(),
+      cancelKnowledgeSearch: vi.fn(),
+    };
   });
 
   it('renders the search input', () => {
     render(<HeaderSearch {...defaultProps} />);
     expect(screen.getByRole('combobox')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search Relay...')).toBeInTheDocument();
   });
 
   it('renders the search input with correct aria-label', () => {
     render(<HeaderSearch {...defaultProps} />);
-    expect(screen.getByLabelText('Search')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search Relay')).toBeInTheDocument();
   });
 
   it('shows keyboard shortcut hint when query is empty', () => {
@@ -357,6 +429,43 @@ describe('HeaderSearch', () => {
       expect(screen.queryByText(/Filtering Knowledge list/)).not.toBeInTheDocument();
     });
 
+    it('ranks results from the active Knowledge destination first', () => {
+      render(<HeaderSearch {...defaultProps} activeTab="Knowledge" preferredResultType="server" />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent('web-server');
+    });
+
+    it('caps immediate results at 15 after preferred-result ranking', () => {
+      mockSearchResults.splice(
+        0,
+        mockSearchResults.length,
+        ...Array.from({ length: 16 }, (_, index) => ({
+          id: `contact-${index}`,
+          title: `Contact ${index}`,
+          type: 'contact',
+          data: { email: `contact${index}@example.com` },
+        })),
+        {
+          id: 'server-preferred',
+          title: 'Preferred server',
+          type: 'server',
+          data: { name: 'Preferred server' },
+        },
+      );
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" preferredResultType="server" />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      expect(screen.getAllByRole('option')).toHaveLength(15);
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent('Preferred server');
+      expect(screen.queryByText('Contact 15')).not.toBeInTheDocument();
+    });
+
     it('shows keyboard shortcut hints in dropdown footer', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
@@ -603,10 +712,239 @@ describe('HeaderSearch', () => {
 
       expect(screen.getByTestId('knowledge-icon')).toBeInTheDocument();
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-      expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenCalledWith(
-        'kb-1',
-        'restart-service',
+      expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenCalledWith({
+        documentId: 'kb-1',
+        headingId: 'restart-service',
+      });
+    });
+  });
+
+  describe('Wiki passage results', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      mockSearchContext.isSearchFocused = true;
+      mockSearchContext.query = 'oracle';
+      mockSearchResults.push({
+        id: 'knowledge-kb-1',
+        title: 'Oracle Database Server',
+        subtitle: 'Infrastructure',
+        type: 'knowledge',
+        data: { document: { id: 'kb-1', outline: [] } },
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('starts universal passage search after one 150ms debounce', async () => {
+      vi.mocked(globalThis.api.searchKnowledge).mockReturnValue(
+        deferred<KnowledgeSearchResponse>().promise,
       );
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await act(async () => vi.advanceTimersByTimeAsync(149));
+      expect(globalThis.api.searchKnowledge).not.toHaveBeenCalled();
+
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+      expect(globalThis.api.searchKnowledge).toHaveBeenCalledTimes(1);
+      expect(globalThis.api.searchKnowledge).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'oracle', scope: { kind: 'all' }, limit: 20 }),
+      );
+    });
+
+    it('shows immediate results while passage search is still pending', async () => {
+      const pending = deferred<KnowledgeSearchResponse>();
+      vi.mocked(globalThis.api.searchKnowledge).mockReturnValue(pending.promise);
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+
+      expect(screen.getByText('Oracle Database Server')).toBeVisible();
+      expect(screen.queryByText('Wiki passages')).not.toBeInTheDocument();
+      expect(globalThis.api.searchKnowledge).toHaveBeenCalledTimes(1);
+      expect(globalThis.api.searchKnowledge).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'oracle', scope: { kind: 'all' }, limit: 20 }),
+      );
+    });
+
+    it('keeps immediate results when Wiki passage search rejects', async () => {
+      vi.mocked(globalThis.api.searchKnowledge).mockRejectedValue(new Error('offline'));
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+
+      expect(screen.getByText('Oracle Database Server')).toBeVisible();
+      expect(screen.queryByText('Wiki passages')).not.toBeInTheDocument();
+    });
+
+    it('renders one presentation heading and keeps option indices contiguous', async () => {
+      const passages = [
+        makePassageResult(),
+        makePassageResult({
+          id: 'passage-2',
+          documentId: 'kb-3',
+          title: 'Oracle Recovery Checklist',
+          headingId: null,
+          heading: null,
+          pageIndex: 1,
+          matchKind: 'exact',
+        }),
+      ];
+      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+        Promise.resolve(successResponse(request, passages)),
+      );
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+
+      const group = screen.getByText('Wiki passages');
+      expect(group).toHaveAttribute('role', 'presentation');
+      expect(screen.getAllByText('Wiki passages')).toHaveLength(1);
+      expect(screen.getAllByRole('option')).toHaveLength(3);
+      expect(document.querySelectorAll('[data-index]')).toHaveLength(3);
+      expect(screen.getByRole('combobox')).toHaveAttribute(
+        'aria-activedescendant',
+        'search-result-0',
+      );
+      expect(screen.getByText('Page 4')).toBeInTheDocument();
+      expect(screen.getAllByText('Database')).toHaveLength(2);
+      expect(screen.getByText('Failover procedure')).toBeInTheDocument();
+      expect(screen.getByText('Close match')).toBeInTheDocument();
+    });
+
+    it('opens an async passage with its complete canonical target by keyboard and mouse', async () => {
+      const passage = makePassageResult();
+      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+        Promise.resolve(successResponse(request, [passage])),
+      );
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+      const input = screen.getByRole('combobox');
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(input).toHaveAttribute('aria-activedescendant', 'search-result-1');
+      fireEvent.keyDown(input, { key: 'ArrowUp' });
+      expect(input).toHaveAttribute('aria-activedescendant', 'search-result-0');
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenLastCalledWith({
+        documentId: passage.documentId,
+        headingId: passage.headingId,
+        pageIndex: passage.pageIndex,
+        highlightText: passage.highlightText,
+        normalizedStart: passage.normalizedStart,
+        normalizedEnd: passage.normalizedEnd,
+      });
+
+      vi.mocked(defaultActions.onOpenKnowledgeDocument).mockClear();
+      fireEvent.mouseDown(screen.getByText('Failover procedure').closest('button')!);
+      expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenCalledWith({
+        documentId: passage.documentId,
+        headingId: passage.headingId,
+        pageIndex: passage.pageIndex,
+        highlightText: passage.highlightText,
+        normalizedStart: passage.normalizedStart,
+        normalizedEnd: passage.normalizedEnd,
+      });
+
+      mockSearchContext.clearSearch.mockClear();
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(mockSearchContext.clearSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('deduplicates only the same document, page, and heading destination', async () => {
+      mockSearchResults.splice(0, 1, {
+        id: 'knowledge-kb-2',
+        title: 'Oracle SOP Manual',
+        subtitle: 'Database · Failover procedure',
+        type: 'knowledge',
+        data: {
+          document: {
+            id: 'kb-2',
+            outline: [{ id: 'failover', label: 'Failover procedure', pageIndex: 3 }],
+          },
+          headingId: 'failover',
+        },
+      });
+      const duplicate = makePassageResult();
+      const distinctPage = makePassageResult({ id: 'passage-2', pageIndex: 4 });
+      const duplicatePassage = makePassageResult({ id: 'passage-3', pageIndex: 4 });
+      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+        Promise.resolve(successResponse(request, [duplicate, distinctPage, duplicatePassage])),
+      );
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+
+      expect(screen.getAllByRole('option')).toHaveLength(2);
+      expect(screen.getByText('Page 5')).toBeInTheDocument();
+      expect(screen.queryByText('Page 4')).not.toBeInTheDocument();
+    });
+
+    it('does not publish a stale passage completion after the query changes', async () => {
+      const oldSearch = deferred<KnowledgeSearchResponse>();
+      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) => {
+        if (request.query === 'oracle') return oldSearch.promise;
+        return Promise.resolve(
+          successResponse(request, [
+            makePassageResult({
+              id: 'network-passage',
+              title: 'Network recovery',
+              heading: 'Network failover',
+            }),
+          ]),
+        );
+      });
+
+      const view = render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+      mockSearchContext.query = 'network';
+      view.rerender(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+      expect(screen.getByText('Network recovery')).toBeInTheDocument();
+
+      const oldRequest = vi.mocked(globalThis.api.searchKnowledge).mock.calls[0][0];
+      await act(async () => oldSearch.resolve(successResponse(oldRequest, [makePassageResult()])));
+
+      expect(screen.queryByText('Oracle SOP Manual')).not.toBeInTheDocument();
+      expect(screen.getByText('Network recovery')).toBeInTheDocument();
+    });
+
+    it('removes boundary-failed passages from keyboard and ARIA navigation', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockSearchResults.splice(0, 1, {
+        id: 'contact-operator',
+        title: 'Oracle operator',
+        subtitle: 'operator@example.com',
+        type: 'contact',
+        data: { email: 'operator@example.com' },
+      });
+      mockKnowledgeIconFailure = true;
+      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+        Promise.resolve(successResponse(request, [makePassageResult()])),
+      );
+
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      await settlePassageSearch();
+
+      expect(screen.getAllByText('Oracle operator')).toHaveLength(2);
+      expect(screen.queryByText('Wiki passages')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('option')).toHaveLength(1);
+
+      const input = screen.getByRole('combobox');
+      expect(input).toHaveAttribute('aria-activedescendant', 'search-result-0');
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(input).toHaveAttribute('aria-activedescendant', 'search-result-0');
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('operator@example.com');
+      expect(defaultActions.onOpenKnowledgeDocument).not.toHaveBeenCalled();
+      expect(mockKnowledgeBoundaryError).toHaveBeenCalledWith(
+        'Enhanced Wiki search rendering failed',
+        { errorClass: 'TypeError' },
+      );
+      consoleError.mockRestore();
     });
   });
 

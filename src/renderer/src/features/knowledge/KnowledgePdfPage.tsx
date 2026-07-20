@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RenderingCancelledException,
   TextLayer,
@@ -12,6 +12,8 @@ import {
   type KnowledgeLinkItem,
 } from './KnowledgeLinkLayer';
 import type { KnowledgeResolvedLink } from './knowledgeLinkResolver';
+import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
+import { KnowledgeSearchHighlightLayer } from './KnowledgeSearchHighlightLayer';
 
 export type KnowledgePdfPageStatus =
   | { state: 'ready'; pageIndex: number; width: number; height: number }
@@ -29,6 +31,9 @@ export type KnowledgePdfPageProps = {
   onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
   onActivateDestination: (destination: unknown) => void;
   onStatus: (status: KnowledgePdfPageStatus) => void;
+  searchMatches?: readonly KnowledgeDocumentSearchMatch[];
+  activeSearchResultId?: string | null;
+  onActiveSearchHighlightReady?: (resultId: string, pageIndex: number, top: number) => void;
 };
 
 type KnowledgeLinkRender = {
@@ -66,16 +71,27 @@ export function KnowledgePdfPage({
   onActivateResolvedLink,
   onActivateDestination,
   onStatus,
+  searchMatches = [],
+  activeSearchResultId = null,
+  onActiveSearchHighlightReady,
 }: Readonly<KnowledgePdfPageProps>) {
   const [linkRender, setLinkRender] = useState<KnowledgeLinkRender | null>(null);
+  const [textLayerVersion, setTextLayerVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [localRetryKey, setLocalRetryKey] = useState(0);
   const pageShellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const handleActiveSearchHighlightReady = useCallback(
+    (resultId: string, top: number) => {
+      onActiveSearchHighlightReady?.(resultId, pageIndex, top);
+    },
+    [onActiveSearchHighlightReady, pageIndex],
+  );
 
   useEffect(() => {
     setLinkRender(null);
+    setTextLayerVersion(0);
     setError(null);
     if (!render) return;
 
@@ -185,6 +201,10 @@ export function KnowledgePdfPage({
         if (canvasResult.error !== null) throw canvasResult.error;
         if (textResult.error !== null) throw textResult.error;
         if (disposed) return;
+        textLayer.textDivs?.forEach((textDiv, itemIndex) => {
+          textDiv.dataset.knowledgeTextItemIndex = String(itemIndex);
+        });
+        setTextLayerVersion((version) => version + 1);
 
         if (scrollOnReady) {
           if (targetTop !== null) {
@@ -231,6 +251,13 @@ export function KnowledgePdfPage({
         <>
           <canvas ref={canvasRef} aria-label={`Page ${pageIndex + 1}`} />
           <div ref={textLayerRef} className="knowledge-page__text-layer textLayer" />
+          <KnowledgeSearchHighlightLayer
+            textLayer={textLayerRef.current}
+            textLayerVersion={textLayerVersion}
+            matches={searchMatches}
+            activeResultId={activeSearchResultId}
+            onActiveHighlightReady={handleActiveSearchHighlightReady}
+          />
           {linkRender && (
             <KnowledgeLinkLayer
               items={linkRender.items}

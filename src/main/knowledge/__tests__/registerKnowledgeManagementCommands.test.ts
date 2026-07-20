@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { loggers } from '../../logger';
 import { PrivilegedCommandSafeError } from '../../privileged/PrivilegedCommandProcessor';
 import { KnowledgeUploadAdmissionError } from '../KnowledgeUploadCapacity';
 import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagementCommands';
@@ -8,6 +9,22 @@ const context = {
   account: { id: 'account-admin', displayName: 'Ryan Bledsoe' },
   device: { deviceId: 'device-1' },
   role: 'admin' as const,
+};
+
+const publishedIdentity = {
+  id: 'document-1',
+  checksum: 'b'.repeat(64),
+  revision: 1,
+};
+const replacedIdentity = {
+  id: 'document-1',
+  checksum: 'c'.repeat(64),
+  revision: 2,
+};
+const restoredIdentity = {
+  id: 'document-1',
+  checksum: 'c'.repeat(64),
+  revision: 3,
 };
 
 describe('registerKnowledgeManagementCommands', () => {
@@ -48,8 +65,8 @@ describe('registerKnowledgeManagementCommands', () => {
   const readUploadPdf = vi.fn(async () => Buffer.from('%PDF-test'));
   const service = {
     snapshot: vi.fn(async () => ({ mode: 'managed' })),
-    publish: vi.fn(async () => ({ id: 'document-1' })),
-    replace: vi.fn(async () => ({ id: 'document-1' })),
+    publish: vi.fn(async () => publishedIdentity),
+    replace: vi.fn(async () => replacedIdentity),
     setTitle: vi.fn(async () => ({ id: 'document-1' })),
     setCategory: vi.fn(async () => ({ id: 'document-1' })),
     renameCategory: vi.fn(async () => []),
@@ -60,7 +77,7 @@ describe('registerKnowledgeManagementCommands', () => {
     setDocumentMetadata: vi.fn(async () => ({ id: 'document-1' })),
     assignDocumentCategories: vi.fn(async () => [{ id: 'document-1' }]),
     trash: vi.fn(async () => ({ id: 'document-1' })),
-    restore: vi.fn(async () => ({ id: 'document-1' })),
+    restore: vi.fn(async () => restoredIdentity),
     deletePermanently: vi.fn(async () => ({ id: 'document-1', deleted: true as const })),
     readAudit: vi.fn(async () => ({ items: [], nextCursor: null })),
   };
@@ -76,6 +93,7 @@ describe('registerKnowledgeManagementCommands', () => {
   };
   const searchIndexer = {
     enqueue: vi.fn(),
+    recordTriggerFailure: vi.fn(async () => undefined),
     retry: vi.fn(),
     remove: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
@@ -242,6 +260,7 @@ describe('registerKnowledgeManagementCommands', () => {
       { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
     );
     expect(searchIndexer.enqueue).toHaveBeenCalledWith('document-1');
+    expect(searchIndexer.recordTriggerFailure).not.toHaveBeenCalled();
 
     service.publish.mockRejectedValueOnce(new Error('publication-failed'));
     await expect(
@@ -293,6 +312,192 @@ describe('registerKnowledgeManagementCommands', () => {
       expect(searchIndexer[method]).toHaveBeenCalledTimes(1);
     },
   );
+
+  it.each([
+    [
+      'knowledge.document.publish',
+      { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' },
+      publishedIdentity,
+    ],
+    [
+      'knowledge.document.replace',
+      {
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 2,
+        title: 'Oracle SOP',
+        category: 'Access',
+      },
+      replacedIdentity,
+    ],
+    [
+      'knowledge.document.restore',
+      { documentId: 'document-1', expectedRevision: 2 },
+      restoredIdentity,
+    ],
+  ] as const)(
+    '%s preserves the successful core mutation and records a failed status when the trigger throws',
+    async (command, payload, identity) => {
+      const warn = vi.spyOn(loggers.main, 'warn').mockImplementation(() => undefined);
+      searchIndexer.enqueue.mockImplementationOnce(() => {
+        throw new Error('secret-bearing-optional-index-trigger-failed');
+      });
+
+      await expect(
+        handlers.get(command)!(context as never, payload as never),
+      ).resolves.toMatchObject({ id: 'document-1' });
+      expect(searchIndexer.enqueue).toHaveBeenCalledWith('document-1');
+      expect(searchIndexer.recordTriggerFailure).toHaveBeenCalledWith({
+        documentId: identity.id,
+        expectedChecksum: identity.checksum,
+        expectedRevision: identity.revision,
+      });
+      expect(warn).toHaveBeenCalledWith('Wiki search indexing trigger failed', {
+        documentId: 'document-1',
+        reason: 'trigger-rejected',
+      });
+      expect(warn.mock.calls).not.toEqual(
+        expect.arrayContaining([
+          expect.arrayContaining([expect.objectContaining({ error: expect.anything() })]),
+        ]),
+      );
+      warn.mockRestore();
+    },
+  );
+
+  it.each([
+    [
+      'knowledge.document.publish',
+      { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' },
+      publishedIdentity,
+    ],
+    [
+      'knowledge.document.replace',
+      {
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 2,
+        title: 'Oracle SOP',
+        category: 'Access',
+      },
+      replacedIdentity,
+    ],
+    [
+      'knowledge.document.restore',
+      { documentId: 'document-1', expectedRevision: 2 },
+      restoredIdentity,
+    ],
+  ] as const)(
+    '%s contains an asynchronous trigger rejection without leaking or rejecting the mutation',
+    async (command, payload, identity) => {
+      const warn = vi.spyOn(loggers.main, 'warn').mockImplementation(() => undefined);
+      searchIndexer.enqueue.mockImplementationOnce(() =>
+        Promise.reject(new Error('secret-bearing-async-trigger-failed')),
+      );
+
+      await expect(
+        handlers.get(command)!(context as never, payload as never),
+      ).resolves.toMatchObject({ id: 'document-1' });
+      await vi.waitFor(() =>
+        expect(searchIndexer.recordTriggerFailure).toHaveBeenCalledWith({
+          documentId: identity.id,
+          expectedChecksum: identity.checksum,
+          expectedRevision: identity.revision,
+        }),
+      );
+      expect(warn).toHaveBeenCalledWith('Wiki search indexing trigger failed', {
+        documentId: 'document-1',
+        reason: 'trigger-rejected',
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-bearing-async-trigger-failed');
+      warn.mockRestore();
+    },
+  );
+
+  it('contains failure-status recording faults without leaking their details', async () => {
+    const warn = vi.spyOn(loggers.main, 'warn').mockImplementation(() => undefined);
+    searchIndexer.enqueue.mockImplementationOnce(() => {
+      throw new Error('trigger-secret');
+    });
+    searchIndexer.recordTriggerFailure.mockRejectedValueOnce(new Error('status-secret'));
+
+    await expect(
+      handlers.get('knowledge.document.publish')!(
+        context as never,
+        { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
+      ),
+    ).resolves.toMatchObject({ id: 'document-1' });
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith('Wiki search failure status could not be recorded', {
+        documentId: 'document-1',
+        reason: 'status-update-rejected',
+      }),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('trigger-secret');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('status-secret');
+    warn.mockRestore();
+  });
+
+  it('observes a rejected thenable trigger without leaving an unhandled optional failure', async () => {
+    searchIndexer.enqueue.mockImplementationOnce(
+      () =>
+        ({
+          then: (_resolve: () => void, reject: (error: Error) => void) => {
+            reject(new Error('thenable-secret'));
+          },
+        }) as never,
+    );
+
+    await expect(
+      handlers.get('knowledge.document.publish')!(
+        context as never,
+        { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
+      ),
+    ).resolves.toMatchObject({ id: 'document-1' });
+    await vi.waitFor(() =>
+      expect(searchIndexer.recordTriggerFailure).toHaveBeenCalledWith({
+        documentId: publishedIdentity.id,
+        expectedChecksum: publishedIdentity.checksum,
+        expectedRevision: publishedIdentity.revision,
+      }),
+    );
+  });
+
+  it('binds a delayed publication trigger rejection to publication A after replacement B', async () => {
+    let rejectPublicationTrigger!: (reason: Error) => void;
+    const publicationTrigger = new Promise<void>((_resolve, reject) => {
+      rejectPublicationTrigger = reject;
+    });
+    searchIndexer.enqueue.mockImplementationOnce(() => publicationTrigger);
+
+    await handlers.get('knowledge.document.publish')!(
+      context as never,
+      { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
+    );
+    await handlers.get('knowledge.document.replace')!(
+      context as never,
+      {
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 1,
+        title: 'Replacement',
+        category: 'Operations',
+      } as never,
+    );
+
+    rejectPublicationTrigger(new Error('delayed-publication-trigger-rejection'));
+
+    await vi.waitFor(() =>
+      expect(searchIndexer.recordTriggerFailure).toHaveBeenCalledWith({
+        documentId: publishedIdentity.id,
+        expectedChecksum: publishedIdentity.checksum,
+        expectedRevision: publishedIdentity.revision,
+      }),
+    );
+    expect(searchIndexer.recordTriggerFailure).not.toHaveBeenCalledWith(
+      expect.objectContaining({ expectedChecksum: replacedIdentity.checksum }),
+    );
+  });
 
   it('awaits permanent chunk removal after authoritative document deletion succeeds', async () => {
     let finishRemoval!: () => void;

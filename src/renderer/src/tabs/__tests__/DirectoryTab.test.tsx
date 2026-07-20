@@ -90,7 +90,9 @@ vi.mock('../../components/CollapsibleHeader', () => ({
 }));
 
 vi.mock('../../components/ListToolbar', () => ({
-  ListToolbar: () => <div data-testid="list-toolbar" />,
+  ListToolbar: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="list-toolbar">{children}</div>
+  ),
 }));
 
 vi.mock('../../components/ListFilters', () => ({
@@ -295,6 +297,16 @@ describe('DirectoryTab', () => {
   it('renders ADD CONTACT button', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByText('ADD CONTACT')).toBeInTheDocument();
+  });
+
+  it('provides an independent local contact filter', () => {
+    const onAddToAssembler = vi.fn();
+    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={onAddToAssembler} />);
+
+    const search = screen.getByRole('searchbox', { name: 'Filter contacts' });
+    fireEvent.change(search, { target: { value: 'alice' } });
+
+    expect(mockUseDirectory).toHaveBeenLastCalledWith([], [], onAddToAssembler, 'alice');
   });
 
   it('gives the add contact button a tooltip', () => {

@@ -11,8 +11,10 @@ import { KnowledgeIcon } from '../../components/sidebar/SidebarIcons';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { buildKnowledgeLibrary } from './knowledgeModel';
 import { useKnowledgeLibrary } from './useKnowledgeLibrary';
-import { KnowledgeTree } from './KnowledgeTree';
-import { KnowledgePdfViewer } from './KnowledgePdfViewer';
+import { useKnowledgeSelectionReconciliation } from './useKnowledgeSelectionReconciliation';
+import { KnowledgeReaderSidebarBody } from './KnowledgeReaderSidebarBody';
+import { KnowledgePdfViewer, type KnowledgePdfSession } from './KnowledgePdfViewer';
+import { useKnowledgeDocumentSearch } from './useKnowledgeDocumentSearch';
 import { KnowledgeManagementWorkspace } from './KnowledgeManagementWorkspace';
 import { KnowledgeLibrary } from './KnowledgeLibrary';
 import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
@@ -28,6 +30,18 @@ type Props = {
   active: boolean;
   relayMode?: PublicRelayConfig['mode'];
   onLibraryCountChange?: (count: number | null) => void;
+};
+
+type PendingPassageOpen = {
+  key: number;
+  documentId: string;
+  expectedChecksum: string;
+  expectedSessionGeneration: number | null;
+  expectedSessionPdf: KnowledgePdfSession['pdf'] | null;
+  pageIndex: number;
+  highlightText: string;
+  normalizedStart: number;
+  normalizedEnd: number;
 };
 
 function freshnessLabel(indexedAt: string | null | undefined): string {
@@ -105,11 +119,9 @@ function showsKnowledgeCatalog(
   return view === 'catalog' || !selectedDocument;
 }
 
-function knowledgeSelectionExists(
-  selectedDocumentId: string | null,
-  documents: KnowledgeDocumentRecord[],
-): boolean {
-  return !selectedDocumentId || documents.some((document) => document.id === selectedDocumentId);
+function clampKnowledgePageIndex(pageIndex: number | undefined, pageCount: number): number | null {
+  if (pageIndex === undefined || !Number.isSafeInteger(pageIndex)) return null;
+  return Math.min(Math.max(pageIndex, 0), Math.max(pageCount - 1, 0));
 }
 
 function KnowledgeEmptyState({
@@ -166,26 +178,176 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
   const [focusRequestKey, setFocusRequestKey] = useState(0);
   const [indexStatus, setIndexStatus] = useState<KnowledgeIndexStatus | null>(null);
-  const [removedDocumentTitle, setRemovedDocumentTitle] = useState<string | null>(null);
   const [managementOpen, setManagementOpen] = useState(false);
   const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
   const [desktopLibraryCollapsed, setDesktopLibraryCollapsed] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<'contents' | 'library'>('contents');
+  const [pdfSession, setPdfSession] = useState<KnowledgePdfSession | null>(null);
+  const [readerPageIndex, setReaderPageIndex] = useState(0);
+  const [pendingPassageOpen, setPendingPassageOpen] = useState<PendingPassageOpen | null>(null);
   const [view, setView] = useState<'catalog' | 'reader'>(() =>
     initialKnowledgeView(libraryData.categories),
   );
-  const lastSelectedTitleRef = useRef<string | null>(null);
   const compactLibraryToggleRef = useRef<HTMLButtonElement>(null);
   const desktopLibraryRestoreRef = useRef<HTMLButtonElement>(null);
+  const contentsTabRef = useRef<HTMLButtonElement>(null);
+  const libraryTabRef = useRef<HTMLButtonElement>(null);
+  const contentsSearchRef = useRef<HTMLInputElement>(null);
   const librarySearchRef = useRef<HTMLInputElement>(null);
+  const drawerInitialFocusRef = useRef<'tab' | 'search'>('tab');
+  const passageOpenKeyRef = useRef(0);
   const documentsRef = useRef(documents);
   const selectedDocumentIdRef = useRef(selectedDocumentId);
   documentsRef.current = documents;
   selectedDocumentIdRef.current = selectedDocumentId;
   const library = useMemo(() => buildKnowledgeLibrary(documents, query), [documents, query]);
-  const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null;
+  const handleConfirmedAbsent = useCallback(() => {
+    setSelectedDocumentId(null);
+    setActiveHeadingId(null);
+    setTarget(null);
+    setView('catalog');
+  }, []);
+  const { selectedDocument } = useKnowledgeSelectionReconciliation({
+    selectedDocumentId,
+    documents,
+    loading,
+    error,
+    hasLoadedSnapshot,
+    refetch,
+    onConfirmedAbsent: handleConfirmedAbsent,
+  });
+  const documentSearch = useKnowledgeDocumentSearch(
+    pdfSession,
+    selectedDocument?.outline ?? [],
+    readerPageIndex,
+  );
+  const activateExternalSearchTarget = documentSearch.activateExternalTarget;
+  const cancelExternalSearchActivation = documentSearch.cancelExternalActivation;
   const activeHeading = selectedDocument?.outline.find((node) => node.id === activeHeadingId);
-  const selectedExistsInLibrary = knowledgeSelectionExists(selectedDocumentId, documents);
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
+  const cancelPendingPassageOpen = useCallback(() => {
+    cancelExternalSearchActivation();
+    passageOpenKeyRef.current += 1;
+    setPendingPassageOpen(null);
+  }, [cancelExternalSearchActivation]);
+
+  const queuePassageOpen = useCallback(
+    (
+      request: KnowledgeOpenRequest,
+      document: KnowledgeDocumentRecord,
+      pageIndex: number | null,
+    ) => {
+      if (
+        pageIndex === null ||
+        !request.highlightText ||
+        request.normalizedStart === undefined ||
+        request.normalizedEnd === undefined ||
+        !Number.isSafeInteger(request.normalizedStart) ||
+        !Number.isSafeInteger(request.normalizedEnd) ||
+        request.normalizedStart < 0 ||
+        request.normalizedEnd <= request.normalizedStart
+      ) {
+        cancelPendingPassageOpen();
+        return;
+      }
+      const readySession =
+        pdfSession?.documentId === document.id && pdfSession.checksum === document.checksum
+          ? pdfSession
+          : null;
+      passageOpenKeyRef.current += 1;
+      setPendingPassageOpen({
+        key: passageOpenKeyRef.current,
+        documentId: document.id,
+        expectedChecksum: document.checksum,
+        expectedSessionGeneration: readySession?.generation ?? null,
+        expectedSessionPdf: readySession?.pdf ?? null,
+        pageIndex,
+        highlightText: request.highlightText,
+        normalizedStart: request.normalizedStart,
+        normalizedEnd: request.normalizedEnd,
+      });
+    },
+    [cancelPendingPassageOpen, pdfSession],
+  );
+
+  useEffect(() => {
+    setPendingPassageOpen((current) => {
+      if (!current) return null;
+      const currentDocument = documents.find((document) => document.id === current.documentId);
+      return currentDocument?.checksum === current.expectedChecksum &&
+        selectedDocumentId === current.documentId
+        ? current
+        : null;
+    });
+  }, [documents, selectedDocumentId]);
+
+  useEffect(
+    () => () => {
+      passageOpenKeyRef.current += 1;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (documentSearch.query) cancelPendingPassageOpen();
+  }, [cancelPendingPassageOpen, documentSearch.query]);
+
+  useEffect(() => {
+    const pending = pendingPassageOpen;
+    if (
+      !pending ||
+      pdfSession?.documentId !== pending.documentId ||
+      pdfSession.checksum !== pending.expectedChecksum ||
+      selectedDocument?.id !== pending.documentId ||
+      selectedDocument.checksum !== pending.expectedChecksum
+    ) {
+      return;
+    }
+    if (pending.expectedSessionGeneration === null || pending.expectedSessionPdf === null) {
+      setPendingPassageOpen((current) =>
+        current?.key === pending.key
+          ? {
+              ...current,
+              expectedSessionGeneration: pdfSession.generation,
+              expectedSessionPdf: pdfSession.pdf,
+            }
+          : current,
+      );
+      return;
+    }
+    if (
+      pdfSession.generation !== pending.expectedSessionGeneration ||
+      pdfSession.pdf !== pending.expectedSessionPdf
+    ) {
+      cancelPendingPassageOpen();
+      return;
+    }
+    let activeRequest = true;
+    void activateExternalSearchTarget({
+      pageIndex: pending.pageIndex,
+      highlightText: pending.highlightText,
+      normalizedStart: pending.normalizedStart,
+      normalizedEnd: pending.normalizedEnd,
+    }).then((resolved) => {
+      if (!activeRequest || passageOpenKeyRef.current !== pending.key) return;
+      setPendingPassageOpen((current) => (current?.key === pending.key ? null : current));
+      if (resolved) return;
+      setTarget({ pageIndex: pending.pageIndex, top: null });
+      setReaderPageIndex(pending.pageIndex);
+      showToast('Match text was not selectable on this page.', 'info');
+    });
+    return () => {
+      activeRequest = false;
+    };
+  }, [
+    activateExternalSearchTarget,
+    cancelPendingPassageOpen,
+    pdfSession,
+    pendingPassageOpen,
+    selectedDocument?.checksum,
+    selectedDocument?.id,
+    showToast,
+  ]);
 
   const closeLibraryDrawer = useCallback((restoreFocus = false) => {
     setLibraryDrawerOpen(false);
@@ -201,12 +363,31 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   const showDesktopLibrary = useCallback(() => {
     setDesktopLibraryCollapsed(false);
-    globalThis.requestAnimationFrame(() => librarySearchRef.current?.focus());
-  }, []);
+    globalThis.requestAnimationFrame(() => {
+      (sidebarMode === 'contents' ? contentsTabRef : libraryTabRef).current?.focus();
+    });
+  }, [sidebarMode]);
+
+  const openContentsSearch = useCallback(() => {
+    drawerInitialFocusRef.current = 'search';
+    setSidebarMode('contents');
+    setDesktopLibraryCollapsed(false);
+    setLibraryDrawerOpen(true);
+    if (libraryDrawerOpen) {
+      globalThis.requestAnimationFrame(() => contentsSearchRef.current?.focus());
+    }
+  }, [libraryDrawerOpen]);
 
   useEffect(() => {
     if (!libraryDrawerOpen) return;
-    const frame = globalThis.requestAnimationFrame(() => librarySearchRef.current?.focus());
+    const frame = globalThis.requestAnimationFrame(() => {
+      if (drawerInitialFocusRef.current === 'search') {
+        contentsSearchRef.current?.focus();
+      } else {
+        (sidebarMode === 'contents' ? contentsTabRef : libraryTabRef).current?.focus();
+      }
+      drawerInitialFocusRef.current = 'tab';
+    });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -217,25 +398,24 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       globalThis.cancelAnimationFrame(frame);
       globalThis.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closeLibraryDrawer, libraryDrawerOpen]);
+  }, [closeLibraryDrawer, libraryDrawerOpen, sidebarMode]);
+
+  useEffect(() => {
+    if (!active || view !== 'reader' || managementOpen) return;
+    const handleFind = (event: KeyboardEvent) => {
+      if (event.key.toLocaleLowerCase('en-US') !== 'f' || (!event.metaKey && !event.ctrlKey)) {
+        return;
+      }
+      event.preventDefault();
+      openContentsSearch();
+    };
+    globalThis.addEventListener('keydown', handleFind);
+    return () => globalThis.removeEventListener('keydown', handleFind);
+  }, [active, managementOpen, openContentsSearch, view]);
 
   useEffect(() => {
     onLibraryCountChange?.(hasLoadedSnapshot && !error ? documents.length : null);
   }, [documents.length, error, hasLoadedSnapshot, onLibraryCountChange]);
-
-  useEffect(() => {
-    if (selectedDocument) lastSelectedTitleRef.current = selectedDocument.title;
-  }, [selectedDocument]);
-
-  useEffect(() => {
-    if (selectedDocumentId && !selectedExistsInLibrary) {
-      setRemovedDocumentTitle(lastSelectedTitleRef.current ?? 'The selected guide');
-      setSelectedDocumentId(null);
-      setActiveHeadingId(null);
-      setTarget(null);
-      setView('catalog');
-    }
-  }, [selectedDocumentId, selectedExistsInLibrary]);
 
   useEffect(() => {
     let disposed = false;
@@ -259,18 +439,23 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   }, []);
 
   useEffect(() => {
-    const openDocument = ({ documentId, headingId }: KnowledgeOpenRequest): boolean => {
+    const openDocument = (request: KnowledgeOpenRequest): boolean => {
+      const { documentId, headingId, pageIndex } = request;
       const document = documents.find((candidate) => candidate.id === documentId);
       if (!document) return false;
       const heading = headingId
         ? document.outline.find((candidate) => candidate.id === headingId)
         : undefined;
+      const safePageIndex = clampKnowledgePageIndex(pageIndex, document.pageCount);
+      const pageTarget = safePageIndex === null ? null : { pageIndex: safePageIndex, top: null };
       setQuery('');
       setSelectedDocumentId(documentId);
-      setRemovedDocumentTitle(null);
       setActiveHeadingId(heading?.id ?? null);
-      setTarget(heading ? { ...heading } : null);
+      setTarget(pageTarget ?? (heading ? { ...heading } : null));
+      setReaderPageIndex(pageTarget?.pageIndex ?? heading?.pageIndex ?? 0);
+      queuePassageOpen(request, document, safePageIndex);
       setView('reader');
+      setSidebarMode('contents');
       setLibraryDrawerOpen(false);
       acknowledgeKnowledgeDocumentOpen(documentId);
       return true;
@@ -281,6 +466,13 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
         openDocument({
           documentId: detail.documentId,
           headingId: typeof detail.headingId === 'string' ? detail.headingId : undefined,
+          pageIndex: typeof detail.pageIndex === 'number' ? detail.pageIndex : undefined,
+          highlightText:
+            typeof detail.highlightText === 'string' ? detail.highlightText : undefined,
+          normalizedStart:
+            typeof detail.normalizedStart === 'number' ? detail.normalizedStart : undefined,
+          normalizedEnd:
+            typeof detail.normalizedEnd === 'number' ? detail.normalizedEnd : undefined,
         });
       }
     };
@@ -288,9 +480,10 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
     const pendingRequest = getPendingKnowledgeDocumentOpen();
     if (pendingRequest) openDocument(pendingRequest);
     return () => globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, handleOpenRequest);
-  }, [documents]);
+  }, [documents, queuePassageOpen]);
 
   const handleSelectHeading = (heading: KnowledgeOutlineNode) => {
+    cancelPendingPassageOpen();
     setActiveHeadingId(heading.id);
     setTarget({ ...heading });
     setLibraryDrawerOpen(false);
@@ -298,6 +491,8 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   const handlePageChange = useCallback(
     (pageIndex: number) => {
+      if (pageIndex !== readerPageIndex) cancelPendingPassageOpen();
+      setReaderPageIndex(pageIndex);
       if (!selectedDocument) return;
       const heading = selectedDocument.outline
         .filter((node) => node.pageIndex <= pageIndex)
@@ -305,7 +500,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
         .at(-1);
       setActiveHeadingId(heading?.id ?? null);
     },
-    [selectedDocument],
+    [cancelPendingPassageOpen, readerPageIndex, selectedDocument],
   );
 
   const resolveUrl = useCallback(
@@ -346,6 +541,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       }
 
       if (link.kind === 'same-document') {
+        cancelPendingPassageOpen();
         const nextTarget = { pageIndex: link.pageIndex, top: null };
         const heading = headingForTarget(selectedDocument, nextTarget);
         setActiveHeadingId(heading?.id ?? null);
@@ -363,23 +559,27 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       const nextTarget = { pageIndex: link.pageIndex, top: null };
       const heading = headingForTarget(linkedDocument, nextTarget);
       setQuery('');
+      cancelPendingPassageOpen();
       setSelectedDocumentId(linkedDocument.id);
       setActiveHeadingId(heading?.id ?? null);
       setTarget(nextTarget);
-      setRemovedDocumentTitle(null);
+      setReaderPageIndex(nextTarget.pageIndex);
       setFocusRequestKey((current) => current + 1);
       setView('reader');
+      setSidebarMode('contents');
     },
-    [selectedDocument, showToast],
+    [cancelPendingPassageOpen, selectedDocument, showToast],
   );
 
   const handleDestinationChange = useCallback(
     (nextTarget: KnowledgeViewerTarget) => {
+      cancelPendingPassageOpen();
       const heading = selectedDocument ? headingForTarget(selectedDocument, nextTarget) : undefined;
       setActiveHeadingId(heading?.id ?? null);
       setTarget(nextTarget);
+      setReaderPageIndex(nextTarget.pageIndex);
     },
-    [selectedDocument],
+    [cancelPendingPassageOpen, selectedDocument],
   );
 
   if (managementOpen && canManage) {
@@ -391,7 +591,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
     );
   }
 
-  if (loading && !hasLoadedSnapshot) {
+  if (loading && !hasLoadedSnapshot && !selectedDocument) {
     return (
       <div className="knowledge-tab knowledge-tab--loading" aria-busy="true">
         <div className="knowledge-skeleton knowledge-skeleton--title" />
@@ -403,7 +603,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
     );
   }
 
-  if (documents.length === 0) {
+  if (documents.length === 0 && !selectedDocument) {
     return (
       <KnowledgeEmptyState
         relayMode={relayMode}
@@ -417,23 +617,28 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   if (showsKnowledgeCatalog(view, selectedDocument)) {
     return (
-      <div className="knowledge-tab knowledge-tab--catalog">
-        {removedDocumentTitle && (
-          <div className="knowledge-catalog-notice" role="status">
-            <strong>{removedDocumentTitle} was removed.</strong>
-            <span>The Wiki catalog has been refreshed.</span>
-          </div>
-        )}
+      <div className="knowledge-tab knowledge-tab--catalog" data-motion="panel">
         <KnowledgeLibrary
           documents={documents}
           categories={categories}
           canManage={canManage}
           onManage={() => setManagementOpen(true)}
-          onOpenDocument={(documentId) => {
-            setSelectedDocumentId(documentId);
-            setActiveHeadingId(null);
-            setTarget(null);
-            setRemovedDocumentTitle(null);
+          onOpenDocument={(request) => {
+            const document = documents.find((candidate) => candidate.id === request.documentId);
+            if (!document) return;
+            const heading = request.headingId
+              ? document.outline.find((candidate) => candidate.id === request.headingId)
+              : undefined;
+            const pageIndex = clampKnowledgePageIndex(request.pageIndex, document.pageCount);
+            let nextTarget: KnowledgeViewerTarget | null = null;
+            if (pageIndex !== null) nextTarget = { pageIndex, top: null };
+            else if (heading) nextTarget = { ...heading };
+            setSelectedDocumentId(request.documentId);
+            setActiveHeadingId(heading?.id ?? null);
+            setTarget(nextTarget);
+            setReaderPageIndex(pageIndex ?? heading?.pageIndex ?? 0);
+            queuePassageOpen(request, document, pageIndex);
+            setSidebarMode('contents');
             setView('reader');
           }}
         />
@@ -452,19 +657,6 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   return (
     <div className="knowledge-tab">
-      <div className="knowledge-reader-nav">
-        <button
-          type="button"
-          onClick={() => {
-            setView('catalog');
-            setLibraryDrawerOpen(false);
-          }}
-        >
-          <span aria-hidden="true">←</span>
-          Back to Wiki
-        </button>
-        <span>{selectedDocument.displayTitle}</span>
-      </div>
       <div
         className="knowledge-workspace"
         role="region"
@@ -473,41 +665,21 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
         data-library-collapsed={String(desktopLibraryCollapsed)}
       >
         <button
-          ref={desktopLibraryRestoreRef}
-          type="button"
-          className="knowledge-library-toggle knowledge-library-toggle--desktop"
-          aria-label="Show Wiki library"
-          aria-controls="knowledge-library-drawer"
-          aria-expanded="false"
-          onClick={showDesktopLibrary}
-        >
-          <KnowledgeIcon />
-          <span>Library</span>
-        </button>
-        <button
-          ref={compactLibraryToggleRef}
-          type="button"
-          className="knowledge-library-toggle knowledge-library-toggle--compact"
-          aria-label="Wiki library"
-          aria-controls="knowledge-library-drawer"
-          aria-expanded={libraryDrawerOpen}
-          onClick={() => setLibraryDrawerOpen(true)}
-        >
-          <KnowledgeIcon />
-          <span>Library</span>
-        </button>
-        <button
           type="button"
           className="knowledge-drawer-backdrop"
-          aria-label="Close Wiki library backdrop"
+          aria-label="Close Wiki reader sidebar backdrop"
           tabIndex={-1}
           onClick={() => closeLibraryDrawer()}
         />
-        <aside id="knowledge-library-drawer" className="knowledge-drawer" aria-label="Wiki library">
+        <aside
+          id="knowledge-library-drawer"
+          className="knowledge-drawer"
+          aria-label="Wiki reader sidebar"
+        >
           <div className="knowledge-drawer__heading">
             <div className="knowledge-drawer__title">
-              <span>Operational reference</span>
-              <h1>Wiki</h1>
+              <span>{selectedDocument.category}</span>
+              <h1>{selectedDocument.displayTitle}</h1>
             </div>
             <div className="knowledge-drawer__actions">
               {canManage && (
@@ -517,6 +689,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
                   variant="secondary"
                   aria-label="Manage Wiki"
                   onClick={() => {
+                    cancelPendingPassageOpen();
                     setLibraryDrawerOpen(false);
                     setManagementOpen(true);
                   }}
@@ -527,7 +700,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
               <button
                 type="button"
                 className="knowledge-drawer__collapse"
-                aria-label="Collapse Wiki library"
+                aria-label="Collapse Wiki reader sidebar"
                 onClick={collapseDesktopLibrary}
               >
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
@@ -539,87 +712,121 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
               <button
                 type="button"
                 className="knowledge-drawer__close"
-                aria-label="Close Wiki library"
+                aria-label="Close Wiki reader sidebar"
                 onClick={() => closeLibraryDrawer(true)}
               >
                 ×
               </button>
             </div>
           </div>
-          <label className="knowledge-search">
-            <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-4-4" />
-            </svg>
-            <input
-              ref={librarySearchRef}
-              type="search"
-              aria-label="Search Wiki"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search guides and sections"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                aria-label="Clear knowledge search"
-              >
-                ×
-              </button>
-            )}
-          </label>
-          <div className="knowledge-drawer__scroll">
-            {library.length > 0 ? (
-              <KnowledgeTree
-                groups={library}
-                selectedDocumentId={selectedDocument?.id ?? null}
-                activeHeadingId={activeHeadingId}
-                onSelectDocument={(document) => {
-                  setSelectedDocumentId(document.id);
-                  setView('reader');
-                  setRemovedDocumentTitle(null);
-                  setActiveHeadingId(null);
-                  setTarget(null);
-                  setLibraryDrawerOpen(false);
-                }}
-                onSelectHeading={handleSelectHeading}
-              />
-            ) : (
-              <div className="knowledge-no-results">
-                <span>No matching guides</span>
-                <p>Try a document name, category, or section heading.</p>
-              </div>
-            )}
-          </div>
-          <footer className="knowledge-drawer__footer">
-            <span>
-              {hasQuery ? `${shownCount} matching` : `${documents.length} documents`} across{' '}
-              {shownCategoryCount} {shownCategoryCount === 1 ? 'category' : 'categories'}
-            </span>
-            <span data-state={indexStatus?.state ?? 'idle'}>{currentIndexLabel}</span>
-          </footer>
+          <KnowledgeReaderSidebarBody
+            mode={sidebarMode}
+            contentsTabRef={contentsTabRef}
+            libraryTabRef={libraryTabRef}
+            contentsSearchRef={contentsSearchRef}
+            librarySearchRef={librarySearchRef}
+            contentsSearch={documentSearch}
+            libraryQuery={query}
+            groups={library}
+            documents={documents}
+            selectedDocument={selectedDocument}
+            activeHeadingId={activeHeadingId}
+            shownCount={shownCount}
+            shownCategoryCount={shownCategoryCount}
+            indexState={indexStatus?.state ?? 'idle'}
+            indexLabel={currentIndexLabel}
+            onModeChange={(mode) => {
+              cancelPendingPassageOpen();
+              setSidebarMode(mode);
+            }}
+            onLibraryQueryChange={setQuery}
+            onContentsEscape={() => {
+              if (libraryDrawerOpen) closeLibraryDrawer(true);
+            }}
+            onSelectDocument={(document) => {
+              cancelPendingPassageOpen();
+              setSelectedDocumentId(document.id);
+              setReaderPageIndex(0);
+              setView('reader');
+              setActiveHeadingId(null);
+              setTarget(null);
+              setSidebarMode('contents');
+              setLibraryDrawerOpen(false);
+            }}
+            onSelectHeading={handleSelectHeading}
+          />
         </aside>
 
-        {removedDocumentTitle ? (
-          <div className="knowledge-viewer-state" role="status">
-            <span className="knowledge-viewer-state__eyebrow">Library updated</span>
-            <h2>{removedDocumentTitle} was removed</h2>
-            <p>Choose another guide from the library to continue.</p>
-          </div>
-        ) : (
-          <KnowledgePdfViewer
-            document={selectedDocument}
-            active={active}
-            target={target}
-            currentSection={activeHeading?.label ?? (target ? 'Document section' : null)}
-            focusRequestKey={focusRequestKey}
-            resolveUrl={resolveUrl}
-            onActivateResolvedLink={handleActivateResolvedLink}
-            onDestinationChange={handleDestinationChange}
-            onPageChange={handlePageChange}
-          />
-        )}
+        <KnowledgePdfViewer
+          document={selectedDocument}
+          active={active}
+          target={target}
+          currentSection={activeHeading?.label ?? (target ? 'Document section' : null)}
+          focusRequestKey={focusRequestKey}
+          toolbarLeading={
+            <>
+              <button
+                type="button"
+                className="knowledge-reader-back"
+                aria-label="Back to Wiki"
+                onClick={() => {
+                  cancelPendingPassageOpen();
+                  setView('catalog');
+                  setSidebarMode('contents');
+                  setLibraryDrawerOpen(false);
+                }}
+              >
+                <span aria-hidden="true">←</span>
+                <span className="knowledge-reader-back__label">Back</span>
+              </button>
+              <button
+                ref={desktopLibraryRestoreRef}
+                type="button"
+                className="knowledge-library-toggle knowledge-library-toggle--desktop"
+                aria-label="Show Wiki reader sidebar"
+                aria-controls="knowledge-library-drawer"
+                aria-expanded="false"
+                onClick={showDesktopLibrary}
+              >
+                <KnowledgeIcon />
+                <span>{sidebarMode === 'contents' ? 'Contents' : 'Library'}</span>
+              </button>
+              <button
+                ref={compactLibraryToggleRef}
+                type="button"
+                className="knowledge-library-toggle knowledge-library-toggle--compact"
+                aria-label="Wiki reader sidebar"
+                aria-controls="knowledge-library-drawer"
+                aria-expanded={libraryDrawerOpen}
+                onClick={() => {
+                  drawerInitialFocusRef.current = 'tab';
+                  setLibraryDrawerOpen(true);
+                }}
+              >
+                <KnowledgeIcon />
+                <span>{sidebarMode === 'contents' ? 'Contents' : 'Library'}</span>
+              </button>
+              <button
+                type="button"
+                className="knowledge-reader-search-toggle"
+                aria-label="Search this guide"
+                onClick={openContentsSearch}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m16 16 4 4" />
+                </svg>
+              </button>
+            </>
+          }
+          resolveUrl={resolveUrl}
+          onActivateResolvedLink={handleActivateResolvedLink}
+          onDestinationChange={handleDestinationChange}
+          onPageChange={handlePageChange}
+          onPdfSessionChange={setPdfSession}
+          searchNavigationRequest={documentSearch.navigationRequest}
+          searchMatches={documentSearch.highlightMatches}
+        />
       </div>
     </div>
   );

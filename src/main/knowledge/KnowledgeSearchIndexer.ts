@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  isKnowledgeChecksum,
   normalizeKnowledgeDocumentRecord,
   type KnowledgeDocumentRecord,
 } from '@shared/knowledge';
@@ -52,6 +53,12 @@ export type KnowledgeSearchIndexerOptions = {
   extractor?: Pick<KnowledgeExtractorWorker, 'extractSearchPages' | 'stop'>;
   readPdf?: (document: KnowledgeDocumentRecord) => Promise<Uint8Array>;
   now?: () => number;
+};
+
+export type KnowledgeSearchTriggerIdentity = {
+  documentId: string;
+  expectedChecksum: string;
+  expectedRevision: number;
 };
 
 type SearchIndexPatch = {
@@ -150,6 +157,34 @@ export class KnowledgeSearchIndexer {
 
   retry(documentId: string): void {
     this.enqueue(documentId);
+  }
+
+  async recordTriggerFailure(identity: KnowledgeSearchTriggerIdentity): Promise<void> {
+    const { documentId, expectedChecksum, expectedRevision } = identity;
+    if (
+      this.disposed ||
+      this.removedDocumentIds.has(documentId) ||
+      !DOCUMENT_ID_PATTERN.test(documentId) ||
+      !isKnowledgeChecksum(expectedChecksum) ||
+      !Number.isInteger(expectedRevision) ||
+      expectedRevision < 1
+    ) {
+      return;
+    }
+    try {
+      await this.markFailed(
+        documentId,
+        expectedChecksum,
+        'storage-unavailable',
+        expectedRevision,
+        true,
+      );
+    } catch {
+      loggers.main.warn('Wiki search trigger failure status is unavailable', {
+        documentId,
+        reason: 'status-update-rejected',
+      });
+    }
   }
 
   remove(documentId: string): Promise<void> {
@@ -375,10 +410,20 @@ export class KnowledgeSearchIndexer {
     documentId: string,
     checksum: string,
     error: NonNullable<KnowledgeDocumentRecord['searchIndexError']>,
+    expectedRevision?: number,
+    preserveCurrent = false,
   ): Promise<void> {
     try {
       const current = await this.readActiveDocument(documentId);
-      if (!current || current.checksum !== checksum || this.isCancelled(documentId)) return;
+      if (
+        !current ||
+        current.checksum !== checksum ||
+        (expectedRevision !== undefined && current.revision !== expectedRevision) ||
+        (preserveCurrent && this.isCurrent(current)) ||
+        this.isCancelled(documentId)
+      ) {
+        return;
+      }
       await this.storageCall(() =>
         this.pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).update(
           documentId,
@@ -392,10 +437,10 @@ export class KnowledgeSearchIndexer {
           { requestKey: null },
         ),
       );
-    } catch (statusError) {
+    } catch {
       loggers.main.warn('Wiki search failure status is unavailable', {
         documentId,
-        error: statusError,
+        reason: 'status-update-rejected',
       });
     }
   }

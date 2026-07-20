@@ -2,13 +2,24 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TextLayer } from 'pdfjs-dist/build/pdf.mjs';
 import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
+import type { KnowledgeDocumentSearchMatch } from '../knowledgeDocumentSearch';
 import { KnowledgePdfPage } from '../KnowledgePdfPage';
 
 vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
   AnnotationType: { LINK: 2 },
   RenderingCancelledException: class RenderingCancelledException extends Error {},
-  TextLayer: vi.fn(function MockTextLayer() {
-    return { render: vi.fn(async () => undefined), cancel: vi.fn() };
+  TextLayer: vi.fn(function MockTextLayer({ container }: { container: HTMLElement }) {
+    const textDivs: HTMLElement[] = [];
+    return {
+      render: vi.fn(async () => {
+        const span = document.createElement('span');
+        span.textContent = 'Reset the lane service';
+        textDivs.push(span);
+        container.append(span);
+      }),
+      cancel: vi.fn(),
+      textDivs,
+    };
   }),
 }));
 
@@ -68,6 +79,21 @@ describe('KnowledgePdfPage', () => {
     };
   }
 
+  const searchMatch: KnowledgeDocumentSearchMatch = {
+    id: '0:0:0',
+    pageIndex: 0,
+    matchIndex: 0,
+    snippet: 'Reset the lane service',
+    sectionLabel: 'Recovery',
+    normalizedStart: 0,
+    normalizedEnd: 22,
+    textItemRange: { start: 0, end: 0 },
+    domRange: {
+      start: { itemIndex: 0, itemOffset: 0 },
+      end: { itemIndex: 0, itemOffset: 22 },
+    },
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
@@ -80,6 +106,40 @@ describe('KnowledgePdfPage', () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it('renders search highlights after the selectable text layer is ready', async () => {
+    vi.spyOn(document, 'createRange').mockReturnValue({
+      setStart: vi.fn(),
+      setEnd: vi.fn(),
+      getClientRects: vi.fn(() => [DOMRect.fromRect({ x: 30, y: 120, width: 140, height: 18 })]),
+    } as unknown as Range);
+    const onActiveSearchHighlightReady = vi.fn();
+
+    render(
+      <KnowledgePdfPage
+        {...props({
+          searchMatches: [searchMatch],
+          activeSearchResultId: searchMatch.id,
+          onActiveSearchHighlightReady,
+        })}
+      />,
+    );
+
+    expect(await screen.findByTestId('knowledge-search-highlight-active')).toBeInTheDocument();
+    expect(onActiveSearchHighlightReady).toHaveBeenCalledWith(searchMatch.id, 0, 120);
+  });
+
+  it('labels rendered spans with their source PDF text-item indices', async () => {
+    render(<KnowledgePdfPage {...props()} />);
+
+    const textLayer = await screen.findByTestId('knowledge-pdf-page-shell');
+    await waitFor(() =>
+      expect(textLayer.querySelector('.knowledge-page__text-layer span')).toHaveAttribute(
+        'data-knowledge-text-item-index',
+        '0',
+      ),
+    );
+  });
 
   it('renders the canvas at device pixel ratio with selectable text and safe link annotations', async () => {
     page.getAnnotations.mockResolvedValue([

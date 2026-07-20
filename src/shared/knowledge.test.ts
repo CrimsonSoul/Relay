@@ -50,6 +50,14 @@ const validRecord = {
   updated: '2026-07-14T12:01:00.000Z',
 };
 
+const blankPocketBaseSearchIndexMetadata = {
+  searchIndexState: '',
+  searchIndexChecksum: '',
+  searchIndexVersion: 0,
+  searchIndexedAt: '',
+  searchIndexError: '',
+};
+
 function category(name: string, sortOrder: number) {
   return {
     id: `category-${name.toLocaleLowerCase('en')}`,
@@ -220,7 +228,32 @@ describe('knowledge contracts', () => {
     });
   });
 
-  it('requires canonical timestamps for ready search-index metadata', () => {
+  it('normalizes PocketBase blank search-index fields on legacy documents', () => {
+    expect(
+      normalizeKnowledgeDocumentRecord({
+        ...validRecord,
+        ...blankPocketBaseSearchIndexMetadata,
+      }),
+    ).toMatchObject({
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
+    });
+  });
+
+  it('continues rejecting invalid nonblank search-index metadata', () => {
+    expect(
+      normalizeKnowledgeDocumentRecord({
+        ...validRecord,
+        ...blankPocketBaseSearchIndexMetadata,
+        searchIndexState: 'indexing',
+      }),
+    ).toBeNull();
+  });
+
+  it('canonicalizes PocketBase timestamps for ready search-index metadata', () => {
     const ready = {
       ...validRecord,
       searchIndexState: 'ready',
@@ -231,6 +264,12 @@ describe('knowledge contracts', () => {
     };
 
     expect(normalizeKnowledgeDocumentRecord(ready)).not.toBeNull();
+    expect(
+      normalizeKnowledgeDocumentRecord({
+        ...ready,
+        searchIndexedAt: '2026-07-19 18:00:00.000Z',
+      }),
+    ).toMatchObject({ searchIndexedAt: '2026-07-19T18:00:00.000Z' });
     expect(
       normalizeKnowledgeDocumentRecord({
         ...ready,
@@ -401,12 +440,49 @@ describe('knowledge contracts', () => {
 
     expect(snapshot?.documents.items[0]).toMatchObject({
       id: document.id,
+      checksum: document.checksum,
       displayTitle: document.title,
       searchIndexState: 'pending',
     });
     expect(snapshot?.documents.items[0]).not.toHaveProperty('pdf');
     expect(snapshot?.documents.items[0]).not.toHaveProperty('outline');
     expect(snapshot?.categories).toEqual([category('Operations', 100)]);
+  });
+
+  it('keeps legacy PocketBase documents visible in management snapshots', () => {
+    const snapshot = normalizeKnowledgeManagementSnapshot({
+      mode: 'managed',
+      categories: [category('Operations', 100)],
+      documents: {
+        items: [
+          {
+            ...validRecord,
+            ...blankPocketBaseSearchIndexMetadata,
+            categoryId: null,
+            documentType: 'sop',
+            displayTitle: validRecord.title,
+            lifecycleState: 'active',
+            revision: 1,
+            publishedByName: '',
+            publishedAt: validRecord.indexedAt,
+            trashedByName: null,
+            trashedAt: null,
+          },
+        ],
+        nextCursor: null,
+      },
+      trash: { items: [], nextCursor: null },
+      uploads: { items: [], nextCursor: null },
+    });
+
+    expect(snapshot?.documents.items[0]).toMatchObject({
+      id: validRecord.id,
+      searchIndexState: 'pending',
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: null,
+    });
   });
 
   it('sorts General before alphabetical categories', () => {

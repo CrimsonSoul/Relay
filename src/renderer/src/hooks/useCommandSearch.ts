@@ -9,6 +9,7 @@ export type ResultType = 'contact' | 'server' | 'group' | 'knowledge' | 'action'
 export type SearchResult = {
   id: string;
   type: ResultType;
+  source?: 'wiki-passage';
   title: string;
   subtitle?: string;
   iconType: string;
@@ -159,6 +160,6 @@ export function useCommandSearch(
       });
     });
 
-    return results.slice(0, 15);
+    return results;
   }, [query, contacts, servers, groups, knowledgeDocuments]);
 }

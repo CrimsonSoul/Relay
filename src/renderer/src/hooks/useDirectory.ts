@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Contact, BridgeGroup } from '@shared/ipc';
 import { useDirectoryContacts } from './useDirectoryContacts';
-import { useSearchContext } from '../contexts/SearchContext';
 
 type SortConfig = { key: keyof Contact | 'groups'; direction: 'asc' | 'desc' };
 
@@ -20,8 +19,8 @@ export function useDirectory(
   contacts: Contact[],
   groups: BridgeGroup[],
   onAddToAssembler: (contact: Contact) => void,
+  searchQuery = '',
 ) {
-  const { debouncedQuery: debouncedSearch } = useSearchContext();
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -68,8 +67,9 @@ export function useDirectory(
   const effectiveContacts = useMemo(() => getEffectiveContacts(), [getEffectiveContacts]);
 
   const filtered = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
     const res = effectiveContacts.filter(
-      (c) => !debouncedSearch || c._searchString.includes(debouncedSearch.toLowerCase()),
+      (contact) => !normalizedQuery || contact._searchString.includes(normalizedQuery),
     );
     return res.sort((a, b) => {
       const dir = sortConfig.direction === 'asc' ? 1 : -1;
@@ -82,7 +82,7 @@ export function useDirectory(
       const valB = toSortableText(b[sortConfig.key]).toLowerCase();
       return valA.localeCompare(valB) * dir;
     });
-  }, [effectiveContacts, debouncedSearch, sortConfig, groupStringMap]);
+  }, [effectiveContacts, searchQuery, sortConfig, groupStringMap]);
 
   // Clamp selection is handled in useDirectoryKeyboard
 

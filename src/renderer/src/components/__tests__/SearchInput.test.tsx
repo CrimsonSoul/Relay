@@ -8,6 +8,7 @@ describe('SearchInput', () => {
     const { container } = render(<SearchInput value="" onChange={vi.fn()} />);
     const svg = container.querySelector('svg');
     expect(svg).toBeTruthy();
+    expect(svg).toHaveAttribute('stroke', 'currentColor');
   });
 
   it('renders with the provided value', () => {

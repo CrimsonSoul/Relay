@@ -1,10 +1,18 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useKnowledgeManagement } from '../useKnowledgeManagement';
 import { KnowledgeManagementWorkspace } from '../KnowledgeManagementWorkspace';
 
 vi.mock('../useKnowledgeManagement', () => ({ useKnowledgeManagement: vi.fn() }));
 const useKnowledgeManagementMock = vi.mocked(useKnowledgeManagement);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 describe('KnowledgeManagementWorkspace', () => {
   const stagePdfs = vi.fn(async () => ({ ok: true as const, uploads: [] }));
@@ -56,6 +64,11 @@ describe('KnowledgeManagementWorkspace', () => {
               publishedAt: '2026-07-16T01:00:00.000Z',
               trashedByName: null,
               trashedAt: null,
+              searchIndexState: 'ready',
+              searchIndexChecksum: 'a'.repeat(64),
+              searchIndexVersion: 1,
+              searchIndexedAt: '2026-07-19T18:00:00.000Z',
+              searchIndexError: null,
               updated: '2026-07-16T01:00:00.000Z',
             },
           ],
@@ -88,6 +101,7 @@ describe('KnowledgeManagementWorkspace', () => {
       cancelUpload: vi.fn(),
       cancelUploadBatch: vi.fn(),
       clearError: vi.fn(),
+      retrySearchIndex: vi.fn(async () => true),
       publish: vi.fn(),
       replace: vi.fn(),
       setTitle: vi.fn(),
@@ -120,9 +134,316 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByRole('button', { name: /Categories 2/ })).toBeInTheDocument();
     expect(screen.getByText('Checkout runbook')).toBeInTheDocument();
     expect(screen.getByText('Runbook.pdf')).toBeInTheDocument();
+    const documentEyebrow = screen
+      .getByRole('checkbox', { name: 'Select Checkout runbook' })
+      .closest('.knowledge-management-row__eyebrow');
+    expect(documentEyebrow).not.toBeNull();
+    expect(within(documentEyebrow as HTMLElement).getByText(/SOP · 4 pages/i)).toBeVisible();
     const trashButton = screen.getByRole('button', { name: 'Trash' });
     expect(trashButton).toHaveClass('tactile-button--danger');
     expect(trashButton).toHaveClass('knowledge-management__danger-outline');
+    expect(screen.getByRole('searchbox', { name: 'Search managed documents' })).toHaveClass(
+      'scoped-search-input',
+    );
+  });
+
+  it('keeps every section and document action reachable in the operational workspace', () => {
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    const rail = screen.getByRole('navigation', { name: 'Knowledge management' });
+    expect(
+      within(rail)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual([
+      expect.stringContaining('documents'),
+      expect.stringContaining('categories'),
+      expect.stringContaining('uploads'),
+      expect.stringContaining('trash'),
+      expect.stringContaining('audit'),
+    ]);
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Replace PDF' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Trash' })).toBeVisible();
+  });
+
+  it('shows aggregate readiness only while documents remain unsearchable', () => {
+    const current = useKnowledgeManagementMock();
+    const readyDocument = current.snapshot!.documents.items[0]!;
+    const pendingDocument = {
+      ...readyDocument,
+      id: 'document-2',
+      displayTitle: 'Escalation guide',
+      fileName: 'Escalation.pdf',
+      searchIndexState: 'pending' as const,
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+    };
+    const failedDocument = {
+      ...pendingDocument,
+      id: 'document-3',
+      displayTitle: 'Failover guide',
+      fileName: 'Failover.pdf',
+      searchIndexState: 'failed' as const,
+      searchIndexError: 'extraction-failed' as const,
+    };
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [readyDocument, pendingDocument, failedDocument], nextCursor: null },
+      },
+    });
+
+    const { rerender } = render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    expect(screen.getByText('1 of 3 searchable')).toBeVisible();
+    expect(screen.getByText('Search ready')).toBeVisible();
+    expect(screen.getByText('Indexing search')).toBeVisible();
+    expect(screen.getByText('Search needs retry')).toBeVisible();
+    const retry = screen.getByRole('button', { name: 'Retry search for Failover guide' });
+    const readiness = retry.closest('.knowledge-management-row__search');
+    expect(readiness).toContainElement(screen.getByText('Search needs retry'));
+    expect(retry.closest('.knowledge-management-row__actions')).toBeNull();
+
+    useKnowledgeManagementMock.mockReturnValue(current);
+    rerender(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    expect(screen.queryByText('1 of 1 searchable')).not.toBeInTheDocument();
+  });
+
+  it('loads retry by operation key and restores the matching retry after a reordered refresh', async () => {
+    const current = useKnowledgeManagementMock();
+    const failedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      searchIndexState: 'failed' as const,
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: 'storage-unavailable' as const,
+    };
+    const otherDocument = {
+      ...failedDocument,
+      id: 'document-2',
+      displayTitle: 'Escalation guide',
+      fileName: 'Escalation.pdf',
+      searchIndexState: 'pending' as const,
+      searchIndexError: null,
+    };
+    const retryResult = deferred<boolean>();
+    const retrySearchIndex = vi.fn(() => retryResult.promise);
+    let management = {
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [failedDocument, otherDocument], nextCursor: null },
+      },
+      retrySearchIndex,
+    };
+    useKnowledgeManagementMock.mockImplementation(() => management);
+    const { rerender } = render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    const firstRetry = screen.getByRole('button', {
+      name: 'Retry search for Checkout runbook',
+    });
+
+    fireEvent.click(firstRetry);
+    expect(retrySearchIndex).toHaveBeenCalledWith('document-1');
+
+    management = { ...management, busy: 'search-index:document-1' };
+    rerender(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Retry search for Checkout runbook' })).toHaveClass(
+      'is-loading',
+    );
+
+    management = {
+      ...management,
+      busy: null,
+      snapshot: {
+        ...management.snapshot!,
+        documents: { items: [otherDocument, failedDocument], nextCursor: null },
+      },
+    };
+    rerender(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    retryResult.resolve(true);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Retry search for Checkout runbook' }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it('moves retry focus to the same document status when indexing starts', async () => {
+    const current = useKnowledgeManagementMock();
+    const failedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      searchIndexState: 'failed' as const,
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: 'extraction-failed' as const,
+    };
+    const retryResult = deferred<boolean>();
+    let management = {
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [failedDocument], nextCursor: null },
+      },
+      retrySearchIndex: vi.fn(() => retryResult.promise),
+    };
+    useKnowledgeManagementMock.mockImplementation(() => management);
+    const { rerender } = render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry search for Checkout runbook' }));
+    management = {
+      ...management,
+      snapshot: {
+        ...management.snapshot!,
+        documents: {
+          items: [
+            {
+              ...failedDocument,
+              searchIndexState: 'pending',
+              searchIndexError: null,
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    };
+    rerender(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    retryResult.resolve(true);
+
+    await waitFor(() => expect(screen.getByText('Indexing search')).toHaveFocus());
+    expect(
+      screen.queryByRole('button', { name: 'Retry search for Checkout runbook' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('restores retry focus after the protected operation reports an error', async () => {
+    const current = useKnowledgeManagementMock();
+    const failedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      searchIndexState: 'failed' as const,
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: 'storage-unavailable' as const,
+    };
+    const retrySearchIndex = vi.fn(async () => false);
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [failedDocument], nextCursor: null },
+      },
+      retrySearchIndex,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    const retry = screen.getByRole('button', { name: 'Retry search for Checkout runbook' });
+
+    fireEvent.click(retry);
+
+    expect(retrySearchIndex).toHaveBeenCalledWith('document-1');
+    await waitFor(() => expect(retry).toHaveFocus());
+  });
+
+  it('moves retry focus to the Documents heading when the authoritative row is removed', async () => {
+    const current = useKnowledgeManagementMock();
+    const failedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      searchIndexState: 'failed' as const,
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: 'extraction-failed' as const,
+    };
+    const retryResult = deferred<boolean>();
+    let management = {
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [failedDocument], nextCursor: null },
+      },
+      retrySearchIndex: vi.fn(() => retryResult.promise),
+    };
+    useKnowledgeManagementMock.mockImplementation(() => management);
+    const { rerender } = render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry search for Checkout runbook' }));
+    management = {
+      ...management,
+      snapshot: {
+        ...management.snapshot!,
+        documents: { items: [], nextCursor: null },
+      },
+    };
+    rerender(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    retryResult.resolve(false);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Documents' })).toHaveFocus());
+  });
+
+  it('moves retry focus to the Documents heading when the target is filtered out', async () => {
+    const current = useKnowledgeManagementMock();
+    const failedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      searchIndexState: 'failed' as const,
+      searchIndexChecksum: null,
+      searchIndexVersion: 0,
+      searchIndexedAt: null,
+      searchIndexError: 'storage-unavailable' as const,
+    };
+    const retryResult = deferred<boolean>();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [failedDocument], nextCursor: null },
+      },
+      retrySearchIndex: vi.fn(() => retryResult.promise),
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry search for Checkout runbook' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search managed documents' }), {
+      target: { value: 'no matching document' },
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Retry search for Checkout runbook' }),
+    ).not.toBeInTheDocument();
+    retryResult.resolve(true);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Documents' })).toHaveFocus());
+  });
+
+  it('validates document editor fields without discarding the draft', () => {
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const title = screen.getByLabelText('Display title');
+    fireEvent.change(title, { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a display title.');
+    expect(title).toHaveAttribute('aria-invalid', 'true');
+    expect(title).toHaveValue('   ');
+    expect(title).toHaveFocus();
+  });
+
+  it('keeps Return to library reachable when publisher capability expires', () => {
+    const onExit = vi.fn();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...useKnowledgeManagementMock(),
+      canManage: false,
+      snapshot: null,
+    });
+
+    render(<KnowledgeManagementWorkspace onExit={onExit} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Publisher access ended');
+    expect(screen.queryByRole('button', { name: 'Add PDFs' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Return to library' }));
+    expect(onExit).toHaveBeenCalledOnce();
   });
 
   it('edits categories and document classification from the management workspace', () => {
@@ -216,6 +537,11 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(confirmCancel).toHaveClass('tactile-button--danger');
     expect(confirmCancel).not.toHaveClass('knowledge-management__danger-outline');
 
+    fireEvent.click(screen.getByRole('button', { name: 'Keep upload' }));
+    expect(screen.getByRole('button', { name: 'Cancel batch' })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel batch' }));
+
     fireEvent.click(screen.getByRole('button', { name: 'Resume all' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry Runbook.pdf' }));
     fireEvent.click(cancelFile);
@@ -304,5 +630,83 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByText('Ready to publish')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel batch' })).not.toBeInTheDocument();
+  });
+
+  it('offers source reselection when an interrupted upload loses its local PDF', () => {
+    const reselectUploadSource = vi.fn();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...useKnowledgeManagementMock(),
+      uploadQueue: {
+        restartRecovery: true,
+        activeBatchId: 'batch-1',
+        totalBytes: 1_024,
+        acknowledgedBytes: 512,
+        items: [
+          {
+            id: 'local-1',
+            uploadId: 'upload-1',
+            batchId: 'batch-1',
+            fileName: 'Missing.pdf',
+            byteSize: 1_024,
+            acknowledgedBytes: 512,
+            chunkCount: 2,
+            acknowledgedChunkCount: 1,
+            state: 'source-required',
+            safeError: 'source-required',
+            retryCount: 1,
+            restartRecovery: true,
+          },
+        ],
+      },
+      reselectUploadSource,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reselect Missing.pdf' }));
+
+    expect(screen.getByText('Original PDF must be reselected')).toBeInTheDocument();
+    expect(reselectUploadSource).toHaveBeenCalledWith('upload-1');
+  });
+
+  it('traps permanent-delete focus and restores it to the initiating button on cancel', async () => {
+    const current = useKnowledgeManagementMock();
+    const trashedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      lifecycleState: 'trashed' as const,
+      trashedByName: 'Paris',
+      trashedAt: '2026-07-19T12:00:00.000Z',
+    };
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [], nextCursor: null },
+        trash: { items: [trashedDocument], nextCursor: null },
+      },
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Trash 1/ }));
+    const deleteTrigger = screen.getByRole('button', { name: 'Delete permanently' });
+    fireEvent.click(deleteTrigger);
+
+    const confirmation = screen.getByRole('dialog', { name: 'Delete Checkout runbook' });
+    const passwordInput = within(confirmation).getByLabelText('Confirm your password');
+    const cancel = within(confirmation).getByRole('button', { name: 'Cancel' });
+    const confirmDelete = within(confirmation).getByRole('button', {
+      name: 'Delete permanently',
+    });
+    await waitFor(() => expect(passwordInput).toHaveFocus());
+    fireEvent.change(passwordInput, { target: { value: 'secret' } });
+    confirmDelete.focus();
+    fireEvent.keyDown(confirmDelete, { key: 'Tab' });
+    expect(passwordInput).toHaveFocus();
+    fireEvent.keyDown(passwordInput, { key: 'Tab', shiftKey: true });
+    expect(confirmDelete).toHaveFocus();
+
+    fireEvent.click(cancel);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Delete permanently' })).toHaveFocus(),
+    );
   });
 });

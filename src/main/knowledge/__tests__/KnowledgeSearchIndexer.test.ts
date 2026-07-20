@@ -96,6 +96,7 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
   documentListError: Error | null = null;
   chunkListError: Error | null = null;
   deleteError: Error | null = null;
+  documentUpdateError: Error | null = null;
   partialBatchWrites: number | null = null;
   failBatchNumber: number | null = null;
   chunkListGate: ({ call: number } & StorageGate) | null = null;
@@ -121,6 +122,7 @@ class FakeSearchStorage implements KnowledgeSearchStoragePort {
           return structuredClone(record);
         },
         update: async (id: string, patch: Record<string, unknown>) => {
+          if (this.documentUpdateError) throw this.documentUpdateError;
           const record = this.documents.get(id);
           if (!record) throw new Error('record-not-found');
           this.documentUpdates.push({ id, ...structuredClone(patch) });
@@ -274,6 +276,94 @@ async function settleHousekeeping(): Promise<void> {
 }
 
 describe('KnowledgeSearchIndexer', () => {
+  it('records trigger rejection as failed and recovers through the existing retry queue', async () => {
+    const current = document('triggerfailure');
+    const { indexer, storage } = createHarness({ documents: [current] });
+
+    await indexer.recordTriggerFailure({
+      documentId: current.id,
+      expectedChecksum: current.checksum,
+      expectedRevision: current.revision,
+    });
+
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'failed',
+      searchIndexChecksum: null,
+      searchIndexError: 'storage-unavailable',
+      revision: current.revision,
+    });
+    expect(storage.documentUpdates.at(-1)).not.toHaveProperty('revision');
+
+    indexer.retry(current.id);
+    await indexer.whenIdleForTest();
+
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'ready',
+      searchIndexChecksum: current.checksum,
+      searchIndexError: null,
+    });
+  });
+
+  it.each([
+    ['checksum', { expectedChecksum: 'f'.repeat(64), expectedRevision: 7 }],
+    ['revision', { expectedChecksum: checksum(pdf('staleidentity')), expectedRevision: 6 }],
+  ])('ignores a trigger rejection with stale %s identity', async (_field, staleIdentity) => {
+    const current = document('staleidentity');
+    const { indexer, storage } = createHarness({ documents: [current] });
+
+    await indexer.recordTriggerFailure({ documentId: current.id, ...staleIdentity });
+
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'pending',
+      searchIndexError: null,
+      revision: current.revision,
+    });
+    expect(storage.documentUpdates).toEqual([]);
+  });
+
+  it('keeps a restored matching checksum ready when its trigger is rejected', async () => {
+    const current = document('restoredready', {
+      revision: 8,
+      searchIndexState: 'ready',
+      searchIndexChecksum: checksum(pdf('restoredready')),
+      searchIndexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      searchIndexedAt: '2026-07-18T10:00:00.000Z',
+    });
+    const { indexer, storage } = createHarness({ documents: [current] });
+
+    await indexer.recordTriggerFailure({
+      documentId: current.id,
+      expectedChecksum: current.checksum,
+      expectedRevision: current.revision,
+    });
+
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'ready',
+      searchIndexChecksum: current.checksum,
+      revision: current.revision,
+    });
+    expect(storage.documentUpdates).toEqual([]);
+  });
+
+  it('contains a trigger failure status update rejection', async () => {
+    const current = document('statusrejection');
+    const { indexer, storage } = createHarness({ documents: [current] });
+    storage.documentUpdateError = new Error('secret-bearing-status-rejection');
+
+    await expect(
+      indexer.recordTriggerFailure({
+        documentId: current.id,
+        expectedChecksum: current.checksum,
+        expectedRevision: current.revision,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'pending',
+      searchIndexError: null,
+    });
+  });
+
   it('activates only a complete checksum-matched passage set without changing revision', async () => {
     const current = document();
     const { indexer, storage } = createHarness({ documents: [current] });
@@ -412,6 +502,48 @@ describe('KnowledgeSearchIndexer', () => {
     await indexer.whenIdleForTest();
 
     expect(processedDocumentIds).toEqual(['pending', 'failed', 'mismatch', 'oldversion']);
+  });
+
+  it('backfills a legacy PocketBase record with blank optional search metadata', async () => {
+    const legacy = {
+      ...document('legacyblankmetadata'),
+      searchIndexState: '',
+      searchIndexChecksum: '',
+      searchIndexVersion: 0,
+      searchIndexedAt: '',
+      searchIndexError: '',
+    } as unknown as KnowledgeDocumentRecord;
+    const { indexer, storage, processedDocumentIds } = createHarness({ documents: [legacy] });
+
+    await indexer.start();
+    await indexer.whenIdleForTest();
+
+    expect(processedDocumentIds).toEqual([legacy.id]);
+    expect(storage.documents.get(legacy.id)).toMatchObject({
+      searchIndexState: 'ready',
+      searchIndexChecksum: legacy.checksum,
+      searchIndexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      searchIndexError: null,
+    });
+  });
+
+  it('reindexes a stale ready document whose PocketBase timestamp uses a space separator', async () => {
+    const stale = document('pocketbasetimestamp', {
+      searchIndexState: 'ready',
+      searchIndexChecksum: 'b'.repeat(64),
+      searchIndexVersion: KNOWLEDGE_SEARCH_INDEX_VERSION,
+      searchIndexedAt: '2026-07-19 10:00:00.000Z',
+    });
+    const { indexer, storage, processedDocumentIds } = createHarness({ documents: [stale] });
+
+    await indexer.start();
+    await indexer.whenIdleForTest();
+
+    expect(processedDocumentIds).toEqual([stale.id]);
+    expect(storage.documents.get(stale.id)).toMatchObject({
+      searchIndexState: 'ready',
+      searchIndexChecksum: stale.checksum,
+    });
   });
 
   it('makes startup failure best-effort and accepts later queue work', async () => {

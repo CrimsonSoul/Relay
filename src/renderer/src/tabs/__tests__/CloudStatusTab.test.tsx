@@ -365,7 +365,9 @@ describe('CloudStatusTab', () => {
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText('Search service status'), {
+    const search = screen.getByLabelText('Search service status');
+    expect(search).toHaveClass('scoped-search-input');
+    fireEvent.change(search, {
       target: { value: 'Azure' },
     });
 

@@ -856,7 +856,7 @@ function collapseAndLimit(results: readonly ScoredResult[], request: KnowledgeSe
   const perDocument = new Map<string, number>();
   for (const candidate of results) {
     const count = perDocument.get(candidate.result.documentId) ?? 0;
-    if (count >= 3) continue;
+    if (request.scope.kind === 'all' && count >= 3) continue;
     const overlaps = selected.some(
       (existing) =>
         existing.result.documentId === candidate.result.documentId &&

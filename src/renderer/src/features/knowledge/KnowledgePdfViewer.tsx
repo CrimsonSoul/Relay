@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -20,8 +20,17 @@ import {
   type KnowledgeViewerTarget,
 } from './knowledgePdfDestination';
 import { loadKnowledgePdfViewMode, persistKnowledgePdfViewMode } from './knowledgePdfViewMode';
+import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
+import type { KnowledgeSearchNavigationRequest } from './useKnowledgeDocumentSearch';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+export type KnowledgePdfSession = {
+  pdf: PDFDocumentProxy;
+  documentId: string;
+  checksum: string;
+  generation: number;
+};
 
 type Props = {
   document: KnowledgeDocumentRecord | null;
@@ -29,10 +38,14 @@ type Props = {
   target: KnowledgeViewerTarget | null;
   currentSection?: string | null;
   focusRequestKey?: number;
+  toolbarLeading?: ReactNode;
   resolveUrl: (url: string) => KnowledgeResolvedLink;
   onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
   onDestinationChange: (target: KnowledgeViewerTarget) => void;
   onPageChange: (pageIndex: number) => void;
+  onPdfSessionChange?: (session: KnowledgePdfSession | null) => void;
+  searchNavigationRequest?: KnowledgeSearchNavigationRequest | null;
+  searchMatches?: readonly KnowledgeDocumentSearchMatch[];
 };
 
 type PendingFocusRequest = {
@@ -52,6 +65,15 @@ type KnowledgeViewerError = {
   message: string;
   documentId: string;
   checksum: string;
+};
+
+type PendingSearchRequest = {
+  key: number;
+  result: KnowledgeDocumentSearchMatch;
+  pageIndex: number;
+  documentId: string;
+  checksum: string;
+  generation: number;
 };
 
 const MIN_SCALE = 0.6;
@@ -90,16 +112,27 @@ function normalizedViewerTarget(
   };
 }
 
+function viewerScrollBehavior(): ScrollBehavior {
+  return typeof globalThis.matchMedia === 'function' &&
+    globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth';
+}
+
 export function KnowledgePdfViewer({
   document: knowledgeDocument,
   active,
   target,
   currentSection,
   focusRequestKey,
+  toolbarLeading,
   resolveUrl,
   onActivateResolvedLink,
   onDestinationChange,
   onPageChange,
+  onPdfSessionChange,
+  searchNavigationRequest = null,
+  searchMatches = [],
 }: Readonly<Props>) {
   const documentId = knowledgeDocument?.id;
   const documentChecksum = knowledgeDocument?.checksum;
@@ -108,8 +141,9 @@ export function KnowledgePdfViewer({
   const initialNavigationTarget = normalizedViewerTarget(target, knowledgeDocument?.pageCount ?? 0);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
-  const [scale, setScale] = useState(1.05);
+  const [scale, setScale] = useState(1);
   const [viewMode, setViewMode] = useState(loadKnowledgePdfViewMode);
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [navigationTarget, setNavigationTarget] = useState<KnowledgeViewerTarget | null>(
     initialNavigationTarget,
   );
@@ -119,18 +153,15 @@ export function KnowledgePdfViewer({
   const [retryKey, setRetryKey] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement>(null);
+  const viewOptionsRef = useRef<HTMLDivElement>(null);
+  const viewOptionsButtonRef = useRef<HTMLButtonElement>(null);
   const continuousPdfRef = useRef<KnowledgeContinuousPdfHandle>(null);
   const pageIndexRef = useRef(0);
   const observedPageIndexRef = useRef(0);
   const navigationTargetRef = useRef<KnowledgeViewerTarget | null>(initialNavigationTarget);
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
-  const pdfIdentityRef = useRef<{
-    pdf: PDFDocumentProxy;
-    documentId: string;
-    checksum: string;
-    generation: number;
-  } | null>(null);
+  const pdfIdentityRef = useRef<KnowledgePdfSession | null>(null);
   const activePdfIdentity = pdfIdentityRef.current;
   const activePdf =
     active &&
@@ -144,6 +175,8 @@ export function KnowledgePdfViewer({
   const destinationRequestTokenRef = useRef(0);
   const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
   const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
+  const pendingSearchRequestRef = useRef<PendingSearchRequest | null>(null);
+  const handledSearchRequestKeyRef = useRef<number | null>(null);
   const normalizedTargetPageIndex =
     targetPageIndex === undefined
       ? undefined
@@ -171,6 +204,46 @@ export function KnowledgePdfViewer({
     targetTop,
   };
   viewModeRef.current = viewMode;
+  const searchMatchesByPage = useMemo(() => {
+    const matchesByPage = new Map<number, KnowledgeDocumentSearchMatch[]>();
+    for (const match of searchMatches) {
+      const pageMatches = matchesByPage.get(match.pageIndex);
+      if (pageMatches) pageMatches.push(match);
+      else matchesByPage.set(match.pageIndex, [match]);
+    }
+    return matchesByPage;
+  }, [searchMatches]);
+  const activeSearchResultId = searchNavigationRequest?.result.id ?? null;
+
+  const closeViewOptions = useCallback((restoreFocus = false) => {
+    setViewOptionsOpen(false);
+    if (restoreFocus) queueMicrotask(() => viewOptionsButtonRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!viewOptionsOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && viewOptionsRef.current?.contains(event.target)) return;
+      closeViewOptions();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeViewOptions(true);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeViewOptions, viewOptionsOpen]);
+
+  useEffect(() => {
+    setViewOptionsOpen(false);
+  }, [documentId]);
 
   useEffect(() => {
     if (!active || !documentId || !documentChecksum || !globalThis.api?.getKnowledgePdf) {
@@ -185,14 +258,23 @@ export function KnowledgePdfViewer({
     const generation = pdfGenerationRef.current + 1;
     pdfGenerationRef.current = generation;
     pdfIdentityRef.current = null;
+    pendingSearchRequestRef.current = null;
+    handledSearchRequestKeyRef.current = null;
     readyPageIndicesRef.current.clear();
+    setPdf(null);
+    setPageIndex(0);
+    setScale(1);
+    setNavigationTarget(null);
+    setSingleTopRequest(null);
+    setViewOptionsOpen(false);
     setLoading(true);
     setError(null);
     pageIndexRef.current = 0;
     observedPageIndexRef.current = 0;
+    navigationTargetRef.current = null;
     issuedNavigationTargetRef.current = null;
-    setPageIndex(0);
-    setPdf(null);
+    previousTargetRequestKeyRef.current = '';
+    pendingFocusRequestRef.current = undefined;
 
     globalThis.api
       .getKnowledgePdf({
@@ -222,12 +304,14 @@ export function KnowledgePdfViewer({
           if (!loadingTaskDestroyed) await loadedPdf.destroy();
           return;
         }
-        pdfIdentityRef.current = {
+        const session: KnowledgePdfSession = {
           pdf: loadedPdf,
           documentId,
           checksum: documentChecksum,
           generation,
         };
+        pdfIdentityRef.current = session;
+        onPdfSessionChange?.(session);
         setPdf(loadedPdf);
       })
       .catch(() => {
@@ -245,7 +329,11 @@ export function KnowledgePdfViewer({
 
     return () => {
       disposed = true;
-      if (pdfIdentityRef.current?.generation === generation) pdfIdentityRef.current = null;
+      if (pdfIdentityRef.current?.generation === generation) {
+        pdfIdentityRef.current = null;
+        pendingSearchRequestRef.current = null;
+        onPdfSessionChange?.(null);
+      }
       if (loadedPdf) {
         loadedPdf.destroy().catch(() => undefined);
       } else if (loadingTask) {
@@ -253,7 +341,43 @@ export function KnowledgePdfViewer({
         loadingTask.destroy().catch(() => undefined);
       }
     };
-  }, [active, documentChecksum, documentId, retryKey]);
+  }, [active, documentChecksum, documentId, onPdfSessionChange, retryKey]);
+
+  useEffect(() => {
+    if (!searchNavigationRequest) {
+      pendingSearchRequestRef.current = null;
+      return;
+    }
+    const identity = pdfIdentityRef.current;
+    if (
+      !activePdf ||
+      !documentId ||
+      !documentChecksum ||
+      identity?.pdf !== activePdf ||
+      identity.documentId !== documentId ||
+      identity.checksum !== documentChecksum ||
+      searchNavigationRequest.key === handledSearchRequestKeyRef.current
+    ) {
+      return;
+    }
+
+    const pageIndex = clampKnowledgePdfPageIndex(
+      searchNavigationRequest.result.pageIndex,
+      activePdf.numPages,
+    );
+    pendingSearchRequestRef.current = {
+      ...searchNavigationRequest,
+      pageIndex,
+      documentId,
+      checksum: documentChecksum,
+      generation: identity.generation,
+    };
+    pageIndexRef.current = pageIndex;
+    setPageIndex(pageIndex);
+    if (viewModeRef.current === 'continuous') {
+      continuousPdfRef.current?.scrollToPage(pageIndex);
+    }
+  }, [activePdf, documentChecksum, documentId, searchNavigationRequest, viewMode]);
 
   useEffect(() => {
     const isNewTargetRequest =
@@ -530,6 +654,7 @@ export function KnowledgePdfViewer({
   const handleContinuousPageChange = useCallback(
     (nextPageIndex: number) => {
       observedPageIndexRef.current = nextPageIndex;
+      if (pendingSearchRequestRef.current) return;
       const pendingTarget = navigationTargetRef.current;
       if (pendingTarget && pendingTarget.pageIndex !== nextPageIndex) return;
       if (pendingTarget?.pageIndex === nextPageIndex) {
@@ -541,6 +666,46 @@ export function KnowledgePdfViewer({
       onPageChange(nextPageIndex);
     },
     [consumeNavigationTarget, onPageChange],
+  );
+
+  const handleActiveSearchHighlightReady = useCallback(
+    (resultId: string, readyPageIndex: number, top: number) => {
+      const pendingRequest = pendingSearchRequestRef.current;
+      const identity = pdfIdentityRef.current;
+      const activeDocument = activeDocumentRef.current;
+      if (
+        !pendingRequest ||
+        pendingRequest.result.id !== resultId ||
+        pendingRequest.pageIndex !== readyPageIndex ||
+        identity?.generation !== pendingRequest.generation ||
+        identity.documentId !== pendingRequest.documentId ||
+        identity.checksum !== pendingRequest.checksum ||
+        !activeDocument.active ||
+        activeDocument.documentId !== pendingRequest.documentId ||
+        activeDocument.checksum !== pendingRequest.checksum
+      ) {
+        return;
+      }
+
+      const viewport = viewerRef.current?.querySelector<HTMLDivElement>(
+        '.knowledge-viewer__viewport',
+      );
+      const pageShell = viewerRef.current?.querySelector<HTMLElement>(
+        `[data-page-index="${readyPageIndex}"]`,
+      );
+      const pageOffset = viewModeRef.current === 'continuous' ? (pageShell?.offsetTop ?? 0) : 0;
+      viewport?.scrollTo({
+        top: Math.max(0, pageOffset + top - 28),
+        behavior: viewerScrollBehavior(),
+      });
+      observedPageIndexRef.current = readyPageIndex;
+      pageIndexRef.current = readyPageIndex;
+      setPageIndex(readyPageIndex);
+      onPageChange(readyPageIndex);
+      handledSearchRequestKeyRef.current = pendingRequest.key;
+      pendingSearchRequestRef.current = null;
+    },
+    [onPageChange],
   );
 
   const pageTargetTop = navigationTarget?.pageIndex === pageIndex ? navigationTarget.top : null;
@@ -575,10 +740,19 @@ export function KnowledgePdfViewer({
     setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, availableWidth / naturalViewport.width)));
   };
 
-  const toggleViewMode = () => {
-    const nextMode = viewMode === 'continuous' ? 'single' : 'continuous';
+  const selectViewMode = (nextMode: 'continuous' | 'single') => {
+    if (nextMode === viewMode) {
+      closeViewOptions(true);
+      return;
+    }
     persistKnowledgePdfViewMode(nextMode);
     setViewMode(nextMode);
+    closeViewOptions(true);
+  };
+
+  const handleFitWidth = () => {
+    void fitWidth();
+    closeViewOptions(true);
   };
 
   if (!knowledgeDocument) {
@@ -598,68 +772,118 @@ export function KnowledgePdfViewer({
       aria-label={`${knowledgeDocument.title} PDF viewer`}
     >
       <header className="knowledge-viewer__toolbar">
-        <div className="knowledge-viewer__identity">
-          <span className="knowledge-viewer__eyebrow">{knowledgeDocument.category}</span>
-          <h2>{knowledgeDocument.title}</h2>
-          <span className="knowledge-viewer__section">
-            {currentSection ? `Current section · ${currentSection}` : 'Document overview'}
-          </span>
+        <div className="knowledge-viewer__heading">
+          {toolbarLeading && <div className="knowledge-viewer__leading">{toolbarLeading}</div>}
+          <div className="knowledge-viewer__identity">
+            <span className="knowledge-viewer__eyebrow">{knowledgeDocument.category}</span>
+            <h2>{knowledgeDocument.title}</h2>
+            <span className="knowledge-viewer__section">
+              {currentSection ? `Current section · ${currentSection}` : 'Document overview'}
+            </span>
+          </div>
         </div>
         <div className="knowledge-viewer__controls" aria-label="PDF controls">
-          <button
-            type="button"
-            aria-label="Previous page"
-            disabled={!activePdf || pageIndex === 0}
-            onClick={() => moveToPage(pageIndex - 1)}
+          <div
+            className="knowledge-viewer__control-group knowledge-viewer__page-controls"
+            role="group"
+            aria-label="Page navigation"
           >
-            ←
-          </button>
-          <span className="knowledge-viewer__page-status" aria-live="polite">
-            {activePdf ? `Page ${pageIndex + 1} of ${activePdf.numPages}` : 'Loading document'}
-          </span>
-          <button
-            type="button"
-            aria-label="Next page"
-            disabled={!activePdf || pageIndex >= activePdf.numPages - 1}
-            onClick={() => moveToPage(pageIndex + 1)}
+            <button
+              type="button"
+              aria-label="Previous page"
+              disabled={!activePdf || pageIndex === 0}
+              onClick={() => moveToPage(pageIndex - 1)}
+            >
+              ←
+            </button>
+            <span className="knowledge-viewer__page-status" aria-live="polite">
+              {activePdf ? `Page ${pageIndex + 1} of ${activePdf.numPages}` : 'Loading document'}
+            </span>
+            <button
+              type="button"
+              aria-label="Next page"
+              disabled={!activePdf || pageIndex >= activePdf.numPages - 1}
+              onClick={() => moveToPage(pageIndex + 1)}
+            >
+              →
+            </button>
+          </div>
+          <div
+            className="knowledge-viewer__control-group knowledge-viewer__zoom-controls"
+            role="group"
+            aria-label="Zoom controls"
           >
-            →
-          </button>
-          <span className="knowledge-viewer__control-divider" aria-hidden="true" />
-          <button
-            type="button"
-            aria-label="Zoom out"
-            disabled={!activePdf || scale <= MIN_SCALE}
-            onClick={() => setScale((current) => Math.max(MIN_SCALE, current - SCALE_STEP))}
-          >
-            −
-          </button>
-          <span className="knowledge-viewer__zoom">{Math.round(scale * 100)}%</span>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            disabled={!activePdf || scale >= MAX_SCALE}
-            onClick={() => setScale((current) => Math.min(MAX_SCALE, current + SCALE_STEP))}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="knowledge-viewer__fit"
-            disabled={!activePdf}
-            onClick={fitWidth}
-          >
-            Fit width
-          </button>
-          <span className="knowledge-viewer__control-divider" aria-hidden="true" />
-          <button
-            type="button"
-            className="knowledge-viewer__mode"
-            aria-pressed={viewMode === 'continuous'}
-            onClick={toggleViewMode}
-          >
-            {viewMode === 'continuous' ? 'View: Continuous' : 'View: Single page'}
-          </button>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              disabled={!activePdf || scale <= MIN_SCALE}
+              onClick={() => setScale((current) => Math.max(MIN_SCALE, current - SCALE_STEP))}
+            >
+              −
+            </button>
+            <span className="knowledge-viewer__zoom">{Math.round(scale * 100)}%</span>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              disabled={!activePdf || scale >= MAX_SCALE}
+              onClick={() => setScale((current) => Math.min(MAX_SCALE, current + SCALE_STEP))}
+            >
+              +
+            </button>
+          </div>
+          <div ref={viewOptionsRef} className="knowledge-viewer__view-menu">
+            <button
+              ref={viewOptionsButtonRef}
+              type="button"
+              className="knowledge-viewer__view-trigger"
+              aria-label={`View options: ${viewMode === 'continuous' ? 'Continuous' : 'Single page'}`}
+              aria-haspopup="dialog"
+              aria-expanded={viewOptionsOpen}
+              aria-controls="knowledge-view-options"
+              onClick={() => setViewOptionsOpen((current) => !current)}
+            >
+              <span>View</span>
+              <span aria-hidden="true">▾</span>
+            </button>
+            {viewOptionsOpen && (
+              <div
+                id="knowledge-view-options"
+                className="knowledge-viewer__view-panel"
+                role="dialog"
+                aria-label="View options"
+                data-motion="popover"
+              >
+                <div className="knowledge-viewer__view-heading">View options</div>
+                <button
+                  type="button"
+                  className="knowledge-viewer__view-option"
+                  disabled={!activePdf}
+                  onClick={handleFitWidth}
+                >
+                  <span>Fit width</span>
+                </button>
+                <span className="knowledge-viewer__view-label">Page flow</span>
+                <button
+                  type="button"
+                  className="knowledge-viewer__view-option"
+                  aria-pressed={viewMode === 'continuous'}
+                  onClick={() => selectViewMode('continuous')}
+                >
+                  <span>Continuous scrolling</span>
+                  <span aria-hidden="true">{viewMode === 'continuous' ? '✓' : ''}</span>
+                </button>
+                <button
+                  type="button"
+                  className="knowledge-viewer__view-option"
+                  aria-pressed={viewMode === 'single'}
+                  onClick={() => selectViewMode('single')}
+                >
+                  <span>Single page</span>
+                  <span aria-hidden="true">{viewMode === 'single' ? '✓' : ''}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
       {!activePdf && (loading || error) && (
@@ -691,6 +915,9 @@ export function KnowledgePdfViewer({
           onPageStatus={handlePageStatus}
           onTargetNavigationComplete={handleTargetNavigationComplete}
           onCurrentPageChange={handleContinuousPageChange}
+          searchMatchesByPage={searchMatchesByPage}
+          activeSearchResultId={activeSearchResultId}
+          onActiveSearchHighlightReady={handleActiveSearchHighlightReady}
         />
       )}
       {!error && activePdf && viewMode === 'single' && (
@@ -706,6 +933,9 @@ export function KnowledgePdfViewer({
             onActivateResolvedLink={onActivateResolvedLink}
             onActivateDestination={activateDestination}
             onStatus={handlePageStatus}
+            searchMatches={searchMatchesByPage.get(pageIndex) ?? []}
+            activeSearchResultId={activeSearchResultId}
+            onActiveSearchHighlightReady={handleActiveSearchHighlightReady}
           />
         </div>
       )}

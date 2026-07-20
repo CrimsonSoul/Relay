@@ -201,12 +201,12 @@ describe('useCommandSearch', () => {
   });
 
   describe('result limiting', () => {
-    it('limits results to 15', () => {
+    it('returns all immediate candidates so the header can rank before capping', () => {
       const contacts: Contact[] = Array.from({ length: 20 }, (_, i) =>
         makeContact({ email: `user${i}@x.com`, _searchString: `user${i} user` }),
       );
       const { result } = renderHook(() => useCommandSearch('user', contacts, [], []));
-      expect(result.current.length).toBeLessThanOrEqual(15);
+      expect(result.current).toHaveLength(20);
     });
   });
 

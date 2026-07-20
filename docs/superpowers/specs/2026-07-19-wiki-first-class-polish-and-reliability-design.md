@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-19
 
-**Status:** Approved design; awaiting written-spec review
+**Status:** Approved and implemented; verification complete with documented fixture limits
 
 ## Summary
 

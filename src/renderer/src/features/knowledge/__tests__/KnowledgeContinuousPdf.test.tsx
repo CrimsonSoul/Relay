@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PDFDocumentProxy } from 'pdfjs-dist/build/pdf.mjs';
 import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
+import type { KnowledgeDocumentSearchMatch } from '../knowledgeDocumentSearch';
 import {
   KnowledgeContinuousPdf,
   type KnowledgeContinuousPdfHandle,
@@ -15,16 +16,25 @@ vi.mock('../KnowledgePdfPage', async () => {
       pdf,
       pageIndex,
       render: shouldRender,
+      searchMatches = [],
+      activeSearchResultId,
     }: {
       pdf: PDFDocumentProxy;
       pageIndex: number;
       render: boolean;
+      searchMatches?: readonly KnowledgeDocumentSearchMatch[];
+      activeSearchResultId?: string | null;
     }) {
       const [retryCount, setRetryCount] = React.useState(0);
       const errorPageIndex = (pdf as unknown as { errorPageIndex?: number }).errorPageIndex;
       const failed = errorPageIndex === pageIndex && retryCount === 0;
       return (
-        <div data-testid="rendered-pdf-page" data-page-index={pageIndex}>
+        <div
+          data-testid="rendered-pdf-page"
+          data-page-index={pageIndex}
+          data-search-match-count={searchMatches.length}
+          data-active-search-result={activeSearchResultId ?? ''}
+        >
           {failed ? (
             <div role="status">
               <span>Page {pageIndex + 1} failed</span>
@@ -127,6 +137,21 @@ describe('KnowledgeContinuousPdf', () => {
     };
   }
 
+  const searchMatch: KnowledgeDocumentSearchMatch = {
+    id: '0:0:0',
+    pageIndex: 0,
+    matchIndex: 0,
+    snippet: 'Reset the lane service',
+    sectionLabel: 'Recovery',
+    normalizedStart: 0,
+    normalizedEnd: 22,
+    textItemRange: { start: 0, end: 0 },
+    domRange: {
+      start: { itemIndex: 0, itemOffset: 0 },
+      end: { itemIndex: 0, itemOffset: 22 },
+    },
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     IntersectionObserverDouble.instances.splice(0);
@@ -145,6 +170,28 @@ describe('KnowledgeContinuousPdf', () => {
   afterEach(() => {
     delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
     vi.unstubAllGlobals();
+  });
+
+  it('threads only each page search matches and the active result into rendered pages', () => {
+    const { pdf } = createPdf(4);
+    render(
+      <KnowledgeContinuousPdf
+        {...props(pdf, {
+          searchMatchesByPage: new Map([[0, [searchMatch]]]),
+          activeSearchResultId: searchMatch.id,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText('Rendered page 1').closest('[data-testid="rendered-pdf-page"]'),
+    ).toHaveAttribute('data-search-match-count', '1');
+    expect(
+      screen.getByText('Rendered page 1').closest('[data-testid="rendered-pdf-page"]'),
+    ).toHaveAttribute('data-active-search-result', searchMatch.id);
+    expect(
+      screen.getByText('Rendered page 2').closest('[data-testid="rendered-pdf-page"]'),
+    ).toHaveAttribute('data-search-match-count', '0');
   });
 
   it('creates one stable shell per page and mounts only the bounded overscan window', async () => {

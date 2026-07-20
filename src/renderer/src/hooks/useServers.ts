@@ -1,10 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Server, Contact } from '@shared/ipc';
-import { useSearchContext } from '../contexts/SearchContext';
 import { deleteServer as pbDeleteServer } from '../services/serverService';
 
-export function useServers(servers: Server[], contacts: Contact[]) {
-  const { debouncedQuery: debouncedSearch } = useSearchContext();
+export function useServers(servers: Server[], contacts: Contact[], searchQuery = '') {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortKey, setSortKey] = useState<'name' | 'businessArea' | 'lob' | 'owner' | 'os'>('name');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; server: Server } | null>(
@@ -25,8 +23,9 @@ export function useServers(servers: Server[], contacts: Contact[]) {
 
   const filteredServers = useMemo(() => {
     let result = [...servers];
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase();
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (normalizedQuery) {
+      const q = normalizedQuery;
       result = result.filter((s) => s._searchString.includes(q));
     }
     return result.sort((a, b) => {
@@ -36,7 +35,7 @@ export function useServers(servers: Server[], contacts: Contact[]) {
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [servers, debouncedSearch, sortOrder, sortKey]);
+  }, [servers, searchQuery, sortOrder, sortKey]);
 
   const handleContextMenu = useCallback(
     (e: Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>, server: Server) => {

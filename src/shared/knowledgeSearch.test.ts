@@ -135,8 +135,20 @@ describe('knowledge search contracts', () => {
     ).toMatchObject({ pageNumber: 1, passageNumber: 1, normalizedStart: 0 });
   });
 
-  it('accepts canonical chunk timestamps and rejects impossible calendar dates', () => {
+  it('canonicalizes PocketBase chunk timestamps and rejects impossible calendar dates', () => {
     expect(normalizeKnowledgeSearchChunkRecord(validChunk)).not.toBeNull();
+    expect(
+      normalizeKnowledgeSearchChunkRecord({
+        ...validChunk,
+        indexedAt: '2026-07-19 18:00:00.000Z',
+        created: '2026-07-19 18:00:00.000Z',
+        updated: '2026-07-19 18:00:00.000Z',
+      }),
+    ).toMatchObject({
+      indexedAt: '2026-07-19T18:00:00.000Z',
+      created: '2026-07-19T18:00:00.000Z',
+      updated: '2026-07-19T18:00:00.000Z',
+    });
     expect(
       normalizeKnowledgeSearchChunkRecord({
         ...validChunk,

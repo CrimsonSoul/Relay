@@ -24,7 +24,7 @@
 .knowledge-home__kicker {
   color: var(--accent-bright);
   font-family: var(--font-family-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -33,7 +33,7 @@
 .knowledge-home__header h1 {
   max-width: 740px;
   margin: 10px 0 8px;
-  font-size: clamp(25px, 2.5vw, 38px);
+  font-size: var(--text-display);
   line-height: 1.05;
   letter-spacing: -0.035em;
   text-wrap: balance;
@@ -43,7 +43,7 @@
   max-width: 68ch;
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: var(--leading-normal);
   text-wrap: pretty;
 }
@@ -114,14 +114,14 @@
 
 .knowledge-home__destination-title {
   color: var(--color-text-primary);
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: var(--weight-bold);
 }
 
 .knowledge-home__destination-description {
   flex: 1;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.45;
   text-wrap: pretty;
 }
@@ -134,8 +134,9 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-medium);
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
-  font-size: 10px;
+  font-family: var(--font-family-base);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .knowledge-home__destination-meta span:last-child {
@@ -189,10 +190,14 @@
   background: transparent;
   color: var(--color-text-tertiary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.025em;
   cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .knowledge-workspace-shell__home {
@@ -203,7 +208,7 @@
   color: var(--color-text-secondary);
 }
 
-.knowledge-workspace-shell__home span {
+.knowledge-workspace-shell__home-back {
   color: var(--accent);
   font-size: 14px;
 }
@@ -307,7 +312,7 @@
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .match-count {
   margin-right: auto;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -317,7 +322,7 @@
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .list-toolbar-sort-label {
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -325,8 +330,8 @@
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .collapsible-header
   .tactile-button {
-  height: 34px;
-  font-size: 11px;
+  height: 40px;
+  font-size: var(--text-sm);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -334,7 +339,17 @@
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .collapsible-header
   .tactile-button--icon-only {
-  width: 34px;
+  width: 40px;
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .directory-search-control {
+  width: clamp(180px, 24vw, 300px);
+}
+
+.knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
+  .list-toolbar:has(.directory-search-control) {
+  min-width: 0;
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -361,10 +376,10 @@
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .list-filters
   .tactile-button--sm {
-  height: 28px;
+  min-height: 32px;
   flex: 0 0 auto;
   padding: 0 10px;
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -404,21 +419,24 @@
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .detail-panel-name {
-  font-size: 16px;
+  font-size: var(--text-lg);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
-  .detail-panel-title,
+  .detail-panel-title {
+  font-size: var(--text-sm);
+}
+
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .detail-panel-field-value {
-  font-size: 11px;
+  font-size: var(--text-base);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .detail-panel-field-label,
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   .detail-panel-section-label {
-  font-size: 8px;
+  font-size: var(--text-2xs);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
@@ -444,15 +462,15 @@
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   :is(.contact-entry-name, .server-card-name) {
-  font-size: 16px;
+  font-size: var(--text-md);
 }
 
 .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
   :is(.contact-entry-line2, .server-card-meta) {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
-@media (max-width: 899px) {
+@media (max-width: 1024px) {
   .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
     .tab-split-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -460,6 +478,17 @@
 
   .knowledge-workspace-shell__panel:is([data-destination='contacts'], [data-destination='servers'])
     .detail-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .knowledge-workspace-shell__navigation {
+    gap: 12px;
+    padding: 0 12px;
+  }
+
+  .knowledge-workspace-shell__home-context {
     display: none;
   }
 }
@@ -480,7 +509,7 @@
 .knowledge-workspace-shell__failure-eyebrow {
   color: var(--accent);
   font-family: var(--font-family-base);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
@@ -501,4 +530,39 @@
   display: flex;
   gap: var(--space-3);
   margin-top: var(--space-5);
+}
+
+.knowledge-document-search__enhanced-unavailable {
+  margin: 0;
+  padding: 0 9px 9px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
+
+.knowledge-document-search__row-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.knowledge-document-search__row-heading > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-document-search__match-kind {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border-accent);
+  border-radius: 999px;
+  color: var(--accent-bright);
+  background: var(--accent-subtle);
+  font-family: var(--font-family-base);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
 }

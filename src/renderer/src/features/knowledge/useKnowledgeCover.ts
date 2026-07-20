@@ -6,6 +6,8 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
   ref: (node: HTMLDivElement | null) => void;
   url: string | null;
   state: CoverState;
+  onImageLoad: () => void;
+  onImageError: () => void;
 } {
   const { documentId, checksum } = request;
   const [node, setNode] = useState<HTMLDivElement | null>(null);
@@ -13,6 +15,8 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
   const [url, setUrl] = useState<string | null>(null);
   const [state, setState] = useState<CoverState>('idle');
   const ref = useCallback((next: HTMLDivElement | null) => setNode(next), []);
+  const onImageLoad = useCallback(() => setState('ready'), []);
+  const onImageError = useCallback(() => setState('error'), []);
 
   useEffect(() => {
     if (!node || visible) return;
@@ -35,13 +39,14 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
   useEffect(() => {
     if (!visible) return;
     const getKnowledgeCover = globalThis.api?.getKnowledgeCover;
+    setUrl(null);
+    setState('loading');
     if (!getKnowledgeCover) {
       setState('error');
       return;
     }
     let disposed = false;
     let objectUrl: string | null = null;
-    setState('loading');
     void getKnowledgeCover({ documentId, checksum })
       .then((result) => {
         if (disposed) return;
@@ -51,7 +56,6 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
         }
         objectUrl = URL.createObjectURL(new Blob([result.data], { type: 'image/png' }));
         setUrl(objectUrl);
-        setState('ready');
       })
       .catch(() => {
         if (!disposed) setState('error');
@@ -62,5 +66,5 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
     };
   }, [checksum, documentId, visible]);
 
-  return { ref, url, state };
+  return { ref, url, state, onImageLoad, onImageError };
 }

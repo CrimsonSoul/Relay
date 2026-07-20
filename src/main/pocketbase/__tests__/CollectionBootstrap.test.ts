@@ -23,6 +23,8 @@ const mockKnowledgeStateCreate = vi.fn();
 const mockKnowledgeStateUpdate = vi.fn();
 const mockBatchCreate = vi.fn();
 const mockBatchSend = vi.fn();
+const mockSettingsGetAll = vi.fn();
+const mockSettingsUpdate = vi.fn();
 const mockCreateBatch = vi.fn(() => ({
   collection: () => ({ create: mockBatchCreate }),
   send: mockBatchSend,
@@ -68,6 +70,10 @@ const mockPb = {
     delete: mockDelete,
     getOne: mockGetOne,
     update: mockUpdate,
+  },
+  settings: {
+    getAll: mockSettingsGetAll,
+    update: mockSettingsUpdate,
   },
   collection: mockPbCollection,
   createBatch: mockCreateBatch,
@@ -139,6 +145,12 @@ beforeEach(() => {
   mockKnowledgeStateCreate.mockResolvedValue({});
   mockKnowledgeStateUpdate.mockResolvedValue({});
   mockBatchSend.mockResolvedValue([]);
+  mockSettingsGetAll.mockResolvedValue({
+    meta: { appName: 'Relay' },
+    logs: { maxDays: 5 },
+    batch: { enabled: false, maxRequests: 50, timeout: 9, maxBodySize: 4_096 },
+  });
+  mockSettingsUpdate.mockResolvedValue({});
 });
 
 function mockSuccessfulCollectionCreation(): void {
@@ -149,6 +161,71 @@ function mockSuccessfulCollectionCreation(): void {
 }
 
 describe('ensureCollections', () => {
+  it('enables enough PocketBase batch capacity for Wiki indexing without rewriting unrelated settings', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
+    mockGetOne.mockResolvedValue({ fields: [], indexes: [] });
+    mockSuccessfulCollectionCreation();
+    mockUpdate.mockResolvedValue({});
+
+    await ensureKnowledgeSearchCollections(mockPb);
+
+    expect(mockSettingsUpdate).toHaveBeenCalledOnce();
+    expect(mockSettingsUpdate).toHaveBeenCalledWith(
+      {
+        batch: {
+          enabled: true,
+          maxRequests: 100,
+          timeout: 9,
+          maxBodySize: 2 * 1024 * 1024,
+        },
+      },
+      { requestKey: null },
+    );
+    expect(mockSettingsUpdate.mock.calls[0]?.[0]).not.toHaveProperty('meta');
+    expect(mockSettingsUpdate.mock.calls[0]?.[0]).not.toHaveProperty('logs');
+  });
+
+  it('repairs an undersized nonzero batch body cap even when batching is already enabled', async () => {
+    mockSettingsGetAll.mockResolvedValue({
+      batch: { enabled: true, maxRequests: 100, timeout: 3, maxBodySize: 64 * 1024 },
+    });
+    mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
+    mockGetOne.mockResolvedValue({ fields: [], indexes: [] });
+    mockSuccessfulCollectionCreation();
+    mockUpdate.mockResolvedValue({});
+
+    await ensureKnowledgeSearchCollections(mockPb);
+
+    expect(mockSettingsUpdate).toHaveBeenCalledWith(
+      {
+        batch: {
+          enabled: true,
+          maxRequests: 100,
+          timeout: 3,
+          maxBodySize: 2 * 1024 * 1024,
+        },
+      },
+      { requestKey: null },
+    );
+  });
+
+  it.each([0, 4 * 1024 * 1024])(
+    'preserves a safe PocketBase batch body cap of %i bytes',
+    async (maxBodySize) => {
+      mockSettingsGetAll.mockResolvedValue({
+        batch: { enabled: true, maxRequests: 100, timeout: 9, maxBodySize },
+      });
+      mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
+      mockGetOne.mockResolvedValue({ fields: [], indexes: [] });
+      mockSuccessfulCollectionCreation();
+      mockUpdate.mockResolvedValue({});
+
+      await ensureKnowledgeSearchCollections(mockPb);
+
+      expect(mockSettingsUpdate).not.toHaveBeenCalled();
+    },
+  );
+
   it('creates optional Wiki search storage with authenticated read rules', async () => {
     mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
     mockGetOne.mockResolvedValue({ fields: [], indexes: [] });

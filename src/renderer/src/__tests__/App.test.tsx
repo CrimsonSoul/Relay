@@ -10,7 +10,9 @@ import {
 } from '../features/knowledge/knowledgeWorkspaceNavigation';
 import {
   acknowledgeKnowledgeDocumentOpen,
+  getPendingKnowledgeDocumentOpen,
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
+  type KnowledgeOpenRequest,
 } from '../features/knowledge/knowledgeNavigation';
 
 const mockIsConfigured = vi.fn();
@@ -185,7 +187,7 @@ vi.mock('../components/HeaderSearch', () => ({
       onNavigateToTab: (tab: string) => void;
       onOpenKnowledgeDestination: (destination: 'wiki' | 'contacts' | 'servers') => void;
       onOpenAddContact: (email?: string) => void;
-      onOpenKnowledgeDocument: (documentId: string, headingId?: string) => void;
+      onOpenKnowledgeDocument: (request: KnowledgeOpenRequest) => void;
     };
   }) => (
     <div data-testid="header-search">
@@ -194,7 +196,20 @@ vi.mock('../components/HeaderSearch', () => ({
         add-to-bridge
       </button>
       <button onClick={() => actions.onOpenAddContact('new@example.com')}>open-add-contact</button>
-      <button onClick={() => actions.onOpenKnowledgeDocument('kb-1')}>open-knowledge</button>
+      <button
+        onClick={() =>
+          actions.onOpenKnowledgeDocument({
+            documentId: 'kb-1',
+            headingId: 'failover',
+            pageIndex: 3,
+            highlightText: 'failover',
+            normalizedStart: 48,
+            normalizedEnd: 56,
+          })
+        }
+      >
+        open-knowledge
+      </button>
       <button onClick={() => actions.onOpenKnowledgeDestination('contacts')}>go-contacts</button>
       <button onClick={() => actions.onOpenKnowledgeDestination('servers')}>go-servers</button>
     </div>
@@ -537,6 +552,14 @@ describe('MainApp', () => {
     fireEvent.click(screen.getByText('open-knowledge'));
 
     expect(calls).toEqual(['document', 'destination:wiki']);
+    expect(getPendingKnowledgeDocumentOpen()).toEqual({
+      documentId: 'kb-1',
+      headingId: 'failover',
+      pageIndex: 3,
+      highlightText: 'failover',
+      normalizedStart: 48,
+      normalizedEnd: 56,
+    });
     expect(getPendingKnowledgeDestinationOpen()).toBe('wiki');
     expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
     globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, onDocument);

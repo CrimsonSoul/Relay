@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KnowledgeCategoryRecord, KnowledgeManagementDocumentView } from '@shared/knowledge';
 import { TactileButton } from '../../components/TactileButton';
 
@@ -27,9 +27,13 @@ export function KnowledgeCategoryManager({
   ) => Result;
 }>) {
   const [newName, setNewName] = useState('');
+  const [newNameError, setNewNameError] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [nameErrors, setNameErrors] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [replacementId, setReplacementId] = useState('');
+  const newNameRef = useRef<HTMLInputElement>(null);
+  const nameRefs = useRef(new Map<string, HTMLInputElement>());
   const counts = useMemo(
     () =>
       documents.reduce<Record<string, number>>((result, document) => {
@@ -53,10 +57,40 @@ export function KnowledgeCategoryManager({
   };
 
   const beginDelete = (category: KnowledgeCategoryRecord) => {
-    const replacement = categories.find(({ id }) => id !== category.id);
+    const replacement =
+      categories.find(({ id, systemKey }) => id !== category.id && systemKey === 'uncategorized') ??
+      categories.find(({ id }) => id !== category.id);
     if (!replacement) return;
     setDeletingId(category.id);
     setReplacementId(replacement.id);
+  };
+
+  const closeDelete = (categoryId: string) => {
+    setDeletingId(null);
+    setReplacementId('');
+    queueMicrotask(() => {
+      const trigger = [
+        ...globalThis.document.querySelectorAll<HTMLButtonElement>('[data-category-delete-id]'),
+      ].find((button) => button.dataset.categoryDeleteId === categoryId);
+      trigger?.focus();
+    });
+  };
+
+  const saveCategoryName = async (category: KnowledgeCategoryRecord, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setNameErrors((current) => ({ ...current, [category.id]: 'Enter a category name.' }));
+      nameRefs.current.get(category.id)?.focus();
+      return;
+    }
+    const result = await setCategoryName(category.id, trimmedName, category.revision);
+    if (result !== false) {
+      setNameErrors((current) => {
+        const next = { ...current };
+        delete next[category.id];
+        return next;
+      });
+    }
   };
 
   return (
@@ -73,25 +107,47 @@ export function KnowledgeCategoryManager({
           className="knowledge-category-manager__create"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (!newName.trim()) return;
-            await createCategory(newName, categories.at(-1)?.id ?? null);
-            setNewName('');
+            const trimmedName = newName.trim();
+            if (!trimmedName) {
+              setNewNameError('Enter a category name.');
+              newNameRef.current?.focus();
+              return;
+            }
+            const result = await createCategory(trimmedName, categories.at(-1)?.id ?? null);
+            if (result !== false) {
+              setNewName('');
+              setNewNameError(null);
+            }
           }}
         >
           <label>
             <span>New category</span>
             <input
+              ref={newNameRef}
               aria-label="New category name"
+              aria-invalid={newNameError ? true : undefined}
+              aria-describedby={newNameError ? 'knowledge-category-create-error' : undefined}
               value={newName}
-              onChange={(event) => setNewName(event.target.value)}
+              onChange={(event) => {
+                setNewName(event.target.value);
+                if (newNameError && event.target.value.trim()) setNewNameError(null);
+              }}
               placeholder="Category name"
             />
+            {newNameError && (
+              <span
+                id="knowledge-category-create-error"
+                className="knowledge-management-field-error"
+                role="alert"
+              >
+                {newNameError}
+              </span>
+            )}
           </label>
           <TactileButton
             size="sm"
             variant="primary"
             type="submit"
-            disabled={!newName.trim()}
             loading={busy === 'category:create'}
           >
             Add category
@@ -133,12 +189,38 @@ export function KnowledgeCategoryManager({
                   {category.systemKey === 'uncategorized' ? 'Fallback category' : 'Category'}
                 </span>
                 <input
+                  ref={(node) => {
+                    if (node) nameRefs.current.set(category.id, node);
+                    else nameRefs.current.delete(category.id);
+                  }}
                   aria-label={`Category name ${category.name}`}
-                  value={name}
-                  onChange={(event) =>
-                    setNames((current) => ({ ...current, [category.id]: event.target.value }))
+                  aria-invalid={nameErrors[category.id] ? true : undefined}
+                  aria-describedby={
+                    nameErrors[category.id]
+                      ? `knowledge-category-name-error-${category.id}`
+                      : undefined
                   }
+                  value={name}
+                  onChange={(event) => {
+                    setNames((current) => ({ ...current, [category.id]: event.target.value }));
+                    if (nameErrors[category.id] && event.target.value.trim()) {
+                      setNameErrors((current) => {
+                        const next = { ...current };
+                        delete next[category.id];
+                        return next;
+                      });
+                    }
+                  }}
                 />
+                {nameErrors[category.id] && (
+                  <span
+                    id={`knowledge-category-name-error-${category.id}`}
+                    className="knowledge-management-field-error"
+                    role="alert"
+                  >
+                    {nameErrors[category.id]}
+                  </span>
+                )}
               </label>
               <span className="knowledge-category-manager__count">
                 {counts[category.id] ?? 0} documents
@@ -146,10 +228,10 @@ export function KnowledgeCategoryManager({
               <div className="knowledge-category-manager__actions">
                 <TactileButton
                   size="sm"
-                  disabled={!name.trim() || name.trim() === category.name}
+                  disabled={name.trim() === category.name}
                   loading={busy === `category:name:${category.id}`}
                   aria-label={`Save ${category.name}`}
-                  onClick={async () => setCategoryName(category.id, name, category.revision)}
+                  onClick={() => void saveCategoryName(category, name)}
                 >
                   Save
                 </TactileButton>
@@ -158,6 +240,7 @@ export function KnowledgeCategoryManager({
                   variant="danger"
                   className="knowledge-management__danger-outline"
                   aria-label={`Delete ${category.name}`}
+                  data-category-delete-id={category.id}
                   disabled={category.systemKey === 'uncategorized' || categories.length < 2}
                   onClick={() => beginDelete(category)}
                 >
@@ -185,7 +268,7 @@ export function KnowledgeCategoryManager({
                         ))}
                     </select>
                   </label>
-                  <TactileButton size="sm" onClick={() => setDeletingId(null)}>
+                  <TactileButton size="sm" onClick={() => closeDelete(category.id)}>
                     Cancel
                   </TactileButton>
                   <TactileButton
@@ -194,14 +277,15 @@ export function KnowledgeCategoryManager({
                     aria-label={`Confirm delete ${category.name}`}
                     disabled={!replacementId}
                     loading={busy === `category:delete:${category.id}`}
-                    onClick={async () =>
-                      deleteCategory(
+                    onClick={async () => {
+                      const result = await deleteCategory(
                         category.id,
                         replacementId,
                         category.revision,
                         documentRevisions,
-                      )
-                    }
+                      );
+                      if (result !== false) closeDelete(category.id);
+                    }}
                   >
                     Reassign and delete
                   </TactileButton>

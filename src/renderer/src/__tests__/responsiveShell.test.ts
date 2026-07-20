@@ -41,4 +41,18 @@ describe('compact Relay shell', () => {
       /@media \(max-width: 900px\)[\s\S]*?\.dt-problems__workspace\s*\{[\s\S]*?grid-template-columns:\s*1fr/,
     );
   });
+
+  it('uses one managed focus ring for native form controls', () => {
+    const formFocusRule =
+      /:where\(input, textarea, select\):focus-visible\s*\{([^}]*)\}/m.exec(responsiveCss)?.[1] ??
+      '';
+
+    expect(formFocusRule).toContain('outline: none !important;');
+    expect(formFocusRule).toContain('outline-offset: 0 !important;');
+    expect(formFocusRule).toContain('border-color: var(--color-accent) !important;');
+    expect(formFocusRule).toContain('box-shadow: 0 0 0 2px var(--color-accent-dim) !important;');
+    expect(responsiveCss.indexOf(':where(input, textarea, select):focus-visible')).toBeGreaterThan(
+      responsiveCss.indexOf(':focus-visible'),
+    );
+  });
 });

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { KnowledgeCategoryRecord, KnowledgeManagementDocumentView } from '@shared/knowledge';
 import { KnowledgeCategoryManager } from '../KnowledgeCategoryManager';
@@ -27,6 +27,41 @@ const categories: KnowledgeCategoryRecord[] = [
 ];
 
 describe('KnowledgeCategoryManager', () => {
+  it('announces validation and returns focus after cancelling a destructive editor', async () => {
+    render(
+      <KnowledgeCategoryManager
+        categories={categories}
+        documents={
+          [
+            { id: 'document-1', categoryId: 'operations', revision: 3 },
+          ] as KnowledgeManagementDocumentView[]
+        }
+        busy={null}
+        createCategory={vi.fn()}
+        setCategoryName={vi.fn()}
+        setCategoryOrder={vi.fn()}
+        deleteCategory={vi.fn()}
+      />,
+    );
+
+    const newCategory = screen.getByRole('textbox', { name: 'New category name' });
+    fireEvent.change(newCategory, { target: { value: '   ' } });
+    fireEvent.submit(newCategory.closest('form')!);
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a category name.');
+    expect(newCategory).toHaveAttribute('aria-invalid', 'true');
+    expect(newCategory).toHaveFocus();
+
+    const deleteOperations = screen.getByRole('button', { name: 'Delete Operations' });
+    fireEvent.click(deleteOperations);
+    expect(screen.getByRole('combobox', { name: 'Reassign documents to' })).toHaveValue(
+      'uncategorized',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Delete Operations' })).toHaveFocus(),
+    );
+  });
+
   it('creates, renames, reorders, and safely deletes categories with reassignment', () => {
     const actions = {
       createCategory: vi.fn(),

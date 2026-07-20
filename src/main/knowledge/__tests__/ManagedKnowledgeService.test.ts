@@ -213,6 +213,7 @@ describe('ManagedKnowledgeService', () => {
       }),
     ).resolves.toMatchObject({
       id: 'document-2',
+      checksum: upload().checksum,
       displayTitle: 'Checkout Runbook',
       fileName: 'Replacement.pdf',
       lifecycleState: 'active',

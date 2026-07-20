@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-19
 
-**Status:** Approved for implementation planning
+**Status:** Implemented and verified
 
 **Target corpus:** Approximately 20 SOP guides plus cheatsheets
 
@@ -339,3 +339,32 @@ The feature is complete only when:
 8. Offline or degraded mode preserves exact open-document search and metadata filtering.
 9. Search dependency failures do not affect startup, publishing, PDF viewing, management, other tabs, connectivity, or non-Wiki search.
 10. The automated suite, fault-injection matrix, typecheck, lint, format, production build, and relevance evaluation all pass.
+
+## Verification
+
+Automated verification completed on 2026-07-19:
+
+- `npm run test:unit -- --run src/main/knowledge/__tests__/KnowledgeSearchFailureIsolation.test.ts` — PASS, 15 tests, including delayed publication A rejection after replacement B is ready.
+- `npm run test:renderer -- src/renderer/src/features/knowledge/__tests__/KnowledgeSearchFailureIsolation.test.tsx` — PASS, 9 tests.
+- `npm test` — PASS: 1,707 unit tests, 79 cache tests, and 2,687 renderer tests (4,473 total).
+- `npm run typecheck` — PASS.
+- `npm run lint` — PASS.
+- `npm run format:check` — PASS.
+- `npm run build` — PASS. Vite emitted its existing informational large-chunk warning.
+- `git diff --check` — PASS.
+
+The main-process matrix covers optional storage bootstrap, client search authentication, collection fetch and validation, cache reads and writes, extraction worker timeout and exit, chunk-batch and document-status failures, realtime subscription drops, ranking timeout, explicit cancellation, IPC handler exceptions, and a delayed trigger rejection from publication A after replacement B is ready. Every row uses one connected storage, cache identity, search service/runtime, command-triggered indexer, management-command registration, and PDF-open path. Publish, replace, and restore remain successful, command-triggered queue faults recover on later work, and the search assertion comes from that row's faulted service/runtime/engine. Trigger-failure callbacks carry the successful mutation's checksum and revision; the indexer fails only a matching pending operation, ignores stale checksum/revision identities, and preserves a matching already-ready checksum such as restore reuse. Owning tests additionally prove that synchronous throws and rejected promises/thenables cannot reject a completed mutation, emit only bounded logs, and expose management retry when the matching operation actually fails.
+
+The renderer matrix covers a missing bridge API, rejected IPC, typed timeout, cancellation, malformed responses, and separate production render-boundary failures in universal search, the catalog, and the open-guide sidebar. Every row renders the actual SearchProvider/SearchContext, exported NotesProvider, ToastProvider, HeaderSearch, KnowledgeLibrary, reader search/sidebar, KnowledgeManagementWorkspace, KnowledgeWorkspace, DirectoryTab, and ServersTab. Contact, server, and action selections each reopen the dropdown by focusing and typing through real provider state, then prove production clear/blur closes it before the next selection. The matrix also proves NotesProvider data/reload lifecycle, local catalog opening, exact reader navigation, an actionable management surface, and activation of the production Contacts and Servers destinations. The catalog recovery row crashes the real KnowledgeSearchBoundary and proves a new search generation restores enhanced results.
+
+Live Electron verification completed on 2026-07-19 against the local PocketBase-backed test copy:
+
+- The empty-query Wiki opens on the cover-first catalog with separate SOP-guide and cheatsheet type controls.
+- The exact phrase `Understanding Oracle Terms and Tickets` returns and opens the canonical page 4 passage.
+- The one-edit query `Understnding` returns `Close match` results, opens page 4, and highlights the canonical `Understanding` text.
+- The short token `rf` returns page 7 matches and highlights the visible `RF Gun Password Resets` text; `gg` returns no matches and no highlight, directly exercising the reported regression.
+- Exact and fuzzy reader results navigate correctly in single-page and continuous modes. The active highlight remains aligned after zooming from 100% to 115%.
+- Universal search independently returns a real contact (`Alex Novak`), server (`prod-api-01`), and navigation actions while Wiki passage search is installed.
+- The local index reached `ready` for the 23-page Oracle guide with 29 synchronized passage chunks, and PocketBase batch writes completed successfully after bootstrap enabled the optional batch setting.
+
+The current local instance has no connected client peer and is signed out of privileged access, so client-disconnect fallback and protected management readiness/retry were verified with the production-component fault-injection matrices rather than by changing local topology or creating credentials. Those matrices exercise the real cache/search/runtime/management boundaries and prove that enhanced-search failures do not block metadata filtering, exact open-document search, publishing, PDF viewing, management recovery, Contacts, Servers, actions, or Relay startup.

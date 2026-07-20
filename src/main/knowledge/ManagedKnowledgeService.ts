@@ -75,6 +75,7 @@ function sourceKey(category: string, fileName: string): string {
 function documentView(document: KnowledgeDocumentRecord): KnowledgeManagementDocumentView {
   return {
     id: document.id,
+    checksum: document.checksum,
     category: document.category,
     categoryId: document.categoryId,
     documentType: document.documentType,
@@ -88,6 +89,11 @@ function documentView(document: KnowledgeDocumentRecord): KnowledgeManagementDoc
     publishedAt: document.publishedAt,
     trashedByName: document.trashedByName,
     trashedAt: document.trashedAt,
+    searchIndexState: document.searchIndexState,
+    searchIndexChecksum: document.searchIndexChecksum,
+    searchIndexVersion: document.searchIndexVersion,
+    searchIndexedAt: document.searchIndexedAt,
+    searchIndexError: document.searchIndexError,
     updated: document.updated,
   };
 }

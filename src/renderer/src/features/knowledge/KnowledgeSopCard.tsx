@@ -17,11 +17,11 @@ export function KnowledgeSopCard({
       onClick={() => onOpen(document.id)}
     >
       <div ref={cover.ref} className="knowledge-sop-card__cover" data-state={cover.state}>
-        {cover.url ? (
-          <img src={cover.url} alt="" />
+        {cover.url && cover.state !== 'error' ? (
+          <img src={cover.url} alt="" onLoad={cover.onImageLoad} onError={cover.onImageError} />
         ) : (
           <div className="knowledge-sop-card__fallback" aria-hidden="true">
-            <span>SOP</span>
+            <span>{cover.state === 'loading' ? 'Loading cover' : 'SOP guide'}</span>
             <strong>{document.displayTitle.slice(0, 1)}</strong>
           </div>
         )}

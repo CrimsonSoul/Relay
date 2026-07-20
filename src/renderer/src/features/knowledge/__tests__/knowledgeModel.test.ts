@@ -3,6 +3,7 @@ import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import {
   buildKnowledgeLibrary,
   buildKnowledgeCatalog,
+  buildLocalKnowledgeSearchResults,
   findKnowledgeDocument,
   knowledgeDocumentMatches,
 } from '../knowledgeModel';
@@ -108,7 +109,7 @@ describe('knowledgeModel', () => {
     expect(knowledgeDocumentMatches(active, 'legacy')).toBe(false);
   });
 
-  it('builds the M3 catalog with automatic recent, ordered SOP groups, and cheatsheets', () => {
+  it('builds the M3 catalog with ordered SOP groups and cheatsheets', () => {
     const categories = [
       {
         id: 'cat-network',
@@ -161,9 +162,62 @@ describe('knowledgeModel', () => {
       sort: 'recent',
     });
 
-    expect(catalog.recent[0]?.id).toBe('quick');
+    expect(catalog).not.toHaveProperty('recent');
     expect(catalog.sopGroups.map(({ category }) => category.name)).toEqual(['Access', 'Network']);
     expect(catalog.cheatsheets.map(({ id }) => id)).toEqual(['quick']);
     expect(catalog.total).toBe(3);
+  });
+
+  it('builds exact page-aware fallback rows from document metadata and outline headings', () => {
+    const entry = document({
+      id: 'oracle',
+      title: 'Oracle recovery',
+      displayTitle: 'Oracle recovery guide',
+      category: 'Access',
+      fileName: 'oracle-failover.pdf',
+      outline: [
+        { id: 'overview', label: 'Overview', level: 1, pageIndex: 0, top: 700 },
+        { id: 'failover', label: 'Failover procedure', level: 1, pageIndex: 6, top: 680 },
+      ],
+    });
+
+    expect(buildLocalKnowledgeSearchResults([entry], 'oracle')).toEqual([
+      expect.objectContaining({
+        id: 'local-oracle-document',
+        documentId: 'oracle',
+        headingId: null,
+        heading: null,
+        pageIndex: 0,
+        matchKind: 'exact',
+      }),
+    ]);
+    expect(buildLocalKnowledgeSearchResults([entry], 'failover')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: 'oracle',
+          headingId: 'failover',
+          heading: 'Failover procedure',
+          pageIndex: 6,
+          matchKind: 'exact',
+        }),
+      ]),
+    );
+  });
+
+  it('keeps fallback excerpts bounded and excludes inactive documents', () => {
+    const active = document({
+      id: 'active',
+      title: 'Recovery',
+      displayTitle: 'Recovery '.repeat(25).trim(),
+      category: 'Operations '.repeat(12).trim(),
+      fileName: `${'recovery-'.repeat(20)}guide.pdf`,
+    });
+    const trashed = document({ id: 'trashed', title: 'Recovery', lifecycleState: 'trashed' });
+
+    const results = buildLocalKnowledgeSearchResults([active, trashed], 'recovery');
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.documentId).toBe('active');
+    expect(results[0]?.excerpt.length).toBeLessThanOrEqual(280);
   });
 });

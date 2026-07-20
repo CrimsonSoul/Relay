@@ -84,6 +84,15 @@ describe('DynatraceProblemsTab', () => {
     } as never;
   });
 
+  it('uses the shared scoped search control for the local problem queue', async () => {
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    expect(screen.getByRole('searchbox', { name: 'Search problems' })).toHaveClass(
+      'scoped-search-input',
+    );
+  });
+
   it('shows the unaddressed queue and selected problem context', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
 

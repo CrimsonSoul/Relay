@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
 import {
   acknowledgeKnowledgeDestinationOpen,
+  KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
   requestKnowledgeDestinationOpen,
   type KnowledgeDestination,
@@ -47,7 +48,7 @@ vi.mock('../../../utils/logger', () => ({
 }));
 
 vi.mock('../KnowledgeTab', async () => {
-  const { useEffect } = await import('react');
+  const { useEffect, useState } = await import('react');
   return {
     KnowledgeTab: ({
       active,
@@ -58,6 +59,7 @@ vi.mock('../KnowledgeTab', async () => {
       relayMode?: string;
       onLibraryCountChange?: (count: number | null) => void;
     }) => {
+      const [page, setPage] = useState(1);
       useEffect(() => {
         surfaceMocks.wikiEffectStarted();
         return () => surfaceMocks.wikiEffectCleanedUp();
@@ -65,7 +67,10 @@ vi.mock('../KnowledgeTab', async () => {
       if (surfaceMocks.wikiShouldThrow) throw new Error('Wiki surface failed');
       return (
         <div data-testid="wiki-surface" data-active={active} data-relay-mode={relayMode}>
-          Wiki surface
+          <span>Page {page} of 23</span>
+          <button type="button" onClick={() => setPage(8)}>
+            Open page 8 match
+          </button>
           <button onClick={() => onLibraryCountChange?.(3)}>Publish Wiki count</button>
         </div>
       );
@@ -155,6 +160,7 @@ function visiblePanel() {
 
 describe('KnowledgeWorkspace', () => {
   beforeEach(() => {
+    localStorage.removeItem(KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY);
     surfaceMocks.wikiEffectStarted.mockClear();
     surfaceMocks.wikiEffectCleanedUp.mockClear();
   });
@@ -176,6 +182,29 @@ describe('KnowledgeWorkspace', () => {
     expect(screen.getByText('1 contacts')).toBeInTheDocument();
     expect(screen.getByText('1 servers')).toBeInTheDocument();
     expect(visiblePanel()).toHaveAttribute('data-destination', 'home');
+  });
+
+  it('restores the last content destination on the next Knowledge mount', async () => {
+    const first = renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Contacts' }));
+    await screen.findByTestId('contacts-surface');
+    first.unmount();
+
+    renderWorkspace();
+
+    expect(visiblePanel()).toHaveAttribute('data-destination', 'contacts');
+  });
+
+  it('does not replace the last content destination when Home is opened explicitly', async () => {
+    const first = renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    await screen.findByTestId('wiki-surface');
+    fireEvent.click(screen.getByRole('button', { name: /Knowledge home/ }));
+    first.unmount();
+
+    renderWorkspace();
+
+    expect(visiblePanel()).toHaveAttribute('data-destination', 'wiki');
   });
 
   it.each([
@@ -207,6 +236,25 @@ describe('KnowledgeWorkspace', () => {
     expect(
       screen.queryByRole('navigation', { name: 'Knowledge destinations' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('reports the active destination for global-search result ranking', () => {
+    const onDestinationChange = vi.fn();
+    render(
+      <KnowledgeWorkspace
+        active
+        contacts={contacts}
+        groups={groups}
+        servers={servers}
+        relayMode="server"
+        onAddToAssembler={vi.fn()}
+        onDestinationChange={onDestinationChange}
+      />,
+    );
+
+    expect(onDestinationChange).toHaveBeenLastCalledWith('home');
+    fireEvent.click(screen.getByRole('button', { name: 'Open Contacts' }));
+    expect(onDestinationChange).toHaveBeenLastCalledWith('contacts');
   });
 
   it('uses the approved destination navigation order', () => {
@@ -252,6 +300,17 @@ describe('KnowledgeWorkspace', () => {
     expect(surfaceMocks.wikiEffectCleanedUp).not.toHaveBeenCalled();
   });
 
+  it('retains the Wiki reader through a Contacts round trip without an error boundary', async () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open page 8 match' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Contacts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Wiki' }));
+
+    expect(await screen.findByText('Page 8 of 23')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Wiki unavailable' })).not.toBeInTheDocument();
+  });
+
   it('opens destinations requested by external navigation events', () => {
     renderWorkspace();
 
@@ -287,16 +346,17 @@ describe('KnowledgeWorkspace', () => {
   });
 
   it.each(['contacts', 'servers'] as const)(
-    'opens a pending %s request once before lazy workspace render and consumes it',
-    (requestedDestination) => {
+    'opens a pending %s request before lazy workspace render and remembers it',
+    async (requestedDestination) => {
       requestKnowledgeDestinationOpen(requestedDestination);
 
       const firstWorkspace = renderWorkspace();
       expect(visiblePanel()).toHaveAttribute('data-destination', requestedDestination);
+      await screen.findByTestId(`${requestedDestination}-surface`);
       firstWorkspace.unmount();
 
       renderWorkspace();
-      expect(visiblePanel()).toHaveAttribute('data-destination', 'home');
+      expect(visiblePanel()).toHaveAttribute('data-destination', requestedDestination);
     },
   );
 

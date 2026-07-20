@@ -12,6 +12,7 @@ import { ProviderIcon } from '../components/icons/ProviderIcons';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { Tooltip } from '../components/Tooltip';
+import { SearchInput } from '../components/SearchInput';
 
 type FilterMode = 'all' | CloudStatusProvider;
 type FeedMode = 'active' | 'recent' | 'resolved';
@@ -419,27 +420,16 @@ export const CloudStatusTab: React.FC<{
             </button>
           ))}
         </div>
-        <label className="cloud-status__search">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-          <span className="sr-only">Search service status</span>
-          <input
+        <div className="cloud-status__search scoped-search-control">
+          <SearchInput
             type="search"
+            aria-label="Search service status"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search provider or incident"
+            className="scoped-search-input"
           />
-        </label>
+        </div>
       </div>
 
       {statusData && statusData.errors.length > 0 && (

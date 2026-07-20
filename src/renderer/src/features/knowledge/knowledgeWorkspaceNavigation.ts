@@ -3,6 +3,7 @@ import { TAB_NAMES, type TabName } from '@shared/ipc';
 export type KnowledgeDestination = 'home' | 'wiki' | 'contacts' | 'servers';
 
 export const OPEN_KNOWLEDGE_DESTINATION_EVENT = 'relay:open-knowledge-destination';
+export const KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY = 'relay.knowledge.lastDestination.v1';
 
 export type KnowledgeContentDestination = Exclude<KnowledgeDestination, 'home'>;
 
@@ -11,6 +12,8 @@ const knowledgeContentDestinations = new Set<KnowledgeContentDestination>([
   'contacts',
   'servers',
 ]);
+
+type KnowledgeDestinationStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
 let pendingDestination: KnowledgeContentDestination | null = null;
 
@@ -21,6 +24,29 @@ export function isKnowledgeContentDestination(
     typeof value === 'string' &&
     knowledgeContentDestinations.has(value as KnowledgeContentDestination)
   );
+}
+
+export function loadLastKnowledgeDestination(
+  storage: KnowledgeDestinationStorage = globalThis.localStorage,
+): KnowledgeDestination {
+  try {
+    const stored = storage.getItem(KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY);
+    return isKnowledgeContentDestination(stored) ? stored : 'home';
+  } catch {
+    return 'home';
+  }
+}
+
+export function persistLastKnowledgeDestination(
+  destination: KnowledgeDestination,
+  storage: KnowledgeDestinationStorage = globalThis.localStorage,
+): void {
+  if (!isKnowledgeContentDestination(destination)) return;
+  try {
+    storage.setItem(KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY, destination);
+  } catch {
+    // A blocked local preference must not block Knowledge navigation.
+  }
 }
 
 export function requestKnowledgeDestinationOpen(destination: KnowledgeContentDestination): void {

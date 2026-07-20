@@ -279,3 +279,12 @@
   outline: 3px solid var(--color-accent) !important;
   outline-offset: 2px !important;
 }
+
+/* Native form controls already communicate focus through their border and
+   halo. Suppress the fallback outline so those treatments do not stack. */
+:where(input, textarea, select):focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 2px var(--color-accent-dim) !important;
+}

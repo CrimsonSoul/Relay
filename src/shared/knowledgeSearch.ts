@@ -103,6 +103,8 @@ export type KnowledgeSearchSourceRange = { start: number; end: number };
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const POCKETBASE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const SEARCH_INDEX_STATES: KnowledgeSearchIndexState[] = ['pending', 'ready', 'failed'];
 const SEARCH_MATCH_KINDS: KnowledgeSearchMatchKind[] = ['exact', 'tokens', 'prefix', 'fuzzy'];
 const SEARCH_AVAILABILITY: KnowledgeSearchAvailability[] = ['ready', 'cached'];
@@ -131,13 +133,20 @@ function isChecksum(value: unknown): value is string {
   return typeof value === 'string' && SHA256_PATTERN.test(value);
 }
 
+export function normalizeKnowledgeSearchTimestamp(value: unknown): string | null {
+  if (!boundedString(value, 100)) return null;
+  const normalized = POCKETBASE_TIMESTAMP_PATTERN.test(value)
+    ? `${value.slice(0, 10)}T${value.slice(11)}`
+    : value;
+  return ISO_TIMESTAMP_PATTERN.test(normalized) &&
+    !Number.isNaN(Date.parse(normalized)) &&
+    new Date(normalized).toISOString() === normalized
+    ? normalized
+    : null;
+}
+
 export function isKnowledgeSearchTimestamp(value: unknown): value is string {
-  return (
-    boundedString(value, 100) &&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) &&
-    !Number.isNaN(Date.parse(value)) &&
-    new Date(value).toISOString() === value
-  );
+  return normalizeKnowledgeSearchTimestamp(value) !== null;
 }
 
 function hasAtMostCodePoints(value: string, maximum: number): boolean {
@@ -223,6 +232,9 @@ export function normalizeKnowledgeSearchChunkRecord(
   if (!isRecord(value)) return null;
   const headingId = normalizeNullableHeading(value.headingId, 200);
   const heading = normalizeNullableHeading(value.heading, 240);
+  const indexedAt = normalizeKnowledgeSearchTimestamp(value.indexedAt);
+  const created = normalizeKnowledgeSearchTimestamp(value.created);
+  const updated = normalizeKnowledgeSearchTimestamp(value.updated);
 
   if (
     !boundedIdentifier(value.id) ||
@@ -241,9 +253,9 @@ export function normalizeKnowledgeSearchChunkRecord(
     (value.normalizedEnd as number) - (value.normalizedStart as number) !==
       (value.normalizedText as string).length ||
     value.indexVersion !== KNOWLEDGE_SEARCH_INDEX_VERSION ||
-    !isKnowledgeSearchTimestamp(value.indexedAt) ||
-    !isKnowledgeSearchTimestamp(value.created) ||
-    !isKnowledgeSearchTimestamp(value.updated)
+    indexedAt === null ||
+    created === null ||
+    updated === null
   ) {
     return null;
   }
@@ -261,9 +273,9 @@ export function normalizeKnowledgeSearchChunkRecord(
     normalizedStart: value.normalizedStart,
     normalizedEnd: value.normalizedEnd,
     indexVersion: value.indexVersion,
-    indexedAt: value.indexedAt,
-    created: value.created,
-    updated: value.updated,
+    indexedAt,
+    created,
+    updated,
   };
 }
 

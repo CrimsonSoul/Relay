@@ -9,6 +9,11 @@ import {
   knowledgeCategoryKey,
   normalizeKnowledgeSearchText,
 } from '@shared/knowledge';
+import {
+  KNOWLEDGE_SEARCH_MAX_EXCERPT_TEXT,
+  normalizeKnowledgeSearchQuery,
+  type KnowledgeSearchResult,
+} from '@shared/knowledgeSearch';
 
 export type KnowledgeCategoryGroup = {
   category: string;
@@ -25,11 +30,123 @@ export type KnowledgeCatalogInput = {
 };
 
 export type KnowledgeCatalogView = {
-  recent: KnowledgeDocumentRecord[];
   sopGroups: Array<{ category: KnowledgeCategoryRecord; documents: KnowledgeDocumentRecord[] }>;
   cheatsheets: KnowledgeDocumentRecord[];
   total: number;
 };
+
+type LocalMatch = {
+  highlightText: string;
+  normalizedStart: number;
+  normalizedEnd: number;
+};
+
+function localMatch(
+  value: string,
+  normalizedQuery: string,
+  queryTerms: readonly string[],
+): LocalMatch | null {
+  const normalizedValue = normalizeKnowledgeSearchQuery(value);
+  const phraseStart = normalizedValue.indexOf(normalizedQuery);
+  if (phraseStart >= 0) {
+    return {
+      highlightText: normalizedValue.slice(phraseStart, phraseStart + normalizedQuery.length),
+      normalizedStart: phraseStart,
+      normalizedEnd: phraseStart + normalizedQuery.length,
+    };
+  }
+  if (!queryTerms.every((term) => normalizedValue.includes(term))) return null;
+  const firstTerm = queryTerms[0];
+  if (!firstTerm) return null;
+  const start = normalizedValue.indexOf(firstTerm);
+  return {
+    highlightText: normalizedValue.slice(start, start + firstTerm.length),
+    normalizedStart: start,
+    normalizedEnd: start + firstTerm.length,
+  };
+}
+
+function boundedLocalExcerpt(value: string): string {
+  const excerpt = value.trim().replace(/\s+/g, ' ');
+  if (excerpt.length <= KNOWLEDGE_SEARCH_MAX_EXCERPT_TEXT) return excerpt;
+  return `${excerpt.slice(0, KNOWLEDGE_SEARCH_MAX_EXCERPT_TEXT - 1).trimEnd()}…`;
+}
+
+function localResult(
+  document: KnowledgeDocumentRecord,
+  match: LocalMatch,
+  heading: KnowledgeDocumentRecord['outline'][number] | null,
+  excerpt: string,
+  score: number,
+): KnowledgeSearchResult {
+  return {
+    id: `local-${document.id}-${heading?.id ?? 'document'}`,
+    documentId: document.id,
+    checksum: document.checksum,
+    title: document.displayTitle,
+    fileName: document.fileName,
+    category: document.category,
+    categoryId: document.categoryId,
+    documentType: document.documentType,
+    headingId: heading?.id ?? null,
+    heading: heading?.label ?? null,
+    pageIndex: heading?.pageIndex ?? 0,
+    passageNumber: 1,
+    excerpt: boundedLocalExcerpt(excerpt),
+    matchKind: 'exact',
+    highlightText: match.highlightText,
+    normalizedStart: match.normalizedStart,
+    normalizedEnd: match.normalizedEnd,
+    score,
+  };
+}
+
+export function buildLocalKnowledgeSearchResults(
+  documents: readonly KnowledgeDocumentRecord[],
+  rawQuery: string,
+): KnowledgeSearchResult[] {
+  const normalizedQuery = normalizeKnowledgeSearchQuery(rawQuery);
+  if (!normalizedQuery) return [];
+  const queryTerms = normalizedQuery.split(' ').filter(Boolean);
+  const results: KnowledgeSearchResult[] = [];
+  const destinations = new Set<string>();
+  const append = (result: KnowledgeSearchResult) => {
+    const key = JSON.stringify([
+      result.documentId,
+      result.pageIndex,
+      result.normalizedStart,
+      result.normalizedEnd,
+    ]);
+    if (destinations.has(key)) return;
+    destinations.add(key);
+    results.push(result);
+  };
+
+  for (const document of documents) {
+    if (document.lifecycleState !== 'active') continue;
+    const metadata = [document.displayTitle, document.fileName, document.category];
+    const metadataMatch =
+      metadata.map((value) => localMatch(value, normalizedQuery, queryTerms)).find(Boolean) ??
+      localMatch(metadata.join(' '), normalizedQuery, queryTerms);
+    if (metadataMatch) {
+      append(
+        localResult(
+          document,
+          metadataMatch,
+          null,
+          [document.displayTitle, document.category, document.fileName].join(' · '),
+          500,
+        ),
+      );
+    }
+    for (const heading of document.outline) {
+      const headingMatch = localMatch(heading.label, normalizedQuery, queryTerms);
+      if (!headingMatch) continue;
+      append(localResult(document, headingMatch, heading, heading.label, 490));
+    }
+  }
+  return results;
+}
 
 export function knowledgeDocumentMatches(
   document: KnowledgeDocumentRecord,
@@ -126,7 +243,6 @@ export function buildKnowledgeCatalog(input: KnowledgeCatalogInput): KnowledgeCa
     groups.set(category.id, group);
   }
   return {
-    recent: filtered.toSorted(byRecent).slice(0, 4),
     sopGroups: [...groups.values()]
       .map((group) => ({ ...group, documents: group.documents.toSorted(documentComparator) }))
       .toSorted((left, right) => compareKnowledgeCategories(left.category, right.category)),

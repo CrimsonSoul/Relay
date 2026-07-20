@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Contact, Server, BridgeGroup } from '@shared/ipc';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
+import type { KnowledgeSearchResult } from '@shared/knowledgeSearch';
 import { useSearchContext } from '../contexts/SearchContext';
 import { useCommandSearch, SearchResult, ResultType } from '../hooks/useCommandSearch';
 import {
@@ -13,6 +14,9 @@ import {
 } from './command-palette/CommandIcons';
 import { Tooltip } from './Tooltip';
 import { useKnowledgeLibrary } from '../features/knowledge/useKnowledgeLibrary';
+import { KnowledgeSearchBoundary } from '../features/knowledge/KnowledgeSearchBoundary';
+import { useKnowledgePassageSearch } from '../features/knowledge/useKnowledgePassageSearch';
+import type { KnowledgeOpenRequest } from '../features/knowledge/knowledgeNavigation';
 import {
   isKnowledgeContentDestination,
   type KnowledgeContentDestination,
@@ -22,6 +26,12 @@ const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
   Personnel: ['contact', 'group', 'server'],
 };
+const IMMEDIATE_RESULT_LIMIT = 15;
+
+type WikiPassageSearchResult = SearchResult & {
+  source: 'wiki-passage';
+  data: KnowledgeSearchResult;
+};
 
 export type HeaderSearchActions = {
   onAddContactToBridge: (email: string) => void;
@@ -29,11 +39,12 @@ export type HeaderSearchActions = {
   onNavigateToTab: (tab: string) => void;
   onOpenKnowledgeDestination: (destination: KnowledgeContentDestination) => void;
   onOpenAddContact: (email?: string) => void;
-  onOpenKnowledgeDocument: (documentId: string, headingId?: string) => void;
+  onOpenKnowledgeDocument: (request: KnowledgeOpenRequest) => void;
 };
 
 type HeaderSearchProps = {
   activeTab: string;
+  preferredResultType?: ResultType;
   contacts: Contact[];
   servers: Server[];
   groups: BridgeGroup[];
@@ -58,8 +69,161 @@ const RenderIcon: React.FC<{ result: SearchResult }> = ({ result }) => {
   }
 };
 
+function destinationKey(documentId: string, pageIndex: number, headingId: string | null): string {
+  return JSON.stringify([documentId, pageIndex, headingId]);
+}
+
+function immediateKnowledgeDestinationKey(result: SearchResult): string | null {
+  if (result.type !== 'knowledge') return null;
+  const selection = result.data as {
+    document?: Pick<KnowledgeDocumentRecord, 'id' | 'outline'>;
+    headingId?: string;
+  };
+  if (!selection.document?.id) return null;
+  const heading = selection.headingId
+    ? selection.document.outline?.find((node) => node.id === selection.headingId)
+    : undefined;
+  return destinationKey(
+    selection.document.id,
+    heading?.pageIndex ?? 0,
+    selection.headingId ?? null,
+  );
+}
+
+function mapWikiPassageResults(
+  immediateResults: SearchResult[],
+  passageResults: KnowledgeSearchResult[],
+): WikiPassageSearchResult[] {
+  const destinations = new Set(
+    immediateResults.map(immediateKnowledgeDestinationKey).filter((key): key is string => !!key),
+  );
+
+  return passageResults.flatMap((passage) => {
+    const key = destinationKey(passage.documentId, passage.pageIndex, passage.headingId);
+    if (destinations.has(key)) return [];
+    destinations.add(key);
+    return [
+      {
+        id: `wiki-passage-${passage.id}`,
+        type: 'knowledge' as const,
+        source: 'wiki-passage' as const,
+        title: passage.title,
+        subtitle: passage.excerpt,
+        iconType: 'knowledge',
+        data: passage,
+      },
+    ];
+  });
+}
+
+type SearchResultItemProps = {
+  result: SearchResult;
+  index: number;
+  selectedIndex: number;
+  onSelect: (result: SearchResult) => void;
+  onHover: (index: number) => void;
+};
+
+const SearchResultItem: React.FC<SearchResultItemProps> = ({
+  result,
+  index,
+  selectedIndex,
+  onSelect,
+  onHover,
+}) => {
+  const passage = result.source === 'wiki-passage' ? (result.data as KnowledgeSearchResult) : null;
+  return (
+    <li // NOSONAR - combobox pattern requires role="option" on li
+      className={`search-dropdown-item ${index === selectedIndex ? 'is-selected' : ''}`}
+      role="option"
+      aria-selected={index === selectedIndex}
+    >
+      <button
+        type="button"
+        data-index={index}
+        id={`search-result-${index}`}
+        className="search-dropdown-hitbox"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          onSelect(result);
+        }}
+        onMouseEnter={() => onHover(index)}
+      >
+        <div className="search-dropdown-result-icon">
+          <RenderIcon result={result} />
+        </div>
+        <div className="search-dropdown-result-info">
+          <div className="search-dropdown-result-title">{result.title}</div>
+          {passage ? (
+            <>
+              <div className="search-dropdown-result-meta">
+                <span>Page {passage.pageIndex + 1}</span>
+                <span>{passage.category}</span>
+                {passage.heading && <span>{passage.heading}</span>}
+                {passage.matchKind === 'fuzzy' && (
+                  <span className="search-dropdown-close-match">Close match</span>
+                )}
+              </div>
+              <div className="search-dropdown-result-subtitle">{passage.excerpt}</div>
+            </>
+          ) : (
+            result.subtitle && (
+              <div className="search-dropdown-result-subtitle">{result.subtitle}</div>
+            )
+          )}
+        </div>
+        <div className="search-dropdown-result-type">{passage ? 'Wiki' : result.type}</div>
+      </button>
+    </li>
+  );
+};
+
+type WikiPassageResultsProps = {
+  results: WikiPassageSearchResult[];
+  startIndex: number;
+  selectedIndex: number;
+  onSelect: (result: SearchResult) => void;
+  onHover: (index: number) => void;
+};
+
+const WikiPassageResults: React.FC<WikiPassageResultsProps> = ({
+  results,
+  startIndex,
+  selectedIndex,
+  onSelect,
+  onHover,
+}) => {
+  if (results.length === 0) return null;
+  return (
+    <>
+      <li role="presentation" className="search-dropdown-group-label">
+        Wiki passages
+      </li>
+      {results.map((result, offset) => (
+        <SearchResultItem
+          key={result.id}
+          result={result}
+          index={startIndex + offset}
+          selectedIndex={selectedIndex}
+          onSelect={onSelect}
+          onHover={onHover}
+        />
+      ))}
+    </>
+  );
+};
+
+const WikiPassageRenderFailure: React.FC<{
+  generationKey: string;
+  onFailure: (generationKey: string) => void;
+}> = ({ generationKey, onFailure }) => {
+  useLayoutEffect(() => onFailure(generationKey), [generationKey, onFailure]);
+  return null;
+};
+
 export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   activeTab,
+  preferredResultType,
   contacts,
   servers,
   groups,
@@ -79,6 +243,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   const { query, setQuery, isSearchFocused, setIsSearchFocused, searchInputRef, clearSearch } =
     useSearchContext();
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [failedPassageGeneration, setFailedPassageGeneration] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLUListElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -97,31 +262,93 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     groups,
     searchableKnowledgeDocuments,
   );
+  const passageSearch = useKnowledgePassageSearch({
+    query,
+    scope: { kind: 'all' },
+    limit: 20,
+    enabled: isSearchFocused,
+  });
+
+  const rankedResults = useMemo(() => {
+    if (!preferredResultType) return allResults;
+    const preferred: SearchResult[] = [];
+    const remaining: SearchResult[] = [];
+    for (const result of allResults) {
+      (result.type === preferredResultType ? preferred : remaining).push(result);
+    }
+    return [...preferred, ...remaining];
+  }, [allResults, preferredResultType]);
 
   // On filterable tabs, hide results that duplicate the tab's filtered list
-  const dropdownResults = useMemo(() => {
+  const immediateResults = useMemo(() => {
     const typesToHide = FILTERABLE_TABS[activeTab] || [];
-    if (!typesToHide.length || !dropdownQuery) return allResults;
-    return allResults.filter((r) => !typesToHide.includes(r.type));
-  }, [allResults, activeTab, dropdownQuery]);
+    const visibleResults =
+      !typesToHide.length || !dropdownQuery
+        ? rankedResults
+        : rankedResults.filter((result) => !typesToHide.includes(result.type));
+    return visibleResults.slice(0, IMMEDIATE_RESULT_LIMIT);
+  }, [rankedResults, activeTab, dropdownQuery]);
+
+  const passageResults = useMemo(
+    () =>
+      passageSearch.state === 'ready' && passageSearch.response
+        ? mapWikiPassageResults(immediateResults, passageSearch.response.results)
+        : [],
+    [immediateResults, passageSearch.response, passageSearch.state],
+  );
+  const passageGenerationKey = passageSearch.generationKey || dropdownQuery;
+  const visiblePassageResults = useMemo(
+    () => (failedPassageGeneration === passageGenerationKey ? [] : passageResults),
+    [failedPassageGeneration, passageGenerationKey, passageResults],
+  );
+  const dropdownResults = useMemo(
+    () => [...immediateResults, ...visiblePassageResults],
+    [immediateResults, visiblePassageResults],
+  );
+  const activeIndex =
+    dropdownResults.length === 0 ? 0 : Math.min(selectedIndex, dropdownResults.length - 1);
+
+  const handlePassageRenderFailure = useCallback((generationKey: string) => {
+    setFailedPassageGeneration(generationKey);
+  }, []);
 
   // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(0);
   }, [dropdownQuery]);
 
+  useEffect(() => {
+    setSelectedIndex((current) =>
+      dropdownResults.length === 0 ? 0 : Math.min(current, dropdownResults.length - 1),
+    );
+  }, [dropdownResults.length]);
+
   // Scroll selected item into view
   useEffect(() => {
     if (resultsRef.current) {
-      const selected = resultsRef.current.querySelector(`[data-index="${selectedIndex}"]`);
+      const selected = resultsRef.current.querySelector(`[data-index="${activeIndex}"]`);
       selected?.scrollIntoView({ block: 'nearest' });
     }
-  }, [selectedIndex]);
+  }, [activeIndex]);
 
   const showDropdown = isSearchFocused && dropdownResults.length > 0;
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
+      if (result.source === 'wiki-passage') {
+        const passage = result.data as KnowledgeSearchResult;
+        onOpenKnowledgeDocument({
+          documentId: passage.documentId,
+          ...(passage.headingId ? { headingId: passage.headingId } : {}),
+          pageIndex: passage.pageIndex,
+          highlightText: passage.highlightText,
+          normalizedStart: passage.normalizedStart,
+          normalizedEnd: passage.normalizedEnd,
+        });
+        clearSearch();
+        searchInputRef.current?.blur();
+        return;
+      }
       switch (result.type) {
         case 'contact': {
           const contact = result.data as Contact;
@@ -142,7 +369,10 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
             document: KnowledgeDocumentRecord;
             headingId?: string;
           };
-          onOpenKnowledgeDocument(selection.document.id, selection.headingId);
+          onOpenKnowledgeDocument({
+            documentId: selection.document.id,
+            ...(selection.headingId ? { headingId: selection.headingId } : {}),
+          });
           break;
         }
         case 'action': {
@@ -207,21 +437,13 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           break;
         case 'Enter':
           e.preventDefault();
-          if (dropdownResults[selectedIndex]) {
-            handleSelect(dropdownResults[selectedIndex]);
+          if (dropdownResults[activeIndex]) {
+            handleSelect(dropdownResults[activeIndex]);
           }
           break;
       }
     },
-    [
-      query,
-      showDropdown,
-      dropdownResults,
-      selectedIndex,
-      handleSelect,
-      clearSearch,
-      searchInputRef,
-    ],
+    [query, showDropdown, dropdownResults, activeIndex, handleSelect, clearSearch, searchInputRef],
   );
 
   const handleFocus = useCallback(() => {
@@ -291,14 +513,12 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           onKeyDown={handleKeyDown}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          placeholder="Search..."
-          aria-label="Search"
+          placeholder="Search Relay..."
+          aria-label="Search Relay"
           aria-expanded={showDropdown}
           aria-controls={showDropdown ? 'header-search-dropdown' : undefined}
           aria-activedescendant={
-            showDropdown && dropdownResults.length > 0
-              ? `search-result-${selectedIndex}`
-              : undefined
+            showDropdown && dropdownResults.length > 0 ? `search-result-${activeIndex}` : undefined
           }
         />
         {query ? (
@@ -340,37 +560,33 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
             {/* Custom combobox dropdown requires ARIA roles - no semantic HTML equivalent */}
             <ul ref={resultsRef} className="search-dropdown-results" role="listbox">
               {/* NOSONAR */}
-              {dropdownResults.map((result, index) => (
-                <li // NOSONAR - combobox pattern requires role="option" on li
+              {immediateResults.map((result, index) => (
+                <SearchResultItem
                   key={result.id}
-                  className={`search-dropdown-item ${index === selectedIndex ? 'is-selected' : ''}`}
-                  role="option"
-                  aria-selected={index === selectedIndex}
-                >
-                  <button
-                    type="button"
-                    data-index={index}
-                    id={`search-result-${index}`}
-                    className="search-dropdown-hitbox"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleSelect(result);
-                    }}
-                    onMouseEnter={() => setSelectedIndex(index)}
-                  >
-                    <div className="search-dropdown-result-icon">
-                      <RenderIcon result={result} />
-                    </div>
-                    <div className="search-dropdown-result-info">
-                      <div className="search-dropdown-result-title">{result.title}</div>
-                      {result.subtitle && (
-                        <div className="search-dropdown-result-subtitle">{result.subtitle}</div>
-                      )}
-                    </div>
-                    <div className="search-dropdown-result-type">{result.type}</div>
-                  </button>
-                </li>
+                  result={result}
+                  index={index}
+                  selectedIndex={activeIndex}
+                  onSelect={handleSelect}
+                  onHover={setSelectedIndex}
+                />
               ))}
+              <KnowledgeSearchBoundary
+                key={passageGenerationKey}
+                fallback={
+                  <WikiPassageRenderFailure
+                    generationKey={passageGenerationKey}
+                    onFailure={handlePassageRenderFailure}
+                  />
+                }
+              >
+                <WikiPassageResults
+                  results={visiblePassageResults}
+                  startIndex={immediateResults.length}
+                  selectedIndex={activeIndex}
+                  onSelect={handleSelect}
+                  onHover={setSelectedIndex}
+                />
+              </KnowledgeSearchBoundary>
             </ul>
             <div className="search-dropdown-footer">
               <span>

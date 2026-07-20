@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist/build/pdf.mjs';
 import { KnowledgePdfPage, type KnowledgePdfPageProps } from './KnowledgePdfPage';
+import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
 import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
 import { useContinuousPdfPages } from './useContinuousPdfPages';
 
@@ -20,6 +21,9 @@ type KnowledgeContinuousPdfProps = {
   onPageStatus?: KnowledgePdfPageProps['onStatus'];
   onTargetNavigationComplete?: (target: KnowledgeViewerTarget) => void;
   onCurrentPageChange: (pageIndex: number) => void;
+  searchMatchesByPage?: ReadonlyMap<number, readonly KnowledgeDocumentSearchMatch[]>;
+  activeSearchResultId?: string | null;
+  onActiveSearchHighlightReady?: KnowledgePdfPageProps['onActiveSearchHighlightReady'];
 };
 
 type PageMetric = {
@@ -70,6 +74,9 @@ export const KnowledgeContinuousPdf = forwardRef<
     onPageStatus = ignorePageStatus,
     onTargetNavigationComplete,
     onCurrentPageChange,
+    searchMatchesByPage,
+    activeSearchResultId = null,
+    onActiveSearchHighlightReady,
   },
   ref,
 ) {
@@ -268,6 +275,9 @@ export const KnowledgeContinuousPdf = forwardRef<
                 onActivateResolvedLink={onActivateResolvedLink}
                 onActivateDestination={onActivateDestination}
                 onStatus={onPageStatus}
+                searchMatches={searchMatchesByPage?.get(pageIndex) ?? []}
+                activeSearchResultId={activeSearchResultId}
+                onActiveSearchHighlightReady={onActiveSearchHighlightReady}
               />
             ) : (
               <div className="knowledge-page-placeholder" aria-hidden="true">

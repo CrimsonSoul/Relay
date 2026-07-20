@@ -1,4 +1,7 @@
-import { isKnowledgeSearchTimestamp, type KnowledgeSearchIndexState } from './knowledgeSearch';
+import {
+  normalizeKnowledgeSearchTimestamp,
+  type KnowledgeSearchIndexState,
+} from './knowledgeSearch';
 
 export const KNOWLEDGE_DOCUMENTS_COLLECTION = 'knowledge_documents';
 export const KNOWLEDGE_CATEGORIES_COLLECTION = 'knowledge_categories';
@@ -260,6 +263,7 @@ export type KnowledgeAuditEventView = {
 export type KnowledgeManagementDocumentView = Pick<
   KnowledgeDocumentRecord,
   | 'id'
+  | 'checksum'
   | 'category'
   | 'categoryId'
   | 'documentType'
@@ -379,11 +383,15 @@ type KnowledgeSearchIndexMetadata = Pick<
 function normalizeKnowledgeSearchIndexMetadata(
   value: Record<string, unknown>,
 ): KnowledgeSearchIndexMetadata | null {
-  const searchIndexState = value.searchIndexState ?? 'pending';
-  const searchIndexChecksum = value.searchIndexChecksum ?? null;
+  const searchIndexState =
+    value.searchIndexState === '' ? 'pending' : (value.searchIndexState ?? 'pending');
+  const searchIndexChecksum =
+    value.searchIndexChecksum === '' ? null : (value.searchIndexChecksum ?? null);
   const searchIndexVersion = value.searchIndexVersion ?? 0;
-  const searchIndexedAt = value.searchIndexedAt ?? null;
-  const searchIndexError = value.searchIndexError ?? null;
+  const rawSearchIndexedAt = value.searchIndexedAt === '' ? null : (value.searchIndexedAt ?? null);
+  const searchIndexedAt =
+    rawSearchIndexedAt === null ? null : normalizeKnowledgeSearchTimestamp(rawSearchIndexedAt);
+  const searchIndexError = value.searchIndexError === '' ? null : (value.searchIndexError ?? null);
 
   if (
     !['pending', 'ready', 'failed'].includes(String(searchIndexState)) ||
@@ -391,7 +399,7 @@ function normalizeKnowledgeSearchIndexMetadata(
       (typeof searchIndexChecksum !== 'string' || !SHA256_PATTERN.test(searchIndexChecksum))) ||
     !Number.isInteger(searchIndexVersion) ||
     (searchIndexVersion as number) < 0 ||
-    (searchIndexedAt !== null && !isKnowledgeSearchTimestamp(searchIndexedAt)) ||
+    (rawSearchIndexedAt !== null && searchIndexedAt === null) ||
     ![null, 'no-searchable-text', 'extraction-failed', 'storage-unavailable'].includes(
       searchIndexError as KnowledgeSearchIndexError | null,
     ) ||
@@ -914,6 +922,7 @@ export function normalizeKnowledgeManagementDocumentView(
   const searchIndex = normalizeKnowledgeSearchIndexMetadata(value);
   if (
     !boundedString(value.id, 200) ||
+    !isKnowledgeChecksum(value.checksum) ||
     !boundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
     (categoryId !== null && !boundedIdentifier(categoryId, 200)) ||
     (documentType !== 'sop' && documentType !== 'cheatsheet') ||
@@ -940,6 +949,7 @@ export function normalizeKnowledgeManagementDocumentView(
   }
   return {
     id: value.id,
+    checksum: value.checksum,
     category: value.category,
     categoryId,
     documentType,

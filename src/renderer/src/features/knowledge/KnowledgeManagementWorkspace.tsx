@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   KnowledgeAuditAction,
   KnowledgeDocumentType,
@@ -9,12 +9,15 @@ import type {
   KnowledgeUploadQueueItemView,
 } from '@shared/knowledge';
 import { TactileButton } from '../../components/TactileButton';
+import { SearchInput } from '../../components/SearchInput';
 import { useKnowledgeManagement } from './useKnowledgeManagement';
 import { KnowledgeCategoryManager } from './KnowledgeCategoryManager';
 
 type Section = 'documents' | 'categories' | 'uploads' | 'trash' | 'audit';
 type Draft = { title: string; categoryId: string; documentType: KnowledgeDocumentType };
+type DraftErrors = Partial<Record<'title' | 'categoryId', string>>;
 type UploadDraft = { title: string; category: string };
+type RetryFocusIntent = { documentId: string; operationId: number; settled: boolean };
 
 const ACTION_LABELS: Record<KnowledgeAuditAction, string> = {
   'upload-validated': 'Validated upload',
@@ -35,6 +38,12 @@ const ACTION_LABELS: Record<KnowledgeAuditAction, string> = {
   'migration-completed': 'Completed migration',
   'recovery-completed': 'Completed recovery',
 };
+
+const SEARCH_READINESS_LABELS = {
+  pending: 'Indexing search',
+  ready: 'Search ready',
+  failed: 'Search needs retry',
+} as const;
 
 function formatDate(value: string | null): string {
   if (!value) return 'Unknown time';
@@ -135,6 +144,12 @@ export function KnowledgeManagementWorkspace({
     categoryId: '',
     documentType: 'sop',
   });
+  const [editErrors, setEditErrors] = useState<DraftErrors>({});
+  const editTitleRef = useRef<HTMLInputElement>(null);
+  const editCategoryRef = useRef<HTMLSelectElement>(null);
+  const sectionContentRef = useRef<HTMLDivElement>(null);
+  const documentsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const retryFocusOperationRef = useRef(0);
   const [uploadDrafts, setUploadDrafts] = useState<Record<string, UploadDraft>>({});
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [bulkCategoryId, setBulkCategoryId] = useState('');
@@ -142,6 +157,8 @@ export function KnowledgeManagementWorkspace({
   const [password, setPassword] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelBatchConfirmation, setCancelBatchConfirmation] = useState(false);
+  const [retryFocusIntent, setRetryFocusIntent] = useState<RetryFocusIntent | null>(null);
+  const restoreBatchCancelFocusRef = useRef(false);
   const snapshot = management.snapshot;
   const documents = useMemo(() => snapshot?.documents.items ?? [], [snapshot]);
   const trash = snapshot?.trash.items ?? [];
@@ -158,13 +175,39 @@ export function KnowledgeManagementWorkspace({
     ['paused', 'paused-network'].includes(state),
   );
   const filteredDocuments = documents.filter((document) => matchesDocument(document, query));
+  const searchableDocumentCount = documents.filter(
+    ({ searchIndexState }) => searchIndexState === 'ready',
+  ).length;
   const categories = snapshot?.categories ?? [];
+
+  useEffect(() => {
+    if (cancelBatchConfirmation || !restoreBatchCancelFocusRef.current) return;
+    restoreBatchCancelFocusRef.current = false;
+    document.querySelector<HTMLButtonElement>('[data-cancel-batch-trigger]')?.focus();
+  }, [cancelBatchConfirmation]);
+
+  useEffect(() => {
+    if (!retryFocusIntent?.settled) return;
+    const retryButton = [
+      ...globalThis.document.querySelectorAll<HTMLButtonElement>('[data-search-retry-document-id]'),
+    ].find((button) => button.dataset.searchRetryDocumentId === retryFocusIntent.documentId);
+    const readiness = [
+      ...globalThis.document.querySelectorAll<HTMLElement>('[data-search-readiness-document-id]'),
+    ].find((status) => status.dataset.searchReadinessDocumentId === retryFocusIntent.documentId);
+    const target =
+      retryButton ?? readiness ?? documentsHeadingRef.current ?? sectionContentRef.current;
+    target?.focus();
+    setRetryFocusIntent((current) =>
+      current?.operationId === retryFocusIntent.operationId ? null : current,
+    );
+  }, [retryFocusIntent]);
 
   const selectSection = (next: Section) => {
     setSection(next);
     setNotice(null);
     setCancelBatchConfirmation(false);
     if (next === 'audit') void management.readAudit();
+    queueMicrotask(() => sectionContentRef.current?.focus());
   };
 
   const stagePdfs = async () => {
@@ -188,20 +231,34 @@ export function KnowledgeManagementWorkspace({
         '',
       documentType: document.documentType,
     });
+    setEditErrors({});
   };
 
   const saveEdit = async (document: KnowledgeManagementDocumentView) => {
-    if (!editDraft.categoryId) return;
+    const nextErrors: DraftErrors = {};
+    const trimmedTitle = editDraft.title.trim();
+    if (!trimmedTitle) nextErrors.title = 'Enter a display title.';
+    if (!editDraft.categoryId) nextErrors.categoryId = 'Choose a category.';
+    setEditErrors(nextErrors);
+    if (nextErrors.title) {
+      editTitleRef.current?.focus();
+      return;
+    }
+    if (nextErrors.categoryId) {
+      editCategoryRef.current?.focus();
+      return;
+    }
     if (
       !(await management.setDocumentMetadata(
         document,
-        editDraft.title,
+        trimmedTitle,
         editDraft.categoryId,
         editDraft.documentType,
       ))
     )
       return;
     setEditingId(null);
+    setEditErrors({});
   };
 
   const replacePdf = async (document: KnowledgeManagementDocumentView) => {
@@ -213,6 +270,19 @@ export function KnowledgeManagementWorkspace({
         ? `Replacement for ${document.displayTitle} queued. Use Replace existing when it is ready.`
         : 'PDFs queued. Each duplicate filename can replace its existing document when ready.',
     );
+  };
+
+  const retrySearchIndex = async (documentId: string) => {
+    const operationId = retryFocusOperationRef.current + 1;
+    retryFocusOperationRef.current = operationId;
+    setRetryFocusIntent({ documentId, operationId, settled: false });
+    try {
+      await management.retrySearchIndex(documentId);
+    } finally {
+      setRetryFocusIntent((current) =>
+        current?.operationId === operationId ? { ...current, settled: true } : current,
+      );
+    }
   };
 
   const publishUpload = async (upload: KnowledgeManagementUploadView) => {
@@ -230,6 +300,50 @@ export function KnowledgeManagementWorkspace({
     }
   };
 
+  const closeDeleteConfirmation = useCallback((documentId: string) => {
+    setDeleteId(null);
+    setPassword('');
+    queueMicrotask(() => {
+      const trigger = [
+        ...globalThis.document.querySelectorAll<HTMLButtonElement>('[data-delete-document-id]'),
+      ].find((button) => button.dataset.deleteDocumentId === documentId);
+      trigger?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!deleteId) return undefined;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      const confirmation = [
+        ...globalThis.document.querySelectorAll<HTMLFormElement>('[data-document-id]'),
+      ].find((form) => form.dataset.documentId === deleteId);
+      if (!confirmation) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDeleteConfirmation(deleteId);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const controls = [
+        ...confirmation.querySelectorAll<HTMLElement>(
+          'input:not([disabled]), button:not([disabled])',
+        ),
+      ];
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (!first || !last) return;
+      if (!event.shiftKey && globalThis.document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && globalThis.document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    };
+    globalThis.document.addEventListener('keydown', handleKeyDown);
+    return () => globalThis.document.removeEventListener('keydown', handleKeyDown);
+  }, [closeDeleteConfirmation, deleteId]);
+
   const toggleDocumentSelection = (documentId: string, selected: boolean) => {
     setSelectedDocumentIds((current) =>
       selected ? [...current, documentId] : current.filter((id) => id !== documentId),
@@ -246,6 +360,30 @@ export function KnowledgeManagementWorkspace({
     trash: trash.length,
     audit: management.auditEvents.length,
   };
+
+  if (!management.canManage) {
+    return (
+      <div className="knowledge-management">
+        <header className="knowledge-management__header">
+          <div>
+            <span className="knowledge-tab__kicker">Protected publisher workspace</span>
+            <h1>Manage Wiki</h1>
+            <p>Stage, review, publish, and recover PDF guides shared across the Relay team.</p>
+          </div>
+          <div className="knowledge-management__header-actions">
+            <TactileButton size="sm" onClick={onExit}>
+              Return to library
+            </TactileButton>
+          </div>
+        </header>
+        <div className="knowledge-management__access-lost" role="alert">
+          <span className="knowledge-tab__kicker">Protected access required</span>
+          <h2>Publisher access ended</h2>
+          <p>Sign in again from Settings to continue managing the Wiki.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="knowledge-management">
@@ -315,7 +453,12 @@ export function KnowledgeManagementWorkspace({
           ))}
         </nav>
 
-        <div className="knowledge-management__content">
+        <div
+          ref={sectionContentRef}
+          className="knowledge-management__content"
+          tabIndex={-1}
+          aria-label={`${section[0]!.toUpperCase()}${section.slice(1)} management section`}
+        >
           {!snapshot && (
             <EmptyPanel>
               {management.loading ? 'Loading managed library…' : 'Managed library unavailable.'}
@@ -324,15 +467,27 @@ export function KnowledgeManagementWorkspace({
 
           {snapshot && section === 'documents' && (
             <>
+              <div className="knowledge-management-section-heading knowledge-management-section-heading--documents">
+                <h2 ref={documentsHeadingRef} tabIndex={-1}>
+                  Documents
+                </h2>
+                {searchableDocumentCount !== documents.length && (
+                  <span className="knowledge-management__searchable-count" role="status">
+                    {searchableDocumentCount} of {documents.length} searchable
+                  </span>
+                )}
+              </div>
               <div className="knowledge-management__toolbar">
-                <label className="knowledge-management__search">
-                  <span>Search</span>
-                  <input
+                <div className="knowledge-management__search scoped-search-control">
+                  <SearchInput
+                    type="search"
+                    aria-label="Search managed documents"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Title, PDF, or category"
+                    className="scoped-search-input"
                   />
-                </label>
+                </div>
                 {categories.length > 0 && (
                   <div className="knowledge-management__category-tool">
                     <select
@@ -377,45 +532,98 @@ export function KnowledgeManagementWorkspace({
                 {filteredDocuments.map((document) => (
                   <article className="knowledge-management-row" key={document.id}>
                     <div className="knowledge-management-row__identity">
-                      <label className="knowledge-management-row__select">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${document.displayTitle}`}
-                          checked={selectedDocumentIds.includes(document.id)}
-                          onChange={(event) =>
-                            toggleDocumentSelection(document.id, event.target.checked)
-                          }
-                        />
-                        <span>Select</span>
-                      </label>
-                      <span className="knowledge-management-row__type">
-                        {document.documentType === 'cheatsheet' ? 'CHEATSHEET' : 'SOP'} ·{' '}
-                        {document.pageCount} pages
-                      </span>
+                      <div className="knowledge-management-row__eyebrow">
+                        <label className="knowledge-management-row__select">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${document.displayTitle}`}
+                            checked={selectedDocumentIds.includes(document.id)}
+                            onChange={(event) =>
+                              toggleDocumentSelection(document.id, event.target.checked)
+                            }
+                          />
+                          <span>Select</span>
+                        </label>
+                        <span className="knowledge-management-row__type">
+                          {document.documentType === 'cheatsheet' ? 'CHEATSHEET' : 'SOP'} ·{' '}
+                          {document.pageCount} pages
+                        </span>
+                      </div>
                       <h2>{document.displayTitle}</h2>
                       <p>{document.fileName}</p>
+                      <div className="knowledge-management-row__search">
+                        <span
+                          className={`knowledge-search-readiness is-${document.searchIndexState}`}
+                          data-search-readiness-document-id={document.id}
+                          tabIndex={-1}
+                        >
+                          {SEARCH_READINESS_LABELS[document.searchIndexState]}
+                        </span>
+                        {document.searchIndexState === 'failed' && (
+                          <TactileButton
+                            size="sm"
+                            className="knowledge-search-readiness__retry"
+                            aria-label={`Retry search for ${document.displayTitle}`}
+                            data-search-retry-document-id={document.id}
+                            loading={management.busy === `search-index:${document.id}`}
+                            onClick={() => void retrySearchIndex(document.id)}
+                          >
+                            Retry
+                          </TactileButton>
+                        )}
+                      </div>
                     </div>
                     {editingId === document.id ? (
                       <div className="knowledge-management-row__editor">
                         <label>
                           Display title
                           <input
-                            value={editDraft.title}
-                            onChange={(event) =>
-                              setEditDraft((draft) => ({ ...draft, title: event.target.value }))
+                            ref={editTitleRef}
+                            aria-invalid={editErrors.title ? true : undefined}
+                            aria-describedby={
+                              editErrors.title ? `knowledge-title-error-${document.id}` : undefined
                             }
+                            value={editDraft.title}
+                            onChange={(event) => {
+                              setEditDraft((draft) => ({ ...draft, title: event.target.value }));
+                              if (editErrors.title && event.target.value.trim()) {
+                                setEditErrors((current) => ({ ...current, title: undefined }));
+                              }
+                            }}
                           />
+                          {editErrors.title && (
+                            <span
+                              id={`knowledge-title-error-${document.id}`}
+                              className="knowledge-management-field-error"
+                              role="alert"
+                            >
+                              {editErrors.title}
+                            </span>
+                          )}
                         </label>
                         <label>
                           Category
                           <select
+                            ref={editCategoryRef}
+                            aria-invalid={editErrors.categoryId ? true : undefined}
+                            aria-describedby={
+                              editErrors.categoryId
+                                ? `knowledge-category-error-${document.id}`
+                                : undefined
+                            }
                             value={editDraft.categoryId}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setEditDraft((draft) => ({
                                 ...draft,
                                 categoryId: event.target.value,
-                              }))
-                            }
+                              }));
+                              if (editErrors.categoryId && event.target.value) {
+                                setEditErrors((current) => ({
+                                  ...current,
+                                  categoryId: undefined,
+                                }));
+                              }
+                            }}
                           >
                             <option value="">Choose category</option>
                             {categories.map((category) => (
@@ -424,6 +632,15 @@ export function KnowledgeManagementWorkspace({
                               </option>
                             ))}
                           </select>
+                          {editErrors.categoryId && (
+                            <span
+                              id={`knowledge-category-error-${document.id}`}
+                              className="knowledge-management-field-error"
+                              role="alert"
+                            >
+                              {editErrors.categoryId}
+                            </span>
+                          )}
                         </label>
                         <label>
                           Document type
@@ -441,13 +658,18 @@ export function KnowledgeManagementWorkspace({
                           </select>
                         </label>
                         <div>
-                          <TactileButton size="sm" onClick={() => setEditingId(null)}>
+                          <TactileButton
+                            size="sm"
+                            onClick={() => {
+                              setEditingId(null);
+                              setEditErrors({});
+                            }}
+                          >
                             Cancel
                           </TactileButton>
                           <TactileButton
                             size="sm"
                             variant="primary"
-                            disabled={!editDraft.categoryId || !editDraft.title.trim()}
                             loading={management.busy === `metadata:${document.id}`}
                             onClick={() => void saveEdit(document)}
                           >
@@ -555,23 +777,39 @@ export function KnowledgeManagementWorkspace({
                               Pause all
                             </TactileButton>
                           )}
-                          <TactileButton
-                            size="sm"
-                            variant="danger"
-                            className={
-                              cancelBatchConfirmation ? '' : 'knowledge-management__danger-outline'
-                            }
-                            onClick={() => {
-                              if (!cancelBatchConfirmation) {
-                                setCancelBatchConfirmation(true);
-                                return;
-                              }
-                              void management.cancelUploadBatch(uploadBatchId);
-                              setCancelBatchConfirmation(false);
-                            }}
-                          >
-                            {cancelBatchConfirmation ? 'Confirm cancel' : 'Cancel batch'}
-                          </TactileButton>
+                          {cancelBatchConfirmation ? (
+                            <>
+                              <TactileButton
+                                size="sm"
+                                onClick={() => {
+                                  restoreBatchCancelFocusRef.current = true;
+                                  setCancelBatchConfirmation(false);
+                                }}
+                              >
+                                Keep upload
+                              </TactileButton>
+                              <TactileButton
+                                size="sm"
+                                variant="danger"
+                                onClick={() => {
+                                  void management.cancelUploadBatch(uploadBatchId);
+                                  setCancelBatchConfirmation(false);
+                                }}
+                              >
+                                Confirm cancel
+                              </TactileButton>
+                            </>
+                          ) : (
+                            <TactileButton
+                              size="sm"
+                              variant="danger"
+                              className="knowledge-management__danger-outline"
+                              data-cancel-batch-trigger
+                              onClick={() => setCancelBatchConfirmation(true)}
+                            >
+                              Cancel batch
+                            </TactileButton>
+                          )}
                         </>
                       )}
                     </div>
@@ -780,6 +1018,10 @@ export function KnowledgeManagementWorkspace({
                   {deleteId === document.id ? (
                     <form
                       className="knowledge-management-row__delete"
+                      role="dialog"
+                      aria-modal="false"
+                      aria-label={`Delete ${document.displayTitle}`}
+                      data-document-id={document.id}
                       onSubmit={(event) => {
                         event.preventDefault();
                         void permanentlyDelete(document);
@@ -790,17 +1032,12 @@ export function KnowledgeManagementWorkspace({
                         <input
                           type="password"
                           autoComplete="current-password"
+                          autoFocus
                           value={password}
                           onChange={(event) => setPassword(event.target.value)}
                         />
                       </label>
-                      <TactileButton
-                        size="sm"
-                        onClick={() => {
-                          setDeleteId(null);
-                          setPassword('');
-                        }}
-                      >
+                      <TactileButton size="sm" onClick={() => closeDeleteConfirmation(document.id)}>
                         Cancel
                       </TactileButton>
                       <TactileButton type="submit" size="sm" variant="danger" disabled={!password}>
@@ -825,6 +1062,7 @@ export function KnowledgeManagementWorkspace({
                         size="sm"
                         variant="danger"
                         className="knowledge-management__danger-outline"
+                        data-delete-document-id={document.id}
                         onClick={() => setDeleteId(document.id)}
                       >
                         Delete permanently

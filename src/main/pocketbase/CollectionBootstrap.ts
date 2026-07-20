@@ -187,6 +187,9 @@ const KNOWLEDGE_SEARCH_CHUNK_UNIQUE_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_search_chunk_identity ON knowledge_search_chunks (documentId, checksum, pageNumber, passageNumber, indexVersion)';
 const KNOWLEDGE_SEARCH_CHUNK_DOCUMENT_INDEX =
   'CREATE INDEX idx_knowledge_search_chunk_document ON knowledge_search_chunks (documentId, checksum, indexVersion)';
+const KNOWLEDGE_SEARCH_BATCH_MAX_REQUESTS = 100;
+const KNOWLEDGE_SEARCH_BATCH_MIN_BODY_BYTES = 2 * 1024 * 1024;
+const POCKETBASE_DEFAULT_BATCH_TIMEOUT_SECONDS = 3;
 
 const DEFAULT_AUTH_RULES: CollectionRules = {
   listRule: AUTH_RULE,
@@ -1489,6 +1492,69 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+function finiteNumber(value: unknown, fallback: number, minimum: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum ? value : fallback;
+}
+
+async function ensureKnowledgeSearchBatchApi(pb: PocketBase): Promise<void> {
+  let settings: Record<string, unknown>;
+  try {
+    settings = await pb.settings.getAll({ requestKey: null });
+  } catch (err) {
+    logger.error('Failed to read PocketBase batch settings for optional Wiki search', {
+      error: err,
+    });
+    throw new Error('Failed to read PocketBase batch settings for optional Wiki search', {
+      cause: err,
+    });
+  }
+
+  const current =
+    settings.batch && typeof settings.batch === 'object'
+      ? (settings.batch as Record<string, unknown>)
+      : {};
+  const currentMaxRequests = finiteNumber(current.maxRequests, 0, 0);
+  const currentMaxBodySize = finiteNumber(current.maxBodySize, 0, 0);
+  const bodyCapFitsWriteBatch =
+    currentMaxBodySize === 0 || currentMaxBodySize >= KNOWLEDGE_SEARCH_BATCH_MIN_BODY_BYTES;
+  if (
+    current.enabled === true &&
+    currentMaxRequests >= KNOWLEDGE_SEARCH_BATCH_MAX_REQUESTS &&
+    bodyCapFitsWriteBatch
+  ) {
+    return;
+  }
+
+  const batch = {
+    enabled: true,
+    maxRequests: Math.max(currentMaxRequests, KNOWLEDGE_SEARCH_BATCH_MAX_REQUESTS),
+    timeout: finiteNumber(
+      current.timeout,
+      POCKETBASE_DEFAULT_BATCH_TIMEOUT_SECONDS,
+      Number.EPSILON,
+    ),
+    // PocketBase uses 0 for its ~128 MiB default. Preserve that sentinel;
+    // otherwise make sure a full 100-passage write batch fits.
+    maxBodySize:
+      currentMaxBodySize === 0
+        ? 0
+        : Math.max(currentMaxBodySize, KNOWLEDGE_SEARCH_BATCH_MIN_BODY_BYTES),
+  };
+  try {
+    // Send only the complete nested batch value. PocketBase requires maxRequests
+    // and timeout, while unrelated application settings must remain untouched.
+    await pb.settings.update({ batch }, { requestKey: null });
+    logger.info('Enabled PocketBase batch API for optional Wiki search indexing');
+  } catch (err) {
+    logger.error('Failed to enable PocketBase batch API for optional Wiki search', {
+      error: err,
+    });
+    throw new Error('Failed to enable PocketBase batch API for optional Wiki search', {
+      cause: err,
+    });
+  }
+}
+
 /** Warn about collections Relay does not manage. Startup never deletes user data. */
 function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }>): number {
   const staleCols = allCols.filter(
@@ -1508,6 +1574,8 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
  * PocketBase bootstrap. Callers intentionally treat failures as best-effort.
  */
 export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<void> {
+  await ensureKnowledgeSearchBatchApi(pb);
+
   let allCols: Array<{ id: string; name: string }>;
   try {
     allCols = await pb.collections.getFullList();

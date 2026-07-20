@@ -17,6 +17,7 @@ import { Modal } from '../components/Modal';
 import { TabFallback } from '../components/TabFallback';
 import { TactileButton } from '../components/TactileButton';
 import { useToast } from '../components/Toast';
+import { SearchInput } from '../components/SearchInput';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
 import {
   MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
@@ -1046,27 +1047,16 @@ export const DynatraceProblemsTab: React.FC<{
             onCancel={handleProfileDraftCancel}
             onSave={handleSaveProfileFilter}
           />
-          <label className="dt-problems__search">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-            <span className="sr-only">Search problems</span>
-            <input
+          <div className="dt-problems__search scoped-search-control">
+            <SearchInput
               type="search"
+              aria-label="Search problems"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search title, ID, entity, profile, or zone"
+              className="scoped-search-input"
             />
-          </label>
+          </div>
         </div>
       </div>
 
