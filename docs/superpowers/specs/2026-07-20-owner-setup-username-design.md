@@ -1,7 +1,7 @@
 # First-Owner Username Setup Design
 
 **Date:** 2026-07-20
-**Status:** Approved design; awaiting written-spec review
+**Status:** Approved
 
 ## Summary
 
