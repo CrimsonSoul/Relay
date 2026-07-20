@@ -55,11 +55,36 @@ describe('Knowledge catalog visual details', () => {
   });
 
   it('keeps cheatsheets visually separate from cover shelves', () => {
-    expect(ruleBody('.knowledge-cheatsheet-row')).toContain('min-height: 64px;');
-    expect(ruleBody('.knowledge-cheatsheet-row')).not.toContain('aspect-ratio');
-    expect(ruleBody('.knowledge-catalog__cheatsheets')).toContain(
+    const row = ruleBody('.knowledge-cheatsheet-row');
+    expect(row).toContain('min-height: 64px;');
+    expect(row).not.toContain('aspect-ratio');
+    expect(row).toContain('border-top: 1px solid var(--color-border);');
+
+    const cheatsheets = ruleBody('.knowledge-catalog__cheatsheets');
+    expect(cheatsheets).toContain('border-top: 1px solid var(--color-border);');
+    expect(cheatsheets).toContain('padding-top: var(--space-4);');
+
+    const heading = ruleBody('.knowledge-catalog__cheatsheets .knowledge-catalog__section-heading');
+    expect(heading).toContain('padding-bottom: var(--space-4);');
+    expect(heading).toContain('border-bottom: 1px solid var(--color-border);');
+    expect(heading).toContain('margin-bottom: var(--space-4);');
+    expect(ruleBody('.knowledge-cheatsheet-list')).not.toContain(
       'border-top: 1px solid var(--color-border);',
     );
+  });
+
+  it('keeps the desktop filter toolbar inset and opaque over scrolling catalog content', () => {
+    expect(ruleBody('.knowledge-catalog__filters')).toContain(
+      'background: var(--color-bg-surface);',
+    );
+
+    const desktopSticky =
+      /@media \(min-width: 821px\)\s*\{[\s\S]*?\.knowledge-catalog__filters\s*\{([^}]*)\}/.exec(
+        css,
+      )?.[1] ?? '';
+    expect(desktopSticky).toContain('top: var(--space-4);');
+    expect(desktopSticky).toContain('0 calc(-1 * var(--space-4)) 0 var(--color-bg-app),');
+    expect(desktopSticky).toContain('0 var(--space-4) 0 var(--color-bg-app);');
   });
 
   it('gives catalog search and filters readable rows at half-monitor widths', () => {
