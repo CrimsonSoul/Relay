@@ -104,16 +104,18 @@ const privilegedPasswordSchema = z
   .min(MIN_PRIVILEGED_PASSWORD_LENGTH)
   .max(MAX_PRIVILEGED_PASSWORD_LENGTH);
 
+const privilegedUsernameSchema = z.string().transform((value, context) => {
+  const error = getRoleUsernameError(value);
+  if (error) {
+    context.addIssue({ code: 'custom', message: error });
+    return z.NEVER;
+  }
+  return normalizeRoleUsername(value);
+});
+
 export const PrivilegedLoginSchema = z
   .object({
-    username: z.string().transform((value, context) => {
-      const error = getRoleUsernameError(value);
-      if (error) {
-        context.addIssue({ code: 'custom', message: error });
-        return z.NEVER;
-      }
-      return normalizeRoleUsername(value);
-    }),
+    username: privilegedUsernameSchema,
     password: privilegedPasswordSchema,
   })
   .strict();
@@ -121,6 +123,18 @@ export const PrivilegedLoginSchema = z
 export const PrivilegedReauthenticationSchema = z
   .object({ password: privilegedPasswordSchema })
   .strict();
+
+export const PrivilegedInitialOwnerSetupSchema = z
+  .object({
+    username: privilegedUsernameSchema,
+    password: privilegedPasswordSchema,
+    passwordConfirm: privilegedPasswordSchema,
+  })
+  .strict()
+  .refine((input) => input.password === input.passwordConfirm, {
+    message: 'Passwords must match.',
+    path: ['passwordConfirm'],
+  });
 
 export const PrivilegedCredentialSetupSchema = z
   .object({

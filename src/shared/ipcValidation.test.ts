@@ -9,6 +9,7 @@ import {
   KnowledgeSearchRequestSchema,
   KnowledgeSearchRequestIdSchema,
   PrivilegedLoginSchema,
+  PrivilegedInitialOwnerSetupSchema,
   PrivilegedCredentialSetupSchema,
   PrivilegedPairingTargetAccountSchema,
   PrivilegedPairingCompletionSchema,
@@ -227,6 +228,49 @@ describe('privileged IPC schemas', () => {
       PrivilegedLoginSchema.parse({ username: '  Ryan.Admin ', password: ` ${password} ` }),
     ).toEqual({ username: 'ryan.admin', password: ` ${password} ` });
     expect(PrivilegedReauthenticationSchema.parse({ password })).toEqual({ password });
+  });
+
+  it('normalizes first-Owner usernames without exposing account IDs or changing passwords', () => {
+    expect(
+      PrivilegedInitialOwnerSetupSchema.parse({
+        username: '  Ryan ',
+        password: ` ${password} `,
+        passwordConfirm: ` ${password} `,
+      }),
+    ).toEqual({
+      username: 'ryan',
+      password: ` ${password} `,
+      passwordConfirm: ` ${password} `,
+    });
+    expect(
+      PrivilegedInitialOwnerSetupSchema.safeParse({
+        accountId: 'account-ryan',
+        password,
+        passwordConfirm: password,
+      }).success,
+    ).toBe(false);
+    expect(
+      PrivilegedInitialOwnerSetupSchema.safeParse({
+        username: 'Ryan Owner',
+        password,
+        passwordConfirm: password,
+      }).success,
+    ).toBe(false);
+    expect(
+      PrivilegedInitialOwnerSetupSchema.safeParse({
+        username: 'ryan',
+        password,
+        passwordConfirm: `${password}-different`,
+      }).success,
+    ).toBe(false);
+    expect(
+      PrivilegedInitialOwnerSetupSchema.safeParse({
+        username: 'ryan',
+        password,
+        passwordConfirm: password,
+        remote: true,
+      }).success,
+    ).toBe(false);
   });
 
   it('strictly validates local credential setup and preserves password bytes', () => {

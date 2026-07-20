@@ -93,6 +93,11 @@ export type PrivilegedIpcResult<T> =
 
 export type PrivilegedLoginInput = { username: string; password: string };
 export type PrivilegedReauthenticationInput = { password: string };
+export type PrivilegedInitialOwnerSetupInput = {
+  username: string;
+  password: string;
+  passwordConfirm: string;
+};
 export type PrivilegedCredentialSetupInput = {
   accountId: string;
   password: string;
@@ -439,7 +444,7 @@ export type BridgeAPI = {
     input: PublicPrivilegedCommandRequest,
   ) => Promise<PrivilegedCommandResult>;
   setupInitialAdministratorCredential: (
-    input: PrivilegedCredentialSetupInput,
+    input: PrivilegedInitialOwnerSetupInput,
   ) => Promise<PrivilegedIpcResult<PrivilegedCredentialSetupView>>;
   setupPrivilegedCredential: (
     input: PrivilegedCredentialSetupInput,
