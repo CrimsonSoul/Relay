@@ -139,15 +139,129 @@ describe('useAppCloudStatus', () => {
     );
   });
 
-  it('notifies once for a new warning or outage received over realtime', async () => {
-    collectionState.data = [snapshot(status([item()]))];
+  it('uses the first uncached realtime snapshot as a silent outage baseline', async () => {
+    const shared = status([item()]);
+    collectionState.data = [snapshot(shared)];
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() => expect(result.current.statusData).toEqual(shared));
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('notifies only when a new outage arrives after the baseline', async () => {
+    collectionState.data = [snapshot(status([item({ id: 'warning-1', severity: 'warning' })]))];
     const { rerender } = renderHook(() => useAppCloudStatus(showToast));
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('AWS Outage: S3 outage', 'error'));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [
+      snapshot(
+        status([
+          item({ id: 'warning-1', severity: 'warning' }),
+          item({ id: 'outage-1', title: 'S3 outage', severity: 'error' }),
+        ]),
+      ),
+    ];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'AWS Outage: S3 outage',
+        'error',
+        expect.objectContaining({ title: 'Cloud outage', delivery: 'cloud-outage' }),
+      ),
+    );
+  });
+
+  it('does not repeat an active outage received over realtime', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([item()]))];
+    rerender();
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
 
     showToast.mockClear();
     collectionState.data = [snapshot(status([item()]))];
     rerender();
 
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('notifies when a known warning escalates to an outage', async () => {
+    collectionState.data = [snapshot(status([item({ severity: 'warning' })]))];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([item({ severity: 'error' })]))];
+    rerender();
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+  });
+
+  it('notifies when a resolved outage later reopens with the same id', async () => {
+    collectionState.data = [snapshot(status([item({ severity: 'error' })]))];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([item({ severity: 'resolved' })]))];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([item({ severity: 'error' })]))];
+    rerender();
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+  });
+
+  it('batches simultaneous new outages into one cloud toast', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [
+      snapshot(
+        status([
+          item({ id: 'outage-1', title: 'S3 outage' }),
+          item({ id: 'outage-2', provider: 'azure', title: 'Storage outage' }),
+        ]),
+      ),
+    ];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'AWS Outage: S3 outage (+1 more)',
+        'error',
+        expect.objectContaining({ delivery: 'cloud-outage' }),
+      ),
+    );
+    expect(showToast).toHaveBeenCalledOnce();
+  });
+
+  it.each(['warning', 'info', 'resolved'] as const)(
+    'does not notify for %s-only updates',
+    async (severity) => {
+      collectionState.data = [snapshot(status())];
+      const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+      await act(async () => Promise.resolve());
+
+      collectionState.data = [snapshot(status([item({ severity })]))];
+      rerender();
+      await act(async () => Promise.resolve());
+
+      expect(showToast).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not replay a cached outage when the same realtime snapshot arrives', async () => {
+    const cached = status([item()]);
+    secureStorageMock.setItemSync('cached_cloud_status', { fetchedAt: Date.now(), data: cached });
+    collectionState.data = [snapshot(cached)];
+
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() => expect(result.current.statusData).toEqual(cached));
     expect(showToast).not.toHaveBeenCalled();
   });
 

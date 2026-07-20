@@ -74,12 +74,41 @@ describe('DynatraceProblemNotificationManager', () => {
       expect.objectContaining({
         title: 'New Dynatrace problem',
         durationMs: 8_000,
+        delivery: 'dynatrace-problem',
       }),
     );
 
     const options = mocks.showToast.mock.calls[0]?.[2];
     options?.action?.onClick();
     expect(onOpenProblems).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['AVAILABILITY', 'error'],
+    ['MONITORING_UNAVAILABLE', 'error'],
+    ['ERROR', 'error'],
+    ['PERFORMANCE', 'warning'],
+    ['RESOURCE_CONTENTION', 'warning'],
+    ['CUSTOM_ALERT', 'warning'],
+    ['INFO', 'warning'],
+  ] as const)('notifies for a newly opened %s problem', async (severity, toastType) => {
+    const onOpenProblems = vi.fn();
+    const { rerender } = render(
+      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
+    );
+
+    mocks.collection = {
+      data: [problem({ problemId: `PROBLEM-${severity}`, severity })],
+      loading: false,
+    };
+    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
+
+    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      'P-1001 · Checkout service unavailable',
+      toastType,
+      expect.objectContaining({ delivery: 'dynatrace-problem' }),
+    );
   });
 
   it('does not notify for a newly synchronized closed problem or repeat a seen problem', async () => {

@@ -4,13 +4,13 @@ import {
   CLOUD_STATUS_PROVIDERS,
   type CloudStatusData,
   type CloudStatusItem,
-  type CloudStatusSeverity,
   type CloudStatusSnapshotRecord,
 } from '@shared/ipc';
 import { ErrorCategory } from '@shared/logging';
 import { getErrorMessage } from '@shared/types';
 import { secureStorage } from '../utils/secureStorage';
 import { loggers } from '../utils/logger';
+import type { ShowToast } from '../components/Toast';
 import { useCollection } from './useCollection';
 
 const CACHE_KEY = 'cached_cloud_status';
@@ -22,20 +22,16 @@ type CacheEntry = {
 
 type CollectionCloudStatusSnapshot = CloudStatusSnapshotRecord & RecordModel;
 
-const TOAST_SEVERITIES: Set<CloudStatusSeverity> = new Set(['error', 'warning']);
-
 function providerLabel(provider: string): string {
   return CLOUD_STATUS_PROVIDERS[provider as keyof typeof CLOUD_STATUS_PROVIDERS]?.label ?? provider;
 }
 
-function severityLabel(severity: CloudStatusSeverity): string {
-  if (severity === 'error') return 'Outage';
-  if (severity === 'warning') return 'Degraded';
-  return severity;
-}
-
 function getAllItems(data: CloudStatusData): CloudStatusItem[] {
   return Object.values(data.providers).flat();
+}
+
+function getOutages(data: CloudStatusData): CloudStatusItem[] {
+  return getAllItems(data).filter((item) => item.severity === 'error');
 }
 
 function toStatusData(record: CloudStatusSnapshotRecord): CloudStatusData {
@@ -47,37 +43,37 @@ function toStatusData(record: CloudStatusSnapshotRecord): CloudStatusData {
 }
 
 /** Consume the server-owned Cloud Status snapshot and issue local notifications. */
-export function useAppCloudStatus(
-  showToast: (message: string, type: 'success' | 'error' | 'info') => void,
-) {
+export function useAppCloudStatus(showToast: ShowToast) {
   const sharedSnapshot = useCollection<CollectionCloudStatusSnapshot>('cloud_status_snapshot', {
     filter: 'key="current"',
   });
   const [statusData, setStatusData] = useState<CloudStatusData | null>(null);
   const [manualLoading, setManualLoading] = useState(false);
-  const seenIdsRef = useRef(new Set<string>());
+  const activeOutageIdsRef = useRef(new Set<string>());
+  const baselineEstablishedRef = useRef(false);
   const cacheRestoredRef = useRef(false);
 
   const processNewEvents = useCallback(
     (data: CloudStatusData) => {
-      const allItems = getAllItems(data);
-      const newItems = allItems.filter(
-        (item) => !seenIdsRef.current.has(item.id) && TOAST_SEVERITIES.has(item.severity),
-      );
-      if (newItems.length > 0) {
-        const mostSevere = newItems.find((item) => item.severity === 'error') ?? newItems[0]!;
-        const suffix = newItems.length > 1 ? ` (+${newItems.length - 1} more)` : '';
-        showToast(
-          `${providerLabel(mostSevere.provider)} ${severityLabel(mostSevere.severity)}: ${mostSevere.title}${suffix}`,
-          'error',
-        );
+      const outages = getOutages(data);
+      const currentOutageIds = new Set(outages.map((item) => item.id));
+      if (!baselineEstablishedRef.current) {
+        activeOutageIdsRef.current = currentOutageIds;
+        baselineEstablishedRef.current = true;
+        return;
       }
 
-      const currentIds = new Set(allItems.map((item) => item.id));
-      for (const item of allItems) seenIdsRef.current.add(item.id);
-      for (const id of seenIdsRef.current) {
-        if (!currentIds.has(id)) seenIdsRef.current.delete(id);
+      const newItems = outages.filter((item) => !activeOutageIdsRef.current.has(item.id));
+      if (newItems.length > 0) {
+        const primary = newItems[0]!;
+        const suffix = newItems.length > 1 ? ` (+${newItems.length - 1} more)` : '';
+        showToast(`${providerLabel(primary.provider)} Outage: ${primary.title}${suffix}`, 'error', {
+          title: 'Cloud outage',
+          delivery: 'cloud-outage',
+        });
       }
+
+      activeOutageIdsRef.current = currentOutageIds;
     },
     [showToast],
   );
@@ -95,7 +91,8 @@ export function useAppCloudStatus(
     const cached = secureStorage.getItemSync<CacheEntry>(CACHE_KEY);
     if (!cached?.data?.providers) return;
     cacheRestoredRef.current = true;
-    for (const item of getAllItems(cached.data)) seenIdsRef.current.add(item.id);
+    activeOutageIdsRef.current = new Set(getOutages(cached.data).map((item) => item.id));
+    baselineEstablishedRef.current = true;
     setStatusData(cached.data);
   }, []);
 

@@ -61,6 +61,7 @@ export function DynatraceProblemNotificationManager({
     showToast(notificationMessage(newOpenProblems), toastType, {
       title: newOpenProblems.length === 1 ? 'New Dynatrace problem' : 'New Dynatrace problems',
       durationMs: 8_000,
+      delivery: 'dynatrace-problem',
       action: { label: 'Open Problems', onClick: onOpenProblems },
     });
     void globalThis.api?.playAlertSound?.().catch(() => undefined);
