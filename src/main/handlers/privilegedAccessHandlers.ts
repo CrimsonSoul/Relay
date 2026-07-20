@@ -11,6 +11,7 @@ import {
 import {
   PrivilegedLoginSchema,
   PrivilegedCredentialSetupSchema,
+  PrivilegedInitialOwnerSetupSchema,
   PrivilegedPairingCompletionSchema,
   PrivilegedPairingTargetAccountSchema,
   PrivilegedReauthenticationSchema,
@@ -217,7 +218,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (!trusted(event, IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN) || !isServer()) {
       return failure('unauthorized');
     }
-    const parsed = PrivilegedCredentialSetupSchema.safeParse(input);
+    const parsed = PrivilegedInitialOwnerSetupSchema.safeParse(input);
     if (!parsed.success) return failure('invalid-input');
     const manager = getAccountManager();
     if (!manager) return failure('offline');

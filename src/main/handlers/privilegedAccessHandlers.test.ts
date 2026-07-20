@@ -197,7 +197,7 @@ describe('setupPrivilegedAccessHandlers', () => {
   it('allows first administrator setup only through trusted local server IPC', async () => {
     setup();
     const input = {
-      accountId: 'account-admin',
+      username: '  Ryan ',
       password: PASSWORD,
       passwordConfirm: PASSWORD,
     };
@@ -207,7 +207,10 @@ describe('setupPrivilegedAccessHandlers', () => {
         value: { accountId: 'account-admin', credentialState: 'configured' },
       },
     );
-    expect(accountManager.setupInitialAdministrator).toHaveBeenCalledWith(input);
+    expect(accountManager.setupInitialAdministrator).toHaveBeenCalledWith({
+      ...input,
+      username: 'ryan',
+    });
 
     handlers.clear();
     setup(false);
