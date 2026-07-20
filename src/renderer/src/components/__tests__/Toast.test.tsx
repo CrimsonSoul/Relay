@@ -202,6 +202,25 @@ describe('ToastProvider', () => {
     expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
   });
 
+  it('does not let the interrupted cloud timer remove a queued outage', async () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    await act(async () => vi.advanceTimersByTime(3_999));
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(screen.getByText('AWS outage')).toBeInTheDocument();
+  });
+
   it('keeps Dynatrace FIFO ahead of queued cloud outages', async () => {
     render(
       <ToastProvider>

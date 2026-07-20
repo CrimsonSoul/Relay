@@ -123,6 +123,8 @@ export const useToast = () => {
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, dispatch] = useReducer(toastReducer, []);
+  const toastsRef = useRef(toasts);
+  toastsRef.current = toasts;
   const autoCloseTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const exitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -154,6 +156,16 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     (message: string, type: ToastType, options?: ToastOptions) => {
       const id = globalThis.crypto.randomUUID();
       const delivery = options?.delivery ?? 'routine';
+      if (delivery === 'dynatrace-problem') {
+        const interruptedCloud = toastsRef.current.find(
+          (toast) => deliveryOf(toast) === 'cloud-outage' && toast.state === 'open',
+        );
+        if (interruptedCloud) {
+          const timer = autoCloseTimersRef.current.get(interruptedCloud.id);
+          if (timer) globalThis.clearTimeout(timer);
+          autoCloseTimersRef.current.delete(interruptedCloud.id);
+        }
+      }
       dispatch({
         type: 'show',
         toast: {

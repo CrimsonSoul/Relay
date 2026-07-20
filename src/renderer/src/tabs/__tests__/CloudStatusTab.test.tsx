@@ -69,13 +69,26 @@ describe('CloudStatusTab', () => {
     expect(screen.getByTestId('tab-fallback')).toBeInTheDocument();
   });
 
+  it('marks coverage unknown when loading ends without a status snapshot', () => {
+    render(<CloudStatusTab statusData={null} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
+    expect(screen.getByText('No status snapshot available')).toBeInTheDocument();
+    expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
+    expect(screen.getAllByText('Unknown')).toHaveLength(10);
+    expect(screen.queryByText('No reported outages')).not.toBeInTheDocument();
+    expect(screen.queryByText('No active vendor outages')).not.toBeInTheDocument();
+  });
+
   it('uses precise all-clear copy and keeps compact provider coverage', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'External outages' })).toBeInTheDocument();
     expect(screen.getByText('No reported outages')).toBeInTheDocument();
     expect(screen.getByText('10 monitored providers')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open AWS status page' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open AWS status page - No outage' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
@@ -86,6 +99,9 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('No reported outages from available feeds')).toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
     expect(screen.getByText('Some provider feeds are unavailable.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open GitHub status page - Unknown' }),
+    ).toBeInTheDocument();
   });
 
   it('refreshes manually and disables refresh while loading', () => {

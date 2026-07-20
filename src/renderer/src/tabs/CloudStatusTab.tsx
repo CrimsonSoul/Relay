@@ -142,7 +142,7 @@ const ProviderChip: React.FC<{
       type="button"
       className={`cloud-status-provider-chip cloud-status-provider-chip--${posture}`}
       onClick={() => openProviderStatus(provider)}
-      aria-label={`Open ${providerLabel(provider)} status page`}
+      aria-label={`Open ${providerLabel(provider)} status page - ${postureLabel(posture)}`}
     >
       <ProviderIcon provider={provider} size={15} />
       <span className="cloud-status-provider-chip__name">{providerLabel(provider)}</span>
@@ -189,13 +189,28 @@ type StatusSummary = {
   label: string;
 };
 
-function statusSummary(outageCount: number, hasFeedErrors: boolean): StatusSummary {
+function statusSummary(
+  outageCount: number,
+  hasFeedErrors: boolean,
+  snapshotUnavailable: boolean,
+): StatusSummary {
+  if (snapshotUnavailable) return { tone: 'unknown', label: 'Coverage unavailable' };
   if (outageCount > 0) return { tone: 'outage', label: outageCountLabel(outageCount) };
   if (hasFeedErrors) return { tone: 'unknown', label: 'Coverage incomplete' };
   return { tone: 'clear', label: 'No active vendor outages' };
 }
 
-function allClearCopy(hasFeedErrors: boolean): { title: string; detail: string; icon: string } {
+function allClearCopy(
+  hasFeedErrors: boolean,
+  snapshotUnavailable: boolean,
+): { title: string; detail: string; icon: string } {
+  if (snapshotUnavailable) {
+    return {
+      title: 'No status snapshot available',
+      detail: 'Relay has not received provider status data yet.',
+      icon: '?',
+    };
+  }
   if (hasFeedErrors) {
     return {
       title: 'No reported outages from available feeds',
@@ -210,8 +225,19 @@ function allClearCopy(hasFeedErrors: boolean): { title: string; detail: string; 
   };
 }
 
-const FeedUnavailableNotice: React.FC<{ visible: boolean }> = ({ visible }) => {
-  if (!visible) return null;
+const FeedUnavailableNotice: React.FC<{
+  hasFeedErrors: boolean;
+  snapshotUnavailable: boolean;
+}> = ({ hasFeedErrors, snapshotUnavailable }) => {
+  if (!hasFeedErrors) return null;
+  if (snapshotUnavailable) {
+    return (
+      <div className="cloud-status__notice" role="status">
+        <strong>Provider status data is unavailable.</strong>
+        <span>Refresh to try loading a current snapshot.</span>
+      </div>
+    );
+  }
   return (
     <div className="cloud-status__notice" role="status">
       <strong>Some provider feeds are unavailable.</strong>
@@ -225,6 +251,7 @@ type StatusWorkspaceProps = {
   providerOrder: CloudStatusProvider[];
   statusData: CloudStatusData | null;
   errorProviders: ReadonlySet<CloudStatusProvider>;
+  snapshotUnavailable: boolean;
 };
 
 const OutageWorkspace: React.FC<StatusWorkspaceProps> = ({
@@ -268,9 +295,10 @@ const AllClearWorkspace: React.FC<Omit<StatusWorkspaceProps, 'outages'>> = ({
   providerOrder,
   statusData,
   errorProviders,
+  snapshotUnavailable,
 }) => {
   const hasFeedErrors = errorProviders.size > 0;
-  const copy = allClearCopy(hasFeedErrors);
+  const copy = allClearCopy(hasFeedErrors, snapshotUnavailable);
   const iconClassName = hasFeedErrors
     ? 'cloud-status__all-clear-icon cloud-status__all-clear-icon--unknown'
     : 'cloud-status__all-clear-icon';
@@ -317,8 +345,11 @@ export const CloudStatusTab: React.FC<{
   refetch: () => void;
 }> = ({ statusData, loading, refetch }) => {
   const errorProviders = useMemo(
-    () => new Set(statusData?.errors.map((error) => error.provider) ?? []),
-    [statusData?.errors],
+    () =>
+      new Set(
+        statusData ? statusData.errors.map((error) => error.provider) : CLOUD_STATUS_PROVIDER_ORDER,
+      ),
+    [statusData],
   );
   const allItems = useMemo(
     () => (statusData ? Object.values(statusData.providers).flat() : []),
@@ -338,9 +369,10 @@ export const CloudStatusTab: React.FC<{
 
   if (!statusData && loading) return <TabFallback />;
 
+  const snapshotUnavailable = statusData === null;
   const hasFeedErrors = errorProviders.size > 0;
   const updatedLabel = `Updated ${lastUpdatedLabel(statusData?.lastUpdated ?? 0)}`;
-  const summary = statusSummary(outages.length, hasFeedErrors);
+  const summary = statusSummary(outages.length, hasFeedErrors, snapshotUnavailable);
 
   return (
     <div className="cloud-status">
@@ -386,13 +418,17 @@ export const CloudStatusTab: React.FC<{
         <span>across {CLOUD_STATUS_PROVIDER_ORDER.length} monitored providers</span>
       </div>
 
-      <FeedUnavailableNotice visible={hasFeedErrors} />
+      <FeedUnavailableNotice
+        hasFeedErrors={hasFeedErrors}
+        snapshotUnavailable={snapshotUnavailable}
+      />
 
       <StatusWorkspace
         outages={outages}
         providerOrder={providerOrder}
         statusData={statusData}
         errorProviders={errorProviders}
+        snapshotUnavailable={snapshotUnavailable}
       />
 
       <StatusBar
@@ -401,7 +437,7 @@ export const CloudStatusTab: React.FC<{
         right={
           <span className="cloud-status__status-summary">
             {CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored ·{' '}
-            {outageCountLabel(outages.length)}
+            {snapshotUnavailable ? 'coverage unavailable' : outageCountLabel(outages.length)}
           </span>
         }
       />
