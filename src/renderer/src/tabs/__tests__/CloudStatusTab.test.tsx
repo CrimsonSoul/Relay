@@ -85,12 +85,16 @@ describe('CloudStatusTab', () => {
   });
 
   it('uses precise all-clear copy and keeps compact provider coverage', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    const { container } = render(
+      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+    );
 
     expect(screen.getByRole('heading', { name: 'External outages' })).toBeInTheDocument();
     expect(screen.getByText('No reported outages')).toBeInTheDocument();
     expect(screen.getByText('10 monitored providers')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'AWS - No outage' })).toBeInTheDocument();
+    expect(container.querySelector('svg.cloud-status__all-clear-icon')).toBeInTheDocument();
+    expect(container.querySelector('.cloud-status__all-clear-body')).not.toHaveTextContent('✓');
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 

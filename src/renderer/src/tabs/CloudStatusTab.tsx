@@ -216,27 +216,49 @@ function statusSummary(
 function allClearCopy(
   hasFeedErrors: boolean,
   snapshotUnavailable: boolean,
-): { title: string; detail: string; icon: string } {
+): { title: string; detail: string } {
   if (snapshotUnavailable) {
     return {
       title: 'No status snapshot available',
       detail: 'Relay has not received provider status data yet.',
-      icon: '?',
     };
   }
   if (hasFeedErrors) {
     return {
       title: 'No reported outages from available feeds',
       detail: 'Relay is showing the status available from responding provider feeds.',
-      icon: '?',
     };
   }
   return {
     title: 'No reported outages',
     detail: 'Relay is receiving status from every monitored provider.',
-    icon: '✓',
   };
 }
+
+const CoverageStateIcon: React.FC<{ unknown: boolean }> = ({ unknown }) => (
+  <svg
+    className={`cloud-status__all-clear-icon${unknown ? ' cloud-status__all-clear-icon--unknown' : ''}`}
+    width="40"
+    height="40"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
+    {unknown ? (
+      <>
+        <path d="M12 8v5" />
+        <path d="M12 17h.01" />
+      </>
+    ) : (
+      <path d="m9 12 2 2 4-4" />
+    )}
+  </svg>
+);
 
 const FeedUnavailableNotice: React.FC<{
   hasFeedErrors: boolean;
@@ -312,9 +334,6 @@ const AllClearWorkspace: React.FC<Omit<StatusWorkspaceProps, 'outages'>> = ({
 }) => {
   const hasFeedErrors = errorProviders.size > 0;
   const copy = allClearCopy(hasFeedErrors, snapshotUnavailable);
-  const iconClassName = hasFeedErrors
-    ? 'cloud-status__all-clear-icon cloud-status__all-clear-icon--unknown'
-    : 'cloud-status__all-clear-icon';
 
   return (
     <div className="cloud-status__workspace cloud-status__workspace--clear">
@@ -324,9 +343,7 @@ const AllClearWorkspace: React.FC<Omit<StatusWorkspaceProps, 'outages'>> = ({
           <span>{CLOUD_STATUS_PROVIDER_ORDER.length} monitored providers</span>
         </div>
         <div className="cloud-status__all-clear-body">
-          <div className={iconClassName} aria-hidden="true">
-            {copy.icon}
-          </div>
+          <CoverageStateIcon unknown={hasFeedErrors} />
           <h3>{copy.title}</h3>
           <p>{copy.detail}</p>
           <div className="cloud-status__provider-chips">

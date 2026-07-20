@@ -11,4 +11,12 @@ describe('Cloud Status responsive styling', () => {
     expect(allClearBody).toContain('overflow-y: auto');
     expect(allClearBody).toContain('justify-content: safe center');
   });
+
+  it('uses sharp geometry for status data cards', () => {
+    const providerChip = /\.cloud-status-provider-chip\s*{([^}]*)}/.exec(css)?.[1] ?? '';
+    const outageCard = /\.cloud-status-outage\s*{([^}]*)}/.exec(css)?.[1] ?? '';
+
+    expect(providerChip).toContain('border-radius: 0');
+    expect(outageCard).toContain('border-radius: 0');
+  });
 });

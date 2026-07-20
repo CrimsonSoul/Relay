@@ -1418,7 +1418,7 @@ describe('ensureCollections', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'key', type: 'text', required: true }),
         expect.objectContaining({ name: 'providers', type: 'json', required: true }),
-        expect.objectContaining({ name: 'errors', type: 'json', required: true }),
+        expect.objectContaining({ name: 'errors', type: 'json', required: false }),
         expect.objectContaining({ name: 'lastUpdated', type: 'number', required: true }),
         expect.objectContaining({ name: 'contentHash', type: 'text', required: true }),
       ]),
@@ -1426,6 +1426,37 @@ describe('ensureCollections', () => {
     expect(snapshotCall?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)',
     );
+  });
+
+  it('makes existing cloud status errors optional for healthy snapshots', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'cloud-status-col', name: 'cloud_status_snapshot' }]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'key', required: true },
+        { type: 'json', name: 'providers', required: true },
+        { type: 'json', name: 'errors', required: true },
+        { type: 'number', name: 'lastUpdated', required: true },
+        { type: 'text', name: 'contentHash', required: true },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      indexes: ['CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)'],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const update = mockUpdate.mock.calls.find(([id]) => id === 'cloud-status-col');
+    expect(update).toBeDefined();
+    expect(
+      (update?.[1] as { fields: Array<{ name: string; required?: boolean }> }).fields,
+    ).toContainEqual(expect.objectContaining({ name: 'errors', required: false }));
   });
 
   it('creates server-owned Dynatrace problem records and append-only local notes', async () => {

@@ -614,7 +614,8 @@ const COLLECTIONS: CollectionDef[] = [
     fields: [
       { type: 'text', name: 'key', required: true },
       { type: 'json', name: 'providers', required: true },
-      { type: 'json', name: 'errors', required: true },
+      // Healthy snapshots use an empty array, which PocketBase treats as blank.
+      { type: 'json', name: 'errors', required: false },
       { type: 'number', name: 'lastUpdated', required: true },
       { type: 'text', name: 'contentHash', required: true },
     ],
