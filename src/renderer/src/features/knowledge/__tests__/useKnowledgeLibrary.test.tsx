@@ -101,4 +101,46 @@ describe('useKnowledgeLibrary', () => {
       enabled: false,
     });
   });
+
+  it('retains the last loaded snapshot while subscriptions are disabled', () => {
+    const documentRecord = validRecord();
+    const categoryRecord = {
+      id: 'category-general',
+      name: 'General',
+      normalizedName: 'general',
+      sortOrder: 100,
+      systemKey: '',
+      revision: 1,
+      created: '2026-07-14T12:00:00.000Z',
+      updated: '2026-07-14T12:00:00.000Z',
+    };
+    useCollectionMock.mockImplementation((name, options) => {
+      let data: never[] = [];
+      if (options.enabled !== false) {
+        data =
+          name === 'knowledge_documents'
+            ? ([documentRecord] as never)
+            : ([categoryRecord] as never);
+      }
+      return {
+        data,
+        loading: false,
+        error: null,
+        hasLoadedSnapshot: options.enabled !== false,
+        refetch: vi.fn(async () => undefined),
+      };
+    });
+
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useKnowledgeLibrary({ enabled, retainSnapshotWhenDisabled: true }),
+      { initialProps: { enabled: true } },
+    );
+    expect(result.current.documents).toHaveLength(1);
+
+    rerender({ enabled: false });
+
+    expect(result.current.documents).toHaveLength(1);
+    expect(result.current.categories).toHaveLength(1);
+    expect(result.current.hasLoadedSnapshot).toBe(true);
+  });
 });

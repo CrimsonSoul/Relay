@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { collectGpuDiagnostics, logGpuDiagnostics } from '../gpuDiagnostics';
+import {
+  collectGpuDiagnostics,
+  logGpuDiagnostics,
+  scheduleGpuDiagnostics,
+} from '../gpuDiagnostics';
 
 function createApp() {
   return {
@@ -61,5 +65,39 @@ describe('gpuDiagnostics', () => {
     expect(logger.warn).toHaveBeenCalledWith('gpu-diagnostics unavailable', {
       error: 'GPU process unavailable',
     });
+  });
+
+  it('defers collection beyond renderer mount and can cancel pending work', async () => {
+    vi.useFakeTimers();
+    const app = createApp();
+    const logger = { info: vi.fn(), warn: vi.fn() };
+
+    try {
+      const cancel = scheduleGpuDiagnostics(app, logger);
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(app.getGPUInfo).not.toHaveBeenCalled();
+
+      cancel();
+      await vi.runAllTimersAsync();
+      expect(app.getGPUInfo).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('collects diagnostics after the deferred idle window', async () => {
+    vi.useFakeTimers();
+    const app = createApp();
+    const logger = { info: vi.fn(), warn: vi.fn() };
+
+    try {
+      scheduleGpuDiagnostics(app, logger);
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(app.getGPUInfo).toHaveBeenCalledOnce();
+      expect(logger.info).toHaveBeenCalledWith('gpu-diagnostics', expect.any(Object));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

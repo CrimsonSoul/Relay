@@ -6,6 +6,11 @@ function median(values) {
   return (sorted[midpoint - 1] + sorted[midpoint]) / 2;
 }
 
+export function calculateSampleWindowSeconds(samples) {
+  if (samples.length < 2) return 0;
+  return Number(((samples.at(-1).sampledAtMs - samples[0].sampledAtMs) / 1_000).toFixed(3));
+}
+
 export function summarizeProcessSamples(samples) {
   const byProcess = new Map();
 

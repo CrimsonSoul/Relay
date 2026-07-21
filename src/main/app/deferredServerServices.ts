@@ -2,24 +2,31 @@ import type { ServerConfig } from '../config/AppConfig';
 
 type DeferredServerServiceDependencies = {
   startDataManagers(): void;
-  startPocketBaseServices(config: ServerConfig): void;
+  startPocketBaseServices(config: ServerConfig): void | (() => void);
 };
 
 export function createDeferredServerServices(dependencies: DeferredServerServiceDependencies) {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let cleanupPocketBaseServices: (() => void) | null = null;
+
+  const cancelCurrentWork = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    cleanupPocketBaseServices?.();
+    cleanupPocketBaseServices = null;
+  };
 
   return {
     schedule(config: ServerConfig): void {
-      if (timer) clearTimeout(timer);
+      cancelCurrentWork();
       timer = setTimeout(() => {
         timer = null;
         dependencies.startDataManagers();
-        dependencies.startPocketBaseServices(config);
+        cleanupPocketBaseServices = dependencies.startPocketBaseServices(config) ?? null;
       }, 0);
     },
     cancel(): void {
-      if (timer) clearTimeout(timer);
-      timer = null;
+      cancelCurrentWork();
     },
   };
 }

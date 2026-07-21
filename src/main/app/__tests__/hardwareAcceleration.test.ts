@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  configureElectronPerformancePolicy,
   configureHardwareAcceleration,
   shouldDisableHardwareAcceleration,
 } from '../hardwareAcceleration';
@@ -16,30 +15,6 @@ function createMockApp(isPackaged: boolean) {
 }
 
 describe('hardwareAcceleration', () => {
-  it('keeps the Windows occlusion optimization without imposing V8 or GPU-selection flags', () => {
-    const app = createMockApp(true);
-
-    configureElectronPerformancePolicy(app, { platform: 'win32' });
-
-    expect(app.commandLine.appendSwitch).toHaveBeenCalledExactlyOnceWith(
-      'disable-features',
-      'CalculateNativeWinOcclusion',
-    );
-    expect(app.commandLine.appendSwitch).not.toHaveBeenCalledWith('js-flags', expect.anything());
-    expect(app.commandLine.appendSwitch).not.toHaveBeenCalledWith(
-      'force_high_performance_gpu',
-      expect.anything(),
-    );
-  });
-
-  it('does not apply the Windows policy on other platforms', () => {
-    const app = createMockApp(true);
-
-    configureElectronPerformancePolicy(app, { platform: 'darwin' });
-
-    expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
-  });
-
   it('keeps hardware acceleration enabled for packaged Windows builds by default', () => {
     expect(
       shouldDisableHardwareAcceleration({
@@ -89,6 +64,7 @@ describe('hardwareAcceleration', () => {
     });
     expect(enabledByDefault).toBe(false);
     expect(app.disableHardwareAcceleration).not.toHaveBeenCalled();
+    expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
 
     const disabledByEnv = configureHardwareAcceleration(app, {
       platform: 'win32',

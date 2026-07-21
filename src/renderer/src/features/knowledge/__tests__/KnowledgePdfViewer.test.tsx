@@ -1534,6 +1534,8 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(firstPdfGetPage).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('115%')).toBeInTheDocument();
 
     rerender(renderRetainedViewer(false));
     await waitFor(() => expect(firstPdfDestroy).toHaveBeenCalledOnce());
@@ -1547,6 +1549,7 @@ describe('KnowledgePdfViewer', () => {
 
     secondPdfLoad.resolve(pdf());
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('115%')).toBeInTheDocument();
   });
 
   it.each(['rejects', 'throws'])(

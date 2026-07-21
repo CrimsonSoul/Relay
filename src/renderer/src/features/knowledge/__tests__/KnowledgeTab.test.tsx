@@ -195,6 +195,29 @@ describe('KnowledgeTab', () => {
     delete globalThis.api;
   });
 
+  it('pauses retained collection subscriptions while the Wiki is inactive', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      categories: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: false,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    const view = render(<KnowledgeTab active={false} relayMode="client" />);
+    expect(useKnowledgeLibraryMock).toHaveBeenLastCalledWith({
+      enabled: false,
+      retainSnapshotWhenDisabled: true,
+    });
+
+    view.rerender(<KnowledgeTab active relayMode="client" />);
+    expect(useKnowledgeLibraryMock).toHaveBeenLastCalledWith({
+      enabled: true,
+      retainSnapshotWhenDisabled: true,
+    });
+  });
+
   it('reports the document count after a usable Wiki snapshot loads', async () => {
     const onLibraryCountChange = vi.fn();
     useKnowledgeLibraryMock.mockReturnValue({

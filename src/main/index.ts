@@ -47,16 +47,17 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow, showAndFocusWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
-import {
-  configureElectronPerformancePolicy,
-  configureHardwareAcceleration,
-} from './app/hardwareAcceleration';
-import { logGpuDiagnostics } from './app/gpuDiagnostics';
+import { configureHardwareAcceleration } from './app/hardwareAcceleration';
+import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
 import { createDeferredServerServices } from './app/deferredServerServices';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
-import { startDeferredPocketBaseServices, startPocketBase } from './app/pocketbaseBootstrap';
+import {
+  cancelDeferredPocketBaseServices,
+  startDeferredPocketBaseServices,
+  startPocketBase,
+} from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
@@ -117,7 +118,6 @@ validateEnv();
 const isCrashWatchdog = runCrashWatchdogIfRequested();
 
 const hardwareAccelerationDisabled = configureHardwareAcceleration(app);
-configureElectronPerformancePolicy(app);
 const devDeviceScaleFactor = process.env.RELAY_TEST_DEVICE_SCALE_FACTOR;
 if (!app.isPackaged && devDeviceScaleFactor) {
   const parsedScaleFactor = Number(devDeviceScaleFactor);
@@ -151,7 +151,6 @@ if (gotLock) {
     electron: process.versions.electron,
     node: process.versions.node,
     hardwareAcceleration: hardwareAccelerationDisabled ? 'disabled' : 'enabled',
-    nativeWinOcclusion: process.platform === 'win32' ? 'disabled' : 'unchanged',
   });
 
   // App lifecycle
@@ -175,6 +174,7 @@ if (gotLock) {
     let workspaceSettled = false;
     let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
     let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
+    let cancelGpuDiagnostics: (() => void) | null = null;
     let cleanupComplete = false;
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
@@ -191,6 +191,9 @@ if (gotLock) {
       stopKnowledgeUploadSession?.();
       stopKnowledgeUploadSession = null;
       deferredServerServices?.cancel();
+      cancelDeferredPocketBaseServices();
+      cancelGpuDiagnostics?.();
+      cancelGpuDiagnostics = null;
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
       void getRelayWebServerManager()?.stop();
@@ -249,10 +252,15 @@ if (gotLock) {
       startupTimeline.mark('electron-ready');
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
-      void logGpuDiagnostics(app, loggers.main);
 
       setupPermissions(session.defaultSession);
-      cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline);
+      cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {
+        onRendererMounted: () => {
+          if (process.env.RELAY_DISABLE_GPU_DIAGNOSTICS === '1') return;
+          cancelGpuDiagnostics?.();
+          cancelGpuDiagnostics = scheduleGpuDiagnostics(app, loggers.main);
+        },
+      });
 
       const workspaceReady = new Promise<ReturnType<AppConfig['load']>>((resolve, reject) => {
         resolveWorkspace = resolve;

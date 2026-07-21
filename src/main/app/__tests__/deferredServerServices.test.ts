@@ -32,4 +32,18 @@ describe('deferred server services', () => {
 
     expect(startDataManagers).not.toHaveBeenCalled();
   });
+
+  it('cancels background work that has already started', async () => {
+    const cleanupPocketBaseServices = vi.fn();
+    const services = createDeferredServerServices({
+      startDataManagers: vi.fn(),
+      startPocketBaseServices: vi.fn(() => cleanupPocketBaseServices),
+    });
+
+    services.schedule({ mode: 'server', port: 8090, secret: 'test' });
+    await vi.runOnlyPendingTimersAsync();
+    services.cancel();
+
+    expect(cleanupPocketBaseServices).toHaveBeenCalledOnce();
+  });
 });

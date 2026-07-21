@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { RecordModel } from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
@@ -11,7 +11,12 @@ import {
 } from '@shared/knowledge';
 import { useCollection } from '../../hooks/useCollection';
 
-export function useKnowledgeLibrary(options: { enabled?: boolean } = {}): {
+type KnowledgeLibraryOptions = {
+  enabled?: boolean;
+  retainSnapshotWhenDisabled?: boolean;
+};
+
+export function useKnowledgeLibrary(options: KnowledgeLibraryOptions = {}): {
   documents: KnowledgeDocumentRecord[];
   categories: KnowledgeCategoryRecord[];
   loading: boolean;
@@ -19,7 +24,8 @@ export function useKnowledgeLibrary(options: { enabled?: boolean } = {}): {
   hasLoadedSnapshot: boolean;
   refetch: () => Promise<void>;
 } {
-  const enabledOption = options.enabled === undefined ? {} : { enabled: options.enabled };
+  const enabled = options.enabled ?? true;
+  const enabledOption = options.enabled === undefined ? {} : { enabled };
   const documentCollection = useCollection<KnowledgeDocumentRecord & RecordModel>(
     KNOWLEDGE_DOCUMENTS_COLLECTION,
     { sort: 'category,title,fileName', ...enabledOption },
@@ -28,7 +34,7 @@ export function useKnowledgeLibrary(options: { enabled?: boolean } = {}): {
     KNOWLEDGE_CATEGORIES_COLLECTION,
     { sort: 'sortOrder,name', ...enabledOption },
   );
-  const documents = useMemo(
+  const currentDocuments = useMemo(
     () =>
       documentCollection.data
         .map(normalizeKnowledgeDocumentRecord)
@@ -38,7 +44,7 @@ export function useKnowledgeLibrary(options: { enabled?: boolean } = {}): {
         ),
     [documentCollection.data],
   );
-  const categories = useMemo(
+  const currentCategories = useMemo(
     () =>
       categoryCollection.data
         .map(normalizeKnowledgeCategoryRecord)
@@ -50,12 +56,30 @@ export function useKnowledgeLibrary(options: { enabled?: boolean } = {}): {
     await Promise.all([documentCollection.refetch(), categoryCollection.refetch()]);
   }, [categoryCollection, documentCollection]);
 
+  const retainedSnapshot = useRef({
+    documents: currentDocuments,
+    categories: currentCategories,
+    hasLoadedSnapshot: false,
+  });
+  const hasLoadedSnapshot =
+    documentCollection.hasLoadedSnapshot && categoryCollection.hasLoadedSnapshot;
+  if (enabled && hasLoadedSnapshot && !documentCollection.error && !categoryCollection.error) {
+    retainedSnapshot.current = {
+      documents: currentDocuments,
+      categories: currentCategories,
+      hasLoadedSnapshot: true,
+    };
+  }
+  const useRetainedSnapshot = !enabled && options.retainSnapshotWhenDisabled;
+
   return {
-    documents,
-    categories,
-    loading: documentCollection.loading || categoryCollection.loading,
-    error: documentCollection.error || categoryCollection.error,
-    hasLoadedSnapshot: documentCollection.hasLoadedSnapshot && categoryCollection.hasLoadedSnapshot,
+    documents: useRetainedSnapshot ? retainedSnapshot.current.documents : currentDocuments,
+    categories: useRetainedSnapshot ? retainedSnapshot.current.categories : currentCategories,
+    loading: useRetainedSnapshot ? false : documentCollection.loading || categoryCollection.loading,
+    error: useRetainedSnapshot ? null : documentCollection.error || categoryCollection.error,
+    hasLoadedSnapshot: useRetainedSnapshot
+      ? retainedSnapshot.current.hasLoadedSnapshot
+      : hasLoadedSnapshot,
     refetch,
   };
 }

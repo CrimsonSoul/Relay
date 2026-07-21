@@ -43,7 +43,8 @@ describe('setupStartupIpc', () => {
     const controller = createStartupStateController();
     const timeline = createStartupTimeline(() => 100);
     const { setupStartupIpc } = await import('./startupIpc');
-    const cleanup = setupStartupIpc(controller, timeline);
+    const onRendererMounted = vi.fn();
+    const cleanup = setupStartupIpc(controller, timeline, { onRendererMounted });
     const getHandler = mocks.handle.mock.calls.find(
       ([channel]) => channel === 'startup:getState',
     )?.[1] as (event: unknown) => unknown;
@@ -63,6 +64,7 @@ describe('setupStartupIpc', () => {
     mountedHandler({});
     expect(mocks.info).toHaveBeenCalledTimes(1);
     expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('renderer-mounted'));
+    expect(onRendererMounted).toHaveBeenCalledOnce();
 
     cleanup();
     expect(mocks.removeHandler).toHaveBeenCalledWith('startup:getState');

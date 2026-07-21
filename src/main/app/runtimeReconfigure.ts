@@ -22,7 +22,11 @@ import {
   setPrivilegedRuntime,
   setPrivilegedHost,
 } from './appState';
-import { startDeferredPocketBaseServices, startPocketBase } from './pocketbaseBootstrap';
+import {
+  cancelDeferredPocketBaseServices,
+  startDeferredPocketBaseServices,
+  startPocketBase,
+} from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
 import {
@@ -73,6 +77,7 @@ async function rebuildPrivilegedRuntime(
 }
 
 async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> {
+  cancelDeferredPocketBaseServices();
   const config = getAppConfig()?.load();
   await getRelayWebServerManager()?.stop();
   await disposePrivilegedRuntime();

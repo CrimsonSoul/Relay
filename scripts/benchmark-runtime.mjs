@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  calculateSampleWindowSeconds,
   collectRuntimeResources,
   selectGpuDiagnostics,
   summarizeProcessSamples,
@@ -40,6 +41,7 @@ fs.writeFileSync(
 );
 
 const env = { ...process.env, NODE_ENV: 'test' };
+env.RELAY_DISABLE_GPU_DIAGNOSTICS = '1';
 delete env.ELECTRON_RUN_AS_NODE;
 let electronApp;
 
@@ -55,29 +57,35 @@ try {
   const cdp = await electronApp.context().newCDPSession(window);
   await Promise.all([cdp.send('Page.enable'), cdp.send('Performance.enable')]);
   await new Promise((resolve) => setTimeout(resolve, 5_000));
+  await electronApp.evaluate(({ app }) => app.getAppMetrics());
 
   const samples = [];
-  for (let index = 0; index < 10; index += 1) {
-    const processes = await electronApp.evaluate(({ app }) =>
-      app.getAppMetrics().map((metric) => ({
-        type: metric.type,
-        name: metric.name,
-        cpu: metric.cpu?.percentCPUUsage ?? 0,
-        workingSetMB: Number(((metric.memory?.workingSetSize ?? 0) / 1024).toFixed(1)),
-      })),
-    );
+  const processSamples = [];
+  for (let index = 0; index <= 10; index += 1) {
+    if (index > 0) await new Promise((resolve) => setTimeout(resolve, 1_000));
+    if (index > 0) {
+      processSamples.push(
+        await electronApp.evaluate(({ app }) =>
+          app.getAppMetrics().map((metric) => ({
+            type: metric.type,
+            name: metric.name,
+            cpu: metric.cpu?.percentCPUUsage ?? 0,
+            workingSetMB: Number(((metric.memory?.workingSetSize ?? 0) / 1024).toFixed(1)),
+          })),
+        ),
+      );
+    }
     const performanceMetrics = await cdp.send('Performance.getMetrics');
     const dom = await cdp.send('Memory.getDOMCounters');
     const metrics = Object.fromEntries(
       performanceMetrics.metrics.map(({ name, value }) => [name, value]),
     );
     samples.push({
-      processes,
+      sampledAtMs: performance.now(),
       dom,
       taskDuration: metrics.TaskDuration ?? 0,
       jsHeapUsedMB: Number(((metrics.JSHeapUsedSize ?? 0) / 1024 / 1024).toFixed(1)),
     });
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
 
   const gpu = await electronApp.evaluate(async ({ app }) => ({
@@ -106,8 +114,8 @@ try {
   console.log(
     JSON.stringify(
       {
-        sampleWindowSeconds: 10,
-        processes: summarizeProcessSamples(samples.map((sample) => sample.processes)),
+        sampleWindowSeconds: calculateSampleWindowSeconds(samples),
+        processes: summarizeProcessSamples(processSamples),
         renderer: {
           jsHeapUsedMB: last.jsHeapUsedMB,
           documents: last.dom.documents,

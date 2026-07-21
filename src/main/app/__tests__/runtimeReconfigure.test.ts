@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   getCloudStatusManager: vi.fn(),
   startPocketBase: vi.fn(),
   startDeferredPocketBaseServices: vi.fn(),
+  cancelDeferredPocketBaseServices: vi.fn(),
   syncPbClient: {
     collection: vi.fn(),
   },
@@ -108,6 +109,7 @@ vi.mock('../appState', () => ({
 vi.mock('../pocketbaseBootstrap', () => ({
   startPocketBase: mocks.startPocketBase,
   startDeferredPocketBaseServices: mocks.startDeferredPocketBaseServices,
+  cancelDeferredPocketBaseServices: mocks.cancelDeferredPocketBaseServices,
 }));
 
 vi.mock('pocketbase', () => ({

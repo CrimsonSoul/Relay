@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  calculateSampleWindowSeconds,
   collectRuntimeResources,
   selectGpuDiagnostics,
   summarizeProcessSamples,
 } from './runtime-benchmark-utils.mjs';
+
+describe('calculateSampleWindowSeconds', () => {
+  it('reports the actual interval between endpoint samples', () => {
+    expect(
+      calculateSampleWindowSeconds([{ sampledAtMs: 250.25 }, { sampledAtMs: 10_251.75 }]),
+    ).toBe(10.002);
+  });
+});
 
 describe('summarizeProcessSamples', () => {
   it('reports average CPU and median working set by process', () => {

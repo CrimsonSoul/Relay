@@ -165,7 +165,7 @@ function KnowledgeEmptyState({
 }
 
 export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readonly<Props>) {
-  const libraryData = useKnowledgeLibrary();
+  const libraryData = useKnowledgeLibrary({ enabled: active, retainSnapshotWhenDisabled: true });
   const { documents, loading, error, hasLoadedSnapshot, refetch } = libraryData;
   const categories = libraryData.categories ?? [];
   const { session } = usePrivilegedAccess();

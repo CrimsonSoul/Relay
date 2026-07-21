@@ -61,6 +61,9 @@ const mocks = vi.hoisted(() => {
     startSchedule,
     backupManager,
     retentionManager,
+    maintenancePb,
+    restartKnowledgeSearchRuntime: vi.fn().mockResolvedValue(undefined),
+    stopKnowledgeSearchRuntime: vi.fn().mockResolvedValue(undefined),
     loggers: {
       pocketbase: {
         info: vi.fn(),
@@ -140,6 +143,11 @@ vi.mock('../../logger', () => ({
   loggers: mocks.loggers,
 }));
 
+vi.mock('../../knowledge/knowledgeSearchRuntime', () => ({
+  restartKnowledgeSearchRuntime: mocks.restartKnowledgeSearchRuntime,
+  stopKnowledgeSearchRuntime: mocks.stopKnowledgeSearchRuntime,
+}));
+
 vi.mock('pocketbase', () => ({
   default: vi.fn(function MockPocketBase() {
     return {
@@ -158,6 +166,7 @@ describe('pocketbaseBootstrap', () => {
     vi.clearAllMocks();
     mocks.getPbProcess.mockReturnValue(null);
     mocks.getRetentionManager.mockReturnValue(null);
+    mocks.getPbClient.mockReturnValue(mocks.maintenancePb);
     mocks.pbProcess.isRunning.mockReturnValue(false);
     mocks.pbProcess.start.mockResolvedValue(undefined);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
@@ -406,6 +415,51 @@ describe('pocketbaseBootstrap', () => {
       process.off('unhandledRejection', onUnhandledRejection);
       vi.useRealTimers();
     }
+  });
+
+  it('does not let a cancelled optional Wiki bootstrap mutate a newer runtime', async () => {
+    const oldPb = { id: 'old' };
+    const newPb = { id: 'new' };
+    let resolveBootstrap!: () => void;
+    mocks.ensureKnowledgeSearchCollections.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveBootstrap = resolve;
+        }),
+    );
+    mocks.getPbClient.mockReturnValue(oldPb as never);
+    const { startDeferredPocketBaseServices } = await import('../pocketbaseBootstrap');
+
+    const cancel = startDeferredPocketBaseServices({
+      mode: 'server',
+      port: 8090,
+      secret: 'super-secret-passphrase',
+    });
+    await vi.waitFor(() => expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce());
+
+    cancel();
+    mocks.getPbClient.mockReturnValue(newPb as never);
+    resolveBootstrap();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.restartKnowledgeSearchRuntime).not.toHaveBeenCalled();
+    expect(mocks.stopKnowledgeSearchRuntime).not.toHaveBeenCalled();
+  });
+
+  it('starts optional Wiki search only for the still-current PocketBase client', async () => {
+    const currentPb = { id: 'current' };
+    mocks.getPbClient.mockReturnValue(currentPb as never);
+    const { startDeferredPocketBaseServices } = await import('../pocketbaseBootstrap');
+
+    startDeferredPocketBaseServices({
+      mode: 'server',
+      port: 8090,
+      secret: 'super-secret-passphrase',
+    });
+
+    await vi.waitFor(() => expect(mocks.restartKnowledgeSearchRuntime).toHaveBeenCalledOnce());
+    expect(mocks.stopKnowledgeSearchRuntime).not.toHaveBeenCalled();
   });
 
   it('checks whether the daily automatic backup is due before retention cleanup', async () => {

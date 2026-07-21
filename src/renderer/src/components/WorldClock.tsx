@@ -43,7 +43,7 @@ export const WorldClock: React.FC = () => {
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const updateTime = () => {
       const now = new Date();
@@ -54,6 +54,7 @@ export const WorldClock: React.FC = () => {
       }
     };
     const scheduleNextMinute = () => {
+      if (document.visibilityState !== 'visible') return;
       const remainder = Date.now() % 60_000;
       const delay = remainder === 0 ? 60_000 : 60_000 - remainder;
       timer = setTimeout(() => {
@@ -62,8 +63,9 @@ export const WorldClock: React.FC = () => {
       }, delay);
     };
     const handleVisibilityChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
       if (document.visibilityState !== 'visible') return;
-      clearTimeout(timer);
       updateTime();
       scheduleNextMinute();
     };
@@ -71,7 +73,7 @@ export const WorldClock: React.FC = () => {
     scheduleNextMinute();
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);

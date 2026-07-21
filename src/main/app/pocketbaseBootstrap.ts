@@ -43,6 +43,7 @@ const OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS = 250;
 const OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS = 3_000;
 const MAINTENANCE_INITIAL_DELAY_MS = 30_000;
 const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let optionalKnowledgeSearchGeneration = 0;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -127,13 +128,26 @@ export function startPocketBaseMaintenanceSchedule(serverConfig: ServerConfig): 
   return true;
 }
 
-export function startDeferredPocketBaseServices(serverConfig: ServerConfig): void {
+export function cancelDeferredPocketBaseServices(): void {
+  optionalKnowledgeSearchGeneration += 1;
+}
+
+export function startDeferredPocketBaseServices(serverConfig: ServerConfig): () => void {
   startPocketBaseMaintenanceSchedule(serverConfig);
   const pb = getPbClient();
-  if (!pb) return;
-  void initializeOptionalKnowledgeSearch(pb).then((ready) =>
-    ready ? restartKnowledgeSearchRuntime() : stopKnowledgeSearchRuntime(),
-  );
+  const generation = optionalKnowledgeSearchGeneration + 1;
+  optionalKnowledgeSearchGeneration = generation;
+  if (pb) {
+    void initializeOptionalKnowledgeSearch(pb).then((ready) => {
+      if (generation !== optionalKnowledgeSearchGeneration || pb !== getPbClient()) return;
+      return ready ? restartKnowledgeSearchRuntime() : stopKnowledgeSearchRuntime();
+    });
+  }
+  return () => {
+    if (generation === optionalKnowledgeSearchGeneration) {
+      optionalKnowledgeSearchGeneration += 1;
+    }
+  };
 }
 
 /**

@@ -9,6 +9,7 @@ import type { StartupTimeline } from './startupTimeline';
 export function setupStartupIpc(
   controller: StartupStateController,
   timeline: StartupTimeline,
+  options: { onRendererMounted?: () => void } = {},
 ): () => void {
   const getState = (event: Electron.IpcMainInvokeEvent) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.STARTUP_GET_STATE)) {
@@ -20,7 +21,10 @@ export function setupStartupIpc(
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.STARTUP_RENDERER_MOUNTED)) return;
     timeline.mark('renderer-mounted');
     const summary = timeline.takeSummary();
-    if (summary) loggers.main.info(summary);
+    if (summary) {
+      loggers.main.info(summary);
+      options.onRendererMounted?.();
+    }
   };
   const unsubscribe = controller.subscribe((snapshot) => {
     broadcastToAllWindows(IPC_CHANNELS.STARTUP_STATE_CHANGED, snapshot);

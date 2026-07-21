@@ -10,6 +10,10 @@ describe('WorldClock', () => {
     vi.useFakeTimers();
     // Freeze to January (standard time) so America/Chicago shows CST, not CDT
     vi.setSystemTime(new Date('2026-01-15T12:00:00Z'));
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
     vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (
       locales?: Intl.LocalesArgument,
       options: Intl.DateTimeFormatOptions = {},
@@ -175,6 +179,33 @@ describe('WorldClock', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
+    expect(document.querySelector('.world-clock-primary-time')?.textContent).not.toBe(initialTime);
+  });
+
+  it('stops minute wakeups while hidden and restarts them when visible', async () => {
+    vi.setSystemTime(new Date('2026-01-15T12:00:30Z'));
+    await act(async () => {
+      render(<WorldClock />);
+    });
+    const initialTime = document.querySelector('.world-clock-primary-time')?.textContent;
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(90_000);
+    });
+    expect(document.querySelector('.world-clock-primary-time')?.textContent).toBe(initialTime);
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
     expect(document.querySelector('.world-clock-primary-time')?.textContent).not.toBe(initialTime);
   });
 });

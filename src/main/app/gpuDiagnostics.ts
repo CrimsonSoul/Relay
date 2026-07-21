@@ -8,6 +8,8 @@ type GpuDiagnosticsApp = {
 
 type GpuDiagnosticsLogger = Pick<ModuleLogger, 'info' | 'warn'>;
 
+const GPU_DIAGNOSTICS_DELAY_MS = 5_000;
+
 const ADAPTER_FIELDS = ['active', 'vendorId', 'deviceId', 'driverVendor', 'driverVersion'] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -55,4 +57,13 @@ export async function logGpuDiagnostics(
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+export function scheduleGpuDiagnostics(
+  app: GpuDiagnosticsApp,
+  logger: GpuDiagnosticsLogger,
+): () => void {
+  const timer = setTimeout(() => void logGpuDiagnostics(app, logger), GPU_DIAGNOSTICS_DELAY_MS);
+  timer.unref?.();
+  return () => clearTimeout(timer);
 }
