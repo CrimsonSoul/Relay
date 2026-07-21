@@ -161,6 +161,41 @@ function mockSuccessfulCollectionCreation(): void {
 }
 
 describe('ensureCollections', () => {
+  it('reuses complete collection metadata from the bootstrap snapshot', async () => {
+    mockGetFullList.mockResolvedValue([
+      {
+        id: 'contacts-id',
+        name: 'contacts',
+        fields: [],
+        indexes: [],
+        listRule: '@request.auth.id != ""',
+        viewRule: '@request.auth.id != ""',
+        createRule: '@request.auth.id != ""',
+        updateRule: '@request.auth.id != ""',
+        deleteRule: '@request.auth.id != ""',
+      },
+    ]);
+    mockSuccessfulCollectionCreation();
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    expect(mockGetFullList).toHaveBeenCalledOnce();
+    expect(mockGetOne).not.toHaveBeenCalledWith('contacts-id');
+    expect(mockUpdate).toHaveBeenCalledWith('contacts-id', expect.any(Object));
+  });
+
+  it('falls back to getOne when bootstrap collection metadata is incomplete', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'contacts-id', name: 'contacts' }]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockResolvedValue({ id: 'contacts-id', fields: [], indexes: [] });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    expect(mockGetOne).toHaveBeenCalledWith('contacts-id');
+  });
+
   it('enables enough PocketBase batch capacity for Wiki indexing without rewriting unrelated settings', async () => {
     mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
     mockGetOne.mockResolvedValue({ fields: [], indexes: [] });

@@ -532,8 +532,9 @@ export class RoleAccountMigration {
     this.now = options.now ?? Date.now;
   }
 
-  async run(): Promise<RoleAccountMigrationResult> {
-    const collections = await this.pb.collections.getFullList<CollectionInfo>();
+  async run(collectionSnapshot?: readonly CollectionInfo[]): Promise<RoleAccountMigrationResult> {
+    const collections =
+      collectionSnapshot ?? (await this.pb.collections.getFullList<CollectionInfo>());
     const collectionByName = new Map(
       collections.map((collection) => [collection.name, collection]),
     );

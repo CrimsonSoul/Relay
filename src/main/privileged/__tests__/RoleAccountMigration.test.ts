@@ -9,6 +9,7 @@ class MigrationFixture {
   readonly collectionIds = new Map<string, string>();
   readonly collectionMetadata = new Map<string, Record<string, unknown>>();
   readonly writes: Array<{ collection: string; operation: string; id?: string }> = [];
+  collectionListCalls = 0;
   failNextUpdateFor: string | null = null;
   ignoreNextUpdateFor: string | null = null;
   failNextCollectionDeleteFor: string | null = null;
@@ -23,12 +24,10 @@ class MigrationFixture {
     }
 
     const collections = {
-      getFullList: async () =>
-        [...this.collectionIds].map(([name, id]) => ({
-          id,
-          name,
-          ...this.collectionMetadata.get(name),
-        })),
+      getFullList: async () => {
+        this.collectionListCalls += 1;
+        return this.collectionSnapshot();
+      },
       delete: async (id: string) => {
         const name = [...this.collectionIds].find(([, collectionId]) => collectionId === id)?.[0];
         if (!name) throw new Error(`Unknown collection ${id}`);
@@ -98,6 +97,14 @@ class MigrationFixture {
     return this.collectionIds.has(name);
   }
 
+  collectionSnapshot(): Array<{ id: string; name: string; [key: string]: unknown }> {
+    return [...this.collectionIds].map(([name, id]) => ({
+      id,
+      name,
+      ...this.collectionMetadata.get(name),
+    }));
+  }
+
   setCollectionMetadata(name: string, metadata: Record<string, unknown>): void {
     if (!this.collectionIds.has(name)) throw new Error(`Unknown collection ${name}`);
     this.collectionMetadata.set(name, structuredClone(metadata));
@@ -162,6 +169,14 @@ function migration(fixture: MigrationFixture): RoleAccountMigration {
 }
 
 describe('RoleAccountMigration', () => {
+  it('uses a supplied collection snapshot without listing metadata again', async () => {
+    const fixture = legacyFixture();
+
+    await migration(fixture).run(fixture.collectionSnapshot());
+
+    expect(fixture.collectionListCalls).toBe(0);
+  });
+
   it('preserves Ryan and Charles auth record IDs, credentials, and device relations', async () => {
     const fixture = legacyFixture();
 

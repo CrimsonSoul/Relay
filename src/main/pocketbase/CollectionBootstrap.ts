@@ -1184,8 +1184,26 @@ function passwordAuthMatches(
 ): boolean {
   return (
     actual?.enabled === expected.enabled &&
+    Array.isArray(actual?.identityFields) &&
     actual.identityFields.length === expected.identityFields.length &&
     actual.identityFields.every((field, index) => field === expected.identityFields[index])
+  );
+}
+
+function hasCompleteCollectionSnapshot(
+  collection: ExistingCollection,
+  expectedAuth?: AuthCollectionOptions,
+): boolean {
+  if (!Array.isArray(collection.fields) || !Array.isArray(collection.indexes)) return false;
+  for (const rule of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(collection, rule)) return false;
+  }
+  if (!expectedAuth) return true;
+  return (
+    Object.prototype.hasOwnProperty.call(collection, 'authRule') &&
+    Object.prototype.hasOwnProperty.call(collection, 'manageRule') &&
+    typeof collection.passwordAuth?.enabled === 'boolean' &&
+    Array.isArray(collection.passwordAuth.identityFields)
   );
 }
 
@@ -1242,8 +1260,10 @@ async function patchCollectionDefinition(
   expectedIndexes: string[] = [],
   expectedRules: CollectionRules = DEFAULT_AUTH_RULES,
   expectedAuth?: AuthCollectionOptions,
+  snapshot?: ExistingCollection,
 ): Promise<boolean> {
-  const colFull = (await pb.collections.getOne(colId)) as unknown as ExistingCollection;
+  const colFull =
+    snapshot ?? ((await pb.collections.getOne(colId)) as unknown as ExistingCollection);
   const fields = colFull.fields || [];
   const reconciledFields = reconcileManagedFields(fields, expectedSchemaFields);
   const indexes = colFull.indexes || [];
@@ -1335,7 +1355,7 @@ async function createManagedCollection(
 async function patchManagedCollection(
   pb: PocketBase,
   def: CollectionDef,
-  allCols: Array<{ id: string; name: string }>,
+  allCols: ExistingCollection[],
   collectionIds: ReadonlyMap<string, string>,
 ): Promise<boolean> {
   const col = allCols.find((candidate) => candidate.name === def.name);
@@ -1349,6 +1369,7 @@ async function patchManagedCollection(
       def.indexes,
       def.rules ?? DEFAULT_AUTH_RULES,
       def.auth,
+      hasCompleteCollectionSnapshot(col, def.auth) ? col : undefined,
     );
   } catch (err) {
     logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
@@ -1359,7 +1380,7 @@ async function patchManagedCollection(
 async function ensureManagedCollections(
   pb: PocketBase,
   existing: Set<string>,
-  allCols: Array<{ id: string; name: string }>,
+  allCols: ExistingCollection[],
   collectionIds: Map<string, string>,
   definitions: readonly CollectionDef[],
 ): Promise<{ created: number; patched: number }> {
@@ -1588,9 +1609,9 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
 export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<void> {
   await ensureKnowledgeBatchApi(pb);
 
-  let allCols: Array<{ id: string; name: string }>;
+  let allCols: ExistingCollection[];
   try {
-    allCols = await pb.collections.getFullList();
+    allCols = await pb.collections.getFullList<ExistingCollection>();
   } catch (err) {
     logger.error('Failed to list collections for optional Wiki search storage', { error: err });
     throw new Error('Failed to list PocketBase collections for optional Wiki search storage', {
@@ -1604,7 +1625,9 @@ export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<
   }
 
   try {
-    const existing = (await pb.collections.getOne(documents.id)) as unknown as ExistingCollection;
+    const existing = Array.isArray(documents.fields)
+      ? documents
+      : ((await pb.collections.getOne(documents.id)) as unknown as ExistingCollection);
     const reconciled = reconcileManagedFields(
       existing.fields ?? [],
       KNOWLEDGE_SEARCH_DOCUMENT_STATUS_FIELDS,
@@ -1633,9 +1656,9 @@ export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<
  * unmanaged collections without deleting them.
  */
 export async function ensureCollections(pb: PocketBase): Promise<CollectionBootstrapResult> {
-  let allCols: Array<{ id: string; name: string }>;
+  let allCols: ExistingCollection[];
   try {
-    allCols = await pb.collections.getFullList();
+    allCols = await pb.collections.getFullList<ExistingCollection>();
   } catch (err) {
     logger.error('Failed to list collections', { error: err });
     throw new Error('Failed to list PocketBase collections', { cause: err });
@@ -1669,7 +1692,7 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
     bootstrapDefinitions,
   );
   let { patched } = managed;
-  const migration = await new RoleAccountMigration({ pb }).run();
+  const migration = await new RoleAccountMigration({ pb }).run(allCols);
   let migrationDeferredReason: string | null = null;
   if (migration.status === 'deferred') {
     logger.warn(`Role account migration deferred: ${migration.reason}`);
