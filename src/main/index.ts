@@ -47,7 +47,11 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow, showAndFocusWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
-import { configureHardwareAcceleration } from './app/hardwareAcceleration';
+import {
+  configureElectronPerformancePolicy,
+  configureHardwareAcceleration,
+} from './app/hardwareAcceleration';
+import { logGpuDiagnostics } from './app/gpuDiagnostics';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
@@ -112,6 +116,7 @@ validateEnv();
 const isCrashWatchdog = runCrashWatchdogIfRequested();
 
 const hardwareAccelerationDisabled = configureHardwareAcceleration(app);
+configureElectronPerformancePolicy(app);
 const devDeviceScaleFactor = process.env.RELAY_TEST_DEVICE_SCALE_FACTOR;
 if (!app.isPackaged && devDeviceScaleFactor) {
   const parsedScaleFactor = Number(devDeviceScaleFactor);
@@ -119,10 +124,6 @@ if (!app.isPackaged && devDeviceScaleFactor) {
     app.commandLine.appendSwitch('force-device-scale-factor', String(parsedScaleFactor));
   }
 }
-if (process.platform === 'win32') {
-  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-}
-
 crashReporter.start({
   uploadToServer: false,
   compress: false,
@@ -151,11 +152,6 @@ if (gotLock) {
     hardwareAcceleration: hardwareAccelerationDisabled ? 'disabled' : 'enabled',
     nativeWinOcclusion: process.platform === 'win32' ? 'disabled' : 'unchanged',
   });
-
-  // Windows-specific optimizations
-  if (process.platform === 'win32') {
-    app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
-  }
 
   // App lifecycle
   app.on('window-all-closed', () => {
@@ -250,6 +246,7 @@ if (gotLock) {
       startupTimeline.mark('electron-ready');
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
+      void logGpuDiagnostics(app, loggers.main);
 
       setupPermissions(session.defaultSession);
       cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline);

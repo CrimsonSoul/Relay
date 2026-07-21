@@ -11,9 +11,15 @@ type HardwareAccelerationConfigOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
+type ElectronPerformancePolicyOptions = {
+  platform?: NodeJS.Platform;
+};
+
 type HardwareAccelerationApp = Pick<App, 'disableHardwareAcceleration' | 'commandLine'> & {
   isPackaged: boolean;
 };
+
+type ElectronPerformancePolicyApp = Pick<App, 'commandLine'>;
 
 /* Hardware acceleration is ON by default everywhere. The env var remains as
    an opt-out for machines with broken GPU drivers (the original reason this
@@ -40,4 +46,13 @@ export function configureHardwareAcceleration(
   }
 
   return disabled;
+}
+
+export function configureElectronPerformancePolicy(
+  app: ElectronPerformancePolicyApp,
+  options: ElectronPerformancePolicyOptions = {},
+): void {
+  if ((options.platform ?? process.platform) === 'win32') {
+    app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  }
 }
