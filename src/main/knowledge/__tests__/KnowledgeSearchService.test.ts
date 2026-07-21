@@ -1008,6 +1008,27 @@ describe('KnowledgeSearchService', () => {
     });
   });
 
+  it('relies on realtime updates instead of reloading the full corpus every minute', async () => {
+    vi.useFakeTimers();
+    const network = pbWith([readyDocument], [validChunk]);
+    const service = new KnowledgeSearchService({ engine: new KnowledgeSearchEngine() });
+    await service.start(network.pb as never);
+
+    expect(network.documentCollection.getFullList).toHaveBeenCalledOnce();
+    expect(network.chunkCollection.getFullList).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(network.documentCollection.getFullList).toHaveBeenCalledOnce();
+    expect(network.chunkCollection.getFullList).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(14 * 60_000);
+    expect(network.documentCollection.getFullList).toHaveBeenCalledTimes(2);
+    expect(network.chunkCollection.getFullList).toHaveBeenCalledTimes(2);
+
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
   it('returns a stable timeout after the one-second main-process deadline', async () => {
     vi.useFakeTimers();
     const engine = {

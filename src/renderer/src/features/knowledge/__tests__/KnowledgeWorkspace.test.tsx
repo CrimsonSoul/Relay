@@ -285,7 +285,7 @@ describe('KnowledgeWorkspace', () => {
     );
   });
 
-  it('keeps Wiki effects alive while Contacts is the active retained destination', async () => {
+  it('retains Wiki state but marks its heavy reader inactive outside Wiki', async () => {
     renderWorkspace();
     fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
     expect(await screen.findByTestId('wiki-surface')).toBeInTheDocument();
@@ -294,11 +294,12 @@ describe('KnowledgeWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Contacts' }));
     expect(await screen.findByTestId('contacts-surface')).toBeInTheDocument();
-    expect(screen.getByTestId('wiki-surface')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('wiki-surface')).toHaveAttribute('data-active', 'false');
     expect(surfaceMocks.wikiEffectCleanedUp).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Wiki' }));
     expect(await screen.findByTestId('wiki-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('wiki-surface')).toHaveAttribute('data-active', 'true');
     expect(surfaceMocks.wikiEffectStarted).toHaveBeenCalledOnce();
     expect(surfaceMocks.wikiEffectCleanedUp).not.toHaveBeenCalled();
   });

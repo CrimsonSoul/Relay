@@ -25,7 +25,7 @@ import { loggers } from '../logger';
 import { KnowledgeSearchEngine } from './KnowledgeSearchEngine';
 
 const SEARCH_DEADLINE_MS = 1_000;
-const RECONCILIATION_INTERVAL_MS = 60_000;
+const RECONCILIATION_INTERVAL_MS = 15 * 60_000;
 const RECONCILIATION_DEADLINE_MS = 5_000;
 const UNSUBSCRIBE_DEADLINE_MS = 1_000;
 const CIRCUIT_FAILURE_THRESHOLD = 3;

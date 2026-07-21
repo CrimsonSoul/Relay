@@ -261,7 +261,7 @@ export function KnowledgeWorkspace({
             <DestinationBoundary label="Wiki" onHome={openHome}>
               <Suspense fallback={<TabFallback />}>
                 <WikiSurface
-                  active={active}
+                  active={active && destination === 'wiki'}
                   relayMode={relayMode}
                   onLibraryCountChange={setWikiCount}
                 />
