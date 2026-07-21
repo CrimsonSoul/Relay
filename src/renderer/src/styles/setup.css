@@ -4,6 +4,79 @@
    =========================== */
 
 /* Shared full-screen layout for setup, loading, error, connecting states */
+.startup-shell {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-base);
+  -webkit-app-region: drag;
+}
+
+.startup-shell__content {
+  width: min(320px, 100%);
+}
+
+.startup-shell__wordmark {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 28px;
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+}
+
+.startup-shell__wordmark span {
+  color: var(--accent-bright);
+}
+
+.startup-shell__rail {
+  height: 2px;
+  margin-top: 20px;
+  overflow: hidden;
+  background: var(--color-border-subtle);
+}
+
+.startup-shell__rail span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: var(--accent);
+  animation: relay-startup-progress 1.15s var(--motion-ease-out) infinite alternate;
+}
+
+.startup-shell__status {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: var(--leading-normal);
+}
+
+.startup-shell--failed .startup-shell__rail span {
+  width: 100%;
+  animation: none;
+  background: var(--alarm);
+}
+
+@keyframes relay-startup-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(263%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-shell__rail span {
+    animation: none;
+    transform: none;
+  }
+}
+
 .setup-fullscreen {
   display: flex;
   flex-direction: column;

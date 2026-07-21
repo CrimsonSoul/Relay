@@ -9,6 +9,7 @@ import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/700.css';
 import './styles.css';
 import { initAccent } from './theme/accent';
+import { DesktopStartupGate, type DesktopStartupBridge } from './runtime/DesktopStartupGate';
 
 initAccent();
 
@@ -20,7 +21,18 @@ function renderApp(app: React.ReactNode): void {
 }
 
 async function bootstrapRenderer(): Promise<void> {
-  if (globalThis.api) {
+  const api = globalThis.api;
+  if (api?.getStartupState && api.onStartupStateChanged && api.markStartupRendererMounted) {
+    const bridge: DesktopStartupBridge = {
+      getStartupState: api.getStartupState,
+      onStartupStateChanged: api.onStartupStateChanged,
+      markStartupRendererMounted: api.markStartupRendererMounted,
+    };
+    renderApp(<DesktopStartupGate bridge={bridge} loadApp={() => import('./App')} />);
+    return;
+  }
+
+  if (api) {
     const { default: App } = await import('./App');
     renderApp(<App />);
     return;
