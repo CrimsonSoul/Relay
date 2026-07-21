@@ -194,7 +194,15 @@ Current behavior:
 - Client mode writes a heartbeat every 15 seconds and hides the server-only client-count block
 - Records older than 45 seconds are treated as inactive
 
-The server is intentionally excluded from the count. Only records with `mode: "client"` are considered active clients.
+The server is intentionally excluded from the count. Desktop client and browser records are considered active clients. Browser records use a bounded `Web · Browser · address` label and the same expiry window.
+
+### Relay Web Runtime
+
+The optional Relay Web service runs only in server mode and is implemented in `src/main/web/`. It serves the built renderer and a narrow same-origin API on a port separate from PocketBase. `src/renderer/src/runtime/` selects either the Electron preload adapter or the browser session adapter without forking the feature UI.
+
+The browser session exposes capability flags for device-specific operations. Keep desktop-only behavior behind those capabilities rather than testing the user agent inside feature components. Relay Web does not provide offline cache/replay or browser push notifications.
+
+See `docs/relay-web.md` for operator setup and the supported browser boundary.
 
 ### Dynatrace Dashboards
 
@@ -304,7 +312,10 @@ npm run test:unit
 npm run test:renderer
 npm run test:coverage
 npm run test:electron
+npm run test:web
 ```
+
+`npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
 Coverage thresholds are currently 80% for lines, functions, branches, and statements in both Vitest configs.
 

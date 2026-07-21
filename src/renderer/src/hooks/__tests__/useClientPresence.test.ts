@@ -159,6 +159,21 @@ describe('useClientPresence', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('web-presence'));
   });
 
+  it('refreshes the snapshot after the first Web heartbeat can race realtime setup', async () => {
+    const webPresence = makePresence('web-presence', 'web-session', 'Web · Edge · 10.0.0.8');
+    globalThis.api = {
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
+    } as typeof globalThis.api;
+    mockCreate.mockResolvedValue(webPresence);
+    mockGetFullList.mockResolvedValueOnce([]).mockResolvedValue([webPresence]);
+
+    const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(result.current.count).toBe(1));
+    expect(mockGetFullList).toHaveBeenCalledTimes(2);
+  });
+
   it('filters stale client records out of the visible count', async () => {
     mockGetFullList.mockResolvedValue([
       makePresence('fresh', 'fresh-session', 'ops-laptop'),

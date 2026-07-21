@@ -42,6 +42,7 @@ export function runElectronTests({
   playwrightPath,
   npmExecPath,
   nodePath = process.execPath,
+  playwrightConfigPath = 'playwright.electron.config.ts',
   playwrightArgs = [],
   spawnSync = defaultSpawnSync,
   cwd = process.cwd(),
@@ -73,7 +74,7 @@ export function runElectronTests({
     primaryOutcome = runChild(
       spawnSync,
       nodePath,
-      [playwrightPath, 'test', '-c', 'playwright.electron.config.ts', ...playwrightArgs],
+      [playwrightPath, 'test', '-c', playwrightConfigPath, ...playwrightArgs],
       childOptions,
     );
   }

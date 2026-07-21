@@ -35,6 +35,7 @@ const knowledgeTokens = `
     --font-family-mono: ui-monospace, monospace;
     --radius-sm: 4px;
     --space-4: 16px;
+    --transition-fast: 0.18s ease;
     --weight-bold: 700;
   }
 `;
@@ -115,9 +116,8 @@ test('continuous PDF keeps oversized pages reachable and smaller pages centered'
     .toBe(20);
 });
 
-test('mode control preserves keyboard focus, name, pressed state, and reduced motion', async ({
-  window,
-}) => {
+test('view options preserve keyboard focus, state, and reduced motion', async ({ window }) => {
+  await window.emulateMedia({ reducedMotion: 'no-preference' });
   await window.setContent(`
     <style>
       ${knowledgeTokens}
@@ -128,39 +128,61 @@ test('mode control preserves keyboard focus, name, pressed state, and reduced mo
       <header class="knowledge-viewer__toolbar">
         <div class="knowledge-viewer__identity"><h2>Guide</h2></div>
         <div class="knowledge-viewer__controls" aria-label="PDF controls">
-          <button class="knowledge-viewer__mode" type="button" aria-pressed="true">View: Continuous</button>
+          <div class="knowledge-viewer__view-menu">
+            <button class="knowledge-viewer__view-trigger" type="button" aria-label="View options: Continuous" aria-expanded="false" aria-haspopup="dialog">View ▾</button>
+            <div class="knowledge-viewer__view-panel" role="dialog" aria-label="View options" hidden>
+              <button class="knowledge-viewer__view-option" type="button">Fit width</button>
+              <button class="knowledge-viewer__view-option" type="button" aria-pressed="true">Continuous scrolling</button>
+              <button class="knowledge-viewer__view-option" type="button" aria-pressed="false">Single page</button>
+            </div>
+          </div>
         </div>
       </header>
     </section>
     <script>
-      const mode = document.querySelector('.knowledge-viewer__mode');
-      mode.addEventListener('click', () => {
-        const continuous = mode.getAttribute('aria-pressed') === 'true';
-        mode.setAttribute('aria-pressed', String(!continuous));
-        mode.textContent = continuous ? 'View: Single page' : 'View: Continuous';
+      const trigger = document.querySelector('.knowledge-viewer__view-trigger');
+      const panel = document.querySelector('.knowledge-viewer__view-panel');
+      const continuous = [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Continuous scrolling');
+      const single = [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Single page');
+      trigger.addEventListener('click', () => {
+        const open = trigger.getAttribute('aria-expanded') === 'true';
+        trigger.setAttribute('aria-expanded', String(!open));
+        panel.hidden = open;
       });
+      const select = (next) => {
+        const isContinuous = next === 'continuous';
+        continuous.setAttribute('aria-pressed', String(isContinuous));
+        single.setAttribute('aria-pressed', String(!isContinuous));
+        trigger.setAttribute('aria-label', 'View options: ' + (isContinuous ? 'Continuous' : 'Single page'));
+        trigger.setAttribute('aria-expanded', 'false');
+        panel.hidden = true;
+        trigger.focus();
+      };
+      continuous.addEventListener('click', () => select('continuous'));
+      single.addEventListener('click', () => select('single'));
     </script>
   `);
 
-  const continuousMode = window.getByRole('button', { name: 'View: Continuous' });
-  await expect(continuousMode).toHaveCount(1);
-  await expect(continuousMode).toHaveAttribute('aria-pressed', 'true');
+  const continuousMode = window.getByRole('button', { name: 'View options: Continuous' });
   await continuousMode.focus();
   await expect(continuousMode).toBeFocused();
   await expect(continuousMode).toHaveCSS('outline-style', 'solid');
-  await expect(continuousMode).toHaveCSS('transition-duration', /0\.18s/);
+  await expect(continuousMode).not.toHaveCSS('transition-duration', '0s');
 
-  await window.keyboard.press('Enter');
-  const singleMode = window.getByRole('button', { name: 'View: Single page' });
-  await expect(singleMode).toHaveAttribute('aria-pressed', 'false');
+  await continuousMode.click();
+  const options = window.getByRole('dialog', { name: 'View options' });
+  await expect(options).toBeVisible();
+  await expect(options.getByRole('button', { name: 'Continuous scrolling' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await options.getByRole('button', { name: 'Single page' }).click();
+  const singleMode = window.getByRole('button', { name: 'View options: Single page' });
   await expect(singleMode).toBeFocused();
-
-  await window.keyboard.press('Space');
-  await expect(continuousMode).toHaveAttribute('aria-pressed', 'true');
-  await expect(continuousMode).toBeFocused();
+  await expect(singleMode).toHaveAttribute('aria-expanded', 'false');
 
   await window.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(continuousMode).toHaveCSS('transition-duration', /0s/);
+  await expect(singleMode).toHaveCSS('transition-duration', /0s/);
 });
 
 test('collapsible Wiki library preserves the compact container drawer', async ({ window }) => {
@@ -316,13 +338,19 @@ test('narrow reader controls and fitted page content stay contained and readable
       <header class="knowledge-viewer__toolbar" data-testid="toolbar">
         <div class="knowledge-viewer__identity"><h2>A long guide title that must not overflow</h2></div>
         <div class="knowledge-viewer__controls" aria-label="PDF controls" data-testid="controls">
-          <button type="button" aria-label="Previous page">←</button>
-          <span class="knowledge-viewer__page-status">Page 2 of 12</span>
-          <button type="button" aria-label="Next page">→</button>
-          <span class="knowledge-viewer__control-divider"></span>
-          <span class="knowledge-viewer__zoom">105%</span>
-          <button class="knowledge-viewer__fit" type="button">Fit width</button>
-          <button class="knowledge-viewer__mode" type="button" aria-pressed="true">View: Continuous</button>
+          <div class="knowledge-viewer__control-group knowledge-viewer__page-controls">
+            <button type="button" aria-label="Previous page">←</button>
+            <span class="knowledge-viewer__page-status"><span class="knowledge-viewer__page-status-long">Page 2 of 12</span><span class="knowledge-viewer__page-status-compact">2 / 12</span></span>
+            <button type="button" aria-label="Next page">→</button>
+          </div>
+          <div class="knowledge-viewer__control-group knowledge-viewer__zoom-controls">
+            <button type="button" aria-label="Zoom out">−</button>
+            <span class="knowledge-viewer__zoom">105%</span>
+            <button type="button" aria-label="Zoom in">+</button>
+          </div>
+          <div class="knowledge-viewer__view-menu">
+            <button class="knowledge-viewer__view-trigger" type="button" aria-label="View options: Continuous" aria-expanded="false">View ▾</button>
+          </div>
         </div>
       </header>
       <div class="knowledge-continuous-pdf knowledge-viewer__viewport" role="region" aria-label="Continuous PDF pages">
@@ -340,9 +368,8 @@ test('narrow reader controls and fitted page content stay contained and readable
 
   const toolbar = window.getByTestId('toolbar');
   const controls = window.getByTestId('controls');
-  const mode = window.getByRole('button', { name: 'View: Continuous' });
-  await expect(window.getByRole('button', { name: 'Fit width' })).toBeHidden();
-  await expect(mode).toBeVisible();
+  const viewOptions = window.getByRole('button', { name: 'View options: Continuous' });
+  await expect(viewOptions).toBeVisible();
   await expect
     .poll(() =>
       controls.evaluate((element) => element.getBoundingClientRect().right <= window.innerWidth),
@@ -352,7 +379,7 @@ test('narrow reader controls and fitted page content stay contained and readable
     .poll(() => toolbar.evaluate((element) => element.scrollWidth <= element.clientWidth))
     .toBe(true);
   await expect
-    .poll(() => mode.evaluate((element) => element.scrollWidth <= element.clientWidth))
+    .poll(() => viewOptions.evaluate((element) => element.scrollWidth <= element.clientWidth))
     .toBe(true);
 
   const placeholderShell = window.getByTestId('placeholder-shell');

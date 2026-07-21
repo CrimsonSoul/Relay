@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import React from 'react';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { StartupErrorScreen } from '../StartupErrorScreen';
 
 describe('StartupErrorScreen', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    globalThis.api = { runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -75,6 +77,21 @@ describe('StartupErrorScreen', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Reconfigure' }));
     expect(onReconfigure).toHaveBeenCalledOnce();
+  });
+
+  it('hides desktop connection recovery controls on the web', () => {
+    globalThis.api = { runtime: WEB_RUNTIME } as typeof globalThis.api;
+    render(
+      <StartupErrorScreen
+        message="PocketBase authentication failed."
+        retryable={false}
+        onRetry={vi.fn()}
+        onReconfigure={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Reconfigure' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
   });
 
   it('stops auto-retrying after unmount', () => {

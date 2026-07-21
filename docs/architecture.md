@@ -16,7 +16,7 @@ High-level structure of the Relay Electron application.
 
 ## Runtime Model
 
-Relay has three main layers:
+Relay has three main application layers and one optional browser gateway:
 
 1. `src/main/`
    Manages Electron windows, app lifecycle, PocketBase bootstrap, IPC handlers, logging, backup/restore, and the offline cache.
@@ -24,6 +24,8 @@ Relay has three main layers:
    Exposes the typed `window.api` bridge through Electron context isolation.
 3. `src/renderer/`
    Hosts the React UI, feature hooks, service modules, and tab components.
+4. `src/main/web/`
+   Hosts the optional server-mode Relay Web gateway, browser sessions, same-origin API routes, and static renderer delivery for trusted LAN/VPN access.
 
 `src/shared/` contains types, IPC channel definitions, validation schemas, and shared helpers used across those layers.
 
@@ -107,7 +109,17 @@ Client mode responsibilities:
 - Write a `client_presence` heartbeat every 15 seconds with the client hostname
 - Hide the client-count sidebar block because it is server-only operator context
 
-Presence records expire from the UI after 45 seconds without a heartbeat. The collection only stores clients, so the Relay server itself is not counted.
+Relay Web responsibilities:
+
+- Serve the shared renderer from the Relay server on an independently configured port
+- Authenticate ordinary browser sessions with the Relay connection passphrase
+- Write browser heartbeats with a sanitized browser/address label
+- Adapt system actions through a bounded same-origin API while capability-gating desktop-only operations
+- Require a desktop viewport at least 1,024 pixels wide
+
+Presence records expire from the UI after 45 seconds without a heartbeat. The collection stores desktop clients and browser sessions, so the Relay server itself is not counted.
+
+Relay Web is a backup access path, not an independent frontend. The same React components, PocketBase services, realtime subscriptions, and feature state are used in both runtimes. The Electron preload adapter and browser session adapter implement the runtime boundary. Native window management, connection reconfiguration, backup/restore, offline cache/replay, native alarm selection, and image clipboard capture remain desktop-only.
 
 ### Offline Resilience
 

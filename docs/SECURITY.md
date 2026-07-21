@@ -45,6 +45,18 @@ The renderer runs with:
 
 The renderer does not import Node.js or Electron APIs directly. System-level operations go through the preload bridge. PocketBase data CRUD is performed with the PocketBase SDK rather than IPC.
 
+### Relay Web Gateway
+
+Relay Web is an optional server-mode backup path for desktop Chrome, Edge, and Safari on a managed LAN or private VPN. It serves the shared renderer and a bounded same-origin API from `src/main/web/`. It is not designed or approved for internet exposure.
+
+The gateway binds only when server-mode direct LAN access and Relay Web are both enabled. Host-header and request-origin validation restrict accepted requests to the local machine name and private interface addresses. Ordinary sessions use random server-side identifiers in HTTP-only, path-scoped, `SameSite=Strict` cookies with one-hour idle and eight-hour absolute limits. Logout and expiry destroy the server-side record.
+
+The browser receives the ordinary app-user connection needed by the shared renderer only after the web session is authenticated. Protected commands keep the existing authoritative capability, revision, replay, and audit controls. Browser protected sign-in and destructive approvals are server-mediated; they do not expose Electron secrets, local paths, the protected auth store, or private signing keys.
+
+Relay Web deliberately has no service worker, browser push subscription, permissive cross-origin API, backup/restore endpoint, arbitrary filesystem bridge, connection-reconfiguration endpoint, or offline mutation queue.
+
+The service uses cleartext HTTP. Session credentials, operational data, and responses are not confidential against a network observer. Never port-forward or publish the Relay Web port through public DNS, a public reverse proxy, or a WAN-facing firewall rule. Restrict access to approved LAN/VPN devices. See `docs/relay-web.md` for deployment requirements.
+
 ## Runtime Hardening
 
 ### IPC Sender Validation

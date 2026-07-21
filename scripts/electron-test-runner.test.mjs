@@ -113,4 +113,17 @@ describe('runElectronTests', () => {
     expect(runElectronTests(makeOptions(spawnSync))).toBe(0);
     expect(spawnSync).toHaveBeenCalledTimes(3);
   });
+
+  it('runs Playwright with an explicitly selected configuration', () => {
+    const spawnSync = vi.fn().mockReturnValue(success());
+    const options = makeOptions(spawnSync, { playwrightConfigPath: 'playwright.web.config.ts' });
+
+    expect(runElectronTests(options)).toBe(0);
+    expect(spawnSync).toHaveBeenNthCalledWith(
+      2,
+      options.nodePath,
+      [options.playwrightPath, 'test', '-c', 'playwright.web.config.ts'],
+      expect.any(Object),
+    );
+  });
 });

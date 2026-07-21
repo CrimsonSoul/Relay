@@ -1,0 +1,167 @@
+import {
+  _electron as electron,
+  expect,
+  test as base,
+  type ElectronApplication,
+} from '@playwright/test';
+import { createServer } from 'node:net';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const mainEntry = join(root, 'dist/main/index.js');
+const TEST_PASSPHRASE = ['relay', 'web', 'e2e', 'passphrase'].join('-');
+
+type RelayWebFixture = {
+  origin: string;
+};
+
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const address = probe.address();
+  if (!address || typeof address === 'string') throw new Error('Expected a local TCP port.');
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => (error ? reject(error) : resolve()));
+  });
+  return address.port;
+}
+
+async function stopElectron(app: ElectronApplication | null): Promise<void> {
+  if (!app) return;
+  try {
+    const process = app.process();
+    if (!process || process.exitCode === null) await app.close();
+  } catch {
+    // The application may have already exited during a failed test.
+  }
+}
+
+const test = base.extend<{ relayWeb: RelayWebFixture }>({
+  relayWeb: async ({ browserName: _browserName }, use) => {
+    const userDataDir = await mkdtemp(join(tmpdir(), 'relay-web-e2e-'));
+    let app: ElectronApplication | null = null;
+    try {
+      const pocketBasePort = await freePort();
+      let webPort = await freePort();
+      while (webPort === pocketBasePort) webPort = await freePort();
+      const dataDir = join(userDataDir, 'data');
+      await mkdir(dataDir, { recursive: true });
+      await writeFile(
+        join(dataDir, 'config.json'),
+        JSON.stringify(
+          {
+            mode: 'server',
+            port: pocketBasePort,
+            bindHost: '0.0.0.0',
+            secret: TEST_PASSPHRASE,
+            web: { enabled: true, port: webPort },
+          },
+          null,
+          2,
+        ),
+        { encoding: 'utf8', mode: 0o600 },
+      );
+
+      const launchEnvironment = { ...process.env, NODE_ENV: 'test' };
+      delete launchEnvironment.ELECTRON_RUN_AS_NODE;
+      app = await electron.launch({
+        args: [`--user-data-dir=${userDataDir}`, mainEntry],
+        env: launchEnvironment,
+      });
+      const desktop = await app.firstWindow();
+      await expect(desktop.getByTestId('sidebar-compose')).toBeVisible();
+      await use({ origin: `http://127.0.0.1:${webPort}` });
+    } finally {
+      await stopElectron(app);
+      await rm(userDataDir, { recursive: true, force: true });
+    }
+  },
+});
+
+test('runs the shared Relay shell with browser-safe behavior @critical', async ({
+  page,
+  relayWeb,
+}, testInfo) => {
+  await expect
+    .poll(async () => {
+      try {
+        return (await fetch(relayWeb.origin)).status;
+      } catch {
+        return 0;
+      }
+    })
+    .toBe(200);
+
+  const bootstrapResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith('/relay-api/v1/session/bootstrap'),
+  );
+  await page.goto(relayWeb.origin);
+  const bootstrapResponse = await bootstrapResponsePromise;
+  const unauthenticatedBootstrap = {
+    status: bootstrapResponse.status(),
+    body: (await bootstrapResponse.json()) as unknown,
+  };
+  expect(unauthenticatedBootstrap).toEqual({
+    status: 401,
+    body: { ok: false, error: 'unauthenticated' },
+  });
+  await expect(page.getByRole('heading', { name: 'Relay Web' })).toBeVisible();
+  await page.getByLabel('Connection passphrase').fill(TEST_PASSPHRASE);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+
+  await expect(page.getByTestId('sidebar-compose')).toBeVisible();
+  await expect(page.getByLabel('Relay Web connection notice')).toContainText('Web');
+  await expect(page.getByLabel('Relay Web connection notice')).toContainText(
+    'Trusted LAN/VPN only - browser traffic is not encrypted',
+  );
+  await expect(page.locator('.window-controls')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { api?: { runtime?: { kind?: string } } }).api?.runtime
+            ?.kind,
+      ),
+    )
+    .toBe('web');
+
+  const browserFamily = { chrome: 'Chrome', edge: 'Edge', safari: 'Safari' }[testInfo.project.name];
+  expect(browserFamily).toBeTruthy();
+  const clients = page.getByTestId('sidebar-clients');
+  await expect(clients).toHaveAttribute('data-client-count', '1');
+  await clients.hover();
+  await expect(page.getByText(`Web · ${browserFamily} · 127.0.0.1`)).toBeVisible();
+
+  const destinations = [
+    ['Alerts', 'Alerts'],
+    ['On-Call', 'On-Call'],
+    ['Knowledge', 'Knowledge'],
+    ['Status', 'Service Status'],
+    ['Problems', 'Dynatrace Problems'],
+  ] as const;
+  for (const [button, breadcrumb] of destinations) {
+    await page.getByRole('button', { name: button, exact: true }).click();
+    await expect(page.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumb}`);
+  }
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'Relay data' }).click();
+  await expect(
+    page.getByText('Connection settings are managed by Relay Desktop on the server.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reconfigure...' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open Data Manager...' }).click();
+  const dataManager = page.getByRole('dialog', { name: 'Data Manager' });
+  await expect(dataManager).toBeVisible();
+  await expect(dataManager.getByRole('tab', { name: 'Backups' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await expect(page.getByRole('heading', { name: 'Larger window required' })).toBeVisible();
+  await expect(page.getByText('at least 1024 pixels wide')).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.getByTestId('sidebar-compose')).toBeVisible();
+});

@@ -311,20 +311,21 @@ export function useClientPresence(
     const sessionId = getClientPresenceSessionId();
     ownSessionIdRef.current = sessionId;
 
-    async function heartbeat(): Promise<void> {
+    async function heartbeat(refreshSnapshot = false): Promise<void> {
       if (cancelled || !isOnline()) return;
       try {
         await writeClientHeartbeat(sessionId, await getClientHostname());
+        if (refreshSnapshot && !cancelled) await loadPresence();
       } catch (error) {
         handleApiError(error);
       }
     }
 
-    void heartbeat();
+    void heartbeat(true);
     interval = setInterval(() => void heartbeat(), CLIENT_PRESENCE_HEARTBEAT_MS);
 
     const unsubscribeConnection = onConnectionStateChange((state) => {
-      if (state === 'online') void heartbeat();
+      if (state === 'online') void heartbeat(true);
     });
 
     return () => {
@@ -333,7 +334,7 @@ export function useClientPresence(
       unsubscribeConnection();
       if (isOnline()) void removeClientHeartbeat(sessionId);
     };
-  }, [enabled, publishesPresence]);
+  }, [enabled, loadPresence, publishesPresence]);
 
   useEffect(() => {
     const expiresAt = getNextPresenceExpiry(records);

@@ -121,8 +121,8 @@ const expectDirectoryToolbarControlsToBeCentered = async (workspace: Locator) =>
           const top = box!.y - toolbarBox.y;
           const bottom = toolbarBox.y + toolbarBox.height - box!.y - box!.height;
           return {
-            heightWithinTolerance: Math.abs(box!.height - 34) <= 1,
-            insetWithinTolerance: Math.abs(Math.min(top, bottom) - 14) <= 1,
+            heightWithinTolerance: Math.abs(box!.height - 40) <= 1,
+            insetWithinTolerance: Math.abs(Math.min(top, bottom) - 11) <= 1,
             centered: Math.abs(top - bottom) <= 1,
           };
         }),
@@ -201,6 +201,40 @@ const makeSuperuserPbClient = async (port: number) => {
   return pb;
 };
 
+const knowledgeCategoryKey = (name: string) => name.trim().toLocaleLowerCase('en-US');
+
+const ensureKnowledgeCategories = async (pb: PocketBase, names: string[]) => {
+  const collection = pb.collection('knowledge_categories');
+  const existing = await collection.getFullList<{
+    id: string;
+    name: string;
+    normalizedName: string;
+  }>({ requestKey: null });
+  const byKey = new Map(existing.map((category) => [category.normalizedName, category]));
+
+  for (const name of [...new Set(names)]) {
+    const normalizedName = knowledgeCategoryKey(name);
+    if (byKey.has(normalizedName)) continue;
+    const category = await collection.create<{
+      id: string;
+      name: string;
+      normalizedName: string;
+    }>(
+      {
+        name,
+        normalizedName,
+        sortOrder: (byKey.size + 1) * 100,
+        systemKey: '',
+        revision: 1,
+      },
+      { requestKey: null },
+    );
+    byKey.set(normalizedName, category);
+  }
+
+  return byKey;
+};
+
 const seedKnowledgeLinkFixtures = async (port: number) => {
   const pb = await makeSuperuserPbClient(port);
   const timestamp = new Date().toISOString();
@@ -217,11 +251,16 @@ const seedKnowledgeLinkFixtures = async (port: number) => {
       }),
     },
   ];
+  const categories = await ensureKnowledgeCategories(
+    pb,
+    fixtures.map(({ category }) => category),
+  );
   for (const fixture of fixtures) {
     const bytes = Uint8Array.from(fixture.data);
     const form = new FormData();
     form.set('sourceKey', `${fixture.category}/${fixture.fileName}`);
     form.set('category', fixture.category);
+    form.set('categoryId', categories.get(knowledgeCategoryKey(fixture.category))!.id);
     form.set('documentType', 'sop');
     form.set('title', fixture.title);
     form.set('displayTitle', fixture.title);
@@ -504,32 +543,36 @@ const enterKnowledgeDestination = async (
 };
 
 const openKnowledgeReaderDocument = async (targetWindow: Page, category: string, title: string) => {
-  const catalogAction = targetWindow.getByRole('button', {
-    name: `Open ${title}`,
-    exact: true,
-  });
-  const categoryNode = targetWindow.getByRole('treeitem', {
-    name: `${category}, 1 document`,
-    exact: true,
-  });
-  await expect
-    .poll(async () => {
-      if (await catalogAction.isVisible()) return 'catalog';
-      if (await categoryNode.isVisible()) return 'reader';
-      return 'loading';
-    })
-    .not.toBe('loading');
+  const viewer = targetWindow.getByRole('region', { name: `${title} PDF viewer` });
+  if (!(await viewer.isVisible())) {
+    const libraryTab = targetWindow.getByRole('tab', { name: 'Library' });
+    if (await libraryTab.isVisible()) await libraryTab.click();
+    const catalogAction = targetWindow.getByRole('button', {
+      name: `Open ${title}`,
+      exact: true,
+    });
+    const categoryNode = targetWindow.getByRole('treeitem', {
+      name: `${category}, 1 document`,
+      exact: true,
+    });
+    await expect
+      .poll(async () => {
+        if (await catalogAction.isVisible()) return 'catalog';
+        if (await categoryNode.isVisible()) return 'reader';
+        return 'loading';
+      })
+      .not.toBe('loading');
 
-  if (await catalogAction.isVisible()) {
-    await catalogAction.click();
-  } else {
-    if ((await categoryNode.getAttribute('aria-expanded')) === 'false') {
-      await categoryNode.click();
+    if (await catalogAction.isVisible()) {
+      await catalogAction.click();
+    } else {
+      if ((await categoryNode.getAttribute('aria-expanded')) === 'false') {
+        await categoryNode.click();
+      }
+      await targetWindow.getByRole('treeitem', { name: title, exact: true }).click();
     }
-    await targetWindow.getByRole('treeitem', { name: title, exact: true }).click();
   }
 
-  const viewer = targetWindow.getByRole('region', { name: `${title} PDF viewer` });
   await expect(viewer).toBeVisible();
   return viewer;
 };
@@ -780,11 +823,15 @@ test.describe('Vital Critical Path', () => {
     );
     const timestamp = new Date().toISOString();
     const pb = await makeSuperuserPbClient(pbPort);
+    const categories = await ensureKnowledgeCategories(pb, ['Pagination']);
+    const categoryId = categories.get(knowledgeCategoryKey('Pagination'))!.id;
     for (let index = 0; index < count; index += 1) {
       const fileName = `ZZ Pagination fixture ${String(index + 1).padStart(2, '0')}.pdf`;
       const form = new FormData();
       form.set('sourceKey', `Pagination/${fileName}`);
       form.set('category', 'Pagination');
+      form.set('categoryId', categoryId);
+      form.set('documentType', 'sop');
       form.set('title', fileName.replace(/\.pdf$/i, ''));
       form.set('displayTitle', fileName.replace(/\.pdf$/i, ''));
       form.set('fileName', fileName);
@@ -950,8 +997,8 @@ test.describe('Vital Critical Path', () => {
     await setServerWindowWidth(540);
     await expectBottomGutter(12);
     const railButtons = rail.getByRole('button');
-    await expect(railButtons).toHaveCount(4);
-    for (const section of ['Documents', 'Uploads', 'Trash', 'Audit']) {
+    await expect(railButtons).toHaveCount(5);
+    for (const section of ['Documents', 'Categories', 'Uploads', 'Trash', 'Audit']) {
       const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
       await expect(button.locator('span')).toHaveText(section.toLowerCase());
       expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
@@ -988,7 +1035,7 @@ test.describe('Vital Critical Path', () => {
   });
 
   test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
-    await seedKnowledgePaginationFixtures(27);
+    await seedKnowledgePaginationFixtures(107);
     const { content, search } = await openOwnerKnowledgeManagement();
 
     const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
@@ -1009,9 +1056,14 @@ test.describe('Vital Critical Path', () => {
     }
     await search.fill('');
 
-    await window.getByLabel('Category to rename').selectOption('Reader validation');
-    await window.getByLabel('New category name').fill('Reader operations');
-    await window.getByRole('button', { name: 'Rename', exact: true }).click();
+    const rail = window.getByRole('navigation', { name: 'Knowledge management' });
+    await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
+    await window.getByLabel('Category name Reader validation').fill('Reader operations');
+    await window.getByRole('button', { name: 'Save Reader validation' }).click();
+    await expect(window.getByLabel('Category name Reader operations')).toHaveValue(
+      'Reader operations',
+    );
+    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
     await expect(
       window.locator('.knowledge-management-row', { hasText: CONTINUOUS_READER_TITLE }),
     ).toContainText('Reader operations');
@@ -1107,6 +1159,12 @@ test.describe('Vital Critical Path', () => {
 
   test('Knowledge management trash workflow restores and permanently deletes live documents', async () => {
     const { rail, search } = await openOwnerKnowledgeManagement();
+    const pb = await makeSuperuserPbClient(pbPort);
+    const documentToDelete = await pb
+      .collection('knowledge_documents')
+      .getFirstListItem<{ id: string }>('fileName = "Payment API Degradation Guide.pdf"', {
+        requestKey: null,
+      });
 
     await search.fill('Checkout Service Incident Runbook');
     const restoreSource = window.locator('.knowledge-management-row', {
@@ -1149,6 +1207,19 @@ test.describe('Vital Critical Path', () => {
     await expect(confirmedDelete).toHaveClass(/tactile-button--danger/);
     await expect(confirmedDelete).not.toHaveClass(/knowledge-management__danger-outline/);
     await confirmedDelete.click();
+    await expect
+      .poll(async () => {
+        try {
+          await pb.collection('knowledge_documents').getOne(documentToDelete.id, {
+            requestKey: null,
+          });
+          return true;
+        } catch (error) {
+          if ((error as { status?: unknown }).status === 404) return false;
+          throw error;
+        }
+      })
+      .toBe(false);
     await expect(permanentRow).not.toBeVisible();
     await expect(rail.getByRole('button', { name: /^Trash 0$/ })).toBeVisible();
   });
@@ -1278,8 +1349,8 @@ test.describe('Vital Critical Path', () => {
       CONTINUOUS_READER_TITLE,
     );
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
-    const continuousMode = viewer.getByRole('button', { name: 'View: Continuous' });
-    await expect(continuousMode).toHaveAttribute('aria-pressed', 'true');
+    const continuousMode = viewer.getByRole('button', { name: 'View options: Continuous' });
+    await expect(continuousMode).toHaveAttribute('aria-expanded', 'false');
 
     const viewport = viewer.getByRole('region', { name: 'Continuous PDF pages' });
     const pageShells = viewport.locator('.knowledge-page-shell');
@@ -1302,8 +1373,12 @@ test.describe('Vital Critical Path', () => {
     await expect.poll(() => viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
 
     await continuousMode.click();
-    const singleMode = viewer.getByRole('button', { name: 'View: Single page' });
-    await expect(singleMode).toHaveAttribute('aria-pressed', 'false');
+    await viewer
+      .getByRole('dialog', { name: 'View options' })
+      .getByRole('button', { name: 'Single page' })
+      .click();
+    const singleMode = viewer.getByRole('button', { name: 'View options: Single page' });
+    await expect(singleMode).toHaveAttribute('aria-expanded', 'false');
     await expect(viewer).toContainText(
       `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
     );
@@ -1319,9 +1394,13 @@ test.describe('Vital Critical Path', () => {
       `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
     );
     await singleMode.click();
-    await expect(viewer.getByRole('button', { name: 'View: Continuous' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+    await viewer
+      .getByRole('dialog', { name: 'View options' })
+      .getByRole('button', { name: 'Continuous scrolling' })
+      .click();
+    await expect(viewer.getByRole('button', { name: 'View options: Continuous' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
     );
     await expect(viewer.getByRole('region', { name: 'Continuous PDF pages' })).toBeVisible();
 
@@ -1485,11 +1564,8 @@ test.describe('Vital Critical Path', () => {
     await goToTab(connectedClient, 'sidebar-compose', 'Compose');
     await expect(connectedClient.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient
-      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
-      .click();
     await expect(
-      connectedClient.getByRole('region', { name: 'Link navigation test PDF viewer' }),
+      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
     ).toContainText('Page 1 of 2');
 
     const serverAccess = await openPrivilegedAccess(window);
@@ -1561,11 +1637,8 @@ test.describe('Vital Critical Path', () => {
     });
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient
-      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
-      .click();
     await expect(
-      connectedClient.getByRole('region', { name: 'Link navigation test PDF viewer' }),
+      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
     ).toContainText('Page 1 of 2');
 
     await electronApp?.close();
@@ -1586,10 +1659,7 @@ test.describe('Vital Critical Path', () => {
     await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
     await enterKnowledgeDestination(connectedClient, 'Wiki');
     await expect(
-      connectedClient.getByRole('treeitem', { name: 'Link navigation test', exact: true }),
-    ).toBeVisible();
-    await expect(
-      connectedClient.getByRole('region', { name: 'Link navigation test PDF viewer' }),
+      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
     ).toContainText('Page 1 of 2');
   });
 
@@ -1763,9 +1833,8 @@ test.describe('Vital Critical Path', () => {
     const activePublisherAccess = await openPrivilegedAccess(connectedClient);
     await activePublisherAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient.getByRole('treeitem', { name: largeTitle, exact: true }).click();
     await expect(
-      connectedClient.getByRole('region', { name: `${largeTitle} PDF viewer` }),
+      await openKnowledgeReaderDocument(connectedClient, 'General', largeTitle),
     ).toContainText('Page 1 of 1');
   });
 
@@ -1782,21 +1851,27 @@ test.describe('Vital Critical Path', () => {
     connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
+    const sourceViewer = await openKnowledgeReaderDocument(
+      connectedClient,
+      'General',
+      'Link navigation test',
+    );
     const sourceDocument = connectedClient.getByRole('treeitem', {
       name: 'Link navigation test',
       exact: true,
     });
-    await expect(sourceDocument).toBeVisible();
-    await sourceDocument.click();
-
-    const sourceViewer = connectedClient.getByRole('region', {
-      name: 'Link navigation test PDF viewer',
-    });
     await expect(sourceViewer).toContainText('Page 1 of 2');
-    await sourceViewer.getByRole('button', { name: 'View: Continuous' }).click();
-    await expect(sourceViewer.getByRole('button', { name: 'View: Single page' })).toBeVisible();
+    await sourceViewer.getByRole('button', { name: 'View options: Continuous' }).click();
+    await sourceViewer
+      .getByRole('dialog', { name: 'View options' })
+      .getByRole('button', { name: 'Single page' })
+      .click();
+    await expect(
+      sourceViewer.getByRole('button', { name: 'View options: Single page' }),
+    ).toBeVisible();
     await sourceViewer.getByRole('button', { name: 'Open linked location in this guide' }).click();
     await expect(sourceViewer).toContainText('Page 2 of 2');
+    await connectedClient.getByRole('tab', { name: 'Library' }).click();
     await expect(sourceDocument).toHaveAttribute('aria-current', 'page');
 
     await sourceViewer.getByRole('button', { name: 'Previous page' }).click();
@@ -1810,10 +1885,7 @@ test.describe('Vital Critical Path', () => {
     });
     await expect(paymentViewer).toContainText('Page 2 of 2');
 
-    await connectedClient.getByRole('treeitem', { name: 'General, 1 document' }).click();
-    await connectedClient
-      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
-      .click();
+    await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test');
     await expect(sourceViewer).toContainText('Page 1 of 2');
     const authorDirectory = 'C:/Users/Author/Documents';
     const absoluteFileOverlay = sourceViewer.getByRole('button', {
@@ -1838,10 +1910,7 @@ test.describe('Vital Critical Path', () => {
     await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
     expect(rendererLogs.join('\n')).not.toContain(authorDirectory);
 
-    await connectedClient.getByRole('treeitem', { name: 'General, 1 document' }).click();
-    await connectedClient
-      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
-      .click();
+    await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test');
     await expect(sourceViewer).toContainText('Page 1 of 2');
 
     if (!clientElectronApp) throw new Error('Connected Electron app not launched');
@@ -1885,11 +1954,14 @@ test.describe('Vital Critical Path', () => {
   test('Service Status uses the operational queue layout', async () => {
     await goToTab(window, 'sidebar-status', 'Service Status');
 
-    await expect(window.getByRole('heading', { name: 'External service monitor' })).toBeVisible();
-    await expect(window.getByRole('tablist', { name: 'Incident feed filters' })).toBeVisible();
-    await expect(window.getByLabel('Search service status')).toBeVisible();
-    await expect(window.getByRole('region', { name: 'Provider posture' })).toBeVisible();
-    await expect(window.getByRole('region', { name: 'Service incident feed' })).toBeVisible();
+    await expect(window.getByRole('heading', { name: 'External Outages' })).toBeVisible();
+    await expect(window.getByRole('status')).toContainText(/monitored providers/);
+    await expect(window.getByRole('region', { name: 'Provider coverage' })).toBeVisible();
+    await expect(
+      window.getByRole('button', { name: /official status page/ }).first(),
+    ).toBeVisible();
+    await expect(window.getByRole('button', { name: / on X$/ }).first()).toBeVisible();
+    await expect(window.getByRole('button', { name: / on Downdetector$/ }).first()).toBeVisible();
     await expect(window.getByText('ADP', { exact: true })).toHaveCount(0);
   });
 
@@ -2204,7 +2276,7 @@ test.describe('Vital Critical Path', () => {
 
         const actions = globalThis.document.querySelector('.collapsible-header-actions');
         const start = buttonByText('Start Bridge');
-        const schedule = buttonByText('Schedule Bridge');
+        const schedule = buttonByText('Schedule');
         if (!actions || !start || !schedule) return null;
 
         const actionsRect = toRect(actions);

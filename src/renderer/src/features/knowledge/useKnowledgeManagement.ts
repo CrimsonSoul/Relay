@@ -494,7 +494,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         setError(REAUTHENTICATION_ERROR);
         return false;
       }
-      return execute(
+      const deleted = await execute(
         {
           command: 'knowledge.document.delete',
           payload: { documentId, expectedRevision, reauthRequestId: proof.proofId },
@@ -506,6 +506,24 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           !authoritative.trash.items.some(({ id }) => id === documentId),
         ['documents', 'trash'],
       );
+      if (deleted) {
+        setSnapshot((current) =>
+          current
+            ? {
+                ...current,
+                documents: {
+                  ...current.documents,
+                  items: current.documents.items.filter(({ id }) => id !== documentId),
+                },
+                trash: {
+                  ...current.trash,
+                  items: current.trash.items.filter(({ id }) => id !== documentId),
+                },
+              }
+            : current,
+        );
+      }
+      return deleted;
     },
     [execute, reauthenticate],
   );

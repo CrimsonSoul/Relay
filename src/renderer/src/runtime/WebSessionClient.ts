@@ -22,7 +22,8 @@ export class WebSessionClient {
   #cleanup: (() => void) | null = null;
 
   constructor(options: WebSessionClientOptions = {}) {
-    this.#fetcher = options.fetcher ?? fetch;
+    const fetcher = options.fetcher ?? fetch;
+    this.#fetcher = (input, init) => fetcher(input, init);
     this.#install =
       options.install ??
       ((session) => {

@@ -10,6 +10,7 @@ Relay is an Electron desktop command center for operations teams managing people
 - Typed preload bridge with Zod-validated IPC contracts
 - Feature tabs for compose, alerts, on-call, notes, knowledge, service status, people, and servers
 - Sidebar client presence, connect toasts, and a unified connected/cached/offline indicator
+- LAN/VPN-only browser backup for desktop Chrome, Edge, and Safari
 - Dynatrace dashboard launcher with Relay-styled popout windows and isolated SSO session storage
 - Electron hardening with context isolation, sandboxing, CSP, path validation, and domain-gated external navigation
 
@@ -36,6 +37,7 @@ Relay is an Electron desktop command center for operations teams managing people
 - **Notes**: Maintain standalone tagged notes with reorderable cards and adjustable reading density
 - **Knowledge Base**: Read server-managed PDF runbooks with nested document headings, local search, and on-demand offline caching
 - **Service Status**: Monitor provider incident feeds across major cloud and SaaS vendors
+- **Relay Web Backup**: Use the shared Relay workspace from a supported desktop browser on the trusted LAN or VPN
 - **Client Presence**: Show connected Relay clients in server mode, list hostnames on hover, and notify when clients connect
 - **Dynatrace Dashboards**: Save Dynatrace dashboard URLs in Settings, launch them from the sidebar, support Microsoft SSO, and clear the dashboard session when needed
 - **Data Management**: Export, import, reset, and restore Relay data from the Settings modal
@@ -60,6 +62,7 @@ Append an optional, one-based `#page=N` fragment to open a specific page. Relay 
 - `docs/DEVELOPMENT.md`: service patterns, hooks, testing, and contributor conventions
 - `docs/DESIGN.md`: current renderer styling and component conventions
 - `docs/knowledge-base.md`: publisher workflow, document linking, retention, and recovery
+- `docs/relay-web.md`: browser support, setup, feature boundaries, notifications, and network safety
 - `docs/SECURITY.md`: trust boundaries, hardening, validation, and secret handling
 
 ## Quick Start
@@ -76,6 +79,7 @@ npm run typecheck
 npm run lint
 npm test
 npm run test:electron
+npm run test:web
 npm run test:coverage
 npm run build
 ```

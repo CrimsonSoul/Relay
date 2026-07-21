@@ -50,6 +50,16 @@ describe('WebSessionClient', () => {
     await expect(client.bootstrap()).resolves.toEqual({ ok: false, error: 'unavailable' });
   });
 
+  it('invokes browser fetch without binding the WebSessionClient as its receiver', async () => {
+    const browserFetch = vi.fn(function (this: unknown) {
+      if (this !== undefined) throw new TypeError('Illegal invocation');
+      return Promise.resolve(jsonResponse({ ok: false, error: 'unauthenticated' }, 401));
+    }) as unknown as typeof fetch;
+    const client = new WebSessionClient({ fetcher: browserFetch });
+
+    await expect(client.bootstrap()).resolves.toEqual({ ok: false, error: 'unauthenticated' });
+  });
+
   it('submits the exact passphrase in a bounded login request and never stores it', async () => {
     const passphrase = '  exact browser passphrase  ';
     fetcher.mockResolvedValue(jsonResponse({ ok: true, session: SESSION }));
