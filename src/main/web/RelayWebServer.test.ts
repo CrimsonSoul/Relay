@@ -89,6 +89,36 @@ describe('RelayWebServer', () => {
     await server.stop();
   });
 
+  it('routes API requests through the gateway and guards static responses', async () => {
+    const port = await freePort();
+    const gateway = {
+      authorizeStatic: (
+        _request: import('node:http').IncomingMessage,
+        response: import('node:http').ServerResponse,
+      ) => {
+        response.setHeader('X-Relay-Static-Guard', 'active');
+        return true;
+      },
+      handleApi: async (
+        _request: import('node:http').IncomingMessage,
+        response: import('node:http').ServerResponse,
+      ) => {
+        response.statusCode = 200;
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify({ ok: true }));
+      },
+    };
+    const server = new RelayWebServer({ host: LOOPBACK, port, staticRoot, gateway });
+    await server.start();
+
+    const page = await fetch(loopbackUrl(port));
+    expect(page.headers.get('x-relay-static-guard')).toBe('active');
+    const api = await fetch(loopbackUrl(port, '/relay-api/v1/session/bootstrap'));
+    expect(api.headers.get('x-relay-static-guard')).toBeNull();
+    await expect(api.json()).resolves.toEqual({ ok: true });
+    await server.stop();
+  });
+
   it('rejects encoded traversal rather than serving an app fallback', async () => {
     const port = await freePort();
     const server = new RelayWebServer({ host: LOOPBACK, port, staticRoot });

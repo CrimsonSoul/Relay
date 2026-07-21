@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { extname, relative, resolve, sep } from 'node:path';
 import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
 import type { RelayWebServerState } from './RelayWebServerState';
@@ -25,6 +25,10 @@ export type RelayWebServerOptions = {
   port: number;
   staticRoot: string;
   onStateChanged?: (state: RelayWebServerState) => void;
+  gateway?: {
+    authorizeStatic(request: IncomingMessage, response: ServerResponse): boolean;
+    handleApi(request: IncomingMessage, response: ServerResponse): Promise<void>;
+  };
 };
 
 function publicState(state: RelayWebServerState): RelayWebServerState {
@@ -81,7 +85,7 @@ export class RelayWebServer {
   private listen(): Promise<RelayWebServerState> {
     return new Promise((resolveStart) => {
       const server = createServer((request, response) => {
-        void this.handleRequest(request.url ?? '/', request.method ?? 'GET', response);
+        void this.handleRequest(request, response);
       });
       this.server = server;
       server.once('error', (error: NodeJS.ErrnoException) => {
@@ -107,12 +111,24 @@ export class RelayWebServer {
     });
   }
 
-  private async handleRequest(rawUrl: string, method: string, response: ServerResponse) {
-    if (method !== 'GET' && method !== 'HEAD') {
-      send(response, 405, 'Method not allowed');
+  private async handleRequest(request: IncomingMessage, response: ServerResponse) {
+    const rawUrl = request.url ?? '/';
+    const method = request.method ?? 'GET';
+    const rawPath = rawUrl.split('?', 1)[0] || '/';
+    if (this.isApiPath(rawPath)) {
+      await this.handleApiRequest(request, response);
       return;
     }
-    const rawPath = rawUrl.split('?', 1)[0] || '/';
+    if (this.options.gateway && !this.options.gateway.authorizeStatic(request, response)) return;
+    await this.handleStaticRequest(request, rawPath, method, response);
+  }
+
+  private async handleStaticRequest(
+    request: IncomingMessage,
+    rawPath: string,
+    method: string,
+    response: ServerResponse,
+  ): Promise<void> {
     let pathname: string;
     try {
       pathname = decodeURIComponent(rawPath);
@@ -124,11 +140,14 @@ export class RelayWebServer {
       send(response, 400, 'Invalid path');
       return;
     }
-    if (pathname === RELAY_WEB_API_PREFIX || pathname.startsWith(`${RELAY_WEB_API_PREFIX}/`)) {
-      send(response, 404, 'Not found');
+    if (this.isApiPath(pathname)) {
+      await this.handleApiRequest(request, response);
       return;
     }
-
+    if (method !== 'GET' && method !== 'HEAD') {
+      send(response, 405, 'Method not allowed');
+      return;
+    }
     const requested = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
     const candidate = resolve(this.options.staticRoot, requested);
     const relativePath = relative(this.options.staticRoot, candidate);
@@ -140,6 +159,21 @@ export class RelayWebServer {
     if (await this.serveFile(resolve(this.options.staticRoot, 'index.html'), method, response))
       return;
     send(response, 404, 'Not found');
+  }
+
+  private isApiPath(pathname: string): boolean {
+    return pathname === RELAY_WEB_API_PREFIX || pathname.startsWith(`${RELAY_WEB_API_PREFIX}/`);
+  }
+
+  private async handleApiRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    if (this.options.gateway) {
+      await this.options.gateway.handleApi(request, response);
+    } else {
+      send(response, 404, 'Not found');
+    }
   }
 
   private async serveFile(

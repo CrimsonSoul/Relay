@@ -7,6 +7,8 @@ import {
   type ReactElement,
 } from 'react';
 import type { WebSessionBootstrap, WebSessionBootstrapResult } from '@shared/webApi';
+import { WebLoginScreen } from '../components/WebLoginScreen';
+import { webSessionClient } from './WebSessionClient';
 
 export type WebSessionAppProps = {
   onWebSessionRequired?: () => void;
@@ -14,6 +16,7 @@ export type WebSessionAppProps = {
 
 export type WebSessionClientPort = {
   bootstrap(): Promise<WebSessionBootstrapResult>;
+  login(input: { passphrase: string }): Promise<WebSessionBootstrapResult>;
   activate(session: WebSessionBootstrap): Promise<void>;
 };
 
@@ -24,10 +27,7 @@ type GateState =
   | { stage: 'ready'; App: ComponentType<WebSessionAppProps> }
   | { stage: 'error' };
 
-const DEFAULT_CLIENT: WebSessionClientPort = {
-  bootstrap: async () => ({ ok: false, error: 'unauthenticated' }),
-  activate: async () => undefined,
-};
+const DEFAULT_CLIENT: WebSessionClientPort = webSessionClient;
 const DEFAULT_APP_LOADER = () => import('../App');
 
 async function resolveSession(
@@ -41,13 +41,9 @@ async function resolveSession(
   return { stage: 'ready', App };
 }
 
-function defaultSignIn(): ReactElement {
+function defaultSignIn(login: (passphrase: string) => Promise<boolean>): ReactElement {
   return (
-    <main className="app-state" aria-labelledby="relay-web-sign-in-title">
-      <h1 id="relay-web-sign-in-title">Relay Web</h1>
-      <p>Sign in to this Relay server to continue.</p>
-      <p>Trusted LAN/VPN only - browser traffic is not encrypted.</p>
-    </main>
+    <WebLoginScreen serverLabel={globalThis.location?.hostname || 'Relay server'} onLogin={login} />
   );
 }
 
@@ -58,7 +54,7 @@ export function WebSessionGate({
 }: Readonly<{
   client?: WebSessionClientPort;
   appLoader?: () => Promise<AppModule>;
-  renderSignIn?: (retry: () => void) => ReactElement;
+  renderSignIn?: (login: (passphrase: string) => Promise<boolean>) => ReactElement;
 }>): ReactElement {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<GateState>({ stage: 'checking' });
@@ -74,6 +70,24 @@ export function WebSessionGate({
     resolutionRef.current = null;
     setState({ stage: 'sign-in' });
   }, []);
+
+  const signIn = useCallback(
+    async (passphrase: string) => {
+      const result = await client.login({ passphrase });
+      if (!result.ok) return false;
+      setState({ stage: 'checking' });
+      try {
+        await client.activate(result.session);
+        const { default: App } = await appLoader();
+        setState({ stage: 'ready', App });
+        return true;
+      } catch {
+        setState({ stage: 'error' });
+        return false;
+      }
+    },
+    [appLoader, client],
+  );
 
   useEffect(() => {
     let active = true;
@@ -102,7 +116,7 @@ export function WebSessionGate({
     );
   }
 
-  if (state.stage === 'sign-in') return renderSignIn(retry);
+  if (state.stage === 'sign-in') return renderSignIn(signIn);
 
   if (state.stage === 'error') {
     return (

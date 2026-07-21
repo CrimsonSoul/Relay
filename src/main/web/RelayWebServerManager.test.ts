@@ -95,4 +95,29 @@ describe('RelayWebServerManager', () => {
     expect(createServer).toHaveBeenCalledTimes(2);
     expect(manager.getState().port).toBe(8091);
   });
+
+  it('creates one gateway per listener and disposes it after the listener stops', async () => {
+    const server = fakeServer({ status: 'available', host: '0.0.0.0', port: 8091 });
+    const gateway = {
+      authorizeStatic: vi.fn(() => true),
+      handleApi: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+    };
+    const createGateway = vi.fn(() => gateway);
+    const createServer = vi.fn(() => server);
+    const manager = new RelayWebServerManager({
+      staticRoot: '/renderer',
+      createServer,
+      createGateway,
+    });
+
+    await manager.applyConfig(SERVER_CONFIG);
+    expect(createGateway).toHaveBeenCalledWith(SERVER_CONFIG);
+    expect(createServer).toHaveBeenCalledWith(expect.objectContaining({ gateway }));
+
+    await manager.stop();
+    expect(server.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      gateway.dispose.mock.invocationCallOrder[0]!,
+    );
+  });
 });

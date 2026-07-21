@@ -70,6 +70,8 @@ import {
 } from './knowledge/knowledgeSearchRuntime';
 import { RelayWebServerManager } from './web/RelayWebServerManager';
 import { resolveRendererStaticRoot } from './web/rendererStaticRoot';
+import { RelayWebGateway } from './web/RelayWebGateway';
+import { createWebSessionAuthenticator } from './web/WebSessionAuthenticator';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -220,8 +222,16 @@ if (gotLock) {
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
       setAppConfig(new AppConfig(configDataDir));
+      const authenticateWebSession = createWebSessionAuthenticator({
+        getAppConfig,
+        getPbProcess,
+      });
       setRelayWebServerManager(
-        new RelayWebServerManager({ staticRoot: resolveRendererStaticRoot() }),
+        new RelayWebServerManager({
+          staticRoot: resolveRendererStaticRoot(),
+          createGateway: (config) =>
+            new RelayWebGateway({ config, authenticate: authenticateWebSession }),
+        }),
       );
       initializeKnowledgePdfService(configDataDir);
       const knowledgeUploadService = new KnowledgeUploadService({

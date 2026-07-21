@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain } from 'electron';
 import PocketBase from 'pocketbase';
 import { IPC_CHANNELS, type PbConnectionResult } from '@shared/ipc';
-import { setupPocketbaseConnectionHandlers } from './pocketbaseConnectionHandlers';
+import { loggers } from '../logger';
+import {
+  authenticateRelayAppUser,
+  setupPocketbaseConnectionHandlers,
+} from './pocketbaseConnectionHandlers';
 
 const mockAppUserAuthWithPassword = vi.fn();
 const mockSuperuserAuthWithPassword = vi.fn();
@@ -144,6 +148,31 @@ describe('pocketbaseConnectionHandlers', () => {
 
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result)).not.toContain('super-secret-passphrase');
+  });
+
+  it('authenticates an explicitly supplied web passphrase and never logs its bytes', async () => {
+    const webPassphrase = ['submitted', 'web', 'passphrase'].join('-');
+    const config = {
+      mode: 'server' as const,
+      port: 8090,
+      bindHost: '0.0.0.0' as const,
+      secret: 'different-saved-secret',
+    };
+    mockAppUserAuthWithPassword.mockRejectedValue(new Error(`rejected ${webPassphrase}`));
+    mockSuperuserAuthWithPassword.mockRejectedValue(new Error(`rejected ${webPassphrase}`));
+
+    await expect(
+      authenticateRelayAppUser(config, 'http://127.0.0.1:8090', webPassphrase, 'Web login failed'),
+    ).resolves.toEqual({ ok: false, error: 'auth-failed' });
+
+    expect(mockAppUserAuthWithPassword).toHaveBeenCalledWith(
+      'relay@relay.app',
+      webPassphrase,
+      expect.objectContaining({ requestKey: null }),
+    );
+    expect(JSON.stringify(vi.mocked(loggers.pocketbase.warn).mock.calls)).not.toContain(
+      webPassphrase,
+    );
   });
 
   it('returns the local PocketBase URL in server mode when the process is running', async () => {

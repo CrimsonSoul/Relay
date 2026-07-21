@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BridgeAPI } from '@shared/ipc';
 import type { WebSessionBootstrap } from '@shared/webApi';
@@ -37,6 +37,7 @@ describe('WebSessionGate', () => {
         calls.push('bootstrap');
         return { ok: true, session: SESSION };
       }),
+      login: vi.fn(),
       activate: vi.fn(async () => {
         calls.push('activate');
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
@@ -60,6 +61,7 @@ describe('WebSessionGate', () => {
   it('renders the sign-in slot without loading the app when no session exists', async () => {
     const client: WebSessionClientPort = {
       bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
+      login: vi.fn(),
       activate: vi.fn(),
     };
     const appLoader = vi.fn(async () => ({ default: RelayShell }));
@@ -80,6 +82,7 @@ describe('WebSessionGate', () => {
   it('keeps the default app loader stable while showing sign-in', async () => {
     const client: WebSessionClientPort = {
       bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
+      login: vi.fn(),
       activate: vi.fn(),
     };
 
@@ -88,5 +91,27 @@ describe('WebSessionGate', () => {
     expect(await screen.findByText('Stable Relay sign-in')).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(client.bootstrap).toHaveBeenCalledOnce();
+  });
+
+  it('authenticates from the default browser sign-in before loading the shared app', async () => {
+    const client: WebSessionClientPort = {
+      bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
+      login: vi.fn(async () => ({ ok: true, session: SESSION })),
+      activate: vi.fn(async () => {
+        globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
+      }),
+    };
+    const appLoader = vi.fn(async () => ({ default: RelayShell }));
+    render(<WebSessionGate client={client} appLoader={appLoader} />);
+
+    const passphrase = await screen.findByLabelText('Connection passphrase');
+    expect(appLoader).not.toHaveBeenCalled();
+    fireEvent.change(passphrase, { target: { value: 'fixture-passphrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByText('Relay shell · Web')).toBeVisible();
+    expect(client.login).toHaveBeenCalledWith({ passphrase: 'fixture-passphrase' });
+    expect(client.activate).toHaveBeenCalledWith(SESSION);
+    expect(appLoader).toHaveBeenCalledOnce();
   });
 });

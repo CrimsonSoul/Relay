@@ -2,18 +2,21 @@ import type { ServerConfig } from '../config/AppConfig';
 import { DEFAULT_SERVER_WEB_CONFIG } from '../config/AppConfig';
 import { RelayWebServer, type RelayWebServerOptions } from './RelayWebServer';
 import type { RelayWebServerState } from './RelayWebServerState';
+import type { RelayWebGatewayPort } from './RelayWebGateway';
 
 type ManagedRelayWebServer = Pick<RelayWebServer, 'getState' | 'start' | 'stop'>;
 
 type RelayWebServerManagerOptions = {
   staticRoot: string;
   createServer?: (options: RelayWebServerOptions) => ManagedRelayWebServer;
+  createGateway?: (config: ServerConfig) => RelayWebGatewayPort;
   onStateChanged?: (state: RelayWebServerState) => void;
 };
 
 export class RelayWebServerManager {
   private readonly createServer: NonNullable<RelayWebServerManagerOptions['createServer']>;
   private server: ManagedRelayWebServer | null = null;
+  private gateway: RelayWebGatewayPort | null = null;
   private config: ServerConfig | null = null;
   private state: RelayWebServerState = {
     status: 'disabled',
@@ -39,11 +42,14 @@ export class RelayWebServerManager {
       return this.getState();
     }
 
+    const gateway = this.options.createGateway?.(config) ?? null;
+    this.gateway = gateway;
     const server = this.createServer({
       host: config.bindHost,
       port: web.port,
       staticRoot: this.options.staticRoot,
       onStateChanged: (state) => this.publish(state),
+      ...(gateway ? { gateway } : {}),
     });
     this.server = server;
     const state = await server.start();
@@ -68,8 +74,11 @@ export class RelayWebServerManager {
 
   private async stopServer(): Promise<void> {
     const server = this.server;
+    const gateway = this.gateway;
     this.server = null;
+    this.gateway = null;
     await server?.stop();
+    await gateway?.dispose();
   }
 
   private publish(state: RelayWebServerState): void {

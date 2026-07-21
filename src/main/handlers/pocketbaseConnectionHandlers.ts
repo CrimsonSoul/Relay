@@ -23,12 +23,12 @@ class PbAuthTimeoutError extends Error {
 type AuthFailure = {
   error: 'auth-failed' | 'pb-unavailable';
   timedOut: boolean;
-  originalError: unknown;
 };
 
 type AuthAttemptResult =
   | { ok: true; result: PbConnectionResult }
   | { ok: false; failure: AuthFailure };
+type LoadedRelayConfig = NonNullable<ReturnType<AppConfig['load']>>;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,8 +90,8 @@ function getPbConnectionResult(pbUrl: string, pb: PocketBase): PbConnectionResul
 }
 
 function isServerModeConfig(
-  config: ReturnType<AppConfig['load']>,
-): config is Extract<ReturnType<AppConfig['load']>, { mode: 'server' }> {
+  config: LoadedRelayConfig,
+): config is Extract<LoadedRelayConfig, { mode: 'server' }> {
   return config?.mode === 'server';
 }
 
@@ -99,7 +99,7 @@ function getPbConnectionContext(
   getAppConfig: () => AppConfig | null,
   getPbProcess: () => PocketBaseProcess | null,
 ):
-  | { ok: true; config: ReturnType<AppConfig['load']>; pbUrl: string }
+  | { ok: true; config: LoadedRelayConfig; pbUrl: string }
   | { ok: false; result: PbConnectionResult } {
   const appConfig = getAppConfig();
   const config = appConfig?.load();
@@ -143,12 +143,11 @@ function toAuthFailure(error: unknown): AuthFailure {
   return {
     error: isPbUnavailableError(error) ? 'pb-unavailable' : 'auth-failed',
     timedOut: error instanceof PbAuthTimeoutError,
-    originalError: error,
   };
 }
 
 async function authenticatePbConnectionOnce(
-  config: ReturnType<AppConfig['load']>,
+  config: LoadedRelayConfig,
   pbUrl: string,
   secret: string,
 ): Promise<AuthAttemptResult> {
@@ -186,8 +185,8 @@ async function authenticatePbConnectionOnce(
   }
 }
 
-async function authenticatePbConnection(
-  config: ReturnType<AppConfig['load']>,
+export async function authenticateRelayAppUser(
+  config: LoadedRelayConfig,
   pbUrl: string,
   secret: string,
   logMessage: string,
@@ -210,7 +209,8 @@ async function authenticatePbConnection(
     loggers.pocketbase.warn(logMessage, {
       attempt,
       attempts: PB_BOOTSTRAP_AUTH_ATTEMPTS,
-      error: lastFailure.originalError,
+      error: lastFailure.error,
+      timedOut: lastFailure.timedOut,
       pbUrl,
     });
 
@@ -256,7 +256,7 @@ export function setupPocketbaseConnectionHandlers(
       return context.result;
     }
 
-    const result = await authenticatePbConnection(
+    const result = await authenticateRelayAppUser(
       context.config,
       context.pbUrl,
       context.config.secret,
@@ -274,7 +274,7 @@ export function setupPocketbaseConnectionHandlers(
       return context.result;
     }
 
-    const result = await authenticatePbConnection(
+    const result = await authenticateRelayAppUser(
       context.config,
       context.pbUrl,
       context.config.secret,
