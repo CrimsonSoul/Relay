@@ -43,15 +43,37 @@ export const WorldClock: React.FC = () => {
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const updateTime = () => {
       const now = new Date();
       const nowMinuteKey = getMinuteKey(now);
       if (nowMinuteKey !== minuteKeyRef.current) {
         minuteKeyRef.current = nowMinuteKey;
         setTime(now);
       }
-    }, 1000);
-    return () => clearInterval(timer);
+    };
+    const scheduleNextMinute = () => {
+      const remainder = Date.now() % 60_000;
+      const delay = remainder === 0 ? 60_000 : 60_000 - remainder;
+      timer = setTimeout(() => {
+        updateTime();
+        scheduleNextMinute();
+      }, delay);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      clearTimeout(timer);
+      updateTime();
+      scheduleNextMinute();
+    };
+
+    scheduleNextMinute();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Position the popover centered under the trigger

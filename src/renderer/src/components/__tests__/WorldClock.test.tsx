@@ -137,6 +137,46 @@ describe('WorldClock', () => {
     const container = document.querySelector('.world-clock-container');
     expect(container).toBeTruthy();
   });
+
+  it('schedules minute-boundary updates without a one-second interval', async () => {
+    const intervalSpy = vi.spyOn(globalThis, 'setInterval');
+    vi.setSystemTime(new Date('2026-01-15T12:00:30Z'));
+
+    await act(async () => {
+      render(<WorldClock />);
+    });
+
+    expect(intervalSpy).not.toHaveBeenCalled();
+    const initialTime = document.querySelector('.world-clock-primary-time')?.textContent;
+
+    await act(async () => {
+      vi.advanceTimersByTime(29_999);
+    });
+    expect(document.querySelector('.world-clock-primary-time')?.textContent).toBe(initialTime);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(document.querySelector('.world-clock-primary-time')?.textContent).not.toBe(initialTime);
+  });
+
+  it('resynchronizes immediately when the window becomes visible', async () => {
+    await act(async () => {
+      render(<WorldClock />);
+    });
+    const initialTime = document.querySelector('.world-clock-primary-time')?.textContent;
+
+    vi.setSystemTime(new Date('2026-01-15T12:05:00Z'));
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(document.querySelector('.world-clock-primary-time')?.textContent).not.toBe(initialTime);
+  });
 });
 
 describe('WorldClock with no timezone context', () => {

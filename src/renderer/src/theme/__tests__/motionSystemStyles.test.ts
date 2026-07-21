@@ -15,6 +15,10 @@ const modalsCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/modals.css'),
   'utf8',
 );
+const statusbarCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/components/statusbar.css'),
+  'utf8',
+);
 const knowledgeCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
   'utf8',
@@ -111,6 +115,12 @@ describe('Operational silk motion system', () => {
   it('does not stagger operational lists', () => {
     expect(animationCss).not.toContain('.stagger-children');
     expect(animationCss).not.toContain('.animate-card-entrance');
+  });
+
+  it('keeps the always-visible connection indicator compositor-idle', () => {
+    expect(statusbarCss).toMatch(/\.status-bar-live-dot\s*{[^}]*background:\s*var\(--ok\)/);
+    expect(statusbarCss).not.toMatch(/\.status-bar-live-dot\s*{[^}]*animation:/);
+    expect(animationCss).not.toContain('@keyframes breathe');
   });
 
   it('uses canonical font tokens and removes superseded motion helpers', () => {
