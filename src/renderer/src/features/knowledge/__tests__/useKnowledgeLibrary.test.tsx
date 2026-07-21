@@ -80,4 +80,25 @@ describe('useKnowledgeLibrary', () => {
     expect(result.current.documents.map((document) => document.id)).toEqual(['doc-1']);
     expect(result.current.categories.map((category) => category.id)).toEqual(['category-general']);
   });
+
+  it('forwards disabled state to both backing collections', () => {
+    useCollectionMock.mockReturnValue({
+      data: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: false,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    renderHook(() => useKnowledgeLibrary({ enabled: false }));
+
+    expect(useCollectionMock).toHaveBeenNthCalledWith(1, 'knowledge_documents', {
+      sort: 'category,title,fileName',
+      enabled: false,
+    });
+    expect(useCollectionMock).toHaveBeenNthCalledWith(2, 'knowledge_categories', {
+      sort: 'sortOrder,name',
+      enabled: false,
+    });
+  });
 });

@@ -63,6 +63,27 @@ beforeEach(() => {
 });
 
 describe('useCollection', () => {
+  it('does not create collection work until an enabled consumer needs it', async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useCollection('knowledge_documents', { enabled }),
+      { initialProps: { enabled: false } },
+    );
+
+    expect(result.current).toMatchObject({
+      data: [],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: false,
+    });
+    expect(mockGetFullList).not.toHaveBeenCalled();
+    expect(mockSubscribe).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(mockGetFullList).toHaveBeenCalledOnce());
+    expect(mockSubscribe).toHaveBeenCalledOnce();
+  });
+
   it('shares one fetch, subscription, and cache snapshot for identical queries', async () => {
     const cacheSnapshot = vi.fn();
     (globalThis as Record<string, unknown>).api = { cacheSnapshot };

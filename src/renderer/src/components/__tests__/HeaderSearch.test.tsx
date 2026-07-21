@@ -37,8 +37,11 @@ vi.mock('../../hooks/useCommandSearch', () => ({
   useCommandSearch: () => mockSearchResults,
 }));
 
+const { mockUseKnowledgeLibrary } = vi.hoisted(() => ({
+  mockUseKnowledgeLibrary: vi.fn(() => ({ documents: [] })),
+}));
 vi.mock('../../features/knowledge/useKnowledgeLibrary', () => ({
-  useKnowledgeLibrary: () => ({ documents: [] }),
+  useKnowledgeLibrary: mockUseKnowledgeLibrary,
 }));
 
 const { mockKnowledgeBoundaryError } = vi.hoisted(() => ({
@@ -137,6 +140,7 @@ describe('HeaderSearch', () => {
     mockSearchContext.searchInputRef = { current: null };
     mockSearchResults.length = 0;
     mockKnowledgeIconFailure = false;
+    mockUseKnowledgeLibrary.mockClear();
     globalThis.api = {
       ...globalThis.api,
       platform: 'darwin',
@@ -149,6 +153,24 @@ describe('HeaderSearch', () => {
     render(<HeaderSearch {...defaultProps} />);
     expect(screen.getByRole('combobox')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search Relay...')).toBeInTheDocument();
+  });
+
+  it('defers the Wiki library while global search is idle outside Knowledge', () => {
+    render(<HeaderSearch {...defaultProps} />);
+
+    expect(mockUseKnowledgeLibrary).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it('enables the Wiki library while search is focused or Knowledge is active', () => {
+    mockSearchContext.isSearchFocused = true;
+    const { unmount } = render(<HeaderSearch {...defaultProps} />);
+    expect(mockUseKnowledgeLibrary).toHaveBeenCalledWith({ enabled: true });
+    unmount();
+
+    mockUseKnowledgeLibrary.mockClear();
+    mockSearchContext.isSearchFocused = false;
+    render(<HeaderSearch {...defaultProps} activeTab="Knowledge" />);
+    expect(mockUseKnowledgeLibrary).toHaveBeenCalledWith({ enabled: true });
   });
 
   it('renders the search input with correct aria-label', () => {

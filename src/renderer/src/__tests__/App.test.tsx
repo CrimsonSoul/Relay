@@ -58,6 +58,7 @@ let lastSettingsModalProps: {
     clearSession: () => Promise<boolean>;
   };
 } | null = null;
+let lastDataManagerModalProps: { isOpen: boolean } | null = null;
 let lastPersonnelTabProps: {
   onCallFontScale?: number;
   onOnCallFontScaleChange?: (scale: number) => void;
@@ -358,12 +359,14 @@ vi.mock('../components/SettingsModal', () => ({
 }));
 
 vi.mock('../components/DataManagerModal', () => ({
-  DataManagerModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
-    isOpen ? (
+  DataManagerModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+    lastDataManagerModalProps = { isOpen };
+    return isOpen ? (
       <div data-testid="data-manager-modal">
         <button onClick={onClose}>close-data-manager</button>
       </div>
-    ) : null,
+    ) : null;
+  },
 }));
 
 vi.mock('../components/PopoutBoard', () => ({
@@ -462,6 +465,7 @@ describe('MainApp', () => {
     mockSettingsOpen = false;
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    lastDataManagerModalProps = null;
     lastKnowledgeWorkspaceProps = null;
     lastPersonnelTabProps = null;
     lastPopoutBoardProps = null;
@@ -483,6 +487,7 @@ describe('MainApp', () => {
     mockActiveTab = 'Compose';
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    lastDataManagerModalProps = null;
     acknowledgeKnowledgeDestinationOpen('wiki');
     acknowledgeKnowledgeDestinationOpen('contacts');
     acknowledgeKnowledgeDestinationOpen('servers');
@@ -513,6 +518,13 @@ describe('MainApp', () => {
     await vi.waitFor(() => {
       expect(screen.getByTestId('assembler-tab')).toBeInTheDocument();
     });
+  });
+
+  it('does not mount closed settings or data-management surfaces at startup', () => {
+    renderApp();
+
+    expect(lastSettingsModalProps).toBeNull();
+    expect(lastDataManagerModalProps).toBeNull();
   });
 
   it('renders Knowledge as a retained top-level tab with the correct breadcrumb', async () => {

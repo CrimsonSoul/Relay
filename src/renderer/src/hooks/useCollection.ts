@@ -14,18 +14,37 @@ interface UseCollectionResult<T> {
   refetch: () => Promise<void>;
 }
 
+export interface UseCollectionOptions extends CollectionQueryOptions {
+  enabled?: boolean;
+}
+
+const DISABLED_SNAPSHOT = {
+  data: [],
+  loading: false,
+  error: null,
+  hasLoadedSnapshot: false,
+} as const;
+const subscribeDisabled = () => () => undefined;
+const getDisabledSnapshot = () => DISABLED_SNAPSHOT;
+const refetchDisabled = async () => undefined;
+
 export function useCollection<T extends RecordModel>(
   collectionName: string,
-  options: CollectionQueryOptions = {},
+  options: UseCollectionOptions = {},
 ): UseCollectionResult<T> {
-  const queryKey = normalizeCollectionQuery(collectionName, options);
+  const { enabled = true, ...queryOptions } = options;
+  const queryKey = normalizeCollectionQuery(collectionName, queryOptions);
   const store = useMemo(
-    () => getCollectionStore<T>(collectionName, options),
+    () => (enabled ? getCollectionStore<T>(collectionName, queryOptions) : null),
     // The normalized key captures every option that changes query identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [queryKey],
+    [enabled, queryKey],
   );
-  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const snapshot = useSyncExternalStore(
+    store?.subscribe ?? subscribeDisabled,
+    store?.getSnapshot ?? getDisabledSnapshot,
+    store?.getSnapshot ?? getDisabledSnapshot,
+  );
 
   return useMemo(
     () => ({
@@ -33,7 +52,7 @@ export function useCollection<T extends RecordModel>(
       loading: snapshot.loading,
       error: snapshot.error,
       hasLoadedSnapshot: snapshot.hasLoadedSnapshot,
-      refetch: store.refetch,
+      refetch: store?.refetch ?? refetchDisabled,
     }),
     [snapshot, store],
   );

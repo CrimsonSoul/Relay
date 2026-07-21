@@ -11,7 +11,7 @@ import {
 } from '@shared/knowledge';
 import { useCollection } from '../../hooks/useCollection';
 
-export function useKnowledgeLibrary(): {
+export function useKnowledgeLibrary(options: { enabled?: boolean } = {}): {
   documents: KnowledgeDocumentRecord[];
   categories: KnowledgeCategoryRecord[];
   loading: boolean;
@@ -19,13 +19,14 @@ export function useKnowledgeLibrary(): {
   hasLoadedSnapshot: boolean;
   refetch: () => Promise<void>;
 } {
+  const enabledOption = options.enabled === undefined ? {} : { enabled: options.enabled };
   const documentCollection = useCollection<KnowledgeDocumentRecord & RecordModel>(
     KNOWLEDGE_DOCUMENTS_COLLECTION,
-    { sort: 'category,title,fileName' },
+    { sort: 'category,title,fileName', ...enabledOption },
   );
   const categoryCollection = useCollection<KnowledgeCategoryRecord & RecordModel>(
     KNOWLEDGE_CATEGORIES_COLLECTION,
-    { sort: 'sortOrder,name' },
+    { sort: 'sortOrder,name', ...enabledOption },
   );
   const documents = useMemo(
     () =>

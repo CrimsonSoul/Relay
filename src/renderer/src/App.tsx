@@ -497,20 +497,22 @@ export function MainApp({
                 </ErrorBoundary>
               </RetainedTabPanel>
             )}
-            <RetainedTabPanel active={activeTab === 'Settings'}>
-              <ErrorBoundary fallback={errorFallback}>
-                <Suspense fallback={<TabFallback />}>
-                  <SettingsTab
-                    isOpen={activeTab === 'Settings'}
-                    onClose={() => setActiveTab('Compose')}
-                    onOpenDataManager={dataManagerModal.open}
-                    onReconfigure={onReconfigure}
-                    dynatrace={dynatrace}
-                    presentation="page"
-                  />
-                </Suspense>
-              </ErrorBoundary>
-            </RetainedTabPanel>
+            {activeTab === 'Settings' && (
+              <RetainedTabPanel active>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <SettingsTab
+                      isOpen
+                      onClose={() => setActiveTab('Compose')}
+                      onOpenDataManager={dataManagerModal.open}
+                      onReconfigure={onReconfigure}
+                      dynatrace={dynatrace}
+                      presentation="page"
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
+            )}
           </div>
         </main>
 
@@ -518,11 +520,13 @@ export function MainApp({
           <WindowControls />
         </div>
 
-        <ErrorBoundary fallback={errorFallback}>
-          <Suspense fallback={null}>
-            <DataManagerModal isOpen={dataManagerModal.isOpen} onClose={dataManagerModal.close} />
-          </Suspense>
-        </ErrorBoundary>
+        {dataManagerModal.isOpen && (
+          <ErrorBoundary fallback={errorFallback}>
+            <Suspense fallback={null}>
+              <DataManagerModal isOpen onClose={dataManagerModal.close} />
+            </Suspense>
+          </ErrorBoundary>
+        )}
 
         <ErrorBoundary fallback={null}>
           <ShortcutsModal isOpen={shortcutsModal.isOpen} onClose={shortcutsModal.close} />

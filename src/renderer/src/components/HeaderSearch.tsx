@@ -230,8 +230,6 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   knowledgeDocuments,
   actions,
 }) => {
-  const knowledgeLibrary = useKnowledgeLibrary();
-  const searchableKnowledgeDocuments = knowledgeDocuments ?? knowledgeLibrary.documents;
   const {
     onAddContactToBridge,
     onToggleGroup,
@@ -242,6 +240,10 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   } = actions;
   const { query, setQuery, isSearchFocused, setIsSearchFocused, searchInputRef, clearSearch } =
     useSearchContext();
+  const knowledgeLibrary = useKnowledgeLibrary({
+    enabled: isSearchFocused || activeTab === 'Knowledge',
+  });
+  const searchableKnowledgeDocuments = knowledgeDocuments ?? knowledgeLibrary.documents;
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [failedPassageGeneration, setFailedPassageGeneration] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
