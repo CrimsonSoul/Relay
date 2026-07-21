@@ -11,6 +11,8 @@ import {
   summarizeProcessSamples,
 } from './runtime-benchmark-utils.mjs';
 
+/* global document, getComputedStyle */
+
 const root = process.cwd();
 const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-runtime-benchmark-'));
 

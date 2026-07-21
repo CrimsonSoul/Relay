@@ -162,6 +162,7 @@ export function KnowledgePdfViewer({
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
   const pdfIdentityRef = useRef<KnowledgePdfSession | null>(null);
+  const loadedDocumentIdentityRef = useRef<string | null>(null);
   const activePdfIdentity = pdfIdentityRef.current;
   const activePdf =
     active &&
@@ -248,6 +249,7 @@ export function KnowledgePdfViewer({
   useEffect(() => {
     if (!active || !documentId || !documentChecksum || !globalThis.api?.getKnowledgePdf) {
       setPdf(null);
+      if (!documentId || !documentChecksum) loadedDocumentIdentityRef.current = null;
       return;
     }
 
@@ -256,21 +258,28 @@ export function KnowledgePdfViewer({
     let loadedPdf: PDFDocumentProxy | null = null;
     let loadingTaskDestroyed = false;
     const generation = pdfGenerationRef.current + 1;
+    const documentIdentity = `${documentId}:${documentChecksum}`;
+    const preserveViewState = loadedDocumentIdentityRef.current === documentIdentity;
+    loadedDocumentIdentityRef.current = documentIdentity;
     pdfGenerationRef.current = generation;
     pdfIdentityRef.current = null;
     pendingSearchRequestRef.current = null;
     handledSearchRequestKeyRef.current = null;
     readyPageIndicesRef.current.clear();
     setPdf(null);
-    setPageIndex(0);
-    setScale(1);
+    if (!preserveViewState) {
+      setPageIndex(0);
+      setScale(1);
+      pageIndexRef.current = 0;
+      observedPageIndexRef.current = 0;
+    } else {
+      observedPageIndexRef.current = pageIndexRef.current;
+    }
     setNavigationTarget(null);
     setSingleTopRequest(null);
     setViewOptionsOpen(false);
     setLoading(true);
     setError(null);
-    pageIndexRef.current = 0;
-    observedPageIndexRef.current = 0;
     navigationTargetRef.current = null;
     issuedNavigationTargetRef.current = null;
     previousTargetRequestKeyRef.current = '';

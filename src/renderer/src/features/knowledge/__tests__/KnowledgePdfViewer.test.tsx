@@ -1532,6 +1532,8 @@ describe('KnowledgePdfViewer', () => {
     const { rerender } = render(renderRetainedViewer(true));
     await screen.findByText('Page 1 of 3');
     await waitFor(() => expect(firstPdfGetPage).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
 
     rerender(renderRetainedViewer(false));
     await waitFor(() => expect(firstPdfDestroy).toHaveBeenCalledOnce());
@@ -1542,6 +1544,9 @@ describe('KnowledgePdfViewer', () => {
 
     expect(firstPdfGetPage).not.toHaveBeenCalled();
     expect(screen.getByText('Loading document')).toBeInTheDocument();
+
+    secondPdfLoad.resolve(pdf());
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
   });
 
   it.each(['rejects', 'throws'])(
