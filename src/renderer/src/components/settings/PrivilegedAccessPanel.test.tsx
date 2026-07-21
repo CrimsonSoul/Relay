@@ -90,6 +90,9 @@ describe('PrivilegedAccessPanel', () => {
     const username = screen.getByLabelText('Username');
     const password = screen.getByLabelText('Password') as HTMLInputElement;
 
+    expect(username).toHaveClass('tactile-input');
+    expect(password).toHaveClass('tactile-input');
+
     fireEvent.change(username, { target: { value: 'ryan' } });
     fireEvent.change(password, { target: { value: 'a-long-private-password' } });
     fireEvent.submit(password.closest('form')!);

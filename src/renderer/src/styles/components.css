@@ -143,8 +143,8 @@
   border-color: var(--accent);
 }
 
-/* Tactile Input */
-input.tactile-input.tactile-input {
+/* Tactile Field */
+:is(input, select, textarea).tactile-input.tactile-input {
   width: 100%;
   box-sizing: border-box;
   height: 44px;
@@ -163,13 +163,37 @@ input.tactile-input.tactile-input {
   outline: none;
 }
 
-input.tactile-input.tactile-input:hover {
+:is(input, select, textarea).tactile-input.tactile-input:hover:not(:disabled) {
   border-color: var(--color-text-tertiary);
 }
 
-input.tactile-input.tactile-input:focus {
+:is(input, select, textarea).tactile-input.tactile-input:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--color-accent-dim);
+}
+
+:is(input, select, textarea).tactile-input.tactile-input[aria-invalid='true'] {
+  border-color: var(--alarm);
+}
+
+:is(input, select, textarea).tactile-input.tactile-input:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-surface-2);
+  opacity: 0.72;
+}
+
+input.tactile-input.tactile-input::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 1;
+}
+
+textarea.tactile-input.tactile-input {
+  height: auto;
+  min-height: 116px;
+  padding: 12px 16px;
+  line-height: var(--leading-normal);
+  resize: vertical;
 }
 
 /* SearchInput supplies Relay's own clear button; suppress WebKit's duplicate. */

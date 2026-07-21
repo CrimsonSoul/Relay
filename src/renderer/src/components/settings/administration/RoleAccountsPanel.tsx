@@ -525,6 +525,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         <label className="administration-field">
           <span>Publisher account</span>
           <select
+            className="tactile-input"
             value={publisherAccountId}
             onChange={(event) => setPublisherAccountId(event.target.value)}
           >

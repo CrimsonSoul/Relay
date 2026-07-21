@@ -92,7 +92,7 @@ describe('Operational silk motion system', () => {
 
   it('keeps shared form feedback on the control tier', () => {
     expect(componentsCss).toMatch(
-      /input\.tactile-input\.tactile-input\s*{[^}]*border-color var\(--transition-fast\)/,
+      /:is\(input, select, textarea\)\.tactile-input\.tactile-input\s*{[^}]*border-color var\(--transition-fast\)/,
     );
     expect(componentsCss).toMatch(
       /\.group-selector-checkbox\s*{[^}]*background-color var\(--transition-fast\)/,

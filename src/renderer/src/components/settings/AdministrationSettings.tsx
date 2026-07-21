@@ -66,6 +66,7 @@ export function AdministrationSettings({
       <label className="administration-settings__selector">
         <span>Administration section</span>
         <select
+          className="tactile-input"
           value={activeSection}
           onChange={(event) => setActiveSection(event.target.value as SectionId)}
         >

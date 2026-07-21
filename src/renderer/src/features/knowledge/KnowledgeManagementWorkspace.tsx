@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   knowledgeCategoryKey,
   type KnowledgeAuditAction,
@@ -151,6 +151,7 @@ export function KnowledgeManagementWorkspace({
   const management = useKnowledgeManagement(onLibraryChanged);
   const { canManage, readAudit } = management;
   const [section, setSection] = useState<Section>('documents');
+  const sectionRef = useRef<Section>('documents');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>({
@@ -162,6 +163,14 @@ export function KnowledgeManagementWorkspace({
   const editTitleRef = useRef<HTMLInputElement>(null);
   const editCategoryRef = useRef<HTMLSelectElement>(null);
   const sectionContentRef = useRef<HTMLDivElement>(null);
+  const sectionScrollPositionsRef = useRef<Record<Section, number>>({
+    documents: 0,
+    categories: 0,
+    uploads: 0,
+    trash: 0,
+    audit: 0,
+  });
+  const focusSectionAfterChangeRef = useRef(false);
   const documentsHeadingRef = useRef<HTMLHeadingElement>(null);
   const retryFocusOperationRef = useRef(0);
   const [uploadDrafts, setUploadDrafts] = useState<Record<string, UploadDraft>>({});
@@ -220,17 +229,40 @@ export function KnowledgeManagementWorkspace({
     );
   }, [retryFocusIntent]);
 
-  const selectSection = (next: Section) => {
+  useLayoutEffect(() => {
+    sectionRef.current = section;
+    const content = sectionContentRef.current;
+    if (!content) return;
+    content.scrollTop = sectionScrollPositionsRef.current[section];
+    if (focusSectionAfterChangeRef.current) {
+      focusSectionAfterChangeRef.current = false;
+      content.focus();
+    }
+  }, [section]);
+
+  const openSection = (next: Section, focus = false) => {
+    const currentSection = sectionRef.current;
+    const content = sectionContentRef.current;
+    if (content) sectionScrollPositionsRef.current[currentSection] = content.scrollTop;
+    if (next === currentSection) {
+      if (focus) content?.focus();
+      return;
+    }
+    sectionRef.current = next;
+    focusSectionAfterChangeRef.current = focus;
     setSection(next);
+  };
+
+  const selectSection = (next: Section) => {
+    openSection(next, true);
     setNotice(null);
     setCancelBatchConfirmation(false);
-    queueMicrotask(() => sectionContentRef.current?.focus());
   };
 
   const stagePdfs = async () => {
     const result = await management.stagePdfs();
     if (result.ok && result.uploads.length > 0) {
-      setSection('uploads');
+      openSection('uploads');
       setNotice(`${result.uploads.length} PDF${result.uploads.length === 1 ? '' : 's'} queued.`);
     }
   };
@@ -281,7 +313,7 @@ export function KnowledgeManagementWorkspace({
   const replacePdf = async (document: KnowledgeManagementDocumentView) => {
     const result = await management.stagePdfs();
     if (!result.ok) return;
-    setSection('uploads');
+    openSection('uploads');
     setNotice(
       result.uploads.length === 1
         ? `Replacement for ${document.displayTitle} queued. Use Replace existing when it is ready.`
@@ -381,7 +413,7 @@ export function KnowledgeManagementWorkspace({
 
   if (!management.canManage) {
     return (
-      <div className="knowledge-management">
+      <div className="knowledge-management knowledge-management--access-lost">
         <header className="knowledge-management__header">
           <div>
             <span className="knowledge-tab__kicker">Protected publisher workspace</span>
@@ -473,7 +505,7 @@ export function KnowledgeManagementWorkspace({
 
         <div
           ref={sectionContentRef}
-          className={`knowledge-management__content${section === 'audit' ? ' knowledge-management__content--audit' : ''}`}
+          className="knowledge-management__content"
           tabIndex={-1}
           aria-label={`${section[0]!.toUpperCase()}${section.slice(1)} management section`}
         >
@@ -509,6 +541,7 @@ export function KnowledgeManagementWorkspace({
                 {categories.length > 0 && (
                   <div className="knowledge-management__category-tool">
                     <select
+                      className="tactile-input"
                       aria-label="Bulk category"
                       value={bulkCategoryId}
                       onChange={(event) => setBulkCategoryId(event.target.value)}
@@ -596,6 +629,7 @@ export function KnowledgeManagementWorkspace({
                         <label>
                           Display title
                           <input
+                            className="tactile-input"
                             ref={editTitleRef}
                             aria-invalid={editErrors.title ? true : undefined}
                             aria-describedby={
@@ -622,6 +656,7 @@ export function KnowledgeManagementWorkspace({
                         <label>
                           Category
                           <select
+                            className="tactile-input"
                             ref={editCategoryRef}
                             aria-invalid={editErrors.categoryId ? true : undefined}
                             aria-describedby={
@@ -663,6 +698,7 @@ export function KnowledgeManagementWorkspace({
                         <label>
                           Document type
                           <select
+                            className="tactile-input"
                             value={editDraft.documentType}
                             onChange={(event) =>
                               setEditDraft((draft) => ({
@@ -944,6 +980,7 @@ export function KnowledgeManagementWorkspace({
                       <label>
                         Display title
                         <input
+                          className="tactile-input"
                           value={draft.title}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
@@ -956,6 +993,7 @@ export function KnowledgeManagementWorkspace({
                       <label>
                         Category
                         <select
+                          className="tactile-input"
                           value={selectedCategory?.id ?? NEW_CATEGORY_VALUE}
                           onChange={(event) => {
                             const category = selectedUploadCategory(categories, event.target.value);
@@ -980,6 +1018,7 @@ export function KnowledgeManagementWorkspace({
                         <label>
                           New category name
                           <input
+                            className="tactile-input"
                             value={draft.category}
                             onChange={(event) =>
                               setUploadDrafts((current) => ({
@@ -993,6 +1032,7 @@ export function KnowledgeManagementWorkspace({
                       <label>
                         Document type
                         <select
+                          className="tactile-input"
                           name={`knowledge-upload-document-type-${upload.id}`}
                           autoComplete="off"
                           value={draft.documentType}
@@ -1101,6 +1141,7 @@ export function KnowledgeManagementWorkspace({
                       <label>
                         Confirm your password
                         <input
+                          className="tactile-input"
                           type="password"
                           autoComplete="current-password"
                           autoFocus

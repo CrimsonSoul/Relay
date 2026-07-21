@@ -194,7 +194,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
             <label className="privileged-access__field">
               <span>Pairing challenge ID</span>
               <input
-                className="input"
+                className="tactile-input"
                 value={challengeId}
                 onChange={(event) => setChallengeId(event.target.value)}
                 autoComplete="off"
@@ -204,7 +204,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
             <label className="privileged-access__field">
               <span>One-time pairing code</span>
               <input
-                className="input privileged-access__code"
+                className="tactile-input privileged-access__code"
                 value={pairingCode}
                 onChange={(event) => setPairingCode(event.target.value)}
                 autoCapitalize="characters"
@@ -216,7 +216,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
             <label className="privileged-access__field privileged-access__field--wide">
               <span>Device label</span>
               <input
-                className="input"
+                className="tactile-input"
                 value={deviceLabel}
                 onChange={(event) => setDeviceLabel(event.target.value)}
                 placeholder="Work laptop"
@@ -272,7 +272,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                 <label className="privileged-access__field">
                   <span>Workstation owner</span>
                   <select
-                    className="input"
+                    className="tactile-input"
                     value={pairingTargetAccountId}
                     onChange={(event) => setPairingTargetAccountId(event.target.value)}
                     disabled={administration.loading || pairingTargets.length === 0}
@@ -338,7 +338,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
             <label className="privileged-access__field">
               <span>Username</span>
               <input
-                className="input"
+                className="tactile-input"
                 value={username}
                 onChange={(event) => {
                   setUsername(event.target.value);
@@ -355,7 +355,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
               <input
                 ref={passwordRef}
                 type="password"
-                className="input"
+                className="tactile-input"
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value);
@@ -395,7 +395,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                   <label className="privileged-access__field">
                     <span>Owner username</span>
                     <input
-                      className="input"
+                      className="tactile-input"
                       value={initialUsername}
                       onChange={(event) => setInitialUsername(event.target.value)}
                       autoComplete="off"
@@ -406,7 +406,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                     <label className="privileged-access__field">
                       <span>Desktop approval code</span>
                       <input
-                        className="input privileged-access__code"
+                        className="tactile-input privileged-access__code"
                         value={initialApprovalCode}
                         onChange={(event) => setInitialApprovalCode(event.target.value)}
                         inputMode="numeric"
@@ -421,7 +421,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                     <span>New Owner password</span>
                     <input
                       type="password"
-                      className="input"
+                      className="tactile-input"
                       value={initialPassword}
                       onChange={(event) => setInitialPassword(event.target.value)}
                       minLength={12}
@@ -433,7 +433,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                     <span>Confirm Owner password</span>
                     <input
                       type="password"
-                      className="input"
+                      className="tactile-input"
                       value={initialPasswordConfirm}
                       onChange={(event) => setInitialPasswordConfirm(event.target.value)}
                       minLength={12}

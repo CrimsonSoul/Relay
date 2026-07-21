@@ -251,9 +251,19 @@ describe('AdministrationSettings', () => {
     const { container } = render(<AdministrationSettings relayMode="client" />);
 
     expect(screen.getByRole('navigation', { name: 'Administration sections' })).toBeVisible();
+    expect(screen.getByLabelText('Administration section')).toHaveClass('tactile-input');
     expect(container.querySelector('#administration-panel-roles')).toHaveAttribute(
       'aria-labelledby',
       'administration-nav-roles',
+    );
+  });
+
+  it('uses the shared tactile field for multiline administration values', () => {
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+
+    expect(screen.getByLabelText('Selected profile names · one per line')).toHaveClass(
+      'tactile-input',
     );
   });
 

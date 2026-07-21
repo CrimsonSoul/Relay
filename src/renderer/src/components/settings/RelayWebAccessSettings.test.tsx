@@ -56,6 +56,7 @@ describe('RelayWebAccessSettings', () => {
 
     expect(await screen.findByRole('checkbox', { name: 'Enable browser backup' })).toBeChecked();
     expect(screen.getByRole('spinbutton', { name: 'Browser port' })).toHaveValue(8091);
+    expect(screen.getByRole('spinbutton', { name: 'Browser port' })).toHaveClass('tactile-input');
     expect(screen.getByText('Available')).toBeVisible();
     expect(screen.getByText('http://192.168.1.25:8091')).toBeVisible();
     expect(

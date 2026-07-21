@@ -1069,7 +1069,41 @@ test.describe('Vital Critical Path', () => {
 
   test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
     await seedKnowledgePaginationFixtures(107);
-    const { content, search } = await openOwnerKnowledgeManagement();
+    const { content, rail, search } = await openOwnerKnowledgeManagement();
+
+    const documentsScrollTop = await content.evaluate((element) => {
+      element.scrollTop = 180;
+      return element.scrollTop;
+    });
+    expect(documentsScrollTop).toBeGreaterThan(0);
+
+    await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
+    await expect(content).toHaveAttribute('aria-label', 'Categories management section');
+    await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBe(0);
+    const newCategory = window.getByLabel('New category name');
+    await expect(newCategory).toHaveClass(/tactile-input/);
+    expect(
+      await newCategory.evaluate((element) => {
+        const style = globalThis.getComputedStyle(element);
+        return {
+          background: style.backgroundColor,
+          borderRadius: style.borderRadius,
+          borderWidth: style.borderTopWidth,
+          height: style.height,
+        };
+      }),
+    ).toEqual({
+      background: 'rgba(0, 0, 0, 0)',
+      borderRadius: '2px',
+      borderWidth: '1px',
+      height: '44px',
+    });
+
+    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+    await expect(content).toHaveAttribute('aria-label', 'Documents management section');
+    await expect
+      .poll(() => content.evaluate((element) => element.scrollTop))
+      .toBe(documentsScrollTop);
 
     const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
     await expect(loadMore).toBeVisible();
@@ -1089,7 +1123,6 @@ test.describe('Vital Critical Path', () => {
     }
     await search.fill('');
 
-    const rail = window.getByRole('navigation', { name: 'Knowledge management' });
     await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
     await window.getByLabel('Category name Reader validation').fill('Reader operations');
     await window.getByRole('button', { name: 'Save Reader validation' }).click();

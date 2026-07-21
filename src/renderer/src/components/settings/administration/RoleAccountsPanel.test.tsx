@@ -127,6 +127,7 @@ describe('RoleAccountsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Add Administrator' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Transfer ownership/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Replace Publisher' })).toBeVisible();
+    expect(screen.getByLabelText('Publisher account')).toHaveClass('tactile-input');
 
     fireEvent.change(screen.getByLabelText('Publisher account'), {
       target: { value: 'account-old-publisher' },

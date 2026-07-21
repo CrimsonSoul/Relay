@@ -441,6 +441,9 @@ describe('KnowledgeManagementWorkspace', () => {
 
     render(<KnowledgeManagementWorkspace onExit={onExit} />);
 
+    expect(screen.getByRole('alert').closest('.knowledge-management')).toHaveClass(
+      'knowledge-management--access-lost',
+    );
     expect(screen.getByRole('alert')).toHaveTextContent('Publisher access ended');
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Password confirmation was not accepted. Try again.',
@@ -478,6 +481,74 @@ describe('KnowledgeManagementWorkspace', () => {
     );
   });
 
+  it('uses the shared tactile field vocabulary throughout management forms', () => {
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    expect(screen.getByLabelText('Bulk category')).toHaveClass('tactile-input');
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    expect(screen.getByLabelText('New category name')).toHaveClass('tactile-input');
+    expect(screen.getByLabelText('Category name Operations')).toHaveClass('tactile-input');
+  });
+
+  it('restores an independent scroll position for every management section', () => {
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    const content = screen.getByLabelText('Documents management section');
+    content.scrollTop = 180;
+
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    expect(screen.getByLabelText('Categories management section').scrollTop).toBe(0);
+    content.scrollTop = 72;
+
+    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+    expect(screen.getByLabelText('Documents management section').scrollTop).toBe(180);
+
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    expect(screen.getByLabelText('Categories management section').scrollTop).toBe(72);
+  });
+
+  it('preserves current tab scroll state when asynchronous PDF staging changes sections', async () => {
+    const staging = deferred<Awaited<ReturnType<typeof stagePdfs>>>();
+    const delayedStagePdfs = vi.fn(() => staging.promise);
+    useKnowledgeManagementMock.mockReturnValue({
+      ...useKnowledgeManagementMock(),
+      stagePdfs: delayedStagePdfs,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    const content = screen.getByLabelText('Documents management section');
+    content.scrollTop = 180;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add PDFs' }));
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    content.scrollTop = 72;
+    staging.resolve({
+      ok: true,
+      uploads: [
+        {
+          id: 'delayed-upload',
+          uploadId: null,
+          batchId: 'batch-delayed',
+          fileName: 'Delayed.pdf',
+          byteSize: 1_024,
+          acknowledgedBytes: 0,
+          chunkCount: 1,
+          acknowledgedChunkCount: 0,
+          state: 'queued',
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: false,
+        },
+      ],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Uploads management section')).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    expect(screen.getByLabelText('Categories management section').scrollTop).toBe(72);
+    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+    expect(screen.getByLabelText('Documents management section').scrollTop).toBe(180);
+  });
+
   it('stages PDFs and loads audit history when the workspace opens', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
@@ -488,12 +559,12 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(stagePdfs).toHaveBeenCalledOnce();
     expect(readAudit).toHaveBeenCalledOnce();
     expect(screen.getByLabelText('Audit management section')).toHaveClass(
-      'knowledge-management__content--audit',
+      'knowledge-management__content',
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
-    expect(screen.getByLabelText('Documents management section')).not.toHaveClass(
-      'knowledge-management__content--audit',
+    expect(screen.getByLabelText('Documents management section')).toHaveClass(
+      'knowledge-management__content',
     );
   });
 

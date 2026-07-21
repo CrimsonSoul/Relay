@@ -123,6 +123,7 @@ export function KnowledgeCategoryManager({
           <label>
             <span>New category</span>
             <input
+              className="tactile-input"
               ref={newNameRef}
               aria-label="New category name"
               aria-invalid={newNameError ? true : undefined}
@@ -189,6 +190,7 @@ export function KnowledgeCategoryManager({
                   {category.systemKey === 'uncategorized' ? 'Fallback category' : 'Category'}
                 </span>
                 <input
+                  className="tactile-input"
                   ref={(node) => {
                     if (node) nameRefs.current.set(category.id, node);
                     else nameRefs.current.delete(category.id);
@@ -256,6 +258,7 @@ export function KnowledgeCategoryManager({
                   <label>
                     Reassign documents to
                     <select
+                      className="tactile-input"
                       value={replacementId}
                       onChange={(event) => setReplacementId(event.target.value)}
                     >

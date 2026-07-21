@@ -6,6 +6,10 @@ const css = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
   'utf8',
 );
+const componentCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
+  'utf8',
+);
 
 function ruleBody(source: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -39,33 +43,43 @@ describe('Knowledge Management visual system', () => {
     expect(workspace).toContain('box-shadow: none;');
   });
 
-  it('keeps a desktop bottom gutter while preserving the mobile all-side gutter', () => {
+  it('keeps the shell fixed while preserving desktop and mobile gutters', () => {
     const root = ruleBody(css, '.knowledge-management');
+    const accessLostRoot = ruleBody(css, '.knowledge-management--access-lost');
+    const workspace = ruleBody(css, '.knowledge-management__workspace');
     const mobileRoot = ruleBody(mediaBody(820), '.knowledge-management');
 
     expect(root).toContain(
       'padding: var(--space-4) var(--space-5) max(var(--space-5), env(safe-area-inset-bottom));',
     );
-    expect(root).toContain('overflow: auto;');
+    expect(root).toContain('overflow: hidden;');
+    expect(accessLostRoot).toContain('overflow-y: auto;');
+    expect(workspace).toContain('overflow: hidden;');
     expect(mobileRoot).toContain(
       'padding: var(--space-3) var(--space-3) max(var(--space-3), env(safe-area-inset-bottom));',
     );
   });
 
-  it('keeps content unclipped, actions wrapped, and one visible field focus ring', () => {
+  it('keeps every active section independently scrollable with one visible field focus ring', () => {
     const content = ruleBody(css, '.knowledge-management__content');
-    const auditContent = ruleBody(css, '.knowledge-management__content--audit');
     const actions = ruleBody(css, '.knowledge-management-row__actions');
-    const focus = ruleBody(css, '.knowledge-management :is(input, select, textarea):focus-visible');
+    const managementFocus = ruleBody(
+      css,
+      '.knowledge-management :is(input, select, textarea):focus-visible',
+    );
+    const sharedFocus = ruleBody(
+      componentCss,
+      ':is(input, select, textarea).tactile-input.tactile-input:focus-visible',
+    );
 
-    expect(content).toContain('overflow: visible;');
-    expect(content).not.toContain('overflow: hidden;');
-    expect(auditContent).toContain('overflow-y: auto;');
-    expect(auditContent).toContain('overscroll-behavior: contain;');
+    expect(content).toContain('overflow-x: hidden;');
+    expect(content).toContain('overflow-y: auto;');
+    expect(content).toContain('overscroll-behavior: contain;');
+    expect(content).toContain('scrollbar-gutter: stable;');
     expect(actions).toContain('flex-wrap: wrap;');
-    expect(focus).toContain('outline: 2px solid var(--accent-bright);');
-    expect(focus).toContain('outline-offset: 1px;');
-    expect(focus).toContain('box-shadow: none;');
+    expect(managementFocus).toBe('');
+    expect(sharedFocus).toContain('border-color: var(--accent);');
+    expect(sharedFocus).toContain('box-shadow: 0 0 0 2px var(--color-accent-dim);');
     expect(css).not.toContain('.knowledge-management-grid');
   });
 
@@ -119,13 +133,25 @@ describe('Knowledge Management visual system', () => {
     expect(eyebrow).toContain('gap: var(--space-2);');
   });
 
-  it('uses flat selection, opaque tools, square controls, and compact rows', () => {
+  it('uses flat selection, shared tactile fields, square controls, and compact rows', () => {
     const railButton = ruleBody(css, '.knowledge-management__rail button');
     const activeRailButton = ruleBody(css, '.knowledge-management__rail button.is-active');
     const count = ruleBody(css, '.knowledge-management__rail strong');
     const role = ruleBody(css, '.knowledge-management__role');
     const toolbar = ruleBody(css, '.knowledge-management__toolbar');
     const controls = ruleBody(css, '.knowledge-management :is(input, select, textarea)');
+    const sharedControls = ruleBody(
+      componentCss,
+      ':is(input, select, textarea).tactile-input.tactile-input',
+    );
+    const sharedInvalidControls = ruleBody(
+      componentCss,
+      ":is(input, select, textarea).tactile-input.tactile-input[aria-invalid='true']",
+    );
+    const sharedDisabledControls = ruleBody(
+      componentCss,
+      ':is(input, select, textarea).tactile-input.tactile-input:disabled',
+    );
     const select = ruleBody(css, '.knowledge-management select');
     const categoryTool = ruleBody(css, '.knowledge-management__category-tool');
     const row = ruleBody(css, '.knowledge-management-row');
@@ -143,9 +169,14 @@ describe('Knowledge Management visual system', () => {
     expect(toolbar).toContain('padding: var(--space-3) var(--space-4);');
     expect(toolbar).toContain('background: var(--color-bg-surface);');
     expect(toolbar).toContain('backdrop-filter: none;');
-    expect(controls).toContain('height: 40px;');
-    expect(controls).toContain('border-radius: 2px;');
-    expect(select).toContain('padding-right: 34px;');
+    expect(controls).not.toContain('background:');
+    expect(controls).not.toContain('border:');
+    expect(sharedControls).toContain('height: 44px;');
+    expect(sharedControls).toContain('background: transparent;');
+    expect(sharedControls).toContain('border: 1px solid var(--color-border-strong);');
+    expect(sharedControls).toContain('border-radius: 2px;');
+    expect(sharedInvalidControls).toContain('border-color: var(--alarm);');
+    expect(sharedDisabledControls).toContain('cursor: not-allowed;');
     expect(select).toContain('appearance: none;');
     expect(select).toContain('background-position: right 12px center;');
     expect(categoryTool).toContain('gap: var(--space-2);');

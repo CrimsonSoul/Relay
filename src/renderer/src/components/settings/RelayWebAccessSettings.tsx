@@ -125,6 +125,7 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
         <div className="relay-web-port-field">
           <label htmlFor="relay-web-port">Browser port</label>
           <input
+            className="tactile-input"
             id="relay-web-port"
             name="relay-web-port"
             type="number"
