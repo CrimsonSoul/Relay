@@ -23,6 +23,7 @@ import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService
 import type { KnowledgeSearchService } from '../knowledge/KnowledgeSearchService';
 import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import type { RelayWebServerManager } from '../web/RelayWebServerManager';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -44,6 +45,7 @@ export interface AppState {
   knowledgeUploadService: KnowledgeUploadService | null;
   knowledgeSearchService: KnowledgeSearchService | null;
   privilegedRuntime: PrivilegedRuntime | null;
+  relayWebServerManager: RelayWebServerManager | null;
 }
 
 const state: AppState = {
@@ -65,6 +67,7 @@ const state: AppState = {
   knowledgeUploadService: null,
   knowledgeSearchService: null,
   privilegedRuntime: null,
+  relayWebServerManager: null,
 };
 
 const privilegedSessionListeners = new Set<(view: PrivilegedSessionView) => void>();
@@ -126,6 +129,9 @@ export function getKnowledgeSearchService() {
 }
 export function getPrivilegedRuntime() {
   return state.privilegedRuntime;
+}
+export function getRelayWebServerManager() {
+  return state.relayWebServerManager;
 }
 
 // --- Setters ---
@@ -207,6 +213,10 @@ export function setPrivilegedRuntime(runtime: PrivilegedRuntime | null) {
     });
   }
   log.debug('appState.privilegedRuntime changed');
+}
+export function setRelayWebServerManager(manager: RelayWebServerManager | null) {
+  state.relayWebServerManager = manager;
+  log.debug('appState.relayWebServerManager changed');
 }
 
 export function subscribePrivilegedSessionChanged(
@@ -298,6 +308,7 @@ export function setupIpc(
     getKnowledgeUploadService: () => state.knowledgeUploadService,
     getKnowledgeSearchService: () => state.knowledgeSearchService,
     getPrivilegedRuntime: () => state.privilegedRuntime,
+    getRelayWebServerManager: () => state.relayWebServerManager,
     subscribePrivilegedSessionChanged,
     restartPb,
   });
@@ -333,8 +344,8 @@ export function setupPermissions(sess: Electron.Session) {
   sess.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
     const mainWindowWebContents = state.mainWindow?.webContents;
     const canCompareById =
-      typeof mainWindowWebContents?.id === 'number' && typeof webContents.id === 'number';
-    const isMainWindowById = canCompareById && mainWindowWebContents.id === webContents.id;
+      typeof mainWindowWebContents?.id === 'number' && typeof webContents?.id === 'number';
+    const isMainWindowById = canCompareById && mainWindowWebContents?.id === webContents?.id;
     const isMainWindow = isMainWindowById;
 
     if (permission === 'geolocation') {

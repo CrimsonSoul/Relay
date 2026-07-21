@@ -160,6 +160,30 @@ describe('setupHandlers', () => {
       expect(result).toBe(true);
     });
 
+    it('saves an explicitly enabled web listener on a LAN-bound server', () => {
+      const config = buildServerConfig({
+        bindHost: '0.0.0.0',
+        web: { enabled: true, port: 8091 },
+      });
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
+
+      expect(mockAppConfig.save).toHaveBeenCalledWith(config);
+      expect(result).toBe(true);
+    });
+
+    it.each([
+      { bindHost: '127.0.0.1', web: { enabled: true, port: 8091 } },
+      { bindHost: '0.0.0.0', web: { enabled: true, port: 8090 } },
+      { bindHost: '0.0.0.0', web: { enabled: true, port: 80 } },
+      { bindHost: '0.0.0.0', web: { enabled: true, port: 70000 } },
+    ])('rejects unsafe web listener settings %o', (overrides) => {
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, buildServerConfig(overrides));
+
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
     it('defaults server mode config to direct LAN access when bindHost is omitted', () => {
       const config = buildServerConfig();
       delete config.bindHost;

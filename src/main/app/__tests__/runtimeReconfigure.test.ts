@@ -66,6 +66,11 @@ const mocks = vi.hoisted(() => ({
   createProductionPrivilegedRuntime: vi.fn(),
   serverPbClient: { authStore: { isValid: true } },
   restartKnowledgeSearchRuntime: vi.fn(),
+  relayWebServerManager: {
+    stop: vi.fn(),
+    applyConfig: vi.fn(),
+  },
+  getRelayWebServerManager: vi.fn(),
 }));
 
 vi.mock('../appState', () => ({
@@ -87,6 +92,7 @@ vi.mock('../appState', () => ({
   getCloudStatusManager: mocks.getCloudStatusManager,
   getPrivilegedRuntime: mocks.getPrivilegedRuntime,
   setPrivilegedRuntime: mocks.setPrivilegedRuntime,
+  getRelayWebServerManager: mocks.getRelayWebServerManager,
 }));
 
 vi.mock('../pocketbaseBootstrap', () => ({
@@ -139,6 +145,7 @@ describe('reconfigureRuntime', () => {
     mocks.getDynatraceProblemsManager.mockReturnValue(mocks.dynatraceProblemsManager);
     mocks.getPrivilegedRuntime.mockReturnValue(mocks.privilegedRuntime);
     mocks.getPbClient.mockReturnValue(mocks.serverPbClient);
+    mocks.getRelayWebServerManager.mockReturnValue(mocks.relayWebServerManager);
     mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
     mocks.startPocketBase.mockResolvedValue({ status: 'started', privilegedRuntimeReady: true });
@@ -241,6 +248,26 @@ describe('reconfigureRuntime', () => {
     expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
     expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createProductionPrivilegedRuntime.mock.invocationCallOrder[0] as number,
+    );
+  });
+
+  it('stops Relay Web before runtime replacement and restarts it after PocketBase', async () => {
+    const config = {
+      mode: 'server' as const,
+      port: 8090,
+      bindHost: '0.0.0.0' as const,
+      secret: 'super-secret-passphrase',
+      web: { enabled: true, port: 8091 },
+    };
+    mocks.appConfig.load.mockReturnValue(config);
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await reconfigureRuntime('/Users/test/RelayData/data');
+
+    expect(mocks.relayWebServerManager.stop).toHaveBeenCalledOnce();
+    expect(mocks.relayWebServerManager.applyConfig).toHaveBeenCalledWith(config);
+    expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.relayWebServerManager.applyConfig.mock.invocationCallOrder[0]!,
     );
   });
 

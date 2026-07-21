@@ -3,6 +3,7 @@ import type PocketBase from 'pocketbase';
 import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
+import { setupRelayWebServerHandlers } from './handlers/webServerHandlers';
 import { setupCacheHandlers } from './handlers/cacheHandlers';
 import { setupOfflineMutationHandlers } from './handlers/offlineMutationHandlers';
 import { setupBackupHandlers } from './handlers/backupHandlers';
@@ -30,6 +31,7 @@ import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
+import type { RelayWebServerManager } from './web/RelayWebServerManager';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -53,6 +55,7 @@ export function setupIpcHandlers(opts: {
   getKnowledgeUploadService?: () => KnowledgeUploadService | null;
   getKnowledgeSearchService?: () => KnowledgeSearchService | null;
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
+  getRelayWebServerManager?: () => RelayWebServerManager | null;
   subscribePrivilegedSessionChanged?: (
     listener: (view: PrivilegedSessionView) => void,
   ) => () => void;
@@ -75,6 +78,7 @@ export function setupIpcHandlers(opts: {
     getKnowledgeUploadService,
     getKnowledgeSearchService,
     getPrivilegedRuntime,
+    getRelayWebServerManager,
     subscribePrivilegedSessionChanged,
     restartPb,
   } = opts;
@@ -143,6 +147,13 @@ export function setupIpcHandlers(opts: {
       getCache ?? (() => null),
       getPendingChanges ?? (() => null),
     ),
+  );
+
+  safeSetup('relayWebServer', () =>
+    setupRelayWebServerHandlers({
+      getAppConfig: getAppConfig ?? (() => null),
+      getManager: getRelayWebServerManager ?? (() => null),
+    }),
   );
 
   // Offline Cache Handlers (always registered — getters return null when not in client mode)

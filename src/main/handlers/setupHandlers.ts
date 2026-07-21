@@ -8,6 +8,7 @@ import {
   type SetupTestConnectionResult,
 } from '@shared/ipc';
 import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
+import { ServerWebConfigSchema } from '@shared/ipcValidation';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
@@ -24,12 +25,31 @@ const relayServerUrlSchema = z
   .max(MAX_SERVER_URL_LENGTH)
   .refine((value) => z.url().safeParse(value).success, { message: 'Invalid URL' });
 
-const serverConfigSchema = z.object({
-  mode: z.literal('server'),
-  port: z.number().int().min(1024).max(65535),
-  bindHost: z.enum(['127.0.0.1', '0.0.0.0']).default('0.0.0.0'),
-  secret: relaySecretSchema,
-});
+const serverConfigSchema = z
+  .object({
+    mode: z.literal('server'),
+    port: z.number().int().min(1024).max(65535),
+    bindHost: z.enum(['127.0.0.1', '0.0.0.0']).default('0.0.0.0'),
+    secret: relaySecretSchema,
+    web: ServerWebConfigSchema.optional(),
+  })
+  .superRefine((config, context) => {
+    if (!config.web) return;
+    if (config.web.port === config.port) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Relay Web must use a different port than PocketBase.',
+        path: ['web', 'port'],
+      });
+    }
+    if (config.web.enabled && config.bindHost !== '0.0.0.0') {
+      context.addIssue({
+        code: 'custom',
+        message: 'Relay Web requires direct LAN access.',
+        path: ['web', 'enabled'],
+      });
+    }
+  });
 
 const clientConfigSchema = z
   .object({
@@ -73,6 +93,7 @@ function toPublicConfig(config: RelayConfig): PublicRelayConfig {
       port: config.port,
       bindHost: config.bindHost,
       lanIp: getLanIpAddress(),
+      ...(config.web ? { web: { ...config.web } } : {}),
     };
   }
   return {

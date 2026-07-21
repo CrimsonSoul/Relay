@@ -99,6 +99,14 @@ describe('SettingsModal', () => {
       }),
       getConnectionSecret: vi.fn().mockResolvedValue(CONNECTION_SECRET),
       clearConfig: vi.fn().mockResolvedValue(true),
+      getWebServerState: vi.fn().mockResolvedValue({
+        enabled: false,
+        status: 'disabled',
+        port: 8091,
+      }),
+      saveWebServerConfig: vi.fn(),
+      retryWebServer: vi.fn(),
+      writeClipboard: vi.fn(),
     };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi;
   });
@@ -111,6 +119,21 @@ describe('SettingsModal', () => {
   it('renders modal when open', () => {
     render(<SettingsModal {...defaultProps} />);
     expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+  });
+
+  it('shows Relay Web controls only for the desktop server role', async () => {
+    const { unmount } = render(<SettingsModal {...defaultProps} />);
+    expect(await screen.findByText('Relay Web')).toBeVisible();
+    unmount();
+
+    (globalThis.api as Record<string, unknown>).getConfig = vi.fn().mockResolvedValue({
+      mode: 'client',
+      serverUrl: ['http', '://', LAN_SERVER_ADDRESS, ':8090'].join(''),
+      allowInsecureHttp: true,
+    });
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => expect(screen.getByText('Mode: Remote Client')).toBeVisible());
+    expect(screen.queryByText('Relay Web')).toBeNull();
   });
 
   it('renders focused sections when used as the Settings page', () => {

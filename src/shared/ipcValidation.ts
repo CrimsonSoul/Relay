@@ -40,6 +40,13 @@ const MAX_GROUP_CONTACTS = 200;
 
 export const TabNameSchema = z.enum(TAB_NAMES);
 
+export const ServerWebConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    port: z.number().int().min(1024).max(65535),
+  })
+  .strict();
+
 export const KnowledgePdfRequestSchema = z
   .object({
     documentId: z

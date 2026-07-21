@@ -35,6 +35,7 @@ import {
 } from '../theme/accent';
 import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 import { AdministrationSettings } from './settings/AdministrationSettings';
+import { RelayWebAccessSettings } from './settings/RelayWebAccessSettings';
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 
 type DynatraceSettingsProps = {
@@ -1042,6 +1043,10 @@ export const SettingsModal: React.FC<Props> = ({
           </>
         )}
       </div>
+
+      {!pbConfigLoading && pbConfig?.mode === 'server' && (
+        <RelayWebAccessSettings pocketBasePort={pbConfig.port} />
+      )}
     </>
   );
 

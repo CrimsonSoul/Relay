@@ -332,8 +332,27 @@ export type SetupTestConnectionResult =
 
 export type DiscoveredRelayServer = { name: string; host: string; port: number; url: string };
 
+export type ServerWebConfig = {
+  enabled: boolean;
+  port: number;
+};
+
+export type RelayWebServerPublicState = {
+  enabled: boolean;
+  status: 'disabled' | 'starting' | 'available' | 'conflict' | 'failed';
+  port: number;
+  url?: string;
+  error?: 'port-conflict' | 'startup-failed' | 'unavailable';
+};
+
 export type PublicRelayConfig =
-  | { mode: 'server'; port: number; bindHost?: '127.0.0.1' | '0.0.0.0'; lanIp?: string }
+  | {
+      mode: 'server';
+      port: number;
+      bindHost?: '127.0.0.1' | '0.0.0.0';
+      lanIp?: string;
+      web?: ServerWebConfig;
+    }
   | { mode: 'client'; serverUrl: string; allowInsecureHttp?: boolean };
 
 export type OfflineWritableCollection =
@@ -502,6 +521,10 @@ export type BridgeAPI = {
     allowInsecureHttp?: boolean;
   }) => Promise<SetupTestConnectionResult>;
   discoverServers: () => Promise<DiscoveredRelayServer[]>;
+  // Relay Web — desktop server configuration only.
+  getWebServerState: () => Promise<RelayWebServerPublicState>;
+  saveWebServerConfig: (input: ServerWebConfig) => Promise<IpcResult<RelayWebServerPublicState>>;
+  retryWebServer: () => Promise<IpcResult<RelayWebServerPublicState>>;
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
@@ -642,6 +665,10 @@ export const IPC_CHANNELS = {
   SETUP_IS_CONFIGURED: 'setup:isConfigured',
   SETUP_TEST_CONNECTION: 'setup:testConnection',
   SETUP_DISCOVER_SERVERS: 'setup:discoverServers',
+  // Relay Web server controls
+  WEB_SERVER_GET_STATE: 'webServer:getState',
+  WEB_SERVER_SAVE_CONFIG: 'webServer:saveConfig',
+  WEB_SERVER_RETRY: 'webServer:retry',
   // Cache (offline mode)
   CACHE_READ: 'cache:read',
   CACHE_WRITE: 'cache:write',

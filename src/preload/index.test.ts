@@ -33,7 +33,9 @@ describe('preload Knowledge web link bridge', () => {
     await import('./index');
 
     expect(electronMocks.exposeInMainWorld).toHaveBeenCalledWith('api', expect.any(Object));
-    api = electronMocks.exposeInMainWorld.mock.calls[0][1] as BridgeAPI;
+    const exposeCall = electronMocks.exposeInMainWorld.mock.calls[0];
+    if (!exposeCall) throw new Error('Expected preload API to be exposed');
+    api = exposeCall[1] as BridgeAPI;
   });
 
   it('invokes the dedicated Knowledge web link channel with the URL', async () => {
@@ -46,6 +48,19 @@ describe('preload Knowledge web link bridge', () => {
 
   it('identifies the existing preload as the full desktop runtime', () => {
     expect(api.runtime).toEqual(ELECTRON_RUNTIME);
+  });
+
+  it('forwards Relay Web settings controls over dedicated IPC channels', async () => {
+    await api.getWebServerState();
+    await api.saveWebServerConfig({ enabled: true, port: 8091 });
+    await api.retryWebServer();
+
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'webServer:getState');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'webServer:saveConfig', {
+      enabled: true,
+      port: 8091,
+    });
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'webServer:retry');
   });
 
   it('exposes cover bytes through the narrow Knowledge cover channel', async () => {

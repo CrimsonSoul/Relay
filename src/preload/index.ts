@@ -133,6 +133,9 @@ const api: BridgeAPI = {
   isConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_IS_CONFIGURED),
   testConnection: (payload) => ipcRenderer.invoke(IPC_CHANNELS.SETUP_TEST_CONNECTION, payload),
   discoverServers: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_DISCOVER_SERVERS),
+  getWebServerState: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_GET_STATE),
+  saveWebServerConfig: (input) => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_SAVE_CONFIG, input),
+  retryWebServer: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_RETRY),
   // Cache (offline)
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
   cacheWrite: (collection: string, action: string, record: unknown) =>

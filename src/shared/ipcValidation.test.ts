@@ -18,6 +18,7 @@ import {
   TabNameSchema,
   DataCategorySchema,
   ExportOptionsSchema,
+  ServerWebConfigSchema,
 } from './ipcValidation';
 import { IPC_CHANNELS } from './ipc';
 
@@ -39,6 +40,24 @@ describe('TabNameSchema', () => {
 
   it.each(['People', 'Servers', 'Notes'])('rejects removed top-level tab %s', (tab) => {
     expect(TabNameSchema.safeParse(tab).success).toBe(false);
+  });
+});
+
+describe('ServerWebConfigSchema', () => {
+  it('accepts a bounded explicit web listener configuration', () => {
+    expect(ServerWebConfigSchema.parse({ enabled: true, port: 8091 })).toEqual({
+      enabled: true,
+      port: 8091,
+    });
+  });
+
+  it.each([
+    { enabled: true, port: 80 },
+    { enabled: true, port: 65536 },
+    { enabled: 'yes', port: 8091 },
+    { enabled: true, port: 8091, host: 'public.example.com' },
+  ])('rejects unsafe web listener config %o', (config) => {
+    expect(ServerWebConfigSchema.safeParse(config).success).toBe(false);
   });
 });
 

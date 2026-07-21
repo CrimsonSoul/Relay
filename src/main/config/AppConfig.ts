@@ -8,6 +8,9 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
+import type { ServerWebConfig } from '@shared/ipc';
+
+export type { ServerWebConfig } from '@shared/ipc';
 
 let electronModuleForTests: typeof import('electron') | null | undefined;
 
@@ -38,7 +41,13 @@ export interface ServerConfig {
   port: number;
   bindHost: '127.0.0.1' | '0.0.0.0';
   secret: string;
+  web?: ServerWebConfig;
 }
+
+export const DEFAULT_SERVER_WEB_CONFIG: Readonly<ServerWebConfig> = Object.freeze({
+  enabled: false,
+  port: 8091,
+});
 
 export interface ClientConfig {
   mode: 'client';
@@ -57,6 +66,7 @@ interface StoredConfig {
   lanAccessConfigured?: boolean;
   serverUrl?: string;
   allowInsecureHttp?: boolean;
+  web?: ServerWebConfig;
   /** Encrypted secret (base64-encoded buffer) — used when safeStorage is available. */
   encryptedSecret?: string;
   /** Plaintext fallback — used only when safeStorage is unavailable (e.g. headless CI). */
@@ -73,6 +83,7 @@ function toRelayConfig(stored: StoredConfig, secret: string): RelayConfig {
       port: stored.port ?? 8090,
       bindHost: isLegacyLocalOnlyConfig ? '0.0.0.0' : (stored.bindHost ?? '0.0.0.0'),
       secret,
+      web: stored.web ?? { ...DEFAULT_SERVER_WEB_CONFIG },
     };
   }
 
@@ -132,6 +143,7 @@ export class AppConfig {
       stored.port = config.port;
       stored.bindHost = config.bindHost;
       stored.lanAccessConfigured = true;
+      stored.web = config.web ?? { ...DEFAULT_SERVER_WEB_CONFIG };
     } else {
       stored.serverUrl = config.serverUrl;
       if (config.allowInsecureHttp) {
@@ -158,6 +170,27 @@ export class AppConfig {
 
   isConfigured(): boolean {
     return this.load() !== null;
+  }
+
+  updateServerWebConfig(web: ServerWebConfig): boolean {
+    const current = this.load();
+    if (
+      current?.mode !== 'server' ||
+      !Number.isInteger(web.port) ||
+      web.port < 1024 ||
+      web.port > 65535 ||
+      web.port === current.port ||
+      (web.enabled && current.bindHost !== '0.0.0.0')
+    ) {
+      return false;
+    }
+    try {
+      this.save({ ...current, web: { ...web } });
+      return true;
+    } catch (error) {
+      loggers.main.error('Failed to update Relay Web configuration', { error });
+      return false;
+    }
   }
 
   /** Deletes the config file so the app returns to the setup screen on next load. */

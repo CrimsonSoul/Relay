@@ -39,6 +39,13 @@ const PublicServerConfigSchema: z.ZodType<Extract<PublicRelayConfig, { mode: 'se
     port: z.number().int().min(1024).max(65535),
     bindHost: z.enum(['127.0.0.1', '0.0.0.0']).optional(),
     lanIp: z.string().min(1).max(255).optional(),
+    web: z
+      .object({
+        enabled: z.boolean(),
+        port: z.number().int().min(1024).max(65535),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

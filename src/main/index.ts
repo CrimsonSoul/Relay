@@ -1,7 +1,7 @@
 import { app, BrowserWindow, session, dialog, ipcMain, crashReporter, safeStorage } from 'electron';
 import { join } from 'node:path';
 import { loggers } from './logger';
-import { AppConfig } from './config/AppConfig';
+import { AppConfig, type ServerConfig } from './config/AppConfig';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 import { validateEnv } from './env';
@@ -35,6 +35,8 @@ import {
   getPrivilegedRuntime,
   setPrivilegedRuntime,
   subscribePrivilegedSessionChanged,
+  getRelayWebServerManager,
+  setRelayWebServerManager,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow, showAndFocusWindow } from './app/windowFactory';
@@ -66,6 +68,8 @@ import {
   restartKnowledgeSearchRuntime,
   stopKnowledgeSearchRuntime,
 } from './knowledge/knowledgeSearchRuntime';
+import { RelayWebServerManager } from './web/RelayWebServerManager';
+import { resolveRendererStaticRoot } from './web/rendererStaticRoot';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -156,6 +160,8 @@ if (gotLock) {
       stopKnowledgeUploadSession = null;
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
+      void getRelayWebServerManager()?.stop();
+      setRelayWebServerManager(null);
       getKnowledgeUploadService()?.handleSessionChanged({
         state: 'signed-out',
         accountId: null,
@@ -214,6 +220,9 @@ if (gotLock) {
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
       setAppConfig(new AppConfig(configDataDir));
+      setRelayWebServerManager(
+        new RelayWebServerManager({ staticRoot: resolveRendererStaticRoot() }),
+      );
       initializeKnowledgePdfService(configDataDir);
       const knowledgeUploadService = new KnowledgeUploadService({
         getRuntime: getPrivilegedRuntime,
@@ -275,9 +284,7 @@ if (gotLock) {
         }
       };
 
-      const startServerServices = async (
-        config: NonNullable<ReturnType<AppConfig['load']>>,
-      ): Promise<boolean> => {
+      const startServerServices = async (config: ServerConfig): Promise<boolean> => {
         const result = await startPocketBase(config, configDataDir);
         if (result.status !== 'started') return false;
         if (result.privilegedRuntimeReady) {
@@ -291,6 +298,7 @@ if (gotLock) {
           );
         }
         startServerDataManagers();
+        await getRelayWebServerManager()?.applyConfig(config);
         void restartKnowledgeSearchRuntime();
         return true;
       };
@@ -321,6 +329,7 @@ if (gotLock) {
         if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
+        await getRelayWebServerManager()?.stop();
         await stopPrivilegedAccess();
         return startServerServices(config);
       });
@@ -343,6 +352,7 @@ if (gotLock) {
       const restartPb = async (): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
+        await getRelayWebServerManager()?.stop();
         await stopPrivilegedAccess();
         return startServerServices(config);
       };

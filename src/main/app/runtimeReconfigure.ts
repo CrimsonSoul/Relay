@@ -10,6 +10,7 @@ import {
   getCloudStatusManager,
   getPbClient,
   getPrivilegedRuntime,
+  getRelayWebServerManager,
   setBackupManager,
   setOfflineCache,
   setPbClient,
@@ -60,6 +61,7 @@ async function rebuildPrivilegedRuntime(
 
 export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   const config = getAppConfig()?.load();
+  await getRelayWebServerManager()?.stop();
   await disposePrivilegedRuntime();
   const dynatraceProblemsManager = getDynatraceProblemsManager();
   dynatraceProblemsManager?.stop();
@@ -98,6 +100,7 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
     }
     dynatraceProblemsManager?.start();
     cloudStatusManager?.start();
+    await getRelayWebServerManager()?.applyConfig(config);
   } else if (pbProcess) {
     await pbProcess.stop();
     setPbProcess(null);

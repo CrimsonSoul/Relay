@@ -36,7 +36,77 @@ describe('AppConfig', () => {
     };
     config.save(serverConfig);
     const loaded = config.load();
-    expect(loaded).toEqual(serverConfig);
+    expect(loaded).toEqual({
+      ...serverConfig,
+      web: { enabled: false, port: 8091 },
+    });
+  });
+
+  it('adds disabled web defaults to legacy server configs without rewriting on load', () => {
+    const stored = {
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      lanAccessConfigured: true,
+      secret: 'legacy-secret',
+    };
+    writeFileSync(join(tempDir, 'config.json'), JSON.stringify(stored, null, 2), 'utf-8');
+
+    const loaded = new AppConfig(tempDir).load();
+
+    expect(loaded).toMatchObject({
+      mode: 'server',
+      web: { enabled: false, port: 8091 },
+    });
+    expect(JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'))).toEqual(stored);
+  });
+
+  it('persists explicit web access settings with server configuration', () => {
+    const config = new AppConfig(tempDir);
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'server-secret',
+      web: { enabled: true, port: 9081 },
+    });
+
+    expect(config.load()).toMatchObject({ web: { enabled: true, port: 9081 } });
+    expect(JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8')).web).toEqual({
+      enabled: true,
+      port: 9081,
+    });
+  });
+
+  it('updates only web settings while preserving the server passphrase', () => {
+    const config = new AppConfig(tempDir);
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'preserved-secret',
+    });
+
+    expect(config.updateServerWebConfig({ enabled: true, port: 8091 })).toBe(true);
+    expect(config.load()).toEqual({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'preserved-secret',
+      web: { enabled: true, port: 8091 },
+    });
+  });
+
+  it('refuses to attach web settings to client mode', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'client', serverUrl: remoteHttpsUrl, secret: 'client-secret' });
+
+    expect(config.updateServerWebConfig({ enabled: true, port: 8091 })).toBe(false);
+    expect(config.load()).toEqual({
+      mode: 'client',
+      serverUrl: remoteHttpsUrl,
+      secret: 'client-secret',
+    });
   });
 
   it('writes and reads client config', () => {
