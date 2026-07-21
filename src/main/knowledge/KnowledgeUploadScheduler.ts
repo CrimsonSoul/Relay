@@ -216,9 +216,7 @@ export class KnowledgeUploadScheduler {
         (result): result is PromiseRejectedResult => result.status === 'rejected',
       );
       if (failed) throw failed.reason;
-      if (!this.sessionActive || this.pausedBatches.has(task.batchId)) {
-        throw new SchedulerTaskError('paused', null, 0);
-      }
+      this.assertRunnable(task);
       await task.finalize();
       this.completed.add(task.uploadId);
       task.onState('assembling', null, 0);
@@ -240,6 +238,7 @@ export class KnowledgeUploadScheduler {
       const controller = this.addController(task.uploadId);
       try {
         await task.uploadChunk(index, bytes, controller.signal);
+        this.assertRunnable(task);
         task.onAcknowledged(index, bytes.byteLength);
         return;
       } catch (error) {
@@ -255,6 +254,9 @@ export class KnowledgeUploadScheduler {
   }
 
   private assertRunnable(task: KnowledgeUploadSchedulerTask): void {
+    if (this.completed.has(task.uploadId)) {
+      throw new SchedulerTaskError('cancelled', null, 0);
+    }
     if (!this.sessionActive || this.pausedBatches.has(task.batchId)) {
       throw new SchedulerTaskError('paused', null, 0);
     }
@@ -268,7 +270,13 @@ export class KnowledgeUploadScheduler {
     controller: AbortController,
     error: unknown,
   ): Promise<boolean> {
-    if (controller.signal.aborted) throw new SchedulerTaskError('paused', null, 0);
+    if (controller.signal.aborted) {
+      throw new SchedulerTaskError(
+        this.completed.has(task.uploadId) ? 'cancelled' : 'paused',
+        null,
+        0,
+      );
+    }
     if (await this.serverAcknowledged(task, index)) {
       task.onAcknowledged(index, byteLength);
       return true;

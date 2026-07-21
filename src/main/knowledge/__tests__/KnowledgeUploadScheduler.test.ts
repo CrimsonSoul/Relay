@@ -181,4 +181,27 @@ describe('KnowledgeUploadScheduler', () => {
     expect(value.finalize).not.toHaveBeenCalled();
     expect(stateCalls(value)).toContainEqual(['paused', null, 0]);
   });
+
+  it('does not let an in-flight chunk completion revive a cancelled upload', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const uploadChunk = vi.fn(async () => gate);
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      uploadChunk,
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledOnce());
+    scheduler.cancelUpload(value.uploadId);
+    release();
+    await scheduler.whenIdle();
+
+    expect(value.onAcknowledged).not.toHaveBeenCalled();
+    expect(value.finalize).not.toHaveBeenCalled();
+    expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
+  });
 });
