@@ -198,6 +198,7 @@ export function useClientPresence(
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const recordsRef = useRef<ClientPresenceRecord[]>([]);
+  const loadGenerationRef = useRef(0);
   const initializedRef = useRef(false);
   const previousActiveSessionsRef = useRef<Set<string>>(new Set());
   const onClientConnectedRef = useRef(onClientConnected);
@@ -213,6 +214,7 @@ export function useClientPresence(
   }, []);
 
   const loadPresence = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
     if (!enabled || !isOnline()) {
       setLoading(false);
       return;
@@ -220,18 +222,24 @@ export function useClientPresence(
 
     setLoading(true);
     try {
-      commitRecords(await fetchPresenceRecords());
+      const next = await fetchPresenceRecords();
+      if (generation === loadGenerationRef.current) commitRecords(next);
     } catch (error) {
-      handleApiError(error);
-      commitRecords([]);
+      if (generation === loadGenerationRef.current) {
+        handleApiError(error);
+        commitRecords([]);
+      }
     } finally {
-      setLoading(false);
-      setSnapshotReady(true);
+      if (generation === loadGenerationRef.current) {
+        setLoading(false);
+        setSnapshotReady(true);
+      }
     }
   }, [commitRecords, enabled]);
 
   useEffect(() => {
     if (!enabled) {
+      loadGenerationRef.current += 1;
       setLoading(false);
       setSnapshotReady(false);
       initializedRef.current = false;
@@ -281,6 +289,7 @@ export function useClientPresence(
         unsubscribe();
         void subscribe().catch(handleApiError);
       } else {
+        loadGenerationRef.current += 1;
         unsubscribe();
         setLoading(false);
         setSnapshotReady(false);

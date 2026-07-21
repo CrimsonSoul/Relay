@@ -74,6 +74,20 @@ function makePresence(id: string, sessionId: string, hostname: string, ageMs = 0
   };
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} {
+  let resolvePromise: (value: T) => void = () => undefined;
+  let rejectPromise: (reason: unknown) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
@@ -172,6 +186,50 @@ describe('useClientPresence', () => {
 
     await waitFor(() => expect(result.current.count).toBe(1));
     expect(mockGetFullList).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a slower initial presence read overwrite the post-heartbeat snapshot', async () => {
+    const webPresence = makePresence('web-presence', 'web-session', 'Web · Safari · 10.0.0.8');
+    globalThis.api = {
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
+    } as typeof globalThis.api;
+    mockCreate.mockResolvedValue(webPresence);
+    const initialRead = deferred<PresenceRecord[]>();
+    mockGetFullList.mockReturnValueOnce(initialRead.promise).mockResolvedValue([webPresence]);
+
+    const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(mockGetFullList).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.count).toBe(1));
+    await act(async () => {
+      initialRead.resolve([]);
+      await initialRead.promise;
+    });
+
+    expect(result.current.count).toBe(1);
+  });
+
+  it('does not treat a stale failed presence read as a new connection failure', async () => {
+    const webPresence = makePresence('web-presence', 'web-session', 'Web · Safari · 10.0.0.8');
+    globalThis.api = {
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
+    } as typeof globalThis.api;
+    mockCreate.mockResolvedValue(webPresence);
+    const initialRead = deferred<PresenceRecord[]>();
+    mockGetFullList.mockReturnValueOnce(initialRead.promise).mockResolvedValue([webPresence]);
+
+    const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(result.current.count).toBe(1));
+    await act(async () => {
+      initialRead.reject(new TypeError('fetch failed'));
+      await initialRead.promise.catch(() => undefined);
+    });
+
+    expect(mockHandleApiError).not.toHaveBeenCalled();
+    expect(result.current.count).toBe(1);
   });
 
   it('filters stale client records out of the visible count', async () => {

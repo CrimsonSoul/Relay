@@ -16,6 +16,7 @@ const TEST_PASSPHRASE = ['relay', 'web', 'e2e', 'passphrase'].join('-');
 
 type RelayWebFixture = {
   origin: string;
+  pocketBaseOrigin: string;
 };
 
 async function freePort(): Promise<number> {
@@ -73,7 +74,10 @@ const test = base.extend<{ relayWeb: RelayWebFixture }>({
       });
       const desktop = await app.firstWindow();
       await expect(desktop.getByTestId('sidebar-compose')).toBeVisible();
-      await use({ origin: `http://127.0.0.1:${webPort}` });
+      await use({
+        origin: `http://127.0.0.1:${webPort}`,
+        pocketBaseOrigin: `http://127.0.0.1:${pocketBasePort}`,
+      });
     } finally {
       await stopElectron(app);
       await rm(userDataDir, { recursive: true, force: true });
@@ -85,6 +89,15 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   page,
   relayWeb,
 }, testInfo) => {
+  const failedPocketBaseRequests: string[] = [];
+  page.on('requestfailed', (request) => {
+    if (request.url().startsWith(relayWeb.pocketBaseOrigin)) {
+      failedPocketBaseRequests.push(
+        `${request.method()} ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`,
+      );
+    }
+  });
+
   await expect
     .poll(async () => {
       try {
@@ -131,7 +144,25 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   const browserFamily = { chrome: 'Chrome', edge: 'Edge', safari: 'Safari' }[testInfo.project.name];
   expect(browserFamily).toBeTruthy();
   const clients = page.getByTestId('sidebar-clients');
-  await expect(clients).toHaveAttribute('data-client-count', '1');
+  try {
+    await expect(clients).toHaveAttribute('data-client-count', '1');
+  } catch (error) {
+    const nodeHealth = await fetch(`${relayWeb.pocketBaseOrigin}/api/health`)
+      .then((response) => `status:${response.status}`)
+      .catch((cause: unknown) => `error:${String(cause)}`);
+    const browserHealth = await page.evaluate(async (origin) => {
+      try {
+        const response = await fetch(`${origin}/api/health`, { cache: 'no-store' });
+        return `status:${response.status}`;
+      } catch (cause) {
+        return `error:${String(cause)}`;
+      }
+    }, relayWeb.pocketBaseOrigin);
+    throw new Error(
+      `Browser presence unavailable; Node health=${nodeHealth}; browser health=${browserHealth}; failures=${failedPocketBaseRequests.join(' | ') || 'none'}`,
+      { cause: error },
+    );
+  }
   await clients.hover();
   await expect(page.getByText(`Web · ${browserFamily} · 127.0.0.1`)).toBeVisible();
 
