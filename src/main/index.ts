@@ -51,7 +51,6 @@ import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
-import { initializeClientOfflineInfrastructure } from './app/clientOfflineInfrastructure';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
@@ -491,6 +490,8 @@ if (gotLock) {
       // LAN/VPN independent and preserves a cache-backed cold start.
       if (relayConfig?.mode === 'client') {
         try {
+          const { initializeClientOfflineInfrastructure } =
+            await import('./app/clientOfflineInfrastructure');
           await initializeClientOfflineInfrastructure(configDataDir, relayConfig, {
             deferAuthentication: true,
           });

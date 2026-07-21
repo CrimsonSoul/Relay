@@ -22,7 +22,6 @@ import {
   setPrivilegedRuntime,
   setPrivilegedHost,
 } from './appState';
-import { initializeClientOfflineInfrastructure } from './clientOfflineInfrastructure';
 import { startPocketBase } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
@@ -121,6 +120,8 @@ async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> 
 
   if (config?.mode === 'client') {
     try {
+      const { initializeClientOfflineInfrastructure } =
+        await import('./clientOfflineInfrastructure');
       await initializeClientOfflineInfrastructure(configDataDir, config);
       loggers.pocketbase.info('Client-mode offline infrastructure initialized after reconfigure');
     } catch (error) {

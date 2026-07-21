@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,52 @@ afterEach(async () => {
 });
 
 describe('KnowledgeCoverService', () => {
+  it('serves a cached cover without loading the native renderer', async () => {
+    const root = await dataRoot();
+    const cacheDir = join(root, 'knowledge-cover-cache');
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(join(cacheDir, `${CHECKSUMS[0]}.png`), PNG);
+    const loadCoverRenderer = vi.fn();
+    const service = new KnowledgeCoverService({
+      configDataDir: root,
+      getConfig: () => null,
+      getPbClient: () => null,
+      getPdfService: () => null,
+      loadCoverRenderer,
+    });
+
+    await expect(
+      service.getCover({ documentId: 'document1', checksum: CHECKSUMS[0]! }),
+    ).resolves.toMatchObject({ ok: true, source: 'cache' });
+    expect(loadCoverRenderer).not.toHaveBeenCalled();
+  });
+
+  it('loads the native renderer once across generated covers', async () => {
+    const renderKnowledgeCover = vi.fn(async () => PNG);
+    const loadCoverRenderer = vi.fn(async () => ({ renderKnowledgeCover }));
+    const service = new KnowledgeCoverService({
+      configDataDir: await dataRoot(),
+      getConfig: () => ({ mode: 'server', secret: 'secret' }) as never,
+      getPbClient: () => null,
+      getPdfService: () =>
+        ({
+          getPdf: vi.fn(async ({ checksum }) => ({
+            ok: true as const,
+            data: new Uint8Array([1, 2, 3]).buffer,
+            checksum,
+            source: 'server' as const,
+          })),
+        }) as never,
+      loadCoverRenderer,
+    });
+
+    await service.getCover({ documentId: 'document1', checksum: CHECKSUMS[0]! });
+    await service.getCover({ documentId: 'document2', checksum: CHECKSUMS[1]! });
+
+    expect(loadCoverRenderer).toHaveBeenCalledOnce();
+    expect(renderKnowledgeCover).toHaveBeenCalledTimes(2);
+  });
+
   it('cancels a cover download as soon as a response exceeds the hard byte limit', async () => {
     const checksum = CHECKSUMS[0]!;
     let pulls = 0;

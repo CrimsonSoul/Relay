@@ -13,7 +13,6 @@ import {
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
 import type { KnowledgePdfService } from './KnowledgePdfService';
-import { renderKnowledgeCover } from './knowledgeCover';
 
 const CACHE_BUDGET_BYTES = 100 * 1024 * 1024;
 const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -26,6 +25,9 @@ type KnowledgeCoverServiceOptions = {
   createClient?: (url: string) => PocketBase;
   fetch?: typeof globalThis.fetch;
   renderCover?: (data: Uint8Array) => Promise<Uint8Array>;
+  loadCoverRenderer?: () => Promise<{
+    renderKnowledgeCover: (data: Uint8Array) => Promise<Uint8Array>;
+  }>;
 };
 
 type CacheEntry = { path: string; checksum: string; size: number; modifiedAt: number };
@@ -97,7 +99,16 @@ export class KnowledgeCoverService {
     this.getPdfService = options.getPdfService;
     this.createClient = options.createClient ?? ((url) => new PocketBase(url));
     this.fetchCover = options.fetch ?? globalThis.fetch;
-    this.renderCover = options.renderCover ?? renderKnowledgeCover;
+    if (options.renderCover) {
+      this.renderCover = options.renderCover;
+    } else {
+      const loadCoverRenderer = options.loadCoverRenderer ?? (() => import('./knowledgeCover'));
+      let renderer: Promise<(data: Uint8Array) => Promise<Uint8Array>> | null = null;
+      this.renderCover = async (data) => {
+        renderer ??= loadCoverRenderer().then((module) => module.renderKnowledgeCover);
+        return (await renderer)(data);
+      };
+    }
   }
 
   getCover(request: KnowledgeCoverRequest): Promise<KnowledgeCoverResult> {
