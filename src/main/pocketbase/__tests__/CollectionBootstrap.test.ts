@@ -220,6 +220,19 @@ describe('ensureCollections', () => {
     expect(mockSettingsUpdate.mock.calls[0]?.[0]).not.toHaveProperty('logs');
   });
 
+  it('skips a redundant batch-settings read when required startup already verified it', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'documents-id', name: 'knowledge_documents' }]);
+    mockGetOne.mockResolvedValue({ fields: [], indexes: [] });
+    mockSuccessfulCollectionCreation();
+    mockUpdate.mockResolvedValue({});
+
+    await ensureKnowledgeSearchCollections(mockPb, { batchApiReady: true });
+
+    expect(mockSettingsGetAll).not.toHaveBeenCalled();
+    expect(mockSettingsUpdate).not.toHaveBeenCalled();
+    expect(mockGetFullList).toHaveBeenCalledOnce();
+  });
+
   it('repairs an undersized nonzero batch body cap even when batching is already enabled', async () => {
     mockSettingsGetAll.mockResolvedValue({
       batch: { enabled: true, maxRequests: 100, timeout: 3, maxBodySize: 64 * 1024 },

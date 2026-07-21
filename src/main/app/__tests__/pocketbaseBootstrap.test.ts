@@ -339,6 +339,9 @@ describe('pocketbaseBootstrap', () => {
       const startup = initializeOptionalKnowledgeSearch({} as never);
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
+      expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledWith(expect.anything(), {
+        batchApiReady: true,
+      });
 
       await vi.advanceTimersByTimeAsync(249);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();

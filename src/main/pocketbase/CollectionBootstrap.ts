@@ -1606,8 +1606,11 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
  * Ensure derived Wiki search storage without making it part of the required
  * PocketBase bootstrap. Callers intentionally treat failures as best-effort.
  */
-export async function ensureKnowledgeSearchCollections(pb: PocketBase): Promise<void> {
-  await ensureKnowledgeBatchApi(pb);
+export async function ensureKnowledgeSearchCollections(
+  pb: PocketBase,
+  options: { batchApiReady?: boolean } = {},
+): Promise<void> {
+  if (!options.batchApiReady) await ensureKnowledgeBatchApi(pb);
 
   let allCols: ExistingCollection[];
   try {

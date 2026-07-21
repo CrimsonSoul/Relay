@@ -90,10 +90,13 @@ async function retryOptionalSearchBootstrap(
 export async function initializeOptionalKnowledgeSearch(pb: PocketBase): Promise<boolean> {
   try {
     await withDeadline(
-      retryOptionalSearchBootstrap(() => ensureKnowledgeSearchCollections(pb), {
-        attempts: OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS,
-        delayMs: OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS,
-      }),
+      retryOptionalSearchBootstrap(
+        () => ensureKnowledgeSearchCollections(pb, { batchApiReady: true }),
+        {
+          attempts: OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS,
+          delayMs: OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS,
+        },
+      ),
       OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS,
     );
     return true;

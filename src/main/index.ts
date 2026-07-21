@@ -52,6 +52,7 @@ import {
   configureHardwareAcceleration,
 } from './app/hardwareAcceleration';
 import { logGpuDiagnostics } from './app/gpuDiagnostics';
+import { createDeferredServerServices } from './app/deferredServerServices';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
@@ -173,6 +174,7 @@ if (gotLock) {
     let rejectWorkspace: ((error: unknown) => void) | null = null;
     let workspaceSettled = false;
     let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
+    let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
     let cleanupComplete = false;
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
@@ -188,6 +190,7 @@ if (gotLock) {
       stopMemoryHeartbeat = null;
       stopKnowledgeUploadSession?.();
       stopKnowledgeUploadSession = null;
+      deferredServerServices?.cancel();
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
       void getRelayWebServerManager()?.stop();
@@ -363,6 +366,10 @@ if (gotLock) {
         getDynatraceProblemsManager()?.start();
         getCloudStatusManager()?.start();
       };
+      deferredServerServices = createDeferredServerServices({
+        startDataManagers: startServerDataManagers,
+        startPocketBaseServices: startDeferredPocketBaseServices,
+      });
 
       const stopPrivilegedAccess = async () => {
         const runtime = getPrivilegedRuntime();
@@ -423,14 +430,13 @@ if (gotLock) {
             },
           );
         }
-        startServerDataManagers();
         await getRelayWebServerManager()?.applyConfig(config);
         return true;
       };
 
       const startServerServicesAfterReady = async (config: ServerConfig): Promise<boolean> => {
         const started = await startServerServices(config);
-        if (started) startDeferredPocketBaseServices(config);
+        if (started) deferredServerServices?.schedule(config);
         return started;
       };
 
@@ -527,7 +533,7 @@ if (gotLock) {
       resolveWorkspace?.(relayConfig);
       await startupSequence;
       if (relayConfig?.mode === 'server') {
-        startDeferredPocketBaseServices(relayConfig);
+        deferredServerServices?.schedule(relayConfig);
       } else if (relayConfig?.mode === 'client') {
         void restartKnowledgeSearchRuntime();
       }
