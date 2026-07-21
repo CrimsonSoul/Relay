@@ -4,6 +4,7 @@ import { TactileButton } from '../../components/TactileButton';
 import { useToast } from '../../components/Toast';
 import { buildBridgeIcs, IcsAttendee } from '../../utils/ics';
 import { getOrganizerEmail, setOrganizerEmail } from '../../utils/organizerEmail';
+import { getRelayRuntime } from '../../runtime/relayRuntime';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const DURATION_OPTIONS = [30, 60, 90, 120];
@@ -37,6 +38,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
   attendees,
 }) => {
   const { showToast } = useToast();
+  const isWebRuntime = getRelayRuntime().kind === 'web';
   const fieldId = useId();
   const [startValue, setStartValue] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(60);
@@ -84,7 +86,12 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       });
       const success = await globalThis.api?.saveAndOpenIcs(ics);
       if (success) {
-        showToast('Invite created — review and send in your calendar', 'success');
+        showToast(
+          isWebRuntime
+            ? 'Invite downloaded — import it into your calendar'
+            : 'Invite created — review and send in your calendar',
+          'success',
+        );
         onClose();
       } else {
         showToast('Failed to create invite', 'error');

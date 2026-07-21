@@ -27,6 +27,7 @@ import {
 } from '../services/reminderAlarmSoundService';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
@@ -180,6 +181,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   loadedReminderAlert = null,
   onLoadedReminderAlertConsumed,
 }) => {
+  const isWebRuntime = getRelayRuntime().kind === 'web';
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<AlertFormHandle>(null);
@@ -528,11 +530,14 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
       });
       const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
       if (success) {
-        showToast('Outlook draft opened', 'success');
+        showToast(isWebRuntime ? 'Alert draft downloaded' : 'Outlook draft opened', 'success');
         void addHistory({ severity, subject, bodyHtml, sender, recipient });
         return true;
       }
-      showToast('Failed to open Outlook draft', 'error');
+      showToast(
+        isWebRuntime ? 'Failed to download alert draft' : 'Failed to open Outlook draft',
+        'error',
+      );
       return false;
     } catch {
       showToast('Failed to prepare Outlook draft', 'error');
@@ -552,6 +557,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     bodyHtml,
     sender,
     recipient,
+    isWebRuntime,
   ]);
 
   const reminderDraft = useMemo(
@@ -792,7 +798,11 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               variant="primary"
               onClick={() => void handleOpenOutlookDraft()}
               loading={isCapturing}
-              tooltip="Open an editable Outlook draft with a crisp inline alert"
+              tooltip={
+                isWebRuntime
+                  ? 'Download an editable EML draft with a crisp inline alert'
+                  : 'Open an editable Outlook draft with a crisp inline alert'
+              }
               icon={
                 <svg
                   width="14"
@@ -809,7 +819,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
                 </svg>
               }
             >
-              OPEN IN OUTLOOK
+              {isWebRuntime ? 'DOWNLOAD DRAFT' : 'OPEN IN OUTLOOK'}
             </TactileButton>
           </div>
         </CollapsibleHeader>

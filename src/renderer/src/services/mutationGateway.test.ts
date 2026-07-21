@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { WEB_RUNTIME } from '@shared/runtime';
 import { mutateCollection } from './mutationGateway';
+import { registerWebCollectionGate } from '../stores/webOnlineGate';
 
 const { create, update, remove, getConnectionState, applyOfflineMutationToStores } = vi.hoisted(
   () => ({
@@ -86,5 +88,34 @@ describe('mutationGateway', () => {
       mutateCollection('contacts', 'create', undefined, { name: 'Wait' }),
     ).rejects.toThrow('Relay is reconnecting');
     expect(mutateOffline).not.toHaveBeenCalled();
+  });
+
+  it('never queues an offline write in the web runtime', async () => {
+    getConnectionState.mockReturnValue('offline');
+    const mutateOffline = vi.fn();
+    (globalThis as Record<string, unknown>).api = { runtime: WEB_RUNTIME, mutateOffline };
+
+    await expect(
+      mutateCollection('contacts', 'create', undefined, { name: 'Blocked in web' }),
+    ).rejects.toThrow('Web access requires an online connection');
+    expect(mutateOffline).not.toHaveBeenCalled();
+  });
+
+  it('keeps web writes blocked until every active collection has reconciled', async () => {
+    const gate = registerWebCollectionGate();
+    gate.markDisconnected();
+    getConnectionState.mockReturnValue('online');
+    (globalThis as Record<string, unknown>).api = { runtime: WEB_RUNTIME };
+
+    await expect(
+      mutateCollection('contacts', 'create', undefined, { name: 'Too early' }),
+    ).rejects.toThrow('finishing its authoritative refresh');
+    expect(create).not.toHaveBeenCalled();
+
+    gate.markReady();
+    await expect(
+      mutateCollection('contacts', 'create', undefined, { name: 'Ready' }),
+    ).resolves.toEqual({ id: 'server-record' });
+    gate.unregister();
   });
 });

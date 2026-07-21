@@ -1,4 +1,3 @@
-import type { BridgeAPI } from '@shared/ipc';
 import {
   RELAY_WEB_API_PREFIX,
   WebSessionBootstrapResultSchema,
@@ -7,6 +6,7 @@ import {
   type WebSessionBootstrapResult,
   type WebSessionLoginInput,
 } from '@shared/webApi';
+import { createWebBridge } from './WebBridge';
 
 type WebSessionClientOptions = {
   fetcher?: typeof fetch;
@@ -14,29 +14,6 @@ type WebSessionClientOptions = {
 };
 
 type WebLogoutResult = { ok: true } | { ok: false; error: 'unavailable' };
-
-function browserPlatform(): BridgeAPI['platform'] {
-  return globalThis.navigator?.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32';
-}
-
-function installBootstrapBridge(session: WebSessionBootstrap): () => void {
-  const connection = {
-    ok: true as const,
-    connection: { pbUrl: session.pbUrl, auth: session.auth },
-  };
-  const api = {
-    runtime: session.runtime,
-    platform: browserPlatform(),
-    isConfigured: async () => true,
-    getConfig: async () => session.publicConfig,
-    getPbConnection: async () => connection,
-    refreshPbConnection: async () => connection,
-  } as BridgeAPI;
-  globalThis.api = api;
-  return () => {
-    if (globalThis.api === api) globalThis.api = undefined;
-  };
-}
 
 export class WebSessionClient {
   readonly #fetcher: typeof fetch;
@@ -46,7 +23,18 @@ export class WebSessionClient {
 
   constructor(options: WebSessionClientOptions = {}) {
     this.#fetcher = options.fetcher ?? fetch;
-    this.#install = options.install ?? installBootstrapBridge;
+    this.#install =
+      options.install ??
+      ((session) => {
+        const api = createWebBridge(session, {
+          fetcher: this.#fetcher,
+          refreshSession: () => this.refresh(),
+        });
+        globalThis.api = api;
+        return () => {
+          if (globalThis.api === api) globalThis.api = undefined;
+        };
+      });
   }
 
   bootstrap(): Promise<WebSessionBootstrapResult> {

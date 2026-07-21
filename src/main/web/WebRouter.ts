@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { z } from 'zod';
+import type { PrivilegedCapability } from '@shared/privilegedAccess';
 import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
 import { WebRateLimiter, type WebRateLimit } from './WebRateLimiter';
 import { WebRequestSecurity } from './WebRequestSecurity';
@@ -32,6 +33,7 @@ export type WebRoute<TBody = unknown> = {
   path: `${typeof RELAY_WEB_API_PREFIX}/${string}`;
   authenticated?: boolean;
   csrf?: boolean;
+  capability?: PrivilegedCapability;
   bodySchema?: z.ZodType<TBody>;
   maxBodyBytes?: number;
   rateLimit?: WebRateLimit & {
@@ -45,6 +47,7 @@ type WebRouterOptions = {
   security: WebRequestSecurity;
   sessions: WebSessionStore;
   limiter?: WebRateLimiter;
+  authorizeCapability?: (sessionId: string, capability: PrivilegedCapability) => boolean;
 };
 
 type ResolvedWebRequest = {
@@ -219,6 +222,13 @@ export class WebRouter {
       resolved.route.csrf &&
       (!session ||
         !safeEqual(typeof csrfHeader === 'string' ? csrfHeader : undefined, session.csrfToken))
+    ) {
+      this.send(response, { status: 403, body: { ok: false, error: 'forbidden' } });
+      return null;
+    }
+    if (
+      resolved.route.capability &&
+      (!sessionId || !this.options.authorizeCapability?.(sessionId, resolved.route.capability))
     ) {
       this.send(response, { status: 403, body: { ok: false, error: 'forbidden' } });
       return null;

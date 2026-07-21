@@ -1,6 +1,7 @@
 import { getPb, handleApiError, isOnline } from './pocketbase';
 import type { OnCallRecord } from './oncallService';
 import { mutateCollection } from './mutationGateway';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,6 +205,14 @@ async function fetchPrimarySettings(): Promise<
   | { ok: false; result: BoardSettingsInitializationResult }
 > {
   if (!isOnline()) {
+    if (getRelayRuntime().kind === 'web') {
+      return {
+        ok: false,
+        result: lockedResult('unavailable-offline', [
+          'Relay Web requires an online connection for board settings',
+        ]),
+      };
+    }
     const cached = ((await globalThis.api?.cacheRead?.(COLLECTION)) ??
       []) as unknown as BoardSettingsRecord[];
     const records = cached.filter((record) => record.key === PRIMARY_KEY);
@@ -418,6 +427,13 @@ export async function ensurePrimaryBoardSettings(
   teamOrder: string[],
 ): Promise<BoardSettingsRecord> {
   if (!isOnline()) {
+    if (getRelayRuntime().kind === 'web') {
+      return (await mutateCollection<BoardSettingsRecord>(COLLECTION, 'create', undefined, {
+        key: PRIMARY_KEY,
+        teamOrder,
+        locked: false,
+      })) as BoardSettingsRecord;
+    }
     const cached = ((await globalThis.api?.cacheRead?.(COLLECTION)) ??
       []) as unknown as BoardSettingsRecord[];
     const existing = cached.find((record) => record.key === PRIMARY_KEY);

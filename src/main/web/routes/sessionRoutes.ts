@@ -135,8 +135,14 @@ export function registerWebSessionRoutes(
           closed = true;
           clearInterval(heartbeat);
           sessions.unregisterCleanup(sessionId, close);
+          stopEvents();
           if (!response.writableEnded) response.end();
         };
+        const stopEvents = sessions.subscribeEvents(sessionId, (event, data) => {
+          if (!response.writableEnded) {
+            response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          }
+        });
         sessions.registerCleanup(sessionId, close);
         request.once('close', close);
         response.write(': connected\n\n');

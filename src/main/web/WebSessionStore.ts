@@ -29,6 +29,7 @@ type WebSessionEntry = WebSessionRecord & {
   refreshAuth: WebSessionCreateInput['refresh'];
   disposeAuth?: WebSessionCreateInput['dispose'];
   cleanups: Set<() => void | Promise<void>>;
+  eventSinks: Set<(event: string, data: unknown) => void>;
 };
 
 type WebSessionStoreOptions = {
@@ -84,6 +85,7 @@ export class WebSessionStore {
       refreshAuth: input.refresh,
       disposeAuth: input.dispose,
       cleanups: new Set(),
+      eventSinks: new Set(),
     };
     this.sessions.set(entry.id, entry);
     return copySession(entry);
@@ -103,6 +105,25 @@ export class WebSessionStore {
 
   unregisterCleanup(id: string, cleanup: () => void | Promise<void>): void {
     this.sessions.get(id)?.cleanups.delete(cleanup);
+  }
+
+  subscribeEvents(id: string, sink: (event: string, data: unknown) => void): () => void {
+    const entry = this.sessions.get(id);
+    if (!entry) return () => undefined;
+    entry.eventSinks.add(sink);
+    return () => entry.eventSinks.delete(sink);
+  }
+
+  publish(id: string, event: string, data: unknown): boolean {
+    if (!/^[a-z][a-z0-9-]{0,63}$/u.test(event)) return false;
+    const entry = this.getEntry(id, false);
+    if (!entry) return false;
+    for (const sink of entry.eventSinks) sink(event, data);
+    return true;
+  }
+
+  publishAll(event: string, data: unknown): void {
+    for (const id of this.sessions.keys()) this.publish(id, event, data);
   }
 
   async refresh(id: string): Promise<WebSessionRecord | null> {

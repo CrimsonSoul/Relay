@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { WEB_RUNTIME } from '@shared/runtime';
 
 function cssBlock(css: string, selector: string): string | undefined {
   const selectorStart = css.indexOf(selector);
@@ -792,6 +793,17 @@ describe('AlertsTab', () => {
       .replaceAll('\r\n', '');
     const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
     expect(html).toContain('width="640" height="600"');
+  });
+
+  it('downloads an EML with browser-specific action text in the web runtime', async () => {
+    (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByText('DOWNLOAD DRAFT'));
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Alert draft downloaded', 'success');
+    });
+    expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledOnce();
   });
 
   it('wraps the whole Outlook draft image in the one sanitized click-through URL', async () => {

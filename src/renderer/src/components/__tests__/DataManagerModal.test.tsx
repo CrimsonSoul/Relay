@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DataManagerModal } from '../DataManagerModal';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 const mockExportData = vi.fn().mockResolvedValue(true);
 const mockImportData = vi.fn().mockResolvedValue({ success: true, imported: 5, updated: 2 });
@@ -68,6 +69,7 @@ describe('DataManagerModal', () => {
     vi.clearAllMocks();
     mockExportData.mockResolvedValue(true);
     mockImportData.mockResolvedValue({ success: true, imported: 5, updated: 2 });
+    globalThis.api = { runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
   });
 
   it('does not render when isOpen is false', () => {
@@ -156,6 +158,15 @@ describe('DataManagerModal', () => {
     fireEvent.click(screen.getByText('Backups'));
     expect(screen.getByTestId('backups')).toBeInTheDocument();
     expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
+  });
+
+  it('keeps import and export but removes backup controls in the web runtime', () => {
+    globalThis.api = { runtime: WEB_RUNTIME } as typeof globalThis.api;
+    render(<DataManagerModal isOpen onClose={onClose} />);
+
+    expect(screen.getByRole('tab', { name: 'Import' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Export' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Backups' })).not.toBeInTheDocument();
   });
 
   it('shows error toast when export returns false', async () => {

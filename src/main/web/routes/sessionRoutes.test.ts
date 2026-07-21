@@ -194,6 +194,12 @@ describe('Relay Web session routes', () => {
     const first = await reader.read();
     expect(new TextDecoder().decode(first.value)).toContain(': connected');
 
+    sessions.publish(sessionId, 'dynatrace-dashboards-changed', [{ id: 'dashboard-1' }]);
+    const event = await reader.read();
+    expect(new TextDecoder().decode(event.value)).toContain(
+      'event: dynatrace-dashboards-changed\ndata: [{"id":"dashboard-1"}]',
+    );
+
     await sessions.destroy(sessionId);
     await expect(reader.read()).resolves.toMatchObject({ done: true });
   });

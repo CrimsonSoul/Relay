@@ -1,5 +1,6 @@
 import type { OfflineMutationInput, OfflineWritableCollection } from '@shared/ipc';
 import { applyOfflineMutationToStores } from '../stores/collectionStoreRegistry';
+import { isWebMutationGateReady } from '../stores/webOnlineGate';
 import { getConnectionState, getPb, handleApiError, requireOnline } from './pocketbase';
 
 async function mutateOnline<T>(
@@ -49,7 +50,16 @@ export async function mutateCollection<T>(
   }
 
   if (connectionState === 'online') {
+    if (globalThis.api?.runtime?.kind === 'web' && !isWebMutationGateReady()) {
+      throw new Error(
+        'Relay Web is finishing its authoritative refresh. Wait a moment before saving.',
+      );
+    }
     return mutateOnline<T>(collection, action, recordId, data);
+  }
+
+  if (globalThis.api?.runtime?.kind === 'web') {
+    throw new Error('Web access requires an online connection before saving changes.');
   }
 
   const input: OfflineMutationInput = {

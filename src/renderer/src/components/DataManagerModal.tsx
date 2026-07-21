@@ -9,6 +9,7 @@ import { DataManagerImport } from './data-manager/DataManagerImport';
 import { DataManagerExport } from './data-manager/DataManagerExport';
 import { DataManagerBackups } from './data-manager/DataManagerBackups';
 import { loggers } from '../utils/logger';
+import { hasRelayCapability } from '../runtime/relayRuntime';
 
 type Props = {
   isOpen: boolean;
@@ -27,6 +28,10 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json');
   const [importCategory, setImportCategory] = useState<DataCategory>('contacts');
   const [includeMetadata, setIncludeMetadata] = useState(false);
+  const supportsBackups = hasRelayCapability('pocketBaseRecovery');
+  const availableTabs = supportsBackups
+    ? DATA_MANAGER_TABS
+    : DATA_MANAGER_TABS.filter((tab) => tab !== 'backups');
 
   const { showToast } = useToast();
   const {
@@ -54,6 +59,10 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
       cancelled = true;
     };
   }, [isOpen, loadStats, showToast]);
+
+  useEffect(() => {
+    if (!supportsBackups && activeTab === 'backups') setActiveTab('overview');
+  }, [activeTab, supportsBackups]);
 
   const handleExport = async () => {
     try {
@@ -89,7 +98,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const tabs = (
     <div role="tablist" aria-label="Data Manager sections" className="data-manager-tablist">
-      {DATA_MANAGER_TABS.map((tab) => (
+      {availableTabs.map((tab) => (
         <TabButton
           key={tab}
           id={`data-manager-tab-${tab}`}
@@ -145,7 +154,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
             onExport={handleExport}
           />
         )}
-        {activeTab === 'backups' && <DataManagerBackups />}
+        {supportsBackups && activeTab === 'backups' && <DataManagerBackups />}
       </div>
     </Modal>
   );

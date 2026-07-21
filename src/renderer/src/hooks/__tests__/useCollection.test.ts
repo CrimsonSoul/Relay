@@ -2,6 +2,7 @@ import { render, renderHook, waitFor, act } from '@testing-library/react';
 import { Activity, createElement } from 'react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { RecordModel } from 'pocketbase';
+import { WEB_RUNTIME } from '@shared/runtime';
 
 // --- Mocks ---
 const mockGetFullList = vi.fn<() => Promise<RecordModel[]>>();
@@ -807,6 +808,40 @@ describe('useCollection', () => {
     }
 
     expect(syncPendingMock).toHaveBeenCalled();
+  });
+
+  it('retains stale web data and refetches without touching desktop cache or pending sync', async () => {
+    const initial = [makeRecord('stale-web')];
+    const recovered = [makeRecord('authoritative-web')];
+    const cacheRead = vi.fn();
+    const cacheWrite = vi.fn();
+    const cacheSnapshot = vi.fn();
+    const syncPending = vi.fn();
+    (globalThis as Record<string, unknown>).api = {
+      runtime: WEB_RUNTIME,
+      cacheRead,
+      cacheWrite,
+      cacheSnapshot,
+      syncPending,
+    };
+    mockGetFullList.mockResolvedValueOnce(initial).mockResolvedValueOnce(recovered);
+
+    const { result } = renderHook(() => useCollection('test'));
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('stale-web'));
+
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => connectionChangeCallback?.('offline'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data[0]?.id).toBe('stale-web');
+
+    vi.mocked(isOnline).mockReturnValue(true);
+    act(() => connectionChangeCallback?.('online'));
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('authoritative-web'));
+
+    expect(syncPending).not.toHaveBeenCalled();
+    expect(cacheRead).not.toHaveBeenCalled();
+    expect(cacheWrite).not.toHaveBeenCalled();
+    expect(cacheSnapshot).not.toHaveBeenCalled();
   });
 
   it('waits for pending sync before refetching and snapshotting on reconnect', async () => {

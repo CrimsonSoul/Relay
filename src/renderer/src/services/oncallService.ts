@@ -1,5 +1,6 @@
 import { getPb, handleApiError, escapeFilter, isOnline } from './pocketbase';
 import { createCrudService } from './crudServiceFactory';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 export interface OnCallRecord {
   id: string;
@@ -26,11 +27,15 @@ export const updateOnCall = (id: string, data: Partial<OnCallInput>): Promise<On
 export const deleteOnCall = (id: string): Promise<void> => crud.remove(id);
 
 async function getCachedOnCallRecords(): Promise<OnCallRecord[]> {
+  if (getRelayRuntime().kind === 'web') return [];
   return ((await globalThis.api?.cacheRead?.('oncall')) ?? []) as unknown as OnCallRecord[];
 }
 
 async function getTeamRecords(team: string): Promise<OnCallRecord[]> {
   if (!isOnline()) {
+    if (getRelayRuntime().kind === 'web') {
+      throw new Error('Web access requires an online connection before saving changes.');
+    }
     return (await getCachedOnCallRecords()).filter((record) => record.team === team);
   }
   return getPb()

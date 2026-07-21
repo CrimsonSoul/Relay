@@ -1,6 +1,6 @@
 import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { execFile } from 'node:child_process';
-import { writeFile, readFile, stat, mkdir, unlink } from 'node:fs/promises';
+import { writeFile, readFile, stat } from 'node:fs/promises';
 import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS, MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
@@ -12,6 +12,7 @@ import { validatePath } from '../utils/pathSafety';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { rateLimiters } from '../rateLimiter';
+import { BrandAssetService } from '../services/operationalServices';
 
 export const ALLOWED_AUX_ROUTES = new Set([
   'oncall',
@@ -167,6 +168,7 @@ export function setupWindowHandlers(
   createAuxWindow?: (route: string) => void,
   getDataRoot?: () => Promise<string>,
 ) {
+  const brandAssets = getDataRoot ? new BrandAssetService(getDataRoot) : null;
   // Shell / File Operations
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (event, path: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_PATH)) return;
@@ -477,7 +479,7 @@ export function setupWindowHandlers(
 
   // Logo handlers — factory for save/get/remove pattern
   function createLogoHandlers(
-    fileName: string,
+    kind: 'company' | 'footer',
     dialogTitle: string,
     channels: { save: string; get: string; remove: string },
   ): void {
@@ -485,7 +487,7 @@ export function setupWindowHandlers(
       if (!assertTrustedIpcSender(event, channels.save)) {
         return { success: false, error: 'Untrusted sender' };
       }
-      if (!getDataRoot) return { success: false, error: 'Data root not available' };
+      if (!brandAssets) return { success: false, error: 'Data root not available' };
       try {
         const picked = await pickAndResizeImage({
           title: dialogTitle,
@@ -495,14 +497,8 @@ export function setupWindowHandlers(
         });
         if (!picked.success) return picked;
 
-        const assetsDir = join(await getDataRoot(), 'assets');
-        await mkdir(assetsDir, { recursive: true });
-        const logoPath = join(assetsDir, fileName);
         const pngBuffer = picked.image.toPNG();
-        await writeFile(logoPath, pngBuffer);
-
-        const dataUrl = 'data:image/png;base64,' + pngBuffer.toString('base64');
-        return { success: true, data: dataUrl };
+        return await brandAssets.savePng(kind, pngBuffer);
       } catch (err) {
         loggers.ipc.warn(`${dialogTitle} save failed`, {
           error: getErrorMessage(err),
@@ -513,44 +509,25 @@ export function setupWindowHandlers(
 
     ipcMain.handle(channels.get, async (event) => {
       if (!assertTrustedIpcSender(event, channels.get)) return null;
-      if (!getDataRoot) return null;
-      try {
-        const logoPath = join(await getDataRoot(), 'assets', fileName);
-        const buf = await readFile(logoPath);
-        return 'data:image/png;base64,' + buf.toString('base64');
-      } catch {
-        return null;
-      }
+      return (await brandAssets?.get(kind)) ?? null;
     });
 
     ipcMain.handle(channels.remove, async (event) => {
       if (!assertTrustedIpcSender(event, channels.remove)) {
         return { success: false, error: 'Untrusted sender' };
       }
-      if (!getDataRoot) return { success: false, error: 'Data root not available' };
-      try {
-        const logoPath = join(await getDataRoot(), 'assets', fileName);
-        await unlink(logoPath);
-        return { success: true };
-      } catch (err) {
-        if (
-          err instanceof Error &&
-          'code' in err &&
-          (err as NodeJS.ErrnoException).code === 'ENOENT'
-        )
-          return { success: true };
-        return { success: false, error: err instanceof Error ? err.message : 'Remove failed' };
-      }
+      if (!brandAssets) return { success: false, error: 'Data root not available' };
+      return await brandAssets.remove(kind);
     });
   }
 
-  createLogoHandlers('company-logo.png', 'Select Company Logo', {
+  createLogoHandlers('company', 'Select Company Logo', {
     save: IPC_CHANNELS.SAVE_COMPANY_LOGO,
     get: IPC_CHANNELS.GET_COMPANY_LOGO,
     remove: IPC_CHANNELS.REMOVE_COMPANY_LOGO,
   });
 
-  createLogoHandlers('footer-logo.png', 'Select Footer Logo', {
+  createLogoHandlers('footer', 'Select Footer Logo', {
     save: IPC_CHANNELS.SAVE_FOOTER_LOGO,
     get: IPC_CHANNELS.GET_FOOTER_LOGO,
     remove: IPC_CHANNELS.REMOVE_FOOTER_LOGO,

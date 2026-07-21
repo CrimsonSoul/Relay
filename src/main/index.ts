@@ -23,6 +23,7 @@ import {
   getPendingChanges,
   setPendingChanges,
   setDynatraceWindowManager,
+  getDynatraceWindowManager,
   getPbClient,
   getDynatraceProblemsManager,
   setDynatraceProblemsManager,
@@ -72,6 +73,7 @@ import { RelayWebServerManager } from './web/RelayWebServerManager';
 import { resolveRendererStaticRoot } from './web/rendererStaticRoot';
 import { RelayWebGateway } from './web/RelayWebGateway';
 import { createWebSessionAuthenticator } from './web/WebSessionAuthenticator';
+import { createOperationalServices } from './services/operationalServices';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -230,7 +232,17 @@ if (gotLock) {
         new RelayWebServerManager({
           staticRoot: resolveRendererStaticRoot(),
           createGateway: (config) =>
-            new RelayWebGateway({ config, authenticate: authenticateWebSession }),
+            new RelayWebGateway({
+              config,
+              authenticate: authenticateWebSession,
+              operationalServices: createOperationalServices({
+                getCloudStatusManager,
+                getDynatraceWindowManager,
+                getDynatraceProblemsManager,
+                getAppConfig,
+                getDataRoot,
+              }),
+            }),
         }),
       );
       initializeKnowledgePdfService(configDataDir);

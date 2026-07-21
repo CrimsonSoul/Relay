@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { WEB_RUNTIME } from './runtime';
-import { WebSessionBootstrapResultSchema, WebSessionLoginInputSchema } from './webApi';
+import {
+  WebBrandAssetInputSchema,
+  WebCloudStatusDataSchema,
+  WebDynatraceDashboardInputSchema,
+  WebDynatraceProblemsSettingsInputSchema,
+  WebSessionBootstrapResultSchema,
+  WebSessionLoginInputSchema,
+} from './webApi';
 
 const PB_URL = ['http', '://', 'relay-server', ':8090'].join('');
 const LAN_ADDRESS = ['192', '168', '1', '25'].join('.');
@@ -50,5 +57,54 @@ describe('Relay Web session contracts', () => {
         error: 'database-password-was-wrong',
       }),
     ).toThrow();
+  });
+});
+
+describe('Relay Web API operational schemas', () => {
+  it('accepts bounded cloud status data and rejects incomplete provider maps', () => {
+    const providers = Object.fromEntries(
+      [
+        'aws',
+        'azure',
+        'm365',
+        'jira',
+        'github',
+        'cloudflare',
+        'google',
+        'anthropic',
+        'openai',
+        'salesforce',
+      ].map((provider) => [provider, []]),
+    );
+    expect(
+      WebCloudStatusDataSchema.safeParse({ providers, lastUpdated: 1, errors: [] }).success,
+    ).toBe(true);
+    expect(
+      WebCloudStatusDataSchema.safeParse({ providers: {}, lastUpdated: 1, errors: [] }).success,
+    ).toBe(false);
+  });
+
+  it('keeps dashboard, Problems, and asset inputs exact and bounded', () => {
+    expect(
+      WebDynatraceDashboardInputSchema.safeParse({
+        name: 'NOC',
+        url: 'https://abc.live.dynatrace.com/ui/dashboard',
+      }).success,
+    ).toBe(true);
+    expect(
+      WebDynatraceDashboardInputSchema.safeParse({
+        name: 'NOC',
+        url: 'javascript:alert(1)',
+      }).success,
+    ).toBe(false);
+    expect(
+      WebDynatraceProblemsSettingsInputSchema.safeParse({
+        environmentUrl: 'https://abc.apps.dynatrace.com',
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      WebBrandAssetInputSchema.safeParse({ dataUrl: 'data:text/html;base64,PGgxPg==' }).success,
+    ).toBe(false);
   });
 });

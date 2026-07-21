@@ -7,6 +7,7 @@ import {
   onConnectionStateChange,
   onPocketBaseClientChange,
 } from '../services/pocketbase';
+import { registerWebCollectionGate, type WebCollectionGate } from './webOnlineGate';
 
 export interface CollectionQueryOptions {
   sort?: string;
@@ -37,6 +38,10 @@ type SubscriberCountListener = (count: number) => void;
 
 function getApi(): ExtendedApi | undefined {
   return globalThis.api as (ExtendedApi & typeof globalThis.api) | undefined;
+}
+
+function isWebRuntime(): boolean {
+  return globalThis.api?.runtime?.kind === 'web';
 }
 
 let pendingReconnectSync: Promise<
@@ -178,6 +183,7 @@ export class CollectionStore<T extends RecordModel> {
   private clientUnsubscribe: (() => void) | null = null;
   private inFlightEvents: { action: string; record: RecordModel }[] | null = null;
   private lastSnapshotSignature: string | null = null;
+  private webGate: WebCollectionGate | null = null;
 
   constructor(
     private readonly collectionName: string,
@@ -224,29 +230,38 @@ export class CollectionStore<T extends RecordModel> {
     this.clientUnsubscribe?.();
     this.clientUnsubscribe = null;
     this.inFlightEvents = null;
+    this.webGate?.unregister();
+    this.webGate = null;
   }
 
   private start(): void {
     this.active = true;
     this.connected = isOnline();
+    if (isWebRuntime()) this.webGate = registerWebCollectionGate();
     this.connectionUnsubscribe = onConnectionStateChange((state) => {
       const online = state === 'online';
       const wasOffline = !this.connected;
       this.connected = online;
 
       if (online && wasOffline) {
-        void syncPendingOnce().then((result) => {
-          if (this.active && this.connected) {
-            this.restartConnectionCycle(result?.remainingChanges ?? []);
-          }
-        });
+        if (this.webGate) {
+          this.restartConnectionCycle();
+        } else {
+          void syncPendingOnce().then((result) => {
+            if (this.active && this.connected) {
+              this.restartConnectionCycle(result?.remainingChanges ?? []);
+            }
+          });
+        }
       } else if (!online && !wasOffline) {
+        this.webGate?.markDisconnected();
         this.restartConnectionCycle();
       }
     });
     this.clientUnsubscribe = onPocketBaseClientChange(() => {
       if (!this.active) return;
       this.connected = isOnline();
+      this.webGate?.markDisconnected();
       this.restartConnectionCycle();
     });
     this.restartConnectionCycle();
@@ -255,7 +270,11 @@ export class CollectionStore<T extends RecordModel> {
   private restartConnectionCycle(pendingOverlays: PendingMutationOverlay[] = []): void {
     this.stopRealtimeSubscription();
     if (!this.connected) {
-      void this.fetchData();
+      if (this.webGate) {
+        this.updateSnapshot({ loading: false });
+      } else {
+        void this.fetchData();
+      }
       return;
     }
     this.inFlightEvents = [];
@@ -288,7 +307,7 @@ export class CollectionStore<T extends RecordModel> {
     if (next !== this.snapshot.data) {
       this.updateSnapshot({ data: next });
     }
-    getApi()?.cacheWrite?.(this.collectionName, action, record);
+    if (!this.webGate) getApi()?.cacheWrite?.(this.collectionName, action, record);
     if (this.inFlightEvents && this.inFlightEvents.length < 1000) {
       this.inFlightEvents.push({ action, record });
     }
@@ -306,7 +325,7 @@ export class CollectionStore<T extends RecordModel> {
       if (!preserveBufferedEvents) this.inFlightEvents = [];
       if (isOnline()) {
         await this.fetchOnlineSnapshot(isCurrent, pendingOverlays);
-      } else {
+      } else if (!this.webGate) {
         await this.fetchOfflineSnapshot(isCurrent);
       }
     } catch (error) {
@@ -338,6 +357,7 @@ export class CollectionStore<T extends RecordModel> {
       }
     }
     this.updateSnapshot({ data: next, error: null, hasLoadedSnapshot: true });
+    this.webGate?.markReady();
     this.writeCacheSnapshot(next);
   }
 
@@ -354,6 +374,10 @@ export class CollectionStore<T extends RecordModel> {
   private async recoverFromFetchError(error: unknown, isCurrent: () => boolean): Promise<void> {
     if (isAutocancelledError(error) || !isCurrent()) return;
     handleApiError(error);
+    if (this.webGate) {
+      this.updateSnapshot({ error: errorMessage(error) });
+      return;
+    }
     const cached = sortCachedRecords(
       await readOfflineCache<T>(this.collectionName),
       this.comparator,
@@ -366,6 +390,7 @@ export class CollectionStore<T extends RecordModel> {
   }
 
   private writeCacheSnapshot(records: T[]): void {
+    if (this.webGate) return;
     const cacheSnapshot = getApi()?.cacheSnapshot;
     if (!cacheSnapshot) return;
     const signature = collectionRevisionSignature(records);

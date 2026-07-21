@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SettingsModal } from '../SettingsModal';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 // Mock Modal to a simple wrapper
 vi.mock('../Modal', () => ({
@@ -91,6 +92,7 @@ describe('SettingsModal', () => {
       session: { state: 'active', role: 'admin' },
     });
     const mockApi = {
+      runtime: ELECTRON_RUNTIME,
       getConfig: vi.fn().mockResolvedValue({
         mode: 'server',
         port: 8090,
@@ -295,6 +297,18 @@ describe('SettingsModal', () => {
     await waitFor(() => {
       expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
     });
+  });
+
+  it('keeps connection details but hides desktop-only secrets and controls on the web', async () => {
+    (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
+    render(<SettingsModal {...defaultProps} />);
+
+    expect(await screen.findByText('Mode: Embedded Server')).toBeInTheDocument();
+    expect(screen.queryByText(/Passphrase:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Reconfigure...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Relay Web')).not.toBeInTheDocument();
+    expect(screen.getByText(/managed by Relay Desktop/i)).toBeInTheDocument();
+    expect(globalThis.api.getConnectionSecret).not.toHaveBeenCalled();
   });
 
   it('shows "Not configured" when getConfig returns null', async () => {

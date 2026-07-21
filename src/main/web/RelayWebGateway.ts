@@ -5,6 +5,7 @@ import type { WebSessionCreateInput } from './WebSessionStore';
 import { WebSessionStore } from './WebSessionStore';
 import { WebRequestSecurity } from './WebRequestSecurity';
 import { WebRouter } from './WebRouter';
+import { registerOperationalRoutes, type OperationalServices } from './routes/operationalRoutes';
 import { registerWebSessionRoutes } from './routes/sessionRoutes';
 
 type RelayWebGatewayOptions = {
@@ -12,6 +13,8 @@ type RelayWebGatewayOptions = {
   authenticate: (passphrase: string) => Promise<WebSessionCreateInput | null>;
   hostname?: string;
   getInterfaceAddresses?: () => string[];
+  operationalServices?: OperationalServices;
+  authorizeCapability?: ConstructorParameters<typeof WebRouter>[0]['authorizeCapability'];
 };
 
 export type RelayWebGatewayPort = Pick<
@@ -39,6 +42,7 @@ export class RelayWebGateway {
   private readonly sessions = new WebSessionStore();
   private readonly security: WebRequestSecurity;
   private readonly router: WebRouter;
+  private readonly stopOperationalEvents: (() => void) | null;
 
   constructor(options: RelayWebGatewayOptions) {
     const hostname = options.hostname ?? getHostname();
@@ -56,11 +60,27 @@ export class RelayWebGateway {
         ...interfaceAddresses.map((address) => origin(address, options.config.port)),
       ],
     });
-    this.router = new WebRouter({ security: this.security, sessions: this.sessions });
+    this.router = new WebRouter({
+      security: this.security,
+      sessions: this.sessions,
+      authorizeCapability: options.authorizeCapability,
+    });
     registerWebSessionRoutes(this.router, {
       sessions: this.sessions,
       authenticate: options.authenticate,
     });
+    if (options.operationalServices) {
+      registerOperationalRoutes(this.router, {
+        services: options.operationalServices,
+        sessions: this.sessions,
+      });
+      this.stopOperationalEvents =
+        options.operationalServices.dashboards.onChange?.((dashboards) => {
+          this.sessions.publishAll('dynatrace-dashboards-changed', dashboards);
+        }) ?? null;
+    } else {
+      this.stopOperationalEvents = null;
+    }
   }
 
   get sessionCount(): number {
@@ -87,6 +107,7 @@ export class RelayWebGateway {
   }
 
   async dispose(): Promise<void> {
+    this.stopOperationalEvents?.();
     await this.sessions.dispose();
   }
 }

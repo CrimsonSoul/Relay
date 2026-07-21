@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ScheduleBridgeModal } from '../ScheduleBridgeModal';
 import { getOrganizerEmail } from '../../../utils/organizerEmail';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 // Mock Modal to avoid portal issues in jsdom
 vi.mock('../../../components/Modal', () => ({
@@ -55,6 +56,7 @@ describe('ScheduleBridgeModal', () => {
     localStorage.clear();
     vi.useFakeTimers({ now: new Date(2026, 5, 12, 10, 12, 0), toFake: ['Date'] });
     (globalThis as Window & { api?: unknown }).api = {
+      runtime: ELECTRON_RUNTIME,
       saveAndOpenIcs: mockSaveAndOpenIcs,
     } as unknown as typeof globalThis.api;
   });
@@ -137,6 +139,22 @@ describe('ScheduleBridgeModal', () => {
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith('Failed to create invite', 'error'),
+    );
+  });
+
+  it('describes the downloaded calendar file in the web runtime', async () => {
+    (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
+    mockSaveAndOpenIcs.mockResolvedValue(true);
+    render(<ScheduleBridgeModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText(/your email/i), { target: { value: 'me@test.com' } });
+    fireEvent.click(screen.getByText('Create Invite'));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Invite downloaded — import it into your calendar',
+        'success',
+      ),
     );
   });
 });

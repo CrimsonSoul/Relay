@@ -37,6 +37,7 @@ import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 import { AdministrationSettings } from './settings/AdministrationSettings';
 import { RelayWebAccessSettings } from './settings/RelayWebAccessSettings';
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
+import { hasRelayCapability } from '../runtime/relayRuntime';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -609,6 +610,26 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
   );
 }
 
+function ConnectionManagement({
+  enabled,
+  onReconfigure,
+}: Readonly<{ enabled: boolean; onReconfigure: () => Promise<void> }>) {
+  if (!enabled) {
+    return (
+      <div className="settings-data-path">
+        Connection settings are managed by Relay Desktop on the server.
+      </div>
+    );
+  }
+  return (
+    <div className="settings-button-row">
+      <TactileButton onClick={() => void onReconfigure()} className="btn-flex-center">
+        Reconfigure...
+      </TactileButton>
+    </div>
+  );
+}
+
 export const SettingsModal: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -618,6 +639,7 @@ export const SettingsModal: React.FC<Props> = ({
   presentation = 'modal',
 }) => {
   const { session: privilegedSession } = usePrivilegedAccess();
+  const canConfigureConnection = hasRelayCapability('connectionConfiguration');
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
@@ -763,19 +785,21 @@ export const SettingsModal: React.FC<Props> = ({
       .finally(() => {
         if (!cancelled) setPbConfigLoading(false);
       });
-    globalThis.api
-      ?.getConnectionSecret?.()
-      .then((secret) => {
-        if (!cancelled) setConnectionSecret(secret);
-      })
-      .catch(() => {
-        if (!cancelled) setConnectionSecret(null);
-      });
+    if (canConfigureConnection) {
+      globalThis.api
+        ?.getConnectionSecret?.()
+        .then((secret) => {
+          if (!cancelled) setConnectionSecret(secret);
+        })
+        .catch(() => {
+          if (!cancelled) setConnectionSecret(null);
+        });
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [canConfigureConnection, isOpen]);
 
   const handleReconfigure = async () => {
     // Delete config on disk so the app returns to the setup screen on restart.
@@ -1013,7 +1037,7 @@ export const SettingsModal: React.FC<Props> = ({
                 </button>
               </div>
             )}
-            {displayedConnectionSecret && (
+            {canConfigureConnection && displayedConnectionSecret && (
               <div className="settings-data-path settings-copy-row">
                 <span>Passphrase: {displayedConnectionSecret}</span>
                 <span className="settings-inline-actions">
@@ -1035,16 +1059,15 @@ export const SettingsModal: React.FC<Props> = ({
                 </span>
               </div>
             )}
-            <div className="settings-button-row">
-              <TactileButton onClick={handleReconfigure} className="btn-flex-center">
-                Reconfigure...
-              </TactileButton>
-            </div>
+            <ConnectionManagement
+              enabled={canConfigureConnection}
+              onReconfigure={handleReconfigure}
+            />
           </>
         )}
       </div>
 
-      {!pbConfigLoading && pbConfig?.mode === 'server' && (
+      {canConfigureConnection && !pbConfigLoading && pbConfig?.mode === 'server' && (
         <RelayWebAccessSettings pocketBasePort={pbConfig.port} />
       )}
     </>
