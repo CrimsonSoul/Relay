@@ -422,9 +422,22 @@ export type PendingMutationOverlay = {
   record: Record<string, unknown> & { id: string };
 };
 
+export type StartupPhase = 'launching' | 'preparing-data' | 'ready' | 'failed';
+
+export type StartupSnapshot = {
+  generation: number;
+  sequence: number;
+  phase: StartupPhase;
+  message: string;
+};
+
 export type BridgeAPI = {
   /** Identifies the active transport and its explicit UI capabilities. */
   readonly runtime: RelayRuntimeDescriptor;
+  /** Desktop-only startup coordination. Web implementations intentionally omit these methods. */
+  getStartupState?: () => Promise<StartupSnapshot>;
+  onStartupStateChanged?: (callback: (snapshot: StartupSnapshot) => void) => () => void;
+  markStartupRendererMounted?: () => void;
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path: string) => Promise<void>;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
@@ -624,6 +637,9 @@ export const RELAY_APP_USER_EMAIL = 'relay@relay.app';
 export const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024;
 
 export const IPC_CHANNELS = {
+  STARTUP_GET_STATE: 'startup:getState',
+  STARTUP_STATE_CHANGED: 'startup:stateChanged',
+  STARTUP_RENDERER_MOUNTED: 'startup:rendererMounted',
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',

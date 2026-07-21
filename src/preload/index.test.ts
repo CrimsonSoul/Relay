@@ -50,6 +50,31 @@ describe('preload Knowledge web link bridge', () => {
     expect(api.runtime).toEqual(ELECTRON_RUNTIME);
   });
 
+  it('exposes race-safe startup state coordination', async () => {
+    const snapshot = {
+      generation: 1,
+      sequence: 2,
+      phase: 'preparing-data' as const,
+      message: 'Preparing Relay data…',
+    };
+    electronMocks.invoke.mockResolvedValueOnce(snapshot);
+    const callback = vi.fn();
+
+    await expect(api.getStartupState?.()).resolves.toEqual(snapshot);
+    const unsubscribe = api.onStartupStateChanged?.(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'startup:stateChanged',
+    )?.[1] as (_event: unknown, value: unknown) => void;
+    handler({}, snapshot);
+    api.markStartupRendererMounted?.();
+    unsubscribe?.();
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('startup:getState');
+    expect(callback).toHaveBeenCalledWith(snapshot);
+    expect(electronMocks.send).toHaveBeenCalledWith('startup:rendererMounted');
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('startup:stateChanged', handler);
+  });
+
   it('forwards Relay Web settings controls over dedicated IPC channels', async () => {
     await api.getWebServerState();
     await api.saveWebServerConfig({ enabled: true, port: 8091 });

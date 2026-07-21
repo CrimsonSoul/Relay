@@ -1,10 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type BridgeAPI, type AuthRequest } from '@shared/ipc';
+import { IPC_CHANNELS, type BridgeAPI, type AuthRequest, type StartupSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 
 const api: BridgeAPI = {
   runtime: ELECTRON_RUNTIME,
+  getStartupState: () => ipcRenderer.invoke(IPC_CHANNELS.STARTUP_GET_STATE),
+  onStartupStateChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: StartupSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.STARTUP_STATE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.STARTUP_STATE_CHANGED, handler);
+  },
+  markStartupRendererMounted: () => ipcRenderer.send(IPC_CHANNELS.STARTUP_RENDERER_MOUNTED),
   /** Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
