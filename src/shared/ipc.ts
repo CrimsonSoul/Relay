@@ -86,11 +86,29 @@ export type PrivilegedIpcError =
   | 'offline'
   | 'pairing-required'
   | 'conflict'
+  | 'approval-required'
   | 'server-error';
+
+export type PrivilegedApprovalOperation = 'initial-owner-credential' | 'credential-recovery';
+export type PrivilegedApprovalRequestView = {
+  requestId: string;
+  operation: PrivilegedApprovalOperation;
+  sourceLabel: string;
+  createdAt: string;
+  expiresAt: string;
+};
+export type PrivilegedApprovalCodeView = {
+  request: PrivilegedApprovalRequestView;
+  code: string;
+};
 
 export type PrivilegedIpcResult<T> =
   | { ok: true; value: T }
-  | { ok: false; error: PrivilegedIpcError };
+  | {
+      ok: false;
+      error: PrivilegedIpcError;
+      approvalRequest?: PrivilegedApprovalRequestView;
+    };
 
 export type PrivilegedLoginInput = { username: string; password: string };
 export type PrivilegedReauthenticationInput = { password: string };
@@ -98,11 +116,15 @@ export type PrivilegedInitialOwnerSetupInput = {
   username: string;
   password: string;
   passwordConfirm: string;
+  approvalRequestId?: string;
+  approvalCode?: string;
 };
 export type PrivilegedCredentialSetupInput = {
   accountId: string;
   password: string;
   passwordConfirm: string;
+  approvalRequestId?: string;
+  approvalCode?: string;
 };
 export type PrivilegedCredentialSetupView = {
   accountId: string;
@@ -471,6 +493,14 @@ export type BridgeAPI = {
     input: PrivilegedCredentialSetupInput,
   ) => Promise<PrivilegedIpcResult<PrivilegedCredentialSetupView>>;
   onPrivilegedSessionChanged: (callback: (view: PrivilegedSessionView) => void) => () => void;
+  listWebApprovalRequests: () => Promise<PrivilegedApprovalRequestView[]>;
+  generateWebApprovalCode: (
+    requestId: string,
+  ) => Promise<PrivilegedIpcResult<PrivilegedApprovalCodeView>>;
+  cancelWebApprovalRequest: (requestId: string) => Promise<boolean>;
+  onWebApprovalRequestsChanged: (
+    callback: (requests: PrivilegedApprovalRequestView[]) => void,
+  ) => () => void;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
@@ -634,6 +664,10 @@ export const IPC_CHANNELS = {
   PRIVILEGED_SETUP_INITIAL_ADMIN: 'privileged:setupInitialAdministrator',
   PRIVILEGED_SETUP_CREDENTIAL: 'privileged:setupCredential',
   PRIVILEGED_SESSION_CHANGED: 'privileged:sessionChanged',
+  PRIVILEGED_APPROVAL_LIST: 'privileged:approval:list',
+  PRIVILEGED_APPROVAL_GENERATE: 'privileged:approval:generate',
+  PRIVILEGED_APPROVAL_CANCEL: 'privileged:approval:cancel',
+  PRIVILEGED_APPROVAL_CHANGED: 'privileged:approval:changed',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
   OPTIMIZE_ALERT_IMAGE: 'alert:optimizeImage',

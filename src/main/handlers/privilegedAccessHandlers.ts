@@ -7,6 +7,7 @@ import {
   type PrivilegedCredentialSetupView,
   type PrivilegedReauthenticationProof,
   type PublicPrivilegedCommandRequest,
+  type PrivilegedApprovalRequestView,
 } from '@shared/ipc';
 import {
   PrivilegedLoginSchema,
@@ -26,6 +27,7 @@ import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import type { PrivilegedAccountManager } from '../privileged/PrivilegedAccountManager';
 import { privilegedRateLimiters, type KeyedRateLimiter } from '../rateLimiter';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import type { WebApprovalCodeStore } from '../web/WebApprovalCodeStore';
 
 const SIGNED_OUT_VIEW: PrivilegedSessionView = {
   state: 'signed-out',
@@ -66,6 +68,10 @@ export type PrivilegedAccessHandlerOptions = {
     PrivilegedAccountManager,
     'setupInitialAdministrator' | 'setupCredential'
   > | null;
+  getApprovalCodes?: () => WebApprovalCodeStore | null;
+  subscribeApprovalRequestsChanged?: (
+    listener: (requests: PrivilegedApprovalRequestView[]) => void,
+  ) => () => void;
 };
 
 function publicView(value: unknown): PrivilegedSessionView {
@@ -108,6 +114,8 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     subscribeSessionChanged = () => () => undefined,
     loginLimiter = privilegedRateLimiters.login,
     getAccountManager = () => null,
+    getApprovalCodes = () => null,
+    subscribeApprovalRequestsChanged = () => () => undefined,
   } = options;
   const trusted = (event: IpcMainInvokeEvent, channel: string) =>
     assertTrustedIpcSender(event, channel);
@@ -215,7 +223,11 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (!manager) return failure('offline');
     try {
       return success<PrivilegedCredentialSetupView>(
-        await manager.setupInitialAdministrator(parsed.data),
+        await manager.setupInitialAdministrator({
+          username: parsed.data.username,
+          password: parsed.data.password,
+          passwordConfirm: parsed.data.passwordConfirm,
+        }),
       );
     } catch {
       return failure('server-error');
@@ -243,15 +255,48 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (!manager) return failure('offline');
     try {
       return success<PrivilegedCredentialSetupView>(
-        await manager.setupCredential({ actorAccountId: view.accountId, ...parsed.data }),
+        await manager.setupCredential({
+          actorAccountId: view.accountId,
+          accountId: parsed.data.accountId,
+          password: parsed.data.password,
+          passwordConfirm: parsed.data.passwordConfirm,
+        }),
       );
     } catch {
       return failure('server-error');
     }
   });
 
-  return subscribeSessionChanged((view) => {
+  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST, (event) => {
+    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST) || !isServer()) return [];
+    return getApprovalCodes()?.listPending() ?? [];
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_APPROVAL_GENERATE, (event, input: unknown) => {
+    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_APPROVAL_GENERATE) || !isServer()) {
+      return failure('unauthorized');
+    }
+    const parsed = PrivilegedPairingTargetAccountSchema.safeParse(input);
+    if (!parsed.success) return failure('invalid-input');
+    const issued = getApprovalCodes()?.generate(parsed.data);
+    return issued ? success(issued) : failure('unauthorized');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL, (event, input: unknown) => {
+    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL) || !isServer()) return false;
+    const parsed = PrivilegedPairingTargetAccountSchema.safeParse(input);
+    return parsed.success ? (getApprovalCodes()?.cancel(parsed.data) ?? false) : false;
+  });
+
+  const stopSession = subscribeSessionChanged((view) => {
     const normalized = normalizePrivilegedSessionView(view);
     if (normalized) broadcast(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, normalized);
   });
+  const stopApprovals = subscribeApprovalRequestsChanged((requests) => {
+    broadcast(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, requests);
+  });
+  return () => {
+    stopSession();
+    stopApprovals();
+  };
 }

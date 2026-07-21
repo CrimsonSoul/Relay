@@ -70,6 +70,7 @@ const ERROR_MESSAGES = {
   expired: 'The protected request expired. Try again.',
   replayed: 'Relay could not safely repeat that protected request.',
   conflict: 'The server state changed. Refresh and try again.',
+  'approval-required': 'Approve this request on the Relay server PC and try again.',
   'server-error': 'Privileged access could not be completed.',
 } as const;
 

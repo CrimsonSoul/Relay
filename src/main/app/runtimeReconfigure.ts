@@ -10,6 +10,7 @@ import {
   getCloudStatusManager,
   getPbClient,
   getPrivilegedRuntime,
+  getPrivilegedHost,
   getRelayWebServerManager,
   setBackupManager,
   setOfflineCache,
@@ -19,12 +20,16 @@ import {
   setRetentionManager,
   setSyncManager,
   setPrivilegedRuntime,
+  setPrivilegedHost,
 } from './appState';
 import { initializeClientOfflineInfrastructure } from './clientOfflineInfrastructure';
 import { startPocketBase } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
-import { createProductionPrivilegedRuntime } from '../privileged/privilegedRuntime';
+import {
+  createProductionPrivilegedHost,
+  createProductionPrivilegedRuntime,
+} from '../privileged/privilegedRuntime';
 import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 
 function tryClose(db: { close(): void } | null, label: string): void {
@@ -38,8 +43,10 @@ function tryClose(db: { close(): void } | null, label: string): void {
 
 async function disposePrivilegedRuntime(): Promise<void> {
   const runtime = getPrivilegedRuntime();
+  const host = getPrivilegedHost();
   setPrivilegedRuntime(null);
-  await runtime?.dispose();
+  setPrivilegedHost(null);
+  await (host?.dispose() ?? runtime?.dispose());
 }
 
 async function rebuildPrivilegedRuntime(
@@ -47,12 +54,18 @@ async function rebuildPrivilegedRuntime(
   configDataDir: string,
 ): Promise<void> {
   try {
-    const privilegedRuntime = await createProductionPrivilegedRuntime({
+    const productionOptions = {
       config,
       dataDir: configDataDir,
       serverClient: config.mode === 'server' ? getPbClient() : null,
       dynatraceProblemsManager: getDynatraceProblemsManager(),
-    });
+    };
+    const host =
+      config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
+    const privilegedRuntime = host
+      ? host.createElectronRuntime()
+      : await createProductionPrivilegedRuntime(productionOptions);
+    setPrivilegedHost(host);
     setPrivilegedRuntime(privilegedRuntime);
   } catch (error) {
     loggers.security.warn('Could not initialize privileged access after reconfigure', { error });
@@ -100,7 +113,6 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
     }
     dynatraceProblemsManager?.start();
     cloudStatusManager?.start();
-    await getRelayWebServerManager()?.applyConfig(config);
   } else if (pbProcess) {
     await pbProcess.stop();
     setPbProcess(null);
@@ -120,6 +132,9 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
 
   if (config && privilegedRuntimeReady) {
     await rebuildPrivilegedRuntime(config, configDataDir);
+  }
+  if (config?.mode === 'server') {
+    await getRelayWebServerManager()?.applyConfig(config);
   }
 
   // Enhanced search owns only disposable derived state and must never delay

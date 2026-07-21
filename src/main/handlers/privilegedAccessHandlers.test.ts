@@ -46,6 +46,11 @@ describe('setupPrivilegedAccessHandlers', () => {
       credentialVersion: 1,
     })),
   };
+  const approvalCodes = {
+    listPending: vi.fn(() => []),
+    generate: vi.fn(),
+    cancel: vi.fn(() => false),
+  };
 
   beforeEach(() => {
     handlers = new Map();
@@ -86,6 +91,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       isServer: () => isServer,
       assertTrustedIpcSender,
       getAccountManager: () => accountManager,
+      getApprovalCodes: () => approvalCodes as never,
       broadcast,
       subscribeSessionChanged: (listener) => {
         sessionListener = listener;
@@ -102,6 +108,13 @@ describe('setupPrivilegedAccessHandlers', () => {
     return handler({ sender: 'trusted' }, input);
   }
 
+  function untrustedResult(channel: string): unknown {
+    if (channel === IPC_CHANNELS.PRIVILEGED_GET_SESSION) return { state: 'signed-out' };
+    if (channel === IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST) return [];
+    if (channel === IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL) return false;
+    return { ok: false, error: 'unauthorized' };
+  }
+
   it('registers every approved privileged IPC channel', () => {
     setup();
 
@@ -115,6 +128,9 @@ describe('setupPrivilegedAccessHandlers', () => {
       IPC_CHANNELS.PRIVILEGED_SUBMIT_COMMAND,
       IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN,
       IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL,
+      IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST,
+      IPC_CHANNELS.PRIVILEGED_APPROVAL_GENERATE,
+      IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL,
     ]);
   });
 
@@ -123,14 +139,10 @@ describe('setupPrivilegedAccessHandlers', () => {
     setup();
 
     for (const channel of handlers.keys()) {
-      await expect(invoke(channel, {})).resolves.toMatchObject(
-        channel === IPC_CHANNELS.PRIVILEGED_GET_SESSION
-          ? { state: 'signed-out' }
-          : { ok: false, error: 'unauthorized' },
-      );
+      await expect(invoke(channel, {})).resolves.toMatchObject(untrustedResult(channel));
     }
     expect(runtime.login).not.toHaveBeenCalled();
-    expect(assertTrustedIpcSender).toHaveBeenCalledTimes(9);
+    expect(assertTrustedIpcSender).toHaveBeenCalledTimes(12);
   });
 
   it('strictly validates login and returns generic credential errors', async () => {
@@ -248,6 +260,33 @@ describe('setupPrivilegedAccessHandlers', () => {
       actorAccountId: 'account-admin',
       ...input,
     });
+  });
+
+  it('lists, generates, and cancels web approval codes only through trusted server IPC', async () => {
+    const request = {
+      requestId: 'approval-1',
+      operation: 'credential-recovery' as const,
+      sourceLabel: 'Chrome from 10.0.0.8',
+      createdAt: '2026-07-20T12:00:00.000Z',
+      expiresAt: '2026-07-20T12:10:00.000Z',
+    };
+    approvalCodes.listPending.mockReturnValueOnce([request]);
+    approvalCodes.generate.mockReturnValueOnce({ request, code: '123456' });
+    approvalCodes.cancel.mockReturnValueOnce(true);
+    setup();
+
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST)).resolves.toEqual([request]);
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_GENERATE, 'approval-1')).resolves.toEqual({
+      ok: true,
+      value: { request, code: '123456' },
+    });
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL, 'approval-1')).resolves.toBe(true);
+    expect(approvalCodes.generate).toHaveBeenCalledWith('approval-1');
+    expect(approvalCodes.cancel).toHaveBeenCalledWith('approval-1');
+
+    handlers.clear();
+    setup(false);
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST)).resolves.toEqual([]);
   });
 
   it('rejects internal command names at the generic command bridge', async () => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import { WEB_RUNTIME } from '@shared/runtime';
 
 const { mockUsePrivilegedAccess, mockUseRelayAdministration } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
@@ -205,5 +206,52 @@ describe('PrivilegedAccessPanel', () => {
       }),
     );
     expect(login).toHaveBeenCalledWith('ryan', 'a-new-owner-password');
+  });
+
+  it('completes browser first-owner setup only after desktop approval', async () => {
+    const approvalRequest = {
+      requestId: 'approval-1',
+      operation: 'initial-owner-credential' as const,
+      sourceLabel: 'Chrome from 10.0.0.8',
+      createdAt: '2026-07-20T12:00:00.000Z',
+      expiresAt: '2026-07-20T12:10:00.000Z',
+    };
+    const setupInitialAdministratorCredential = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: 'approval-required', approvalRequest })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { accountId: 'account-ryan', username: 'ryan' },
+      });
+    globalThis.api = { runtime: WEB_RUNTIME, setupInitialAdministratorCredential } as never;
+    render(<PrivilegedAccessPanel relayMode="server" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
+    const fillCredential = () => {
+      fireEvent.change(screen.getByLabelText('Owner username'), { target: { value: 'ryan' } });
+      fireEvent.change(screen.getByLabelText('New Owner password'), {
+        target: { value: 'a-new-owner-password' },
+      });
+      fireEvent.change(screen.getByLabelText('Confirm Owner password'), {
+        target: { value: 'a-new-owner-password' },
+      });
+    };
+    fillCredential();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+    expect(await screen.findByText(/Approve this request on the Relay server PC/i)).toBeVisible();
+    fillCredential();
+    fireEvent.change(screen.getByLabelText('Desktop approval code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+
+    await waitFor(() => expect(setupInitialAdministratorCredential).toHaveBeenCalledTimes(2));
+    expect(setupInitialAdministratorCredential).toHaveBeenLastCalledWith({
+      username: 'ryan',
+      password: 'a-new-owner-password',
+      passwordConfirm: 'a-new-owner-password',
+      approvalRequestId: 'approval-1',
+      approvalCode: '123456',
+    });
   });
 });

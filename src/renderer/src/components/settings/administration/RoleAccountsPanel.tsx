@@ -7,6 +7,7 @@ import {
   type EffectivePrivilegedRole,
 } from '@shared/roleAccounts';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
+import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
@@ -147,6 +148,9 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   const [credentialAccountId, setCredentialAccountId] = useState<string | null>(null);
   const [credentialPassword, setCredentialPassword] = useState('');
   const [credentialConfirm, setCredentialConfirm] = useState('');
+  const [credentialApprovalRequest, setCredentialApprovalRequest] =
+    useState<PrivilegedApprovalRequestView | null>(null);
+  const [credentialApprovalCode, setCredentialApprovalCode] = useState('');
   const [reauthAction, setReauthAction] = useState<ReauthenticationAction | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -301,6 +305,8 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   const closeCredential = () => {
     setCredentialPassword('');
     setCredentialConfirm('');
+    setCredentialApprovalRequest(null);
+    setCredentialApprovalCode('');
     setCredentialAccountId(null);
   };
 
@@ -317,15 +323,28 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       accountId: credentialAccountId,
       password,
       passwordConfirm: credentialConfirm,
+      ...(credentialApprovalRequest
+        ? {
+            approvalRequestId: credentialApprovalRequest.requestId,
+            approvalCode: credentialApprovalCode.trim(),
+          }
+        : {}),
     });
+    setCredentialApprovalCode('');
     setCredentialPassword('');
     setCredentialConfirm('');
     setSavingId(null);
     if (result?.ok) {
+      setCredentialApprovalRequest(null);
       setCredentialAccountId(null);
       setFeedback('Credential updated. Existing paired sessions for this account were revoked.');
+    } else if (result?.error === 'approval-required' && result.approvalRequest) {
+      setCredentialApprovalRequest(result.approvalRequest);
+      setFeedback(
+        'Approve this credential recovery on the Relay server PC, then re-enter the password and approval code.',
+      );
     } else {
-      setFeedback('Credential setup could not be completed on this Relay server PC.');
+      setFeedback('Credential setup could not be completed.');
     }
   };
 
@@ -532,7 +551,11 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       {relayMode === 'server' ? (
         <div className="administration-credential">
           <div className="administration-callout">
-            <strong>Credential setup and resets stay on this Relay server PC</strong>
+            <strong>
+              {globalThis.api?.runtime?.kind === 'web'
+                ? 'Credential recovery requires server desktop approval'
+                : 'Credential setup and resets stay on this Relay server PC'}
+            </strong>
             <span>Replacing a password revokes every paired session for that account.</span>
           </div>
           {!credentialAccountId ? (
@@ -575,6 +598,21 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
                   required
                 />
               </label>
+              {credentialApprovalRequest && (
+                <label className="administration-field">
+                  <span>Desktop approval code</span>
+                  <input
+                    className="tactile-input"
+                    value={credentialApprovalCode}
+                    onChange={(event) => setCredentialApprovalCode(event.target.value)}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    required
+                  />
+                </label>
+              )}
               <label className="administration-field">
                 <span>Confirm password</span>
                 <input
@@ -619,7 +657,11 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         action={reauthAction}
         busy={busy === 'reauthenticate'}
         error={dialogError ?? accessError}
-        currentAccountName={session.state === 'active' ? session.displayName : 'the current Owner'}
+        currentAccountName={
+          session.state === 'active'
+            ? (session.displayName ?? 'the current Owner')
+            : 'the current Owner'
+        }
         onConfirm={confirmReauthentication}
         onClose={closeReauthentication}
       />

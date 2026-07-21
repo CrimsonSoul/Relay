@@ -1,5 +1,4 @@
 import type { BridgeAPI, IpcResult, PbConnectionResult, PrivilegedIpcResult } from '@shared/ipc';
-import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { z } from 'zod';
 import type { WebSessionBootstrap, WebSessionBootstrapResult } from '@shared/webApi';
 import {
@@ -10,7 +9,13 @@ import {
   WebDynatraceDashboardStateSchema,
   WebDynatraceProblemsPublicSettingsSchema,
   WebDynatraceProblemsTestResultSchema,
+  WebPrivilegedCommandResultSchema,
+  WebPrivilegedCredentialSetupViewSchema,
+  WebPrivilegedPairingChallengeSchema,
+  WebPrivilegedReauthenticationProofSchema,
+  WebPrivilegedSessionSchema,
   WebSessionBootstrapResultSchema,
+  webPrivilegedIpcResultSchema,
   webIpcResultSchema,
 } from '@shared/webApi';
 import { createBrowserActions, type BrowserActions } from './browserActions';
@@ -29,17 +34,6 @@ type WebBridgeOptions = {
   subscribe?: WebBridgeSubscribe;
   actions?: BrowserActions;
   refreshSession?: () => Promise<WebSessionBootstrapResult>;
-};
-
-const SIGNED_OUT_SESSION: PrivilegedSessionView = {
-  state: 'signed-out',
-  accountId: null,
-  username: null,
-  displayName: null,
-  role: null,
-  capabilities: [],
-  deviceId: null,
-  expiresAt: null,
 };
 
 const EMPTY_UPLOAD_QUEUE = {
@@ -264,16 +258,68 @@ export function createWebBridge(
         { method: 'POST', body: { alertingProfiles } },
         webIpcResultSchema(WebCountResultSchema),
       ),
-    getPrivilegedSession: async () => SIGNED_OUT_SESSION,
-    loginPrivileged: async () => privilegedUnavailable(),
-    logoutPrivileged: async () => SIGNED_OUT_SESSION,
-    reauthenticatePrivileged: async () => privilegedUnavailable(),
-    createPrivilegedPairingChallenge: async () => privilegedUnavailable(),
+    getPrivilegedSession: () =>
+      validatedRequest(
+        request,
+        '/privileged/session',
+        { method: 'GET' },
+        WebPrivilegedSessionSchema,
+      ),
+    loginPrivileged: (input) =>
+      validatedRequest(
+        request,
+        '/privileged/login',
+        { method: 'POST', body: input },
+        webPrivilegedIpcResultSchema(WebPrivilegedSessionSchema),
+      ),
+    logoutPrivileged: () =>
+      validatedRequest(
+        request,
+        '/privileged/logout',
+        { method: 'POST' },
+        WebPrivilegedSessionSchema,
+      ),
+    reauthenticatePrivileged: (input) =>
+      validatedRequest(
+        request,
+        '/privileged/reauthenticate',
+        { method: 'POST', body: input },
+        webPrivilegedIpcResultSchema(WebPrivilegedReauthenticationProofSchema),
+      ),
+    createPrivilegedPairingChallenge: (targetAccountId) =>
+      validatedRequest(
+        request,
+        '/privileged/pairing-challenge',
+        { method: 'POST', body: { targetAccountId } },
+        webPrivilegedIpcResultSchema(WebPrivilegedPairingChallengeSchema),
+      ),
     completePrivilegedPairing: async () => privilegedUnavailable(),
-    submitPrivilegedCommand: async () => ({ ok: false, error: 'offline' }),
-    setupInitialAdministratorCredential: async () => privilegedUnavailable(),
-    setupPrivilegedCredential: async () => privilegedUnavailable(),
+    submitPrivilegedCommand: (input) =>
+      validatedRequest(
+        request,
+        '/privileged/commands',
+        { method: 'POST', body: input },
+        WebPrivilegedCommandResultSchema,
+      ),
+    setupInitialAdministratorCredential: (input) =>
+      validatedRequest(
+        request,
+        '/privileged/initial-owner',
+        { method: 'POST', body: input },
+        webPrivilegedIpcResultSchema(WebPrivilegedCredentialSetupViewSchema),
+      ),
+    setupPrivilegedCredential: (input) =>
+      validatedRequest(
+        request,
+        '/privileged/credential',
+        { method: 'POST', body: input },
+        webPrivilegedIpcResultSchema(WebPrivilegedCredentialSetupViewSchema),
+      ),
     onPrivilegedSessionChanged: (callback) => subscribe('privileged-session-changed', callback),
+    listWebApprovalRequests: async () => [],
+    generateWebApprovalCode: async () => ({ ok: false, error: 'unauthorized' }),
+    cancelWebApprovalRequest: async () => false,
+    onWebApprovalRequestsChanged: noopSubscription,
     windowMinimize: () => undefined,
     windowMaximize: () => undefined,
     windowClose: () => undefined,

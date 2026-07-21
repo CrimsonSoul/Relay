@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
+import type { PrivilegedApprovalRequestView, PrivilegedPairingChallengeTarget } from '@shared/ipc';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { useRelayAdministration } from '../../hooks/useRelayAdministration';
 import { TactileButton } from '../TactileButton';
+import { WebApprovalRequestsPanel } from './WebApprovalRequestsPanel';
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
 type Props = { relayMode: 'server' | 'client' | null };
@@ -43,6 +44,9 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   const [initialUsername, setInitialUsername] = useState('');
   const [initialPassword, setInitialPassword] = useState('');
   const [initialPasswordConfirm, setInitialPasswordConfirm] = useState('');
+  const [initialApprovalRequest, setInitialApprovalRequest] =
+    useState<PrivilegedApprovalRequestView | null>(null);
+  const [initialApprovalCode, setInitialApprovalCode] = useState('');
   const [setupFeedback, setSetupFeedback] = useState<string | null>(null);
   const [challengeId, setChallengeId] = useState('');
   const [pairingCode, setPairingCode] = useState('');
@@ -107,6 +111,8 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   const closeInitialSetup = () => {
     setInitialPassword('');
     setInitialPasswordConfirm('');
+    setInitialApprovalRequest(null);
+    setInitialApprovalCode('');
     setInitialSetupOpen(false);
   };
 
@@ -129,13 +135,32 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
         username: initialUsername.trim(),
         password: passwordToUse,
         passwordConfirm: initialPasswordConfirm,
+        ...(initialApprovalRequest
+          ? {
+              approvalRequestId: initialApprovalRequest.requestId,
+              approvalCode: initialApprovalCode.trim(),
+            }
+          : {}),
       });
-      setInitialPassword('');
-      setInitialPasswordConfirm('');
+      setInitialApprovalCode('');
       if (!result?.ok) {
+        if (result?.error === 'approval-required' && result.approvalRequest) {
+          setInitialApprovalRequest(result.approvalRequest);
+          setInitialPassword('');
+          setInitialPasswordConfirm('');
+          setSetupFeedback(
+            'Approve this request on the Relay server PC, then re-enter the password and approval code.',
+          );
+          return;
+        }
+        setInitialPassword('');
+        setInitialPasswordConfirm('');
         setSetupFeedback('Initial Owner setup was not accepted. It may already be complete.');
         return;
       }
+      setInitialPassword('');
+      setInitialPasswordConfirm('');
+      setInitialApprovalRequest(null);
       setInitialSetupOpen(false);
       setUsername(result.value.username);
       await login(result.value.username, passwordToUse);
@@ -354,7 +379,11 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
           <div className="privileged-access__bootstrap">
             <div className="privileged-access__state">
               <strong>First-time Owner setup</strong>
-              <span>Available only on this Relay server PC. Relay has no default password.</span>
+              <span>
+                {globalThis.api?.runtime?.kind === 'web'
+                  ? 'Requires a one-time approval code from the Relay server PC.'
+                  : 'Available only on this Relay server PC. Relay has no default password.'}
+              </span>
             </div>
             {!initialSetupOpen ? (
               <TactileButton type="button" onClick={openInitialSetup}>
@@ -373,6 +402,21 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                       required
                     />
                   </label>
+                  {initialApprovalRequest && (
+                    <label className="privileged-access__field">
+                      <span>Desktop approval code</span>
+                      <input
+                        className="input privileged-access__code"
+                        value={initialApprovalCode}
+                        onChange={(event) => setInitialApprovalCode(event.target.value)}
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        required
+                      />
+                    </label>
+                  )}
                   <label className="privileged-access__field">
                     <span>New Owner password</span>
                     <input
@@ -420,25 +464,28 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   })();
 
   return (
-    <section
-      className="settings-section privileged-access"
-      aria-labelledby="privileged-access-title"
-    >
-      <header className="privileged-access__header">
-        <div className="settings-section-heading">Access</div>
-        <h2 id="privileged-access-title" className="privileged-access__title">
-          Privileged access
-        </h2>
-        <p className="settings-description">
-          Sign in to administer Relay or publish Wiki documents with a protected role account.
-        </p>
-      </header>
-      {error && (
-        <div className="privileged-access__feedback" role="alert">
-          {error}
-        </div>
-      )}
-      {statusContent}
-    </section>
+    <>
+      <section
+        className="settings-section privileged-access"
+        aria-labelledby="privileged-access-title"
+      >
+        <header className="privileged-access__header">
+          <div className="settings-section-heading">Access</div>
+          <h2 id="privileged-access-title" className="privileged-access__title">
+            Privileged access
+          </h2>
+          <p className="settings-description">
+            Sign in to administer Relay or publish Wiki documents with a protected role account.
+          </p>
+        </header>
+        {error && (
+          <div className="privileged-access__feedback" role="alert">
+            {error}
+          </div>
+        )}
+        {statusContent}
+      </section>
+      <WebApprovalRequestsPanel relayMode={relayMode} />
+    </>
   );
 }

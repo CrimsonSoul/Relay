@@ -120,6 +120,19 @@ const privilegedUsernameSchema = z.string().transform((value, context) => {
   return normalizeRoleUsername(value);
 });
 
+const privilegedApprovalFields = {
+  approvalRequestId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/)
+    .optional(),
+  approvalCode: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
+};
+
 export const PrivilegedLoginSchema = z
   .object({
     username: privilegedUsernameSchema,
@@ -136,6 +149,7 @@ export const PrivilegedInitialOwnerSetupSchema = z
     username: privilegedUsernameSchema,
     password: privilegedPasswordSchema,
     passwordConfirm: privilegedPasswordSchema,
+    ...privilegedApprovalFields,
   })
   .strict()
   .refine((input) => input.password === input.passwordConfirm, {
@@ -153,6 +167,7 @@ export const PrivilegedCredentialSetupSchema = z
       .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
     password: privilegedPasswordSchema,
     passwordConfirm: privilegedPasswordSchema,
+    ...privilegedApprovalFields,
   })
   .strict()
   .refine((input) => input.password === input.passwordConfirm, {

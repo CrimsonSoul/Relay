@@ -33,6 +33,17 @@ const EMPTY_STATUS = {
   errors: [],
 };
 
+const SIGNED_OUT = {
+  state: 'signed-out' as const,
+  accountId: null,
+  username: null,
+  displayName: null,
+  role: null,
+  capabilities: [],
+  deviceId: null,
+  expiresAt: null,
+};
+
 describe('WebBridge', () => {
   beforeEach(() => {
     document.body.replaceChildren();
@@ -40,7 +51,9 @@ describe('WebBridge', () => {
 
   it('provides an exhaustive safe bridge with the current in-memory connection', async () => {
     const bridge: BridgeAPI = createWebBridge(SESSION, {
-      request: vi.fn(async () => EMPTY_STATUS),
+      request: vi.fn(async (path: string) =>
+        path === '/privileged/session' ? SIGNED_OUT : EMPTY_STATUS,
+      ),
       subscribe: vi.fn(() => () => undefined),
     });
 
@@ -72,6 +85,33 @@ describe('WebBridge', () => {
     expect(subscribe).toHaveBeenCalledWith('dynatrace-dashboards-changed', onChange);
     cleanup();
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('maps protected actions onto exact privileged routes', async () => {
+    const request = vi.fn(async (path: string) => {
+      if (path === '/privileged/session' || path === '/privileged/logout') return SIGNED_OUT;
+      if (path === '/privileged/commands') {
+        return { ok: true, requestId: 'request-1', value: { revision: 4 } };
+      }
+      return { ok: false, error: 'invalid-credentials' };
+    });
+    const bridge = createWebBridge(SESSION, { request });
+
+    await bridge.loginPrivileged({ username: 'ryan', password: 'Test-access-value-123!' });
+    await bridge.reauthenticatePrivileged({ password: 'Test-access-value-123!' });
+    await bridge.submitPrivilegedCommand({
+      command: 'administration.snapshot.read',
+      payload: {},
+      expectedRevision: null,
+    });
+    await bridge.logoutPrivileged();
+
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      '/privileged/login',
+      '/privileged/reauthenticate',
+      '/privileged/commands',
+      '/privileged/logout',
+    ]);
   });
 
   it('multiplexes subscriptions over one event stream and closes it when idle', () => {

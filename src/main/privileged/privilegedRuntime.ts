@@ -74,6 +74,7 @@ import { KnowledgeUploadCoordinator } from '../knowledge/KnowledgeUploadCoordina
 import { KnowledgeExtractorWorker } from '../knowledge/KnowledgeExtractorWorker';
 import { KnowledgeSearchIndexer } from '../knowledge/KnowledgeSearchIndexer';
 import { PocketBaseKnowledgeUploadRepository } from '../knowledge/PocketBaseKnowledgeUploadRepository';
+import { ProductionPrivilegedHost, type PrivilegedRuntimeSource } from './ProductionPrivilegedHost';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -122,6 +123,8 @@ export type PrivilegedRuntimeOptions = {
   now?: () => number;
   createId?: () => string;
   additionalDisposable?: { dispose(): void | Promise<void> };
+  localSource?: PrivilegedRuntimeSource;
+  ownsPairingService?: boolean;
 };
 
 type SessionListener = (view: PrivilegedSessionView) => void;
@@ -151,6 +154,8 @@ export class PrivilegedRuntime {
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly additionalDisposable?: { dispose(): void | Promise<void> };
+  private readonly localSource: PrivilegedRuntimeSource;
+  private readonly ownsPairingService: boolean;
   private readonly sessionManager: PrivilegedSessionManager;
   private readonly listeners = new Set<SessionListener>();
   private disposed = false;
@@ -171,6 +176,8 @@ export class PrivilegedRuntime {
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? randomUUID;
     this.additionalDisposable = options.additionalDisposable;
+    this.localSource = options.localSource ?? { kind: 'electron' };
+    this.ownsPairingService = options.ownsPairingService ?? true;
 
     if (this.mode === 'server' && (!this.commandProcessor || !this.pairingService)) {
       throw new TypeError('Server privileged runtime requires command and pairing services.');
@@ -352,7 +359,7 @@ export class PrivilegedRuntime {
       await authorityDisposal;
       await clientDisposal;
       await this.additionalDisposable?.dispose();
-      this.pairingService?.dispose();
+      if (this.ownsPairingService) this.pairingService?.dispose();
     })();
     return this.disposePromise;
   }
@@ -433,6 +440,14 @@ export class PrivilegedRuntime {
         isServerMode: true,
         trustedLocalSender: true,
         session: view,
+        source: this.localSource.kind,
+        ...(this.localSource.kind === 'web'
+          ? {
+              browserFamily: this.localSource.browserFamily,
+              addressLabel: this.localSource.addressLabel,
+              rateLimitKey: `web:${this.localSource.sessionId}:${view.accountId}`,
+            }
+          : {}),
       },
     );
   }
@@ -655,6 +670,161 @@ export async function resolveProductionPairingTarget(
   }
 }
 
+type ProductionServerSharedResources = {
+  commandProcessor: PrivilegedCommandProcessor;
+  pairingService: PrivilegedPairingService;
+  searchIndexer: KnowledgeSearchIndexer;
+  setAuthorityChangedHandler(handler: (accountIds: string[]) => void): void;
+  dispose(): Promise<void>;
+};
+
+async function createProductionServerSharedResources(
+  options: ProductionPrivilegedRuntimeOptions & { serverClient: PocketBase },
+): Promise<ProductionServerSharedResources> {
+  const repository = new PocketBasePrivilegedRepository(
+    options.serverClient as unknown as PrivilegedServerPocketBase,
+  );
+  const pairingService = new PrivilegedPairingService({ repository });
+  const commandProcessor = new PrivilegedCommandProcessor({
+    repository,
+    logger: loggers.security,
+  });
+  const administrationService = options.dynatraceProblemsManager
+    ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
+    : undefined;
+  let authorityChanged: (accountIds: string[]) => void = (_accountIds) => undefined;
+  registerProductionAdministrationCommands({
+    pb: options.serverClient,
+    registrar: commandProcessor,
+    administrationService,
+    consumeReauthenticationProof: (requestId, context) =>
+      commandProcessor.consumeReauthenticationProof(requestId, context),
+    onAuthorityChanged: (accountIds) => authorityChanged(accountIds),
+  });
+  const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
+  const searchIndexer = new KnowledgeSearchIndexer({ pb: options.serverClient });
+  const knowledgeUploadRepository = new PocketBaseKnowledgeUploadRepository({
+    pb: options.serverClient,
+  });
+  const knowledgeUploadCoordinator = new KnowledgeUploadCoordinator({
+    repository: knowledgeUploadRepository,
+    capacity: new KnowledgeUploadCapacity({
+      storagePath: join(options.dataDir, 'pb_data', 'storage'),
+      hasActiveBatch: (accountId) => knowledgeUploadRepository.hasActiveBatch(accountId),
+    }),
+    extractor: new KnowledgeExtractorWorker(),
+  });
+  await knowledgeUploadCoordinator.start();
+  const knowledgeCommands = registerKnowledgeManagementCommands({
+    registrar: commandProcessor,
+    pb: options.serverClient,
+    service: managedKnowledgeService,
+    coordinator: new KnowledgeMutationCoordinator(),
+    uploadCoordinator: knowledgeUploadCoordinator,
+    searchIndexer,
+    consumeReauthenticationProof: (requestId, context) =>
+      commandProcessor.consumeReauthenticationProof(requestId, context),
+  });
+  const serverQueue = new PrivilegedServerQueue({
+    pb: options.serverClient as unknown as PrivilegedServerPocketBase,
+    commandProcessor,
+    pairingService,
+  });
+  await serverQueue.start();
+  startKnowledgeSearchIndexerBestEffort(searchIndexer);
+  return {
+    commandProcessor,
+    pairingService,
+    searchIndexer,
+    setAuthorityChangedHandler: (handler) => {
+      authorityChanged = handler;
+    },
+    dispose: async () => {
+      try {
+        await serverQueue.dispose();
+      } finally {
+        try {
+          await knowledgeCommands.dispose();
+        } finally {
+          await searchIndexer.dispose();
+        }
+      }
+    },
+  };
+}
+
+function createServerRuntime(options: {
+  production: ProductionPrivilegedRuntimeOptions & { serverClient: PocketBase };
+  shared: ProductionServerSharedResources;
+  source: PrivilegedRuntimeSource;
+  deviceStore: PrivilegedDeviceKeyStore;
+  additionalDisposable?: { dispose(): void | Promise<void> };
+  ownsPairingService: boolean;
+}): PrivilegedRuntime {
+  const serverUrl = `http://127.0.0.1:${(options.production.config as { port: number }).port}`;
+  const authClient = new PrivilegedPocketBaseClient({ serverUrl, allowInsecureHttp: true });
+  return new PrivilegedRuntime({
+    ...(options.additionalDisposable ? { additionalDisposable: options.additionalDisposable } : {}),
+    authClient,
+    commandProcessor: options.shared.commandProcessor,
+    deviceStore: options.deviceStore,
+    hostname: options.production.hostname ?? getHostname(),
+    localSource: options.source,
+    mode: 'server',
+    ownsPairingService: options.ownsPairingService,
+    pairingService: options.shared.pairingService,
+    resolvePairingTarget: (targetAccountId) =>
+      resolveProductionPairingTarget(options.production.serverClient, targetAccountId),
+    resolveAccountIdentity: (account) => resolveProductionIdentity(authClient, account),
+  });
+}
+
+function createEphemeralServerDeviceStore(): PrivilegedDeviceKeyStore {
+  const unavailable = async (): Promise<never> => {
+    throw new TypeError('Ephemeral server sessions cannot create device keys.');
+  };
+  return {
+    create: unavailable,
+    load: async () => null,
+    findForAccount: async () => null,
+    bind: unavailable,
+    remove: async () => undefined,
+    removePending: async () => undefined,
+    sign: unavailable,
+  };
+}
+
+export async function createProductionPrivilegedHost(
+  options: ProductionPrivilegedRuntimeOptions,
+): Promise<ProductionPrivilegedHost> {
+  if (options.config.mode !== 'server' || !options.serverClient) {
+    throw new TypeError('Production privileged host requires server mode and PocketBase.');
+  }
+  const production = { ...options, serverClient: options.serverClient };
+  const shared = await createProductionServerSharedResources(production);
+  const electronDeviceStore = new PrivilegedDeviceStore({ dataDir: options.dataDir });
+  const host = new ProductionPrivilegedHost({
+    createRuntime: (source) =>
+      createServerRuntime({
+        production,
+        shared,
+        source,
+        deviceStore:
+          source.kind === 'electron' ? electronDeviceStore : createEphemeralServerDeviceStore(),
+        ownsPairingService: false,
+      }),
+    disposeShared: async () => {
+      try {
+        await shared.dispose();
+      } finally {
+        shared.pairingService.dispose();
+      }
+    },
+  });
+  shared.setAuthorityChangedHandler((accountIds) => host.handleAuthorityChanged(accountIds));
+  return host;
+}
+
 export async function createProductionPrivilegedRuntime(
   options: ProductionPrivilegedRuntimeOptions,
 ): Promise<PrivilegedRuntime> {
@@ -685,80 +855,18 @@ export async function createProductionPrivilegedRuntime(
     authClient.disconnect();
     throw new TypeError('Server PocketBase must be ready before privileged access starts.');
   }
-  const repository = new PocketBasePrivilegedRepository(
-    options.serverClient as unknown as PrivilegedServerPocketBase,
-  );
-  const pairingService = new PrivilegedPairingService({ repository });
-  const commandProcessor = new PrivilegedCommandProcessor({
-    repository,
-    logger: loggers.security,
-  });
-  const administrationService = options.dynatraceProblemsManager
-    ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
-    : undefined;
+  const production = { ...options, serverClient: options.serverClient };
+  const shared = await createProductionServerSharedResources(production);
   let runtime: PrivilegedRuntime | null = null;
-  registerProductionAdministrationCommands({
-    pb: options.serverClient,
-    registrar: commandProcessor,
-    administrationService,
-    consumeReauthenticationProof: (requestId, context) =>
-      commandProcessor.consumeReauthenticationProof(requestId, context),
-    onAuthorityChanged: (accountIds) => runtime?.handleAuthorityChanged(accountIds),
-  });
-  const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
-  const searchIndexer = new KnowledgeSearchIndexer({ pb: options.serverClient });
-  const knowledgeUploadRepository = new PocketBaseKnowledgeUploadRepository({
-    pb: options.serverClient,
-  });
-  const knowledgeUploadCoordinator = new KnowledgeUploadCoordinator({
-    repository: knowledgeUploadRepository,
-    capacity: new KnowledgeUploadCapacity({
-      storagePath: join(dataDir, 'pb_data', 'storage'),
-      hasActiveBatch: (accountId) => knowledgeUploadRepository.hasActiveBatch(accountId),
-    }),
-    extractor: new KnowledgeExtractorWorker(),
-  });
-  await knowledgeUploadCoordinator.start();
-  const knowledgeCommands = registerKnowledgeManagementCommands({
-    registrar: commandProcessor,
-    pb: options.serverClient,
-    service: managedKnowledgeService,
-    coordinator: new KnowledgeMutationCoordinator(),
-    uploadCoordinator: knowledgeUploadCoordinator,
-    searchIndexer,
-    consumeReauthenticationProof: (requestId, context) =>
-      commandProcessor.consumeReauthenticationProof(requestId, context),
-  });
-  const serverQueue = new PrivilegedServerQueue({
-    pb: options.serverClient as unknown as PrivilegedServerPocketBase,
-    commandProcessor,
-    pairingService,
-  });
-  await serverQueue.start();
-  runtime = new PrivilegedRuntime({
-    additionalDisposable: {
-      dispose: async () => {
-        try {
-          await serverQueue.dispose();
-        } finally {
-          try {
-            await knowledgeCommands.dispose();
-          } finally {
-            await searchIndexer.dispose();
-          }
-        }
-      },
-    },
-    authClient,
-    commandProcessor,
+  authClient.disconnect();
+  runtime = createServerRuntime({
+    production,
+    shared,
+    source: { kind: 'electron' },
     deviceStore,
-    hostname: options.hostname ?? getHostname(),
-    mode,
-    pairingService,
-    resolvePairingTarget: (targetAccountId) =>
-      resolveProductionPairingTarget(options.serverClient!, targetAccountId),
-    resolveAccountIdentity,
+    ownsPairingService: true,
+    additionalDisposable: shared,
   });
-  startKnowledgeSearchIndexerBestEffort(searchIndexer);
+  shared.setAuthorityChangedHandler((accountIds) => runtime?.handleAuthorityChanged(accountIds));
   return runtime;
 }

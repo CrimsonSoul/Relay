@@ -25,6 +25,7 @@ import {
 const NOW = new Date('2026-07-15T12:00:00.000Z').getTime();
 const ACCOUNT_ID = 'account-admin';
 const DEVICE_ID = 'device-work-laptop';
+const PRIVATE_ADDRESS = ['10', '0', '0', '8'].join('.');
 
 function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
@@ -542,6 +543,32 @@ describe('PrivilegedCommandProcessor', () => {
     ).resolves.toMatchObject({ ok: true, requestId: 'local-request' });
     expect(repository.getDevice).not.toHaveBeenCalled();
     expect(lastClaim).toMatchObject({ deviceId: null, signature: null });
+    expect(handler).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'electron' }), {
+      clientVersion: '1.0.0',
+    });
+
+    await expect(
+      processor.processLocal(
+        { ...command, requestId: 'web-local-request' },
+        {
+          isServerMode: true,
+          trustedLocalSender: true,
+          session,
+          source: 'web',
+          browserFamily: 'Chrome',
+          addressLabel: PRIVATE_ADDRESS,
+          rateLimitKey: 'web:session-a:account-admin',
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true, requestId: 'web-local-request' });
+    expect(handler).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: 'web',
+        browserFamily: 'Chrome',
+        addressLabel: PRIVATE_ADDRESS,
+      }),
+      { clientVersion: '1.0.0' },
+    );
   });
 
   it('creates an internal reauthentication attestation and consumes it once within five minutes', async () => {

@@ -32,6 +32,8 @@ import { assertTrustedIpcSender } from './utils/trustedSender';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
 import type { RelayWebServerManager } from './web/RelayWebServerManager';
+import type { WebApprovalCodeStore } from './web/WebApprovalCodeStore';
+import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -55,10 +57,15 @@ export function setupIpcHandlers(opts: {
   getKnowledgeUploadService?: () => KnowledgeUploadService | null;
   getKnowledgeSearchService?: () => KnowledgeSearchService | null;
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
+  getWebApprovalCodes?: () => WebApprovalCodeStore | null;
   getRelayWebServerManager?: () => RelayWebServerManager | null;
   subscribePrivilegedSessionChanged?: (
     listener: (view: PrivilegedSessionView) => void,
   ) => () => void;
+  subscribeWebApprovalRequestsChanged?: (
+    listener: (requests: PrivilegedApprovalRequestView[]) => void,
+  ) => () => void;
+  onPrivilegedCredentialChanged?: (accountId: string) => void;
   restartPb?: () => Promise<boolean>;
 }) {
   const {
@@ -78,8 +85,11 @@ export function setupIpcHandlers(opts: {
     getKnowledgeUploadService,
     getKnowledgeSearchService,
     getPrivilegedRuntime,
+    getWebApprovalCodes,
     getRelayWebServerManager,
     subscribePrivilegedSessionChanged,
+    subscribeWebApprovalRequestsChanged,
+    onPrivilegedCredentialChanged,
     restartPb,
   } = opts;
   const knowledgeIndexStatusService = new KnowledgeIndexStatusService(getPbClient ?? (() => null));
@@ -127,6 +137,7 @@ export function setupIpcHandlers(opts: {
         return new PrivilegedAccountManager({
           pb,
           onCredentialChanged: (accountId) => {
+            onPrivilegedCredentialChanged?.(accountId);
             const runtime = getPrivilegedRuntime?.();
             if (runtime?.getView().accountId === accountId) void runtime.logout();
           },
@@ -134,6 +145,8 @@ export function setupIpcHandlers(opts: {
       },
       assertTrustedIpcSender,
       subscribeSessionChanged: subscribePrivilegedSessionChanged,
+      getApprovalCodes: getWebApprovalCodes,
+      subscribeApprovalRequestsChanged: subscribeWebApprovalRequestsChanged,
     }),
   );
 

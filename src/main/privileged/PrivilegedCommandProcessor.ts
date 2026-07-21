@@ -91,6 +91,9 @@ export type PrivilegedAuthorizationContext = {
 export type PrivilegedCommandHandlerContext = PrivilegedAuthorizationContext & {
   capabilities: PrivilegedCapability[];
   requestId: string;
+  source: 'electron' | 'web';
+  browserFamily?: 'Chrome' | 'Edge' | 'Safari' | 'Other';
+  addressLabel?: string;
 };
 
 export type LocalPrivilegedCommand = {
@@ -105,6 +108,10 @@ export type LocalPrivilegedCommandContext = {
   isServerMode: boolean;
   trustedLocalSender: boolean;
   session: PrivilegedSessionView;
+  source?: 'electron' | 'web';
+  browserFamily?: 'Chrome' | 'Edge' | 'Safari' | 'Other';
+  addressLabel?: string;
+  rateLimitKey?: string;
 };
 
 export type PrivilegedCommandProcessorOptions = {
@@ -348,7 +355,7 @@ export class PrivilegedCommandProcessor {
         return errorResult('invalid-request', requestId);
       }
       const command = this.normalizeRemoteCommand(envelope);
-      const authorization = await this.authorize(command, envelope);
+      const authorization = await this.authorize(command, envelope, { source: 'electron' });
       if (!authorization.ok) return errorResult(authorization.error, requestId);
       return await this.claimAndExecute(authorization.authorized);
     } catch {
@@ -403,7 +410,12 @@ export class PrivilegedCommandProcessor {
       bodyHash: sha256(canonicalizePrivilegedValue(signingBody)),
     };
     try {
-      const authorization = await this.authorize(command, null);
+      const authorization = await this.authorize(command, null, {
+        source: context.source ?? 'electron',
+        ...(context.browserFamily ? { browserFamily: context.browserFamily } : {}),
+        ...(context.addressLabel ? { addressLabel: context.addressLabel } : {}),
+        ...(context.rateLimitKey ? { rateLimitKey: context.rateLimitKey } : {}),
+      });
       if (!authorization.ok) return errorResult(authorization.error, requestId);
       return await this.claimAndExecute(authorization.authorized);
     } catch {
@@ -433,6 +445,12 @@ export class PrivilegedCommandProcessor {
   private async authorize(
     command: NormalizedCommand,
     envelope: SignedPrivilegedCommandEnvelope | null,
+    commandSource: {
+      source: 'electron' | 'web';
+      browserFamily?: 'Chrome' | 'Edge' | 'Safari' | 'Other';
+      addressLabel?: string;
+      rateLimitKey?: string;
+    },
   ): Promise<AuthorizationResult> {
     const account = await this.repository.getAccount(command.accountId);
     if (!account?.active || account.id !== command.accountId) {
@@ -459,7 +477,7 @@ export class PrivilegedCommandProcessor {
     if (!requiredCapability || !capabilities.includes(requiredCapability)) {
       return { ok: false, error: 'unauthorized' };
     }
-    const limiterKey = command.deviceId ?? `local:${account.id}`;
+    const limiterKey = command.deviceId ?? commandSource.rateLimitKey ?? `local:${account.id}`;
     const limiter = command.command.startsWith('knowledge.upload.')
       ? this.knowledgeUploadCommandLimiter
       : this.commandLimiter;
@@ -470,7 +488,14 @@ export class PrivilegedCommandProcessor {
       ok: true,
       authorized: {
         command,
-        context: { ...authorization, capabilities, requestId: command.requestId },
+        context: {
+          ...authorization,
+          capabilities,
+          requestId: command.requestId,
+          source: commandSource.source,
+          ...(commandSource.browserFamily ? { browserFamily: commandSource.browserFamily } : {}),
+          ...(commandSource.addressLabel ? { addressLabel: commandSource.addressLabel } : {}),
+        },
       },
     };
   }

@@ -63,7 +63,14 @@ const mocks = vi.hoisted(() => ({
   nextPrivilegedRuntime: { dispose: vi.fn() },
   getPrivilegedRuntime: vi.fn(),
   setPrivilegedRuntime: vi.fn(),
+  getPrivilegedHost: vi.fn(),
+  setPrivilegedHost: vi.fn(),
   createProductionPrivilegedRuntime: vi.fn(),
+  createProductionPrivilegedHost: vi.fn(),
+  nextPrivilegedHost: {
+    createElectronRuntime: vi.fn(),
+    dispose: vi.fn(),
+  },
   serverPbClient: { authStore: { isValid: true } },
   restartKnowledgeSearchRuntime: vi.fn(),
   relayWebServerManager: {
@@ -92,6 +99,8 @@ vi.mock('../appState', () => ({
   getCloudStatusManager: mocks.getCloudStatusManager,
   getPrivilegedRuntime: mocks.getPrivilegedRuntime,
   setPrivilegedRuntime: mocks.setPrivilegedRuntime,
+  getPrivilegedHost: mocks.getPrivilegedHost,
+  setPrivilegedHost: mocks.setPrivilegedHost,
   getRelayWebServerManager: mocks.getRelayWebServerManager,
 }));
 
@@ -124,6 +133,7 @@ vi.mock('../../knowledge/knowledgeSearchRuntime', () => ({
 }));
 
 vi.mock('../../privileged/privilegedRuntime', () => ({
+  createProductionPrivilegedHost: mocks.createProductionPrivilegedHost,
   createProductionPrivilegedRuntime: mocks.createProductionPrivilegedRuntime,
 }));
 
@@ -144,9 +154,12 @@ describe('reconfigureRuntime', () => {
     mocks.getMainWindow.mockReturnValue(mocks.mainWindow);
     mocks.getDynatraceProblemsManager.mockReturnValue(mocks.dynatraceProblemsManager);
     mocks.getPrivilegedRuntime.mockReturnValue(mocks.privilegedRuntime);
+    mocks.getPrivilegedHost.mockReturnValue(null);
     mocks.getPbClient.mockReturnValue(mocks.serverPbClient);
     mocks.getRelayWebServerManager.mockReturnValue(mocks.relayWebServerManager);
     mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
+    mocks.nextPrivilegedHost.createElectronRuntime.mockReturnValue(mocks.nextPrivilegedRuntime);
+    mocks.createProductionPrivilegedHost.mockResolvedValue(mocks.nextPrivilegedHost);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
     mocks.startPocketBase.mockResolvedValue({ status: 'started', privilegedRuntimeReady: true });
     mocks.restartKnowledgeSearchRuntime.mockResolvedValue(undefined);
@@ -247,7 +260,7 @@ describe('reconfigureRuntime', () => {
     expect(mocks.startPocketBase).toHaveBeenCalledOnce();
     expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
     expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.createProductionPrivilegedRuntime.mock.invocationCallOrder[0] as number,
+      mocks.createProductionPrivilegedHost.mock.invocationCallOrder[0] as number,
     );
   });
 
@@ -290,6 +303,7 @@ describe('reconfigureRuntime', () => {
     expect(mocks.dynatraceProblemsManager.start).toHaveBeenCalledOnce();
     expect(mocks.cloudStatusManager.start).toHaveBeenCalledOnce();
     expect(mocks.createProductionPrivilegedRuntime).not.toHaveBeenCalled();
+    expect(mocks.createProductionPrivilegedHost).not.toHaveBeenCalled();
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
   });
 

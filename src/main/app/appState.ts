@@ -22,7 +22,9 @@ import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import type { KnowledgeSearchService } from '../knowledge/KnowledgeSearchService';
 import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
+import type { ProductionPrivilegedHost } from '../privileged/ProductionPrivilegedHost';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import type { RelayWebServerManager } from '../web/RelayWebServerManager';
 
 export interface AppState {
@@ -45,6 +47,7 @@ export interface AppState {
   knowledgeUploadService: KnowledgeUploadService | null;
   knowledgeSearchService: KnowledgeSearchService | null;
   privilegedRuntime: PrivilegedRuntime | null;
+  privilegedHost: ProductionPrivilegedHost | null;
   relayWebServerManager: RelayWebServerManager | null;
 }
 
@@ -67,11 +70,14 @@ const state: AppState = {
   knowledgeUploadService: null,
   knowledgeSearchService: null,
   privilegedRuntime: null,
+  privilegedHost: null,
   relayWebServerManager: null,
 };
 
 const privilegedSessionListeners = new Set<(view: PrivilegedSessionView) => void>();
 let stopPrivilegedRuntimeSubscription: (() => void) | null = null;
+const privilegedApprovalListeners = new Set<(requests: PrivilegedApprovalRequestView[]) => void>();
+let stopPrivilegedApprovalSubscription: (() => void) | null = null;
 
 const log = loggers.main;
 
@@ -129,6 +135,9 @@ export function getKnowledgeSearchService() {
 }
 export function getPrivilegedRuntime() {
   return state.privilegedRuntime;
+}
+export function getPrivilegedHost() {
+  return state.privilegedHost;
 }
 export function getRelayWebServerManager() {
   return state.relayWebServerManager;
@@ -214,6 +223,17 @@ export function setPrivilegedRuntime(runtime: PrivilegedRuntime | null) {
   }
   log.debug('appState.privilegedRuntime changed');
 }
+export function setPrivilegedHost(host: ProductionPrivilegedHost | null) {
+  stopPrivilegedApprovalSubscription?.();
+  stopPrivilegedApprovalSubscription = null;
+  state.privilegedHost = host;
+  if (host) {
+    stopPrivilegedApprovalSubscription = host.approvalCodes.subscribe((requests) => {
+      for (const listener of privilegedApprovalListeners) listener(requests);
+    });
+  }
+  log.debug('appState.privilegedHost changed');
+}
 export function setRelayWebServerManager(manager: RelayWebServerManager | null) {
   state.relayWebServerManager = manager;
   log.debug('appState.relayWebServerManager changed');
@@ -224,6 +244,13 @@ export function subscribePrivilegedSessionChanged(
 ): () => void {
   privilegedSessionListeners.add(listener);
   return () => privilegedSessionListeners.delete(listener);
+}
+
+export function subscribeWebApprovalRequestsChanged(
+  listener: (requests: PrivilegedApprovalRequestView[]) => void,
+): () => void {
+  privilegedApprovalListeners.add(listener);
+  return () => privilegedApprovalListeners.delete(listener);
 }
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
@@ -308,8 +335,12 @@ export function setupIpc(
     getKnowledgeUploadService: () => state.knowledgeUploadService,
     getKnowledgeSearchService: () => state.knowledgeSearchService,
     getPrivilegedRuntime: () => state.privilegedRuntime,
+    getWebApprovalCodes: () => state.privilegedHost?.approvalCodes ?? null,
     getRelayWebServerManager: () => state.relayWebServerManager,
     subscribePrivilegedSessionChanged,
+    subscribeWebApprovalRequestsChanged,
+    onPrivilegedCredentialChanged: (accountId) =>
+      state.privilegedHost?.handleAuthorityChanged([accountId]),
     restartPb,
   });
   setupAuthHandlers();

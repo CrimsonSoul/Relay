@@ -1,5 +1,17 @@
 import { z } from 'zod';
-import type { CloudStatusData, PbAuthSession, PublicRelayConfig } from './ipc';
+import type {
+  CloudStatusData,
+  PbAuthSession,
+  PrivilegedApprovalRequestView,
+  PrivilegedCredentialSetupView,
+  PrivilegedIpcResult,
+  PrivilegedPairingCompletionView,
+  PrivilegedReauthenticationProof,
+  PublicRelayConfig,
+} from './ipc';
+import type { PrivilegedCommandResult } from './privilegedCommands';
+import type { PrivilegedSessionView } from './privilegedAccess';
+import type { PrivilegedPairingChallengeView } from './privilegedAccess';
 import { getDynatraceStartUrlError, type DynatraceDashboardState } from './dynatrace';
 import {
   MAX_DYNATRACE_ALERTING_PROFILES,
@@ -110,6 +122,129 @@ export const WebDynatraceProblemsTestResultSchema = z
   .strict();
 
 export const WebCountResultSchema = z.object({ count: z.number().int().nonnegative() }).strict();
+
+const PrivilegedCapabilitySchema = z.enum([
+  'privileged.status.read',
+  'accounts.manage',
+  'ownership.transfer',
+  'publisher.assign',
+  'devices.manage',
+  'settings.manage',
+  'knowledge.manage',
+]);
+
+export const WebPrivilegedSessionSchema: z.ZodType<PrivilegedSessionView> = z
+  .object({
+    state: z.enum(['signed-out', 'pairing-required', 'active', 'offline']),
+    accountId: z.string().max(200).nullable(),
+    username: z.string().max(64).nullable(),
+    displayName: z.string().max(120).nullable(),
+    role: z.enum(['owner', 'admin', 'publisher']).nullable(),
+    capabilities: z.array(PrivilegedCapabilitySchema).max(7),
+    deviceId: z.string().max(200).nullable(),
+    expiresAt: z.iso.datetime().nullable(),
+  })
+  .strict();
+
+export const WebPrivilegedApprovalRequestSchema: z.ZodType<PrivilegedApprovalRequestView> = z
+  .object({
+    requestId: z.string().min(1).max(128),
+    operation: z.enum(['initial-owner-credential', 'credential-recovery']),
+    sourceLabel: z.string().min(1).max(160),
+    createdAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
+  })
+  .strict();
+
+const PrivilegedIpcErrorSchema = z.enum([
+  'invalid-input',
+  'invalid-credentials',
+  'unauthorized',
+  'locked',
+  'offline',
+  'pairing-required',
+  'conflict',
+  'approval-required',
+  'server-error',
+]);
+
+export function webPrivilegedIpcResultSchema<T extends z.ZodType>(value: T) {
+  return z.discriminatedUnion('ok', [
+    z.object({ ok: z.literal(true), value }).strict(),
+    z
+      .object({
+        ok: z.literal(false),
+        error: PrivilegedIpcErrorSchema,
+        approvalRequest: WebPrivilegedApprovalRequestSchema.optional(),
+      })
+      .strict(),
+  ]) as z.ZodType<PrivilegedIpcResult<z.infer<T>>>;
+}
+
+export const WebPrivilegedReauthenticationProofSchema: z.ZodType<PrivilegedReauthenticationProof> =
+  z.object({ proofId: z.string().min(1).max(128), expiresAt: z.iso.datetime() }).strict();
+
+export const WebPrivilegedPairingCompletionSchema: z.ZodType<PrivilegedPairingCompletionView> = z
+  .object({
+    deviceId: z.string().min(1).max(200),
+    fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    pairedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const WebPrivilegedPairingChallengeSchema: z.ZodType<PrivilegedPairingChallengeView> = z
+  .object({
+    challengeId: z.string().min(1).max(200),
+    accountId: z.string().min(1).max(200),
+    code: z.string().regex(/^[A-HJ-NP-Z2-9]{8}$/),
+    expiresAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const WebPrivilegedCredentialSetupViewSchema: z.ZodType<PrivilegedCredentialSetupView> = z
+  .object({
+    accountId: z.string().min(1).max(200),
+    username: z.string().min(1).max(64),
+    displayName: z.string().min(1).max(120),
+    storedRole: z.enum(['administrator', 'publisher']),
+    role: z.enum(['owner', 'admin', 'publisher']),
+    credentialState: z.literal('configured'),
+    credentialVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const WebPrivilegedCommandResultSchema: z.ZodType<PrivilegedCommandResult> =
+  z.discriminatedUnion('ok', [
+    z
+      .object({
+        ok: z.literal(true),
+        requestId: z.string().min(1).max(128),
+        value: z.unknown(),
+      })
+      .strict(),
+    z
+      .object({
+        ok: z.literal(false),
+        requestId: z.string().min(1).max(128).optional(),
+        error: z.enum([
+          'unauthorized',
+          'locked',
+          'offline',
+          'pairing-required',
+          'invalid-request',
+          'insufficient-storage',
+          'duplicate-file-name',
+          'expired',
+          'replayed',
+          'conflict',
+          'server-error',
+        ]),
+        message: z.string().max(2_000).optional(),
+        currentRevision: z.number().int().nonnegative().optional(),
+        refresh: z.literal(true).optional(),
+      })
+      .strict(),
+  ]);
 
 const CloudStatusProviderSchema = z.enum([
   'aws',

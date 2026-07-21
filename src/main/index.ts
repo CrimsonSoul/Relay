@@ -34,7 +34,9 @@ import {
   getKnowledgeUploadService,
   setKnowledgeUploadService,
   getPrivilegedRuntime,
+  getPrivilegedHost,
   setPrivilegedRuntime,
+  setPrivilegedHost,
   subscribePrivilegedSessionChanged,
   getRelayWebServerManager,
   setRelayWebServerManager,
@@ -64,7 +66,10 @@ import {
 } from './knowledge/knowledgeRuntime';
 import { KnowledgeUploadQueueStore } from './knowledge/KnowledgeUploadQueueStore';
 import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
-import { createProductionPrivilegedRuntime } from './privileged/privilegedRuntime';
+import {
+  createProductionPrivilegedHost,
+  createProductionPrivilegedRuntime,
+} from './privileged/privilegedRuntime';
 import {
   restartKnowledgeSearchRuntime,
   stopKnowledgeSearchRuntime,
@@ -74,6 +79,7 @@ import { resolveRendererStaticRoot } from './web/rendererStaticRoot';
 import { RelayWebGateway } from './web/RelayWebGateway';
 import { createWebSessionAuthenticator } from './web/WebSessionAuthenticator';
 import { createOperationalServices } from './services/operationalServices';
+import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -179,7 +185,8 @@ if (gotLock) {
       void getKnowledgeUploadService()?.dispose();
       setKnowledgeUploadService(null);
       void stopKnowledgeSearchRuntime();
-      void getPrivilegedRuntime()?.dispose();
+      void (getPrivilegedHost()?.dispose() ?? getPrivilegedRuntime()?.dispose());
+      setPrivilegedHost(null);
       setPrivilegedRuntime(null);
       setKnowledgePdfService(null);
       setKnowledgeCoverService(null);
@@ -235,6 +242,21 @@ if (gotLock) {
             new RelayWebGateway({
               config,
               authenticate: authenticateWebSession,
+              privilegedHost: getPrivilegedHost(),
+              getAccountManager: () => {
+                const pb = getPbClient();
+                if (
+                  !pb?.authStore.isValid ||
+                  pb.authStore.record?.collectionName !== '_superusers'
+                ) {
+                  return null;
+                }
+                return new PrivilegedAccountManager({
+                  pb,
+                  onCredentialChanged: (accountId) =>
+                    getPrivilegedHost()?.handleAuthorityChanged([accountId]),
+                });
+              },
               operationalServices: createOperationalServices({
                 getCloudStatusManager,
                 getDynatraceWindowManager,
@@ -276,7 +298,9 @@ if (gotLock) {
 
       const stopPrivilegedAccess = async () => {
         const runtime = getPrivilegedRuntime();
+        const host = getPrivilegedHost();
         setPrivilegedRuntime(null);
+        setPrivilegedHost(null);
         getKnowledgeUploadService()?.handleSessionChanged({
           state: 'signed-out',
           accountId: null,
@@ -287,18 +311,26 @@ if (gotLock) {
           deviceId: null,
           expiresAt: null,
         });
-        await runtime?.dispose();
+        await (host?.dispose() ?? runtime?.dispose());
       };
 
       const startPrivilegedAccess = async (config: NonNullable<ReturnType<AppConfig['load']>>) => {
         await stopPrivilegedAccess();
         try {
-          const runtime = await createProductionPrivilegedRuntime({
+          const productionOptions = {
             config,
             dataDir: configDataDir,
             serverClient: config.mode === 'server' ? getPbClient() : null,
             dynatraceProblemsManager: getDynatraceProblemsManager(),
-          });
+          };
+          const host =
+            config.mode === 'server'
+              ? await createProductionPrivilegedHost(productionOptions)
+              : null;
+          const runtime = host
+            ? host.createElectronRuntime()
+            : await createProductionPrivilegedRuntime(productionOptions);
+          setPrivilegedHost(host);
           setPrivilegedRuntime(runtime);
           getKnowledgeUploadService()?.handleSessionChanged(runtime.getView());
         } catch (error) {

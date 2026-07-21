@@ -6,6 +6,10 @@ import { WebSessionStore } from './WebSessionStore';
 import { WebRequestSecurity } from './WebRequestSecurity';
 import { WebRouter } from './WebRouter';
 import { registerOperationalRoutes, type OperationalServices } from './routes/operationalRoutes';
+import { registerPrivilegedRoutes } from './routes/privilegedRoutes';
+import { WebPrivilegedSession } from './WebPrivilegedSession';
+import type { ProductionPrivilegedHost } from '../privileged/ProductionPrivilegedHost';
+import type { PrivilegedAccountManager } from '../privileged/PrivilegedAccountManager';
 import { registerWebSessionRoutes } from './routes/sessionRoutes';
 
 type RelayWebGatewayOptions = {
@@ -15,6 +19,11 @@ type RelayWebGatewayOptions = {
   getInterfaceAddresses?: () => string[];
   operationalServices?: OperationalServices;
   authorizeCapability?: ConstructorParameters<typeof WebRouter>[0]['authorizeCapability'];
+  privilegedHost?: ProductionPrivilegedHost | null;
+  getAccountManager?: () => Pick<
+    PrivilegedAccountManager,
+    'setupInitialAdministrator' | 'setupCredential'
+  > | null;
 };
 
 export type RelayWebGatewayPort = Pick<
@@ -43,6 +52,7 @@ export class RelayWebGateway {
   private readonly security: WebRequestSecurity;
   private readonly router: WebRouter;
   private readonly stopOperationalEvents: (() => void) | null;
+  private readonly privilegedSessions = new Map<string, WebPrivilegedSession>();
 
   constructor(options: RelayWebGatewayOptions) {
     const hostname = options.hostname ?? getHostname();
@@ -63,7 +73,10 @@ export class RelayWebGateway {
     this.router = new WebRouter({
       security: this.security,
       sessions: this.sessions,
-      authorizeCapability: options.authorizeCapability,
+      authorizeCapability: (sessionId, capability) =>
+        this.privilegedSessions.get(sessionId)?.authorize(capability) ??
+        options.authorizeCapability?.(sessionId, capability) ??
+        false,
     });
     registerWebSessionRoutes(this.router, {
       sessions: this.sessions,
@@ -80,6 +93,31 @@ export class RelayWebGateway {
         }) ?? null;
     } else {
       this.stopOperationalEvents = null;
+    }
+    if (options.privilegedHost) {
+      const host = options.privilegedHost;
+      registerPrivilegedRoutes(this.router, {
+        approvalCodes: host.approvalCodes,
+        getAccountManager: options.getAccountManager ?? (() => null),
+        getSession: (sessionId, context) => {
+          let privileged = this.privilegedSessions.get(sessionId);
+          if (!privileged) {
+            privileged = new WebPrivilegedSession({
+              sessionId,
+              host,
+              sessions: this.sessions,
+              userAgent:
+                typeof context.request.headers['user-agent'] === 'string'
+                  ? context.request.headers['user-agent']
+                  : '',
+              remoteAddress: context.remoteAddress,
+              onDispose: () => this.privilegedSessions.delete(sessionId),
+            });
+            this.privilegedSessions.set(sessionId, privileged);
+          }
+          return { runtime: privileged.runtime, sourceLabel: privileged.sourceLabel };
+        },
+      });
     }
   }
 
@@ -109,5 +147,6 @@ export class RelayWebGateway {
   async dispose(): Promise<void> {
     this.stopOperationalEvents?.();
     await this.sessions.dispose();
+    this.privilegedSessions.clear();
   }
 }

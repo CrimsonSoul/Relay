@@ -2121,6 +2121,46 @@ body.modal-open {
   letter-spacing: 0.12em;
 }
 
+.web-approval-requests {
+  gap: var(--space-4);
+}
+
+.web-approval-requests__list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.web-approval-requests__list .administration-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+}
+
+.web-approval-requests__list .administration-callout > span,
+.web-approval-requests__list .administration-callout > strong {
+  grid-column: 1;
+}
+
+.web-approval-requests__list output,
+.web-approval-requests__list .administration-actions {
+  grid-column: 2;
+  grid-row: auto / span 2;
+  justify-self: end;
+}
+
+@media (max-width: 700px) {
+  .web-approval-requests__list .administration-callout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .web-approval-requests__list output,
+  .web-approval-requests__list .administration-actions {
+    grid-column: 1;
+    justify-self: start;
+  }
+}
+
 /* Administration uses Relay's editorial hierarchy: one rail, one work surface, no card pile. */
 .administration-settings {
   min-height: 100%;

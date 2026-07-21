@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSnapshot } from '@shared/privilegedAccess';
+import { WEB_RUNTIME } from '@shared/runtime';
 
 const { mockUsePrivilegedAccess } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
@@ -265,6 +266,48 @@ describe('RoleAccountsPanel', () => {
         passwordConfirm: 'a-new-admin-password',
       }),
     );
+  });
+
+  it('requires the matching desktop approval code for browser credential recovery', async () => {
+    const approvalRequest = {
+      requestId: 'approval-2',
+      operation: 'credential-recovery' as const,
+      sourceLabel: 'Safari from 10.0.0.9',
+      createdAt: '2026-07-20T12:00:00.000Z',
+      expiresAt: '2026-07-20T12:10:00.000Z',
+    };
+    const setupPrivilegedCredential = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: 'approval-required', approvalRequest })
+      .mockResolvedValueOnce({ ok: true, value: {} });
+    globalThis.api = { runtime: WEB_RUNTIME, setupPrivilegedCredential } as never;
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Set credential for Charles Gibbs' }));
+    const fillPasswords = () => {
+      fireEvent.change(screen.getByLabelText('New password'), {
+        target: { value: 'a-new-admin-password' },
+      });
+      fireEvent.change(screen.getByLabelText('Confirm password'), {
+        target: { value: 'a-new-admin-password' },
+      });
+    };
+    fillPasswords();
+    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+    expect(await screen.findByText(/Approve this credential recovery/i)).toBeVisible();
+    fillPasswords();
+    fireEvent.change(screen.getByLabelText('Desktop approval code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Set credential' }));
+
+    await waitFor(() => expect(setupPrivilegedCredential).toHaveBeenCalledTimes(2));
+    expect(setupPrivilegedCredential).toHaveBeenLastCalledWith({
+      accountId: 'account-charles',
+      password: 'a-new-admin-password',
+      passwordConfirm: 'a-new-admin-password',
+      approvalRequestId: 'approval-2',
+      approvalCode: '123456',
+    });
   });
 
   it('renders no protected account controls for Publisher sessions', () => {

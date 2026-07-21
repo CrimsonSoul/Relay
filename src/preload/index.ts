@@ -80,6 +80,17 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, handler);
   },
+  listWebApprovalRequests: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST),
+  generateWebApprovalCode: (requestId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_GENERATE, requestId),
+  cancelWebApprovalRequest: (requestId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL, requestId),
+  onWebApprovalRequestsChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, requests: Parameters<typeof callback>[0]) =>
+      callback(requests);
+    ipcRenderer.on(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, handler);
+  },
 
   // Drag Sync
   notifyDragStart: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STARTED),

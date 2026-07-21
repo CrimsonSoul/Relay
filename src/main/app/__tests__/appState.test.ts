@@ -67,6 +67,8 @@ import {
   setKnowledgeSearchService,
   getPrivilegedRuntime,
   setPrivilegedRuntime,
+  getPrivilegedHost,
+  setPrivilegedHost,
   subscribePrivilegedSessionChanged,
   getDefaultDataPath,
   getDataRoot,
@@ -98,6 +100,7 @@ beforeEach(() => {
   setKnowledgeUploadService(null);
   setKnowledgeSearchService(null);
   setPrivilegedRuntime(null);
+  setPrivilegedHost(null);
   resetDataRootCache();
 });
 
@@ -141,6 +144,17 @@ describe('appState getters/setters', () => {
     setPrivilegedRuntime(null);
     expect(stopRuntimeSubscription).toHaveBeenCalledOnce();
     unsubscribe();
+  });
+
+  it('owns the server privileged host independently from the Electron child', () => {
+    const host = {
+      dispose: vi.fn(),
+      approvalCodes: { subscribe: vi.fn(() => vi.fn()) },
+    } as never;
+    setPrivilegedHost(host);
+    expect(getPrivilegedHost()).toBe(host);
+    setPrivilegedHost(null);
+    expect(getPrivilegedHost()).toBeNull();
   });
 
   it('mainWindow getter/setter', () => {
