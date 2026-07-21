@@ -91,6 +91,13 @@ import { runStartupSequence } from './app/startupSequence';
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
 
+async function waitForStartupTestDelay(): Promise<void> {
+  if (process.env.NODE_ENV !== 'test') return;
+  const requestedDelay = Number(process.env.RELAY_E2E_STARTUP_DELAY_MS);
+  if (!Number.isFinite(requestedDelay) || requestedDelay <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, Math.min(requestedDelay, 5_000)));
+}
+
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
 // may resolve to different userData dirs and bypass the single-instance lock.
@@ -513,6 +520,7 @@ if (gotLock) {
         }
       }
 
+      await waitForStartupTestDelay();
       startupTimeline.mark('workspace-ready');
       workspaceSettled = true;
       resolveWorkspace?.(relayConfig);

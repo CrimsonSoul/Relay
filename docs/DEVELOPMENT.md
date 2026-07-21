@@ -36,6 +36,33 @@ These files define the current workflow and should win over stale assumptions:
 | `src/main/dynatrace/DynatraceWindowManager.ts`     | Relay-framed Dynatrace popout windows and navigation policy |
 | `src/main/dynatrace/DynatraceDashboardStore.ts`    | Local dashboard URL and popout bounds storage               |
 
+## Startup Performance
+
+Relay shows a static renderer shell as soon as the first window loads, while required workspace
+and PocketBase initialization continue in the main process. Optional search-index repair,
+retention scheduling, backup cleanup, and other maintenance start only after the workspace is
+ready.
+
+Run the repeatable desktop benchmark with:
+
+```sh
+npm run benchmark:startup
+```
+
+The command builds Relay and launches it only against a disposable app-data directory. It never
+opens the current user's Relay database. The JSON report contains:
+
+- `provisioning`: a first-ever launch, including PocketBase credential and schema creation
+- `postUpdate`: the first healthy launch against an existing data directory, used as the closest
+  repeatable proxy for first launch after a build or application update
+- `warmMedian`: the median user-visible window and workspace times from five additional launches
+- `timeline`: Relay's internal monotonic milestones, including window creation, shell readiness,
+  PocketBase health, credentials, schema, workspace readiness, and renderer mount
+
+Compare results on the same machine and power state. The proxy does not reproduce OS-level cache
+changes made by a particular installer, so use packaged-build measurements as the final release
+check when update behavior itself changes.
+
 ## Data Access Pattern
 
 ### Renderer Services

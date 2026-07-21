@@ -711,8 +711,11 @@ test.describe('Vital Critical Path', () => {
   let tempDataDir: string;
   let clientDataDir: string;
   let pbPort: number;
+  let startupShellWasVisible = false;
 
-  const launchServer = async (options: { knowledgeChunkDelayMs?: string } = {}) => {
+  const launchServer = async (
+    options: { knowledgeChunkDelayMs?: string; startupDelayMs?: string } = {},
+  ) => {
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');
     const launchEnv = {
       ...process.env,
@@ -721,6 +724,7 @@ test.describe('Vital Critical Path', () => {
       ...(options.knowledgeChunkDelayMs
         ? { RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS: options.knowledgeChunkDelayMs }
         : {}),
+      ...(options.startupDelayMs ? { RELAY_E2E_STARTUP_DELAY_MS: options.startupDelayMs } : {}),
     };
     delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
 
@@ -733,6 +737,7 @@ test.describe('Vital Critical Path', () => {
       BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
     });
     await window.waitForLoadState('domcontentloaded');
+    startupShellWasVisible = await window.locator('.startup-shell').isVisible();
     await expect(window.getByTestId('sidebar-compose')).toBeVisible();
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
   };
@@ -884,6 +889,9 @@ test.describe('Vital Critical Path', () => {
       knowledgeChunkDelayMs: testInfo.title.includes('Knowledge management upload workflow')
         ? '150'
         : undefined,
+      startupDelayMs: testInfo.title.includes('startup shell appears before workspace readiness')
+        ? '1000'
+        : undefined,
     });
     if (
       testInfo.title.includes('Knowledge PDF links') ||
@@ -945,6 +953,31 @@ test.describe('Vital Critical Path', () => {
     if (clientDataDir) {
       fs.rmSync(clientDataDir, { recursive: true, force: true });
     }
+  });
+
+  test('startup shell appears before workspace readiness and healthy relaunch skips credential repair', async () => {
+    expect(startupShellWasVisible).toBe(true);
+    const logPath = path.join(tempDataDir, 'logs', 'relay.log');
+    const countMatches = (pattern: RegExp) => {
+      try {
+        return fs.readFileSync(logPath, 'utf8').match(pattern)?.length ?? 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    await expect.poll(() => countMatches(/Superuser upserted via CLI/g)).toBeGreaterThan(0);
+    const credentialRepairCount = countMatches(/Superuser upserted via CLI/g);
+    const startupSummaryCount = countMatches(/Relay startup timing/g);
+
+    await electronApp?.close();
+    electronApp = null;
+    await launchServer();
+
+    await expect
+      .poll(() => countMatches(/Relay startup timing/g))
+      .toBeGreaterThan(startupSummaryCount);
+    expect(countMatches(/Superuser upserted via CLI/g)).toBe(credentialRepairCount);
   });
 
   test('Knowledge management responsive geometry preserves navigation and bottom gutters', async () => {

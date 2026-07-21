@@ -22,6 +22,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build:renderer": "vite build --config vite.renderer.config.ts",
+    "benchmark:startup": "npm run build && node scripts/benchmark-startup.mjs",
     "dev:test": "vite --config vite.renderer.config.ts --port 4173",
     "test": "npm run test:unit && npm run test:cache && npm run test:renderer",
     "test:electron": "node scripts/run-electron-tests.mjs",
