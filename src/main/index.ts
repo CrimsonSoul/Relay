@@ -403,7 +403,11 @@ if (gotLock) {
       };
 
       const startServerServices = async (config: ServerConfig): Promise<boolean> => {
-        const result = await startPocketBase(config, configDataDir);
+        const result = await startPocketBase(config, configDataDir, {
+          onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
+          onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
+          onSchemaReady: () => startupTimeline.mark('schema-ready'),
+        });
         if (result.status !== 'started') return false;
         if (result.privilegedRuntimeReady) {
           await startPrivilegedAccess(config);

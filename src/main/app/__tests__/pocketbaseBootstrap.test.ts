@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => {
       crashCallback = callback;
     }),
   };
+  const appUserAuth = vi.fn().mockResolvedValue({});
+  const superuserAuth = vi.fn().mockResolvedValue({});
+  const getFirstListItem = vi.fn().mockRejectedValue(new Error('missing'));
+  const deleteRecord = vi.fn().mockResolvedValue({});
+  const createRecord = vi.fn().mockResolvedValue({});
 
   return {
     app: {
@@ -28,6 +33,11 @@ const mocks = vi.hoisted(() => {
     setBackupManager: vi.fn(),
     setPbClient: vi.fn(),
     execFileSync: vi.fn(),
+    appUserAuth,
+    superuserAuth,
+    getFirstListItem,
+    deleteRecord,
+    createRecord,
     existsSync: vi.fn(() => false),
     ensureKnowledgeBatchApi: vi.fn().mockResolvedValue(undefined),
     ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
@@ -123,11 +133,11 @@ vi.mock('../../logger', () => ({
 vi.mock('pocketbase', () => ({
   default: vi.fn(function MockPocketBase() {
     return {
-      collection: vi.fn(() => ({
-        authWithPassword: vi.fn().mockResolvedValue({}),
-        getFirstListItem: vi.fn().mockRejectedValue(new Error('missing')),
-        delete: vi.fn().mockResolvedValue({}),
-        create: vi.fn().mockResolvedValue({}),
+      collection: vi.fn((name: string) => ({
+        authWithPassword: name === '_superusers' ? mocks.superuserAuth : mocks.appUserAuth,
+        getFirstListItem: mocks.getFirstListItem,
+        delete: mocks.deleteRecord,
+        create: mocks.createRecord,
       })),
     };
   }),
@@ -139,11 +149,119 @@ describe('pocketbaseBootstrap', () => {
     mocks.getPbProcess.mockReturnValue(null);
     mocks.pbProcess.isRunning.mockReturnValue(false);
     mocks.pbProcess.start.mockResolvedValue(undefined);
+    mocks.pbProcess.stop.mockResolvedValue(undefined);
+    mocks.appUserAuth.mockResolvedValue({});
+    mocks.superuserAuth.mockResolvedValue({});
+    mocks.getFirstListItem.mockRejectedValue(new Error('missing'));
+    mocks.execFileSync.mockReturnValue(undefined);
     mocks.backup.mockResolvedValue(undefined);
     mocks.backupIfDue.mockResolvedValue(null);
     mocks.ensureKnowledgeBatchApi.mockResolvedValue(undefined);
     mocks.ensureCollections.mockResolvedValue({ privilegedRuntimeReady: true });
     mocks.ensureKnowledgeSearchCollections.mockResolvedValue(undefined);
+  });
+
+  it('authenticates a healthy existing superuser without invoking CLI repair', async () => {
+    const onHealthy = vi.fn();
+    const onCredentialsReady = vi.fn();
+    const onSchemaReady = vi.fn();
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+        { onHealthy, onCredentialsReady, onSchemaReady },
+      ),
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+
+    expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
+    expect(mocks.superuserAuth).toHaveBeenCalledWith('admin@relay.app', 'super-secret-passphrase');
+    expect(mocks.execFileSync).not.toHaveBeenCalled();
+    expect(onHealthy).toHaveBeenCalledOnce();
+    expect(onCredentialsReady).toHaveBeenCalledOnce();
+    expect(onSchemaReady).toHaveBeenCalledOnce();
+  });
+
+  it('repairs and restarts once after a definitive superuser credential rejection', async () => {
+    mocks.superuserAuth
+      .mockRejectedValueOnce(Object.assign(new Error('invalid credentials'), { status: 401 }))
+      .mockResolvedValue({});
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+
+    expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
+    expect(mocks.pbProcess.start).toHaveBeenCalledTimes(2);
+    expect(mocks.execFileSync).toHaveBeenCalledWith(
+      'C:\\Relay\\resources\\pocketbase\\pocketbase.exe',
+      expect.arrayContaining(['superuser', 'upsert', 'admin@relay.app']),
+      expect.objectContaining({ timeout: 10_000 }),
+    );
+    expect(mocks.superuserAuth).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mutate credentials after an ambiguous superuser failure', async () => {
+    mocks.superuserAuth.mockRejectedValueOnce(
+      Object.assign(new Error('connection closed'), { status: 0 }),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({ status: 'failed' });
+
+    expect(mocks.execFileSync).not.toHaveBeenCalled();
+    expect(mocks.pbProcess.stop).not.toHaveBeenCalled();
+    expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
+  });
+
+  it('fails startup when credential repair cannot complete', async () => {
+    mocks.superuserAuth.mockRejectedValueOnce(
+      Object.assign(new Error('invalid credentials'), { status: 401 }),
+    );
+    mocks.execFileSync.mockImplementationOnce(() => {
+      throw new Error('database locked');
+    });
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({ status: 'failed' });
+
+    expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
+    expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
   });
 
   it('keeps server startup successful when optional Wiki search storage rejects', async () => {

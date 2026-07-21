@@ -318,6 +318,34 @@ describe('PocketBaseProcess', () => {
     vi.useRealTimers();
   });
 
+  it('uses fast bounded backoff while waiting for health', async () => {
+    vi.useFakeTimers();
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce({ ok: true });
+
+    const startup = pbProcess.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(19);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(40);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(160);
+
+    await expect(startup).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledTimes(5);
+  });
+
   it('start() rejects when the PocketBase child process cannot spawn', async () => {
     const child = makeMockChild();
     mockSpawn.mockReturnValue(child);

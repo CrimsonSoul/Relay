@@ -350,6 +350,7 @@ export class PocketBaseProcess {
   private async waitForHealthy(timeoutMs = 10000): Promise<void> {
     const start = Date.now();
     const healthUrl = `${this.getLocalUrl()}/api/health`;
+    let retryDelayMs = 20;
 
     while (Date.now() - start < timeoutMs) {
       try {
@@ -358,7 +359,10 @@ export class PocketBaseProcess {
       } catch {
         // Not ready yet
       }
-      await new Promise((r) => setTimeout(r, 200));
+      const remainingMs = timeoutMs - (Date.now() - start);
+      if (remainingMs <= 0) break;
+      await delay(Math.min(retryDelayMs, remainingMs));
+      retryDelayMs = Math.min(retryDelayMs * 2, 200);
     }
 
     throw new Error(`PocketBase failed to become healthy within ${timeoutMs}ms`);

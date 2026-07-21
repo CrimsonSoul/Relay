@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { loggers } from '../logger';
 import type { ServerConfig } from '../config/AppConfig';
@@ -80,13 +81,11 @@ async function retryOptionalSearchBootstrap(
 /**
  * Ensure superuser and app user exist with the correct passphrase.
  *
- * 1. Use PB CLI to upsert superuser BEFORE PB starts (always works, no auth needed)
- * 2. After PB starts, use superuser to create/recreate app user
+ * This repair path is intentionally invoked only after the running server
+ * definitively rejects the configured superuser credentials.
  */
-function ensureSuperuserSync(binaryPath: string, pbDataDir: string, secret: string): void {
+function repairSuperuserCredentials(binaryPath: string, pbDataDir: string, secret: string): void {
   try {
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
-
     // Use execFileSync with args array to bypass cmd.exe shell quoting on Windows.
     // execSync passes through cmd.exe which mangles paths with spaces and special chars.
     execFileSync(
@@ -99,11 +98,12 @@ function ensureSuperuserSync(binaryPath: string, pbDataDir: string, secret: stri
     );
     loggers.pocketbase.info('Superuser upserted via CLI');
   } catch (err) {
-    loggers.pocketbase.error('Failed to upsert superuser via CLI — auth will not work', {
+    loggers.pocketbase.error('Failed to repair superuser via CLI', {
       error: err,
       binaryPath,
       pbDataDir,
     });
+    throw new Error('PocketBase superuser credential repair failed.', { cause: err });
   }
 }
 
@@ -179,6 +179,12 @@ export type PocketBaseStartResult =
   | { status: 'started'; privilegedRuntimeReady: true }
   | { status: 'started'; privilegedRuntimeReady: false; reason: string };
 
+export type PocketBaseStartOptions = Readonly<{
+  onHealthy?: () => void;
+  onCredentialsReady?: () => void;
+  onSchemaReady?: () => void;
+}>;
+
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
 let pbStartPromise: Promise<PocketBaseStartResult> | null = null;
 
@@ -189,9 +195,10 @@ let pbStartPromise: Promise<PocketBaseStartResult> | null = null;
 export const startPocketBase = (
   serverConfig: ServerConfig,
   configDataDir: string,
+  options: PocketBaseStartOptions = {},
 ): Promise<PocketBaseStartResult> => {
   if (pbStartPromise) return pbStartPromise;
-  pbStartPromise = doStartPocketBase(serverConfig, configDataDir).finally(() => {
+  pbStartPromise = doStartPocketBase(serverConfig, configDataDir, options).finally(() => {
     pbStartPromise = null;
   });
   return pbStartPromise;
@@ -200,6 +207,7 @@ export const startPocketBase = (
 const doStartPocketBase = async (
   serverConfig: ServerConfig,
   configDataDir: string,
+  options: PocketBaseStartOptions,
 ): Promise<PocketBaseStartResult> => {
   // Stop any previous mDNS advertisement before (re)starting the server.
   stopAdvertising();
@@ -248,9 +256,6 @@ const doStartPocketBase = async (
       isPackaged: app.isPackaged,
     });
 
-    // Upsert superuser via CLI BEFORE starting PB (no auth/server needed)
-    ensureSuperuserSync(binaryPath, pbDataDir, serverConfig.secret);
-
     const pbProcess = new PocketBaseProcess({
       binaryPath,
       dataDir: pbDataDir,
@@ -268,19 +273,33 @@ const doStartPocketBase = async (
     });
 
     await pbProcess.start();
+    options.onHealthy?.();
     loggers.pocketbase.info('PocketBase started', { url: pbProcess.getUrl() });
 
+    const localUrl = pbProcess.getLocalUrl();
+    const PocketBase = (await import('pocketbase')).default;
+    let pb = new PocketBase(localUrl);
+    try {
+      await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
+    } catch (authError) {
+      if (!isCredentialRejection(authError)) throw authError;
+      loggers.pocketbase.warn('PocketBase superuser credentials rejected; repairing once');
+      await pbProcess.stop();
+      repairSuperuserCredentials(binaryPath, pbDataDir, serverConfig.secret);
+      await pbProcess.start();
+      pb = new PocketBase(localUrl);
+      await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
+    }
+
     // Ensure app user exists for remote client auth (superuser is localhost-only)
-    await ensureAppUser(pbProcess.getLocalUrl(), serverConfig.secret);
+    await ensureAppUser(localUrl, serverConfig.secret);
+    options.onCredentialsReady?.();
 
     // Ensure collections exist before returning success — the renderer
     // depends on them being available immediately after bootstrap resolves.
-    const localUrl = pbProcess.getLocalUrl();
-    const PocketBase = (await import('pocketbase')).default;
-    const pb = new PocketBase(localUrl);
-    await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
     await ensureKnowledgeBatchApi(pb);
     const collections = await ensureCollections(pb);
+    options.onSchemaReady?.();
     setPbClient(pb);
 
     try {
