@@ -45,18 +45,29 @@ export function useDynatraceProblems() {
   }, [notes.data]);
 
   const setAddressed = useCallback(
-    async (problemId: string, addressed: boolean, responseNoteId?: string) =>
-      setDynatraceProblemAddressed(
-        problemId,
-        addressed,
-        stateByProblemId.get(problemId)?.id,
-        responseNoteId,
-      ),
+    async (problemId: string, addressed: boolean, responseNoteId?: string, resolver?: string) =>
+      resolver
+        ? setDynatraceProblemAddressed(
+            problemId,
+            addressed,
+            stateByProblemId.get(problemId)?.id,
+            responseNoteId,
+            resolver,
+          )
+        : setDynatraceProblemAddressed(
+            problemId,
+            addressed,
+            stateByProblemId.get(problemId)?.id,
+            responseNoteId,
+          ),
     [stateByProblemId],
   );
 
   const addNote = useCallback(
-    (problemId: string, note: string) => addDynatraceProblemNote(problemId, note),
+    (problemId: string, note: string, author?: string) =>
+      author
+        ? addDynatraceProblemNote(problemId, note, author)
+        : addDynatraceProblemNote(problemId, note),
     [],
   );
 

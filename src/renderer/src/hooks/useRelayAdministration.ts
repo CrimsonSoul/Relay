@@ -14,6 +14,7 @@ const SAFE_ERRORS = {
   'pairing-required': 'Pair this workstation before using administration.',
   'invalid-request': 'Relay rejected the administration request.',
   'insufficient-storage': 'Relay does not have enough storage to complete that action.',
+  'duplicate-file-name': 'A protected document with that PDF filename already exists.',
   expired: 'The request expired. Try again.',
   replayed: 'Relay could not safely repeat that request.',
   conflict: 'The server state changed. Review the refreshed information and try again.',

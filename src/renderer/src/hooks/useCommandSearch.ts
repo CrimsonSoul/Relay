@@ -33,52 +33,79 @@ export function useCommandSearch(
   knowledgeDocuments: KnowledgeDocumentRecord[] = [],
 ) {
   return useMemo((): SearchResult[] => {
-    if (!query.trim()) {
-      return [
-        {
-          id: 'action-compose',
-          type: 'action',
-          title: 'Go to Compose',
-          subtitle: 'Open bridge composition',
-          iconType: 'compose',
-          data: { action: 'navigate', tab: 'Compose' },
-        },
-        {
-          id: 'action-personnel',
-          type: 'action',
-          title: 'Go to On-Call Board',
-          subtitle: 'View current on-call assignments',
-          iconType: 'personnel',
-          data: { action: 'navigate', tab: 'Personnel' },
-        },
-        {
-          id: 'action-contacts',
-          type: 'action',
-          title: 'Go to Contacts',
-          subtitle: 'Search contacts directory',
-          iconType: 'people',
-          data: { action: 'open-knowledge', destination: 'contacts' },
-        },
-        {
-          id: 'action-problems',
-          type: 'action',
-          title: 'Go to Dynatrace Problems',
-          subtitle: 'Review the local NOC response queue',
-          iconType: 'problems',
-          data: { action: 'navigate', tab: 'Problems' },
-        },
-        {
-          id: 'action-create-contact',
-          type: 'action',
-          title: 'Create New Contact',
-          subtitle: 'Add a new person to the directory',
-          iconType: 'add-contact',
-          data: { action: 'create-contact' },
-        },
-      ];
-    }
+    const actions: SearchResult[] = [
+      {
+        id: 'action-compose',
+        type: 'action',
+        title: 'Go to Compose',
+        subtitle: 'Open bridge composition',
+        iconType: 'compose',
+        data: { action: 'navigate', tab: 'Compose' },
+      },
+      {
+        id: 'action-alerts',
+        type: 'action',
+        title: 'Go to Alerts',
+        subtitle: 'Review operational alerts',
+        iconType: 'alerts',
+        data: { action: 'navigate', tab: 'Alerts' },
+      },
+      {
+        id: 'action-personnel',
+        type: 'action',
+        title: 'Go to On-Call Board',
+        subtitle: 'View current on-call assignments',
+        iconType: 'personnel',
+        data: { action: 'navigate', tab: 'Personnel' },
+      },
+      {
+        id: 'action-contacts',
+        type: 'action',
+        title: 'Go to Contacts',
+        subtitle: 'Search contacts directory',
+        iconType: 'people',
+        data: { action: 'open-knowledge', destination: 'contacts' },
+      },
+      {
+        id: 'action-wiki',
+        type: 'action',
+        title: 'Go to Wiki',
+        subtitle: 'Open the shared guidance library',
+        iconType: 'wiki',
+        data: { action: 'open-knowledge', destination: 'wiki' },
+      },
+      {
+        id: 'action-servers',
+        type: 'action',
+        title: 'Go to Servers',
+        subtitle: 'Search the server directory',
+        iconType: 'servers',
+        data: { action: 'open-knowledge', destination: 'servers' },
+      },
+      {
+        id: 'action-problems',
+        type: 'action',
+        title: 'Go to Dynatrace Problems',
+        subtitle: 'Review the local NOC response queue',
+        iconType: 'problems',
+        data: { action: 'navigate', tab: 'Problems' },
+      },
+      {
+        id: 'action-create-contact',
+        type: 'action',
+        title: 'Create New Contact',
+        subtitle: 'Add a new person to the directory',
+        iconType: 'add-contact',
+        data: { action: 'create-contact' },
+      },
+    ];
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return actions;
 
-    const lower = query.toLowerCase();
+    const lower = trimmedQuery.toLowerCase();
+    const matchingActions = actions.filter((item) =>
+      `${item.title} ${item.subtitle ?? ''}`.toLowerCase().includes(lower),
+    );
     const results: SearchResult[] = [];
 
     const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s.]{2,}$/.test(query.trim());
@@ -160,6 +187,6 @@ export function useCommandSearch(
       });
     });
 
-    return results;
+    return [...results, ...matchingActions];
   }, [query, contacts, servers, groups, knowledgeDocuments]);
 }

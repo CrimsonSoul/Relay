@@ -18,7 +18,11 @@ import { KnowledgeCategoryManager } from './KnowledgeCategoryManager';
 type Section = 'documents' | 'categories' | 'uploads' | 'trash' | 'audit';
 type Draft = { title: string; categoryId: string; documentType: KnowledgeDocumentType };
 type DraftErrors = Partial<Record<'title' | 'categoryId', string>>;
-type UploadDraft = { title: string; category: string };
+type UploadDraft = {
+  title: string;
+  category: string;
+  documentType: KnowledgeDocumentType;
+};
 type RetryFocusIntent = { documentId: string; operationId: number; settled: boolean };
 
 const NEW_CATEGORY_VALUE = '__new_category__';
@@ -145,6 +149,7 @@ export function KnowledgeManagementWorkspace({
   onLibraryChanged,
 }: Readonly<WorkspaceProps>) {
   const management = useKnowledgeManagement(onLibraryChanged);
+  const { canManage, readAudit } = management;
   const [section, setSection] = useState<Section>('documents');
   const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -190,6 +195,10 @@ export function KnowledgeManagementWorkspace({
   const categories = snapshot?.categories ?? [];
 
   useEffect(() => {
+    if (canManage) void readAudit();
+  }, [canManage, readAudit]);
+
+  useEffect(() => {
     if (cancelBatchConfirmation || !restoreBatchCancelFocusRef.current) return;
     restoreBatchCancelFocusRef.current = false;
     document.querySelector<HTMLButtonElement>('[data-cancel-batch-trigger]')?.focus();
@@ -215,7 +224,6 @@ export function KnowledgeManagementWorkspace({
     setSection(next);
     setNotice(null);
     setCancelBatchConfirmation(false);
-    if (next === 'audit') void management.readAudit();
     queueMicrotask(() => sectionContentRef.current?.focus());
   };
 
@@ -298,8 +306,9 @@ export function KnowledgeManagementWorkspace({
     const draft = uploadDrafts[upload.id] ?? {
       title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
       category: upload.proposedCategory || 'General',
+      documentType: 'sop',
     };
-    await management.publish(upload.id, draft.title, draft.category);
+    await management.publish(upload.id, draft.title, draft.category, draft.documentType);
   };
 
   const permanentlyDelete = async (document: KnowledgeManagementDocumentView) => {
@@ -910,6 +919,7 @@ export function KnowledgeManagementWorkspace({
                 const draft = uploadDrafts[upload.id] ?? {
                   title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
                   category: upload.proposedCategory || 'General',
+                  documentType: 'sop',
                 };
                 const selectedCategory = categories.find(
                   ({ normalizedName }) => normalizedName === knowledgeCategoryKey(draft.category),
@@ -980,6 +990,26 @@ export function KnowledgeManagementWorkspace({
                           />
                         </label>
                       )}
+                      <label>
+                        Document type
+                        <select
+                          name={`knowledge-upload-document-type-${upload.id}`}
+                          autoComplete="off"
+                          value={draft.documentType}
+                          onChange={(event) =>
+                            setUploadDrafts((current) => ({
+                              ...current,
+                              [upload.id]: {
+                                ...draft,
+                                documentType: event.target.value as KnowledgeDocumentType,
+                              },
+                            }))
+                          }
+                        >
+                          <option value="sop">SOP Manual</option>
+                          <option value="cheatsheet">Quick Guide</option>
+                        </select>
+                      </label>
                     </div>
                     <div className="knowledge-management-row__actions">
                       {upload.duplicateDocumentId && (

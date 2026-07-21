@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loggers } from '../../logger';
 import { PrivilegedCommandSafeError } from '../../privileged/PrivilegedCommandProcessor';
 import { KnowledgeUploadAdmissionError } from '../KnowledgeUploadCapacity';
+import { ManagedKnowledgeFilenameConflictError } from '../ManagedKnowledgeService';
 import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagementCommands';
 
 const context = {
@@ -146,6 +147,11 @@ describe('registerKnowledgeManagementCommands', () => {
       'upload-1',
       expect.objectContaining({ state: 'ready', pageCount: 2 }),
       { requestKey: null },
+    );
+    expect(getDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: expect.stringContaining('lifecycleState="active"'),
+      }),
     );
   });
 
@@ -658,6 +664,23 @@ describe('registerKnowledgeManagementCommands', () => {
 
     await expect(result).rejects.toBeInstanceOf(PrivilegedCommandSafeError);
     await expect(result).rejects.toMatchObject({ code: 'insufficient-storage' });
+  });
+
+  it('returns an exact safe error when an active PDF filename already exists', async () => {
+    service.publish.mockRejectedValueOnce(new ManagedKnowledgeFilenameConflictError());
+
+    const result = handlers.get('knowledge.document.publish')!(
+      context as never,
+      {
+        uploadId: 'upload-1',
+        title: 'Runbook',
+        category: 'Operations',
+        documentType: 'sop',
+      } as never,
+    );
+
+    await expect(result).rejects.toBeInstanceOf(PrivilegedCommandSafeError);
+    await expect(result).rejects.toMatchObject({ code: 'duplicate-file-name' });
   });
 
   it('requires a bound reauthentication proof for permanent deletion', async () => {

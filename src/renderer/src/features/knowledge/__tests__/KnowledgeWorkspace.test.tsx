@@ -199,7 +199,7 @@ describe('KnowledgeWorkspace', () => {
     const first = renderWorkspace();
     fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
     await screen.findByTestId('wiki-surface');
-    fireEvent.click(screen.getByRole('button', { name: /Knowledge home/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Knowledge Home/ }));
     first.unmount();
 
     renderWorkspace();
@@ -217,7 +217,7 @@ describe('KnowledgeWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: buttonName }));
 
     expect(visiblePanel()).toHaveAttribute('data-destination', destination);
-    expect(screen.getByRole('button', { name: /Knowledge home/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Knowledge Home/ })).toBeInTheDocument();
   });
 
   it('navigates among explicit destinations and back to Knowledge home', () => {
@@ -231,7 +231,7 @@ describe('KnowledgeWorkspace', () => {
       'page',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Knowledge home/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Knowledge Home/ }));
     expect(visiblePanel()).toHaveAttribute('data-destination', 'home');
     expect(
       screen.queryByRole('navigation', { name: 'Knowledge destinations' }),
@@ -266,7 +266,10 @@ describe('KnowledgeWorkspace', () => {
       within(navigation)
         .getAllByRole('button')
         .map((button) => button.textContent?.trim()),
-    ).toEqual(['←Knowledge home', 'Wiki', 'Contacts', 'Servers']);
+    ).toEqual(['Knowledge Home', 'Wiki', 'Contacts', 'Servers']);
+    const home = within(navigation).getByRole('button', { name: 'Knowledge Home' });
+    expect(home.querySelector('svg')).not.toBeNull();
+    expect(home).not.toHaveTextContent('←');
   });
 
   it('retains Contacts selection after visiting Wiki', () => {
@@ -393,7 +396,7 @@ describe('KnowledgeWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Publish Wiki count' }));
-    fireEvent.click(screen.getByRole('button', { name: /Knowledge home/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Knowledge Home/ }));
 
     expect(screen.getByText('3 wiki documents')).toBeInTheDocument();
   });

@@ -437,6 +437,28 @@ describe('useKnowledgeManagement', () => {
     });
   });
 
+  it('explains an active filename collision instead of showing a generic Wiki error', async () => {
+    submitCommand.mockImplementation(async (input) =>
+      input.command === 'knowledge.document.publish'
+        ? {
+            ok: false,
+            requestId: 'publish-duplicate',
+            error: 'duplicate-file-name' as const,
+          }
+        : okSnapshot(snapshot),
+    );
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    await act(async () => {
+      await result.current.publish('upload-1', 'Runbook', 'Operations');
+    });
+
+    expect(result.current.error).toBe(
+      'A published document with this PDF filename already exists. Replace it or rename the PDF.',
+    );
+  });
+
   it('keeps a post-commit publish error visible when its audit event is missing', async () => {
     const authoritative = {
       ...snapshotWithTitle('Runbook'),

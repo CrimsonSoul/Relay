@@ -1014,7 +1014,7 @@ describe('ensureCollections', () => {
       ]),
     );
     expect(knowledgeCall?.indexes).toContain(
-      'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)',
+      'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey) WHERE lifecycleState = "active"',
     );
     expect(knowledgeCall?.indexes).toContain(
       'CREATE INDEX idx_knowledge_documents_lifecycle ON knowledge_documents (lifecycleState)',
@@ -1301,6 +1301,27 @@ describe('ensureCollections', () => {
       'id',
       'pdf-field-id',
     );
+  });
+
+  it('replaces the legacy Wiki source-key index instead of submitting two indexes with the same name', async () => {
+    const oldIndex =
+      'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)';
+    const activeOnlyIndex = `${oldIndex} WHERE lifecycleState = "active"`;
+    mockGetFullList.mockResolvedValue([{ id: 'documents-col-id', name: 'knowledge_documents' }]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockResolvedValue({ id: 'documents-col-id', fields: [], indexes: [oldIndex] });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const patch = mockUpdate.mock.calls.find(([id]) => id === 'documents-col-id')?.[1] as
+      | { indexes?: string[] }
+      | undefined;
+    expect(patch?.indexes).toContain(activeOnlyIndex);
+    expect(patch?.indexes).not.toContain(oldIndex);
+    expect(
+      patch?.indexes?.filter((index) => index.includes('idx_knowledge_documents_source_key')),
+    ).toHaveLength(1);
   });
 
   it('does not recreate the retired operator collection', async () => {

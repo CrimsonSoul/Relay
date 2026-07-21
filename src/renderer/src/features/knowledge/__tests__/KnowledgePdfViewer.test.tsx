@@ -479,10 +479,18 @@ describe('KnowledgePdfViewer', () => {
   });
 
   it('groups the compact reader controls and exposes secondary options from View', async () => {
-    renderComponent({ toolbarLeading: <button type="button">Back to Wiki</button> });
+    const { container } = renderComponent({
+      toolbarLeading: <button type="button">Back to Wiki</button>,
+    });
 
     expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Back to Wiki' })).toBeInTheDocument();
+    expect(container.querySelector('.knowledge-viewer__page-status .sr-only')).toHaveTextContent(
+      'Current page 1 of 3',
+    );
+    const back = screen.getByRole('button', { name: 'Back to Wiki' });
+    expect(back).toBeInTheDocument();
+    expect(back.closest('.knowledge-viewer__leading')).toBeInTheDocument();
+    expect(back.closest('.knowledge-viewer__heading')).toBeNull();
     expect(screen.getByRole('group', { name: 'Page navigation' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Zoom controls' })).toBeInTheDocument();
     expect(screen.getByText('100%')).toBeInTheDocument();

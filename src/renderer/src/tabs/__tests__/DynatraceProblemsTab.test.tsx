@@ -53,6 +53,12 @@ const openProblem: DynatraceProblemRecord = {
   syncedAt: new Date().toISOString(),
 };
 
+function selectResolver(name = 'Ryan') {
+  fireEvent.change(screen.getByRole('combobox', { name: 'Resolved by' }), {
+    target: { value: name },
+  });
+}
+
 describe('DynatraceProblemsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -107,10 +113,45 @@ describe('DynatraceProblemsTab', () => {
     });
     expect(screen.getAllByText('payments-api').length).toBeGreaterThan(0);
     expect(
-      screen.getByText(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-      ),
+      screen.getByText(/Choose your name, then add a ticket or note below/i),
     ).toBeInTheDocument();
+  });
+
+  it('requires one listed resolver and a drafted response before enabling local resolution', async () => {
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    const resolver = screen.getByRole('combobox', { name: 'Resolved by' });
+    const address = screen.getByRole('button', { name: 'Mark addressed locally' });
+    expect(
+      within(resolver)
+        .getAllByRole('option')
+        .map(({ textContent }) => textContent),
+    ).toEqual(['Select your name', 'Paris', 'Tristan', 'Connor', 'Weston', 'Vlad', 'Ryan']);
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Traffic shifted to the secondary pool.' },
+    });
+    expect(address).toBeDisabled();
+
+    fireEvent.change(resolver, { target: { value: 'Ryan' } });
+    expect(address).toBeEnabled();
+    fireEvent.click(address);
+
+    await waitFor(() => {
+      expect(mocks.addNote).toHaveBeenCalledWith(
+        'problem-1',
+        'Traffic shifted to the secondary pool.',
+        'Ryan',
+      );
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-1',
+        true,
+        'new-response-note',
+        'Ryan',
+      );
+      expect(resolver).toHaveValue('');
+    });
   });
 
   it('opens the exact Dynatrace Platform Problems URL for the selected problem', async () => {
@@ -263,21 +304,28 @@ describe('DynatraceProblemsTab', () => {
     });
   });
 
-  it('awaits an unattributed drafted note before marking addressed', async () => {
+  it('awaits an attributed drafted note before marking addressed', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Mitigated by shifting traffic to the secondary pool.' },
     });
+    selectResolver();
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     await waitFor(() => {
       expect(mocks.addNote).toHaveBeenCalledWith(
         'problem-1',
         'Mitigated by shifting traffic to the secondary pool.',
+        'Ryan',
       );
-      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'new-response-note');
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-1',
+        true,
+        'new-response-note',
+        'Ryan',
+      );
     });
     expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
     expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
@@ -293,12 +341,18 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('Service Desk ticket number'), {
       target: { value: '  INC0012345  ' },
     });
+    selectResolver();
     expect(address).toBeEnabled();
     fireEvent.click(address);
 
     await waitFor(() => {
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: INC0012345');
-      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'new-response-note');
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: INC0012345', 'Ryan');
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-1',
+        true,
+        'new-response-note',
+        'Ryan',
+      );
     });
     expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.setAddressed.mock.invocationCallOrder[0],
@@ -315,6 +369,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Traffic shifted to the secondary pool.' },
     });
+    selectResolver();
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     await waitFor(() => expect(mocks.setAddressed).toHaveBeenCalledTimes(1));
@@ -330,17 +385,22 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('adds a standalone ticket reference without operator attribution', async () => {
+  it('saves a standalone ticket through the unified response action', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
     fireEvent.change(screen.getByLabelText('Service Desk ticket number'), {
       target: { value: 'REQ0042000' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add ticket reference' }));
+    const save = screen.getByRole('button', { name: 'Save response' });
+    expect(save).toBeDisabled();
+    selectResolver();
+    fireEvent.click(save);
 
     await waitFor(() =>
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: REQ0042000'),
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: REQ0042000', 'Ryan'),
     );
+    expect(screen.queryByRole('button', { name: 'Add ticket reference' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add note' })).not.toBeInTheDocument();
   });
 
   it('retains ticket and note drafts and does not address when ticket persistence fails', async () => {
@@ -353,6 +413,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Keep this draft for retry.' },
     });
+    selectResolver();
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     await waitFor(() =>
@@ -383,6 +444,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Queued NOC context.' },
     });
+    selectResolver();
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     await waitFor(() => expect(mocks.addNote).toHaveBeenCalledTimes(1));
@@ -400,32 +462,64 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('saves a standalone note without requiring an operator provider', async () => {
+  it('saves a standalone note through the unified response action', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Escalated to the payments team.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const save = screen.getByRole('button', { name: 'Save response' });
+    expect(save).toBeDisabled();
+    selectResolver();
+    fireEvent.click(save);
 
     await waitFor(() => {
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Escalated to the payments team.');
+      expect(mocks.addNote).toHaveBeenCalledWith(
+        'problem-1',
+        'Escalated to the payments team.',
+        'Ryan',
+      );
     });
     expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
   });
 
-  it('marks addressed without an operator selection', async () => {
+  it('keeps an attributed saved response eligible for local resolution', async () => {
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Mitigation is complete.' },
+    });
+    selectResolver();
+    fireEvent.click(screen.getByRole('button', { name: 'Save response' }));
+
+    const address = screen.getByRole('button', { name: 'Mark addressed locally' });
+    await waitFor(() => expect(address).toBeEnabled());
+    expect(screen.getByLabelText('Add a note')).toHaveValue('');
+    fireEvent.click(address);
+
+    await waitFor(() => {
+      expect(mocks.addNote).toHaveBeenCalledTimes(1);
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-1',
+        true,
+        'new-response-note',
+        'Ryan',
+      );
+    });
+  });
+
+  it('does not mark addressed without a resolver selection', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Investigating the current problem.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
-
-    await waitFor(() => expect(mocks.addNote).toHaveBeenCalledOnce());
-    expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'new-response-note');
+    expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeDisabled();
+    expect(mocks.addNote).not.toHaveBeenCalled();
+    expect(mocks.setAddressed).not.toHaveBeenCalled();
   });
 
   it('queues an offline drafted note before queuing the addressed state', async () => {
@@ -444,6 +538,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Queued mitigation note.' },
     });
+    selectResolver();
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     await waitFor(() => expect(mocks.addNote).toHaveBeenCalledTimes(1));
@@ -463,6 +558,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.change(screen.getByLabelText('Add a note'), {
       target: { value: 'Mitigation could not be persisted.' },
     });
+    selectResolver();
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     await waitFor(() => {
@@ -505,9 +601,7 @@ describe('DynatraceProblemsTab', () => {
 
     expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeDisabled();
     expect(
-      screen.getByText(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-      ),
+      screen.getByText(/Choose your name, then add a ticket or note below/i),
     ).toBeInTheDocument();
 
     mocks.hookValue = {
@@ -559,12 +653,10 @@ describe('DynatraceProblemsTab', () => {
     expect(within(ticketEntry!).getByText('Ryan Bell')).toBeVisible();
   });
 
-  it('explains that either a ticket number or NOC note is required', async () => {
+  it('explains that a resolver and response are required', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     expect(
-      await screen.findByText(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-      ),
+      await screen.findByText(/Choose your name, then add a ticket or note below/i),
     ).toBeVisible();
     expect(screen.getByText(/Relay records the ticket number for notation only/i)).toBeVisible();
   });

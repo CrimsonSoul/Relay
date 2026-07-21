@@ -478,9 +478,10 @@ describe('KnowledgeManagementWorkspace', () => {
     );
   });
 
-  it('stages PDFs and loads audit history on demand', () => {
+  it('stages PDFs and loads audit history when the workspace opens', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
+    expect(readAudit).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Add PDFs' }));
     fireEvent.click(screen.getByRole('button', { name: /Audit 0/ }));
 
@@ -494,6 +495,43 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByLabelText('Documents management section')).not.toHaveClass(
       'knowledge-management__content--audit',
     );
+  });
+
+  it('always queues new PDFs for review before publishing', async () => {
+    const publish = vi.fn(async () => true);
+    const stageForReview = vi.fn(async () => ({
+      ok: true as const,
+      uploads: [
+        {
+          id: 'local-review-upload',
+          uploadId: null,
+          batchId: 'batch-1',
+          fileName: 'Escalation.pdf',
+          byteSize: 1_024,
+          acknowledgedBytes: 0,
+          chunkCount: 1,
+          acknowledgedChunkCount: 0,
+          state: 'queued' as const,
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: false,
+        },
+      ],
+    }));
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      stagePdfs: stageForReview,
+      publish,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    expect(screen.queryByRole('combobox', { name: 'After upload' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add PDFs' }));
+    await waitFor(() => expect(stageForReview).toHaveBeenCalledOnce());
+
+    expect(publish).not.toHaveBeenCalled();
+    expect(screen.getByText('1 PDF queued.')).toBeInTheDocument();
   });
 
   it('publishes an upload into an existing category selected from the category list', () => {
@@ -563,7 +601,7 @@ describe('KnowledgeManagementWorkspace', () => {
     fireEvent.change(category, { target: { value: 'category-sentinel-name' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
-    expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', '__new_category__');
+    expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', '__new_category__', 'sop');
   });
 
   it('keeps new-category creation available from upload review', () => {
@@ -610,7 +648,7 @@ describe('KnowledgeManagementWorkspace', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
-    expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', 'Network');
+    expect(publish).toHaveBeenCalledWith('upload-1', 'Escalation guide', 'Network', 'sop');
   });
 
   it('presents aggregate and per-file controls for a resumable VPN upload', () => {

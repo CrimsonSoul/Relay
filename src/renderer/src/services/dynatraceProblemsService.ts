@@ -1,7 +1,9 @@
 import {
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
+  isDynatraceProblemResolver,
   type DynatraceProblemNoteRecord,
+  type DynatraceProblemResolver,
   type DynatraceProblemStateRecord,
 } from '@shared/dynatraceProblems';
 import { escapeFilter, getConnectionState, getPb, handleApiError } from './pocketbase';
@@ -13,6 +15,14 @@ export const MAX_DYNATRACE_TICKET_REFERENCE_LENGTH = 120;
 export const DYNATRACE_TICKET_NOTE_PREFIX = 'Ticket: ';
 const REQUIRED_RESPONSE_MESSAGE =
   'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.';
+const REQUIRED_RESOLVER_MESSAGE = 'Select your name from the resolver list.';
+
+function normalizeResolver(value: string | undefined): DynatraceProblemResolver | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  if (!isDynatraceProblemResolver(normalized)) throw new Error(REQUIRED_RESOLVER_MESSAGE);
+  return normalized;
+}
 
 function normalizeDynatraceTicketReference(value: string): string {
   const normalized = value.trim();
@@ -57,8 +67,10 @@ async function requireProblemResponseWhenAddressing(
   addressed: boolean,
   online: boolean,
   responseNoteId?: string,
+  addressedBy?: DynatraceProblemResolver,
 ): Promise<void> {
   if (!addressed) return;
+  if (!addressedBy) throw new Error(REQUIRED_RESOLVER_MESSAGE);
   const normalizedResponseNoteId = responseNoteId?.trim();
   if (!normalizedResponseNoteId) throw new Error(REQUIRED_RESPONSE_MESSAGE);
   if (!online) return;
@@ -66,10 +78,12 @@ async function requireProblemResponseWhenAddressing(
   try {
     const responseNote = await getPb()
       .collection(DYNATRACE_PROBLEM_NOTES_COLLECTION)
-      .getOne<Pick<DynatraceProblemNoteRecord, 'problemId'>>(normalizedResponseNoteId, {
+      .getOne<Pick<DynatraceProblemNoteRecord, 'problemId' | 'author'>>(normalizedResponseNoteId, {
         requestKey: null,
       });
-    if (responseNote.problemId !== problemId) throw new Error(REQUIRED_RESPONSE_MESSAGE);
+    if (responseNote.problemId !== problemId || responseNote.author !== addressedBy) {
+      throw new Error(REQUIRED_RESPONSE_MESSAGE);
+    }
   } catch (error) {
     if (isPbNotFoundError(error)) throw new Error(REQUIRED_RESPONSE_MESSAGE);
     handleApiError(error);
@@ -82,13 +96,22 @@ export async function setDynatraceProblemAddressed(
   addressed: boolean,
   existingRecordId?: string,
   responseNoteId?: string,
+  resolver?: string,
 ): Promise<DynatraceProblemStateRecord> {
   const online = getConnectionState() === 'online';
-  await requireProblemResponseWhenAddressing(problemId, addressed, online, responseNoteId);
+  const addressedBy = normalizeResolver(resolver);
+  await requireProblemResponseWhenAddressing(
+    problemId,
+    addressed,
+    online,
+    responseNoteId,
+    addressedBy,
+  );
   const payload = {
     problemId,
     addressed,
     addressedAt: addressed ? new Date().toISOString() : '',
+    addressedBy: addressed ? addressedBy : '',
   };
   try {
     const recordId = existingRecordId || (online ? (await findState(problemId))?.id : undefined);
@@ -117,8 +140,10 @@ export async function setDynatraceProblemAddressed(
 export async function addDynatraceProblemNote(
   problemId: string,
   note: string,
+  author?: string,
 ): Promise<DynatraceProblemNoteRecord> {
   const normalizedNote = note.trim();
+  const normalizedAuthor = normalizeResolver(author);
   if (!normalizedNote) throw new Error('Enter a note before saving.');
   if (normalizedNote.length > MAX_NOTE_LENGTH) {
     throw new Error(`Notes can be up to ${MAX_NOTE_LENGTH.toLocaleString()} characters.`);
@@ -132,6 +157,7 @@ export async function addDynatraceProblemNote(
       {
         problemId,
         note: normalizedNote,
+        ...(normalizedAuthor ? { author: normalizedAuthor } : {}),
       },
     )) as DynatraceProblemNoteRecord;
   } catch (error) {

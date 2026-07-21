@@ -59,9 +59,9 @@ const makeKnowledgeDocument = (
 
 describe('useCommandSearch', () => {
   describe('empty query', () => {
-    it('returns 5 default action items when query is empty', () => {
+    it('returns 8 default action items when query is empty', () => {
       const { result } = renderHook(() => useCommandSearch('', [], [], []));
-      expect(result.current).toHaveLength(5);
+      expect(result.current).toHaveLength(8);
       expect(result.current.every((r) => r.type === 'action')).toBe(true);
     });
 
@@ -71,6 +71,9 @@ describe('useCommandSearch', () => {
       expect(ids).toContain('action-compose');
       expect(ids).toContain('action-personnel');
       expect(ids).toContain('action-contacts');
+      expect(ids).toContain('action-wiki');
+      expect(ids).toContain('action-servers');
+      expect(ids).toContain('action-alerts');
       expect(ids).toContain('action-problems');
       expect(ids).toContain('action-create-contact');
     });
@@ -84,10 +87,46 @@ describe('useCommandSearch', () => {
       });
     });
 
+    it('routes the Wiki action through the Knowledge workspace with its own icon', () => {
+      const { result } = renderHook(() => useCommandSearch('', [], [], []));
+
+      expect(result.current.find((item) => item.id === 'action-wiki')).toMatchObject({
+        title: 'Go to Wiki',
+        iconType: 'wiki',
+        data: { action: 'open-knowledge', destination: 'wiki' },
+      });
+      expect(result.current.find((item) => item.id === 'action-problems')).toMatchObject({
+        iconType: 'problems',
+      });
+      expect(result.current.find((item) => item.id === 'action-servers')).toMatchObject({
+        title: 'Go to Servers',
+        iconType: 'servers',
+        data: { action: 'open-knowledge', destination: 'servers' },
+      });
+      expect(result.current.find((item) => item.id === 'action-alerts')).toMatchObject({
+        title: 'Go to Alerts',
+        iconType: 'alerts',
+        data: { action: 'navigate', tab: 'Alerts' },
+      });
+    });
+
     it('returns empty results for whitespace-only query', () => {
       const { result } = renderHook(() => useCommandSearch('   ', [], [], []));
       // whitespace trims to empty → returns default actions
-      expect(result.current).toHaveLength(5);
+      expect(result.current).toHaveLength(8);
+    });
+  });
+
+  describe('navigation action search', () => {
+    it.each([
+      ['alerts', 'action-alerts'],
+      ['servers', 'action-servers'],
+      ['wiki', 'action-wiki'],
+      ['dynatrace', 'action-problems'],
+    ])('keeps the %s navigation action searchable', (query, actionId) => {
+      const { result } = renderHook(() => useCommandSearch(query, [], [], []));
+
+      expect(result.current.map(({ id }) => id)).toContain(actionId);
     });
   });
 

@@ -208,9 +208,10 @@
   color: var(--color-text-secondary);
 }
 
-.knowledge-workspace-shell__home-back {
+.knowledge-workspace-shell__home-icon {
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
-  font-size: 14px;
 }
 
 .knowledge-workspace-shell__destination {

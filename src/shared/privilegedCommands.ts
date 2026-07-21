@@ -102,7 +102,12 @@ export type PrivilegedCommandPayloadMap = {
   'knowledge.upload.batch.cancel': { batchId: string; expectedRevision: number };
   'knowledge.upload.validate': { uploadId: string; preliminaryChecksum: string };
   'knowledge.snapshot.read': { query: string; cursor: string | null; pageSize: number };
-  'knowledge.document.publish': { uploadId: string; title: string; category: string };
+  'knowledge.document.publish': {
+    uploadId: string;
+    title: string;
+    category: string;
+    documentType: KnowledgeDocumentType;
+  };
   'knowledge.document.replace': {
     uploadId: string;
     documentId: string;
@@ -199,6 +204,7 @@ export type PrivilegedCommandError =
   | 'pairing-required'
   | 'invalid-request'
   | 'insufficient-storage'
+  | 'duplicate-file-name'
   | 'expired'
   | 'replayed'
   | 'conflict'
@@ -946,11 +952,15 @@ function normalizePayload(
         : null;
     }
     case 'knowledge.document.publish': {
-      if (!hasExactKeys(payload, ['uploadId', 'title', 'category'])) return null;
+      if (!hasExactKeys(payload, ['uploadId', 'title', 'category', 'documentType'])) return null;
       const title = normalizedKnowledgeText(payload.title, 240);
       const category = normalizedKnowledgeText(payload.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-      return boundedIdentifier(payload.uploadId, 200) && title && category
-        ? { uploadId: payload.uploadId, title, category }
+      const documentType = payload.documentType;
+      return boundedIdentifier(payload.uploadId, 200) &&
+        title &&
+        category &&
+        (documentType === 'sop' || documentType === 'cheatsheet')
+        ? { uploadId: payload.uploadId, title, category, documentType }
         : null;
     }
     case 'knowledge.document.replace': {

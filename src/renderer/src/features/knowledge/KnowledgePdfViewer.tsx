@@ -772,8 +772,8 @@ export function KnowledgePdfViewer({
       aria-label={`${knowledgeDocument.title} PDF viewer`}
     >
       <header className="knowledge-viewer__toolbar">
+        {toolbarLeading && <div className="knowledge-viewer__leading">{toolbarLeading}</div>}
         <div className="knowledge-viewer__heading">
-          {toolbarLeading && <div className="knowledge-viewer__leading">{toolbarLeading}</div>}
           <div className="knowledge-viewer__identity">
             <span className="knowledge-viewer__eyebrow">{knowledgeDocument.category}</span>
             <h2>{knowledgeDocument.title}</h2>
@@ -796,8 +796,18 @@ export function KnowledgePdfViewer({
             >
               ←
             </button>
-            <span className="knowledge-viewer__page-status" aria-live="polite">
-              {activePdf ? `Page ${pageIndex + 1} of ${activePdf.numPages}` : 'Loading document'}
+            <span className="knowledge-viewer__page-status" aria-live="polite" aria-atomic="true">
+              <span className="knowledge-viewer__page-status-long" aria-hidden="true">
+                {activePdf ? `Page ${pageIndex + 1} of ${activePdf.numPages}` : 'Loading document'}
+              </span>
+              <span className="knowledge-viewer__page-status-compact" aria-hidden="true">
+                {activePdf ? `${pageIndex + 1} / ${activePdf.numPages}` : 'Loading…'}
+              </span>
+              <span className="sr-only">
+                {activePdf
+                  ? `Current page ${pageIndex + 1} of ${activePdf.numPages}`
+                  : 'Loading current document'}
+              </span>
             </span>
             <button
               type="button"

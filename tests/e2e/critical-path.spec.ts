@@ -222,6 +222,7 @@ const seedKnowledgeLinkFixtures = async (port: number) => {
     const form = new FormData();
     form.set('sourceKey', `${fixture.category}/${fixture.fileName}`);
     form.set('category', fixture.category);
+    form.set('documentType', 'sop');
     form.set('title', fixture.title);
     form.set('displayTitle', fixture.title);
     form.set('fileName', fixture.fileName);
@@ -500,6 +501,37 @@ const enterKnowledgeDestination = async (
     targetWindow.getByRole('region', { name: `${destination.toLowerCase()} workspace` }),
   ).toBeVisible();
   await expect(targetWindow.locator('.header-breadcrumb')).toContainText('Relay / Knowledge');
+};
+
+const openKnowledgeReaderDocument = async (targetWindow: Page, category: string, title: string) => {
+  const catalogAction = targetWindow.getByRole('button', {
+    name: `Open ${title}`,
+    exact: true,
+  });
+  const categoryNode = targetWindow.getByRole('treeitem', {
+    name: `${category}, 1 document`,
+    exact: true,
+  });
+  await expect
+    .poll(async () => {
+      if (await catalogAction.isVisible()) return 'catalog';
+      if (await categoryNode.isVisible()) return 'reader';
+      return 'loading';
+    })
+    .not.toBe('loading');
+
+  if (await catalogAction.isVisible()) {
+    await catalogAction.click();
+  } else {
+    if ((await categoryNode.getAttribute('aria-expanded')) === 'false') {
+      await categoryNode.click();
+    }
+    await targetWindow.getByRole('treeitem', { name: title, exact: true }).click();
+  }
+
+  const viewer = targetWindow.getByRole('region', { name: `${title} PDF viewer` });
+  await expect(viewer).toBeVisible();
+  return viewer;
 };
 
 const openPrivilegedAccess = async (targetWindow: Page) => {
@@ -1240,15 +1272,11 @@ test.describe('Vital Critical Path', () => {
     });
     connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient
-      .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
-      .click();
-    await connectedClient
-      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
-      .click();
-    const viewer = connectedClient.getByRole('region', {
-      name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
-    });
+    const viewer = await openKnowledgeReaderDocument(
+      connectedClient,
+      'Reader validation',
+      CONTINUOUS_READER_TITLE,
+    );
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
     const continuousMode = viewer.getByRole('button', { name: 'View: Continuous' });
     await expect(continuousMode).toHaveAttribute('aria-pressed', 'true');
@@ -1316,16 +1344,12 @@ test.describe('Vital Critical Path', () => {
     connectedClient.on('pageerror', (error) => captureLifecycleError(error.message));
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await connectedClient
-      .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
-      .click();
-    await connectedClient
-      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
-      .click();
+    const viewer = await openKnowledgeReaderDocument(
+      connectedClient,
+      'Reader validation',
+      CONTINUOUS_READER_TITLE,
+    );
     const wikiWorkspace = connectedClient.getByRole('region', { name: 'wiki workspace' });
-    const viewer = connectedClient.getByRole('region', {
-      name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
-    });
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
 
     for (let cycle = 0; cycle < 5; cycle += 1) {
@@ -1345,6 +1369,10 @@ test.describe('Vital Critical Path', () => {
 
   test('Knowledge PDF links use the compact Wiki Library drawer without losing reader state', async () => {
     test.setTimeout(120_000);
+    const authenticatedDocuments = await (await makePbClient(pbPort))
+      .collection('knowledge_documents')
+      .getFullList<{ title: string }>({ requestKey: null });
+    expect(authenticatedDocuments.map(({ title }) => title)).toContain(CONTINUOUS_READER_TITLE);
     const connectedClient = await launchConnectedClient();
     if (!clientElectronApp) throw new Error('Connected Electron app not launched');
     await clientElectronApp.evaluate(({ BrowserWindow }) => {
@@ -1355,15 +1383,22 @@ test.describe('Vital Critical Path', () => {
       .toBeGreaterThan(900);
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
+    const viewer = await openKnowledgeReaderDocument(
+      connectedClient,
+      'Reader validation',
+      CONTINUOUS_READER_TITLE,
+    );
     const workspace = connectedClient.getByRole('region', { name: 'Wiki reader workspace' });
-    const drawer = connectedClient.getByRole('complementary', { name: 'Wiki library' });
+    const drawer = connectedClient.getByRole('complementary', { name: 'Wiki reader sidebar' });
     const libraryToggle = connectedClient.getByRole('button', {
-      name: 'Wiki library',
+      name: 'Wiki reader sidebar',
       exact: true,
     });
-    const desktopRestore = connectedClient.getByRole('button', { name: 'Show Wiki library' });
+    const desktopRestore = connectedClient.getByRole('button', {
+      name: 'Show Wiki reader sidebar',
+    });
     const desktopCollapse = connectedClient.getByRole('button', {
-      name: 'Collapse Wiki library',
+      name: 'Collapse Wiki reader sidebar',
     });
     await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
     await expect(libraryToggle).toBeHidden();
@@ -1371,15 +1406,6 @@ test.describe('Vital Critical Path', () => {
     await expect(desktopCollapse).toBeVisible();
     await expect(drawer).toBeVisible();
 
-    await connectedClient
-      .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
-      .click();
-    await connectedClient
-      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
-      .click();
-    const viewer = connectedClient.getByRole('region', {
-      name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
-    });
     await expect(drawer).toBeVisible();
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
 
@@ -1404,7 +1430,15 @@ test.describe('Vital Critical Path', () => {
     await libraryToggle.click();
     await expect(workspace).toHaveAttribute('data-library-drawer', 'open');
     await expect(drawer).toBeVisible();
-    await expect(connectedClient.getByRole('searchbox', { name: 'Search Wiki' })).toBeFocused();
+    await expect(connectedClient.getByRole('tab', { name: 'Contents' })).toBeFocused();
+    await connectedClient.getByRole('tab', { name: 'Library' }).click();
+    const readerCategory = connectedClient.getByRole('treeitem', {
+      name: 'Reader validation, 1 document',
+      exact: true,
+    });
+    if ((await readerCategory.getAttribute('aria-expanded')) === 'false') {
+      await readerCategory.click();
+    }
     await connectedClient
       .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
       .click();
@@ -1432,7 +1466,7 @@ test.describe('Vital Critical Path', () => {
     await desktopRestore.click();
     await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
     await expect(drawer).toBeVisible();
-    await expect(connectedClient.getByRole('searchbox', { name: 'Search Wiki' })).toBeFocused();
+    await expect(connectedClient.getByRole('tab', { name: 'Contents' })).toBeFocused();
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
     await expect(
       connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
@@ -1928,6 +1962,8 @@ test.describe('Vital Critical Path', () => {
     const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
     await expect(addressedAction).toBeDisabled();
     await window.getByLabel('Service Desk ticket number').fill(ticketNumber);
+    await expect(addressedAction).toBeDisabled();
+    await window.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
     await expect(addressedAction).toBeEnabled();
     await addressedAction.click();
     await expect(window.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
@@ -1949,9 +1985,9 @@ test.describe('Vital Critical Path', () => {
       })
       .toEqual({
         noteOperatorId: '',
-        author: '',
+        author: 'Ryan',
         stateOperatorId: '',
-        addressedBy: '',
+        addressedBy: 'Ryan',
         addressed: true,
       });
 
@@ -1965,13 +2001,11 @@ test.describe('Vital Critical Path', () => {
       name: 'Selected problem details',
     });
     await expect(clientDetail.getByRole('heading', { name: CHECKOUT_PROBLEM_TITLE })).toBeVisible();
-    await expect(clientDetail.locator('.dt-problem-detail__response-copy')).toContainText(
-      'Unattributed',
-    );
+    await expect(clientDetail.locator('.dt-problem-detail__response-copy')).toContainText('Ryan');
     const syncedTicket = clientDetail.locator('.dt-problem-note', { hasText: ticketNumber });
     await expect(syncedTicket).toContainText('Service Desk ticket');
     await expect(syncedTicket).toContainText(ticketNumber);
-    await expect(syncedTicket).toContainText('Unattributed');
+    await expect(syncedTicket).toContainText('Ryan');
 
     await connectedClient.getByRole('tab', { name: 'History 2' }).click();
     const historicalDetail = connectedClient.getByRole('region', {
@@ -1988,7 +2022,7 @@ test.describe('Vital Critical Path', () => {
     ).toContainText('noc-demo-east-01');
   });
 
-  test('connected client queues ordinary unattributed Dynatrace actions offline', async () => {
+  test('connected client queues ordinary attributed Dynatrace actions offline', async () => {
     test.setTimeout(90_000);
     const noteText = `Offline NOC follow-up ${uniqueSuffix()}`;
 
@@ -2031,6 +2065,8 @@ test.describe('Vital Critical Path', () => {
       name: 'Mark addressed locally',
     });
     await connectedClient.getByLabel('Add a note').fill(noteText);
+    await expect(addressedAction).toBeDisabled();
+    await connectedClient.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
     await expect(addressedAction).toBeEnabled();
     await addressedAction.click();
     await expect
@@ -2067,9 +2103,9 @@ test.describe('Vital Critical Path', () => {
       })
       .toEqual({
         noteOperatorId: '',
-        author: '',
+        author: 'Ryan',
         stateOperatorId: '',
-        addressedBy: '',
+        addressedBy: 'Ryan',
         addressed: true,
       });
     await expect

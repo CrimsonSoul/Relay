@@ -65,6 +65,8 @@ const ERROR_MESSAGES = {
   'pairing-required': 'This workstation must be paired before privileged access can continue.',
   'invalid-request': 'Relay rejected the protected request.',
   'insufficient-storage': 'Relay does not have enough storage to complete that action.',
+  'duplicate-file-name':
+    'A published document with this PDF filename already exists. Replace it or rename the PDF.',
   expired: 'The protected request expired. Try again.',
   replayed: 'Relay could not safely repeat that protected request.',
   conflict: 'The server state changed. Refresh and try again.',

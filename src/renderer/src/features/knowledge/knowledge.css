@@ -94,8 +94,14 @@
   padding: 0 10px;
   color: var(--color-text-primary);
   background: transparent;
+  color-scheme: dark;
   font: inherit;
   font-size: var(--text-sm);
+}
+
+.knowledge-catalog__filters option {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
 }
 
 .knowledge-catalog__search {
@@ -1223,7 +1229,8 @@
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'leading heading controls';
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
   min-height: 58px;
@@ -1240,10 +1247,12 @@
 }
 
 .knowledge-viewer__heading {
+  grid-area: heading;
   gap: 8px;
 }
 
 .knowledge-viewer__leading {
+  grid-area: leading;
   flex: none;
   gap: 6px;
 }
@@ -1317,6 +1326,7 @@
   justify-content: flex-end;
   gap: 7px;
   flex-shrink: 0;
+  grid-area: controls;
 }
 
 .knowledge-viewer__controls button {
@@ -1400,6 +1410,10 @@
 .knowledge-viewer__page-status {
   min-width: 108px;
   text-align: center;
+}
+
+.knowledge-viewer__page-status-compact {
+  display: none;
 }
 
 .knowledge-viewer__zoom {
@@ -2048,7 +2062,13 @@
 }
 
 .knowledge-management select {
-  padding-right: var(--space-5);
+  padding-right: 34px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238A8A8A' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 7px;
   text-overflow: ellipsis;
 }
 
@@ -2380,7 +2400,7 @@
 
 .knowledge-management-row--upload .knowledge-management-row__editor {
   grid-column: auto;
-  grid-template-columns: 1.3fr 0.8fr;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr;
 }
 
 .knowledge-management-status {
@@ -2753,6 +2773,12 @@
     display: none;
   }
 
+  .knowledge-management__header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .knowledge-management__toolbar {
     position: static;
     align-items: stretch;
@@ -2963,17 +2989,54 @@
   }
 }
 
-@container knowledge-pdf-viewer (max-width: 720px) {
+@container knowledge-pdf-viewer (max-width: 900px) {
+  .knowledge-reader-back,
+  .knowledge-library-toggle {
+    width: 32px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .knowledge-reader-back__label,
+  .knowledge-library-toggle > span {
+    display: none;
+  }
+
+  .knowledge-viewer__page-status {
+    min-width: 68px;
+  }
+
+  .knowledge-viewer__page-status-long {
+    display: none;
+  }
+
+  .knowledge-viewer__page-status-compact {
+    display: inline;
+  }
+
+  .knowledge-viewer__zoom {
+    min-width: 50px;
+  }
+
+  .knowledge-viewer__controls button {
+    min-width: 34px;
+  }
+}
+
+@container knowledge-pdf-viewer (max-width: 640px) {
   .knowledge-viewer__toolbar {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'heading heading'
+      'leading controls';
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: stretch;
     gap: 6px;
     padding: 7px 8px;
   }
 
   .knowledge-viewer__controls {
-    width: 100%;
-    justify-content: flex-start;
+    width: auto;
+    justify-content: safe flex-end;
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
@@ -2989,29 +3052,12 @@
 }
 
 @container knowledge-pdf-viewer (max-width: 480px) {
-  .knowledge-reader-back {
-    width: 32px;
-    justify-content: center;
-    padding: 0;
-  }
-
-  .knowledge-reader-back__label,
-  .knowledge-library-toggle > span {
-    display: none;
-  }
-
-  .knowledge-library-toggle {
-    width: 32px;
-    justify-content: center;
-    padding: 0;
-  }
-
   .knowledge-viewer__controls {
     gap: 5px;
   }
 
   .knowledge-viewer__page-status {
-    min-width: 92px;
+    min-width: 60px;
   }
 
   .knowledge-viewer__zoom {

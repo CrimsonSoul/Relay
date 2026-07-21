@@ -267,6 +267,20 @@ describe('ManagedKnowledgeService', () => {
     );
   });
 
+  it('publishes directly into Quick Guides when requested', async () => {
+    await service().publish({
+      actor: ACTOR,
+      requestId: 'request-publish-quick-guide',
+      uploadId: 'upload-1',
+      title: 'Checkout Quick Guide',
+      category: 'Operations',
+      documentType: 'cheatsheet',
+    });
+
+    const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
+    expect(publishForm.get('documentType')).toBe('cheatsheet');
+  });
+
   it('reads current audit attribution first and falls back for historical events', async () => {
     audits.getFullList.mockResolvedValueOnce([
       {

@@ -5,9 +5,11 @@ import type { RowComponentProps } from 'react-window';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
   buildDynatraceProblemUrl,
+  DYNATRACE_PROBLEM_RESOLVERS,
   type DynatraceEntityRef,
   type DynatraceProblemNoteRecord,
   type DynatraceProblemRecord,
+  type DynatraceProblemResolver,
   type DynatraceProblemSeverity,
   type DynatraceProblemStateRecord,
   type DynatraceProblemSyncRecord,
@@ -324,6 +326,7 @@ function AlertingProfilePicker({
 function getDispositionDetail(
   addressed: boolean,
   responseRequirementMet: boolean,
+  resolverRequirementMet: boolean,
   state: DynatraceProblemStateRecord | undefined,
   resolved: boolean,
 ): string {
@@ -333,10 +336,10 @@ function getDispositionDetail(
   if (resolved) {
     return 'Dynatrace resolved this problem before Relay recorded a local addressed status.';
   }
-  if (responseRequirementMet) {
-    return 'A local response is recorded or ready. This status stays in Relay and never changes Dynatrace.';
+  if (responseRequirementMet && resolverRequirementMet) {
+    return 'Response ready. Mark addressed when the local work is complete.';
   }
-  return 'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.';
+  return 'Choose your name, then add a ticket or note below.';
 }
 
 type ProblemQueueProps = {
@@ -491,20 +494,22 @@ function ProblemQueue({
   );
 }
 
-type ProblemSavingAction = 'address' | 'note' | 'ticket' | 'refresh' | 'profile' | null;
+type ProblemSavingAction = 'address' | 'response' | 'refresh' | 'profile' | null;
 
 type ProblemDetailProps = {
   problem: DynatraceProblemRecord | undefined;
   state: DynatraceProblemStateRecord | undefined;
   notes: DynatraceProblemNoteRecord[];
+  hasSavedResponse: boolean;
+  resolverDraft: DynatraceProblemResolver | '';
   ticketDraft: string;
   noteDraft: string;
   connectionState: ConnectionState;
   savingAction: ProblemSavingAction;
   onTicketDraftChange: (value: string) => void;
   onNoteDraftChange: (value: string) => void;
-  onSaveTicketReference: () => void;
-  onSaveNote: () => void;
+  onResolverDraftChange: (value: DynatraceProblemResolver | '') => void;
+  onSaveResponse: () => void;
   onAddressToggle: () => void;
   onOpenDynatrace: (problem: DynatraceProblemRecord) => void;
 };
@@ -513,14 +518,16 @@ function ProblemDetail({
   problem,
   state,
   notes,
+  hasSavedResponse,
+  resolverDraft,
   ticketDraft,
   noteDraft,
   connectionState,
   savingAction,
   onTicketDraftChange,
   onNoteDraftChange,
-  onSaveTicketReference,
-  onSaveNote,
+  onResolverDraftChange,
+  onSaveResponse,
   onAddressToggle,
   onOpenDynatrace,
 }: Readonly<ProblemDetailProps>) {
@@ -537,7 +544,9 @@ function ProblemDetail({
 
   const addressed = isAddressed(state);
   const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
-  const responseRequirementMet = ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
+  const hasDraftedResponse = ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
+  const responseRequirementMet = hasDraftedResponse || hasSavedResponse;
+  const resolverRequirementMet = resolverDraft.length > 0;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
   const statusLabel =
     problem.status === 'CLOSED' ? 'Resolved by Dynatrace' : severityLabel(problem.severity);
@@ -545,6 +554,7 @@ function ProblemDetail({
   const dispositionDetail = getDispositionDetail(
     addressed,
     responseRequirementMet,
+    resolverRequirementMet,
     state,
     resolved,
   );
@@ -606,21 +616,47 @@ function ProblemDetail({
             <small id="dt-problem-note-requirement">{dispositionDetail}</small>
           </div>
           {!resolved && (
-            <button
-              type="button"
-              className={`dt-problems__primary-action${
-                addressed ? ' dt-problems__primary-action--secondary' : ''
-              }`}
-              onClick={onAddressToggle}
-              disabled={
-                !mutationsEnabled ||
-                savingAction !== null ||
-                (!addressed && !responseRequirementMet)
-              }
-              aria-describedby={!addressed ? 'dt-problem-note-requirement' : undefined}
-            >
-              {addressActionLabel}
-            </button>
+            <div className="dt-problem-detail__response-actions">
+              {!addressed && (
+                <label className="dt-problem-resolver">
+                  <span>Resolved by</span>
+                  <select
+                    name="dynatrace-problem-resolver"
+                    autoComplete="off"
+                    value={resolverDraft}
+                    onChange={(event) =>
+                      onResolverDraftChange(event.target.value as DynatraceProblemResolver | '')
+                    }
+                    disabled={!mutationsEnabled || savingAction !== null}
+                    required
+                  >
+                    <option value="" disabled>
+                      Select your name
+                    </option>
+                    {DYNATRACE_PROBLEM_RESOLVERS.map((resolver) => (
+                      <option key={resolver} value={resolver}>
+                        {resolver}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <button
+                type="button"
+                className={`dt-problems__primary-action${
+                  addressed ? ' dt-problems__primary-action--secondary' : ''
+                }`}
+                onClick={onAddressToggle}
+                disabled={
+                  !mutationsEnabled ||
+                  savingAction !== null ||
+                  (!addressed && (!responseRequirementMet || !resolverRequirementMet))
+                }
+                aria-describedby={!addressed ? 'dt-problem-note-requirement' : undefined}
+              >
+                {addressActionLabel}
+              </button>
+            </div>
           )}
         </div>
 
@@ -634,20 +670,16 @@ function ProblemDetail({
             <div className="dt-problem-ticket-composer__control">
               <input
                 id="dt-problem-ticket-number"
+                name="dynatrace-problem-ticket"
                 type="text"
+                autoComplete="off"
+                spellCheck={false}
                 value={ticketDraft}
                 onChange={(event) => onTicketDraftChange(event.target.value)}
                 maxLength={MAX_DYNATRACE_TICKET_REFERENCE_LENGTH}
                 disabled={!mutationsEnabled || savingAction !== null}
                 placeholder="INC, REQ, CHG, or other ticket number"
               />
-              <button
-                type="button"
-                onClick={onSaveTicketReference}
-                disabled={!mutationsEnabled || !ticketDraft.trim() || savingAction !== null}
-              >
-                {savingAction === 'ticket' ? 'Adding…' : 'Add ticket reference'}
-              </button>
             </div>
             <small>
               Relay records the ticket number for notation only. It does not create or update a
@@ -657,6 +689,8 @@ function ProblemDetail({
           <label className="dt-problem-note-composer">
             <span>Add a note</span>
             <textarea
+              name="dynatrace-problem-note"
+              autoComplete="off"
               value={noteDraft}
               onChange={(event) => onNoteDraftChange(event.target.value)}
               placeholder="Record investigation details, mitigation, ownership, or next steps"
@@ -668,10 +702,15 @@ function ProblemDetail({
             <span>{noteDraft.length.toLocaleString()} / 5,000</span>
             <button
               type="button"
-              onClick={onSaveNote}
-              disabled={!mutationsEnabled || !noteDraft.trim() || savingAction !== null}
+              onClick={onSaveResponse}
+              disabled={
+                !mutationsEnabled ||
+                !hasDraftedResponse ||
+                !resolverRequirementMet ||
+                savingAction !== null
+              }
             >
-              {savingAction === 'note' ? 'Adding…' : 'Add note'}
+              {savingAction === 'response' ? 'Saving…' : 'Save response'}
             </button>
           </div>
           {connectionState === 'offline' && (
@@ -752,6 +791,12 @@ export const DynatraceProblemsTab: React.FC<{
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [ticketDraft, setTicketDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
+  const [resolverDraft, setResolverDraft] = useState<DynatraceProblemResolver | ''>('');
+  const [savedResponse, setSavedResponse] = useState<{
+    problemId: string;
+    noteId: string;
+    resolver: DynatraceProblemResolver;
+  } | null>(null);
   const [savingAction, setSavingAction] = useState<ProblemSavingAction>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
@@ -817,6 +862,8 @@ export const DynatraceProblemsTab: React.FC<{
   useEffect(() => {
     setTicketDraft('');
     setNoteDraft('');
+    setResolverDraft('');
+    setSavedResponse(null);
   }, [selectedProblemId]);
 
   const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
@@ -826,6 +873,18 @@ export const DynatraceProblemsTab: React.FC<{
   const selectedNotes = selectedProblem
     ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
     : [];
+  const savedResponseNoteId =
+    selectedProblem &&
+    resolverDraft &&
+    savedResponse?.problemId === selectedProblem.problemId &&
+    savedResponse.resolver === resolverDraft
+      ? savedResponse.noteId
+      : '';
+  const addSelectedProblemNote = useCallback(
+    (problemId: string, note: string) =>
+      resolverDraft ? addNote(problemId, note, resolverDraft) : addNote(problemId, note),
+    [addNote, resolverDraft],
+  );
   const handleOpenDynatrace = useCallback(
     async (problem: DynatraceProblemRecord) => {
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
@@ -836,46 +895,18 @@ export const DynatraceProblemsTab: React.FC<{
     [showToast],
   );
 
-  const handleSaveNote = async () => {
-    if (!selectedProblem || !noteDraft.trim() || savingAction) return;
-    setSavingAction('note');
-    try {
-      await addNote(selectedProblem.problemId, noteDraft);
-      setNoteDraft('');
-      showToast('NOC note added', 'success');
-    } catch (saveError) {
-      showToast(saveError instanceof Error ? saveError.message : 'Failed to add note', 'error');
-    } finally {
-      setSavingAction(null);
-    }
-  };
-
-  const handleSaveTicketReference = async () => {
-    if (!selectedProblem || !ticketDraft.trim() || savingAction) return;
-    setSavingAction('ticket');
-    try {
-      await addNote(selectedProblem.problemId, formatDynatraceTicketReferenceNote(ticketDraft));
-      setTicketDraft('');
-      showToast('Service Desk ticket reference added', 'success');
-    } catch (saveError) {
-      showToast(
-        saveError instanceof Error ? saveError.message : 'Failed to add ticket reference',
-        'error',
-      );
-    } finally {
-      setSavingAction(null);
-    }
-  };
-
   const saveDraftedResponses = async (problemId: string) => {
     let responseNoteId = '';
     if (ticketDraft.trim()) {
-      const ticketNote = await addNote(problemId, formatDynatraceTicketReferenceNote(ticketDraft));
+      const ticketNote = await addSelectedProblemNote(
+        problemId,
+        formatDynatraceTicketReferenceNote(ticketDraft),
+      );
       responseNoteId = ticketNote.id;
       setTicketDraft('');
     }
     if (noteDraft.trim()) {
-      const nocNote = await addNote(problemId, noteDraft);
+      const nocNote = await addSelectedProblemNote(problemId, noteDraft);
       responseNoteId ||= nocNote.id;
       setNoteDraft('');
     }
@@ -887,10 +918,42 @@ export const DynatraceProblemsTab: React.FC<{
     return responseNoteId;
   };
 
+  const handleSaveResponse = async () => {
+    if (
+      !selectedProblem ||
+      !resolverDraft ||
+      (!ticketDraft.trim() && !noteDraft.trim()) ||
+      savingAction
+    )
+      return;
+    setSavingAction('response');
+    try {
+      const responseNoteId = await saveDraftedResponses(selectedProblem.problemId);
+      setSavedResponse({
+        problemId: selectedProblem.problemId,
+        noteId: responseNoteId,
+        resolver: resolverDraft,
+      });
+      showToast('Local response saved', 'success');
+    } catch (saveError) {
+      showToast(
+        saveError instanceof Error ? saveError.message : 'Failed to save local response',
+        'error',
+      );
+    } finally {
+      setSavingAction(null);
+    }
+  };
+
   const handleAddressToggle = async () => {
     if (!selectedProblem || savingAction) return;
     const nextAddressed = !isAddressed(selectedState);
-    if (nextAddressed && !ticketDraft.trim() && !noteDraft.trim()) {
+    if (nextAddressed && !resolverDraft) {
+      showToast('Select your name from the resolver list.', 'warning');
+      return;
+    }
+    const hasDraftedResponse = Boolean(ticketDraft.trim() || noteDraft.trim());
+    if (nextAddressed && !hasDraftedResponse && !savedResponseNoteId) {
       showToast(
         'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
         'warning',
@@ -899,10 +962,20 @@ export const DynatraceProblemsTab: React.FC<{
     }
     setSavingAction('address');
     try {
-      const responseNoteId = nextAddressed
-        ? await saveDraftedResponses(selectedProblem.problemId)
-        : undefined;
-      await setAddressed(selectedProblem.problemId, nextAddressed, responseNoteId);
+      let responseNoteId: string | undefined;
+      if (nextAddressed) {
+        responseNoteId = hasDraftedResponse
+          ? await saveDraftedResponses(selectedProblem.problemId)
+          : savedResponseNoteId;
+      }
+      await setAddressed(
+        selectedProblem.problemId,
+        nextAddressed,
+        responseNoteId,
+        nextAddressed ? resolverDraft : undefined,
+      );
+      setSavedResponse(null);
+      setResolverDraft('');
       showToast(
         nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
         'success',
@@ -1087,14 +1160,16 @@ export const DynatraceProblemsTab: React.FC<{
           problem={selectedProblem}
           state={selectedState}
           notes={selectedNotes}
+          hasSavedResponse={Boolean(savedResponseNoteId)}
+          resolverDraft={resolverDraft}
           ticketDraft={ticketDraft}
           noteDraft={noteDraft}
           connectionState={connectionState}
           savingAction={savingAction}
           onTicketDraftChange={setTicketDraft}
           onNoteDraftChange={setNoteDraft}
-          onSaveTicketReference={() => void handleSaveTicketReference()}
-          onSaveNote={() => void handleSaveNote()}
+          onResolverDraftChange={setResolverDraft}
+          onSaveResponse={() => void handleSaveResponse()}
           onAddressToggle={() => void handleAddressToggle()}
           onOpenDynatrace={(problem) => void handleOpenDynatrace(problem)}
         />

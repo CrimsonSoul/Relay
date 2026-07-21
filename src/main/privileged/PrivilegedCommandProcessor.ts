@@ -151,7 +151,7 @@ export class PrivilegedCommandAuthorizationError extends Error {
 }
 
 export class PrivilegedCommandSafeError extends Error {
-  constructor(readonly code: 'invalid-request' | 'insufficient-storage') {
+  constructor(readonly code: 'invalid-request' | 'insufficient-storage' | 'duplicate-file-name') {
     super('The privileged command could not be completed safely.');
     this.name = 'PrivilegedCommandSafeError';
   }
@@ -277,6 +277,7 @@ function safeStoredError(value: PrivilegedCommandError | null): PrivilegedComman
     'pairing-required',
     'invalid-request',
     'insufficient-storage',
+    'duplicate-file-name',
     'expired',
     'replayed',
     'conflict',

@@ -24,6 +24,7 @@ import { KnowledgeMutationCoordinator } from './KnowledgeMutationCoordinator';
 import type { KnowledgeSearchIndexer } from './KnowledgeSearchIndexer';
 import {
   ManagedKnowledgeConflictError,
+  ManagedKnowledgeFilenameConflictError,
   type ManagedKnowledgeService,
 } from './ManagedKnowledgeService';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
@@ -125,6 +126,9 @@ async function translateConflict<T>(operation: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof ManagedKnowledgeConflictError) {
       throw new PrivilegedCommandConflictError(error.currentRevision);
+    }
+    if (error instanceof ManagedKnowledgeFilenameConflictError) {
+      throw new PrivilegedCommandSafeError('duplicate-file-name');
     }
     throw error;
   }
@@ -347,7 +351,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
         const duplicate = await options.pb
           .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
           .getFullList<{ id: string }>({
-            filter: `fileName="${record.fileName.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`,
+            filter: `fileName="${record.fileName.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}" && lifecycleState="active"`,
             fields: 'id',
             requestKey: null,
           });
@@ -391,16 +395,18 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
     'knowledge.document.publish',
     'knowledge.manage',
     async (context, payload) => {
-      const result = await coordinator.run({
-        requestId: context.requestId,
-        action: 'published',
-        mutate: () =>
-          options.service.publish({
-            actor: actor(context),
-            requestId: context.requestId,
-            ...payload,
-          }),
-      });
+      const result = await translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'published',
+          mutate: () =>
+            options.service.publish({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      );
       enqueueSearchIndexBestEffort(options.searchIndexer, result);
       return result;
     },

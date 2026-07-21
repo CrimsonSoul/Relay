@@ -4,6 +4,20 @@ export const DYNATRACE_PROBLEM_NOTES_COLLECTION = 'dynatrace_problem_notes';
 export const DYNATRACE_PROBLEM_SYNC_COLLECTION = 'dynatrace_problem_sync';
 export const DYNATRACE_PROBLEM_SYNC_KEY = 'primary';
 export const DYNATRACE_PROBLEM_HISTORY_RETENTION_DAYS = 365;
+export const DYNATRACE_PROBLEM_RESOLVERS = [
+  'Paris',
+  'Tristan',
+  'Connor',
+  'Weston',
+  'Vlad',
+  'Ryan',
+] as const;
+
+export type DynatraceProblemResolver = (typeof DYNATRACE_PROBLEM_RESOLVERS)[number];
+
+export function isDynatraceProblemResolver(value: string): value is DynatraceProblemResolver {
+  return (DYNATRACE_PROBLEM_RESOLVERS as readonly string[]).includes(value);
+}
 
 export type DynatraceProblemStatus = 'OPEN' | 'CLOSED';
 

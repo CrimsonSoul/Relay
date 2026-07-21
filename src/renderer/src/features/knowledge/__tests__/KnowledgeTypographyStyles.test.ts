@@ -146,10 +146,16 @@ describe('Knowledge and directory semantic typography', () => {
     );
     expect(ruleBody(knowledgeCss, '.knowledge-viewer__toolbar')).toContain('min-height: 58px;');
     expect(knowledgeCss).toMatch(
-      /@container knowledge-pdf-viewer \(max-width: 720px\)[\s\S]*?\.knowledge-viewer__toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+      /@container knowledge-pdf-viewer \(max-width: 640px\)[\s\S]*?\.knowledge-viewer__toolbar\s*\{[\s\S]*?grid-template-areas:\s*'heading heading'\s*'leading controls';/,
     );
     expect(knowledgeCss).toMatch(
-      /@container knowledge-pdf-viewer \(max-width: 720px\)[\s\S]*?\.knowledge-viewer__controls\s*\{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;/,
+      /@container knowledge-pdf-viewer \(max-width: 900px\)[\s\S]*?\.knowledge-reader-back__label,[\s\S]*?\.knowledge-library-toggle > span\s*\{[\s\S]*?display:\s*none;/,
+    );
+    expect(knowledgeCss).toMatch(
+      /@container knowledge-pdf-viewer \(max-width: 640px\)[\s\S]*?\.knowledge-viewer__controls\s*\{[\s\S]*?justify-content:\s*safe flex-end;[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;/,
+    );
+    expect(knowledgeCss).toMatch(
+      /@container knowledge-pdf-viewer \(max-width: 480px\)[\s\S]*?\.knowledge-viewer__page-status\s*\{[^}]*min-width:\s*60px;/,
     );
     expect(knowledgeCss).toMatch(
       /@container knowledge-reader \(max-width: 900px\)[\s\S]*?\.knowledge-drawer\s*\{[\s\S]*?width:\s*min\(320px, calc\(100% - 52px\)\);/,

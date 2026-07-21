@@ -191,6 +191,27 @@ describe('privileged command validation', () => {
 
   it('normalizes stable category and document metadata commands', () => {
     expect(
+      normalizePrivilegedCommandPayload('knowledge.document.publish', {
+        uploadId: 'upload_1',
+        title: ' Network Quick Guide ',
+        category: ' Network ',
+        documentType: 'cheatsheet',
+      }),
+    ).toEqual({
+      uploadId: 'upload_1',
+      title: 'Network Quick Guide',
+      category: 'Network',
+      documentType: 'cheatsheet',
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.publish', {
+        uploadId: 'upload_1',
+        title: 'Network Quick Guide',
+        category: 'Network',
+        documentType: 'reference',
+      }),
+    ).toBeNull();
+    expect(
       normalizePrivilegedCommandPayload('knowledge.category.create', {
         name: '  Access   and Identity ',
         afterCategoryId: null,

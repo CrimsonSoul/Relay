@@ -43,6 +43,13 @@ type StoredUploadRecord = Partial<KnowledgeUploadView> & {
   revision: number;
 };
 
+export class ManagedKnowledgeFilenameConflictError extends Error {
+  constructor() {
+    super('A published document with this PDF filename already exists.');
+    this.name = 'ManagedKnowledgeFilenameConflictError';
+  }
+}
+
 type ManagedKnowledgeServiceOptions = {
   pb: PocketBase;
   now?: () => number;
@@ -241,6 +248,7 @@ export class ManagedKnowledgeService {
     uploadId: string;
     title: string;
     category: string;
+    documentType?: KnowledgeDocumentType;
   }): Promise<KnowledgeManagementDocumentView> {
     const upload = await this.readyUpload(input.uploadId, input.actor);
     await this.assertUniqueFilename(upload.fileName);
@@ -251,10 +259,11 @@ export class ManagedKnowledgeService {
       this.readAndVerifyCover(upload),
     ]);
     const publishedAt = this.timestamp();
+    const documentType = input.documentType === 'cheatsheet' ? 'cheatsheet' : 'sop';
     const form = this.documentForm(upload, bytes, coverBytes, {
       category: category.name,
       categoryId: category.id,
-      documentType: 'sop',
+      documentType,
       title,
       fileName: upload.fileName,
       publishedAt,
@@ -267,7 +276,7 @@ export class ManagedKnowledgeService {
     const document = this.documentFromSaved(saved, upload, {
       category: category.name,
       categoryId: category.id,
-      documentType: 'sop',
+      documentType,
       title,
       fileName: upload.fileName,
       publishedAt,
@@ -980,7 +989,7 @@ export class ManagedKnowledgeService {
     if (
       records.some(({ id, lifecycleState }) => id !== excludingId && lifecycleState !== 'trashed')
     ) {
-      throw new Error('A document with this PDF filename already exists.');
+      throw new ManagedKnowledgeFilenameConflictError();
     }
   }
 

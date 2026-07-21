@@ -38,6 +38,13 @@ describe('Knowledge catalog visual details', () => {
     expect(select).toContain('background-position: right 12px center;');
   });
 
+  it('uses a dark native popup palette so every select option remains legible', () => {
+    expect(ruleBody('.knowledge-catalog__filters select')).toContain('color-scheme: dark;');
+    const option = ruleBody('.knowledge-catalog__filters option');
+    expect(option).toContain('background: var(--color-bg-surface);');
+    expect(option).toContain('color: var(--color-text-primary);');
+  });
+
   it('keeps native select controls from drawing a second focus ring inside the filter shell', () => {
     expect(css).toMatch(
       /\.knowledge-catalog__filters select:focus-visible\s*\{[^}]*outline:\s*0 !important;[^}]*box-shadow:\s*none !important;/,

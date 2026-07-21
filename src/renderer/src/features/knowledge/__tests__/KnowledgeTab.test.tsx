@@ -437,6 +437,9 @@ describe('KnowledgeTab', () => {
       screen.getAllByRole('treeitem', { name: 'Restart the lane service, page 2' })[0]!,
     );
     expect(screen.getByText(/at Restart the lane service/)).toBeInTheDocument();
+    expect(latestViewerProps?.target).toEqual(
+      expect.objectContaining({ pageIndex: 1, top: null, label: 'Restart the lane service' }),
+    );
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());
   });
 

@@ -22,6 +22,8 @@ const SAFE_ERRORS = {
   offline: 'Wiki management is unavailable while Relay is offline.',
   'pairing-required': 'Pair this workstation before managing the Wiki.',
   'invalid-request': 'Relay rejected the Wiki request.',
+  'duplicate-file-name':
+    'A published document with this PDF filename already exists. Replace it or rename the PDF.',
   expired: 'The request expired. Try again.',
   replayed: 'Relay could not safely repeat that request.',
   conflict: 'This item changed on the server. Review the refreshed information and try again.',
@@ -586,11 +588,16 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         ['documents'],
         false,
       ),
-    publish: (uploadId: string, title: string, category: string) =>
+    publish: (
+      uploadId: string,
+      title: string,
+      category: string,
+      documentType: KnowledgeDocumentType = 'sop',
+    ) =>
       execute(
         {
           command: 'knowledge.document.publish',
-          payload: { uploadId, title, category },
+          payload: { uploadId, title, category, documentType },
           expectedRevision: null,
         },
         `publish:${uploadId}`,
@@ -602,7 +609,8 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
             (document) =>
               document.lifecycleState === 'active' &&
               document.displayTitle === title.trim().replace(/\s+/g, ' ') &&
-              knowledgeCategoryKey(document.category) === knowledgeCategoryKey(category),
+              knowledgeCategoryKey(document.category) === knowledgeCategoryKey(category) &&
+              document.documentType === documentType,
           ),
         ['documents', 'uploads'],
         true,

@@ -485,7 +485,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const handleSelectHeading = (heading: KnowledgeOutlineNode) => {
     cancelPendingPassageOpen();
     setActiveHeadingId(heading.id);
-    setTarget({ ...heading });
+    setTarget({ ...heading, top: null });
     setLibraryDrawerOpen(false);
   };
 

@@ -166,7 +166,7 @@ const PRIVILEGED_PAIRING_CHALLENGE_INDEX =
 const PRIVILEGED_PAIRING_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_pairing_requests_id ON relay_privileged_pairing_requests (requestId)';
 const KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX =
-  'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)';
+  'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey) WHERE lifecycleState = "active"';
 const KNOWLEDGE_DOCUMENT_LIFECYCLE_INDEX =
   'CREATE INDEX idx_knowledge_documents_lifecycle ON knowledge_documents (lifecycleState)';
 const KNOWLEDGE_CATEGORY_NAME_INDEX =
@@ -1209,17 +1209,28 @@ function reconcileManagedIndexes(
   indexes: string[],
   expectedIndexes: string[],
 ): { indexes: string[]; changed: boolean; added: number } {
-  const retainedIndexes =
+  const initiallyRetainedIndexes =
     colName === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION &&
     expectedIndexes.includes(PRIVILEGED_ACCOUNT_USERNAME_INDEX)
       ? indexes.filter((index) => index !== PRIVILEGED_ACCOUNT_OPERATOR_INDEX)
       : indexes;
+  const expectedByName = new Map(
+    expectedIndexes.map((index) => [managedIndexName(index), index] as const),
+  );
+  const retainedIndexes = initiallyRetainedIndexes.filter((index) => {
+    const expected = expectedByName.get(managedIndexName(index));
+    return expected === undefined || expected === index;
+  });
   const missingIndexes = expectedIndexes.filter((index) => !retainedIndexes.includes(index));
   return {
     indexes: [...retainedIndexes, ...missingIndexes],
     changed: retainedIndexes.length !== indexes.length || missingIndexes.length > 0,
     added: missingIndexes.length,
   };
+}
+
+function managedIndexName(definition: string): string {
+  return /\bINDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/i.exec(definition)?.[1] ?? definition;
 }
 
 /** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */

@@ -27,6 +27,7 @@ const COMMAND_ERRORS = {
   'pairing-required': 'Pair this workstation before retrying this protected change.',
   'invalid-request': 'Relay rejected this protected change. Close the dialog, refresh, and retry.',
   'insufficient-storage': 'Relay needs more free storage before it can apply this change.',
+  'duplicate-file-name': 'A protected document with that PDF filename already exists.',
   expired: 'This confirmation expired. Enter your password and try again.',
   replayed: 'Relay could not safely repeat this change. Close the dialog, refresh, and retry.',
   conflict:

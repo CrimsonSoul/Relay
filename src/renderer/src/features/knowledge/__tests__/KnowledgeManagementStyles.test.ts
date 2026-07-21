@@ -126,6 +126,7 @@ describe('Knowledge Management visual system', () => {
     const role = ruleBody(css, '.knowledge-management__role');
     const toolbar = ruleBody(css, '.knowledge-management__toolbar');
     const controls = ruleBody(css, '.knowledge-management :is(input, select, textarea)');
+    const select = ruleBody(css, '.knowledge-management select');
     const categoryTool = ruleBody(css, '.knowledge-management__category-tool');
     const row = ruleBody(css, '.knowledge-management-row');
     const title = ruleBody(css, '.knowledge-management-row__identity h2,\n.knowledge-audit-row h2');
@@ -144,6 +145,9 @@ describe('Knowledge Management visual system', () => {
     expect(toolbar).toContain('backdrop-filter: none;');
     expect(controls).toContain('height: 40px;');
     expect(controls).toContain('border-radius: 2px;');
+    expect(select).toContain('padding-right: 34px;');
+    expect(select).toContain('appearance: none;');
+    expect(select).toContain('background-position: right 12px center;');
     expect(categoryTool).toContain('gap: var(--space-2);');
     expect(row).toContain('gap: var(--space-4);');
     expect(row).toContain('min-height: 84px;');

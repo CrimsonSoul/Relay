@@ -93,13 +93,26 @@ function KnowledgeDestinationNav({
         type="button"
         className="knowledge-workspace-shell__home"
         onClick={() => onOpen('home')}
-        aria-label="Knowledge home"
+        aria-label="Knowledge Home"
       >
-        <span className="knowledge-workspace-shell__home-back" aria-hidden="true">
-          ←
+        <span className="knowledge-workspace-shell__home-icon" aria-hidden="true">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m3 11 9-8 9 8" />
+            <path d="M5 10v10h14V10" />
+            <path d="M9 20v-6h6v6" />
+          </svg>
         </span>
         <span className="knowledge-workspace-shell__home-context">{'Knowledge '}</span>
-        home
+        Home
       </button>
       <span className="knowledge-workspace-shell__navigation-divider" aria-hidden="true" />
       {CONTENT_DESTINATIONS.map(({ id, label }) => (
