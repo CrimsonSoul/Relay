@@ -94,6 +94,7 @@ describe('ToastProvider', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('renders children', () => {
@@ -114,6 +115,21 @@ describe('ToastProvider', () => {
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Saved!')).toBeInTheDocument();
     expect(screen.getByText('Success')).toBeInTheDocument();
+  });
+
+  it('shows a toast when randomUUID is unavailable in a web client', () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => bytes.fill(7),
+    });
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Web toast" type="success" />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('trigger'));
+
+    expect(screen.getByText('Web toast')).toBeInTheDocument();
   });
 
   it('shows an error toast when showToast is called with error type', () => {

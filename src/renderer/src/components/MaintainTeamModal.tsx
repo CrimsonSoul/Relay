@@ -18,6 +18,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableEditRow } from './oncall/SortableEditRow';
+import { createClientId } from '../utils/clientId';
 
 interface MaintainTeamModalProps {
   isOpen: boolean;
@@ -69,7 +70,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     setRows((prev) => [
       ...prev,
       {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         team: teamName,
         teamId,
         role: 'Member',

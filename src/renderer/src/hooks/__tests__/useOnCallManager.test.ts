@@ -444,7 +444,10 @@ describe('useOnCallManager', () => {
   });
 
   describe('handleAddTeam', () => {
-    it('adds a new team optimistically and calls API', async () => {
+    it('adds a new team in a web client without randomUUID', async () => {
+      vi.stubGlobal('crypto', {
+        getRandomValues: (bytes: Uint8Array) => bytes.fill(13),
+      });
       mockReplaceTeamRecords.mockResolvedValue([]);
       mockUpdatePrimaryBoardSettings.mockResolvedValue({});
 

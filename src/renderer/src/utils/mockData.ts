@@ -1,4 +1,5 @@
 import { AppData, Contact, Server } from '@shared/ipc';
+import { createClientId } from './clientId';
 
 // Dev-only mock data for browser preview (no Electron API available)
 
@@ -15,7 +16,7 @@ function mkContact(
     phone,
     title,
     _searchString: `${name} ${email} ${phone} ${title}`.toLowerCase(),
-    raw: { id: crypto.randomUUID(), createdAt: now, updatedAt: now },
+    raw: { id: createClientId(), createdAt: now, updatedAt: now },
   };
 }
 
@@ -39,7 +40,7 @@ function mkServer(opts: {
     contact,
     os,
     _searchString: `${name} ${ba} ${lob} ${comment} ${owner} ${contact} ${os}`.toLowerCase(),
-    raw: { id: crypto.randomUUID(), createdAt: now, updatedAt: now },
+    raw: { id: createClientId(), createdAt: now, updatedAt: now },
   };
 }
 

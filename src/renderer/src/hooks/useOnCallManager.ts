@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { OnCallRow } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
+import { createClientId } from '../utils/clientId';
 import {
   replaceTeamRecords,
   deleteOnCallByTeam,
@@ -328,7 +329,7 @@ export function useOnCallManager(
       }
 
       const initialRow: OnCallRow = {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         team: trimmedName,
         teamId,
         role: 'Primary',

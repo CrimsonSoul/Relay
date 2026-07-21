@@ -8,6 +8,7 @@ import React, {
   useEffect,
   useReducer,
 } from 'react';
+import { createClientId } from '../utils/clientId';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 export type ToastDelivery = 'routine' | 'cloud-outage' | 'dynatrace-problem';
@@ -154,7 +155,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const showToast = useCallback<ShowToast>(
     (message: string, type: ToastType, options?: ToastOptions) => {
-      const id = globalThis.crypto.randomUUID();
+      const id = createClientId();
       const delivery = options?.delivery ?? 'routine';
       if (delivery === 'dynatrace-problem') {
         const interruptedCloud = toastsRef.current.find(

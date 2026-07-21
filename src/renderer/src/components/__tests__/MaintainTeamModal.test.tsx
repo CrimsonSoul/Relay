@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { MaintainTeamModal } from '../MaintainTeamModal';
 import type { OnCallRow, Contact } from '@shared/ipc';
 
@@ -28,6 +28,10 @@ const makeRow = (overrides: Partial<OnCallRow> = {}): OnCallRow => ({
 });
 
 describe('MaintainTeamModal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('does not render when isOpen is false', () => {
     render(
       <MaintainTeamModal
@@ -89,7 +93,10 @@ describe('MaintainTeamModal', () => {
     expect(screen.getByText('+ Add Row')).toBeInTheDocument();
   });
 
-  it('clicking Add Row adds a new row', () => {
+  it('clicking Add Row adds a new row when randomUUID is unavailable', () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => bytes.fill(11),
+    });
     render(
       <MaintainTeamModal
         isOpen={true}
