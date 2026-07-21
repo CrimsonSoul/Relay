@@ -1291,6 +1291,25 @@ describe('App default export', () => {
     expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
   });
 
+  it('returns invalid browser configuration to the outer session gate', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'invalid-config' });
+    const onWebSessionRequired = vi.fn();
+    globalThis.api = {
+      ...globalThis.api,
+      runtime: WEB_RUNTIME,
+    } as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App onWebSessionRequired={onWebSessionRequired} />);
+
+    await vi.waitFor(() => expect(onWebSessionRequired).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
+  });
+
   it('shows generic error when checkConfig throws a non-timeout error', async () => {
     mockIsConfigured.mockRejectedValue(new Error('random failure'));
     Object.defineProperty(globalThis, 'location', {
@@ -1448,6 +1467,24 @@ describe('App default export', () => {
     const closeBtn = screen.getByLabelText('Close');
     fireEvent.click(closeBtn);
     expect(mockWindowClose).toHaveBeenCalled();
+  });
+
+  it('does not expose desktop window controls while browser startup is checking', async () => {
+    mockIsConfigured.mockImplementation(() => new Promise(() => undefined));
+    globalThis.api = {
+      ...globalThis.api,
+      runtime: WEB_RUNTIME,
+    } as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(screen.getByText('Initializing...')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Close')).not.toBeInTheDocument();
   });
 
   it('calls windowClose when close button is clicked in error state', async () => {

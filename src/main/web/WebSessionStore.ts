@@ -10,6 +10,7 @@ export type WebSessionCreateInput = {
   auth: PbAuthSession;
   publicConfig: Extract<PublicRelayConfig, { mode: 'server' }>;
   runtime: RelayRuntimeDescriptor;
+  presenceLabel?: string;
   refresh: () => Promise<PbAuthSession>;
   dispose?: () => void | Promise<void>;
 };
@@ -21,6 +22,7 @@ export type WebSessionRecord = {
   auth: PbAuthSession;
   publicConfig: Extract<PublicRelayConfig, { mode: 'server' }>;
   runtime: RelayRuntimeDescriptor;
+  presenceLabel: string;
   createdAt: number;
   lastActiveAt: number;
 };
@@ -47,6 +49,7 @@ function copySession(entry: WebSessionEntry): WebSessionRecord {
     auth: { token: entry.auth.token, record: entry.auth.record },
     publicConfig: entry.publicConfig,
     runtime: entry.runtime,
+    presenceLabel: entry.presenceLabel,
     createdAt: entry.createdAt,
     lastActiveAt: entry.lastActiveAt,
   };
@@ -80,6 +83,7 @@ export class WebSessionStore {
       auth: { token: input.auth.token, record: input.auth.record },
       publicConfig: input.publicConfig,
       runtime: input.runtime,
+      presenceLabel: input.presenceLabel ?? 'Web · Other · LAN/VPN client',
       createdAt: now,
       lastActiveAt: now,
       refreshAuth: input.refresh,

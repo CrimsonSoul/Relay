@@ -8,10 +8,12 @@ import {
 } from 'react';
 import type { WebSessionBootstrap, WebSessionBootstrapResult } from '@shared/webApi';
 import { WebLoginScreen } from '../components/WebLoginScreen';
+import { loadAuthSession } from '../services/pocketbase';
 import { webSessionClient } from './WebSessionClient';
 
 export type WebSessionAppProps = {
   onWebSessionRequired?: () => void;
+  onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
 };
 
 export type WebSessionClientPort = {
@@ -89,6 +91,21 @@ export function WebSessionGate({
     [appLoader, client],
   );
 
+  const reauthenticate = useCallback(
+    async (passphrase: string) => {
+      const result = await client.login({ passphrase });
+      if (!result.ok) return false;
+      try {
+        await client.activate(result.session);
+        loadAuthSession(result.session.auth);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [client],
+  );
+
   useEffect(() => {
     let active = true;
     if (!resolutionRef.current || resolutionRef.current.attempt !== attempt) {
@@ -130,5 +147,5 @@ export function WebSessionGate({
   }
 
   const { App } = state;
-  return <App onWebSessionRequired={requestSignIn} />;
+  return <App onWebSessionRequired={requestSignIn} onWebReauthenticate={reauthenticate} />;
 }

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Tooltip } from './Tooltip';
+import { hasRelayCapability } from '../runtime/relayRuntime';
 
 export const WindowControls = () => {
   const [isMaximized, setIsMaximized] = useState(false);
+  const supported = hasRelayCapability('nativeWindowControls');
 
   // Sync with actual window maximize state
   useEffect(() => {
+    if (!supported) return;
     // Check initial state
     globalThis.window.api
       ?.isMaximized?.()
@@ -26,7 +29,7 @@ export const WindowControls = () => {
     return () => {
       cleanup?.();
     };
-  }, []);
+  }, [supported]);
 
   const handleMinimize = () => globalThis.window.api?.windowMinimize();
   const handleMaximize = () => {
@@ -38,6 +41,7 @@ export const WindowControls = () => {
   const handleClose = () => globalThis.window.api?.windowClose();
 
   const btnClass = 'window-control-btn';
+  if (!supported) return null;
   if (
     globalThis.window.api &&
     'platform' in globalThis.window.api &&

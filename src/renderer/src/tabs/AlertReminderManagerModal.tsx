@@ -19,6 +19,7 @@ interface AlertReminderManagerModalProps {
   hasCustomAlarmSound: boolean;
   onChooseAlarmSound: () => void;
   onResetAlarmSound: () => void;
+  canCustomizeAlarmSound?: boolean;
 }
 
 interface ReminderRowProps {
@@ -138,6 +139,7 @@ export function AlertReminderManagerModal({
   hasCustomAlarmSound,
   onChooseAlarmSound,
   onResetAlarmSound,
+  canCustomizeAlarmSound = true,
 }: Readonly<AlertReminderManagerModalProps>) {
   const [showCompleted, setShowCompleted] = useState(false);
 
@@ -160,16 +162,18 @@ export function AlertReminderManagerModal({
 
         <div className="alert-reminder-manager-sound">
           <div className="alert-reminder-manager-sound-label">Alarm sound: {alarmSoundLabel}</div>
-          <div className="alert-reminder-manager-sound-actions">
-            <TactileButton variant="secondary" size="sm" onClick={onChooseAlarmSound}>
-              Choose MP3
-            </TactileButton>
-            {hasCustomAlarmSound && (
-              <TactileButton variant="ghost" size="sm" onClick={onResetAlarmSound}>
-                Use default
+          {canCustomizeAlarmSound && (
+            <div className="alert-reminder-manager-sound-actions">
+              <TactileButton variant="secondary" size="sm" onClick={onChooseAlarmSound}>
+                Choose MP3
               </TactileButton>
-            )}
-          </div>
+              {hasCustomAlarmSound && (
+                <TactileButton variant="ghost" size="sm" onClick={onResetAlarmSound}>
+                  Use default
+                </TactileButton>
+              )}
+            </div>
+          )}
         </div>
 
         {loading && <div className="alert-reminder-manager-state">Loading alarms...</div>}

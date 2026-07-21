@@ -462,6 +462,7 @@ export const WebSessionBootstrapSchema = z
     auth: PbAuthSessionSchema,
     publicConfig: PublicServerConfigSchema,
     runtime: WebRuntimeDescriptorSchema,
+    presenceLabel: z.string().min(1).max(160).optional(),
   })
   .strict();
 

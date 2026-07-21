@@ -151,4 +151,16 @@ describe('AlertReminderManagerModal', () => {
     expect(props.onChooseAlarmSound).toHaveBeenCalledOnce();
     expect(props.onResetAlarmSound).toHaveBeenCalledOnce();
   });
+
+  it('keeps the active alarm label but hides native sound controls in the browser', () => {
+    renderModal({
+      alarmSoundLabel: 'Default alarm',
+      hasCustomAlarmSound: true,
+      canCustomizeAlarmSound: false,
+    });
+
+    expect(screen.getByText('Alarm sound: Default alarm')).toBeInTheDocument();
+    expect(screen.queryByText('Choose MP3')).not.toBeInTheDocument();
+    expect(screen.queryByText('Use default')).not.toBeInTheDocument();
+  });
 });

@@ -7,6 +7,7 @@ import {
   onConnectionStateChange,
   onPocketBaseClientChange,
 } from '../services/pocketbase';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 export const CLIENT_PRESENCE_COLLECTION = 'client_presence';
 export const CLIENT_PRESENCE_SESSION_STORAGE_KEY = 'relay:client-presence-session-id';
@@ -67,7 +68,13 @@ function sortPresence(a: ClientPresenceRecord, b: ClientPresenceRecord): number 
 }
 
 function sanitizeHostname(hostname: string | null | undefined): string {
-  const trimmed = hostname?.trim();
+  const trimmed = [...(hostname?.trim() ?? '')]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint > 31 && codePoint !== 127;
+    })
+    .join('')
+    .slice(0, 160);
   return trimmed || 'unknown-client';
 }
 
@@ -166,12 +173,26 @@ async function writeClientHeartbeat(sessionId: string, hostname: string): Promis
   }
 }
 
+async function removeClientHeartbeat(sessionId: string): Promise<void> {
+  const collection = getPb().collection(CLIENT_PRESENCE_COLLECTION);
+  try {
+    const existing = await collection.getFirstListItem<ClientPresenceRecord>(
+      `sessionId="${sessionId}"`,
+      { requestKey: null },
+    );
+    await collection.delete(existing.id);
+  } catch (error) {
+    if (!isNotFoundError(error)) handleApiError(error);
+  }
+}
+
 export function useClientPresence(
   relayConfig: PublicRelayConfig | null | undefined,
   onClientConnected?: (hostname: string) => void,
   options: { enabled?: boolean } = {},
 ): ClientPresenceState {
   const enabled = options.enabled !== false;
+  const publishesPresence = relayConfig?.mode === 'client' || getRelayRuntime().kind === 'web';
   const [records, setRecords] = useState<ClientPresenceRecord[]>([]);
   const [loading, setLoading] = useState(enabled && isOnline());
   const [snapshotReady, setSnapshotReady] = useState(false);
@@ -283,7 +304,7 @@ export function useClientPresence(
   }, [commitRecords, enabled, loadPresence]);
 
   useEffect(() => {
-    if (!enabled || relayConfig?.mode !== 'client') return;
+    if (!enabled || !publishesPresence) return;
 
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -310,8 +331,9 @@ export function useClientPresence(
       cancelled = true;
       if (interval) clearInterval(interval);
       unsubscribeConnection();
+      if (isOnline()) void removeClientHeartbeat(sessionId);
     };
-  }, [enabled, relayConfig?.mode]);
+  }, [enabled, publishesPresence]);
 
   useEffect(() => {
     const expiresAt = getNextPresenceExpiry(records);

@@ -10,6 +10,11 @@ import {
   type WebSessionAppProps,
 } from './WebSessionGate';
 
+const mockLoadAuthSession = vi.fn();
+vi.mock('../services/pocketbase', () => ({
+  loadAuthSession: (...args: unknown[]) => mockLoadAuthSession(...args),
+}));
+
 const PB_URL = ['http', '://', 'relay-server', ':8090'].join('');
 const LAN_ADDRESS = ['192', '168', '1', '25'].join('.');
 const SESSION: WebSessionBootstrap = {
@@ -25,8 +30,15 @@ const SESSION: WebSessionBootstrap = {
   runtime: WEB_RUNTIME,
 };
 
-function RelayShell(_props: Readonly<WebSessionAppProps>) {
-  return <div>Relay shell · {globalThis.api?.runtime.label}</div>;
+function RelayShell(props: Readonly<WebSessionAppProps>) {
+  return (
+    <div>
+      <span>Relay shell · {globalThis.api?.runtime.label}</span>
+      <button type="button" onClick={() => void props.onWebReauthenticate?.('reauth-passphrase')}>
+        Reauthenticate
+      </button>
+    </div>
+  );
 }
 
 describe('WebSessionGate', () => {
@@ -113,5 +125,26 @@ describe('WebSessionGate', () => {
     expect(client.login).toHaveBeenCalledWith({ passphrase: 'fixture-passphrase' });
     expect(client.activate).toHaveBeenCalledWith(SESSION);
     expect(appLoader).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the bridge in place when the mounted app reauthenticates', async () => {
+    const client: WebSessionClientPort = {
+      bootstrap: vi.fn(async () => ({ ok: true, session: SESSION })),
+      login: vi.fn(async () => ({ ok: true, session: { ...SESSION, csrfToken: 'next-csrf' } })),
+      activate: vi.fn(async () => {
+        globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
+      }),
+    };
+    render(<WebSessionGate client={client} appLoader={async () => ({ default: RelayShell })} />);
+
+    expect(await screen.findByText('Relay shell · Web')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reauthenticate' }));
+
+    await vi.waitFor(() => {
+      expect(client.login).toHaveBeenCalledWith({ passphrase: 'reauth-passphrase' });
+      expect(mockLoadAuthSession).toHaveBeenCalledWith(SESSION.auth);
+    });
+    expect(client.activate).toHaveBeenLastCalledWith({ ...SESSION, csrfToken: 'next-csrf' });
+    expect(screen.getByText('Relay shell · Web')).toBeInTheDocument();
   });
 });

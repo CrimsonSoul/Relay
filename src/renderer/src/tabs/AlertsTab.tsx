@@ -27,7 +27,7 @@ import {
 } from '../services/reminderAlarmSoundService';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
-import { getRelayRuntime } from '../runtime/relayRuntime';
+import { getRelayRuntime, hasRelayCapability } from '../runtime/relayRuntime';
 
 const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
@@ -182,6 +182,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   onLoadedReminderAlertConsumed,
 }) => {
   const isWebRuntime = getRelayRuntime().kind === 'web';
+  const canCustomizeReminderSound = hasRelayCapability('customReminderSound');
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<AlertFormHandle>(null);
@@ -940,6 +941,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         hasCustomAlarmSound={hasCustomReminderAlarm}
         onChooseAlarmSound={() => void handleChooseReminderAlarmSound()}
         onResetAlarmSound={handleResetReminderAlarmSound}
+        canCustomizeAlarmSound={canCustomizeReminderSound}
       />
       <Modal
         isOpen={pinPromptModal.isOpen}

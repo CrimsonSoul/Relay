@@ -1,0 +1,75 @@
+import { useState, type ComponentProps } from 'react';
+import { Input } from './Input';
+import { TactileButton } from './TactileButton';
+
+type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']>>[0];
+
+export function WebReauthenticationOverlay({
+  onAuthenticate,
+  onAuthenticated,
+  onDiscard,
+}: Readonly<{
+  onAuthenticate(passphrase: string): Promise<boolean>;
+  onAuthenticated(): void;
+  onDiscard(): void;
+}>) {
+  const [passphrase, setPassphrase] = useState('');
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const submit = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    if (pending || passphrase.length < 8) return;
+    const submitted = passphrase;
+    setPending(true);
+    setFailed(false);
+    try {
+      const accepted = await onAuthenticate(submitted);
+      setFailed(!accepted);
+      if (accepted) onAuthenticated();
+    } catch {
+      setFailed(true);
+    } finally {
+      setPassphrase('');
+      setPending(false);
+    }
+  };
+
+  return (
+    <div
+      className="web-reauthentication"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="web-reauthentication-title"
+    >
+      <form className="web-reauthentication__panel" onSubmit={submit}>
+        <div className="web-reauthentication__context">Session expired</div>
+        <h2 id="web-reauthentication-title">Sign in to keep working</h2>
+        <p>Your open work stays in this tab. Changes remain disabled until Relay reconnects.</p>
+        <Input
+          label="Connection passphrase"
+          name="relay-reauthentication-passphrase"
+          type="password"
+          autoComplete="current-password"
+          autoFocus
+          disabled={pending}
+          value={passphrase}
+          onChange={(event) => setPassphrase(event.target.value)}
+        />
+        {failed && <div role="alert">Sign-in failed. Check the passphrase and try again.</div>}
+        <div className="web-reauthentication__actions">
+          <TactileButton
+            type="submit"
+            variant="primary"
+            disabled={pending || passphrase.length < 8}
+          >
+            {pending ? 'Signing in…' : 'Sign in again'}
+          </TactileButton>
+          <TactileButton type="button" variant="secondary" disabled={pending} onClick={onDiscard}>
+            Discard and return to sign in
+          </TactileButton>
+        </div>
+      </form>
+    </div>
+  );
+}

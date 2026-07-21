@@ -7,6 +7,7 @@ import {
 } from '@shared/webApi';
 import type { WebSessionCreateInput, WebSessionRecord, WebSessionStore } from '../WebSessionStore';
 import { WEB_SESSION_COOKIE_NAME, type WebRouter } from '../WebRouter';
+import { WebPrivilegedSession } from '../WebPrivilegedSession';
 
 const SESSION_COOKIE_PATH = '/relay-api';
 const SSE_HEARTBEAT_MS = 25_000;
@@ -31,6 +32,7 @@ function bootstrap(session: WebSessionRecord): WebSessionBootstrap {
     auth: session.auth,
     publicConfig: session.publicConfig,
     runtime: WEB_RUNTIME,
+    presenceLabel: session.presenceLabel,
   };
 }
 
@@ -44,13 +46,21 @@ export function registerWebSessionRoutes(
     bodySchema: WebSessionLoginInputSchema,
     maxBodyBytes: 1024,
     rateLimit: { bucket: 'session-login', key: 'ip', limit: 5, windowMs: 60_000 },
-    handler: async ({ body }) => {
+    handler: async ({ body, request, remoteAddress, sessionId }) => {
       try {
         const authenticated = await authenticate(body.passphrase);
         if (!authenticated) {
           return { status: 401, body: { ok: false, error: 'unauthenticated' } };
         }
-        const session = sessions.create(authenticated);
+        const source = WebPrivilegedSession.safeSource(
+          typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : '',
+          remoteAddress,
+        );
+        const session = sessions.create({
+          ...authenticated,
+          presenceLabel: `Web · ${source.browserFamily} · ${source.addressLabel}`,
+        });
+        if (sessionId && sessionId !== session.id) await sessions.destroy(sessionId);
         return {
           status: 200,
           headers: { 'Set-Cookie': sessionCookie(session.id) },

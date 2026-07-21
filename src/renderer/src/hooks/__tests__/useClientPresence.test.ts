@@ -1,6 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicRelayConfig } from '@shared/ipc';
+import { WEB_RUNTIME } from '@shared/runtime';
 import {
   CLIENT_PRESENCE_SESSION_STORAGE_KEY,
   CLIENT_PRESENCE_TTL_MS,
@@ -22,6 +23,7 @@ const mockGetFullList = vi.fn();
 const mockGetFirstListItem = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
+const mockDelete = vi.fn();
 const mockSubscribe = vi.fn();
 const mockUnsubscribe = vi.fn();
 const mockHandleApiError = vi.fn();
@@ -34,6 +36,7 @@ vi.mock('../../services/pocketbase', () => ({
       getFirstListItem: mockGetFirstListItem,
       create: mockCreate,
       update: mockUpdate,
+      delete: mockDelete,
       subscribe: mockSubscribe,
     }),
   }),
@@ -134,6 +137,26 @@ describe('useClientPresence', () => {
       }),
     );
     expect(mockCreate.mock.calls[0]?.[0]).toHaveProperty('sessionId');
+  });
+
+  it('publishes a bounded Web presence label and removes it when the session unmounts', async () => {
+    globalThis.api = {
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue('Web · Edge · 10.0.0.8'),
+    } as typeof globalThis.api;
+    mockGetFirstListItem.mockResolvedValue(
+      makePresence('web-presence', 'web-session', 'Web · Edge · 10.0.0.8'),
+    );
+    const { unmount } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'web-presence',
+      expect.objectContaining({ hostname: 'Web · Edge · 10.0.0.8', mode: 'client' }),
+    );
+
+    unmount();
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('web-presence'));
   });
 
   it('filters stale client records out of the visible count', async () => {

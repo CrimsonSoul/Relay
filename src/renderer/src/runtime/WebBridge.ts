@@ -570,7 +570,7 @@ export function createWebBridge(
     removeFooterLogo: () => request('/operations/assets/footer/remove', { method: 'POST' }),
     getConfig: async () => session.publicConfig,
     getConnectionSecret: async () => null,
-    getClientHostname: async () => globalThis.location?.hostname ?? null,
+    getClientHostname: async () => session.presenceLabel ?? 'Web · Other · LAN/VPN client',
     saveConfig: async () => false,
     clearConfig: async () => false,
     isConfigured: async () => true,

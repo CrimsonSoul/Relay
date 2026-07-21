@@ -56,6 +56,8 @@ import {
   type KnowledgeDestination,
 } from './features/knowledge/knowledgeWorkspaceNavigation';
 import { getRelayRuntime } from './runtime/relayRuntime';
+import { WebRuntimeBanner } from './components/WebRuntimeBanner';
+import { UnsupportedViewport } from './components/UnsupportedViewport';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -350,6 +352,7 @@ export function MainApp({
   return (
     <SearchProvider activeTab={activeTab} searchInputRef={searchInputRef}>
       <div className="app-container">
+        <WebRuntimeBanner />
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabRequest}
@@ -558,18 +561,28 @@ type AppPhase =
     }
   | { stage: 'error'; message: string; retryable: boolean };
 
-function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?: () => void }) {
+function AppWithSetup({
+  onWebSessionRequired,
+  onWebReauthenticate,
+}: {
+  readonly onWebSessionRequired?: () => void;
+  readonly onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
+}) {
   const [phase, setPhase] = useState<AppPhase>({ stage: 'checking' });
+
+  const requestSetupOrWebSession = useCallback(() => {
+    if (getRelayRuntime().kind === 'web') {
+      onWebSessionRequired?.();
+      return;
+    }
+    setPhase({ stage: 'setup' });
+  }, [onWebSessionRequired]);
 
   const checkConfig = useCallback(async () => {
     try {
       const configured = await globalThis.api!.isConfigured();
       if (!configured) {
-        if (getRelayRuntime().kind === 'web') {
-          onWebSessionRequired?.();
-          return;
-        }
-        setPhase({ stage: 'setup' });
+        requestSetupOrWebSession();
         return;
       }
       const relayConfig = await globalThis.api!.getConfig();
@@ -589,7 +602,7 @@ function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?
           return;
         }
         if (result.error === 'not-configured' || result.error === 'invalid-config') {
-          setPhase({ stage: 'setup' });
+          requestSetupOrWebSession();
           return;
         }
 
@@ -621,7 +634,7 @@ function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?
       loggers.app.error('Failed to check configuration', { error: err });
       setPhase({ stage: 'error', message: 'Failed to read configuration.', retryable: false });
     }
-  }, [onWebSessionRequired]);
+  }, [requestSetupOrWebSession]);
 
   useEffect(() => {
     void checkConfig();
@@ -678,15 +691,18 @@ function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?
   }, [checkConfig]);
 
   if (phase.stage === 'checking') {
+    const canConfigureConnection = getRelayRuntime().kind !== 'web';
     return (
       <div className="app-state">
-        <button
-          className="app-state__close-btn"
-          onClick={() => globalThis.window.api?.windowClose()}
-          aria-label="Close"
-        >
-          &#10005;
-        </button>
+        {canConfigureConnection && (
+          <button
+            className="app-state__close-btn"
+            onClick={() => globalThis.window.api?.windowClose()}
+            aria-label="Close"
+          >
+            &#10005;
+          </button>
+        )}
         <div className="app-state__spinner" />
         <p className="app-state__text">Initializing...</p>
       </div>
@@ -714,6 +730,8 @@ function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?
       pbAuth={phase.pbAuth}
       offlineMode={phase.offlineMode}
       onReconfigure={() => setPhase({ stage: 'setup' })}
+      onWebReauthenticate={onWebReauthenticate}
+      onWebSessionRequired={onWebSessionRequired}
     >
       <PrivilegedAccessProvider>
         <MainApp
@@ -727,7 +745,11 @@ function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?
 
 export default function App({
   onWebSessionRequired,
-}: Readonly<{ onWebSessionRequired?: () => void }> = {}) {
+  onWebReauthenticate,
+}: Readonly<{
+  onWebSessionRequired?: () => void;
+  onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
+}> = {}) {
   const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
 
@@ -742,9 +764,14 @@ export default function App({
   return (
     <ErrorBoundary>
       <ToastWrapper>
-        <NotesProvider>
-          <AppWithSetup onWebSessionRequired={onWebSessionRequired} />
-        </NotesProvider>
+        <UnsupportedViewport>
+          <NotesProvider>
+            <AppWithSetup
+              onWebSessionRequired={onWebSessionRequired}
+              onWebReauthenticate={onWebReauthenticate}
+            />
+          </NotesProvider>
+        </UnsupportedViewport>
       </ToastWrapper>
     </ErrorBoundary>
   );

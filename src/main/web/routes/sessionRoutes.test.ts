@@ -101,6 +101,7 @@ describe('Relay Web session routes', () => {
         pbUrl: `${origin}/pocketbase`,
         auth: { token: 'app-user-token' },
         runtime: WEB_RUNTIME,
+        presenceLabel: 'Web · Other · 127.0.0.1',
       },
     });
     expect(body.session.csrfToken.length).toBeGreaterThanOrEqual(32);
@@ -137,6 +138,28 @@ describe('Relay Web session routes', () => {
       session: { auth: { token: 'app-user-token' } },
     });
     expect(JSON.stringify([...Array.from({ length: sessions.size })])).not.toContain(PASSPHRASE);
+  });
+
+  it('replaces the prior ordinary session after signing in again', async () => {
+    const { origin, sessions, dispose } = await fixture();
+    const first = await login(origin);
+    const firstCookie = first.headers.get('set-cookie')!.split(';', 1)[0];
+
+    const replacement = await fetch(`${origin}/relay-api/v1/session/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin, cookie: firstCookie },
+      body: JSON.stringify({ passphrase: PASSPHRASE }),
+    });
+    const replacementCookie = replacement.headers.get('set-cookie')!.split(';', 1)[0];
+
+    expect(replacement.status).toBe(200);
+    expect(replacementCookie).not.toBe(firstCookie);
+    expect(sessions.size).toBe(1);
+    expect(dispose).toHaveBeenCalledOnce();
+    const oldBootstrap = await fetch(`${origin}/relay-api/v1/session/bootstrap`, {
+      headers: { cookie: firstCookie },
+    });
+    expect(oldBootstrap.status).toBe(401);
   });
 
   it('rotates the cookie, CSRF value, and PocketBase token on refresh', async () => {
