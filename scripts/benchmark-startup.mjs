@@ -68,7 +68,7 @@ async function measureLaunch(userDataDir) {
       timeout: launchTimeoutMs,
     });
     const window = await electronApp.firstWindow({ timeout: launchTimeoutMs });
-    await window.waitForFunction(() => document.visibilityState === 'visible', null, {
+    await window.waitForFunction(() => globalThis.document.visibilityState === 'visible', null, {
       timeout: launchTimeoutMs,
     });
     const windowVisibleMs = Math.round(performance.now() - startedAt);

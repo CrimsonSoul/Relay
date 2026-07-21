@@ -585,13 +585,17 @@ class ConnectedHarness {
       mocks.ensureKnowledgeSearchCollections.mockRejectedValue(
         new Error('optional-storage-secret'),
       );
-      const { startPocketBase } = await import('../../app/pocketbaseBootstrap');
-      const startup = startPocketBase(
-        { mode: 'server', bindHost: '0.0.0.0', port: 8090, secret: 'secret' },
-        join(process.cwd(), '.task-13-fixture'),
-      );
+      const { initializeOptionalKnowledgeSearch, startPocketBase } =
+        await import('../../app/pocketbaseBootstrap');
+      await expect(
+        startPocketBase(
+          { mode: 'server', bindHost: '0.0.0.0', port: 8090, secret: 'secret' },
+          join(process.cwd(), '.task-13-fixture'),
+        ),
+      ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      const optionalBootstrap = initializeOptionalKnowledgeSearch(this.storage as never);
       await vi.advanceTimersByTimeAsync(1_000);
-      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      await expect(optionalBootstrap).resolves.toBe(false);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
       await this.service.start(null);
