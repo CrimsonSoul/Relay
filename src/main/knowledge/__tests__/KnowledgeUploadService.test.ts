@@ -136,6 +136,37 @@ function candidate(path = '/private/work/First.pdf') {
 }
 
 describe('KnowledgeUploadService', () => {
+  it('queues server-staged paths with an isolated local source identity', async () => {
+    const store = queueStore();
+    const { runtime } = commandRuntime();
+    runtime.getView.mockReturnValue({ ...view, deviceId: null });
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => candidate('/managed/web/First.pdf')),
+      planSource: vi.fn(async () => ({
+        ...candidate('/managed/web/First.pdf'),
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    const result = await service.queuePaths(['/managed/web/First.pdf'], 'web-session-a');
+
+    expect(result).toMatchObject({ ok: true, uploads: [{ fileName: 'First.pdf' }] });
+    expect(store.current().entries[0]).toMatchObject({
+      localSourceId: 'web-session-a',
+      deviceId: 'server-local',
+      source: { canonicalPath: '/managed/web/First.pdf' },
+    });
+    await service.whenIdle();
+  });
+
   it('returns a safe queue immediately and hashes/uploads in the background', async () => {
     let releasePlan!: () => void;
     const planning = new Promise<void>((resolve) => {

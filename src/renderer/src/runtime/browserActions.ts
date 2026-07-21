@@ -6,6 +6,7 @@ type BrowserActionsOptions = {
   executeCopy?: (command: string) => boolean;
   AudioConstructor?: typeof Audio;
   pickImage?: (maxBytes: number) => Promise<string | null>;
+  pickPdfFiles?: () => Promise<File[]>;
 };
 
 function normalizedExternalUrl(value: string): string | null {
@@ -96,6 +97,34 @@ function pickBrowserImage(maxBytes: number): Promise<string | null> {
   });
 }
 
+function pickBrowserPdfs(): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,.pdf';
+    input.multiple = true;
+    input.hidden = true;
+    document.body.append(input);
+    let settled = false;
+    const finish = (value: File[]) => {
+      if (settled) return;
+      settled = true;
+      globalThis.removeEventListener('focus', handleFocus);
+      input.value = '';
+      input.remove();
+      resolve(value);
+    };
+    const handleFocus = () =>
+      setTimeout(() => {
+        if (!input.files?.length) finish([]);
+      }, 50);
+    input.addEventListener('cancel', () => finish([]), { once: true });
+    input.addEventListener('change', () => finish(Array.from(input.files ?? [])), { once: true });
+    globalThis.addEventListener('focus', handleFocus, { once: true });
+    input.click();
+  });
+}
+
 export function createBrowserActions(options: BrowserActionsOptions = {}) {
   const openWindow = options.openWindow ?? window.open.bind(window);
   const legacyDocument = document as unknown as { execCommand?: (command: string) => boolean };
@@ -164,6 +193,10 @@ export function createBrowserActions(options: BrowserActionsOptions = {}) {
 
     selectImage(maxBytes: number): Promise<string | null> {
       return (options.pickImage ?? pickBrowserImage)(maxBytes);
+    },
+
+    selectPdfs(): Promise<File[]> {
+      return (options.pickPdfFiles ?? pickBrowserPdfs)();
     },
   };
 }

@@ -21,6 +21,7 @@ export type KnowledgeUploadQueueEntry = {
   uploadRevision: number;
   accountId: string;
   deviceId: string;
+  localSourceId?: string;
   source: KnowledgeUploadQueueSource;
   acknowledgedChunkIndexes: number[];
   state: KnowledgeUploadQueueItemState;
@@ -144,6 +145,7 @@ function normalizePersistedEntry(
     !numberInRange(value.uploadRevision, 0, Number.MAX_SAFE_INTEGER) ||
     !boundedString(value.accountId, 200) ||
     !boundedString(value.deviceId, 200) ||
+    (value.localSourceId !== undefined && !boundedString(value.localSourceId, 200)) ||
     !boundedString(canonicalPath, 4_096) ||
     !boundedString(source.fileName, 240) ||
     !numberInRange(source.byteSize, 1, KNOWLEDGE_MAX_PDF_BYTES) ||
@@ -171,6 +173,7 @@ function normalizePersistedEntry(
     uploadRevision: value.uploadRevision as number,
     accountId: value.accountId,
     deviceId: value.deviceId,
+    ...(typeof value.localSourceId === 'string' ? { localSourceId: value.localSourceId } : {}),
     source: {
       canonicalPath,
       fileName: source.fileName,

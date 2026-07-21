@@ -11,6 +11,13 @@ import { WebPrivilegedSession } from './WebPrivilegedSession';
 import type { ProductionPrivilegedHost } from '../privileged/ProductionPrivilegedHost';
 import type { PrivilegedAccountManager } from '../privileged/PrivilegedAccountManager';
 import { registerWebSessionRoutes } from './routes/sessionRoutes';
+import { registerKnowledgeRoutes, type KnowledgeRouteServices } from './routes/knowledgeRoutes';
+import { WebKnowledgeSession } from './WebKnowledgeSession';
+import { prepareWebKnowledgeUploadRoot } from './WebKnowledgeUploadStaging';
+
+function startPreparingKnowledgeRoot(rootDir: string): void {
+  void prepareWebKnowledgeUploadRoot(rootDir).catch(() => undefined);
+}
 
 type RelayWebGatewayOptions = {
   config: ServerConfig;
@@ -24,6 +31,8 @@ type RelayWebGatewayOptions = {
     PrivilegedAccountManager,
     'setupInitialAdministrator' | 'setupCredential'
   > | null;
+  knowledgeServices?: KnowledgeRouteServices;
+  knowledgeUploadRoot?: string;
 };
 
 export type RelayWebGatewayPort = Pick<
@@ -53,6 +62,7 @@ export class RelayWebGateway {
   private readonly router: WebRouter;
   private readonly stopOperationalEvents: (() => void) | null;
   private readonly privilegedSessions = new Map<string, WebPrivilegedSession>();
+  private readonly knowledgeSessions = new Map<string, WebKnowledgeSession>();
 
   constructor(options: RelayWebGatewayOptions) {
     const hostname = options.hostname ?? getHostname();
@@ -119,6 +129,27 @@ export class RelayWebGateway {
         },
       });
     }
+    if (options.knowledgeServices && options.knowledgeUploadRoot) {
+      startPreparingKnowledgeRoot(options.knowledgeUploadRoot);
+      registerKnowledgeRoutes(this.router, {
+        services: options.knowledgeServices,
+        getSession: (sessionId) => {
+          let knowledge = this.knowledgeSessions.get(sessionId);
+          if (knowledge) return knowledge;
+          const privileged = this.privilegedSessions.get(sessionId);
+          if (!privileged?.authorize('knowledge.manage')) return null;
+          knowledge = new WebKnowledgeSession({
+            sessionId,
+            sessions: this.sessions,
+            runtime: privileged.runtime,
+            rootDir: options.knowledgeUploadRoot!,
+            onDispose: () => this.knowledgeSessions.delete(sessionId),
+          });
+          this.knowledgeSessions.set(sessionId, knowledge);
+          return knowledge;
+        },
+      });
+    }
   }
 
   get sessionCount(): number {
@@ -148,5 +179,6 @@ export class RelayWebGateway {
     this.stopOperationalEvents?.();
     await this.sessions.dispose();
     this.privilegedSessions.clear();
+    this.knowledgeSessions.clear();
   }
 }

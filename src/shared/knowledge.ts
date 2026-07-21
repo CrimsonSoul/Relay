@@ -906,6 +906,27 @@ export function normalizeKnowledgeUploadQueueView(value: unknown): KnowledgeUplo
   };
 }
 
+export function normalizeKnowledgeUploadSelectionResult(
+  value: unknown,
+): KnowledgeUploadSelectionResult | null {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return null;
+  if (!value.ok) {
+    return ['cancelled', 'offline', 'unauthorized', 'invalid-file', 'upload-failed'].includes(
+      String(value.error),
+    )
+      ? {
+          ok: false,
+          error: value.error as Extract<KnowledgeUploadSelectionResult, { ok: false }>['error'],
+        }
+      : null;
+  }
+  if (!Array.isArray(value.uploads)) return null;
+  const uploads = value.uploads.map(normalizeKnowledgeUploadQueueItem);
+  return uploads.length <= KNOWLEDGE_UPLOAD_MAX_FILES && uploads.every((item) => item !== null)
+    ? { ok: true, uploads: uploads as KnowledgeUploadQueueItemView[] }
+    : null;
+}
+
 function optionalBoundedString(value: unknown, max: number): value is string | null {
   return value === null || boundedString(value, max);
 }

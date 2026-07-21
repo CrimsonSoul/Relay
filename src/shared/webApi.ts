@@ -22,6 +22,17 @@ import {
   type DynatraceProblemsPublicSettings,
 } from './dynatraceProblems';
 import type { RelayRuntimeDescriptor } from './runtime';
+import {
+  KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
+  type KnowledgePdfRequest,
+  type KnowledgeIndexStatus,
+} from './knowledge';
+import {
+  KNOWLEDGE_SEARCH_GLOBAL_LIMIT,
+  KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS,
+  type KnowledgeSearchRequest,
+} from './knowledgeSearch';
 
 export const RELAY_WEB_API_PREFIX = '/relay-api/v1';
 
@@ -31,6 +42,90 @@ export const WebIdentifierSchema = z
   .min(1)
   .max(128)
   .regex(/^[A-Za-z0-9_-]+$/u);
+
+export const WebKnowledgeDocumentRequestSchema: z.ZodType<KnowledgePdfRequest> = z
+  .object({
+    documentId: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
+    checksum: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict();
+
+export const WebKnowledgeSearchRequestSchema: z.ZodType<KnowledgeSearchRequest> = z
+  .object({
+    requestId: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u),
+    query: z.string().trim().min(1).max(KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS),
+    scope: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('all') }).strict(),
+      z
+        .object({
+          kind: z.literal('document'),
+          documentId: z.string().min(1).max(200),
+        })
+        .strict(),
+    ]),
+    categoryId: z.string().min(1).max(200).nullable(),
+    documentType: z.enum(['sop', 'cheatsheet']).nullable(),
+    limit: z.number().int().min(1).max(KNOWLEDGE_SEARCH_GLOBAL_LIMIT),
+  })
+  .strict();
+
+export const WebKnowledgeSearchCancelSchema = z.object({ requestId: WebIdentifierSchema }).strict();
+
+export const WebKnowledgeUploadBeginSchema = z
+  .object({
+    files: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(240),
+            size: z.number().int().min(5).max(KNOWLEDGE_MAX_PDF_BYTES),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(KNOWLEDGE_UPLOAD_MAX_FILES),
+  })
+  .strict();
+
+export const WebKnowledgeUploadBatchSchema = z.object({ batchId: WebIdentifierSchema }).strict();
+
+export const WebKnowledgeUploadStagingBatchSchema = z
+  .object({
+    batchId: WebIdentifierSchema,
+    files: z
+      .array(
+        z
+          .object({
+            id: WebIdentifierSchema,
+            name: z.string().min(1).max(240),
+            size: z.number().int().min(5).max(KNOWLEDGE_MAX_PDF_BYTES),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(KNOWLEDGE_UPLOAD_MAX_FILES),
+  })
+  .strict();
+
+export const WebKnowledgeUploadControlSchema = z.object({ id: WebIdentifierSchema }).strict();
+
+export const WebKnowledgeIndexStatusSchema: z.ZodType<KnowledgeIndexStatus> = z
+  .object({
+    state: z.enum(['idle', 'indexing', 'warning', 'error']),
+    documentCount: z.number().int().nonnegative(),
+    categoryCount: z.number().int().nonnegative(),
+    lastIndexedAt: z.iso.datetime().nullable(),
+    message: z.string().max(1_000).optional(),
+  })
+  .strict();
 
 export const WebDynatraceDashboardInputSchema = z
   .object({

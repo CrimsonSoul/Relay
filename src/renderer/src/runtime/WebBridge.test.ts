@@ -5,6 +5,7 @@ import type { BridgeAPI } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
 import { createWebBridge, createWebEventSubscriber } from './WebBridge';
+import { createBrowserActions } from './browserActions';
 
 const SESSION: WebSessionBootstrap = {
   csrfToken: 'c'.repeat(43),
@@ -112,6 +113,42 @@ describe('WebBridge', () => {
       '/privileged/commands',
       '/privileged/logout',
     ]);
+  });
+
+  it('streams selected browser PDFs and reads Knowledge binary responses', async () => {
+    const file = new File(['%PDF-first!!'], 'Runbook.pdf', { type: 'application/pdf' });
+    const actions = createBrowserActions({ pickPdfFiles: async () => [file] });
+    const request = vi.fn(async (path: string) => {
+      if (path === '/knowledge/upload/begin') {
+        return { batchId: 'batch-1', files: [{ id: 'file-1', name: file.name, size: file.size }] };
+      }
+      if (path === '/knowledge/upload/commit') return { ok: true, uploads: [] };
+      return EMPTY_STATUS;
+    });
+    const fetcher = vi.fn(async () => new Response(null, { status: 200 }));
+    const bridge = createWebBridge(SESSION, { actions, request, fetcher });
+
+    await expect(bridge.selectAndQueueKnowledgePdfs()).resolves.toEqual({
+      ok: true,
+      uploads: [],
+    });
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      '/knowledge/upload/begin',
+      '/knowledge/upload/commit',
+    ]);
+    expect(fetcher).toHaveBeenCalledWith(
+      '/relay-api/v1/knowledge/upload/chunk?fileId=file-1&offset=0',
+      expect.objectContaining({ method: 'POST', body: expect.any(Blob) }),
+    );
+
+    fetcher.mockResolvedValueOnce(
+      new Response('%PDF-first!!', {
+        status: 200,
+        headers: { 'x-relay-checksum': 'a'.repeat(64), 'x-relay-source': 'server' },
+      }),
+    );
+    const pdf = await bridge.getKnowledgePdf({ documentId: 'doc-1', checksum: 'a'.repeat(64) });
+    expect(pdf.ok && new TextDecoder().decode(pdf.data)).toBe('%PDF-first!!');
   });
 
   it('multiplexes subscriptions over one event stream and closes it when idle', () => {

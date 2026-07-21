@@ -65,6 +65,7 @@ type KnowledgeUploadServiceOptions = {
 type ActiveUploadSession = PrivilegedSessionView & {
   accountId: string;
   deviceId: string;
+  localSourceId: string;
 };
 
 async function defaultSelectFiles(window?: BrowserWindow, single = false): Promise<string[]> {
@@ -78,7 +79,10 @@ async function defaultSelectFiles(window?: BrowserWindow, single = false): Promi
   return result.canceled ? [] : result.filePaths;
 }
 
-function activeUploadSession(runtime: KnowledgeUploadRuntime | null): ActiveUploadSession | null {
+function activeUploadSession(
+  runtime: KnowledgeUploadRuntime | null,
+  localSourceId?: string,
+): ActiveUploadSession | null {
   const session = runtime?.getView();
   if (
     !runtime ||
@@ -92,6 +96,7 @@ function activeUploadSession(runtime: KnowledgeUploadRuntime | null): ActiveUplo
     ...session,
     accountId: session.accountId,
     deviceId: session.deviceId ?? 'server-local',
+    localSourceId: localSourceId ?? session.deviceId ?? 'server-local',
   };
 }
 
@@ -190,6 +195,7 @@ export class KnowledgeUploadService {
   private preparationTail: Promise<void> = Promise.resolve();
   private persistTail: Promise<void> = Promise.resolve();
   private activeSessionKey: string | null | undefined;
+  private localSourceId: string | null = null;
   private started = false;
   private disposed = false;
 
@@ -211,14 +217,14 @@ export class KnowledgeUploadService {
     this.started = true;
     this.queue = await this.store.load();
     this.emit();
-    const session = activeUploadSession(this.getRuntime());
-    this.activeSessionKey = session ? `${session.accountId}\u0000${session.deviceId}` : null;
+    const session = this.activeUploadSession();
+    this.activeSessionKey = session ? `${session.accountId}\u0000${session.localSourceId}` : null;
     this.scheduler.setSessionActive(Boolean(session));
     if (!session) return;
     for (const entry of this.queue.entries) {
       if (
         entry.accountId === session.accountId &&
-        entry.deviceId === session.deviceId &&
+        this.entryLocalSourceId(entry) === session.localSourceId &&
         !isTerminal(entry.state)
       ) {
         this.enqueuePreparation(entry.localId, true);
@@ -233,12 +239,31 @@ export class KnowledgeUploadService {
     if (!runtime || !session) {
       return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
     }
+    const paths = await this.selectFiles(window, false);
+    if (paths.length === 0) return { ok: false, error: 'cancelled' };
+    return this.queuePaths(paths, session.localSourceId);
+  }
+
+  async queuePaths(
+    paths: readonly string[],
+    localSourceId: string,
+  ): Promise<KnowledgeUploadSelectionResult> {
+    if (this.disposed) return { ok: false, error: 'offline' };
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(localSourceId)) {
+      return { ok: false, error: 'invalid-file' };
+    }
+    if (this.localSourceId && this.localSourceId !== localSourceId) {
+      return { ok: false, error: 'unauthorized' };
+    }
+    this.localSourceId = localSourceId;
+    const runtime = this.getRuntime();
+    const session = this.activeUploadSession();
+    if (!runtime || !session) {
+      return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
+    }
     await this.refresh();
     const activeEntries = this.queue.entries.filter((entry) => !isTerminal(entry.state));
     if (activeEntries.length > 0) return { ok: false, error: 'upload-failed' };
-
-    const paths = await this.selectFiles(window, false);
-    if (paths.length === 0) return { ok: false, error: 'cancelled' };
     if (paths.length > KNOWLEDGE_UPLOAD_MAX_FILES) return { ok: false, error: 'invalid-file' };
 
     const candidates: KnowledgePdfCandidate[] = [];
@@ -265,6 +290,7 @@ export class KnowledgeUploadService {
       uploadRevision: 0,
       accountId: session.accountId,
       deviceId: session.deviceId,
+      localSourceId: session.localSourceId,
       source: {
         ...candidate,
         checksum: null,
@@ -294,7 +320,7 @@ export class KnowledgeUploadService {
   }
 
   async refresh(): Promise<KnowledgeUploadQueueView> {
-    const session = activeUploadSession(this.getRuntime());
+    const session = this.activeUploadSession();
     if (!session) return this.snapshot();
     const batchIds = new Set(
       this.queue.entries
@@ -303,7 +329,7 @@ export class KnowledgeUploadService {
             entry.batchId &&
             needsServerReconciliation(entry.state) &&
             entry.accountId === session.accountId &&
-            entry.deviceId === session.deviceId,
+            this.entryLocalSourceId(entry) === session.localSourceId,
         )
         .map((entry) => entry.batchId as string),
     );
@@ -425,8 +451,8 @@ export class KnowledgeUploadService {
   }
 
   handleSessionChanged(view: PrivilegedSessionView): void {
-    const session = view.state === 'active' ? activeUploadSession(this.getRuntime()) : null;
-    const sessionKey = session ? `${session.accountId}\u0000${session.deviceId}` : null;
+    const session = view.state === 'active' ? this.activeUploadSession() : null;
+    const sessionKey = session ? `${session.accountId}\u0000${session.localSourceId}` : null;
     if (sessionKey === this.activeSessionKey) return;
     this.activeSessionKey = sessionKey;
     this.scheduler.setSessionActive(Boolean(session));
@@ -434,7 +460,7 @@ export class KnowledgeUploadService {
     for (const entry of this.queue.entries) {
       if (
         entry.accountId === session.accountId &&
-        entry.deviceId === session.deviceId &&
+        this.entryLocalSourceId(entry) === session.localSourceId &&
         !isTerminal(entry.state)
       ) {
         this.enqueuePreparation(entry.localId, true);
@@ -471,7 +497,7 @@ export class KnowledgeUploadService {
     const entry = this.findEntry(localId);
     if (!entry || isTerminal(entry.state) || entry.state === 'paused') return;
     const runtime = this.getRuntime();
-    const session = activeUploadSession(runtime);
+    const session = this.activeUploadSession();
     if (!this.sessionMatchesEntry(session, entry)) {
       const safeError = runtime ? 'unauthorized' : 'offline';
       this.updateEntry(entry, { state: 'paused', safeError });
@@ -497,8 +523,18 @@ export class KnowledgeUploadService {
     entry: KnowledgeUploadQueueEntry,
   ): session is ActiveUploadSession {
     return Boolean(
-      session && session.accountId === entry.accountId && session.deviceId === entry.deviceId,
+      session &&
+      session.accountId === entry.accountId &&
+      session.localSourceId === this.entryLocalSourceId(entry),
     );
+  }
+
+  private activeUploadSession(): ActiveUploadSession | null {
+    return activeUploadSession(this.getRuntime(), this.localSourceId ?? undefined);
+  }
+
+  private entryLocalSourceId(entry: KnowledgeUploadQueueEntry): string {
+    return entry.localSourceId ?? entry.deviceId;
   }
 
   private async ensureSourcePlan(

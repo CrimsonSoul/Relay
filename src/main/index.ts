@@ -32,6 +32,9 @@ import {
   setKnowledgePdfService,
   setKnowledgeCoverService,
   getKnowledgeUploadService,
+  getKnowledgePdfService,
+  getKnowledgeCoverService,
+  getKnowledgeSearchService,
   setKnowledgeUploadService,
   getPrivilegedRuntime,
   getPrivilegedHost,
@@ -80,6 +83,7 @@ import { RelayWebGateway } from './web/RelayWebGateway';
 import { createWebSessionAuthenticator } from './web/WebSessionAuthenticator';
 import { createOperationalServices } from './services/operationalServices';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
+import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -264,6 +268,33 @@ if (gotLock) {
                 getAppConfig,
                 getDataRoot,
               }),
+              knowledgeServices: {
+                pdf: {
+                  getPdf: async (request) =>
+                    (await getKnowledgePdfService()?.getPdf(request)) ?? {
+                      ok: false,
+                      error: 'not-found',
+                    },
+                },
+                cover: {
+                  getCover: async (request) =>
+                    (await getKnowledgeCoverService()?.getCover(request)) ?? {
+                      ok: false,
+                      error: 'not-found',
+                    },
+                },
+                index: new KnowledgeIndexStatusService(getPbClient),
+                search: {
+                  search: async (request) =>
+                    (await getKnowledgeSearchService()?.search(request)) ?? {
+                      ok: false,
+                      requestId: request.requestId,
+                      error: 'unavailable',
+                    },
+                  cancel: (requestId) => getKnowledgeSearchService()?.cancel(requestId),
+                },
+              },
+              knowledgeUploadRoot: join(app.getPath('temp'), 'Relay', 'web-knowledge-staging'),
             }),
         }),
       );

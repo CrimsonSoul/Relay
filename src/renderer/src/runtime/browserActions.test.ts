@@ -87,4 +87,13 @@ describe('browser actions', () => {
     await expect(actions.selectImage(5 * 1024 * 1024)).resolves.toBe('data:image/png;base64,cG5n');
     expect(pickImage).toHaveBeenCalledWith(5 * 1024 * 1024);
   });
+
+  it('selects browser PDF objects without exposing local paths', async () => {
+    const files = [new File(['%PDF-first!!'], 'Runbook.pdf', { type: 'application/pdf' })];
+    const pickPdfFiles = vi.fn(async () => files);
+    const actions = createBrowserActions({ pickPdfFiles });
+
+    await expect(actions.selectPdfs()).resolves.toEqual(files);
+    expect(pickPdfFiles).toHaveBeenCalledOnce();
+  });
 });
