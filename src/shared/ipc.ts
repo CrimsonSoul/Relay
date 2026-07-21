@@ -22,6 +22,7 @@ import type {
   KnowledgeUploadSelectionResult,
 } from './knowledge';
 import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
+import type { RelayRuntimeDescriptor } from './runtime';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -381,6 +382,8 @@ export type PendingMutationOverlay = {
 };
 
 export type BridgeAPI = {
+  /** Identifies the active transport and its explicit UI capabilities. */
+  readonly runtime: RelayRuntimeDescriptor;
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path: string) => Promise<void>;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */

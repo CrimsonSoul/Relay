@@ -55,6 +55,7 @@ import {
   type KnowledgeContentDestination,
   type KnowledgeDestination,
 } from './features/knowledge/knowledgeWorkspaceNavigation';
+import { getRelayRuntime } from './runtime/relayRuntime';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -557,13 +558,17 @@ type AppPhase =
     }
   | { stage: 'error'; message: string; retryable: boolean };
 
-function AppWithSetup() {
+function AppWithSetup({ onWebSessionRequired }: { readonly onWebSessionRequired?: () => void }) {
   const [phase, setPhase] = useState<AppPhase>({ stage: 'checking' });
 
   const checkConfig = useCallback(async () => {
     try {
       const configured = await globalThis.api!.isConfigured();
       if (!configured) {
+        if (getRelayRuntime().kind === 'web') {
+          onWebSessionRequired?.();
+          return;
+        }
         setPhase({ stage: 'setup' });
         return;
       }
@@ -616,7 +621,7 @@ function AppWithSetup() {
       loggers.app.error('Failed to check configuration', { error: err });
       setPhase({ stage: 'error', message: 'Failed to read configuration.', retryable: false });
     }
-  }, []);
+  }, [onWebSessionRequired]);
 
   useEffect(() => {
     void checkConfig();
@@ -720,7 +725,9 @@ function AppWithSetup() {
   );
 }
 
-export default function App() {
+export default function App({
+  onWebSessionRequired,
+}: Readonly<{ onWebSessionRequired?: () => void }> = {}) {
   const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
 
@@ -736,7 +743,7 @@ export default function App() {
     <ErrorBoundary>
       <ToastWrapper>
         <NotesProvider>
-          <AppWithSetup />
+          <AppWithSetup onWebSessionRequired={onWebSessionRequired} />
         </NotesProvider>
       </ToastWrapper>
     </ErrorBoundary>

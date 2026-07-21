@@ -14,6 +14,7 @@ import {
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
   type KnowledgeOpenRequest,
 } from '../features/knowledge/knowledgeNavigation';
+import { WEB_RUNTIME } from '@shared/runtime';
 
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
@@ -1147,6 +1148,26 @@ describe('App default export', () => {
     render(<App />);
 
     expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
+    expect(mockGetPbConnection).not.toHaveBeenCalled();
+  });
+
+  it('returns an unauthenticated web runtime to the outer session gate', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    const onWebSessionRequired = vi.fn();
+    globalThis.api = {
+      ...globalThis.api,
+      runtime: WEB_RUNTIME,
+    } as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App onWebSessionRequired={onWebSessionRequired} />);
+
+    await vi.waitFor(() => expect(onWebSessionRequired).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
     expect(mockGetPbConnection).not.toHaveBeenCalled();
   });
 

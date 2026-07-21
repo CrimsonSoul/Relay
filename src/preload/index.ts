@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS, type BridgeAPI, type AuthRequest } from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
+import { ELECTRON_RUNTIME } from '@shared/runtime';
 
 const api: BridgeAPI = {
+  runtime: ELECTRON_RUNTIME,
   /** Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),

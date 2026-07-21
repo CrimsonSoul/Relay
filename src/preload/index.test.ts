@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeAPI } from '@shared/ipc';
+import { ELECTRON_RUNTIME } from '@shared/runtime';
 
 const electronMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
@@ -41,6 +42,10 @@ describe('preload Knowledge web link bridge', () => {
     expect(api.openKnowledgeWebLink).toBeTypeOf('function');
     await expect(api.openKnowledgeWebLink(url)).resolves.toEqual({ ok: true });
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:openWebLink', url);
+  });
+
+  it('identifies the existing preload as the full desktop runtime', () => {
+    expect(api.runtime).toEqual(ELECTRON_RUNTIME);
   });
 
   it('exposes cover bytes through the narrow Knowledge cover channel', async () => {

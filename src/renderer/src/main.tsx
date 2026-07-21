@@ -7,20 +7,33 @@ import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-sans/700.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/700.css';
-import App from './App';
 import './styles.css';
 import { initAccent } from './theme/accent';
 
 initAccent();
 
-// Only use StrictMode in development - it causes double renders that slow startup
 const rootElement = document.getElementById('root') as HTMLElement;
-const app = import.meta.env.DEV ? (
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-) : (
-  <App />
-);
+const root = ReactDOM.createRoot(rootElement);
 
-ReactDOM.createRoot(rootElement).render(app);
+function renderApp(app: React.ReactNode): void {
+  root.render(import.meta.env.DEV ? <React.StrictMode>{app}</React.StrictMode> : app);
+}
+
+async function bootstrapRenderer(): Promise<void> {
+  if (globalThis.api) {
+    const { default: App } = await import('./App');
+    renderApp(<App />);
+    return;
+  }
+
+  const { WebSessionGate } = await import('./runtime/WebSessionGate');
+  renderApp(<WebSessionGate />);
+}
+
+void bootstrapRenderer().catch(() => {
+  renderApp(
+    <main className="app-state" role="alert">
+      <p className="app-state__text">Relay could not start.</p>
+    </main>,
+  );
+});
