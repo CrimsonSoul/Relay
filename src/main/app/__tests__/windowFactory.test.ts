@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Hoist all mock state so vi.mock factories can reference them
 const mocks = vi.hoisted(() => {
   const mockWebContentsOn = vi.fn();
+  const mockWebContentsOnce = vi.fn();
   const mockWebContentsSetWindowOpenHandler = vi.fn();
   const mockWebContentsSend = vi.fn();
   const mockWebContentsSession = { setSpellCheckerLanguages: vi.fn() };
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => {
     return {
       webContents: {
         on: mockWebContentsOn,
+        once: mockWebContentsOnce,
         setWindowOpenHandler: mockWebContentsSetWindowOpenHandler,
         send: mockWebContentsSend,
         session: mockWebContentsSession,
@@ -51,6 +53,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     mockWebContentsOn,
+    mockWebContentsOnce,
     mockWebContentsSetWindowOpenHandler,
     mockSetZoomFactor,
     mockSetVisualZoomLevelLimits,
@@ -413,6 +416,21 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - ready-to-show and close handlers', () => {
+    it('reports window creation and first DOM readiness through optional milestones', async () => {
+      const onWindowCreated = vi.fn();
+      const onShellReady = vi.fn();
+      const { createWindow } = await import('../windowFactory');
+
+      await createWindow({ onWindowCreated, onShellReady });
+      expect(onWindowCreated).toHaveBeenCalledOnce();
+      const domReadyCall = mocks.mockWebContentsOnce.mock.calls.find(
+        (call: unknown[]) => call[0] === 'dom-ready',
+      );
+      expect(domReadyCall).toBeDefined();
+      domReadyCall![1]();
+      expect(onShellReady).toHaveBeenCalledOnce();
+    });
+
     it('shows and focuses the main window when the renderer finishes loading', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();

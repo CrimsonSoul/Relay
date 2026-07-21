@@ -84,6 +84,13 @@ import { createWebSessionAuthenticator } from './web/WebSessionAuthenticator';
 import { createOperationalServices } from './services/operationalServices';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
 import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
+import { createStartupStateController } from './app/startupState';
+import { createStartupTimeline } from './app/startupTimeline';
+import { setupStartupIpc } from './app/startupIpc';
+import { runStartupSequence } from './app/startupSequence';
+
+const startupState = createStartupStateController();
+const startupTimeline = createStartupTimeline();
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -157,8 +164,13 @@ if (gotLock) {
 
   const bootstrap = async () => {
     let cleanupMaintenance: (() => void) | null = null;
+    let cleanupStartupIpc: (() => void) | null = null;
     let stopMemoryHeartbeat: (() => void) | null = null;
     let stopKnowledgeUploadSession: (() => void) | null = null;
+    let resolveWorkspace: ((config: ReturnType<AppConfig['load']>) => void) | null = null;
+    let rejectWorkspace: ((error: unknown) => void) | null = null;
+    let workspaceSettled = false;
+    let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
     let cleanupComplete = false;
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
@@ -168,6 +180,8 @@ if (gotLock) {
       stopPeriodicCleanup();
       cleanupMaintenance?.();
       cleanupMaintenance = null;
+      cleanupStartupIpc?.();
+      cleanupStartupIpc = null;
       stopMemoryHeartbeat?.();
       stopMemoryHeartbeat = null;
       stopKnowledgeUploadSession?.();
@@ -227,10 +241,30 @@ if (gotLock) {
         await app.whenReady();
       }
 
+      startupTimeline.mark('electron-ready');
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
 
       setupPermissions(session.defaultSession);
+      cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline);
+
+      const workspaceReady = new Promise<ReturnType<AppConfig['load']>>((resolve, reject) => {
+        resolveWorkspace = resolve;
+        rejectWorkspace = reject;
+      });
+      startupSequence = runStartupSequence({
+        controller: startupState,
+        createWindow: () =>
+          createWindow({
+            onWindowCreated: () => startupTimeline.mark('window-created'),
+            onShellReady: () => startupTimeline.mark('shell-ready'),
+          }),
+        prepareWorkspace: () => workspaceReady,
+      });
+      // The outer bootstrap catch owns user-facing failure handling. Attach a
+      // rejection observer immediately so an early renderer-load failure is
+      // never reported as an unhandled promise while required setup unwinds.
+      void startupSequence.catch(() => undefined);
 
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
@@ -392,18 +426,16 @@ if (gotLock) {
       loggers.main.info('Starting data initialization...');
       try {
         setCurrentDataRoot(await getDataRoot());
+        startupTimeline.mark('data-root');
         loggers.main.info('Data root:', { path: getCurrentDataRoot() });
       } catch (error) {
         loggers.main.error('Failed to initialize data root', { error });
       }
 
       if (!getCurrentDataRoot()) {
-        dialog.showErrorBox(
-          'Critical Startup Error',
+        throw new Error(
           'Failed to initialize data root directory. The application cannot continue.',
         );
-        requestAppQuit('critical-startup-data-root');
-        return;
       }
 
       // Register PocketBase bootstrap IPC early so it's available when the renderer loads.
@@ -431,7 +463,7 @@ if (gotLock) {
           app.quit();
           return;
         }
-        return reconfigureRuntime(configDataDir);
+        return reconfigureRuntime(configDataDir, { startupState });
       });
 
       const restartPb = async (): Promise<boolean> => {
@@ -472,10 +504,10 @@ if (gotLock) {
         void restartKnowledgeSearchRuntime();
       }
 
-      // Present the UI before optional privileged client initialization. A slow
-      // or unreachable LAN/VPN server must never prevent the Relay shell from
-      // appearing.
-      await createWindow();
+      startupTimeline.mark('workspace-ready');
+      workspaceSettled = true;
+      resolveWorkspace?.(relayConfig);
+      await startupSequence;
       startPeriodicCleanup();
       cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
       stopMemoryHeartbeat = startMemoryHeartbeat();
@@ -493,6 +525,11 @@ if (gotLock) {
         await startPrivilegedAccess(relayConfig);
       }
     } catch (error: unknown) {
+      if (!workspaceSettled) {
+        workspaceSettled = true;
+        rejectWorkspace?.(error);
+      }
+      await startupSequence?.catch(() => undefined);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       loggers.main.error('Failed to start application', { error: errorMessage });
       dialog.showErrorBox('Critical Startup Error', errorMessage);

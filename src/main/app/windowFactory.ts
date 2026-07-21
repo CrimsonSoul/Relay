@@ -131,7 +131,12 @@ async function loadMainWindowRenderer(mainWindow: BrowserWindow, isDev: boolean)
   }
 }
 
-export async function createWindow(): Promise<void> {
+export type CreateWindowOptions = Readonly<{
+  onWindowCreated?: () => void;
+  onShellReady?: () => void;
+}>;
+
+export async function createWindow(options: CreateWindowOptions = {}): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
   const devTestWindowSize = getDevTestWindowSize();
 
@@ -166,6 +171,8 @@ export async function createWindow(): Promise<void> {
     height: devTestWindowSize?.height ?? DEFAULT_MAIN_WINDOW_SIZE.height,
     initiallyVisible: mainWindow.isVisible(),
   });
+  options.onWindowCreated?.();
+  mainWindow.webContents.once('dom-ready', () => options.onShellReady?.());
 
   let windowPresented = false;
   let revealFallback: NodeJS.Timeout | null = null;

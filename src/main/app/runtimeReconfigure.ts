@@ -31,6 +31,7 @@ import {
   createProductionPrivilegedRuntime,
 } from '../privileged/privilegedRuntime';
 import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
+import type { StartupStateController } from './startupState';
 
 function tryClose(db: { close(): void } | null, label: string): void {
   if (!db) return;
@@ -72,7 +73,7 @@ async function rebuildPrivilegedRuntime(
   }
 }
 
-export async function reconfigureRuntime(configDataDir: string): Promise<void> {
+async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> {
   const config = getAppConfig()?.load();
   await getRelayWebServerManager()?.stop();
   await disposePrivilegedRuntime();
@@ -144,5 +145,33 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.reloadIgnoringCache();
+  }
+}
+
+type RuntimeReconfigureOptions = Readonly<{
+  startupState?: StartupStateController;
+}>;
+
+export async function reconfigureRuntime(
+  configDataDir: string,
+  options: RuntimeReconfigureOptions = {},
+): Promise<void> {
+  const generation = options.startupState?.beginGeneration();
+  if (generation !== undefined) {
+    options.startupState?.transition(generation, 'preparing-data');
+  }
+
+  try {
+    await reconfigureRuntimeInternal(configDataDir);
+    if (generation !== undefined) options.startupState?.transition(generation, 'ready');
+  } catch (error) {
+    if (generation !== undefined) {
+      options.startupState?.transition(
+        generation,
+        'failed',
+        'Relay could not apply the new configuration.',
+      );
+    }
+    throw error;
   }
 }

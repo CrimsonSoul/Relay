@@ -356,4 +356,34 @@ describe('reconfigureRuntime', () => {
       mocks.mainWindow.webContents.reloadIgnoringCache.mock.invocationCallOrder[0] as number,
     );
   });
+
+  it('publishes a fresh ready startup generation after reconfiguration', async () => {
+    const { createStartupStateController } = await import('../startupState');
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+    const startupState = createStartupStateController();
+
+    await reconfigureRuntime('/Users/test/RelayData/data', { startupState });
+
+    expect(startupState.getSnapshot()).toMatchObject({
+      generation: 1,
+      phase: 'ready',
+      sequence: 3,
+    });
+  });
+
+  it('keeps a failed reconfiguration generation from becoming ready', async () => {
+    mocks.relayWebServerManager.stop.mockRejectedValueOnce(new Error('web server stuck'));
+    const { createStartupStateController } = await import('../startupState');
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+    const startupState = createStartupStateController();
+
+    await expect(
+      reconfigureRuntime('/Users/test/RelayData/data', { startupState }),
+    ).rejects.toThrow('web server stuck');
+    expect(startupState.getSnapshot()).toMatchObject({
+      generation: 1,
+      phase: 'failed',
+      message: 'Relay could not apply the new configuration.',
+    });
+  });
 });
