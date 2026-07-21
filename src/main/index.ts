@@ -86,7 +86,7 @@ import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusSer
 import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
 import { setupStartupIpc } from './app/startupIpc';
-import { runStartupSequence } from './app/startupSequence';
+import { assertRequiredStartupSucceeded, runStartupSequence } from './app/startupSequence';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
@@ -494,11 +494,15 @@ if (gotLock) {
       // startup failure cannot leave PocketBase or SQLite handles behind.
       app.on('before-quit', cleanupAppResources);
 
-      // Start PocketBase before the window in server mode so bootstrap
-      // connection checks can succeed as soon as the renderer loads.
+      // Required server startup must settle before the workspace can publish
+      // ready, even though the window and static shell are already visible.
       const relayConfig = getAppConfig()?.load();
       if (relayConfig?.mode === 'server') {
-        await startServerServices(relayConfig);
+        const serverStarted = await startServerServices(relayConfig);
+        assertRequiredStartupSucceeded(
+          serverStarted,
+          'Relay could not start its PocketBase workspace.',
+        );
       }
 
       // Open the local client cache before the renderer asks for its bootstrap

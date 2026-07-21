@@ -200,6 +200,7 @@ describe('pocketbaseBootstrap', () => {
   });
 
   it('repairs and restarts once after a definitive superuser credential rejection', async () => {
+    const onHealthy = vi.fn();
     mocks.superuserAuth
       .mockRejectedValueOnce(Object.assign(new Error('invalid credentials'), { status: 401 }))
       .mockResolvedValue({});
@@ -214,6 +215,7 @@ describe('pocketbaseBootstrap', () => {
           secret: 'super-secret-passphrase',
         },
         'C:\\Users\\Relay\\data',
+        { onHealthy },
       ),
     ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
 
@@ -225,6 +227,10 @@ describe('pocketbaseBootstrap', () => {
       expect.objectContaining({ timeout: 10_000 }),
     );
     expect(mocks.superuserAuth).toHaveBeenCalledTimes(2);
+    expect(onHealthy).toHaveBeenCalledOnce();
+    expect(onHealthy.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.superuserAuth.mock.invocationCallOrder[1],
+    );
   });
 
   it('does not mutate credentials after an ambiguous superuser failure', async () => {

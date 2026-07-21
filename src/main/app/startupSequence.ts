@@ -1,5 +1,12 @@
 import type { StartupStateController } from './startupState';
 
+export function assertRequiredStartupSucceeded(
+  succeeded: boolean,
+  failureMessage: string,
+): asserts succeeded {
+  if (!succeeded) throw new Error(failureMessage);
+}
+
 type StartupSequenceOptions<T> = {
   controller: StartupStateController;
   createWindow: () => Promise<void>;

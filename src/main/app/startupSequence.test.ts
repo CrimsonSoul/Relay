@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createStartupStateController } from './startupState';
-import { runStartupSequence } from './startupSequence';
+import { assertRequiredStartupSucceeded, runStartupSequence } from './startupSequence';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -13,6 +13,13 @@ function deferred<T>() {
 }
 
 describe('runStartupSequence', () => {
+  it('rejects a failed required startup operation before readiness can publish', () => {
+    expect(() => assertRequiredStartupSucceeded(false, 'PocketBase workspace unavailable')).toThrow(
+      'PocketBase workspace unavailable',
+    );
+    expect(() => assertRequiredStartupSucceeded(true, 'unused')).not.toThrow();
+  });
+
   it('starts window creation without waiting for required workspace preparation', async () => {
     const controller = createStartupStateController();
     const workspace = deferred<string>();

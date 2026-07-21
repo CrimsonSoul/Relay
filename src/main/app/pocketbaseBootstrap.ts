@@ -328,8 +328,6 @@ const doStartPocketBase = async (
     });
 
     await pbProcess.start();
-    options.onHealthy?.();
-    loggers.pocketbase.info('PocketBase started', { url: pbProcess.getUrl() });
 
     const localUrl = pbProcess.getLocalUrl();
     const PocketBase = (await import('pocketbase')).default;
@@ -345,6 +343,8 @@ const doStartPocketBase = async (
       pb = new PocketBase(localUrl);
       await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
     }
+    options.onHealthy?.();
+    loggers.pocketbase.info('PocketBase started', { url: pbProcess.getUrl() });
 
     // Ensure app user exists for remote client auth (superuser is localhost-only)
     await ensureAppUser(localUrl, serverConfig.secret);
