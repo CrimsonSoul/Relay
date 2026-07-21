@@ -45,7 +45,7 @@ export interface ServerConfig {
 }
 
 export const DEFAULT_SERVER_WEB_CONFIG: Readonly<ServerWebConfig> = Object.freeze({
-  enabled: false,
+  enabled: true,
   port: 8091,
 });
 

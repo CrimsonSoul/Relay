@@ -26,7 +26,7 @@ describe('AppConfig', () => {
     expect(config.load()).toBeNull();
   });
 
-  it('writes and reads server config', () => {
+  it('enables browser backup when server config omits web settings', () => {
     const config = new AppConfig(tempDir);
     const serverConfig: RelayConfig = {
       mode: 'server',
@@ -38,11 +38,11 @@ describe('AppConfig', () => {
     const loaded = config.load();
     expect(loaded).toEqual({
       ...serverConfig,
-      web: { enabled: false, port: 8091 },
+      web: { enabled: true, port: 8091 },
     });
   });
 
-  it('adds disabled web defaults to legacy server configs without rewriting on load', () => {
+  it('enables browser backup for legacy server configs without rewriting on load', () => {
     const stored = {
       mode: 'server',
       port: 8090,
@@ -56,9 +56,22 @@ describe('AppConfig', () => {
 
     expect(loaded).toMatchObject({
       mode: 'server',
-      web: { enabled: false, port: 8091 },
+      web: { enabled: true, port: 8091 },
     });
     expect(JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'))).toEqual(stored);
+  });
+
+  it('preserves an explicit browser backup opt-out', () => {
+    const config = new AppConfig(tempDir);
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'server-secret',
+      web: { enabled: false, port: 8091 },
+    });
+
+    expect(config.load()).toMatchObject({ web: { enabled: false, port: 8091 } });
   });
 
   it('persists explicit web access settings with server configuration', () => {
