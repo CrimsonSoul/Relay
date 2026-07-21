@@ -22,7 +22,7 @@ import {
   setPrivilegedRuntime,
   setPrivilegedHost,
 } from './appState';
-import { startPocketBase } from './pocketbaseBootstrap';
+import { startDeferredPocketBaseServices, startPocketBase } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
 import {
@@ -139,10 +139,6 @@ async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> 
     await getRelayWebServerManager()?.applyConfig(config);
   }
 
-  // Enhanced search owns only disposable derived state and must never delay
-  // runtime reconfiguration or the renderer reload.
-  void restartKnowledgeSearchRuntime();
-
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.reloadIgnoringCache();
@@ -165,6 +161,12 @@ export async function reconfigureRuntime(
   try {
     await reconfigureRuntimeInternal(configDataDir);
     if (generation !== undefined) options.startupState?.transition(generation, 'ready');
+    const config = getAppConfig()?.load();
+    if (config?.mode === 'server') {
+      startDeferredPocketBaseServices(config);
+    } else if (config?.mode === 'client') {
+      void restartKnowledgeSearchRuntime();
+    }
   } catch (error) {
     if (generation !== undefined) {
       options.startupState?.transition(

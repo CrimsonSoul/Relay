@@ -19,6 +19,14 @@ const mocks = vi.hoisted(() => {
   const getFirstListItem = vi.fn().mockRejectedValue(new Error('missing'));
   const deleteRecord = vi.fn().mockResolvedValue({});
   const createRecord = vi.fn().mockResolvedValue({});
+  const backup = vi.fn().mockResolvedValue(undefined);
+  const backupIfDue = vi.fn().mockResolvedValue(null);
+  const startSchedule = vi.fn();
+  const backupManager = { setPocketBase: vi.fn(), backup, backupIfDue };
+  const retentionManager = { startSchedule, stop: vi.fn() };
+  const maintenancePb = {
+    collection: vi.fn(() => ({ authWithPassword: superuserAuth })),
+  };
 
   return {
     app: {
@@ -29,6 +37,8 @@ const mocks = vi.hoisted(() => {
     setPbProcess: vi.fn(),
     getPbProcess: vi.fn(() => null),
     getRetentionManager: vi.fn(() => null),
+    getBackupManager: vi.fn(() => backupManager),
+    getPbClient: vi.fn(() => maintenancePb),
     setRetentionManager: vi.fn(),
     setBackupManager: vi.fn(),
     setPbClient: vi.fn(),
@@ -46,9 +56,11 @@ const mocks = vi.hoisted(() => {
     stopAdvertising: vi.fn(),
     requestAppRelaunch: vi.fn(),
     broadcastToAllWindows: vi.fn(),
-    backup: vi.fn().mockResolvedValue(undefined),
-    backupIfDue: vi.fn().mockResolvedValue(null),
-    startSchedule: vi.fn(),
+    backup,
+    backupIfDue,
+    startSchedule,
+    backupManager,
+    retentionManager,
     loggers: {
       pocketbase: {
         info: vi.fn(),
@@ -75,6 +87,8 @@ vi.mock('../appState', () => ({
   getPbProcess: mocks.getPbProcess,
   setPbProcess: mocks.setPbProcess,
   getRetentionManager: mocks.getRetentionManager,
+  getBackupManager: mocks.getBackupManager,
+  getPbClient: mocks.getPbClient,
   setRetentionManager: mocks.setRetentionManager,
   setBackupManager: mocks.setBackupManager,
   setPbClient: mocks.setPbClient,
@@ -93,17 +107,13 @@ vi.mock('../../pocketbase/binaryPath', () => ({
 
 vi.mock('../../pocketbase/BackupManager', () => ({
   BackupManager: vi.fn(function MockBackupManager() {
-    return {
-      setPocketBase: vi.fn(),
-      backup: mocks.backup,
-      backupIfDue: mocks.backupIfDue,
-    };
+    return mocks.backupManager;
   }),
 }));
 
 vi.mock('../../pocketbase/RetentionManager', () => ({
   RetentionManager: vi.fn(function MockRetentionManager() {
-    return { startSchedule: mocks.startSchedule, stop: vi.fn() };
+    return mocks.retentionManager;
   }),
 }));
 
@@ -147,6 +157,7 @@ describe('pocketbaseBootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getPbProcess.mockReturnValue(null);
+    mocks.getRetentionManager.mockReturnValue(null);
     mocks.pbProcess.isRunning.mockReturnValue(false);
     mocks.pbProcess.start.mockResolvedValue(undefined);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
@@ -264,7 +275,7 @@ describe('pocketbaseBootstrap', () => {
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
   });
 
-  it('keeps server startup successful when optional Wiki search storage rejects', async () => {
+  it('keeps optional Wiki search storage entirely outside required startup', async () => {
     mocks.ensureKnowledgeSearchCollections.mockRejectedValue(
       new Error('search storage unavailable'),
     );
@@ -284,11 +295,7 @@ describe('pocketbaseBootstrap', () => {
 
     expect(mocks.ensureCollections).toHaveBeenCalledOnce();
     expect(mocks.setPbClient).toHaveBeenCalledOnce();
-    expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledTimes(2);
-    expect(mocks.loggers.pocketbase.warn).toHaveBeenCalledWith(
-      'Optional Wiki search storage is unavailable',
-      expect.objectContaining({ error: expect.any(Error) }),
-    );
+    expect(mocks.ensureKnowledgeSearchCollections).not.toHaveBeenCalled();
   });
 
   it('stops startup when the required PocketBase batch API cannot be enabled', async () => {
@@ -320,18 +327,10 @@ describe('pocketbaseBootstrap', () => {
     mocks.ensureKnowledgeSearchCollections.mockRejectedValueOnce(
       new Error('temporary search storage failure'),
     );
-    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const { initializeOptionalKnowledgeSearch } = await import('../pocketbaseBootstrap');
 
     try {
-      const startup = startPocketBase(
-        {
-          mode: 'server',
-          bindHost: '0.0.0.0',
-          port: 8090,
-          secret: 'super-secret-passphrase',
-        },
-        'C:\\\\Users\\\\Relay\\\\data',
-      );
+      const startup = initializeOptionalKnowledgeSearch({} as never);
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
 
@@ -340,7 +339,7 @@ describe('pocketbaseBootstrap', () => {
 
       await vi.advanceTimersByTimeAsync(1);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledTimes(2);
-      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      await expect(startup).resolves.toBe(true);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -352,24 +351,16 @@ describe('pocketbaseBootstrap', () => {
     mocks.ensureKnowledgeSearchCollections.mockImplementation(
       () => new Promise<void>(() => undefined),
     );
-    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const { initializeOptionalKnowledgeSearch } = await import('../pocketbaseBootstrap');
 
     try {
-      const startup = startPocketBase(
-        {
-          mode: 'server',
-          bindHost: '0.0.0.0',
-          port: 8090,
-          secret: 'super-secret-passphrase',
-        },
-        'C:\\\\Users\\\\Relay\\\\data',
-      );
+      const startup = initializeOptionalKnowledgeSearch({} as never);
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
 
       await vi.advanceTimersByTimeAsync(3_000);
 
-      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      await expect(startup).resolves.toBe(false);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
@@ -388,23 +379,15 @@ describe('pocketbaseBootstrap', () => {
     const unhandledRejections: unknown[] = [];
     const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason);
     process.on('unhandledRejection', onUnhandledRejection);
-    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const { initializeOptionalKnowledgeSearch } = await import('../pocketbaseBootstrap');
 
     try {
-      const startup = startPocketBase(
-        {
-          mode: 'server',
-          bindHost: '0.0.0.0',
-          port: 8090,
-          secret: 'super-secret-passphrase',
-        },
-        'C:\\\\Users\\\\Relay\\\\data',
-      );
+      const startup = initializeOptionalKnowledgeSearch({} as never);
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.ensureKnowledgeSearchCollections).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(3_000);
 
-      await expect(startup).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+      await expect(startup).resolves.toBe(false);
       rejectOptionalBootstrap(new Error('late optional bootstrap failure'));
       await vi.advanceTimersByTimeAsync(250);
 
@@ -417,7 +400,8 @@ describe('pocketbaseBootstrap', () => {
   });
 
   it('checks whether the daily automatic backup is due before retention cleanup', async () => {
-    const { startPocketBase } = await import('../pocketbaseBootstrap');
+    const { startPocketBase, startPocketBaseMaintenanceSchedule } =
+      await import('../pocketbaseBootstrap');
 
     await expect(
       startPocketBase(
@@ -431,7 +415,19 @@ describe('pocketbaseBootstrap', () => {
       ),
     ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
 
-    await vi.waitFor(() => expect(mocks.startSchedule).toHaveBeenCalledOnce());
+    expect(mocks.startSchedule).not.toHaveBeenCalled();
+    mocks.getRetentionManager.mockReturnValue(mocks.retentionManager);
+    startPocketBaseMaintenanceSchedule({
+      mode: 'server',
+      bindHost: '0.0.0.0',
+      port: 8090,
+      secret: 'super-secret-passphrase',
+    });
+    expect(mocks.startSchedule).toHaveBeenCalledWith(
+      24 * 60 * 60 * 1000,
+      expect.any(Function),
+      30_000,
+    );
     const beforeCleanup = mocks.startSchedule.mock.calls[0]?.[1] as () => Promise<void>;
     await beforeCleanup();
 

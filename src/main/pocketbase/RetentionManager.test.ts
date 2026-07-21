@@ -75,6 +75,21 @@ describe('RetentionManager', () => {
   });
 
   describe('startSchedule()', () => {
+    it('supports a delayed first run followed by the unchanged recurring interval', async () => {
+      const manager = new RetentionManager(makePb());
+      const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+
+      manager.startSchedule(60_000, undefined, 30_000);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(cleanupSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(cleanupSpy).toHaveBeenCalledTimes(2);
+    });
+
     it('runs cleanup immediately on start', async () => {
       const getFullList = vi.fn().mockResolvedValue([]);
       const pb = makePb({ getFullList });
@@ -187,6 +202,17 @@ describe('RetentionManager', () => {
   });
 
   describe('stop()', () => {
+    it('cancels a pending delayed first run', async () => {
+      const manager = new RetentionManager(makePb());
+      const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+
+      manager.startSchedule(60_000, undefined, 30_000);
+      manager.stop();
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expect(cleanupSpy).not.toHaveBeenCalled();
+    });
+
     it('clears the interval so cleanup no longer fires', async () => {
       const getFullList = vi.fn().mockResolvedValue([]);
       const pb = makePb({ getFullList });

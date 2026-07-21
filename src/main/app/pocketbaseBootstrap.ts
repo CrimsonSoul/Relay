@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import type PocketBase from 'pocketbase';
 import { join } from 'node:path';
 import { loggers } from '../logger';
 import type { ServerConfig } from '../config/AppConfig';
@@ -15,6 +16,8 @@ import {
 } from '../pocketbase/CollectionBootstrap';
 import {
   getPbProcess,
+  getPbClient,
+  getBackupManager,
   setPbProcess,
   getRetentionManager,
   setRetentionManager,
@@ -26,6 +29,10 @@ import { requestAppRelaunch } from './relaunch';
 import { startAdvertising, stopAdvertising } from '../discovery/RelayDiscovery';
 import { IPC_CHANNELS, RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import { isCredentialRejection } from './pbErrors';
+import {
+  restartKnowledgeSearchRuntime,
+  stopKnowledgeSearchRuntime,
+} from '../knowledge/knowledgeSearchRuntime';
 
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
@@ -34,6 +41,8 @@ const APP_USER_ENSURE_RETRY_MS = 750;
 const OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS = 2;
 const OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS = 250;
 const OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS = 3_000;
+const MAINTENANCE_INITIAL_DELAY_MS = 30_000;
+const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -76,6 +85,52 @@ async function retryOptionalSearchBootstrap(
   } finally {
     if (retryTimer) clearTimeout(retryTimer);
   }
+}
+
+export async function initializeOptionalKnowledgeSearch(pb: PocketBase): Promise<boolean> {
+  try {
+    await withDeadline(
+      retryOptionalSearchBootstrap(() => ensureKnowledgeSearchCollections(pb), {
+        attempts: OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS,
+        delayMs: OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS,
+      }),
+      OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS,
+    );
+    return true;
+  } catch (error) {
+    loggers.pocketbase.warn('Optional Wiki search storage is unavailable', { error });
+    return false;
+  }
+}
+
+export function startPocketBaseMaintenanceSchedule(serverConfig: ServerConfig): boolean {
+  const pb = getPbClient();
+  const backupManager = getBackupManager();
+  const retentionManager = getRetentionManager();
+  if (!pb || !backupManager || !retentionManager) {
+    loggers.pocketbase.warn('PocketBase maintenance managers are unavailable after startup');
+    return false;
+  }
+
+  retentionManager.startSchedule(
+    MAINTENANCE_INTERVAL_MS,
+    async () => {
+      await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
+      await backupManager.backupIfDue();
+    },
+    MAINTENANCE_INITIAL_DELAY_MS,
+  );
+  loggers.pocketbase.info('Backup and retention schedule started');
+  return true;
+}
+
+export function startDeferredPocketBaseServices(serverConfig: ServerConfig): void {
+  startPocketBaseMaintenanceSchedule(serverConfig);
+  const pb = getPbClient();
+  if (!pb) return;
+  void initializeOptionalKnowledgeSearch(pb).then((ready) =>
+    ready ? restartKnowledgeSearchRuntime() : stopKnowledgeSearchRuntime(),
+  );
 }
 
 /**
@@ -302,48 +357,22 @@ const doStartPocketBase = async (
     options.onSchemaReady?.();
     setPbClient(pb);
 
-    try {
-      await withDeadline(
-        retryOptionalSearchBootstrap(() => ensureKnowledgeSearchCollections(pb), {
-          attempts: OPTIONAL_SEARCH_BOOTSTRAP_ATTEMPTS,
-          delayMs: OPTIONAL_SEARCH_BOOTSTRAP_RETRY_MS,
-        }),
-        OPTIONAL_SEARCH_BOOTSTRAP_DEADLINE_MS,
-      );
-    } catch (error) {
-      loggers.pocketbase.warn('Optional Wiki search storage is unavailable', { error });
-    }
-
     // Advertise on the LAN so client setup can discover this server (best-effort).
     if (serverConfig.bindHost === '0.0.0.0') {
       startAdvertising(serverConfig.port);
     }
 
-    // Fire-and-forget: backup and retention run in the background on a shared
-    // daily schedule, ordered backup-then-retention so retention can never
-    // delete data that isn't captured in a backup.
-    void (async () => {
-      try {
-        const backupMgr = new BackupManager(configDataDir);
-        setBackupManager(backupMgr);
-        backupMgr.setPocketBase(pb);
-        const retentionMgr = new RetentionManager(pb);
-        setRetentionManager(retentionMgr);
-        retentionMgr.startSchedule(24 * 60 * 60 * 1000, async () => {
-          // Re-auth unconditionally: the superuser token expires (~2 weeks) and
-          // isValid has no expiry margin — one auth call per day is cheap.
-          await pb
-            .collection('_superusers')
-            .authWithPassword('admin@relay.app', serverConfig.secret);
-          await backupMgr.backupIfDue();
-        });
-        loggers.pocketbase.info('Backup and retention managers started');
-      } catch (retErr) {
-        loggers.pocketbase.error('Failed to start backup/retention managers', {
-          error: retErr,
-        });
-      }
-    })();
+    // Construct managers now so manual backup/restore is ready with the
+    // workspace. Automatic database work is scheduled only after global ready.
+    try {
+      const backupMgr = new BackupManager(configDataDir);
+      setBackupManager(backupMgr);
+      backupMgr.setPocketBase(pb);
+      setRetentionManager(new RetentionManager(pb));
+      loggers.pocketbase.info('Backup and retention managers prepared');
+    } catch (retErr) {
+      loggers.pocketbase.error('Failed to prepare backup/retention managers', { error: retErr });
+    }
 
     return collections.privilegedRuntimeReady
       ? { status: 'started', privilegedRuntimeReady: true }

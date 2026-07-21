@@ -51,7 +51,7 @@ import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
-import { startPocketBase } from './app/pocketbaseBootstrap';
+import { startDeferredPocketBaseServices, startPocketBase } from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
@@ -421,8 +421,13 @@ if (gotLock) {
         }
         startServerDataManagers();
         await getRelayWebServerManager()?.applyConfig(config);
-        void restartKnowledgeSearchRuntime();
         return true;
+      };
+
+      const startServerServicesAfterReady = async (config: ServerConfig): Promise<boolean> => {
+        const started = await startServerServices(config);
+        if (started) startDeferredPocketBaseServices(config);
+        return started;
       };
 
       // Resolve data root before loading the renderer
@@ -451,7 +456,7 @@ if (gotLock) {
         if (config?.mode !== 'server') return false;
         await getRelayWebServerManager()?.stop();
         await stopPrivilegedAccess();
-        return startServerServices(config);
+        return startServerServicesAfterReady(config);
       });
 
       // Runtime reconfigure — used by the setup flow so the main process rebuilds
@@ -474,7 +479,7 @@ if (gotLock) {
         if (config?.mode !== 'server') return false;
         await getRelayWebServerManager()?.stop();
         await stopPrivilegedAccess();
-        return startServerServices(config);
+        return startServerServicesAfterReady(config);
       };
       setupIpc(createAuxWindow, restartPb);
 
@@ -506,13 +511,17 @@ if (gotLock) {
             { error: syncErr },
           );
         }
-        void restartKnowledgeSearchRuntime();
       }
 
       startupTimeline.mark('workspace-ready');
       workspaceSettled = true;
       resolveWorkspace?.(relayConfig);
       await startupSequence;
+      if (relayConfig?.mode === 'server') {
+        startDeferredPocketBaseServices(relayConfig);
+      } else if (relayConfig?.mode === 'client') {
+        void restartKnowledgeSearchRuntime();
+      }
       startPeriodicCleanup();
       cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
       stopMemoryHeartbeat = startMemoryHeartbeat();

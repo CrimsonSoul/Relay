@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
   },
   getCloudStatusManager: vi.fn(),
   startPocketBase: vi.fn(),
+  startDeferredPocketBaseServices: vi.fn(),
   syncPbClient: {
     collection: vi.fn(),
   },
@@ -106,6 +107,7 @@ vi.mock('../appState', () => ({
 
 vi.mock('../pocketbaseBootstrap', () => ({
   startPocketBase: mocks.startPocketBase,
+  startDeferredPocketBaseServices: mocks.startDeferredPocketBaseServices,
 }));
 
 vi.mock('pocketbase', () => ({
@@ -345,16 +347,16 @@ describe('reconfigureRuntime', () => {
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
   });
 
-  it('restarts enhanced search best-effort before reloading without awaiting it on the critical path', async () => {
+  it('restarts enhanced search best-effort after reloading without awaiting it on the critical path', async () => {
     mocks.restartKnowledgeSearchRuntime.mockReturnValueOnce(new Promise(() => undefined));
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
     await expect(reconfigureRuntime('/Users/test/RelayData/data')).resolves.toBeUndefined();
 
     expect(mocks.restartKnowledgeSearchRuntime).toHaveBeenCalledOnce();
-    expect(mocks.restartKnowledgeSearchRuntime.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.mainWindow.webContents.reloadIgnoringCache.mock.invocationCallOrder[0] as number,
-    );
+    expect(
+      mocks.mainWindow.webContents.reloadIgnoringCache.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.restartKnowledgeSearchRuntime.mock.invocationCallOrder[0] as number);
   });
 
   it('publishes a fresh ready startup generation after reconfiguration', async () => {

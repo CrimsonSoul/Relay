@@ -6,6 +6,7 @@ const logger = loggers.retention;
 
 export class RetentionManager {
   private interval: ReturnType<typeof setInterval> | null = null;
+  private initialTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly pb: PocketBase) {}
 
@@ -29,7 +30,11 @@ export class RetentionManager {
     }
   }
 
-  startSchedule(intervalMs = 24 * 60 * 60 * 1000, beforeCleanup?: () => Promise<void>): void {
+  startSchedule(
+    intervalMs = 24 * 60 * 60 * 1000,
+    beforeCleanup?: () => Promise<void>,
+    initialDelayMs = 0,
+  ): void {
     this.stop();
     let running = false;
     const run = async (): Promise<void> => {
@@ -49,14 +54,27 @@ export class RetentionManager {
         running = false;
       }
     };
-    void run();
-    this.interval = setInterval(() => {
+    const startRecurringSchedule = () => {
+      this.initialTimeout = null;
       void run();
-    }, intervalMs);
-    this.interval.unref?.();
+      this.interval = setInterval(() => {
+        void run();
+      }, intervalMs);
+      this.interval.unref?.();
+    };
+    if (initialDelayMs > 0) {
+      this.initialTimeout = setTimeout(startRecurringSchedule, initialDelayMs);
+      this.initialTimeout.unref?.();
+    } else {
+      startRecurringSchedule();
+    }
   }
 
   stop(): void {
+    if (this.initialTimeout) {
+      clearTimeout(this.initialTimeout);
+      this.initialTimeout = null;
+    }
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
