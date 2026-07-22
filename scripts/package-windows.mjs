@@ -67,9 +67,23 @@ function run(command, args, options = {}) {
   });
 }
 
+export function resolveMakensisCommand(
+  makensis,
+  { platform = process.platform, dirname: dirnamePath = dirname, join: joinPath = join } = {},
+) {
+  if (platform !== 'win32' || !makensis.path.toLowerCase().endsWith('.cmd')) return makensis;
+
+  const nsisDir = joinPath(dirnamePath(makensis.path), 'windows');
+  return {
+    ...makensis,
+    path: joinPath(nsisDir, 'makensis.exe'),
+    env: { ...(makensis.env ?? {}), NSISDIR: nsisDir },
+  };
+}
+
 async function compileLauncher(harness) {
   await mkdir(generatedDir, { recursive: true });
-  const makensis = await getMakeNsisPath('1.2.1');
+  const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
   const defines = [
     '-WX',
     '-INPUTCHARSET',

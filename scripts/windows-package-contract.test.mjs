@@ -6,6 +6,7 @@ import {
   resolveBuildId,
   validateBuildId,
 } from './windows-package-contract.mjs';
+import { resolveMakensisCommand } from './package-windows.mjs';
 
 describe('Windows package contract', () => {
   it('forwards release publish flags through the nested Windows package script', () => {
@@ -30,6 +31,28 @@ describe('Windows package contract', () => {
     expect(source).toContain("await writeFile(buildIdentityPath, `${buildId}\\n`, 'utf8')");
     expect(config).toContain("from: 'release/windows-bootstrap/relay-build-id.txt'");
     expect(config).toContain("to: 'relay-build-id.txt'");
+  });
+
+  it('runs the bundled NSIS executable directly instead of spawning its Windows cmd wrapper', () => {
+    expect(
+      resolveMakensisCommand(
+        { path: '/cache/nsis/makensis.cmd' },
+        {
+          platform: 'win32',
+          dirname: (value) => value.slice(0, value.lastIndexOf('/')),
+          join: (...parts) => parts.join('/'),
+        },
+      ),
+    ).toEqual({
+      path: '/cache/nsis/windows/makensis.exe',
+      env: { NSISDIR: '/cache/nsis/windows' },
+    });
+    expect(
+      resolveMakensisCommand(
+        { path: '/cache/nsis/makensis', env: { NSISDIR: '/cache/nsis' } },
+        { platform: 'darwin', dirname: () => '', join: (...parts) => parts.join('/') },
+      ),
+    ).toEqual({ path: '/cache/nsis/makensis', env: { NSISDIR: '/cache/nsis' } });
   });
 
   it('accepts only bounded path-safe build identifiers', () => {
