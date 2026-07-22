@@ -145,6 +145,7 @@ Section
   StrCpy $RelayStateNew "$RelayRoot\state.ini.new"
   StrCpy $RelayLauncher "$RelayRoot\Relay.exe"
   StrCpy $RelayLauncherNew "$RelayRoot\Relay.exe.new"
+  Delete "$RelayRoot\bootstrap-error.ini"
 
   CreateDirectory "$RelayRuntimeRoot"
   IfErrors 0 +3
@@ -416,6 +417,7 @@ BootstrapFailed:
       ${EndIf}
     ${EndIf}
   ${EndIf}
+  WriteINIStr "$RelayRoot\bootstrap-error.ini" "Relay" "message" "$RelayFailureMessage"
   ${If} $RelayArgs != "/relay-prepare-only"
     MessageBox MB_OK|MB_ICONSTOP "$RelayFailureMessage Relay will try the last usable build."
   ${EndIf}

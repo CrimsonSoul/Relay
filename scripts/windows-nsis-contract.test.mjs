@@ -209,6 +209,7 @@ describe('Windows NSIS bootstrap contract', () => {
 
   it('smoke-tests first preparation, reuse, shortcuts, and data isolation', () => {
     const source = read('scripts/windows-bootstrap-smoke.ps1');
+    const bootstrap = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain("-ArgumentList '/relay-prepare-only'");
     expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(7);
@@ -232,6 +233,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('Wait-ProcessWithTimeout');
     expect(source).toContain('relay-build-id.txt');
     expect(source).toContain('BrokenCurrentPreservedPrevious');
+    expect(bootstrap).toContain('$RelayRoot\\bootstrap-error.ini');
+    expect(source).toContain('Relay bootstrap failure:');
   });
 
   it('compiles production boundary hooks only into an isolated harness root', () => {

@@ -76,7 +76,16 @@ function Invoke-RelayPreparation {
     }
   }
   elseif ($process.ExitCode -ne 0) {
-    throw "Relay bootstrap exited with code $($process.ExitCode)"
+    $bootstrapErrorPath = Join-Path $runtimeRoot 'bootstrap-error.ini'
+    $failureMessage = 'No bootstrap failure record was written.'
+    if (Test-Path -LiteralPath $bootstrapErrorPath) {
+      $match = Select-String -LiteralPath $bootstrapErrorPath -Pattern '^message=(.+)$' |
+        Select-Object -First 1
+      if ($null -ne $match) {
+        $failureMessage = $match.Matches[0].Groups[1].Value
+      }
+    }
+    throw "Relay bootstrap failure: $failureMessage (exit code $($process.ExitCode))"
   }
   return $stopwatch.ElapsedMilliseconds
 }
