@@ -93,6 +93,7 @@ import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
 import { setupStartupIpc } from './app/startupIpc';
 import { assertRequiredStartupSucceeded, runStartupSequence } from './app/startupSequence';
+import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
@@ -175,6 +176,7 @@ if (gotLock) {
     let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
     let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
     let cancelGpuDiagnostics: (() => void) | null = null;
+    let cancelWindowsRuntimeCleanup: (() => void) | null = null;
     let cleanupComplete = false;
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
@@ -194,6 +196,8 @@ if (gotLock) {
       cancelDeferredPocketBaseServices();
       cancelGpuDiagnostics?.();
       cancelGpuDiagnostics = null;
+      cancelWindowsRuntimeCleanup?.();
+      cancelWindowsRuntimeCleanup = null;
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
       void getRelayWebServerManager()?.stop();
@@ -548,6 +552,19 @@ if (gotLock) {
       startPeriodicCleanup();
       cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
       stopMemoryHeartbeat = startMemoryHeartbeat();
+      cancelWindowsRuntimeCleanup = scheduleWindowsRuntimeCleanup({
+        isPackaged: app.isPackaged,
+        onComplete: ({ removed, failed }) => {
+          if (removed.length === 0 && failed.length === 0) return;
+          loggers.main.info('Windows runtime cleanup completed', {
+            removed: removed.length,
+            failed: failed.length,
+          });
+        },
+        onError: (error) => {
+          loggers.main.warn('Windows runtime cleanup failed', { error });
+        },
+      });
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
