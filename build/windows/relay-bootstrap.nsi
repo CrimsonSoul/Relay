@@ -42,6 +42,8 @@ Var RelayQuarantineMarkerHandle
 Var RelayArchiveHash
 Var RelayFallbackBuild
 Var RelayRuntimeIsUsable
+Var RelayPayloadHashLength
+Var RelayPayloadHashFiltered
 
 !macro RelayHarnessFail SENTINEL MESSAGE
   !ifdef RELAY_BOOTSTRAP_HARNESS
@@ -62,6 +64,9 @@ Var RelayRuntimeIsUsable
     ReadINIStr $RelayMarkerProtocol "$RelayMarker" "Relay" "protocol"
     ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
     ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
+    ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
+    StrLen $RelayPayloadHashLength $RelayMarkerPayloadHash
+    ${StrFilter} "$RelayMarkerPayloadHash" "" "0123456789abcdefABCDEF" "" $RelayPayloadHashFiltered
     StrCpy $RelayResult "0"
     ${If} ${FileExists} "$RelayRuntimeRoot\${BUILD_ID}\${APP_EXECUTABLE_FILENAME}"
       System::Call 'kernel32::GetBinaryTypeW(w "$RelayRuntimeRoot\${BUILD_ID}\${APP_EXECUTABLE_FILENAME}", *i .r0) i.r1'
@@ -70,6 +75,8 @@ Var RelayRuntimeIsUsable
     ${If} $RelayMarkerProtocol == "${RELAY_STATE_PROTOCOL}"
     ${AndIf} $RelayMarkerBuildId == "${BUILD_ID}"
     ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
+    ${AndIf} $RelayPayloadHashLength == 128
+    ${AndIf} $RelayPayloadHashFiltered == $RelayMarkerPayloadHash
     ${AndIf} $RelayResult != "0"
       StrCpy ${RESULT} "1"
     ${EndIf}

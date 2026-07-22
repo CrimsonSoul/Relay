@@ -156,6 +156,15 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).not.toContain('WriteINIStr "$RelayStateNew" "Relay" "previous" "$RelayCurrent"');
   });
 
+  it('requires a complete SHA-512 marker before retaining a fallback runtime', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+
+    expect(source.match(/ReadINIStr \$RelayMarkerPayloadHash/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(source).toContain('StrLen $RelayPayloadHashLength $RelayMarkerPayloadHash');
+    expect(source).toContain('$RelayPayloadHashLength == 128');
+    expect(source).toContain('$RelayPayloadHashFiltered == $RelayMarkerPayloadHash');
+  });
+
   it('maintains stable per-user shortcuts without installer state', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
 
