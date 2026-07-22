@@ -221,23 +221,22 @@ Section
   !ifdef COMPRESS
     SetCompress off
   !endif
-  File /oname=$PLUGINSDIR\relay-app.zip "${APP_64}"
+  File /oname=$PLUGINSDIR\relay-app.7z "${APP_64}"
   !ifdef COMPRESS
     SetCompress "${COMPRESS}"
   !endif
 
-  ${StdUtils.HashFile} $RelayArchiveHash "SHA2-512" "$PLUGINSDIR\relay-app.zip"
+  ${StdUtils.HashFile} $RelayArchiveHash "SHA2-512" "$PLUGINSDIR\relay-app.7z"
   ${If} $RelayArchiveHash != "${APP_64_HASH}"
     StrCpy $RelayFailureMessage "Relay could not verify the embedded runtime archive."
     Goto BootstrapFailed
   ${EndIf}
 
-  nsisunz::Unzip "$PLUGINSDIR\relay-app.zip" "$RelayStaging"
+  Push $OUTDIR
+  SetOutPath "$RelayStaging"
+  Nsis7z::Extract "$PLUGINSDIR\relay-app.7z"
   Pop $RelayResult
-  ${If} $RelayResult != "success"
-    StrCpy $RelayFailureMessage "Relay could not extract the new runtime archive: $RelayResult"
-    Goto BootstrapFailed
-  ${EndIf}
+  SetOutPath "$RelayResult"
   !insertmacro RelayHarnessFail ".fail-after-extraction" "Relay harness stopped after extraction."
 
   ${IfNot} ${FileExists} "$RelayStaging\${APP_EXECUTABLE_FILENAME}"

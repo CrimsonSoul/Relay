@@ -70,7 +70,8 @@ describe('Windows NSIS bootstrap contract', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain('.staging-');
-    expect(source.indexOf('nsisunz::Unzip')).toBeLessThan(
+    expect(source.indexOf('Nsis7z::Extract')).toBeGreaterThan(-1);
+    expect(source.indexOf('Nsis7z::Extract')).toBeLessThan(
       source.indexOf('WriteINIStr "$RelayMarker"'),
     );
     expect(source.indexOf('WriteINIStr "$RelayMarker"')).toBeLessThan(
@@ -112,15 +113,17 @@ describe('Windows NSIS bootstrap contract', () => {
   it('verifies the embedded runtime archive before extracting it', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
     const hashIndex = source.indexOf(
-      '${StdUtils.HashFile} $RelayArchiveHash "SHA2-512" "$PLUGINSDIR\\relay-app.zip"',
+      '${StdUtils.HashFile} $RelayArchiveHash "SHA2-512" "$PLUGINSDIR\\relay-app.7z"',
     );
-    const unzipIndex = source.indexOf('nsisunz::Unzip');
+    const extractIndex = source.indexOf('Nsis7z::Extract');
 
     expect(source).toContain('!include "StdUtils.nsh"');
     expect(hashIndex).toBeGreaterThan(-1);
-    expect(hashIndex).toBeLessThan(unzipIndex);
+    expect(hashIndex).toBeLessThan(extractIndex);
     expect(source).toContain('$RelayArchiveHash != "${APP_64_HASH}"');
     expect(source).toContain('Relay could not verify the embedded runtime archive.');
+    expect(source).toContain('SetOutPath "$RelayStaging"');
+    expect(source).not.toContain('nsisunz::Unzip');
   });
 
   it('validates the extracted inner executable before writing readiness', () => {
@@ -234,7 +237,6 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('relay-build-id.txt');
     expect(source).toContain('BrokenCurrentPreservedPrevious');
     expect(bootstrap).toContain('$RelayRoot\\bootstrap-error.ini');
-    expect(bootstrap).toContain('runtime archive: $RelayResult');
     expect(source).toContain('Relay bootstrap failure:');
   });
 
@@ -263,13 +265,13 @@ describe('Windows NSIS bootstrap contract', () => {
 });
 
 describe('Windows packaging integration contract', () => {
-  it('uses the custom ZIP bootstrap instead of portable mode', () => {
+  it('uses the custom self-extracting bootstrap instead of portable mode', () => {
     const config = read('electron-builder.yml');
 
     expect(config).toContain('target: nsis');
     expect(config).toContain("script: 'build/windows/relay-bootstrap.nsi'");
     expect(config).toContain('packElevateHelper: false');
-    expect(config).toContain('useZip: true');
+    expect(config).toContain('useZip: false');
     expect(config).toContain("nsis: '1.2.1'");
     expect(config).not.toContain('target: portable');
   });

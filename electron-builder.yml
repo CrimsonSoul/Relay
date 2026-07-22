@@ -58,7 +58,7 @@ win:
 nsis:
   script: 'build/windows/relay-bootstrap.nsi'
   packElevateHelper: false
-  useZip: true
+  useZip: false
   artifactName: 'Relay.exe'
 compression: 'normal'
 electronDownload:

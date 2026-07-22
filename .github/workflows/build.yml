@@ -150,7 +150,7 @@ jobs:
             exit 1
           fi
 
-      # Branch artifacts use store-mode ZIP payloads for the fastest preparation
+      # Branch artifacts use store-mode 7z payloads for the fastest preparation
       # and packaging feedback. Releases retain normal until the opt-in same-host
       # comparison report records and justifies a different production default.
       - name: Build previous bootstrap fixture
