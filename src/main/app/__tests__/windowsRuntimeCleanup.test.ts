@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +56,8 @@ describe('Windows runtime cleanup', () => {
     await mkdir(freshStage, { recursive: true });
     await mkdir(oldQuarantine, { recursive: true });
     await mkdir(freshQuarantine, { recursive: true });
+    await writeFile(join(oldQuarantine, '.relay-quarantine-created'), '');
+    await writeFile(join(freshQuarantine, '.relay-quarantine-created'), '');
     const now = Date.now();
     await utimes(
       oldStage,
@@ -64,6 +66,11 @@ describe('Windows runtime cleanup', () => {
     );
     await utimes(
       oldQuarantine,
+      new Date(now - 25 * 60 * 60 * 1000),
+      new Date(now - 25 * 60 * 60 * 1000),
+    );
+    await utimes(
+      join(oldQuarantine, '.relay-quarantine-created'),
       new Date(now - 25 * 60 * 60 * 1000),
       new Date(now - 25 * 60 * 60 * 1000),
     );
@@ -99,6 +106,77 @@ describe('Windows runtime cleanup', () => {
     expect(existsSync(freshStage)).toBe(true);
     expect(existsSync(oldQuarantine)).toBe(false);
     expect(existsSync(freshQuarantine)).toBe(true);
+  });
+
+  it('does not run while the bootstrap holds the runtime lock', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const currentDir = await makeCompleteRuntime(runtimeRoot, 'r1-current');
+    const orphanDir = await makeCompleteRuntime(runtimeRoot, 'r1-orphan');
+    await writeFile(join(root, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=r1-current\n');
+    const acquireLock = vi.fn(async () => null);
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+      acquireLock,
+    });
+
+    expect(acquireLock).toHaveBeenCalledWith(await realpath(root));
+    expect(result).toEqual({ removed: [], skipped: [], failed: [] });
+    expect(existsSync(orphanDir)).toBe(true);
+  });
+
+  it('uses quarantine creation time instead of the renamed runtime mtime', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const currentDir = await makeCompleteRuntime(runtimeRoot, 'r1-current');
+    const damagedDir = await makeCompleteRuntime(runtimeRoot, 'r1-damaged');
+    const quarantineDir = join(runtimeRoot, '.corrupt-r1-damaged-123-456');
+    const now = Date.now();
+    const old = new Date(now - 25 * 60 * 60 * 1000);
+    await utimes(damagedDir, old, old);
+    await rename(damagedDir, quarantineDir);
+    const createdMarker = join(quarantineDir, '.relay-quarantine-created');
+    await writeFile(createdMarker, '');
+    await utimes(quarantineDir, old, old);
+    await writeFile(join(root, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=r1-current\n');
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+      nowMs: now,
+    });
+
+    expect(result.removed).not.toContain('.corrupt-r1-damaged-123-456');
+    expect(result.skipped).toContain('.corrupt-r1-damaged-123-456');
+    expect(existsSync(quarantineDir)).toBe(true);
+  });
+
+  it('revalidates the managed runtime root after acquiring the lock', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const originalRuntimeRoot = join(root, 'Runtime.original');
+    const outsideRuntimeRoot = join(root, 'outside-runtime');
+    const currentDir = await makeCompleteRuntime(runtimeRoot, 'r1-current');
+    const outsideOrphan = await makeCompleteRuntime(outsideRuntimeRoot, 'r1-orphan');
+    await writeFile(join(root, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=r1-current\n');
+    const release = vi.fn(async () => undefined);
+    const acquireLock = vi.fn(async () => {
+      await rename(runtimeRoot, originalRuntimeRoot);
+      await symlink(outsideRuntimeRoot, runtimeRoot, 'dir');
+      return release;
+    });
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+      acquireLock,
+    });
+
+    expect(result).toEqual({ removed: [], skipped: [], failed: [] });
+    expect(existsSync(outsideOrphan)).toBe(true);
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it('skips symlinks, unknown directories, and runtimes without a valid marker', async () => {

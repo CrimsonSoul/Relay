@@ -143,10 +143,28 @@ describe('startup benchmark utilities', () => {
     expect(source).toContain('buildLaunchSpec(resolvedOptions)');
     expect(source).toContain('RELAY_BENCHMARK_EXIT_AFTER_RENDER');
     expect(source).toContain('RELAY_BENCHMARK_RUN_ID');
+    expect(source).toContain("RELAY_DISABLE_CRASH_WATCHDOG: '1'");
     expect(source).toContain('processHandoffMs');
     expect(source).toContain('processExitMs');
+    expect(source).toContain('waitForBenchmarkPid');
+    expect(source).toContain('terminateOwnedBenchmarkProcess({');
+    expect(source).toContain('Get-CimInstance Win32_Process');
+    expect(source).toContain('$null = $process.Handle');
+    expect(source).toContain('$rootProcess = Open-MatchingProcessHandle');
+    expect(source).toContain('$pinnedTargets = @(');
+    expect(source).toContain('$actualTicks = $actualTicks - ($actualTicks % 10)');
+    expect(source).not.toContain('-gt 1000');
+    expect(source).toContain('fs.existsSync(exitMarkerPath)');
+    expect(source).toContain('`--relay-benchmark-run-id=${benchmarkRunId}`');
+    expect(source).not.toContain("['/IM', 'Relay.exe'");
+    expect(source).not.toContain("['/PID', String(pid)");
+    expect(source).toContain('launchTimeoutMs');
+    expect(source).toContain("resolvedOptions.scenario === 'prepare'");
+    expect(source).toContain('outerProcessLifetimeMs');
     expect(source).toContain('Promise.all([');
-    expect(source).toContain('waitForPackagedTimeline(logPath, baseline, startedAt)');
+    expect(source).toContain(
+      'waitForPackagedTimeline(logPath, baseline, startedAt, controller.signal)',
+    );
     expect(source).toContain("scenario === 'prepare' && runtimeReused");
     expect(source).toContain('packagedMedian');
     expect(source).not.toContain('postUpdate');

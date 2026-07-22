@@ -18,6 +18,7 @@ const generatedDir = join(projectDir, 'release', 'windows-bootstrap');
 const launcherFile = 'RelayLauncher.exe';
 const launcherPath = join(generatedDir, launcherFile);
 const buildDefinesPath = join(generatedDir, 'relay-build.nsh');
+const buildIdentityPath = join(generatedDir, 'relay-build-id.txt');
 
 function printUsage() {
   console.log(`Usage: node scripts/package-windows.mjs [electron-builder options]
@@ -92,6 +93,7 @@ async function writeBuildDefines(harness) {
     renderBuildDefines({ buildId, launcherFile, harnessRoot: harness?.root }),
     'utf8',
   );
+  await writeFile(buildIdentityPath, `${buildId}\n`, 'utf8');
   console.log(`Windows runtime build ID: ${buildId}`);
 }
 

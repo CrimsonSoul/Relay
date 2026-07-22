@@ -93,7 +93,19 @@ describe('setupStartupIpc', () => {
   it('recognizes only an explicit self-terminating startup benchmark', async () => {
     const { shouldExitAfterStartupBenchmark } = await import('./startupIpc');
 
-    expect(shouldExitAfterStartupBenchmark({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1' })).toBe(true);
+    expect(
+      shouldExitAfterStartupBenchmark({
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+        RELAY_BENCHMARK_RUN_ID: '5e50ac3a-1bf0-47f5-a653-09bf8a30b364',
+      }),
+    ).toBe(true);
+    expect(shouldExitAfterStartupBenchmark({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1' })).toBe(false);
+    expect(
+      shouldExitAfterStartupBenchmark({
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+        RELAY_BENCHMARK_RUN_ID: '..\\outside',
+      }),
+    ).toBe(false);
     expect(shouldExitAfterStartupBenchmark({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '0' })).toBe(false);
     expect(shouldExitAfterStartupBenchmark({})).toBe(false);
   });

@@ -22,6 +22,16 @@ describe('Windows package contract', () => {
     expect(source).not.toContain("'--untracked-files=no'");
   });
 
+  it('embeds the runtime build identity inside each packaged app payload', () => {
+    const source = readFileSync('scripts/package-windows.mjs', 'utf8');
+    const config = readFileSync('electron-builder.yml', 'utf8');
+
+    expect(source).toContain("'relay-build-id.txt'");
+    expect(source).toContain("await writeFile(buildIdentityPath, `${buildId}\\n`, 'utf8')");
+    expect(config).toContain("from: 'release/windows-bootstrap/relay-build-id.txt'");
+    expect(config).toContain("to: 'relay-build-id.txt'");
+  });
+
   it('accepts only bounded path-safe build identifiers', () => {
     expect(validateBuildId('r1-7e97e422')).toBe('r1-7e97e422');
 
@@ -40,8 +50,15 @@ describe('Windows package contract', () => {
     }
   });
 
-  it('makes dirty local builds unique without changing an explicit CI identity', () => {
+  it('makes every dirty build unique, including an explicit identity', () => {
     expect(resolveBuildId({ env: { RELAY_BUILD_ID: 'r1-ci' } })).toBe('r1-ci');
+    expect(
+      resolveBuildId({
+        env: { RELAY_BUILD_ID: 'r1-ci' },
+        dirty: true,
+        nonce: 'abc123',
+      }),
+    ).toBe('r1-ci-dirty-abc123');
     expect(
       resolveBuildId({
         env: {},
@@ -99,6 +116,23 @@ describe('Windows package contract', () => {
         RELAY_BOOTSTRAP_HARNESS_ROOT: String.raw`C:\runner\..\escape`,
       }),
     ).toThrow(/root/i);
+    for (const root of [
+      'C:\\',
+      'C:\\relay\\trailing\\',
+      String.raw`C:\relay\path" !define PWNED`,
+      String.raw`C:\relay\path$INSTDIR`,
+      'C:\\relay\\path\n!define PWNED',
+      `C:\\relay\\control-${String.fromCharCode(1)}`,
+      String.raw`C:\relay\trailing.`,
+      String.raw`C:\relay\trailing `,
+    ]) {
+      expect(() =>
+        resolveHarnessConfig({
+          RELAY_BOOTSTRAP_HARNESS: '1',
+          RELAY_BOOTSTRAP_HARNESS_ROOT: root,
+        }),
+      ).toThrow(/root/i);
+    }
   });
 
   it('renders harness-only NSIS defines only when explicitly requested', () => {

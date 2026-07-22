@@ -98,7 +98,6 @@ import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
-installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
 
 async function waitForStartupTestDelay(): Promise<void> {
   if (process.env.NODE_ENV !== 'test') return;
@@ -140,6 +139,7 @@ crashReporter.start({
 
 const gotLock = !isCrashWatchdog && app.requestSingleInstanceLock();
 if (gotLock) {
+  installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
   startCrashWatchdog();
 
   app.on('second-instance', () => {

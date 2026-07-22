@@ -1,4 +1,5 @@
-import { lstat, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, open, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -12,6 +13,7 @@ const RESERVED_WINDOWS_NAMES = new Set([
   ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
 ]);
 const RUNTIME_MARKER = '.relay-runtime-ready';
+const QUARANTINE_CREATED_MARKER = '.relay-quarantine-created';
 const STALE_STAGING_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CLEANUP_DELAY_MS = 5 * 60 * 1000;
 
@@ -26,6 +28,17 @@ type CleanupOptions = {
   execPath: string;
   nowMs?: number;
   staleStagingAgeMs?: number;
+  acquireLock?: (root: string) => Promise<(() => Promise<void>) | null>;
+};
+
+type ManagedRoot = { root: string; runtimeRoot: string };
+
+type CleanupContext = {
+  managedRoot: ManagedRoot;
+  requestedRoot: string;
+  executingBuild: string;
+  nowMs: number;
+  staleStagingAgeMs: number;
 };
 
 type TimerHandle = ReturnType<typeof setTimeout>;
@@ -107,9 +120,7 @@ async function executingBuildId(runtimeRoot: string, execPath: string): Promise<
   return isBuildId(parts[0]) ? parts[0] : null;
 }
 
-async function resolveManagedRoot(
-  root: string,
-): Promise<{ root: string; runtimeRoot: string } | null> {
+async function resolveManagedRoot(root: string): Promise<ManagedRoot | null> {
   const requestedRoot = resolve(root);
   const requestedRuntimeRoot = resolve(requestedRoot, 'Runtime');
   try {
@@ -134,6 +145,42 @@ async function resolveManagedRoot(
     return { root: realRoot, runtimeRoot: realRuntimeRoot };
   } catch {
     return null;
+  }
+}
+
+async function acquireBootstrapLock(root: string): Promise<(() => Promise<void>) | null> {
+  try {
+    const handle = await open(join(root, 'bootstrap.lock'), 'a+');
+    return async () => handle.close();
+  } catch {
+    // The NSIS bootstrap opens this file with no sharing while it mutates runtime state.
+    return null;
+  }
+}
+
+function sameManagedRoot(first: ManagedRoot, second: ManagedRoot): boolean {
+  return (
+    first.root.toLowerCase() === second.root.toLowerCase() &&
+    first.runtimeRoot.toLowerCase() === second.runtimeRoot.toLowerCase()
+  );
+}
+
+async function isSafeDeletionPath(
+  managedRoot: ManagedRoot,
+  requestedRoot: string,
+  path: string,
+  name: string,
+): Promise<boolean> {
+  const currentRoot = await resolveManagedRoot(requestedRoot);
+  if (!currentRoot || !sameManagedRoot(managedRoot, currentRoot)) return false;
+
+  try {
+    const [stats, resolvedPath] = await Promise.all([lstat(path), realpath(path)]);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
+    const relativePath = relative(currentRoot.runtimeRoot, resolvedPath);
+    return !isAbsolute(relativePath) && relativePath === name;
+  } catch {
+    return false;
   }
 }
 
@@ -166,62 +213,127 @@ async function isCompleteRuntime(directory: string, buildId: string): Promise<bo
   }
 }
 
+async function removeTransientRuntime(
+  context: CleanupContext,
+  name: string,
+  path: string,
+  directoryMtimeMs: number,
+  result: WindowsRuntimeCleanupResult,
+): Promise<boolean> {
+  const isStaging = STAGING_DIRECTORY_PATTERN.test(name);
+  const isQuarantine = isQuarantineDirectory(name);
+  if (!isStaging && !isQuarantine) return false;
+
+  let createdAtMs = directoryMtimeMs;
+  if (isQuarantine) {
+    try {
+      const markerStats = await lstat(join(path, QUARANTINE_CREATED_MARKER));
+      if (!markerStats.isFile() || markerStats.isSymbolicLink()) {
+        result.skipped.push(name);
+        return true;
+      }
+      createdAtMs = markerStats.mtimeMs;
+    } catch {
+      result.skipped.push(name);
+      return true;
+    }
+  }
+
+  if (context.nowMs - createdAtMs < context.staleStagingAgeMs) {
+    result.skipped.push(name);
+    return true;
+  }
+  if (!(await isSafeDeletionPath(context.managedRoot, context.requestedRoot, path, name))) {
+    result.skipped.push(name);
+    return true;
+  }
+  await rm(path, { recursive: true, force: true });
+  result.removed.push(name);
+  return true;
+}
+
+async function removeCompleteRuntime(
+  context: CleanupContext,
+  name: string,
+  path: string,
+  result: WindowsRuntimeCleanupResult,
+): Promise<void> {
+  const preserved = await readPreservedBuilds(context.managedRoot.root, context.executingBuild);
+  if (
+    !isBuildId(name) ||
+    !preserved ||
+    preserved.has(name) ||
+    !(await isCompleteRuntime(path, name))
+  ) {
+    result.skipped.push(name);
+    return;
+  }
+  if (!(await isSafeDeletionPath(context.managedRoot, context.requestedRoot, path, name))) {
+    result.skipped.push(name);
+    return;
+  }
+  await rm(path, { recursive: true, force: true });
+  result.removed.push(name);
+}
+
+async function cleanupRuntimeEntry(
+  entry: Dirent,
+  context: CleanupContext,
+  result: WindowsRuntimeCleanupResult,
+): Promise<void> {
+  const name = entry.name;
+  const path = join(context.managedRoot.runtimeRoot, name);
+  try {
+    const stats = await lstat(path);
+    if (!entry.isDirectory() || entry.isSymbolicLink() || stats.isSymbolicLink()) {
+      result.skipped.push(name);
+      return;
+    }
+    if (await removeTransientRuntime(context, name, path, stats.mtimeMs, result)) return;
+    await removeCompleteRuntime(context, name, path, result);
+  } catch {
+    result.failed.push(name);
+  }
+}
+
 export async function cleanupWindowsRuntimes({
   root,
   execPath,
   nowMs = Date.now(),
   staleStagingAgeMs = STALE_STAGING_AGE_MS,
+  acquireLock = acquireBootstrapLock,
 }: CleanupOptions): Promise<WindowsRuntimeCleanupResult> {
   const result: WindowsRuntimeCleanupResult = { removed: [], skipped: [], failed: [] };
-  const managedRoot = await resolveManagedRoot(root);
-  if (!managedRoot) return result;
-  const executingBuild = await executingBuildId(managedRoot.runtimeRoot, execPath);
-  if (!executingBuild) return result;
+  const initialManagedRoot = await resolveManagedRoot(root);
+  if (!initialManagedRoot) return result;
+  const releaseLock = await acquireLock(initialManagedRoot.root);
+  if (!releaseLock) return result;
 
-  const runtimeRoot = managedRoot.runtimeRoot;
-  const preserved = await readPreservedBuilds(managedRoot.root, executingBuild);
-  let entries;
   try {
-    entries = await readdir(runtimeRoot, { withFileTypes: true });
-  } catch {
-    return result;
-  }
+    const managedRoot = await resolveManagedRoot(root);
+    if (!managedRoot || !sameManagedRoot(initialManagedRoot, managedRoot)) return result;
+    const executingBuild = await executingBuildId(managedRoot.runtimeRoot, execPath);
+    if (!executingBuild) return result;
 
-  for (const entry of entries) {
-    const name = entry.name;
-    const path = join(runtimeRoot, name);
+    let entries: Dirent[];
     try {
-      const stats = await lstat(path);
-      if (!entry.isDirectory() || entry.isSymbolicLink() || stats.isSymbolicLink()) {
-        result.skipped.push(name);
-        continue;
-      }
-
-      if (STAGING_DIRECTORY_PATTERN.test(name) || isQuarantineDirectory(name)) {
-        if (nowMs - stats.mtimeMs < staleStagingAgeMs) {
-          result.skipped.push(name);
-          continue;
-        }
-        await rm(path, { recursive: true, force: true });
-        result.removed.push(name);
-        continue;
-      }
-
-      if (
-        !isBuildId(name) ||
-        !preserved ||
-        preserved.has(name) ||
-        !(await isCompleteRuntime(path, name))
-      ) {
-        result.skipped.push(name);
-        continue;
-      }
-
-      await rm(path, { recursive: true, force: true });
-      result.removed.push(name);
+      entries = await readdir(managedRoot.runtimeRoot, { withFileTypes: true });
     } catch {
-      result.failed.push(name);
+      return result;
     }
+
+    const context: CleanupContext = {
+      managedRoot,
+      requestedRoot: root,
+      executingBuild,
+      nowMs,
+      staleStagingAgeMs,
+    };
+    for (const entry of entries) {
+      await cleanupRuntimeEntry(entry, context, result);
+    }
+  } finally {
+    await releaseLock();
   }
 
   result.removed.sort((left, right) => left.localeCompare(right));

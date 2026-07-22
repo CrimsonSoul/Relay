@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from '@playwright/test';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -20,6 +20,109 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const mainEntry = path.join(root, 'dist/main/index.js');
 const warmRunCount = 5;
 const launchTimeoutMs = 60_000;
+const terminateOwnedWindowsBenchmarkScript = String.raw`
+$ErrorActionPreference = 'Stop'
+$targetPid = [int]$env:RELAY_BENCHMARK_TARGET_PID
+$identityToken = $env:RELAY_BENCHMARK_PROCESS_TOKEN
+$records = @(Get-CimInstance Win32_Process)
+$rootRecord = $records |
+  Where-Object { [int]$_.ProcessId -eq $targetPid } |
+  Select-Object -First 1
+if ($null -eq $rootRecord -or -not ([string]$rootRecord.CommandLine).Contains($identityToken)) {
+  exit 3
+}
+
+function Get-CreationTimeUtc {
+  param([Parameter(Mandatory = $true)][object]$Record)
+  if ($Record.CreationDate -is [DateTime]) {
+    return $Record.CreationDate.ToUniversalTime()
+  }
+  return [Management.ManagementDateTimeConverter]::ToDateTime(
+    [string]$Record.CreationDate
+  ).ToUniversalTime()
+}
+
+function Open-MatchingProcessHandle {
+  param([Parameter(Mandatory = $true)][object]$Record)
+  $process = Get-Process -Id ([int]$Record.ProcessId) -ErrorAction SilentlyContinue
+  if ($null -eq $process) {
+    return $null
+  }
+  try {
+    # Opening the handle pins this process identity before any PID can be reused.
+    $null = $process.Handle
+    [long]$actualTicks = $process.StartTime.ToUniversalTime().Ticks
+    [long]$expectedTicks = (Get-CreationTimeUtc -Record $Record).Ticks
+    # CIM exposes creation time to microsecond precision; compare exactly at that precision.
+    $actualTicks = $actualTicks - ($actualTicks % 10)
+    $expectedTicks = $expectedTicks - ($expectedTicks % 10)
+    if ($actualTicks -ne $expectedTicks) {
+      $process.Dispose()
+      return $null
+    }
+    return $process
+  }
+  catch {
+    $process.Dispose()
+    return $null
+  }
+}
+
+$rootProcess = Open-MatchingProcessHandle -Record $rootRecord
+if ($null -eq $rootProcess) {
+  exit 3
+}
+
+$targets = @(
+  [pscustomobject]@{ Record = $rootRecord; Depth = 0 }
+)
+$known = @{}
+$known[$targetPid] = $true
+$added = $true
+while ($added) {
+  $added = $false
+  foreach ($record in $records) {
+    $recordId = [int]$record.ProcessId
+    $parentId = [int]$record.ParentProcessId
+    if ($known.ContainsKey($recordId) -or -not $known.ContainsKey($parentId)) {
+      continue
+    }
+    $parent = $targets |
+      Where-Object { [int]$_.Record.ProcessId -eq $parentId } |
+      Select-Object -First 1
+    if ((Get-CreationTimeUtc -Record $record) -lt (Get-CreationTimeUtc -Record $parent.Record)) {
+      continue
+    }
+    $targets += [pscustomobject]@{ Record = $record; Depth = $parent.Depth + 1 }
+    $known[$recordId] = $true
+    $added = $true
+  }
+}
+
+$pinnedTargets = @(
+  [pscustomobject]@{ Process = $rootProcess; Depth = 0 }
+)
+foreach ($target in @($targets | Where-Object { $_.Depth -gt 0 })) {
+  $process = Open-MatchingProcessHandle -Record $target.Record
+  if ($null -eq $process) {
+    continue
+  }
+  $pinnedTargets += [pscustomobject]@{ Process = $process; Depth = $target.Depth }
+}
+
+foreach ($target in @($pinnedTargets | Sort-Object -Property Depth -Descending)) {
+  try {
+    $target.Process.Kill()
+  }
+  catch {
+    # A pinned process that has already exited is safely gone.
+  }
+  finally {
+    $target.Process.Dispose()
+  }
+}
+exit 0
+`;
 const buildIdPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const reservedWindowsNames = new Set([
   'con',
@@ -168,9 +271,10 @@ function readLogBaseline(logPath) {
   }
 }
 
-async function waitForPackagedTimeline(logPath, baseline, startedAt) {
+async function waitForPackagedTimeline(logPath, baseline, startedAt, signal) {
   const deadline = Date.now() + launchTimeoutMs;
   while (Date.now() < deadline) {
+    if (signal.aborted) throw signal.reason;
     try {
       const stats = fs.statSync(logPath);
       const identity = `${stats.dev}:${stats.ino}:${stats.birthtimeMs}`;
@@ -226,7 +330,69 @@ function readCurrentBuildId(statePath) {
   }
 }
 
-async function waitForProcessHandoff(command, args, environment, startedAt) {
+function powershellPath(environment = process.env) {
+  const windowsRoot = environment.SystemRoot ?? environment.WINDIR;
+  return windowsRoot
+    ? path.join(windowsRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    : null;
+}
+
+function terminateDirectChild(child) {
+  if (!child || child.killed) return;
+  try {
+    child.kill('SIGKILL');
+  } catch {
+    // The directly spawned process may have exited while cleanup was requested.
+  }
+}
+
+function terminateOwnedBenchmarkProcess({ pid, runId, exitMarkerPath, environment = process.env }) {
+  if (!pid || fs.existsSync(exitMarkerPath)) return false;
+  const shellPath = powershellPath(environment);
+  if (process.platform !== 'win32' || !shellPath) return false;
+  const identityToken = `--relay-benchmark-run-id=${runId}`;
+  const result = spawnSync(
+    shellPath,
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', terminateOwnedWindowsBenchmarkScript],
+    {
+      env: {
+        ...environment,
+        RELAY_BENCHMARK_TARGET_PID: String(pid),
+        RELAY_BENCHMARK_PROCESS_TOKEN: identityToken,
+      },
+      stdio: 'ignore',
+      windowsHide: true,
+      timeout: 10_000,
+    },
+  );
+  return result.status === 0;
+}
+
+function readBenchmarkPid(markerPath) {
+  try {
+    const pid = Number(fs.readFileSync(markerPath, 'utf8').trim());
+    if (!Number.isSafeInteger(pid) || pid <= 0) {
+      throw new Error(`Relay wrote an invalid benchmark PID marker: ${markerPath}`);
+    }
+    return pid;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function waitForBenchmarkPid(markerPath, signal) {
+  const deadline = Date.now() + launchTimeoutMs;
+  while (Date.now() < deadline) {
+    if (signal.aborted) throw signal.reason;
+    const pid = readBenchmarkPid(markerPath);
+    if (pid) return pid;
+    await delay(25);
+  }
+  throw new Error(`Relay did not publish its benchmark PID within ${launchTimeoutMs}ms.`);
+}
+
+async function waitForProcessHandoff(command, args, environment, startedAt, signal) {
   const child = spawn(command, args, {
     env: environment,
     stdio: 'ignore',
@@ -234,10 +400,31 @@ async function waitForProcessHandoff(command, args, environment, startedAt) {
   });
 
   return new Promise((resolve, reject) => {
-    child.once('error', reject);
+    let settled = false;
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', onAbort);
+      callback(value);
+    };
+    const onAbort = () => {
+      terminateDirectChild(child);
+      settle(reject, signal.reason);
+    };
+    const timeout = setTimeout(() => {
+      terminateDirectChild(child);
+      settle(
+        reject,
+        new Error(`${path.basename(command)} did not exit within ${launchTimeoutMs}ms.`),
+      );
+    }, launchTimeoutMs);
+    signal.addEventListener('abort', onAbort, { once: true });
+    child.once('error', (error) => settle(reject, error));
     child.once('close', (code, signal) => {
       if (code !== 0) {
-        reject(
+        settle(
+          reject,
           new Error(
             `${path.basename(command)} exited before handoff with ${
               signal ? `signal ${signal}` : `code ${code}`
@@ -246,14 +433,15 @@ async function waitForProcessHandoff(command, args, environment, startedAt) {
         );
         return;
       }
-      resolve(Math.round(performance.now() - startedAt));
+      settle(resolve, Math.round(performance.now() - startedAt));
     });
   });
 }
 
-async function waitForProcessExitMarker(markerPath, startedAt) {
+async function waitForProcessExitMarker(markerPath, startedAt, signal) {
   const deadline = Date.now() + launchTimeoutMs;
   while (Date.now() < deadline) {
+    if (signal.aborted) throw signal.reason;
     if (fs.existsSync(markerPath)) {
       return Math.round(performance.now() - startedAt);
     }
@@ -318,28 +506,47 @@ async function runPackagedBenchmark(options) {
   const completeBefore = listCompleteRuntimeBuilds(runtimeRoot);
   const baseline = readLogBaseline(logPath);
   const benchmarkRunId = crypto.randomUUID();
+  const benchmarkIdentityArg = `--relay-benchmark-run-id=${benchmarkRunId}`;
   const exitMarkerPath = path.join(
     os.tmpdir(),
     'Relay',
     'startup-benchmark',
     `${benchmarkRunId}.complete`,
   );
+  const pidMarkerPath = path.join(
+    os.tmpdir(),
+    'Relay',
+    'startup-benchmark',
+    `${benchmarkRunId}.pid`,
+  );
   fs.rmSync(exitMarkerPath, { force: true });
+  fs.rmSync(pidMarkerPath, { force: true });
   const startedAt = performance.now();
   const launchEnv = {
     ...process.env,
     RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
     RELAY_BENCHMARK_RUN_ID: benchmarkRunId,
     RELAY_DISABLE_GPU_DIAGNOSTICS: '1',
+    RELAY_DISABLE_CRASH_WATCHDOG: '1',
   };
   delete launchEnv.ELECTRON_RUN_AS_NODE;
+  const controller = new AbortController();
+  let benchmarkPid = null;
 
   try {
-    const [processHandoffMs, observed, processExitMs] = await Promise.all([
-      waitForProcessHandoff(launchSpec.command, launchSpec.args, launchEnv, startedAt),
-      waitForPackagedTimeline(logPath, baseline, startedAt),
-      waitForProcessExitMarker(exitMarkerPath, startedAt),
+    const [processHandoffMs, observed, processExitMs, observedPid] = await Promise.all([
+      waitForProcessHandoff(
+        launchSpec.command,
+        [...launchSpec.args, benchmarkIdentityArg],
+        launchEnv,
+        startedAt,
+        controller.signal,
+      ),
+      waitForPackagedTimeline(logPath, baseline, startedAt, controller.signal),
+      waitForProcessExitMarker(exitMarkerPath, startedAt, controller.signal),
+      waitForBenchmarkPid(pidMarkerPath, controller.signal),
     ]);
+    benchmarkPid = observedPid;
     const activeBuildId = readCurrentBuildId(statePath);
     const electronRendererMountedMs = observed.timeline['renderer-mounted'];
     const runtimeReused = resolveRuntimeReuse(
@@ -356,9 +563,9 @@ async function runPackagedBenchmark(options) {
       executableSizeBytes: fs.statSync(launchSpec.command).size,
       processHandoffMs,
       processExitMs,
-      preparationMs: ['prepare', 'portable'].includes(resolvedOptions.scenario)
-        ? processHandoffMs
-        : null,
+      benchmarkPid,
+      preparationMs: resolvedOptions.scenario === 'prepare' ? processHandoffMs : null,
+      outerProcessLifetimeMs: resolvedOptions.scenario === 'portable' ? processHandoffMs : null,
       rendererMountedWallMs: observed.rendererMountedWallMs,
       beforeElectronEntryMs: Math.max(
         0,
@@ -368,8 +575,21 @@ async function runPackagedBenchmark(options) {
       activeBuildId,
       timeline: observed.timeline,
     };
+  } catch (error) {
+    controller.abort(error);
+    benchmarkPid ??= readBenchmarkPid(pidMarkerPath);
+    if (benchmarkPid) {
+      terminateOwnedBenchmarkProcess({
+        pid: benchmarkPid,
+        runId: benchmarkRunId,
+        exitMarkerPath,
+        environment: launchEnv,
+      });
+    }
+    throw error;
   } finally {
     fs.rmSync(exitMarkerPath, { force: true });
+    fs.rmSync(pidMarkerPath, { force: true });
   }
 }
 

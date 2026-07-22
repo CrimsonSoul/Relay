@@ -46,6 +46,8 @@ win:
   icon: build/icon.ico
   requestedExecutionLevel: 'asInvoker'
   extraResources:
+    - from: 'release/windows-bootstrap/relay-build-id.txt'
+      to: 'relay-build-id.txt'
     - from: resources
       to: data
       filter:

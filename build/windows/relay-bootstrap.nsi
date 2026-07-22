@@ -1,6 +1,7 @@
 !include "common.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "StdUtils.nsh"
 !include "Win\WinError.nsh"
 !include "${PROJECT_DIR}/build/windows/include/relay-runtime-contract.nsh"
 !include "${PROJECT_DIR}/release/windows-bootstrap/relay-build.nsh"
@@ -37,14 +38,42 @@ Var RelayFailureMessage
 Var RelayLockHandle
 Var RelayQuarantine
 Var RelayQuarantineActive
+Var RelayQuarantineMarkerHandle
+Var RelayArchiveHash
+Var RelayFallbackBuild
+Var RelayRuntimeIsUsable
 
 !macro RelayHarnessFail SENTINEL MESSAGE
   !ifdef RELAY_BOOTSTRAP_HARNESS
     ${If} ${FileExists} "$RelayRoot\${SENTINEL}"
       StrCpy $RelayFailureMessage "${MESSAGE}"
+      System::Call 'kernel32::GetCurrentProcess() p.r0'
+      System::Call 'kernel32::TerminateProcess(p r0, i 197) i.r1'
       Goto BootstrapFailed
     ${EndIf}
   !endif
+!macroend
+
+!macro RelayRuntimeIsUsable BUILD_ID RESULT
+  StrCpy ${RESULT} "0"
+  !insertmacro RelayValidateBuildId "${BUILD_ID}" $RelayBuildIsValid
+  ${If} $RelayBuildIsValid == "1"
+    StrCpy $RelayMarker "$RelayRuntimeRoot\${BUILD_ID}\${RELAY_RUNTIME_MARKER}"
+    ReadINIStr $RelayMarkerProtocol "$RelayMarker" "Relay" "protocol"
+    ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
+    ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
+    StrCpy $RelayResult "0"
+    ${If} ${FileExists} "$RelayRuntimeRoot\${BUILD_ID}\${APP_EXECUTABLE_FILENAME}"
+      System::Call 'kernel32::GetBinaryTypeW(w "$RelayRuntimeRoot\${BUILD_ID}\${APP_EXECUTABLE_FILENAME}", *i .r0) i.r1'
+      StrCpy $RelayResult $1
+    ${EndIf}
+    ${If} $RelayMarkerProtocol == "${RELAY_STATE_PROTOCOL}"
+    ${AndIf} $RelayMarkerBuildId == "${BUILD_ID}"
+    ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
+    ${AndIf} $RelayResult != "0"
+      StrCpy ${RESULT} "1"
+    ${EndIf}
+  ${EndIf}
 !macroend
 
 !ifdef RELAY_BOOTSTRAP_HARNESS
@@ -163,11 +192,16 @@ Section
   ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
   ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
   ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
+  StrCpy $RelayResult "0"
+  ${If} ${FileExists} "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}"
+    System::Call 'kernel32::GetBinaryTypeW(w "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}", *i .r0) i.r1'
+    StrCpy $RelayResult $1
+  ${EndIf}
   ${If} $RelayMarkerProtocol == "${RELAY_STATE_PROTOCOL}"
   ${AndIf} $RelayMarkerBuildId == "${RELAY_BUILD_ID}"
   ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
   ${AndIf} $RelayMarkerPayloadHash == "${APP_64_HASH}"
-  ${AndIf} ${FileExists} "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}"
+  ${AndIf} $RelayResult != "0"
     Goto RuntimeReady
   ${EndIf}
 
@@ -191,6 +225,12 @@ Section
     SetCompress "${COMPRESS}"
   !endif
 
+  ${StdUtils.HashFile} $RelayArchiveHash "SHA2-512" "$PLUGINSDIR\relay-app.zip"
+  ${If} $RelayArchiveHash != "${APP_64_HASH}"
+    StrCpy $RelayFailureMessage "Relay could not verify the embedded runtime archive."
+    Goto BootstrapFailed
+  ${EndIf}
+
   nsisunz::Unzip "$PLUGINSDIR\relay-app.zip" "$RelayStaging"
   Pop $RelayResult
   ${If} $RelayResult != "success"
@@ -201,6 +241,11 @@ Section
 
   ${IfNot} ${FileExists} "$RelayStaging\${APP_EXECUTABLE_FILENAME}"
     StrCpy $RelayFailureMessage "The prepared Relay runtime is incomplete."
+    Goto BootstrapFailed
+  ${EndIf}
+  System::Call 'kernel32::GetBinaryTypeW(w "$RelayStaging\${APP_EXECUTABLE_FILENAME}", *i .r0) i.r1'
+  ${If} $1 == 0
+    StrCpy $RelayFailureMessage "The prepared Relay executable is not a valid Windows binary."
     Goto BootstrapFailed
   ${EndIf}
 
@@ -243,6 +288,18 @@ Section
       StrCpy $RelayFailureMessage "Relay could not quarantine its damaged runtime."
       Goto BootstrapFailed
     StrCpy $RelayQuarantineActive "1"
+    ClearErrors
+    FileOpen $RelayQuarantineMarkerHandle "$RelayQuarantine\.relay-quarantine-created" w
+    ${If} ${Errors}
+      ClearErrors
+      Rename "$RelayQuarantine" "$RelayFinalRuntime"
+      ${IfNot} ${Errors}
+        StrCpy $RelayQuarantineActive "0"
+      ${EndIf}
+      StrCpy $RelayFailureMessage "Relay could not mark its damaged runtime quarantine."
+      Goto BootstrapFailed
+    ${EndIf}
+    FileClose $RelayQuarantineMarkerHandle
     !insertmacro RelayHarnessFail ".fail-after-quarantine" "Relay harness stopped after quarantining a damaged runtime."
   ${EndIf}
 
@@ -251,6 +308,7 @@ Section
   ${If} ${Errors}
     ${If} $RelayQuarantineActive == "1"
       ClearErrors
+      Delete "$RelayQuarantine\.relay-quarantine-created"
       Rename "$RelayQuarantine" "$RelayFinalRuntime"
       ${IfNot} ${Errors}
         StrCpy $RelayQuarantineActive "0"
@@ -294,12 +352,19 @@ LauncherReady:
   ClearErrors
   WriteINIStr "$RelayStateNew" "Relay" "protocol" "${RELAY_STATE_PROTOCOL}"
   WriteINIStr "$RelayStateNew" "Relay" "current" "${RELAY_BUILD_ID}"
-  ${If} $RelayCurrent == "${RELAY_BUILD_ID}"
-    ${If} $RelayPrevious != ""
-      WriteINIStr "$RelayStateNew" "Relay" "previous" "$RelayPrevious"
+  StrCpy $RelayFallbackBuild ""
+  !insertmacro RelayRuntimeIsUsable "$RelayCurrent" $RelayRuntimeIsUsable
+  ${If} $RelayCurrent != "${RELAY_BUILD_ID}"
+  ${AndIf} $RelayRuntimeIsUsable == "1"
+    StrCpy $RelayFallbackBuild "$RelayCurrent"
+  ${Else}
+    !insertmacro RelayRuntimeIsUsable "$RelayPrevious" $RelayRuntimeIsUsable
+    ${If} $RelayRuntimeIsUsable == "1"
+      StrCpy $RelayFallbackBuild "$RelayPrevious"
     ${EndIf}
-  ${ElseIf} $RelayCurrent != ""
-    WriteINIStr "$RelayStateNew" "Relay" "previous" "$RelayCurrent"
+  ${EndIf}
+  ${If} $RelayFallbackBuild != ""
+    WriteINIStr "$RelayStateNew" "Relay" "previous" "$RelayFallbackBuild"
   ${EndIf}
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not prepare its runtime state."
@@ -344,6 +409,7 @@ BootstrapFailed:
     System::Call 'kernel32::GetFileAttributesW(w "$RelayFinalRuntime") i.r0'
     ${If} $0 == -1
       ClearErrors
+      Delete "$RelayQuarantine\.relay-quarantine-created"
       Rename "$RelayQuarantine" "$RelayFinalRuntime"
       ${IfNot} ${Errors}
         StrCpy $RelayQuarantineActive "0"

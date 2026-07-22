@@ -23,24 +23,38 @@ export function validateBuildId(value) {
 }
 
 export function resolveBuildId({ env = {}, gitSha, dirty = false, nonce } = {}) {
-  if (env.RELAY_BUILD_ID) return validateBuildId(env.RELAY_BUILD_ID);
-  if (typeof gitSha !== 'string' || !/^[0-9a-f]{7,40}$/i.test(gitSha)) {
-    throw new Error('Missing or invalid Git build identity for the Windows package');
+  let buildId;
+  if (env.RELAY_BUILD_ID) {
+    buildId = validateBuildId(env.RELAY_BUILD_ID);
+  } else {
+    if (typeof gitSha !== 'string' || !/^[0-9a-f]{7,40}$/i.test(gitSha)) {
+      throw new Error('Missing or invalid Git build identity for the Windows package');
+    }
+    buildId = `r1-${gitSha.slice(0, 16).toLowerCase()}`;
   }
 
   const suffix = dirty ? `-dirty-${nonce ?? Date.now().toString(36)}` : '';
-  return validateBuildId(`r1-${gitSha.slice(0, 16).toLowerCase()}${suffix}`);
+  return validateBuildId(`${buildId}${suffix}`);
 }
 
 function validateHarnessRoot(value) {
+  const segments = typeof value === 'string' ? value.slice(3).split('\\') : [];
+  const containsControlCharacter =
+    typeof value === 'string' &&
+    [...value].some((character) => {
+      const code = character.codePointAt(0);
+      return code !== undefined && (code < 32 || code === 127);
+    });
   if (
     typeof value !== 'string' ||
-    !/^[A-Za-z]:\\[^<>:"/|?*$\r\n]+/.test(value) ||
+    value.length > 240 ||
+    !/^[A-Za-z]:\\/.test(value) ||
+    containsControlCharacter ||
+    /[<>:"/|?*$!]/.test(value.slice(2)) ||
     value.endsWith('\\') ||
-    value
-      .slice(3)
-      .split('\\')
-      .some((segment) => !segment || segment === '.' || segment === '..')
+    segments.some(
+      (segment) => !segment || segment === '.' || segment === '..' || /[ .]$/.test(segment),
+    )
   ) {
     throw new Error('Windows bootstrap harness root must be a fixed absolute path');
   }

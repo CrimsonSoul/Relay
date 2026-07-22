@@ -51,6 +51,25 @@ $failurePoints = @(
   '.fail-before-state-activation'
 )
 
+function Stop-ProcessTree {
+  param([Parameter(Mandatory = $true)][Diagnostics.Process]$Process)
+  & "$env:SystemRoot\System32\taskkill.exe" /PID $Process.Id /T /F 2>$null | Out-Null
+}
+
+function Wait-ProcessWithTimeout {
+  param(
+    [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+    [Parameter(Mandatory = $true)][string]$Context,
+    [int]$TimeoutSeconds = 120
+  )
+
+  if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
+    Stop-ProcessTree -Process $Process
+    throw "$Context timed out after $TimeoutSeconds seconds."
+  }
+  $Process.WaitForExit()
+}
+
 function Get-IniValue {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -69,7 +88,8 @@ function Invoke-Preparation {
     [Parameter(Mandatory = $true)][string]$Path,
     [switch]$ExpectFailure
   )
-  $process = Start-Process -FilePath $Path -ArgumentList '/relay-prepare-only' -Wait -PassThru
+  $process = Start-Process -FilePath $Path -ArgumentList '/relay-prepare-only' -PassThru
+  Wait-ProcessWithTimeout -Process $process -Context "Boundary preparation: $Path"
   if ($ExpectFailure -and $process.ExitCode -eq 0) {
     throw "Boundary harness unexpectedly succeeded: $Path"
   }
@@ -97,12 +117,14 @@ function Invoke-StableFallback {
   $priorExitAfterRender = $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER
   $priorRunId = $env:RELAY_BENCHMARK_RUN_ID
   $priorGpuDiagnostics = $env:RELAY_DISABLE_GPU_DIAGNOSTICS
+  $priorCrashWatchdog = $env:RELAY_DISABLE_CRASH_WATCHDOG
   try {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = '1'
     $env:RELAY_BENCHMARK_RUN_ID = $runId
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = '1'
+    $env:RELAY_DISABLE_CRASH_WATCHDOG = '1'
     $launcher = Start-Process -FilePath $launcherPath -PassThru
-    $launcher.WaitForExit()
+    Wait-ProcessWithTimeout -Process $launcher -Context 'Stable fallback launch' -TimeoutSeconds 60
     if ($launcher.ExitCode -ne 0) {
       throw "Stable launcher exited with code $($launcher.ExitCode)."
     }
@@ -121,6 +143,7 @@ function Invoke-StableFallback {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = $priorExitAfterRender
     $env:RELAY_BENCHMARK_RUN_ID = $priorRunId
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = $priorGpuDiagnostics
+    $env:RELAY_DISABLE_CRASH_WATCHDOG = $priorCrashWatchdog
     Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
   }
 }
@@ -166,9 +189,15 @@ try {
       Remove-Item -LiteralPath $failureSentinel -Force -ErrorAction SilentlyContinue
     }
     Assert-PreviousActive
-    if ($null -ne $repairRestoreSentinel -and
-        -not (Test-Path -LiteralPath $repairRestoreSentinel)) {
-      throw 'Post-quarantine failure did not restore the damaged runtime directory.'
+    if ($null -ne $repairRestoreSentinel) {
+      $quarantinedSentinel = Get-ChildItem -LiteralPath $runtimeVersionsRoot -Directory |
+        Where-Object { $_.Name -like ".corrupt-$ExpectedBuildId-*" } |
+        ForEach-Object { Join-Path $_.FullName 'repair-restore-sentinel.txt' } |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+      if ($null -eq $quarantinedSentinel) {
+        throw 'Abrupt post-quarantine termination lost the damaged runtime directory.'
+      }
     }
     Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId
   }

@@ -7,8 +7,9 @@ const BENCHMARK_RUN_ID_PATTERN =
 type StartupBenchmarkExitMarkerOptions = {
   environment: Readonly<Record<string, string | undefined>>;
   tempPath: string;
-  onExit?: (listener: () => void) => unknown;
+  onExit?: (listener: (exitCode?: number) => void) => unknown;
   writeMarker?: (markerPath: string) => void;
+  writePidMarker?: (markerPath: string) => void;
 };
 
 function writeExitMarker(markerPath: string): void {
@@ -16,17 +17,34 @@ function writeExitMarker(markerPath: string): void {
   writeFileSync(markerPath, String(process.pid), { encoding: 'utf8', flag: 'wx' });
 }
 
+export function isStartupBenchmarkRun(
+  environment: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return (
+    environment.RELAY_BENCHMARK_EXIT_AFTER_RENDER === '1' &&
+    typeof environment.RELAY_BENCHMARK_RUN_ID === 'string' &&
+    BENCHMARK_RUN_ID_PATTERN.test(environment.RELAY_BENCHMARK_RUN_ID)
+  );
+}
+
 export function installStartupBenchmarkExitMarker({
   environment,
   tempPath,
   onExit = (listener) => process.once('exit', listener),
   writeMarker = writeExitMarker,
+  writePidMarker = writeExitMarker,
 }: StartupBenchmarkExitMarkerOptions): string | null {
   const runId = environment.RELAY_BENCHMARK_RUN_ID;
-  if (!runId || !BENCHMARK_RUN_ID_PATTERN.test(runId)) return null;
+  if (!runId || !isStartupBenchmarkRun(environment)) return null;
 
   const markerPath = join(tempPath, 'Relay', 'startup-benchmark', `${runId}.complete`);
-  onExit(() => {
+  try {
+    writePidMarker(join(tempPath, 'Relay', 'startup-benchmark', `${runId}.pid`));
+  } catch {
+    // Benchmark instrumentation must never affect normal startup.
+  }
+  onExit((exitCode) => {
+    if (exitCode !== 0) return;
     try {
       writeMarker(markerPath);
     } catch {

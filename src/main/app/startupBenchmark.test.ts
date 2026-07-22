@@ -1,26 +1,64 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('installStartupBenchmarkExitMarker', () => {
   it('writes a fixed-root completion marker only when the benchmarked process exits', async () => {
     const onExit = vi.fn();
     const writeMarker = vi.fn();
+    const writePidMarker = vi.fn();
     const { installStartupBenchmarkExitMarker } = await import('./startupBenchmark');
 
     const markerPath = installStartupBenchmarkExitMarker({
       environment: {
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
         RELAY_BENCHMARK_RUN_ID: '5e50ac3a-1bf0-47f5-a653-09bf8a30b364',
       },
       tempPath: 'C:\\RelayBenchmarkTestRoot',
       onExit,
       writeMarker,
+      writePidMarker,
     });
 
     expect(markerPath).toMatch(
       /Relay[\\/]startup-benchmark[\\/]5e50ac3a-1bf0-47f5-a653-09bf8a30b364\.complete$/,
     );
     expect(writeMarker).not.toHaveBeenCalled();
-    onExit.mock.calls[0]?.[0]();
+    expect(writePidMarker).toHaveBeenCalledWith(
+      expect.stringMatching(/5e50ac3a-1bf0-47f5-a653-09bf8a30b364\.pid$/),
+    );
+    onExit.mock.calls[0]?.[0](0);
     expect(writeMarker).toHaveBeenCalledWith(markerPath);
+  });
+
+  it('does not mark a benchmark complete when Relay exits unsuccessfully', async () => {
+    const onExit = vi.fn();
+    const writeMarker = vi.fn();
+    const writePidMarker = vi.fn();
+    const { installStartupBenchmarkExitMarker } = await import('./startupBenchmark');
+
+    installStartupBenchmarkExitMarker({
+      environment: {
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+        RELAY_BENCHMARK_RUN_ID: '5e50ac3a-1bf0-47f5-a653-09bf8a30b364',
+      },
+      tempPath: 'C:\\RelayBenchmarkTestRoot',
+      onExit,
+      writeMarker,
+      writePidMarker,
+    });
+
+    onExit.mock.calls[0]?.[0](1);
+    expect(writeMarker).not.toHaveBeenCalled();
+  });
+
+  it('installs benchmark markers only in the primary app instance', () => {
+    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8');
+    const lockIndex = source.indexOf('if (gotLock) {');
+    const markerIndex = source.indexOf('installStartupBenchmarkExitMarker({');
+
+    expect(lockIndex).toBeGreaterThan(-1);
+    expect(markerIndex).toBeGreaterThan(lockIndex);
   });
 
   it('ignores absent or unsafe benchmark IDs', async () => {
@@ -36,7 +74,19 @@ describe('installStartupBenchmarkExitMarker', () => {
     ).toBeNull();
     expect(
       installStartupBenchmarkExitMarker({
-        environment: { RELAY_BENCHMARK_RUN_ID: '..\\outside' },
+        environment: {
+          RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+          RELAY_BENCHMARK_RUN_ID: '..\\outside',
+        },
+        tempPath: 'C:\\RelayBenchmarkTestRoot',
+        onExit,
+      }),
+    ).toBeNull();
+    expect(
+      installStartupBenchmarkExitMarker({
+        environment: {
+          RELAY_BENCHMARK_RUN_ID: '5e50ac3a-1bf0-47f5-a653-09bf8a30b364',
+        },
         tempPath: 'C:\\RelayBenchmarkTestRoot',
         onExit,
       }),

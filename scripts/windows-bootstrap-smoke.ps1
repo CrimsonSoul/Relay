@@ -40,6 +40,25 @@ if (Test-Path -LiteralPath $relayAppDataRoot) {
   throw "Disposable smoke profile already contains $relayAppDataRoot"
 }
 
+function Stop-ProcessTree {
+  param([Parameter(Mandatory = $true)][Diagnostics.Process]$Process)
+  & "$env:SystemRoot\System32\taskkill.exe" /PID $Process.Id /T /F 2>$null | Out-Null
+}
+
+function Wait-ProcessWithTimeout {
+  param(
+    [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+    [Parameter(Mandatory = $true)][string]$Context,
+    [int]$TimeoutSeconds = 120
+  )
+
+  if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
+    Stop-ProcessTree -Process $Process
+    throw "$Context timed out after $TimeoutSeconds seconds."
+  }
+  $Process.WaitForExit()
+}
+
 function Invoke-RelayPreparation {
   param(
     [Parameter(Mandatory = $true)]
@@ -48,7 +67,8 @@ function Invoke-RelayPreparation {
   )
 
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-  $process = Start-Process -FilePath $Path -ArgumentList '/relay-prepare-only' -Wait -PassThru
+  $process = Start-Process -FilePath $Path -ArgumentList '/relay-prepare-only' -PassThru
+  Wait-ProcessWithTimeout -Process $process -Context "Relay preparation: $Path"
   $stopwatch.Stop()
   if ($ExpectFailure) {
     if ($process.ExitCode -eq 0) {
@@ -81,10 +101,44 @@ function Get-RuntimeMarkerPath {
   return Join-Path (Join-Path $runtimeVersionsRoot $BuildId) '.relay-runtime-ready'
 }
 
+function Assert-EmbeddedBuildIdentity {
+  param([Parameter(Mandatory = $true)][string]$BuildId)
+
+  $identityPath = Join-Path (Join-Path $runtimeVersionsRoot $BuildId) 'resources\relay-build-id.txt'
+  if (-not (Test-Path -LiteralPath $identityPath)) {
+    throw "Runtime $BuildId did not contain its embedded build identity."
+  }
+  if (([IO.File]::ReadAllText($identityPath).Trim()) -ne $BuildId) {
+    throw "Runtime $BuildId contained the wrong embedded build identity."
+  }
+}
+
+function Get-DirectoryTreeHash {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $records = @(
+    Get-ChildItem -LiteralPath $Path -Recurse -File -Force |
+      Sort-Object -Property FullName |
+      ForEach-Object {
+        $relativePath = [IO.Path]::GetRelativePath($Path, $_.FullName).Replace('\', '/')
+        $fileHash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        "$relativePath|$($_.Length)|$fileHash"
+      }
+  )
+  $hasher = [Security.Cryptography.SHA256]::Create()
+  try {
+    $bytes = [Text.Encoding]::UTF8.GetBytes(($records -join "`n"))
+    return [Convert]::ToHexString($hasher.ComputeHash($bytes))
+  }
+  finally {
+    $hasher.Dispose()
+  }
+}
+
 try {
   New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
   [IO.File]::WriteAllText($sentinelPath, "relay-bootstrap-smoke-$([Guid]::NewGuid())")
-  $sentinelHashBefore = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash
+  $dataTreeHashBefore = Get-DirectoryTreeHash -Path $relayAppDataRoot
 
   $previousFirstPreparationMs = Invoke-RelayPreparation -Path $previousArtifactPath
   if (-not (Test-Path -LiteralPath $statePath)) {
@@ -93,6 +147,7 @@ try {
   if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedPreviousBuildId) {
     throw 'Previous bootstrap did not activate the expected build.'
   }
+  Assert-EmbeddedBuildIdentity -BuildId $ExpectedPreviousBuildId
 
   $previousMarkerPath = Get-RuntimeMarkerPath -BuildId $ExpectedPreviousBuildId
   if (-not (Test-Path -LiteralPath $previousMarkerPath)) {
@@ -115,8 +170,8 @@ try {
     $concurrentTimer = [Diagnostics.Stopwatch]::StartNew()
     $firstProcess = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
     $secondProcess = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
-    $firstProcess.WaitForExit()
-    $secondProcess.WaitForExit()
+    Wait-ProcessWithTimeout -Process $firstProcess -Context 'First concurrent preparation'
+    Wait-ProcessWithTimeout -Process $secondProcess -Context 'Second concurrent preparation'
     $concurrentTimer.Stop()
     if ($firstProcess.ExitCode -ne 0 -or $secondProcess.ExitCode -ne 0) {
       throw "Concurrent preparation failed with $($firstProcess.ExitCode)/$($secondProcess.ExitCode)."
@@ -134,6 +189,7 @@ try {
   if ((Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
     throw 'Current bootstrap did not retain the former current build as previous.'
   }
+  Assert-EmbeddedBuildIdentity -BuildId $ExpectedBuildId
   if (-not (Test-Path -LiteralPath $previousMarkerPath)) {
     throw 'Updating while the previous runtime was locked removed that runtime.'
   }
@@ -160,6 +216,31 @@ try {
     throw 'Relay bootstrap did not quarantine the damaged current runtime.'
   }
 
+  $currentExecutable = Join-Path (Join-Path $runtimeVersionsRoot $ExpectedBuildId) 'Relay.exe'
+  Remove-Item -LiteralPath $currentExecutable -Force
+  $executableRepairPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+  if (-not (Test-Path -LiteralPath $currentExecutable)) {
+    throw 'Relay bootstrap did not repair a runtime with a missing executable.'
+  }
+
+  $brokenCurrentBuildId = 'smoke-broken-current'
+  $brokenCurrentRuntime = Join-Path $runtimeVersionsRoot $brokenCurrentBuildId
+  New-Item -ItemType Directory -Path $brokenCurrentRuntime -Force | Out-Null
+  [IO.File]::WriteAllText(
+    (Join-Path $brokenCurrentRuntime '.relay-runtime-ready'),
+    "[Relay]`nprotocol=1`nbuildId=$brokenCurrentBuildId`nexecutable=Relay.exe`n"
+  )
+  [IO.File]::WriteAllText((Join-Path $brokenCurrentRuntime 'Relay.exe'), 'not-a-pe')
+  [IO.File]::WriteAllText(
+    $statePath,
+    "[Relay]`nprotocol=1`ncurrent=$brokenCurrentBuildId`nprevious=$ExpectedPreviousBuildId`n"
+  )
+  $null = Invoke-RelayPreparation -Path $artifactPath
+  if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
+      (Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
+    throw 'A damaged recorded current runtime displaced the last usable previous build.'
+  }
+
   $shell = New-Object -ComObject WScript.Shell
   foreach ($shortcutPath in @($desktopShortcutPath, $startMenuShortcutPath)) {
     if (-not (Test-Path -LiteralPath $shortcutPath)) {
@@ -171,13 +252,14 @@ try {
     }
   }
 
-  & node scripts/verify-windows-pe.mjs $previousArtifactPath $artifactPath $launcherPath
+  & node scripts/verify-windows-pe.mjs `
+    $previousArtifactPath $artifactPath $launcherPath $previousExecutable $currentExecutable
   if ($LASTEXITCODE -ne 0) {
     throw 'Relay bootstrap or stable launcher requested elevation.'
   }
 
-  $sentinelHashAfter = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash
-  if ($sentinelHashAfter -ne $sentinelHashBefore) {
+  $dataTreeHashAfter = Get-DirectoryTreeHash -Path $relayAppDataRoot
+  if ($dataTreeHashAfter -ne $dataTreeHashBefore) {
     throw 'Relay bootstrap modified application data'
   }
 
@@ -185,6 +267,8 @@ try {
     BuildId = $ExpectedBuildId
     PreviousBuildId = $ExpectedPreviousBuildId
     CorruptRuntimeRepaired = $true
+    MissingExecutableRepaired = $true
+    BrokenCurrentPreservedPrevious = $true
     ConcurrentPreparation = $true
     UpdateWhilePreviousLocked = $true
     PreviousFirstPreparationMs = $previousFirstPreparationMs
@@ -192,6 +276,7 @@ try {
     ConcurrentPreparationMs = $concurrentPreparationMs
     CurrentReusePreparationMs = $currentReusePreparationMs
     CurrentRepairPreparationMs = $currentRepairPreparationMs
+    ExecutableRepairPreparationMs = $executableRepairPreparationMs
     Launcher = $launcherPath
     DataUnchanged = $true
   } | ConvertTo-Json

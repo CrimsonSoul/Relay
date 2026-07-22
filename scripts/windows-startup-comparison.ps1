@@ -46,44 +46,92 @@ function Get-Median {
   return ($sorted[$middle - 1] + $sorted[$middle]) / 2
 }
 
-function Invoke-PersistentCandidate {
-  param(
-    [Parameter(Mandatory = $true)][string]$Label,
-    [Parameter(Mandatory = $true)][string]$Artifact
-  )
+function Get-MedianAbsoluteDeviation {
+  param([Parameter(Mandatory = $true)][double[]]$Values)
 
-  $artifactPath = (Resolve-Path -LiteralPath $Artifact).Path
-  $samples = @()
-  for ($index = 0; $index -lt $sampleCount; $index += 1) {
-    Clear-DisposableRuntime
-    $samples += Invoke-NodeBenchmark -Arguments @(
+  $sampleMedian = Get-Median -Values $Values
+  $deviations = @($Values | ForEach-Object { [Math]::Abs($_ - $sampleMedian) })
+  return Get-Median -Values $deviations
+}
+
+function Get-RandomizedCandidateOrder {
+  param([Parameter(Mandatory = $true)][object[]]$Candidates)
+
+  return @($Candidates | Sort-Object { Get-Random })
+}
+
+function Invoke-MeasurementSample {
+  param([Parameter(Mandatory = $true)][object]$Candidate)
+
+  Clear-DisposableRuntime
+  if ($Candidate.Kind -eq 'portable') {
+    return Invoke-NodeBenchmark -Arguments @(
       'scripts/benchmark-startup.mjs',
-      '--scenario', 'prepare',
-      '--artifact', $artifactPath,
-      '--compression', $Label
+      '--scenario', 'portable',
+      '--artifact', $Candidate.Artifact,
+      '--compression', $Candidate.Compression
     )
   }
+  return Invoke-NodeBenchmark -Arguments @(
+    'scripts/benchmark-startup.mjs',
+    '--scenario', 'prepare',
+    '--artifact', $Candidate.Artifact,
+    '--compression', $Candidate.Compression
+  )
+}
 
+function Complete-CandidateMeasurement {
+  param([Parameter(Mandatory = $true)][object]$Candidate)
+
+  # Install the candidate immediately before its stable-launch samples so the
+  # stable path cannot accidentally measure whichever randomized candidate ran last.
+  $null = Invoke-MeasurementSample -Candidate $Candidate
   $stable = Invoke-NodeBenchmark -Arguments @(
     'scripts/benchmark-startup.mjs',
     '--scenario', 'stable',
     '--launcher', $stableLauncher,
-    '--compression', $Label,
+    '--compression', $Candidate.Compression,
     '--runs', "$sampleCount"
   )
   if ($stable.runtimeReused -ne $true) {
-    throw "$Label stable-launch benchmark did not reuse its runtime."
+    throw "$($Candidate.Compression) stable-launch benchmark did not reuse its runtime."
   }
 
+  $handoff = @($Candidate.PrepareSamples | ForEach-Object { [double]$_.processHandoffMs })
+  $renderer = @($Candidate.PrepareSamples | ForEach-Object { [double]$_.rendererMountedWallMs })
+  $beforeElectron = @($Candidate.PrepareSamples | ForEach-Object { [double]$_.beforeElectronEntryMs })
   return [pscustomobject]@{
-    Compression = $Label
-    Artifact = $artifactPath
-    ArtifactSizeBytes = (Get-Item -LiteralPath $artifactPath).Length
-    PrepareSamples = $samples
-    PrepareProcessHandoffMedianMs = Get-Median -Values @($samples.processHandoffMs)
-    PrepareRendererMountedWallMedianMs = Get-Median -Values @($samples.rendererMountedWallMs)
-    PrepareBeforeElectronMedianMs = Get-Median -Values @($samples.beforeElectronEntryMs)
+    Compression = $Candidate.Compression
+    Artifact = $Candidate.Artifact
+    ArtifactSizeBytes = (Get-Item -LiteralPath $Candidate.Artifact).Length
+    PrepareSamples = @($Candidate.PrepareSamples)
+    PrepareProcessHandoffMedianMs = Get-Median -Values $handoff
+    PrepareRendererMountedWallMedianMs = Get-Median -Values $renderer
+    PrepareRendererMountedWallMadMs = Get-MedianAbsoluteDeviation -Values $renderer
+    PrepareBeforeElectronMedianMs = Get-Median -Values $beforeElectron
     Stable = $stable
+  }
+}
+
+function Complete-PortableMeasurement {
+  param([Parameter(Mandatory = $true)][object]$Candidate)
+
+  $samples = @($Candidate.PrepareSamples)
+  return [pscustomobject]@{
+    scenario = 'portable'
+    compression = $Candidate.Compression
+    runs = $samples.Count
+    runtimeReused = $null
+    packagedMedian = [pscustomobject]@{
+      processHandoffMs = Get-Median -Values @($samples.processHandoffMs)
+      processExitMs = Get-Median -Values @($samples.processExitMs)
+      rendererMountedWallMs = Get-Median -Values @($samples.rendererMountedWallMs)
+      beforeElectronEntryMs = Get-Median -Values @($samples.beforeElectronEntryMs)
+      electronRendererMountedMs = Get-Median -Values @(
+        $samples | ForEach-Object { [double]$_.timeline.'renderer-mounted' }
+      )
+    }
+    samples = $samples
   }
 }
 
@@ -97,28 +145,102 @@ try {
     '--compression', 'profile-warmup'
   )
 
+  $candidateDefinitions = @(
+    [pscustomobject]@{
+      Kind = 'persistent'
+      Compression = 'store'
+      Artifact = (Resolve-Path -LiteralPath $StoreArtifact).Path
+      PrepareSamples = [Collections.Generic.List[object]]::new()
+    }
+    [pscustomobject]@{
+      Kind = 'persistent'
+      Compression = 'normal'
+      Artifact = (Resolve-Path -LiteralPath $NormalArtifact).Path
+      PrepareSamples = [Collections.Generic.List[object]]::new()
+    }
+    [pscustomobject]@{
+      Kind = 'persistent'
+      Compression = 'maximum'
+      Artifact = (Resolve-Path -LiteralPath $MaximumArtifact).Path
+      PrepareSamples = [Collections.Generic.List[object]]::new()
+    }
+  )
+  $portableDefinition = [pscustomobject]@{
+    Kind = 'portable'
+    Compression = 'former-maximum-portable'
+    Artifact = $portablePath
+    PrepareSamples = [Collections.Generic.List[object]]::new()
+  }
+  $measurementDefinitions = @($candidateDefinitions) + @($portableDefinition)
+  $measurementOrder = [Collections.Generic.List[string]]::new()
+  for ($round = 1; $round -le $sampleCount; $round += 1) {
+    foreach ($candidate in (Get-RandomizedCandidateOrder -Candidates $measurementDefinitions)) {
+      $measurementOrder.Add("$round`:$($candidate.Compression)") | Out-Null
+      $candidate.PrepareSamples.Add((Invoke-MeasurementSample -Candidate $candidate)) | Out-Null
+    }
+  }
   $candidates = @(
-    Invoke-PersistentCandidate -Label 'store' -Artifact $StoreArtifact
-    Invoke-PersistentCandidate -Label 'normal' -Artifact $NormalArtifact
-    Invoke-PersistentCandidate -Label 'maximum' -Artifact $MaximumArtifact
+    $candidateDefinitions | ForEach-Object { Complete-CandidateMeasurement -Candidate $_ }
   )
+  $portable = Complete-PortableMeasurement -Candidate $portableDefinition
 
-  Clear-DisposableRuntime
-  $portable = Invoke-NodeBenchmark -Arguments @(
-    'scripts/benchmark-startup.mjs',
-    '--scenario', 'portable',
-    '--artifact', $portablePath,
-    '--compression', 'former-maximum-portable',
-    '--runs', "$sampleCount"
-  )
-
-  $recommended = $candidates |
+  $ranked = @($candidates |
     Sort-Object -Property PrepareRendererMountedWallMedianMs |
-    Select-Object -First 1
-  $portableRendererMedianMs = $portable.packagedMedian.rendererMountedWallMs
-  $beatsPortableBaseline =
-    $recommended.PrepareRendererMountedWallMedianMs -lt $portableRendererMedianMs
-  $recommendedCompression = if ($beatsPortableBaseline) { $recommended.Compression } else { $null }
+    Select-Object -First 2)
+  $best = $ranked[0]
+  $runnerUp = $ranked[1]
+  $portableRendererSamples = @(
+    $portable.samples | ForEach-Object { [double]$_.rendererMountedWallMs }
+  )
+  $portableRendererMedianMs = Get-Median -Values $portableRendererSamples
+  $portableRendererMadMs = Get-MedianAbsoluteDeviation -Values $portableRendererSamples
+  $minimumMeaningfulDifferenceMs = [Math]::Max(
+    100,
+    [Math]::Round([double]$best.PrepareRendererMountedWallMedianMs * 0.05)
+  )
+  $winnerLeadMs =
+    [double]$runnerUp.PrepareRendererMountedWallMedianMs -
+    [double]$best.PrepareRendererMountedWallMedianMs
+  $portableLeadMs =
+    [double]$portableRendererMedianMs -
+    [double]$best.PrepareRendererMountedWallMedianMs
+  $portableVarianceLimitMs = [Math]::Max(
+    100,
+    [Math]::Round([double]$portableRendererMedianMs * 0.10)
+  )
+  $noisyCandidates = @(
+    $candidates | Where-Object {
+      $candidateVarianceLimitMs = [Math]::Max(
+        100,
+        [Math]::Round([double]$_.PrepareRendererMountedWallMedianMs * 0.10)
+      )
+      [double]$_.PrepareRendererMountedWallMadMs -gt $candidateVarianceLimitMs
+    }
+  )
+  $allCandidateVarianceAcceptable = $noisyCandidates.Count -eq 0
+  $varianceAcceptable =
+    $allCandidateVarianceAcceptable -and
+    [double]$portableRendererMadMs -le $portableVarianceLimitMs
+  $meaningfulWinner = $winnerLeadMs -ge $minimumMeaningfulDifferenceMs
+  $beatsPortableBaseline = $portableLeadMs -ge $minimumMeaningfulDifferenceMs
+  $selectionConfidence = if (-not $varianceAcceptable) {
+    'insufficient-variance'
+  }
+  elseif (-not $meaningfulWinner) {
+    'statistical-tie'
+  }
+  elseif (-not $beatsPortableBaseline) {
+    'portable-not-meaningfully-beaten'
+  }
+  else {
+    'meaningful-winner'
+  }
+  $recommendedCompression = if ($selectionConfidence -eq 'meaningful-winner') {
+    $best.Compression
+  }
+  else {
+    $null
+  }
   $report = [pscustomobject]@{
     MeasuredAtUtc = [DateTime]::UtcNow.ToString('o')
     Host = [Environment]::MachineName
@@ -126,8 +248,16 @@ try {
     SampleCount = $sampleCount
     RecommendedCompression = $recommendedCompression
     BeatsPortableBaseline = $beatsPortableBaseline
+    SelectionConfidence = $selectionConfidence
+    MinimumMeaningfulDifferenceMs = $minimumMeaningfulDifferenceMs
+    WinnerLeadMs = $winnerLeadMs
+    PortableLeadMs = $portableLeadMs
+    VarianceAcceptable = $varianceAcceptable
+    AllCandidateVarianceAcceptable = $allCandidateVarianceAcceptable
     PortableRendererMountedWallMedianMs = $portableRendererMedianMs
+    PortableRendererMountedWallMadMs = $portableRendererMadMs
     SelectionMetric = 'PrepareRendererMountedWallMedianMs'
+    MeasurementOrder = @($measurementOrder)
     Candidates = $candidates
     PortableBaseline = $portable
   }

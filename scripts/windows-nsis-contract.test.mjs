@@ -97,6 +97,62 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).not.toContain('RMDir /r "$RelayFinalRuntime"');
   });
 
+  it('timestamps new quarantines and refuses to abandon one without a creation marker', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const renameIndex = source.indexOf('Rename "$RelayFinalRuntime" "$RelayQuarantine"');
+    const markerIndex = source.indexOf('$RelayQuarantine\\.relay-quarantine-created');
+
+    expect(renameIndex).toBeGreaterThan(-1);
+    expect(markerIndex).toBeGreaterThan(renameIndex);
+    expect(source).toContain('FileOpen $RelayQuarantineMarkerHandle');
+    expect(source).toContain('Rename "$RelayQuarantine" "$RelayFinalRuntime"');
+    expect(source).toContain('Relay could not mark its damaged runtime quarantine.');
+  });
+
+  it('verifies the embedded runtime archive before extracting it', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const hashIndex = source.indexOf(
+      '${StdUtils.HashFile} $RelayArchiveHash "SHA2-512" "$PLUGINSDIR\\relay-app.zip"',
+    );
+    const unzipIndex = source.indexOf('nsisunz::Unzip');
+
+    expect(source).toContain('!include "StdUtils.nsh"');
+    expect(hashIndex).toBeGreaterThan(-1);
+    expect(hashIndex).toBeLessThan(unzipIndex);
+    expect(source).toContain('$RelayArchiveHash != "${APP_64_HASH}"');
+    expect(source).toContain('Relay could not verify the embedded runtime archive.');
+  });
+
+  it('validates the extracted inner executable before writing readiness', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const binaryCheck = source.indexOf('GetBinaryTypeW');
+    const markerWrite = source.indexOf('WriteINIStr "$RelayMarker"');
+
+    expect(binaryCheck).toBeGreaterThan(-1);
+    expect(binaryCheck).toBeLessThan(markerWrite);
+    expect(source).toContain('The prepared Relay executable is not a valid Windows binary.');
+    expect(source.match(/GetBinaryTypeW/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the last usable fallback when the recorded current runtime is damaged', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const currentCheck = source.indexOf(
+      '!insertmacro RelayRuntimeIsUsable "$RelayCurrent" $RelayRuntimeIsUsable',
+    );
+    const previousCheck = source.indexOf(
+      '!insertmacro RelayRuntimeIsUsable "$RelayPrevious" $RelayRuntimeIsUsable',
+    );
+    const previousWrite = source.indexOf(
+      'WriteINIStr "$RelayStateNew" "Relay" "previous" "$RelayFallbackBuild"',
+    );
+
+    expect(source).toContain('!macro RelayRuntimeIsUsable BUILD_ID RESULT');
+    expect(currentCheck).toBeGreaterThan(-1);
+    expect(previousCheck).toBeGreaterThan(currentCheck);
+    expect(previousWrite).toBeGreaterThan(previousCheck);
+    expect(source).not.toContain('WriteINIStr "$RelayStateNew" "Relay" "previous" "$RelayCurrent"');
+  });
+
   it('maintains stable per-user shortcuts without installer state', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
 
@@ -152,7 +208,7 @@ describe('Windows NSIS bootstrap contract', () => {
     const source = read('scripts/windows-bootstrap-smoke.ps1');
 
     expect(source).toContain("-ArgumentList '/relay-prepare-only'");
-    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(5);
+    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(7);
     expect(source).toContain('LastWriteTimeUtc.Ticks');
     expect(source).toContain("GetFolderPath('Desktop')");
     expect(source).toContain("GetFolderPath('StartMenu')");
@@ -169,6 +225,10 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('FirstPreparationMs');
     expect(source).toContain('ReusePreparationMs');
     expect(source).toContain('CorruptRuntimeRepaired');
+    expect(source).toContain('Get-DirectoryTreeHash');
+    expect(source).toContain('Wait-ProcessWithTimeout');
+    expect(source).toContain('relay-build-id.txt');
+    expect(source).toContain('BrokenCurrentPreservedPrevious');
   });
 
   it('compiles production boundary hooks only into an isolated harness root', () => {
@@ -183,11 +243,14 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(bootstrap).toContain('.fail-after-quarantine');
     expect(bootstrap).toContain('.fail-before-launcher-activation');
     expect(bootstrap).toContain('.fail-before-state-activation');
+    expect(bootstrap).toContain('TerminateProcess');
     expect(launcher).toContain('RELAY_RUNTIME_ROOT');
     expect(harness).toContain('BoundaryFailuresPreservedFallback');
     expect(harness).toContain('Invoke-StableFallback');
     expect(harness).toContain('RELAY_BOOTSTRAP_BOUNDARY_CONFIRM');
+    expect(harness).toContain("RELAY_DISABLE_CRASH_WATCHDOG = '1'");
     expect(harness).toContain('repair-restore-sentinel.txt');
+    expect(harness).toContain('Wait-ProcessWithTimeout');
     expect(bootstrap).not.toMatch(/bootstrap-root|install-dir/i);
   });
 });
@@ -240,6 +303,12 @@ describe('Windows packaging integration contract', () => {
     expect(comparison).toContain("--scenario', 'portable'");
     expect(comparison).toContain('RecommendedCompression');
     expect(comparison).toContain('BeatsPortableBaseline');
+    expect(comparison).toContain('PrepareRendererMountedWallMadMs');
+    expect(comparison).toContain('MinimumMeaningfulDifferenceMs');
+    expect(comparison).toContain('SelectionConfidence');
+    expect(comparison).toContain('Get-RandomizedCandidateOrder');
+    expect(comparison).toContain("Kind = 'portable'");
+    expect(comparison).toContain('AllCandidateVarianceAcceptable');
     expect(comparison).toContain('$null');
     expect(comparison).toContain('RELAY_STARTUP_COMPARISON_CONFIRM');
   });
