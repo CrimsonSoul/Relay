@@ -64,7 +64,7 @@ function run(command, args, options = {}) {
 
 async function compileLauncher() {
   await mkdir(generatedDir, { recursive: true });
-  const makensis = await getMakeNsisPath(undefined);
+  const makensis = await getMakeNsisPath('1.2.1');
   await run(
     makensis.path,
     [
@@ -123,4 +123,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exitCode = 1;
   });
 }
-
