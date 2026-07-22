@@ -195,13 +195,16 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).not.toMatch(/RELAY_TEST_ROOT|bootstrap-root|install-dir/i);
   });
 
-  it('uses host-portable separators for compile-time project files', () => {
+  it('uses NSIS-native separators for compile-time project files', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain(
-      '!include "${PROJECT_DIR}/build/windows/include/relay-runtime-contract.nsh"',
+      '!include "${PROJECT_DIR}\\build\\windows\\include\\relay-runtime-contract.nsh"',
     );
-    expect(source).not.toMatch(/\$\{(?:PROJECT_DIR|BUILD_RESOURCES_DIR)\}\\/);
+    expect(source).toContain(
+      '!include "${PROJECT_DIR}\\release\\windows-bootstrap\\relay-build.nsh"',
+    );
+    expect(source).not.toContain('${PROJECT_DIR}/');
   });
 
   it('smoke-tests first preparation, reuse, shortcuts, and data isolation', () => {

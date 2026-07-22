@@ -3,8 +3,8 @@
 !include "LogicLib.nsh"
 !include "StdUtils.nsh"
 !include "Win\WinError.nsh"
-!include "${PROJECT_DIR}/build/windows/include/relay-runtime-contract.nsh"
-!include "${PROJECT_DIR}/release/windows-bootstrap/relay-build.nsh"
+!include "${PROJECT_DIR}\build\windows\include\relay-runtime-contract.nsh"
+!include "${PROJECT_DIR}\release\windows-bootstrap\relay-build.nsh"
 
 Unicode true
 RequestExecutionLevel user
@@ -165,7 +165,7 @@ Section
   !ifdef COMPRESS
     SetCompress off
   !endif
-  File /oname=$PLUGINSDIR\${RELAY_LAUNCHER_FILE} "${PROJECT_DIR}/release/windows-bootstrap/${RELAY_LAUNCHER_FILE}"
+  File /oname=$PLUGINSDIR\${RELAY_LAUNCHER_FILE} "${PROJECT_DIR}\release\windows-bootstrap\${RELAY_LAUNCHER_FILE}"
   !ifdef COMPRESS
     SetCompress "${COMPRESS}"
   !endif
