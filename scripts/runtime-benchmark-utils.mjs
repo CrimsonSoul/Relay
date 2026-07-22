@@ -31,9 +31,7 @@ export function summarizeProcessSamples(samples) {
         key,
         {
           cpuAverage: Number(
-            (values.cpu.reduce((sum, current) => sum + current, 0) / values.cpu.length).toFixed(
-              3,
-            ),
+            (values.cpu.reduce((sum, current) => sum + current, 0) / values.cpu.length).toFixed(3),
           ),
           workingSetMedianMB: Number(median(values.workingSetMB)?.toFixed(1)),
         },
@@ -69,7 +67,9 @@ export function selectGpuDiagnostics({ accelerated, features, basic }) {
   const adapterFields = ['active', 'vendorId', 'deviceId', 'driverVendor', 'driverVersion'];
   const adapters = (basic?.gpuDevice ?? []).map((adapter) =>
     Object.fromEntries(
-      adapterFields.filter((field) => adapter[field] !== undefined).map((field) => [field, adapter[field]]),
+      adapterFields
+        .filter((field) => adapter[field] !== undefined)
+        .map((field) => [field, adapter[field]]),
     ),
   );
 

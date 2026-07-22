@@ -1,20 +1,45 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from '@playwright/test';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { extractLatestStartupTimeline, median } from './startup-benchmark-utils.mjs';
+import {
+  buildLaunchSpec,
+  extractLatestStartupTimeline,
+  median,
+  parseStartupBenchmarkArgs,
+  sliceAppendedLogText,
+} from './startup-benchmark-utils.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const mainEntry = path.join(root, 'dist/main/index.js');
 const warmRunCount = 5;
 const launchTimeoutMs = 60_000;
+const buildIdPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const reservedWindowsNames = new Set([
+  'con',
+  'prn',
+  'aux',
+  'nul',
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function isBuildId(value) {
+  return (
+    typeof value === 'string' &&
+    buildIdPattern.test(value) &&
+    !value.endsWith('.') &&
+    !reservedWindowsNames.has(value.split('.', 1)[0])
+  );
+}
 
 async function reservePort() {
   const server = net.createServer();
@@ -55,7 +80,7 @@ async function readTimeline(logPath) {
   return null;
 }
 
-async function measureLaunch(userDataDir) {
+async function measureDevelopmentLaunch(userDataDir) {
   const startedAt = performance.now();
   const launchEnv = { ...process.env, NODE_ENV: 'test' };
   delete launchEnv.ELECTRON_RUN_AS_NODE;
@@ -83,7 +108,7 @@ async function measureLaunch(userDataDir) {
   }
 }
 
-function summarize(label, result) {
+function summarizeDevelopment(label, result) {
   return {
     label,
     windowVisibleMs: result.windowVisibleMs,
@@ -92,7 +117,7 @@ function summarize(label, result) {
   };
 }
 
-export async function runStartupBenchmark() {
+async function runDevelopmentBenchmark() {
   if (!fs.existsSync(mainEntry)) {
     throw new Error('Relay is not built. Run `npm run build` before benchmarking startup.');
   }
@@ -101,29 +126,291 @@ export async function runStartupBenchmark() {
   try {
     const port = await reservePort();
     writeServerConfig(userDataDir, port, `benchmark-${crypto.randomUUID()}`);
-    const provisioning = await measureLaunch(userDataDir);
-    const postUpdate = await measureLaunch(userDataDir);
+    const provisioning = await measureDevelopmentLaunch(userDataDir);
+    const secondDevelopmentLaunch = await measureDevelopmentLaunch(userDataDir);
     const warm = [];
     for (let index = 0; index < warmRunCount; index += 1) {
-      warm.push(await measureLaunch(userDataDir));
+      warm.push(await measureDevelopmentLaunch(userDataDir));
     }
 
-    const report = {
-      provisioning: summarize('fresh install', provisioning),
-      postUpdate: summarize('first healthy launch after build/update', postUpdate),
+    return {
+      scenario: 'development',
+      provisioning: summarizeDevelopment('fresh unpackaged development profile', provisioning),
+      secondDevelopmentLaunch: summarizeDevelopment(
+        'second unpackaged development launch (not an update)',
+        secondDevelopmentLaunch,
+      ),
       warmMedian: {
-        label: `median of ${warmRunCount} subsequent launches`,
+        label: `median of ${warmRunCount} subsequent unpackaged launches`,
         windowVisibleMs: median(warm.map((sample) => sample.windowVisibleMs)),
         workspaceVisibleMs: median(warm.map((sample) => sample.workspaceVisibleMs)),
       },
-      warm: warm.map((sample, index) => summarize(`warm ${index + 1}`, sample)),
+      warm: warm.map((sample, index) =>
+        summarizeDevelopment(`unpackaged warm ${index + 1}`, sample),
+      ),
     };
-
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    return report;
   } finally {
     fs.rmSync(userDataDir, { recursive: true, force: true });
   }
+}
+
+function readLogBaseline(logPath) {
+  try {
+    const stats = fs.statSync(logPath);
+    return {
+      exists: true,
+      size: stats.size,
+      identity: `${stats.dev}:${stats.ino}:${stats.birthtimeMs}`,
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { exists: false, size: 0, identity: null };
+    throw error;
+  }
+}
+
+async function waitForPackagedTimeline(logPath, baseline, startedAt) {
+  const deadline = Date.now() + launchTimeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const stats = fs.statSync(logPath);
+      const identity = `${stats.dev}:${stats.ino}:${stats.birthtimeMs}`;
+      const logBuffer = fs.readFileSync(logPath);
+      const appendedText =
+        baseline.exists && identity === baseline.identity && logBuffer.length >= baseline.size
+          ? sliceAppendedLogText(logBuffer, baseline.size)
+          : logBuffer.toString('utf8');
+      const timeline = extractLatestStartupTimeline(appendedText);
+      if (timeline?.['renderer-mounted'] !== undefined) {
+        return {
+          timeline,
+          rendererMountedWallMs: Math.round(performance.now() - startedAt),
+        };
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    await delay(25);
+  }
+  throw new Error(
+    `Relay did not write a new renderer startup milestone within ${launchTimeoutMs}ms.`,
+  );
+}
+
+function listCompleteRuntimeBuilds(runtimeRoot) {
+  const complete = new Set();
+  try {
+    for (const entry of fs.readdirSync(runtimeRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !isBuildId(entry.name)) continue;
+      const runtimeDir = path.join(runtimeRoot, entry.name);
+      if (
+        fs.existsSync(path.join(runtimeDir, '.relay-runtime-ready')) &&
+        fs.existsSync(path.join(runtimeDir, 'Relay.exe'))
+      ) {
+        complete.add(entry.name);
+      }
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return complete;
+}
+
+function readCurrentBuildId(statePath) {
+  try {
+    const match = fs.readFileSync(statePath, 'utf8').match(/^current=(.+)$/m);
+    const buildId = match?.[1]?.trim();
+    return isBuildId(buildId) ? buildId : null;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function waitForProcessHandoff(command, args, environment, startedAt) {
+  const child = spawn(command, args, {
+    env: environment,
+    stdio: 'ignore',
+    windowsHide: false,
+  });
+
+  return new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            `${path.basename(command)} exited before handoff with ${
+              signal ? `signal ${signal}` : `code ${code}`
+            }.`,
+          ),
+        );
+        return;
+      }
+      resolve(Math.round(performance.now() - startedAt));
+    });
+  });
+}
+
+async function waitForProcessExitMarker(markerPath, startedAt) {
+  const deadline = Date.now() + launchTimeoutMs;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(markerPath)) {
+      return Math.round(performance.now() - startedAt);
+    }
+    await delay(25);
+  }
+  throw new Error(`Relay did not finish cleanly within ${launchTimeoutMs}ms of the outer launch.`);
+}
+
+function resolveRuntimeReuse(scenario, activeBuildId, completeBefore) {
+  if (scenario === 'portable' || !activeBuildId) return null;
+  return completeBefore.has(activeBuildId);
+}
+
+function assertRuntimeReusePrecondition(scenario, activeBuildId, runtimeReused) {
+  if (scenario === 'prepare' && runtimeReused) {
+    throw new Error(
+      `The prepare benchmark reused runtime ${activeBuildId}; use a fresh build ID or profile.`,
+    );
+  }
+  if (scenario === 'stable' && runtimeReused !== true) {
+    throw new Error('The stable benchmark did not reuse the active prepared runtime.');
+  }
+}
+
+async function runPackagedBenchmark(options) {
+  if (process.platform !== 'win32') {
+    throw new Error('Packaged Relay startup benchmarks must run on Windows.');
+  }
+  if (process.env.RELAY_BOOTSTRAP_BENCHMARK_CONFIRM !== '1') {
+    throw new Error(
+      'Set RELAY_BOOTSTRAP_BENCHMARK_CONFIRM=1 only on the intended Windows benchmark profile.',
+    );
+  }
+
+  const localAppData = process.env.LOCALAPPDATA;
+  const appData = process.env.APPDATA;
+  if (!localAppData || !appData) {
+    throw new Error('LOCALAPPDATA and APPDATA are required for a packaged Windows benchmark.');
+  }
+
+  const runtimeRoot = path.join(localAppData, 'Relay', 'Runtime');
+  const statePath = path.join(localAppData, 'Relay', 'state.ini');
+  const logPath = path.join(appData, 'Relay', 'logs', 'relay.log');
+  const stableLauncher = path.join(localAppData, 'Relay', 'Relay.exe');
+  const resolvedOptions = {
+    ...options,
+    artifact: options.artifact ? path.resolve(options.artifact) : undefined,
+    launcher: options.launcher ? path.resolve(options.launcher) : undefined,
+  };
+  if (
+    resolvedOptions.scenario === 'stable' &&
+    resolvedOptions.launcher.toLowerCase() !== stableLauncher.toLowerCase()
+  ) {
+    throw new Error(`The stable scenario must use the installed launcher at ${stableLauncher}.`);
+  }
+
+  const launchSpec = buildLaunchSpec(resolvedOptions);
+  if (!fs.existsSync(launchSpec.command)) {
+    throw new Error(`Startup benchmark executable does not exist: ${launchSpec.command}`);
+  }
+
+  const completeBefore = listCompleteRuntimeBuilds(runtimeRoot);
+  const baseline = readLogBaseline(logPath);
+  const benchmarkRunId = crypto.randomUUID();
+  const exitMarkerPath = path.join(
+    os.tmpdir(),
+    'Relay',
+    'startup-benchmark',
+    `${benchmarkRunId}.complete`,
+  );
+  fs.rmSync(exitMarkerPath, { force: true });
+  const startedAt = performance.now();
+  const launchEnv = {
+    ...process.env,
+    RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+    RELAY_BENCHMARK_RUN_ID: benchmarkRunId,
+    RELAY_DISABLE_GPU_DIAGNOSTICS: '1',
+  };
+  delete launchEnv.ELECTRON_RUN_AS_NODE;
+
+  try {
+    const [processHandoffMs, observed, processExitMs] = await Promise.all([
+      waitForProcessHandoff(launchSpec.command, launchSpec.args, launchEnv, startedAt),
+      waitForPackagedTimeline(logPath, baseline, startedAt),
+      waitForProcessExitMarker(exitMarkerPath, startedAt),
+    ]);
+    const activeBuildId = readCurrentBuildId(statePath);
+    const electronRendererMountedMs = observed.timeline['renderer-mounted'];
+    const runtimeReused = resolveRuntimeReuse(
+      resolvedOptions.scenario,
+      activeBuildId,
+      completeBefore,
+    );
+    assertRuntimeReusePrecondition(resolvedOptions.scenario, activeBuildId, runtimeReused);
+
+    return {
+      scenario: resolvedOptions.scenario,
+      compression: resolvedOptions.compression,
+      executable: launchSpec.command,
+      executableSizeBytes: fs.statSync(launchSpec.command).size,
+      processHandoffMs,
+      processExitMs,
+      preparationMs: ['prepare', 'portable'].includes(resolvedOptions.scenario)
+        ? processHandoffMs
+        : null,
+      rendererMountedWallMs: observed.rendererMountedWallMs,
+      beforeElectronEntryMs: Math.max(
+        0,
+        observed.rendererMountedWallMs - electronRendererMountedMs,
+      ),
+      runtimeReused,
+      activeBuildId,
+      timeline: observed.timeline,
+    };
+  } finally {
+    fs.rmSync(exitMarkerPath, { force: true });
+  }
+}
+
+function summarizePackagedSamples(options, samples) {
+  if (samples.length === 1) return samples[0];
+
+  return {
+    scenario: options.scenario,
+    compression: options.compression,
+    runs: samples.length,
+    runtimeReused:
+      options.scenario === 'portable'
+        ? null
+        : samples.every((sample) => sample.runtimeReused === true),
+    packagedMedian: {
+      processHandoffMs: median(samples.map((sample) => sample.processHandoffMs)),
+      processExitMs: median(samples.map((sample) => sample.processExitMs)),
+      rendererMountedWallMs: median(samples.map((sample) => sample.rendererMountedWallMs)),
+      beforeElectronEntryMs: median(samples.map((sample) => sample.beforeElectronEntryMs)),
+      electronRendererMountedMs: median(
+        samples.map((sample) => sample.timeline['renderer-mounted']),
+      ),
+    },
+    samples,
+  };
+}
+
+export async function runStartupBenchmark(argv = process.argv.slice(2)) {
+  const options = parseStartupBenchmarkArgs(argv);
+  let report;
+  if (options.scenario === 'development') {
+    report = await runDevelopmentBenchmark();
+  } else {
+    const samples = [];
+    for (let index = 0; index < options.runs; index += 1) {
+      samples.push(await runPackagedBenchmark(options));
+    }
+    report = summarizePackagedSamples(options, samples);
+  }
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  return report;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -12,6 +12,8 @@ AutoCloseWindow true
 WindowIcon off
 CRCCheck off
 
+!define FILE_ATTRIBUTE_REPARSE_POINT 0x400
+
 Var RelayArgs
 Var RelayRoot
 Var RelayRuntimeRoot
@@ -26,18 +28,65 @@ Var RelayCurrent
 Var RelayPrevious
 Var RelayBuildIsValid
 Var RelayResult
+Var RelayMarkerProtocol
+Var RelayMarkerBuildId
+Var RelayMarkerExecutable
+Var RelayMarkerPayloadHash
 Var RelayBannerVisible
 Var RelayFailureMessage
+Var RelayLockHandle
+Var RelayQuarantine
+Var RelayQuarantineActive
+
+!macro RelayHarnessFail SENTINEL MESSAGE
+  !ifdef RELAY_BOOTSTRAP_HARNESS
+    ${If} ${FileExists} "$RelayRoot\${SENTINEL}"
+      StrCpy $RelayFailureMessage "${MESSAGE}"
+      Goto BootstrapFailed
+    ${EndIf}
+  !endif
+!macroend
+
+!ifdef RELAY_BOOTSTRAP_HARNESS
+  !ifndef RELAY_BOOTSTRAP_HARNESS_ROOT
+    !error "RELAY_BOOTSTRAP_HARNESS_ROOT is required for harness builds"
+  !endif
+  !define RELAY_ROOT "${RELAY_BOOTSTRAP_HARNESS_ROOT}"
+!else
+  !define RELAY_ROOT "$LOCALAPPDATA\Relay"
+!endif
 
 Function .onInit
   !insertmacro check64BitAndSetRegView
   SetShellVarContext current
   ${GetParameters} $RelayArgs
+  StrCpy $RelayRoot "${RELAY_ROOT}"
+  StrCpy $RelayLauncher "$RelayRoot\Relay.exe"
 
-  System::Call 'kernel32::CreateMutexW(p 0, i 1, w "Local\RelayBootstrapProtocol1") p.r0 ?e'
+  ClearErrors
+  CreateDirectory "$RelayRoot"
+  IfErrors BootstrapLockFailed
+  System::Call 'kernel32::GetFileAttributesW(w "$RelayRoot") i.r0'
+  ${If} $0 == -1
+    Goto BootstrapLockFailed
+  ${EndIf}
+  IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+  ${If} $1 != 0
+    Goto BootstrapLockFailed
+  ${EndIf}
+
+  System::Call 'kernel32::CreateFileW(w "$RelayRoot\bootstrap.lock", i 0x40000000, i 0, p 0, i 4, i 0x80, p 0) p.r0 ?e'
   Pop $RelayResult
-  ${If} $RelayResult == ${ERROR_ALREADY_EXISTS}
-    StrCpy $RelayLauncher "$LOCALAPPDATA\Relay\Relay.exe"
+  StrCpy $RelayLockHandle $0
+  ${If} $RelayLockHandle == -1
+    ${If} $RelayResult == ${ERROR_SHARING_VIOLATION}
+      Goto BootstrapAlreadyRunning
+    ${EndIf}
+    Goto BootstrapLockFailed
+  ${EndIf}
+  Goto BootstrapLockReady
+
+BootstrapAlreadyRunning:
     ${If} ${FileExists} "$RelayLauncher"
       ${If} $RelayArgs != "/relay-prepare-only"
         Exec '"$RelayLauncher" $RelayArgs'
@@ -47,24 +96,41 @@ Function .onInit
     ${EndIf}
     SetErrorLevel 0
     Quit
-  ${EndIf}
+
+BootstrapLockFailed:
+  MessageBox MB_OK|MB_ICONSTOP "Relay could not lock its local runtime for preparation."
+  SetErrorLevel 1
+  Quit
+
+BootstrapLockReady:
 FunctionEnd
 
 Section
   InitPluginsDir
   StrCpy $RelayBannerVisible "0"
-  StrCpy $RelayRoot "$LOCALAPPDATA\Relay"
+  StrCpy $RelayQuarantineActive "0"
+  StrCpy $RelayRoot "${RELAY_ROOT}"
   StrCpy $RelayRuntimeRoot "$RelayRoot\Runtime"
   StrCpy $RelayFinalRuntime "$RelayRuntimeRoot\${RELAY_BUILD_ID}"
   StrCpy $RelayState "$RelayRoot\state.ini"
   StrCpy $RelayStateNew "$RelayRoot\state.ini.new"
-  StrCpy $RelayLauncher "$LOCALAPPDATA\Relay\Relay.exe"
+  StrCpy $RelayLauncher "$RelayRoot\Relay.exe"
   StrCpy $RelayLauncherNew "$RelayRoot\Relay.exe.new"
 
   CreateDirectory "$RelayRuntimeRoot"
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not create its local runtime folder."
     Goto BootstrapFailed
+  System::Call 'kernel32::GetFileAttributesW(w "$RelayRuntimeRoot") i.r0'
+  ${If} $0 == -1
+    StrCpy $RelayFailureMessage "Relay could not inspect its local runtime folder."
+    Goto BootstrapFailed
+  ${EndIf}
+  IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+  ${If} $1 != 0
+    StrCpy $RelayFailureMessage "Relay cannot prepare inside a redirected runtime folder."
+    Goto BootstrapFailed
+  ${EndIf}
 
   SetOutPath "$PLUGINSDIR"
   !ifdef COMPRESS
@@ -93,24 +159,28 @@ Section
   ${EndIf}
 
   StrCpy $RelayMarker "$RelayFinalRuntime\${RELAY_RUNTIME_MARKER}"
-  ReadINIStr $RelayResult "$RelayMarker" "Relay" "buildId"
-  ${If} $RelayResult == "${RELAY_BUILD_ID}"
-    ReadINIStr $RelayResult "$RelayMarker" "Relay" "payloadHash"
-    ${If} $RelayResult == "${APP_64_HASH}"
-    ${AndIf} ${FileExists} "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}"
-      Goto RuntimeReady
-    ${EndIf}
+  ReadINIStr $RelayMarkerProtocol "$RelayMarker" "Relay" "protocol"
+  ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
+  ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
+  ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
+  ${If} $RelayMarkerProtocol == "${RELAY_STATE_PROTOCOL}"
+  ${AndIf} $RelayMarkerBuildId == "${RELAY_BUILD_ID}"
+  ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
+  ${AndIf} $RelayMarkerPayloadHash == "${APP_64_HASH}"
+  ${AndIf} ${FileExists} "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}"
+    Goto RuntimeReady
   ${EndIf}
 
   Banner::show /NOUNLOAD "Preparing Relay..."
   StrCpy $RelayBannerVisible "1"
   System::Call 'kernel32::GetCurrentProcessId() i.r0'
-  StrCpy $RelayStaging "$RelayRuntimeRoot\.staging-${RELAY_BUILD_ID}-$0"
-  RMDir /r "$RelayStaging"
-  CreateDirectory "$RelayStaging"
-  IfErrors 0 +3
+  System::Call 'kernel32::GetTickCount() i.r1'
+  StrCpy $RelayStaging "$RelayRuntimeRoot\.staging-${RELAY_BUILD_ID}-$0-$1"
+  System::Call 'kernel32::CreateDirectoryW(w "$RelayStaging", p 0) i.r2'
+  ${If} $2 == 0
     StrCpy $RelayFailureMessage "Relay could not create a staging folder."
     Goto BootstrapFailed
+  ${EndIf}
 
   SetOutPath "$PLUGINSDIR"
   !ifdef COMPRESS
@@ -127,6 +197,7 @@ Section
     StrCpy $RelayFailureMessage "Relay could not extract the new runtime."
     Goto BootstrapFailed
   ${EndIf}
+  !insertmacro RelayHarnessFail ".fail-after-extraction" "Relay harness stopped after extraction."
 
   ${IfNot} ${FileExists} "$RelayStaging\${APP_EXECUTABLE_FILENAME}"
     StrCpy $RelayFailureMessage "The prepared Relay runtime is incomplete."
@@ -137,24 +208,60 @@ Section
   ClearErrors
   WriteINIStr "$RelayMarker" "Relay" "protocol" "${RELAY_STATE_PROTOCOL}"
   WriteINIStr "$RelayMarker" "Relay" "buildId" "${RELAY_BUILD_ID}"
+  WriteINIStr "$RelayMarker" "Relay" "executable" "${APP_EXECUTABLE_FILENAME}"
   WriteINIStr "$RelayMarker" "Relay" "payloadHash" "${APP_64_HASH}"
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not finalize the new runtime."
     Goto BootstrapFailed
+  !insertmacro RelayHarnessFail ".fail-after-marker" "Relay harness stopped after marker creation."
 
-  RMDir /r "$RelayFinalRuntime"
-  ${If} ${FileExists} "$RelayFinalRuntime"
-    StrCpy $RelayFailureMessage "Relay could not replace an incomplete runtime."
+  System::Call 'kernel32::GetFileAttributesW(w "$RelayStaging") i.r0'
+  ${If} $0 == -1
+    StrCpy $RelayFailureMessage "Relay could not inspect the prepared runtime."
     Goto BootstrapFailed
+  ${EndIf}
+  IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+  ${If} $1 != 0
+    StrCpy $RelayFailureMessage "Relay could not safely activate the prepared runtime."
+    Goto BootstrapFailed
+  ${EndIf}
+  !insertmacro RelayHarnessFail ".fail-before-runtime-rename" "Relay harness stopped before runtime activation."
+  System::Call 'kernel32::GetFileAttributesW(w "$RelayFinalRuntime") i.r0'
+  StrCpy $RelayQuarantineActive "0"
+  ${If} $0 != -1
+    System::Call 'kernel32::GetCurrentProcessId() i.r1'
+    System::Call 'kernel32::GetTickCount() i.r2'
+    StrCpy $RelayQuarantine "$RelayRuntimeRoot\.corrupt-${RELAY_BUILD_ID}-$1-$2"
+    System::Call 'kernel32::GetFileAttributesW(w "$RelayQuarantine") i.r0'
+    ${If} $0 != -1
+      StrCpy $RelayFailureMessage "Relay could not reserve a safe repair location."
+      Goto BootstrapFailed
+    ${EndIf}
+    ClearErrors
+    Rename "$RelayFinalRuntime" "$RelayQuarantine"
+    IfErrors 0 +3
+      StrCpy $RelayFailureMessage "Relay could not quarantine its damaged runtime."
+      Goto BootstrapFailed
+    StrCpy $RelayQuarantineActive "1"
+    !insertmacro RelayHarnessFail ".fail-after-quarantine" "Relay harness stopped after quarantining a damaged runtime."
   ${EndIf}
 
   ClearErrors
   Rename "$RelayStaging" "$RelayFinalRuntime"
-  IfErrors 0 +3
+  ${If} ${Errors}
+    ${If} $RelayQuarantineActive == "1"
+      ClearErrors
+      Rename "$RelayQuarantine" "$RelayFinalRuntime"
+      ${IfNot} ${Errors}
+        StrCpy $RelayQuarantineActive "0"
+      ${EndIf}
+    ${EndIf}
     StrCpy $RelayFailureMessage "Relay could not activate the prepared runtime folder."
     Goto BootstrapFailed
+  ${EndIf}
 
 RuntimeReady:
+  !insertmacro RelayHarnessFail ".fail-before-launcher-activation" "Relay harness stopped before launcher activation."
   Delete "$RelayLauncherNew"
   ${If} ${FileExists} "$RelayLauncher"
     ClearErrors
@@ -198,6 +305,8 @@ LauncherReady:
     StrCpy $RelayFailureMessage "Relay could not prepare its runtime state."
     Goto BootstrapFailed
 
+  !insertmacro RelayHarnessFail ".fail-before-state-activation" "Relay harness stopped before state activation."
+
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not activate the prepared build."
@@ -229,10 +338,21 @@ BootstrapFailed:
     Banner::destroy
     StrCpy $RelayBannerVisible "0"
   ${EndIf}
-  RMDir /r "$RelayStaging"
   Delete "$RelayLauncherNew"
   Delete "$RelayStateNew"
-  MessageBox MB_OK|MB_ICONSTOP "$RelayFailureMessage The previous Relay build remains available."
+  ${If} $RelayQuarantineActive == "1"
+    System::Call 'kernel32::GetFileAttributesW(w "$RelayFinalRuntime") i.r0'
+    ${If} $0 == -1
+      ClearErrors
+      Rename "$RelayQuarantine" "$RelayFinalRuntime"
+      ${IfNot} ${Errors}
+        StrCpy $RelayQuarantineActive "0"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${If} $RelayArgs != "/relay-prepare-only"
+    MessageBox MB_OK|MB_ICONSTOP "$RelayFailureMessage Relay will try the last usable build."
+  ${EndIf}
   ${If} $RelayArgs != "/relay-prepare-only"
   ${AndIf} ${FileExists} "$RelayLauncher"
     Exec '"$RelayLauncher" $RelayArgs'

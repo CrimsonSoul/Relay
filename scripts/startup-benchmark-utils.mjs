@@ -1,4 +1,84 @@
 const STARTUP_SUMMARY_PREFIX = 'Relay startup timing ';
+const STARTUP_SCENARIOS = new Set(['development', 'prepare', 'stable', 'portable']);
+const STARTUP_OPTION_KEYS = new Map([
+  ['--scenario', 'scenario'],
+  ['--artifact', 'artifact'],
+  ['--launcher', 'launcher'],
+  ['--compression', 'compression'],
+  ['--runs', 'runs'],
+]);
+
+function requireFlagValue(argv, index) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${argv[index]} requires a value.`);
+  }
+  return value;
+}
+
+function validateStartupBenchmarkOptions(options) {
+  if (!STARTUP_SCENARIOS.has(options.scenario)) {
+    throw new Error(`Unsupported startup benchmark scenario: ${options.scenario}`);
+  }
+  if (['prepare', 'portable'].includes(options.scenario) && !options.artifact) {
+    throw new Error(`${options.scenario} scenario requires --artifact <Relay.exe>.`);
+  }
+  if (options.scenario === 'stable' && !options.launcher) {
+    throw new Error('The stable scenario requires --launcher <installed Relay.exe>.');
+  }
+  if (!Number.isSafeInteger(options.runs) || options.runs < 1 || options.runs > 20) {
+    throw new Error('Startup benchmark --runs must be an integer from 1 through 20.');
+  }
+  if (options.scenario === 'prepare' && options.runs !== 1) {
+    throw new Error('The prepare scenario must use --runs 1 because later runs reuse the runtime.');
+  }
+  if (options.scenario === 'development' && options.runs !== 1) {
+    throw new Error('The development scenario manages its own warm-run sample count.');
+  }
+}
+
+export function parseStartupBenchmarkArgs(argv) {
+  const options = {
+    scenario: 'development',
+    compression: 'development',
+    runs: 1,
+  };
+
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const value = requireFlagValue(argv, index);
+    const optionKey = STARTUP_OPTION_KEYS.get(flag);
+    if (!optionKey) throw new Error(`Unknown startup benchmark flag: ${flag}`);
+    options[optionKey] = optionKey === 'runs' ? Number(value) : value;
+  }
+
+  validateStartupBenchmarkOptions(options);
+  if (options.scenario !== 'development' && options.compression === 'development') {
+    options.compression = 'unspecified';
+  }
+
+  return options;
+}
+
+export function buildLaunchSpec(options) {
+  if (['prepare', 'portable'].includes(options.scenario) && options.artifact) {
+    return { command: options.artifact, args: [] };
+  }
+  if (options.scenario === 'stable' && options.launcher) {
+    return { command: options.launcher, args: [] };
+  }
+  throw new Error(`Cannot build a launch command for scenario: ${options.scenario}`);
+}
+
+export function sliceAppendedLogText(logBuffer, startByte) {
+  if (!Buffer.isBuffer(logBuffer)) {
+    throw new TypeError('Startup benchmark log data must be a Buffer.');
+  }
+  if (!Number.isSafeInteger(startByte) || startByte < 0 || startByte > logBuffer.length) {
+    throw new RangeError('Startup benchmark log byte offset is outside the log buffer.');
+  }
+  return logBuffer.subarray(startByte).toString('utf8');
+}
 
 export function median(samples) {
   if (samples.length === 0) {

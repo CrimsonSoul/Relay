@@ -429,4 +429,3 @@ Review scope: the complete diff against the approved spec, especially NSIS quoti
 git add scripts/benchmark-startup.mjs scripts/startup-benchmark-utils.mjs scripts/startup-benchmark-utils.test.mjs
 git commit -m "perf: benchmark packaged Windows startup"
 ```
-

@@ -6,6 +6,10 @@ import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { StartupStateController } from './startupState';
 import type { StartupTimeline } from './startupTimeline';
 
+export function shouldExitAfterStartupBenchmark(environment: NodeJS.ProcessEnv): boolean {
+  return environment.RELAY_BENCHMARK_EXIT_AFTER_RENDER === '1';
+}
+
 export function setupStartupIpc(
   controller: StartupStateController,
   timeline: StartupTimeline,

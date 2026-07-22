@@ -16,6 +16,10 @@ WindowIcon off
   !error "RELAY_LAUNCHER_ICON is required"
 !endif
 
+!ifndef RELAY_RUNTIME_ROOT
+  !define RELAY_RUNTIME_ROOT "$LOCALAPPDATA\Relay"
+!endif
+
 Name "Relay"
 OutFile "${RELAY_LAUNCHER_OUT}"
 Icon "${RELAY_LAUNCHER_ICON}"
@@ -28,28 +32,39 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "1.0.0.0"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright Relay Team"
 
 Var RelayArgs
+Var RelayRoot
 Var RelayProtocol
 Var RelayBuildId
 Var RelayBuildIsValid
 Var RelayRuntimeDir
 Var RelayExecutable
 Var RelayMarker
+Var RelayMarkerProtocol
+Var RelayMarkerBuildId
+Var RelayMarkerExecutable
 
 !macro RelayTryRuntime BUILD_ID
   !insertmacro RelayValidateBuildId "${BUILD_ID}" $RelayBuildIsValid
   ${If} $RelayBuildIsValid == "1"
-    StrCpy $RelayRuntimeDir "$LOCALAPPDATA\Relay\Runtime\${BUILD_ID}"
-    StrCpy $RelayExecutable "$LOCALAPPDATA\Relay\Runtime\$RelayBuildId\${RELAY_INNER_EXECUTABLE}"
+    StrCpy $RelayRuntimeDir "$RelayRoot\Runtime\${BUILD_ID}"
+    StrCpy $RelayExecutable "$RelayRoot\Runtime\$RelayBuildId\${RELAY_INNER_EXECUTABLE}"
     StrCpy $RelayMarker "$RelayRuntimeDir\${RELAY_RUNTIME_MARKER}"
 
     ${If} ${FileExists} "$RelayMarker"
     ${AndIf} ${FileExists} "$RelayExecutable"
-      SetOutPath "$RelayRuntimeDir"
-      ClearErrors
-      Exec '"$RelayExecutable" $RelayArgs'
-      ${IfNot} ${Errors}
-        SetErrorLevel 0
-        Quit
+      ReadINIStr $RelayMarkerProtocol "$RelayMarker" "Relay" "protocol"
+      ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
+      ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
+      ${If} $RelayMarkerProtocol == "${RELAY_STATE_PROTOCOL}"
+      ${AndIf} $RelayMarkerBuildId == "${BUILD_ID}"
+      ${AndIf} $RelayMarkerExecutable == "${RELAY_INNER_EXECUTABLE}"
+        SetOutPath "$RelayRuntimeDir"
+        ClearErrors
+        Exec '"$RelayExecutable" $RelayArgs'
+        ${IfNot} ${Errors}
+          SetErrorLevel 0
+          Quit
+        ${EndIf}
       ${EndIf}
     ${EndIf}
   ${EndIf}
@@ -57,17 +72,18 @@ Var RelayMarker
 
 Section
   ${GetParameters} $RelayArgs
+  StrCpy $RelayRoot "${RELAY_RUNTIME_ROOT}"
   ${If} $RelayArgs == "${RELAY_LAUNCHER_PROBE}"
     SetErrorLevel ${RELAY_LAUNCHER_PROTOCOL_EXIT_CODE}
     Quit
   ${EndIf}
 
-  ReadINIStr $RelayProtocol "$LOCALAPPDATA\Relay\state.ini" "Relay" "protocol"
+  ReadINIStr $RelayProtocol "$RelayRoot\state.ini" "Relay" "protocol"
   ${If} $RelayProtocol == "${RELAY_STATE_PROTOCOL}"
-    ReadINIStr $RelayBuildId "$LOCALAPPDATA\Relay\state.ini" "Relay" "current"
+    ReadINIStr $RelayBuildId "$RelayRoot\state.ini" "Relay" "current"
     !insertmacro RelayTryRuntime $RelayBuildId
 
-    ReadINIStr $RelayBuildId "$LOCALAPPDATA\Relay\state.ini" "Relay" "previous"
+    ReadINIStr $RelayBuildId "$RelayRoot\state.ini" "Relay" "previous"
     !insertmacro RelayTryRuntime $RelayBuildId
   ${EndIf}
 

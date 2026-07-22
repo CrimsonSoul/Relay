@@ -89,4 +89,12 @@ describe('setupStartupIpc', () => {
     mountedHandler({});
     expect(mocks.info).not.toHaveBeenCalled();
   });
+
+  it('recognizes only an explicit self-terminating startup benchmark', async () => {
+    const { shouldExitAfterStartupBenchmark } = await import('./startupIpc');
+
+    expect(shouldExitAfterStartupBenchmark({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1' })).toBe(true);
+    expect(shouldExitAfterStartupBenchmark({ RELAY_BENCHMARK_EXIT_AFTER_RENDER: '0' })).toBe(false);
+    expect(shouldExitAfterStartupBenchmark({})).toBe(false);
+  });
 });

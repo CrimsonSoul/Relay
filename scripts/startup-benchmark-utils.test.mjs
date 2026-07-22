@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { extractLatestStartupTimeline, median } from './startup-benchmark-utils.mjs';
+import { readFileSync } from 'node:fs';
+import {
+  buildLaunchSpec,
+  extractLatestStartupTimeline,
+  median,
+  parseStartupBenchmarkArgs,
+  sliceAppendedLogText,
+} from './startup-benchmark-utils.mjs';
 
 describe('startup benchmark utilities', () => {
   it('calculates the median for odd and even samples without mutating input', () => {
@@ -35,5 +42,113 @@ describe('startup benchmark utilities', () => {
         '[INFO] Relay startup timing {"entry":0\n[INFO] Relay startup timing not-json',
       ),
     ).toBeNull();
+  });
+
+  it('slices appended log data by bytes so Unicode history cannot shift the boundary', () => {
+    const history = Buffer.from('Relay café\n', 'utf8');
+    const appended = Buffer.concat([
+      history,
+      Buffer.from('[INFO] Relay startup timing {"renderer-mounted":42}\n', 'utf8'),
+    ]);
+
+    expect(sliceAppendedLogText(appended, history.length)).toContain('"renderer-mounted":42');
+  });
+
+  it('keeps the unpackaged benchmark explicit and never labels it as an update', () => {
+    expect(parseStartupBenchmarkArgs([])).toEqual({
+      scenario: 'development',
+      compression: 'development',
+      runs: 1,
+    });
+    expect(() => parseStartupBenchmarkArgs(['--scenario', 'prepare'])).toThrow(/artifact/i);
+  });
+
+  it('requires the stable launcher for a packaged stable launch', () => {
+    expect(() => parseStartupBenchmarkArgs(['--scenario', 'stable'])).toThrow(/launcher/i);
+  });
+
+  it('parses packaged scenarios and compression labels', () => {
+    expect(
+      parseStartupBenchmarkArgs([
+        '--scenario',
+        'prepare',
+        '--artifact',
+        'release/Relay.exe',
+        '--compression',
+        'store',
+        '--runs',
+        '1',
+      ]),
+    ).toEqual({
+      scenario: 'prepare',
+      artifact: 'release/Relay.exe',
+      compression: 'store',
+      runs: 1,
+    });
+  });
+
+  it('builds distinct preparation and stable launcher commands', () => {
+    expect(buildLaunchSpec({ scenario: 'prepare', artifact: 'Relay.exe' })).toEqual({
+      command: 'Relay.exe',
+      args: [],
+    });
+    expect(buildLaunchSpec({ scenario: 'stable', launcher: 'InstalledRelay.exe' })).toEqual({
+      command: 'InstalledRelay.exe',
+      args: [],
+    });
+    expect(buildLaunchSpec({ scenario: 'portable', artifact: 'Relay-portable.exe' })).toEqual({
+      command: 'Relay-portable.exe',
+      args: [],
+    });
+  });
+
+  it('supports repeated former-portable baseline samples', () => {
+    expect(
+      parseStartupBenchmarkArgs([
+        '--scenario',
+        'portable',
+        '--artifact',
+        'Relay-portable.exe',
+        '--runs',
+        '5',
+      ]),
+    ).toEqual({
+      scenario: 'portable',
+      artifact: 'Relay-portable.exe',
+      compression: 'unspecified',
+      runs: 5,
+    });
+  });
+
+  it('rejects unknown flags, missing values, and unsupported scenarios', () => {
+    expect(() => parseStartupBenchmarkArgs(['--unknown'])).toThrow(/unknown/i);
+    expect(() => parseStartupBenchmarkArgs(['--artifact'])).toThrow(/value/i);
+    expect(() => parseStartupBenchmarkArgs(['--scenario', 'update'])).toThrow(/scenario/i);
+    expect(() => parseStartupBenchmarkArgs(['--runs', '0'])).toThrow(/runs/i);
+    expect(() =>
+      parseStartupBenchmarkArgs([
+        '--scenario',
+        'prepare',
+        '--artifact',
+        'Relay.exe',
+        '--runs',
+        '2',
+      ]),
+    ).toThrow(/prepare.*runs 1/i);
+  });
+
+  it('measures packaged launches through the real executable and exits after the milestone', () => {
+    const source = readFileSync('scripts/benchmark-startup.mjs', 'utf8');
+
+    expect(source).toContain('buildLaunchSpec(resolvedOptions)');
+    expect(source).toContain('RELAY_BENCHMARK_EXIT_AFTER_RENDER');
+    expect(source).toContain('RELAY_BENCHMARK_RUN_ID');
+    expect(source).toContain('processHandoffMs');
+    expect(source).toContain('processExitMs');
+    expect(source).toContain('Promise.all([');
+    expect(source).toContain('waitForPackagedTimeline(logPath, baseline, startedAt)');
+    expect(source).toContain("scenario === 'prepare' && runtimeReused");
+    expect(source).toContain('packagedMedian');
+    expect(source).not.toContain('postUpdate');
   });
 });

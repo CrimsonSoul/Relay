@@ -91,12 +91,14 @@ import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager'
 import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
-import { setupStartupIpc } from './app/startupIpc';
+import { setupStartupIpc, shouldExitAfterStartupBenchmark } from './app/startupIpc';
 import { assertRequiredStartupSucceeded, runStartupSequence } from './app/startupSequence';
 import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
+import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
+installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
 
 async function waitForStartupTestDelay(): Promise<void> {
   if (process.env.NODE_ENV !== 'test') return;
@@ -260,6 +262,10 @@ if (gotLock) {
       setupPermissions(session.defaultSession);
       cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {
         onRendererMounted: () => {
+          if (shouldExitAfterStartupBenchmark(process.env)) {
+            requestAppQuit('startup-benchmark-complete');
+            return;
+          }
           if (process.env.RELAY_DISABLE_GPU_DIAGNOSTICS === '1') return;
           cancelGpuDiagnostics?.();
           cancelGpuDiagnostics = scheduleGpuDiagnostics(app, loggers.main);

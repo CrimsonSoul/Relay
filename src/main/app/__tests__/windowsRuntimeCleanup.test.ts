@@ -50,11 +50,20 @@ describe('Windows runtime cleanup', () => {
     const orphanDir = await makeCompleteRuntime(runtimeRoot, 'r1-orphan');
     const oldStage = join(runtimeRoot, '.staging-r1-old-123');
     const freshStage = join(runtimeRoot, '.staging-r1-fresh-456');
+    const oldQuarantine = join(runtimeRoot, '.corrupt-r1-damaged-123-456');
+    const freshQuarantine = join(runtimeRoot, '.corrupt-r1-recent-234-567');
     await mkdir(oldStage, { recursive: true });
     await mkdir(freshStage, { recursive: true });
+    await mkdir(oldQuarantine, { recursive: true });
+    await mkdir(freshQuarantine, { recursive: true });
     const now = Date.now();
     await utimes(
       oldStage,
+      new Date(now - 25 * 60 * 60 * 1000),
+      new Date(now - 25 * 60 * 60 * 1000),
+    );
+    await utimes(
+      oldQuarantine,
       new Date(now - 25 * 60 * 60 * 1000),
       new Date(now - 25 * 60 * 60 * 1000),
     );
@@ -69,9 +78,18 @@ describe('Windows runtime cleanup', () => {
       nowMs: now,
     });
 
-    expect(result.removed).toEqual(['.staging-r1-old-123', 'r1-orphan']);
+    expect(result.removed).toEqual([
+      '.corrupt-r1-damaged-123-456',
+      '.staging-r1-old-123',
+      'r1-orphan',
+    ]);
     expect(result.skipped).toEqual(
-      expect.arrayContaining(['.staging-r1-fresh-456', 'r1-current', 'r1-previous']),
+      expect.arrayContaining([
+        '.corrupt-r1-recent-234-567',
+        '.staging-r1-fresh-456',
+        'r1-current',
+        'r1-previous',
+      ]),
     );
     expect(result.failed).toEqual([]);
     expect(existsSync(currentDir)).toBe(true);
@@ -79,6 +97,8 @@ describe('Windows runtime cleanup', () => {
     expect(existsSync(orphanDir)).toBe(false);
     expect(existsSync(oldStage)).toBe(false);
     expect(existsSync(freshStage)).toBe(true);
+    expect(existsSync(oldQuarantine)).toBe(false);
+    expect(existsSync(freshQuarantine)).toBe(true);
   });
 
   it('skips symlinks, unknown directories, and runtimes without a valid marker', async () => {
@@ -89,10 +109,13 @@ describe('Windows runtime cleanup', () => {
     const linkPath = join(runtimeRoot, 'r1-linked');
     const unknownDir = join(runtimeRoot, 'support-files');
     const incompleteDir = join(runtimeRoot, 'r1-incomplete');
+    const reservedQuarantine = join(runtimeRoot, '.corrupt-con-123-456');
+    const orphanDir = await makeCompleteRuntime(runtimeRoot, 'r1-orphan');
     await mkdir(outsideTarget, { recursive: true });
     await symlink(outsideTarget, linkPath, 'dir');
     await mkdir(unknownDir, { recursive: true });
     await mkdir(incompleteDir, { recursive: true });
+    await mkdir(reservedQuarantine, { recursive: true });
     await writeFile(join(root, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=../escape\n');
 
     const result = await cleanupWindowsRuntimes({
@@ -103,11 +126,65 @@ describe('Windows runtime cleanup', () => {
 
     expect(result.removed).toEqual([]);
     expect(result.skipped).toEqual(
-      expect.arrayContaining(['r1-current', 'r1-incomplete', 'r1-linked', 'support-files']),
+      expect.arrayContaining([
+        '.corrupt-con-123-456',
+        'r1-current',
+        'r1-incomplete',
+        'r1-linked',
+        'support-files',
+      ]),
     );
     expect(existsSync(outsideTarget)).toBe(true);
     expect(existsSync(linkPath)).toBe(true);
     expect(existsSync(incompleteDir)).toBe(true);
+    expect(existsSync(reservedQuarantine)).toBe(true);
+    expect(existsSync(orphanDir)).toBe(true);
+  });
+
+  it('fails closed for complete runtimes when state is missing but still removes stale staging', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const executingDir = await makeCompleteRuntime(runtimeRoot, 'r1-executing');
+    const activeDir = await makeCompleteRuntime(runtimeRoot, 'r1-active');
+    const oldStage = join(runtimeRoot, '.staging-r1-old-123');
+    await mkdir(oldStage, { recursive: true });
+    const now = Date.now();
+    await utimes(
+      oldStage,
+      new Date(now - 25 * 60 * 60 * 1000),
+      new Date(now - 25 * 60 * 60 * 1000),
+    );
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(executingDir, 'Relay.exe'),
+      nowMs: now,
+    });
+
+    expect(result.removed).toEqual(['.staging-r1-old-123']);
+    expect(result.skipped).toEqual(expect.arrayContaining(['r1-active', 'r1-executing']));
+    expect(existsSync(activeDir)).toBe(true);
+  });
+
+  it('does nothing when the managed Relay root is a symlink', async () => {
+    const parent = await makeRoot();
+    const targetRoot = join(parent, 'target-root');
+    const linkedRoot = join(parent, 'managed-root');
+    const runtimeRoot = join(targetRoot, 'Runtime');
+    const executingDir = await makeCompleteRuntime(runtimeRoot, 'r1-current');
+    const orphanDir = await makeCompleteRuntime(runtimeRoot, 'r1-orphan');
+    await writeFile(join(targetRoot, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=r1-current\n');
+    await symlink(targetRoot, linkedRoot, 'dir');
+
+    const result = await cleanupWindowsRuntimes({
+      root: linkedRoot,
+      execPath: join(linkedRoot, 'Runtime', 'r1-current', 'Relay.exe'),
+      nowMs: Date.now(),
+    });
+
+    expect(result).toEqual({ removed: [], skipped: [], failed: [] });
+    expect(existsSync(executingDir)).toBe(true);
+    expect(existsSync(orphanDir)).toBe(true);
   });
 
   it('does nothing when the executing Relay is outside the managed runtime root', async () => {

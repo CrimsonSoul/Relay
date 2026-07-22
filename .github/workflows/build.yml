@@ -151,15 +151,78 @@ jobs:
           fi
 
       # Branch artifacts use store-mode ZIP payloads for the fastest preparation
-      # and packaging feedback. Releases use the benchmarked normal default.
-      - name: Build and package
+      # and packaging feedback. Releases retain normal until the opt-in same-host
+      # comparison report records and justifies a different production default.
+      - name: Build previous bootstrap fixture
+        env:
+          RELAY_BUILD_ID: r0-${{ github.sha }}
         run: npm run package:win -- --config.compression=store
+
+      - name: Preserve previous bootstrap fixture
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayPrevious.exe"
+
+      - name: Build and package
+        run: npm run package:win -- --config.compression=store --config.npmRebuild=false
 
       - name: Smoke test persistent bootstrap
         shell: pwsh
         env:
           RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
-        run: ./scripts/windows-bootstrap-smoke.ps1 -Artifact ./release/Relay.exe
+        run: >-
+          ./scripts/windows-bootstrap-smoke.ps1
+          -Artifact ./release/Relay.exe
+          -PreviousArtifact "$env:RUNNER_TEMP\RelayPrevious.exe"
+          -ExpectedBuildId "r1-${{ github.sha }}"
+          -ExpectedPreviousBuildId "r0-${{ github.sha }}"
+
+      - name: Benchmark packaged startup paths
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_BENCHMARK_CONFIRM: 1
+        run: |
+          node scripts/benchmark-startup.mjs --scenario prepare --artifact ./release/Relay.exe --compression store
+          node scripts/benchmark-startup.mjs --scenario stable --launcher "$env:LOCALAPPDATA\Relay\Relay.exe" --compression store --runs 5
+
+      - name: Preserve production artifact for boundary harness
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayProduction.exe"
+
+      - name: Build previous isolated boundary fixture
+        env:
+          RELAY_BUILD_ID: h0-${{ github.sha }}
+          RELAY_BOOTSTRAP_HARNESS: 1
+          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
+        run: npm run package:win -- --config.compression=store --config.npmRebuild=false
+
+      - name: Preserve previous isolated boundary fixture
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayBoundaryPrevious.exe"
+
+      - name: Build current isolated boundary fixture
+        env:
+          RELAY_BUILD_ID: h1-${{ github.sha }}
+          RELAY_BOOTSTRAP_HARNESS: 1
+          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
+        run: npm run package:win -- --config.compression=store --config.npmRebuild=false
+
+      - name: Exercise isolated activation boundaries and stable fallback
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_BOUNDARY_CONFIRM: 1
+        run: >-
+          ./scripts/windows-bootstrap-boundary-smoke.ps1
+          -Artifact ./release/Relay.exe
+          -PreviousArtifact "$env:RUNNER_TEMP\RelayBoundaryPrevious.exe"
+          -Root "$env:RUNNER_TEMP\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}"
+          -ExpectedBuildId "h1-${{ github.sha }}"
+          -ExpectedPreviousBuildId "h0-${{ github.sha }}"
+
+      - name: Restore production artifact
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath ./release/Relay.exe -Force
+          Move-Item -LiteralPath "$env:RUNNER_TEMP\RelayProduction.exe" -Destination ./release/Relay.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

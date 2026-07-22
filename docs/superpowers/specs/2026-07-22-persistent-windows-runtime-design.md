@@ -72,7 +72,7 @@ current=<build-id>
 previous=<build-id>
 ```
 
-The launcher never accepts an arbitrary executable path from the state file. It accepts only a bounded build identifier containing ASCII letters, digits, `.`, `_`, and `-`, then constructs the executable path beneath the fixed runtime root. This prevents a malformed state file from turning the launcher into a general process launcher.
+The launcher never accepts an arbitrary executable path from the state file. It accepts only a bounded canonical lowercase ASCII build identifier containing letters, digits, `.`, `_`, and `-`, then constructs the executable path beneath the fixed runtime root. Trailing periods and reserved Windows device basenames such as `con`, `nul`, `com1`, and `lpt1` are rejected by both the packaging driver and native validator so two IDs cannot alias the same NTFS directory. This prevents a malformed state file from turning the launcher into a general process launcher.
 
 ## Build Identity and Packaging
 
@@ -150,7 +150,7 @@ The first adoption of this format does not remove the downloaded executable or a
 
 ## Runtime Retention and Cleanup
 
-The active and previous complete runtimes are retained for fallback. Incomplete staging directories and runtimes older than the fallback are cleanup candidates.
+The active and previous complete runtimes are retained for fallback. Incomplete staging directories, stale quarantines from successful damaged-runtime repair, and runtimes older than the fallback are cleanup candidates. Quarantines use a tightly validated build-ID/process/tick name and receive the same 24-hour grace period as staging directories.
 
 Cleanup is not part of the launch-critical path. After Relay reaches workspace readiness, a bounded deferred maintenance task may remove unreferenced runtime directories. Locked directories are skipped without error and retried during a later maintenance opportunity. Cleanup never follows paths outside the fixed runtime root and never touches `%APPDATA%\Relay`.
 
@@ -163,11 +163,13 @@ Packaged Windows performance will be measured as two separate scenarios:
 - **prepare-and-launch:** start the downloaded bootstrap for a build not present in the runtime cache and measure until Relay's existing renderer/workspace milestones; and
 - **stable launch:** start the installed shortcut/launcher for an already prepared build and measure the same milestones.
 
-The benchmark must start before the outer process is created. It must not label a second launch of the same unpackaged Electron build as a post-update result. Results record bootstrap preparation time, process handoff time, Electron startup milestones, artifact size, compression mode, and whether the runtime was reused. Logs remain bounded and contain no user data.
+The benchmark must start before the outer process is created. Timeline observation, outer-process exit, and the benchmark app-exit marker are awaited concurrently so the former portable wrapper's `ExecWait` and cleanup do not inflate its renderer milestone. It must not label a second launch of the same unpackaged Electron build as a post-update result. Results record bootstrap preparation time, process handoff time, Electron startup milestones, artifact size, compression mode, and whether the runtime was reused. Logs remain bounded and contain no user data.
 
 The initial preparation UI must appear before payload extraction begins. Stable launches must not touch runtime file modification times, create a staging directory, start the downloaded SFX, or perform payload decompression.
 
 Compression is selected from repeated Windows measurements, not package-build duration or a single run. A candidate must improve the same-machine median prepare-and-launch time over the current production portable artifact without regressing stable-launch correctness. Antivirus variance is recorded rather than bypassed.
+
+The opt-in `windows-startup-comparison` workflow builds `store`, `normal`, and `maximum` persistent candidates plus the former maximum-compression portable wrapper, provisions one shared disposable Windows profile, collects five same-runner samples for each path, and archives the raw measurements and recommended compression. The existing `normal` release default remains provisional until that report is reviewed and the measured selection is applied deliberately.
 
 ## Testing Strategy
 

@@ -1,8 +1,16 @@
-import { lstat, readdir, readFile, rm } from 'node:fs/promises';
+import { lstat, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-const BUILD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const STAGING_DIRECTORY_PATTERN = /^\.staging-[A-Za-z0-9._-]{1,96}$/;
+const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const STAGING_DIRECTORY_PATTERN = /^\.staging-[a-z0-9._-]{1,96}$/;
+const RESERVED_WINDOWS_NAMES = new Set([
+  'con',
+  'prn',
+  'aux',
+  'nul',
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
 const RUNTIME_MARKER = '.relay-runtime-ready';
 const STALE_STAGING_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CLEANUP_DELAY_MS = 5 * 60 * 1000;
@@ -36,7 +44,30 @@ type ScheduleOptions = {
 };
 
 function isBuildId(value: string | undefined): value is string {
-  return typeof value === 'string' && BUILD_ID_PATTERN.test(value);
+  return (
+    typeof value === 'string' &&
+    BUILD_ID_PATTERN.test(value) &&
+    !value.endsWith('.') &&
+    !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0])
+  );
+}
+
+function isAsciiDigits(value: string): boolean {
+  return value.length > 0 && [...value].every((character) => character >= '0' && character <= '9');
+}
+
+function isQuarantineDirectory(value: string): boolean {
+  const prefix = '.corrupt-';
+  if (!value.startsWith(prefix)) return false;
+  const tickSeparator = value.lastIndexOf('-');
+  const processSeparator = value.lastIndexOf('-', tickSeparator - 1);
+  if (processSeparator < prefix.length || tickSeparator <= processSeparator + 1) return false;
+
+  return (
+    isBuildId(value.slice(prefix.length, processSeparator)) &&
+    isAsciiDigits(value.slice(processSeparator + 1, tickSeparator)) &&
+    isAsciiDigits(value.slice(tickSeparator + 1))
+  );
 }
 
 function readRelayIni(text: string): Record<string, string> {
@@ -60,9 +91,14 @@ function readRelayIni(text: string): Record<string, string> {
   return result;
 }
 
-function executingBuildId(root: string, execPath: string): string | null {
-  const runtimeRoot = resolve(root, 'Runtime');
-  const relativeExec = relative(runtimeRoot, resolve(execPath));
+async function executingBuildId(runtimeRoot: string, execPath: string): Promise<string | null> {
+  let resolvedExecPath: string;
+  try {
+    resolvedExecPath = await realpath(resolve(execPath));
+  } catch {
+    return null;
+  }
+  const relativeExec = relative(runtimeRoot, resolvedExecPath);
   if (!relativeExec || isAbsolute(relativeExec) || relativeExec === '..') return null;
   if (relativeExec.startsWith(`..${sep}`)) return null;
 
@@ -71,17 +107,54 @@ function executingBuildId(root: string, execPath: string): string | null {
   return isBuildId(parts[0]) ? parts[0] : null;
 }
 
-async function readPreservedBuilds(root: string, executingBuild: string): Promise<Set<string>> {
+async function resolveManagedRoot(
+  root: string,
+): Promise<{ root: string; runtimeRoot: string } | null> {
+  const requestedRoot = resolve(root);
+  const requestedRuntimeRoot = resolve(requestedRoot, 'Runtime');
+  try {
+    const [rootStats, runtimeStats] = await Promise.all([
+      lstat(requestedRoot),
+      lstat(requestedRuntimeRoot),
+    ]);
+    if (
+      !rootStats.isDirectory() ||
+      rootStats.isSymbolicLink() ||
+      !runtimeStats.isDirectory() ||
+      runtimeStats.isSymbolicLink()
+    ) {
+      return null;
+    }
+
+    const [realRoot, realRuntimeRoot] = await Promise.all([
+      realpath(requestedRoot),
+      realpath(requestedRuntimeRoot),
+    ]);
+    if (relative(realRoot, realRuntimeRoot).toLowerCase() !== 'runtime') return null;
+    return { root: realRoot, runtimeRoot: realRuntimeRoot };
+  } catch {
+    return null;
+  }
+}
+
+async function readPreservedBuilds(
+  root: string,
+  executingBuild: string,
+): Promise<Set<string> | null> {
   const preserved = new Set([executingBuild]);
   try {
     const state = readRelayIni(await readFile(join(root, 'state.ini'), 'utf8'));
-    if (state.protocol !== '1') return preserved;
-    if (isBuildId(state.current)) preserved.add(state.current);
-    if (isBuildId(state.previous)) preserved.add(state.previous);
+    if (state.protocol !== '1' || !isBuildId(state.current)) return null;
+    preserved.add(state.current);
+    if (state.previous) {
+      if (!isBuildId(state.previous)) return null;
+      preserved.add(state.previous);
+    }
+    return preserved;
   } catch {
-    // A missing or malformed state file must never broaden deletion scope.
+    // A missing or malformed state file must disable complete-runtime deletion.
+    return null;
   }
-  return preserved;
 }
 
 async function isCompleteRuntime(directory: string, buildId: string): Promise<boolean> {
@@ -100,11 +173,13 @@ export async function cleanupWindowsRuntimes({
   staleStagingAgeMs = STALE_STAGING_AGE_MS,
 }: CleanupOptions): Promise<WindowsRuntimeCleanupResult> {
   const result: WindowsRuntimeCleanupResult = { removed: [], skipped: [], failed: [] };
-  const executingBuild = executingBuildId(root, execPath);
+  const managedRoot = await resolveManagedRoot(root);
+  if (!managedRoot) return result;
+  const executingBuild = await executingBuildId(managedRoot.runtimeRoot, execPath);
   if (!executingBuild) return result;
 
-  const runtimeRoot = resolve(root, 'Runtime');
-  const preserved = await readPreservedBuilds(root, executingBuild);
+  const runtimeRoot = managedRoot.runtimeRoot;
+  const preserved = await readPreservedBuilds(managedRoot.root, executingBuild);
   let entries;
   try {
     entries = await readdir(runtimeRoot, { withFileTypes: true });
@@ -122,7 +197,7 @@ export async function cleanupWindowsRuntimes({
         continue;
       }
 
-      if (STAGING_DIRECTORY_PATTERN.test(name)) {
+      if (STAGING_DIRECTORY_PATTERN.test(name) || isQuarantineDirectory(name)) {
         if (nowMs - stats.mtimeMs < staleStagingAgeMs) {
           result.skipped.push(name);
           continue;
@@ -132,7 +207,12 @@ export async function cleanupWindowsRuntimes({
         continue;
       }
 
-      if (!isBuildId(name) || preserved.has(name) || !(await isCompleteRuntime(path, name))) {
+      if (
+        !isBuildId(name) ||
+        !preserved ||
+        preserved.has(name) ||
+        !(await isCompleteRuntime(path, name))
+      ) {
         result.skipped.push(name);
         continue;
       }
