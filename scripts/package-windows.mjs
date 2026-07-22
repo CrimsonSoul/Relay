@@ -81,6 +81,14 @@ export function resolveMakensisCommand(
   };
 }
 
+export function resolveElectronBuilderArgs(args) {
+  const forwarded = args.filter((arg) => arg !== '--compile-launcher-only');
+  const hasPublishPolicy = forwarded.some(
+    (arg) => arg === '--publish' || arg.startsWith('--publish='),
+  );
+  return hasPublishPolicy ? forwarded : [...forwarded, '--publish', 'never'];
+}
+
 async function compileLauncher(harness) {
   await mkdir(generatedDir, { recursive: true });
   const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
@@ -124,7 +132,7 @@ export async function packageWindows(args = process.argv.slice(2)) {
 
   await writeBuildDefines(harness);
   const electronBuilderCli = require.resolve('electron-builder/out/cli/cli.js');
-  const forwardedArgs = args.filter((arg) => arg !== '--compile-launcher-only');
+  const forwardedArgs = resolveElectronBuilderArgs(args);
   await run(process.execPath, [
     electronBuilderCli,
     '--win',

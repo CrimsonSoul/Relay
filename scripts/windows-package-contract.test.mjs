@@ -6,7 +6,7 @@ import {
   resolveBuildId,
   validateBuildId,
 } from './windows-package-contract.mjs';
-import { resolveMakensisCommand } from './package-windows.mjs';
+import { resolveElectronBuilderArgs, resolveMakensisCommand } from './package-windows.mjs';
 
 describe('Windows package contract', () => {
   it('forwards release publish flags through the nested Windows package script', () => {
@@ -14,6 +14,9 @@ describe('Windows package contract', () => {
 
     expect(packageJson.scripts['build:win']).toMatch(/npm run package:win --$/);
     expect(packageJson.scripts.release).toBe('npm run build:win -- --publish always');
+    expect(resolveElectronBuilderArgs([])).toEqual(['--publish', 'never']);
+    expect(resolveElectronBuilderArgs(['--publish', 'always'])).toEqual(['--publish', 'always']);
+    expect(resolveElectronBuilderArgs(['--publish=always'])).toEqual(['--publish=always']);
   });
 
   it('marks untracked non-ignored package inputs as dirty', () => {
