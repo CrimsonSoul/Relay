@@ -236,6 +236,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('Wait-ProcessWithTimeout');
     expect(source).toContain('relay-build-id.txt');
     expect(source).toContain('BrokenCurrentPreservedPrevious');
+    expect(source).toContain('actualCurrent=');
+    expect(source).toContain('actualPrevious=');
     expect(bootstrap).toContain('$RelayRoot\\bootstrap-error.ini');
     expect(source).toContain('Relay bootstrap failure:');
   });

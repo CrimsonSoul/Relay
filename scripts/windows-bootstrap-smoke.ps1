@@ -245,9 +245,12 @@ try {
     "[Relay]`nprotocol=1`ncurrent=$brokenCurrentBuildId`nprevious=$ExpectedPreviousBuildId`n"
   )
   $null = Invoke-RelayPreparation -Path $artifactPath
-  if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
-      (Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
-    throw 'A damaged recorded current runtime displaced the last usable previous build.'
+  $actualCurrent = Get-IniValue -Path $statePath -Key 'current'
+  $actualPrevious = Get-IniValue -Path $statePath -Key 'previous'
+  if ($actualCurrent -ne $ExpectedBuildId -or $actualPrevious -ne $ExpectedPreviousBuildId) {
+    $previousRuntimeExists = Test-Path -LiteralPath (Join-Path $runtimeVersionsRoot $ExpectedPreviousBuildId)
+    $previousMarkerExists = Test-Path -LiteralPath $previousMarkerPath
+    throw "A damaged recorded current runtime displaced the last usable previous build: actualCurrent='$actualCurrent' actualPrevious='$actualPrevious' previousRuntimeExists=$previousRuntimeExists previousMarkerExists=$previousMarkerExists"
   }
 
   $shell = New-Object -ComObject WScript.Shell
