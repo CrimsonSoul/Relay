@@ -234,6 +234,7 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('relay-build-id.txt');
     expect(source).toContain('BrokenCurrentPreservedPrevious');
     expect(bootstrap).toContain('$RelayRoot\\bootstrap-error.ini');
+    expect(bootstrap).toContain('runtime archive: $RelayResult');
     expect(source).toContain('Relay bootstrap failure:');
   });
 

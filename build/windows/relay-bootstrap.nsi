@@ -235,7 +235,7 @@ Section
   nsisunz::Unzip "$PLUGINSDIR\relay-app.zip" "$RelayStaging"
   Pop $RelayResult
   ${If} $RelayResult != "success"
-    StrCpy $RelayFailureMessage "Relay could not extract the new runtime."
+    StrCpy $RelayFailureMessage "Relay could not extract the new runtime archive: $RelayResult"
     Goto BootstrapFailed
   ${EndIf}
   !insertmacro RelayHarnessFail ".fail-after-extraction" "Relay harness stopped after extraction."
