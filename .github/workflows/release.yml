@@ -55,6 +55,7 @@ jobs:
     runs-on: windows-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      RELAY_BUILD_ID: r1-${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -135,6 +136,12 @@ jobs:
 
       - name: Build and package
         run: npm run package:win
+
+      - name: Smoke test persistent bootstrap
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
+        run: ./scripts/windows-bootstrap-smoke.ps1 -Artifact ./release/Relay.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

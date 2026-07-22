@@ -69,6 +69,7 @@ jobs:
     runs-on: windows-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      RELAY_BUILD_ID: r1-${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -149,10 +150,16 @@ jobs:
             exit 1
           fi
 
-      # Branch artifacts skip 'maximum' compression (release.yml keeps it) —
-      # saves minutes of NSIS/7z time; the artifact is just bigger.
+      # Branch artifacts use store-mode ZIP payloads for the fastest preparation
+      # and packaging feedback. Releases use the benchmarked normal default.
       - name: Build and package
         run: npm run package:win -- --config.compression=store
+
+      - name: Smoke test persistent bootstrap
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
+        run: ./scripts/windows-bootstrap-smoke.ps1 -Artifact ./release/Relay.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

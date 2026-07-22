@@ -33,11 +33,13 @@ files:
 directories:
   output: release
   buildResources: resources
+toolsets:
+  nsis: '1.2.1'
 npmRebuild: true
 removePackageScripts: true
 win:
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
   artifactName: 'Relay.exe'
@@ -51,7 +53,12 @@ win:
         - '!pocketbase/**'
     - from: 'resources/pocketbase/win32-x64/'
       to: 'pocketbase/win32-x64/'
-compression: 'maximum'
+nsis:
+  script: 'build/windows/relay-bootstrap.nsi'
+  packElevateHelper: false
+  useZip: true
+  artifactName: 'Relay.exe'
+compression: 'normal'
 electronDownload:
   cache: '.electron'
 
