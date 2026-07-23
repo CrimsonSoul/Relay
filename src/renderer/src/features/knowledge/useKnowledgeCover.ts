@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type SyntheticEvent } from 'react';
 
 type CoverState = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -6,7 +6,8 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
   ref: (node: HTMLDivElement | null) => void;
   url: string | null;
   state: CoverState;
-  onImageLoad: () => void;
+  aspectRatio: string | null;
+  onImageLoad: (event: SyntheticEvent<HTMLImageElement>) => void;
   onImageError: () => void;
 } {
   const { documentId, checksum } = request;
@@ -14,9 +15,24 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
   const [visible, setVisible] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [state, setState] = useState<CoverState>('idle');
+  const [aspectRatio, setAspectRatio] = useState<string | null>(null);
   const ref = useCallback((next: HTMLDivElement | null) => setNode(next), []);
-  const onImageLoad = useCallback(() => setState('ready'), []);
-  const onImageError = useCallback(() => setState('error'), []);
+  const onImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    setAspectRatio(
+      Number.isFinite(naturalWidth) &&
+        Number.isFinite(naturalHeight) &&
+        naturalWidth > 0 &&
+        naturalHeight > 0
+        ? `${naturalWidth} / ${naturalHeight}`
+        : null,
+    );
+    setState('ready');
+  }, []);
+  const onImageError = useCallback(() => {
+    setAspectRatio(null);
+    setState('error');
+  }, []);
 
   useEffect(() => {
     if (!node || visible) return;
@@ -40,6 +56,7 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
     if (!visible) return;
     const getKnowledgeCover = globalThis.api?.getKnowledgeCover;
     setUrl(null);
+    setAspectRatio(null);
     setState('loading');
     if (!getKnowledgeCover) {
       setState('error');
@@ -66,5 +83,5 @@ export function useKnowledgeCover(request: { documentId: string; checksum: strin
     };
   }, [checksum, documentId, visible]);
 
-  return { ref, url, state, onImageLoad, onImageError };
+  return { ref, url, state, aspectRatio, onImageLoad, onImageError };
 }

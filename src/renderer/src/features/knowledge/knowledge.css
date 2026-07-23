@@ -224,11 +224,47 @@
 
 .knowledge-sop-card__cover {
   position: relative;
-  overflow: hidden;
   aspect-ratio: 3 / 4;
+  contain: layout;
+}
+
+.knowledge-sop-card__cover-sheet {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   background: var(--color-bg-app);
-  contain: layout paint;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.knowledge-sop-card__cover[data-state='ready']::before {
+  position: absolute;
+  z-index: 0;
+  inset: 2px -2px -2px 2px;
+  border: 1px solid color-mix(in srgb, var(--color-text-tertiary) 34%, var(--color-border));
+  background: var(--color-bg-surface-2);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.knowledge-sop-card:hover
+  .knowledge-sop-card__cover[data-state='ready']
+  .knowledge-sop-card__cover-sheet,
+.knowledge-sop-card:focus-visible
+  .knowledge-sop-card__cover[data-state='ready']
+  .knowledge-sop-card__cover-sheet {
+  transform: translate(-1px, -3px);
+  filter: drop-shadow(0 8px 9px rgb(0 0 0 / 40%));
+}
+
+.knowledge-sop-card:hover .knowledge-sop-card__cover[data-state='ready']::before,
+.knowledge-sop-card:focus-visible .knowledge-sop-card__cover[data-state='ready']::before {
+  opacity: 1;
 }
 
 .knowledge-sop-card__cover img {
@@ -651,8 +687,21 @@
     transition: none;
   }
 
+  .knowledge-sop-card__cover-sheet {
+    transition: none;
+  }
+
   .knowledge-sop-card:hover,
   .knowledge-sop-card:focus-visible {
+    transform: none;
+  }
+
+  .knowledge-sop-card:hover
+    .knowledge-sop-card__cover[data-state='ready']
+    .knowledge-sop-card__cover-sheet,
+  .knowledge-sop-card:focus-visible
+    .knowledge-sop-card__cover[data-state='ready']
+    .knowledge-sop-card__cover-sheet {
     transform: none;
   }
 

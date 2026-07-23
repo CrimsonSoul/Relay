@@ -56,9 +56,38 @@ describe('Knowledge catalog visual details', () => {
     expect(category).toContain('font-size: var(--text-2xs);');
   });
 
-  it('keeps full covers uncropped in stable shells', () => {
-    expect(ruleBody('.knowledge-sop-card__cover')).toContain('aspect-ratio: 3 / 4;');
+  it('keeps full covers uncropped in exact-ratio shells with stable fallbacks', () => {
+    const cover = ruleBody('.knowledge-sop-card__cover');
+    const sheet = ruleBody('.knowledge-sop-card__cover-sheet');
+
+    expect(cover).toContain('aspect-ratio: 3 / 4;');
+    expect(cover).toContain('contain: layout;');
+    expect(cover).not.toContain('overflow: hidden;');
+    expect(sheet).toContain('position: absolute;');
+    expect(sheet).toContain('inset: 0;');
+    expect(sheet).toContain('overflow: hidden;');
     expect(ruleBody('.knowledge-sop-card__cover img')).toContain('object-fit: contain;');
+  });
+
+  it('adds Relay hybrid depth only while a ready cover is hovered or focused', () => {
+    const restingSheet = ruleBody('.knowledge-sop-card__cover-sheet');
+    const restingEdge = ruleBody(".knowledge-sop-card__cover[data-state='ready']::before");
+
+    expect(restingSheet).not.toContain('box-shadow:');
+    expect(restingSheet).not.toContain('filter: drop-shadow');
+    expect(restingEdge).toContain('opacity: 0;');
+    expect(css).toMatch(
+      /\.knowledge-sop-card:hover\s+\.knowledge-sop-card__cover\[data-state='ready'\]\s+\.knowledge-sop-card__cover-sheet,\s*\.knowledge-sop-card:focus-visible\s+\.knowledge-sop-card__cover\[data-state='ready'\]\s+\.knowledge-sop-card__cover-sheet\s*\{[^}]*transform:\s*translate\(-1px, -3px\);[^}]*filter:\s*drop-shadow\(/,
+    );
+    expect(css).toMatch(
+      /\.knowledge-sop-card:hover \.knowledge-sop-card__cover\[data-state='ready'\]::before,[\s\S]*?\.knowledge-sop-card:focus-visible \.knowledge-sop-card__cover\[data-state='ready'\]::before\s*\{[^}]*opacity:\s*1;/,
+    );
+  });
+
+  it('removes the cover lift when reduced motion is requested', () => {
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.knowledge-sop-card__cover-sheet\s*\{[^}]*transition:\s*none;[^}]*\}[\s\S]*?\.knowledge-sop-card:hover\s+\.knowledge-sop-card__cover\[data-state='ready'\]\s+\.knowledge-sop-card__cover-sheet,\s*\.knowledge-sop-card:focus-visible\s+\.knowledge-sop-card__cover\[data-state='ready'\]\s+\.knowledge-sop-card__cover-sheet\s*\{[^}]*transform:\s*none;/,
+    );
   });
 
   it('keeps cheatsheets visually separate from cover shelves', () => {

@@ -2,12 +2,13 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useKnowledgeCover } from '../useKnowledgeCover';
 
-function Harness() {
-  const cover = useKnowledgeCover({ documentId: 'document1', checksum: 'a'.repeat(64) });
+function Harness({ checksum = 'a'.repeat(64) }: Readonly<{ checksum?: string }>) {
+  const cover = useKnowledgeCover({ documentId: 'document1', checksum });
   return (
     <div ref={cover.ref}>
       <span>{cover.state}</span>
       <span>{cover.url ?? 'no-url'}</span>
+      <span data-testid="aspect-ratio">{cover.aspectRatio ?? 'no-ratio'}</span>
       {cover.url && (
         <img src={cover.url} alt="Cover" onLoad={cover.onImageLoad} onError={cover.onImageError} />
       )}
@@ -65,6 +66,35 @@ describe('useKnowledgeCover', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:first');
   });
 
+  it('records valid natural dimensions and resets them when the cover changes', async () => {
+    const view = render(<Harness />);
+    await waitFor(() => expect(screen.getByText('blob:first')).toBeInTheDocument());
+    const image = screen.getByRole('img', { name: 'Cover' });
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 612 },
+      naturalHeight: { configurable: true, value: 792 },
+    });
+
+    fireEvent.load(image);
+
+    expect(screen.getByTestId('aspect-ratio')).toHaveTextContent('612 / 792');
+
+    view.rerender(<Harness checksum={'b'.repeat(64)} />);
+
+    expect(screen.getByTestId('aspect-ratio')).toHaveTextContent('no-ratio');
+    await waitFor(() => expect(screen.getByText('blob:second')).toBeInTheDocument());
+  });
+
+  it('keeps the fallback ratio when natural dimensions are invalid', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByText('blob:first')).toBeInTheDocument());
+
+    fireEvent.load(screen.getByRole('img', { name: 'Cover' }));
+
+    expect(screen.getByText('ready')).toBeInTheDocument();
+    expect(screen.getByTestId('aspect-ratio')).toHaveTextContent('no-ratio');
+  });
+
   it('does not report ready until the image decodes and falls back on image error', async () => {
     const { result } = renderHook(() =>
       useKnowledgeCover({ documentId: 'guide', checksum: 'a'.repeat(64) }),
@@ -73,7 +103,12 @@ describe('useKnowledgeCover', () => {
     await waitFor(() => expect(result.current.url).toBeTruthy());
     expect(result.current.state).toBe('loading');
 
-    act(() => result.current.onImageLoad());
+    const image = document.createElement('img');
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 612 },
+      naturalHeight: { configurable: true, value: 792 },
+    });
+    act(() => result.current.onImageLoad({ currentTarget: image } as never));
     expect(result.current.state).toBe('ready');
 
     act(() => result.current.onImageError());
