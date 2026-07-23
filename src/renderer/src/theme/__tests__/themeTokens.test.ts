@@ -38,4 +38,15 @@ describe('theme tokens', () => {
   it('uses IBM Plex Sans as the product UI base font', () => {
     expect(cssVar('--font-family-base')).toBe("'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif");
   });
+
+  it('keeps every native Windows select and popup option on the dark Relay palette', () => {
+    const selectRule = ruleFor('select');
+    expect(selectRule).toContain('color-scheme: dark');
+    expect(selectRule).toContain('background-color: var(--color-bg-surface)');
+    expect(selectRule).toContain('color: var(--color-text-primary)');
+
+    const popupRule = /select option,\s*select optgroup\s*\{([^}]*)\}/m.exec(themeCss)?.[1] ?? '';
+    expect(popupRule).toContain('background-color: var(--color-bg-surface)');
+    expect(popupRule).toContain('color: var(--color-text-primary)');
+  });
 });

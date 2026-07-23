@@ -94,6 +94,44 @@ const defaultRows: OnCallRow[] = [
 ];
 const defaultContacts: Contact[] = [];
 
+describe('PersonnelTab — page header and command toolbar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses the shared tab hierarchy without dropping or restyling its actions', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    const { container } = render(
+      <PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />,
+    );
+
+    const heading = screen.getByRole('heading', { name: 'On-Call Coverage' });
+    expect(heading.closest('.oncall-page-header')).not.toBeNull();
+    expect(
+      screen.getByText('March 30 - April 5, 2026').closest('.oncall-page-meta'),
+    ).not.toBeNull();
+
+    const toolbar = screen.getByRole('toolbar', { name: 'On-call actions' });
+    const utilityGroup = container.querySelector('.oncall-command-group--utility');
+    const workflowGroup = container.querySelector('.oncall-command-group--workflow');
+    expect(toolbar).toContainElement(utilityGroup);
+    expect(toolbar).toContainElement(workflowGroup);
+    expect(toolbar).toContainElement(
+      screen.getByRole('group', { name: 'On-call board font scale' }),
+    );
+
+    for (const name of ['Copy All On-Call Info', 'Export to CSV', 'Pop Out Board', 'Lock Board']) {
+      const button = screen.getByRole('button', { name });
+      expect(toolbar).toContainElement(button);
+      expect(button).toHaveClass('tactile-button--secondary', 'oncall-command-action');
+    }
+
+    const addCard = screen.getByRole('button', { name: 'Add Card' });
+    expect(toolbar).toContainElement(addCard);
+    expect(addCard).toHaveClass('tactile-button--primary');
+  });
+});
+
 describe('PersonnelTab — board lock button', () => {
   beforeEach(() => {
     vi.clearAllMocks();

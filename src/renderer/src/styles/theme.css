@@ -310,6 +310,18 @@ textarea {
   letter-spacing: inherit;
 }
 
+select {
+  color-scheme: dark;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+select option,
+select optgroup {
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
 kbd,
 code,
 pre {

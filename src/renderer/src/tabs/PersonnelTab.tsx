@@ -230,171 +230,187 @@ export const PersonnelTab: React.FC<{
 
   return (
     <div ref={scrollContainerRef} className="personnel-tab-root" style={boardStyle}>
-      <CollapsibleHeader isCollapsed={isCollapsed}>
-        <div className="oncall-header-info">
-          <div className="oncall-header-stack">
-            <span className="oncall-header-date">{weekRange}</span>
-            <span className="oncall-header-updated">Last updated {lastUpdatedLabel}</span>
-          </div>
-          {renderAlerts()}
+      <header className="oncall-page-header">
+        <div>
+          <div className="oncall-page-context">On-Call</div>
+          <h2 className="oncall-page-title">On-Call Coverage</h2>
         </div>
-        <OnCallDisplayControl value={effectiveOnCallFontScale} onChange={onOnCallFontScaleChange} />
-        <TactileButton
-          variant="ghost"
-          onClick={handleCopyAllOnCall}
-          title="Copy All On-Call Info"
-          aria-label="Copy All On-Call Info"
-          tooltip="Copy all on-call info"
-          className="header-btn-mr"
-          icon={
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="oncall-page-meta" role="status" aria-live="polite">
+          <span className="oncall-page-state-dot" aria-hidden="true" />
+          <span>{weekRange}</span>
+          <span aria-hidden="true">·</span>
+          <span>Last updated {lastUpdatedLabel}</span>
+        </div>
+      </header>
+
+      <div className="oncall-command-bar" role="toolbar" aria-label="On-call actions">
+        <CollapsibleHeader isCollapsed={isCollapsed}>
+          <div className="oncall-command-group oncall-command-group--utility">
+            {renderAlerts()}
+            <OnCallDisplayControl
+              value={effectiveOnCallFontScale}
+              onChange={onOnCallFontScaleChange}
+            />
+            <TactileButton
+              variant="secondary"
+              onClick={handleCopyAllOnCall}
+              title="Copy All On-Call Info"
+              aria-label="Copy All On-Call Info"
+              tooltip="Copy all on-call info"
+              className="oncall-command-action"
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              }
             >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          }
-        >
-          COPY ALL
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={handleExportCsv}
-          title="Export to CSV (Excel)"
-          aria-label="Export to CSV"
-          tooltip="Export to CSV"
-          className="header-btn-mr"
-          icon={
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              COPY ALL
+            </TactileButton>
+            <TactileButton
+              variant="secondary"
+              onClick={handleExportCsv}
+              title="Export to CSV (Excel)"
+              aria-label="Export to CSV"
+              tooltip="Export to CSV"
+              className="oncall-command-action"
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+              }
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-          }
-        >
-          EXPORT
-        </TactileButton>
-        {!isPopout && (
-          <TactileButton
-            variant="ghost"
-            onClick={() => {
-              globalThis.api?.openAuxWindow('popout/board');
-            }}
-            title="Pop Out Board"
-            aria-label="Pop Out Board"
-            tooltip="Pop out board"
-            className="header-btn-mr"
-            icon={
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              EXPORT
+            </TactileButton>
+            {!isPopout && (
+              <TactileButton
+                variant="secondary"
+                onClick={() => {
+                  globalThis.api?.openAuxWindow('popout/board');
+                }}
+                title="Pop Out Board"
+                aria-label="Pop Out Board"
+                tooltip="Pop out board"
+                className="oncall-command-action"
+                icon={
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                  </svg>
+                }
               >
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
-            }
-          >
-            POP OUT
-          </TactileButton>
-        )}
-        <TactileButton
-          variant="ghost"
-          onClick={toggleBoardLock}
-          disabled={isBoardLockTogglePending}
-          title={
-            bs.effectiveLocked
-              ? 'Unlock Board (enable drag reorder)'
-              : 'Lock Board (disable drag reorder)'
-          }
-          aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
-          tooltip={
-            bs.effectiveLocked
-              ? 'Unlock board to enable drag reorder'
-              : 'Lock board to disable drag reorder'
-          }
-          className="header-btn-mr"
-          icon={
-            bs.effectiveLocked ? (
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-            ) : (
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-              </svg>
-            )
-          }
-        >
-          {bs.effectiveLocked ? 'LOCKED' : 'UNLOCKED'}
-        </TactileButton>
-        <TactileButton
-          variant="primary"
-          aria-label="Add Card"
-          tooltip="Add card"
-          className="btn-collapsible"
-          onClick={addTeamModal.open}
-          icon={
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+                POP OUT
+              </TactileButton>
+            )}
+          </div>
+          <div className="oncall-command-group oncall-command-group--workflow">
+            <TactileButton
+              variant="secondary"
+              onClick={toggleBoardLock}
+              disabled={isBoardLockTogglePending}
+              title={
+                bs.effectiveLocked
+                  ? 'Unlock Board (enable drag reorder)'
+                  : 'Lock Board (disable drag reorder)'
+              }
+              aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
+              tooltip={
+                bs.effectiveLocked
+                  ? 'Unlock board to enable drag reorder'
+                  : 'Lock board to disable drag reorder'
+              }
+              className="oncall-command-action"
+              icon={
+                bs.effectiveLocked ? (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                  </svg>
+                )
+              }
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          }
-        >
-          ADD CARD
-        </TactileButton>
-      </CollapsibleHeader>
+              {bs.effectiveLocked ? 'LOCKED' : 'UNLOCKED'}
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              aria-label="Add Card"
+              tooltip="Add card"
+              className="btn-collapsible"
+              onClick={addTeamModal.open}
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              }
+            >
+              ADD CARD
+            </TactileButton>
+          </div>
+        </CollapsibleHeader>
+      </div>
 
       <DndContext
         id="personnel-board-dnd"
