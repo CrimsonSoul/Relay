@@ -14,6 +14,7 @@ import {
   median,
   parseStartupBenchmarkArgs,
   sliceAppendedLogText,
+  waitForProcessQuiescence,
 } from './startup-benchmark-utils.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -119,6 +120,26 @@ foreach ($target in @($pinnedTargets | Sort-Object -Property Depth -Descending))
   }
   finally {
     $target.Process.Dispose()
+  }
+}
+exit 0
+`;
+const probeRuntimeProcessWindowsScript = String.raw`
+$ErrorActionPreference = 'Stop'
+$targetPath = [IO.Path]::GetFullPath($env:RELAY_BENCHMARK_RUNTIME_EXECUTABLE)
+$records = @(Get-CimInstance Win32_Process)
+foreach ($record in $records) {
+  if ([string]::IsNullOrWhiteSpace([string]$record.ExecutablePath)) {
+    continue
+  }
+  try {
+    $candidatePath = [IO.Path]::GetFullPath([string]$record.ExecutablePath)
+    if ([string]::Equals($candidatePath, $targetPath, [StringComparison]::OrdinalIgnoreCase)) {
+      exit 2
+    }
+  }
+  catch {
+    # A process can exit between the CIM snapshot and path inspection.
   }
 }
 exit 0
@@ -368,6 +389,39 @@ function terminateOwnedBenchmarkProcess({ pid, runId, exitMarkerPath, environmen
   return result.status === 0;
 }
 
+function isRuntimeProcessActive(executablePath, environment = process.env) {
+  const shellPath = powershellPath(environment);
+  if (process.platform !== 'win32' || !shellPath) {
+    throw new Error('Windows PowerShell is required to inspect Relay runtime processes.');
+  }
+  const result = spawnSync(
+    shellPath,
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', probeRuntimeProcessWindowsScript],
+    {
+      env: {
+        ...environment,
+        RELAY_BENCHMARK_RUNTIME_EXECUTABLE: executablePath,
+      },
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5_000,
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status === 0) return false;
+  if (result.status === 2) return true;
+  const detail = result.stderr?.trim() || result.stdout?.trim() || `exit code ${result.status}`;
+  throw new Error(`Relay runtime process inspection failed: ${detail}`);
+}
+
+function waitForRuntimeProcessQuiescence(executablePath, environment = process.env) {
+  return waitForProcessQuiescence(() => isRuntimeProcessActive(executablePath, environment), {
+    idleChecks: 3,
+    pollIntervalMs: 100,
+    timeoutMs: 15_000,
+  });
+}
+
 function readBenchmarkPid(markerPath) {
   try {
     const pid = Number(fs.readFileSync(markerPath, 'utf8').trim());
@@ -466,6 +520,11 @@ function assertRuntimeReusePrecondition(scenario, activeBuildId, runtimeReused) 
   }
 }
 
+function resolveRuntimeExecutablePath(runtimeRoot, scenario, activeBuildId) {
+  if (scenario === 'portable' || !activeBuildId) return null;
+  return path.join(runtimeRoot, activeBuildId, 'Relay.exe');
+}
+
 async function runPackagedBenchmark(options) {
   if (process.platform !== 'win32') {
     throw new Error('Packaged Relay startup benchmarks must run on Windows.');
@@ -555,6 +614,14 @@ async function runPackagedBenchmark(options) {
       completeBefore,
     );
     assertRuntimeReusePrecondition(resolvedOptions.scenario, activeBuildId, runtimeReused);
+    const runtimeExecutablePath = resolveRuntimeExecutablePath(
+      runtimeRoot,
+      resolvedOptions.scenario,
+      activeBuildId,
+    );
+    const processQuiescenceMs = runtimeExecutablePath
+      ? await waitForRuntimeProcessQuiescence(runtimeExecutablePath, launchEnv)
+      : null;
 
     return {
       scenario: resolvedOptions.scenario,
@@ -563,6 +630,7 @@ async function runPackagedBenchmark(options) {
       executableSizeBytes: fs.statSync(launchSpec.command).size,
       processHandoffMs,
       processExitMs,
+      processQuiescenceMs,
       benchmarkPid,
       preparationMs: resolvedOptions.scenario === 'prepare' ? processHandoffMs : null,
       outerProcessLifetimeMs: resolvedOptions.scenario === 'portable' ? processHandoffMs : null,

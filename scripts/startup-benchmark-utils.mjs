@@ -80,6 +80,45 @@ export function sliceAppendedLogText(logBuffer, startByte) {
   return logBuffer.subarray(startByte).toString('utf8');
 }
 
+export async function waitForProcessQuiescence(
+  isProcessActive,
+  { idleChecks = 3, pollIntervalMs = 100, timeoutMs = 15_000 } = {},
+) {
+  if (typeof isProcessActive !== 'function') {
+    throw new TypeError('Process quiescence requires an activity probe.');
+  }
+  if (!Number.isSafeInteger(idleChecks) || idleChecks < 1) {
+    throw new RangeError('Process quiescence idleChecks must be a positive integer.');
+  }
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs < 0) {
+    throw new RangeError('Process quiescence pollIntervalMs must be non-negative.');
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError('Process quiescence timeoutMs must be positive.');
+  }
+
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  let consecutiveIdleChecks = 0;
+
+  while (Date.now() <= deadline) {
+    if (await isProcessActive()) {
+      consecutiveIdleChecks = 0;
+    } else {
+      consecutiveIdleChecks += 1;
+      if (consecutiveIdleChecks >= idleChecks) {
+        return Date.now() - startedAt;
+      }
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
+  }
+
+  throw new Error(`Relay runtime processes did not quiesce within ${timeoutMs}ms.`);
+}
+
 export function median(samples) {
   if (samples.length === 0) {
     throw new Error('Startup benchmark requires at least one sample.');

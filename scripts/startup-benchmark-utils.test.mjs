@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import * as startupBenchmarkUtils from './startup-benchmark-utils.mjs';
 import {
   buildLaunchSpec,
   extractLatestStartupTimeline,
@@ -9,6 +10,27 @@ import {
 } from './startup-benchmark-utils.mjs';
 
 describe('startup benchmark utilities', () => {
+  it('waits for consecutive idle observations before declaring a process quiescent', async () => {
+    expect(startupBenchmarkUtils.waitForProcessQuiescence).toBeTypeOf('function');
+
+    const observations = [true, false, true, false, false];
+    let probeCount = 0;
+    const elapsedMs = await startupBenchmarkUtils.waitForProcessQuiescence?.(
+      async () => {
+        probeCount += 1;
+        return observations.shift() ?? false;
+      },
+      {
+        idleChecks: 2,
+        pollIntervalMs: 0,
+        timeoutMs: 100,
+      },
+    );
+
+    expect(probeCount).toBe(5);
+    expect(elapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
   it('calculates the median for odd and even samples without mutating input', () => {
     const samples = [900, 100, 500, 300];
 
@@ -168,5 +190,14 @@ describe('startup benchmark utilities', () => {
     expect(source).toContain("scenario === 'prepare' && runtimeReused");
     expect(source).toContain('packagedMedian');
     expect(source).not.toContain('postUpdate');
+  });
+
+  it('waits for the Windows runtime process tree to settle between packaged samples', () => {
+    const source = readFileSync('scripts/benchmark-startup.mjs', 'utf8');
+
+    expect(source).toContain('waitForRuntimeProcessQuiescence');
+    expect(source).toContain('RELAY_BENCHMARK_RUNTIME_EXECUTABLE');
+    expect(source).toContain('processQuiescenceMs');
+    expect(source).toContain('Get-CimInstance Win32_Process');
   });
 });
