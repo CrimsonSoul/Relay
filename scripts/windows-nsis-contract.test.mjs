@@ -271,6 +271,9 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain("RELAY_DISABLE_CRASH_WATCHDOG = '1'");
     expect(harness).toContain('repair-restore-sentinel.txt');
     expect(harness).toContain('Wait-ProcessWithTimeout');
+    expect(harness).toContain('Wait-RelayRuntimeQuiescence');
+    expect(harness).toContain('[StringComparison]::OrdinalIgnoreCase');
+    expect(harness).toContain('Get-CimInstance Win32_Process');
     expect(bootstrap).not.toMatch(/bootstrap-root|install-dir/i);
   });
 });

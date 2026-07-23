@@ -70,6 +70,55 @@ function Wait-ProcessWithTimeout {
   $Process.WaitForExit()
 }
 
+function Test-RelayRuntimeActive {
+  param([Parameter(Mandatory = $true)][string]$ExecutablePath)
+
+  $targetPath = [IO.Path]::GetFullPath($ExecutablePath)
+  $records = @(Get-CimInstance Win32_Process -Filter "Name = 'Relay.exe'")
+  foreach ($record in $records) {
+    if ([string]::IsNullOrWhiteSpace([string]$record.ExecutablePath)) {
+      continue
+    }
+    try {
+      $candidatePath = [IO.Path]::GetFullPath([string]$record.ExecutablePath)
+      if ([string]::Equals(
+          $candidatePath,
+          $targetPath,
+          [StringComparison]::OrdinalIgnoreCase
+        )) {
+        return $true
+      }
+    }
+    catch {
+      # A process can exit between the CIM snapshot and path inspection.
+    }
+  }
+  return $false
+}
+
+function Wait-RelayRuntimeQuiescence {
+  param(
+    [Parameter(Mandatory = $true)][string]$ExecutablePath,
+    [int]$TimeoutSeconds = 15
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $idleChecks = 0
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if (Test-RelayRuntimeActive -ExecutablePath $ExecutablePath) {
+      $idleChecks = 0
+    }
+    else {
+      $idleChecks += 1
+      if ($idleChecks -ge 3) {
+        return
+      }
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  throw "Relay runtime did not release its executable within $TimeoutSeconds seconds: $ExecutablePath"
+}
+
 function Get-IniValue {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -135,6 +184,10 @@ function Invoke-StableFallback {
     if (-not (Test-Path -LiteralPath $exitMarker)) {
       throw 'Stable launcher did not start and cleanly exit Relay.'
     }
+    $runtimeExecutable = Join-Path (
+      Join-Path $runtimeVersionsRoot $ExpectedActiveBuildId
+    ) 'Relay.exe'
+    Wait-RelayRuntimeQuiescence -ExecutablePath $runtimeExecutable
     if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedActiveBuildId) {
       throw 'Stable launcher test observed an unexpected active build.'
     }
