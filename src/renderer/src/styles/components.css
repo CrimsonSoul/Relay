@@ -163,6 +163,15 @@
   outline: none;
 }
 
+select.tactile-input.tactile-input {
+  color-scheme: dark;
+}
+
+select.tactile-input.tactile-input option {
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface);
+}
+
 :is(input, select, textarea).tactile-input.tactile-input:hover:not(:disabled) {
   border-color: var(--color-text-tertiary);
 }

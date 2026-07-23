@@ -83,6 +83,15 @@ describe('Knowledge Management visual system', () => {
     expect(css).not.toContain('.knowledge-management-grid');
   });
 
+  it('gives shared tactile selects a legible Windows popup palette', () => {
+    const select = ruleBody(componentCss, 'select.tactile-input.tactile-input');
+    const option = ruleBody(componentCss, 'select.tactile-input.tactile-input option');
+
+    expect(select).toContain('color-scheme: dark;');
+    expect(option).toContain('background: var(--color-bg-surface);');
+    expect(option).toContain('color: var(--color-text-primary);');
+  });
+
   it('contains search readiness and its focus fallback at full and narrow widths', () => {
     const searchGroup = ruleBody(css, '.knowledge-management-row__search');
     const readiness = ruleBody(css, '.knowledge-search-readiness');
