@@ -184,6 +184,51 @@ jobs:
           node scripts/benchmark-startup.mjs --scenario prepare --artifact ./release/Relay.exe --compression store
           node scripts/benchmark-startup.mjs --scenario stable --launcher "$env:LOCALAPPDATA\Relay\Relay.exe" --compression store --runs 5
 
+      - name: Capture packaged startup diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          $diagnostics = Join-Path $env:RUNNER_TEMP 'relay-startup-diagnostics'
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+          $logRoot = Join-Path $env:APPDATA 'Relay\logs'
+          if (Test-Path -LiteralPath $logRoot) {
+            Copy-Item -LiteralPath $logRoot -Destination $diagnostics -Recurse
+          }
+          $statePath = Join-Path $env:LOCALAPPDATA 'Relay\state.ini'
+          if (Test-Path -LiteralPath $statePath) {
+            Copy-Item -LiteralPath $statePath -Destination $diagnostics
+          }
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.Name -in @('Relay.exe', 'pocketbase.exe') } |
+            Select-Object Name, ProcessId, ParentProcessId, ExecutablePath, CreationDate |
+            ConvertTo-Json -Depth 3 |
+            Set-Content -LiteralPath (Join-Path $diagnostics 'processes.json')
+          $runtimeRoot = Join-Path $env:LOCALAPPDATA 'Relay'
+          $runtimeFiles = if (Test-Path -LiteralPath $runtimeRoot) {
+            @(Get-ChildItem -LiteralPath $runtimeRoot -Recurse -Force |
+              Select-Object FullName, Length, LastWriteTimeUtc)
+          } else {
+            @()
+          }
+          ConvertTo-Json -InputObject $runtimeFiles -Depth 3 |
+            Set-Content -LiteralPath (Join-Path $diagnostics 'runtime-files.json')
+          $markerRoot = Join-Path $env:TEMP 'Relay\startup-benchmark'
+          $benchmarkMarkers = if (Test-Path -LiteralPath $markerRoot) {
+            @(Get-ChildItem -LiteralPath $markerRoot -Force |
+              Select-Object FullName, Length, LastWriteTimeUtc)
+          } else {
+            @()
+          }
+          ConvertTo-Json -InputObject $benchmarkMarkers -Depth 3 |
+            Set-Content -LiteralPath (Join-Path $diagnostics 'benchmark-markers.json')
+
+      - name: Upload packaged startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-windows-startup-diagnostics
+          path: ${{ runner.temp }}/relay-startup-diagnostics
+
       - name: Preserve production artifact for boundary harness
         shell: pwsh
         run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayProduction.exe"
