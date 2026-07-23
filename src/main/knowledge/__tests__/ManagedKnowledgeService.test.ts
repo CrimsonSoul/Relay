@@ -214,6 +214,56 @@ describe('ManagedKnowledgeService', () => {
     expect(normalizeKnowledgeManagementSnapshot(snapshot)).not.toBeNull();
   });
 
+  it('resolves upload filename conflicts from the current active document set', async () => {
+    documents.getFullList.mockResolvedValueOnce([
+      document({
+        id: 'document-current',
+        fileName: 'Replacement.pdf',
+        lifecycleState: 'active',
+      }),
+      document({
+        id: 'document-trashed',
+        fileName: 'Trashed.pdf',
+        lifecycleState: 'trashed',
+      }),
+    ]);
+    uploads.getFullList.mockResolvedValueOnce([
+      upload({
+        id: 'upload-current',
+        fileName: 'Replacement.pdf',
+        duplicateDocumentId: 'document-stale',
+      }),
+      upload({
+        id: 'upload-deleted',
+        fileName: 'Deleted.pdf',
+        duplicateDocumentId: 'document-deleted',
+      }),
+      upload({
+        id: 'upload-trashed',
+        fileName: 'Trashed.pdf',
+        duplicateDocumentId: 'document-trashed',
+      }),
+    ]);
+
+    const snapshot = await service().snapshot({
+      accountId: ACTOR.accountId,
+      query: '',
+      cursor: null,
+      pageSize: 25,
+    });
+
+    expect(
+      snapshot.uploads.items.map(({ id, duplicateDocumentId }) => ({
+        id,
+        duplicateDocumentId,
+      })),
+    ).toEqual([
+      { id: 'upload-current', duplicateDocumentId: 'document-current' },
+      { id: 'upload-deleted', duplicateDocumentId: null },
+      { id: 'upload-trashed', duplicateDocumentId: null },
+    ]);
+  });
+
   it('publishes a ready upload with attribution and an audit event', async () => {
     await expect(
       service().publish({

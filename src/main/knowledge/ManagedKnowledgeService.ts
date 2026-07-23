@@ -105,7 +105,10 @@ function documentView(document: KnowledgeDocumentRecord): KnowledgeManagementDoc
   };
 }
 
-function uploadView(upload: StoredUploadRecord): KnowledgeManagementUploadView {
+function uploadView(
+  upload: StoredUploadRecord,
+  duplicateDocumentId: string | null = upload.duplicateDocumentId || null,
+): KnowledgeManagementUploadView {
   let progress = 50;
   if (upload.state === 'failed') progress = 0;
   if (upload.state === 'ready' || upload.state === 'published') progress = 100;
@@ -127,7 +130,7 @@ function uploadView(upload: StoredUploadRecord): KnowledgeManagementUploadView {
         : null,
     outlineSource: upload.outlineSource || null,
     outlineCount: Array.isArray(upload.outline) ? upload.outline.length : 0,
-    duplicateDocumentId: upload.duplicateDocumentId || null,
+    duplicateDocumentId,
     safeError: upload.safeError || null,
     expiresAt: canonicalTimestamp(upload.expiresAt),
     revision: Number.isInteger(upload.revision) ? upload.revision : 0,
@@ -208,6 +211,11 @@ export class ManagedKnowledgeService {
       }),
     ]);
     const query = normalizeKnowledgeSearchText(input.query);
+    const activeDocumentIdByFilename = new Map(
+      documents
+        .filter(({ lifecycleState }) => lifecycleState === 'active')
+        .map(({ fileName, id }) => [fileName, id]),
+    );
     const matches = documents.filter((document) => {
       const text = normalizeKnowledgeSearchText(
         `${document.displayTitle} ${document.fileName} ${document.category}`,
@@ -235,7 +243,9 @@ export class ManagedKnowledgeService {
         pageSize,
       ),
       uploads: {
-        items: uploadItems.map(uploadView),
+        items: uploadItems.map((item) =>
+          uploadView(item, activeDocumentIdByFilename.get(item.fileName) ?? null),
+        ),
         nextCursor:
           uploadStart + pageSize < sortedUploads.length ? (uploadItems.at(-1)?.id ?? null) : null,
       },
