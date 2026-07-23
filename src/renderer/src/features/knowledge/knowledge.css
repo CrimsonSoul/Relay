@@ -2455,10 +2455,38 @@
   background: color-mix(in srgb, var(--alarm) 10%, transparent);
 }
 
-.knowledge-management-row__warning {
-  color: var(--warning, #ffb020);
+.knowledge-management-status.is-action-required {
+  border-color: color-mix(in srgb, var(--color-warning) 52%, var(--color-border));
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+.knowledge-management-row__identity .knowledge-management-row__duplicate {
+  display: flex;
+  overflow: visible;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  border-radius: 2px;
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
   font-family: var(--font-family-base);
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-normal);
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.knowledge-management-row__duplicate-marker {
+  width: 7px;
+  height: 7px;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
 }
 
 .knowledge-management-row__delete {

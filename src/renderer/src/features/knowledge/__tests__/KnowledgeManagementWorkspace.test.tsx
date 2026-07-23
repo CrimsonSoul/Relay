@@ -821,11 +821,66 @@ describe('KnowledgeManagementWorkspace', () => {
           ],
         },
       },
+      uploadQueue: {
+        restartRecovery: false,
+        activeBatchId: 'batch-1',
+        totalBytes: 1_024,
+        acknowledgedBytes: 1_024,
+        items: [
+          {
+            id: 'local-1',
+            uploadId: 'upload-1',
+            batchId: 'batch-1',
+            fileName: 'Runbook.pdf',
+            byteSize: 1_024,
+            acknowledgedBytes: 1_024,
+            chunkCount: 1,
+            acknowledgedChunkCount: 1,
+            state: 'ready',
+            safeError: null,
+            retryCount: 0,
+            restartRecovery: false,
+          },
+        ],
+      },
       replace,
       cancelUpload,
     });
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    expect(screen.getByText('Action required')).toHaveClass(
+      'knowledge-management-status',
+      'is-action-required',
+    );
+
+    const reviewRow = screen
+      .getByRole('heading', { name: 'Runbook.pdf' })
+      .closest('.knowledge-management-row--upload');
+    expect(reviewRow).not.toBeNull();
+    expect(within(reviewRow as HTMLElement).getByText('Duplicate found')).toHaveClass(
+      'knowledge-management-status',
+      'is-action-required',
+    );
+    expect(
+      within(reviewRow as HTMLElement).getByText(
+        'A published document named Runbook.pdf already exists.',
+      ),
+    ).toHaveClass('knowledge-management-row__duplicate');
+    expect(within(reviewRow as HTMLElement).queryByText('Filename already exists')).toBeNull();
+
+    const replaceButton = within(reviewRow as HTMLElement).getByRole('button', {
+      name: 'Replace existing',
+    });
+    const discardButton = within(reviewRow as HTMLElement).getByRole('button', {
+      name: 'Discard Runbook.pdf',
+    });
+    expect(replaceButton).toHaveClass('tactile-button--primary');
+    expect(discardButton).toHaveClass(
+      'tactile-button--danger',
+      'knowledge-management__danger-outline',
+    );
+
     fireEvent.click(screen.getByRole('button', { name: 'Replace existing' }));
 
     expect(replace).toHaveBeenCalledWith(

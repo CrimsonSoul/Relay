@@ -914,14 +914,20 @@ export function KnowledgeManagementWorkspace({
                   </div>
                   <div className="knowledge-upload-queue__files">
                     {queueItems.map((item) => {
-                      const state = effectiveQueueState(item, uploads);
                       const id = item.uploadId ?? item.id;
+                      const queuedUpload = uploads.find((upload) => upload.id === id);
+                      const state = queuedUpload?.state ?? item.state;
                       const progress = queueProgress(item);
+                      const requiresAction = Boolean(queuedUpload?.duplicateDocumentId);
                       return (
                         <article className="knowledge-upload-file" key={item.id}>
                           <div className="knowledge-upload-file__state">
-                            <span className={`knowledge-management-status is-${state}`}>
-                              {QUEUE_STATE_LABELS[state]}
+                            <span
+                              className={`knowledge-management-status is-${
+                                requiresAction ? 'action-required' : state
+                              }`}
+                            >
+                              {requiresAction ? 'Action required' : QUEUE_STATE_LABELS[state]}
                             </span>
                             <strong>{item.fileName}</strong>
                             <span className="knowledge-upload-file__size">
@@ -1000,20 +1006,34 @@ export function KnowledgeManagementWorkspace({
                   ({ normalizedName }) => normalizedName === knowledgeCategoryKey(draft.category),
                 );
                 const duplicate = documents.find(({ id }) => id === upload.duplicateDocumentId);
+                const requiresAction = Boolean(upload.duplicateDocumentId);
                 return (
                   <article
                     className="knowledge-management-row knowledge-management-row--upload"
                     key={upload.id}
                   >
                     <div className="knowledge-management-row__identity">
-                      <span className={`knowledge-management-status is-${upload.state}`}>
-                        {upload.state}
+                      <span
+                        className={`knowledge-management-status is-${
+                          requiresAction ? 'action-required' : upload.state
+                        }`}
+                      >
+                        {requiresAction ? 'Duplicate found' : upload.state}
                       </span>
                       <h2>{upload.fileName}</h2>
                       <p>
                         {formatBytes(upload.byteSize)} · {upload.pageCount ?? '—'} pages ·{' '}
                         {upload.outlineCount} headings
                       </p>
+                      {requiresAction && (
+                        <p className="knowledge-management-row__duplicate" role="status">
+                          <span
+                            className="knowledge-management-row__duplicate-marker"
+                            aria-hidden="true"
+                          />
+                          {`A published document named ${upload.fileName} already exists.`}
+                        </p>
+                      )}
                     </div>
                     <div className="knowledge-management-row__editor">
                       <label>
@@ -1091,11 +1111,6 @@ export function KnowledgeManagementWorkspace({
                       </label>
                     </div>
                     <div className="knowledge-management-row__actions">
-                      {upload.duplicateDocumentId && (
-                        <span className="knowledge-management-row__warning">
-                          Filename already exists
-                        </span>
-                      )}
                       {duplicate ? (
                         <TactileButton
                           size="sm"
