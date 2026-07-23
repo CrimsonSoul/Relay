@@ -789,8 +789,9 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(cancelUpload).toHaveBeenCalledWith('upload-1');
   });
 
-  it('turns a duplicate ready upload into an explicit replace action', () => {
+  it('turns a duplicate ready upload into an explicit replace or discard decision', async () => {
     const replace = vi.fn(async () => true);
+    const cancelUpload = vi.fn(async () => true);
     const current = useKnowledgeManagementMock();
     useKnowledgeManagementMock.mockReturnValue({
       ...current,
@@ -821,6 +822,7 @@ describe('KnowledgeManagementWorkspace', () => {
         },
       },
       replace,
+      cancelUpload,
     });
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
@@ -833,6 +835,62 @@ describe('KnowledgeManagementWorkspace', () => {
       'Checkout runbook',
       'Operations',
     );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Runbook.pdf' }));
+
+    const keep = screen.getByRole('button', { name: 'Keep Runbook.pdf' });
+    expect(keep).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Confirm discard Runbook.pdf' })).toBeInTheDocument();
+
+    fireEvent.click(keep);
+    expect(cancelUpload).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Discard Runbook.pdf' })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Runbook.pdf' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm discard Runbook.pdf' }));
+
+    await waitFor(() => expect(cancelUpload).toHaveBeenCalledWith('upload-1'));
+  });
+
+  it('keeps cancelled upload records out of review', () => {
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        uploads: {
+          nextCursor: null,
+          items: [
+            {
+              id: 'upload-cancelled',
+              requestId: 'request-cancelled',
+              fileName: 'Discarded.pdf',
+              byteSize: 1_024,
+              checksum: 'a'.repeat(64),
+              state: 'cancelled',
+              progress: 50,
+              proposedTitle: 'Discarded',
+              proposedCategory: 'Operations',
+              pageCount: 4,
+              outlineSource: 'native',
+              outlineCount: 3,
+              duplicateDocumentId: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 3,
+            },
+          ],
+        },
+      },
+    });
+
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 0/ }));
+
+    expect(screen.queryByText('Discarded.pdf')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('No uploads queued or awaiting review. Add PDFs to begin.'),
+    ).toBeVisible();
   });
 
   it('removes transfer controls once a queued PDF is ready for review', () => {

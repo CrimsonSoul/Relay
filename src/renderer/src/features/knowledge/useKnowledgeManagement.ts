@@ -389,19 +389,30 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
   }, [canManage, refresh, refreshUploadQueue]);
 
   const runUploadControl = useCallback(
-    async (busyKey: string, operation: (() => Promise<boolean>) | undefined, message: string) => {
+    async (
+      busyKey: string,
+      operation: (() => Promise<boolean>) | undefined,
+      message: string,
+      refreshAfterSuccess = false,
+    ) => {
       if (!canManage || !operation) return false;
       setBusy(busyKey);
       setError(null);
       try {
         const ok = await operation();
-        if (!ok) setError(message);
-        return ok;
+        if (!ok) {
+          setError(message);
+          return false;
+        }
+        if (refreshAfterSuccess) {
+          await Promise.all([refresh(), refreshUploadQueue()]);
+        }
+        return true;
       } finally {
         setBusy(null);
       }
     },
-    [canManage],
+    [canManage, refresh, refreshUploadQueue],
   );
 
   const requestAuditPage = useCallback(
@@ -581,6 +592,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
           : undefined,
         'Relay could not cancel this PDF.',
+        true,
       ),
     cancelUploadBatch: (batchId: string) =>
       runUploadControl(

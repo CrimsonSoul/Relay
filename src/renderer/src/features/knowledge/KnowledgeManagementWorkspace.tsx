@@ -180,12 +180,23 @@ export function KnowledgeManagementWorkspace({
   const [password, setPassword] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelBatchConfirmation, setCancelBatchConfirmation] = useState(false);
+  const [discardUploadId, setDiscardUploadId] = useState<string | null>(null);
   const [retryFocusIntent, setRetryFocusIntent] = useState<RetryFocusIntent | null>(null);
   const restoreBatchCancelFocusRef = useRef(false);
+  const discardFocusIntentRef = useRef<{
+    uploadId: string;
+    target: 'keep' | 'trigger' | 'after';
+  } | null>(null);
   const snapshot = management.snapshot;
   const documents = useMemo(() => snapshot?.documents.items ?? [], [snapshot]);
   const trash = snapshot?.trash.items ?? [];
-  const uploads = snapshot?.uploads.items.filter(({ state }) => state !== 'published') ?? [];
+  const uploads = useMemo(
+    () =>
+      snapshot?.uploads.items.filter(
+        ({ state }) => state !== 'published' && state !== 'cancelled',
+      ) ?? [],
+    [snapshot],
+  );
   const queueItems = management.uploadQueue.items.filter(
     ({ state }) => state !== 'published' && state !== 'cancelled',
   );
@@ -212,6 +223,32 @@ export function KnowledgeManagementWorkspace({
     restoreBatchCancelFocusRef.current = false;
     document.querySelector<HTMLButtonElement>('[data-cancel-batch-trigger]')?.focus();
   }, [cancelBatchConfirmation]);
+
+  useEffect(() => {
+    const intent = discardFocusIntentRef.current;
+    if (!intent) return;
+    const buttons = [
+      ...globalThis.document.querySelectorAll<HTMLButtonElement>('[data-discard-upload-id]'),
+    ];
+    let target: HTMLElement | null | undefined;
+    if (intent.target === 'after') {
+      target =
+        buttons.find(
+          (button) =>
+            button.dataset.discardRole === 'trigger' &&
+            button.dataset.discardUploadId !== intent.uploadId,
+        ) ?? sectionContentRef.current;
+    } else {
+      target = buttons.find(
+        (button) =>
+          button.dataset.discardUploadId === intent.uploadId &&
+          button.dataset.discardRole === intent.target,
+      );
+    }
+    if (!target) return;
+    discardFocusIntentRef.current = null;
+    target.focus();
+  }, [discardUploadId, uploads]);
 
   useEffect(() => {
     if (!retryFocusIntent?.settled) return;
@@ -257,6 +294,8 @@ export function KnowledgeManagementWorkspace({
     openSection(next, true);
     setNotice(null);
     setCancelBatchConfirmation(false);
+    setDiscardUploadId(null);
+    discardFocusIntentRef.current = null;
   };
 
   const stagePdfs = async () => {
@@ -1088,6 +1127,65 @@ export function KnowledgeManagementWorkspace({
                           onClick={() => void publishUpload(upload)}
                         >
                           Publish
+                        </TactileButton>
+                      )}
+                      {discardUploadId === upload.id ? (
+                        <>
+                          <TactileButton
+                            size="sm"
+                            data-discard-upload-id={upload.id}
+                            data-discard-role="keep"
+                            aria-label={`Keep ${upload.fileName}`}
+                            onClick={() => {
+                              discardFocusIntentRef.current = {
+                                uploadId: upload.id,
+                                target: 'trigger',
+                              };
+                              setDiscardUploadId(null);
+                            }}
+                          >
+                            Keep upload
+                          </TactileButton>
+                          <TactileButton
+                            size="sm"
+                            variant="danger"
+                            aria-label={`Confirm discard ${upload.fileName}`}
+                            loading={management.busy === `cancel:${upload.id}`}
+                            onClick={async () => {
+                              const discarded = await management.cancelUpload(upload.id);
+                              if (!discarded) return;
+                              discardFocusIntentRef.current = {
+                                uploadId: upload.id,
+                                target: 'after',
+                              };
+                              setDiscardUploadId(null);
+                              setUploadDrafts((current) => {
+                                const next = { ...current };
+                                delete next[upload.id];
+                                return next;
+                              });
+                            }}
+                          >
+                            Discard upload
+                          </TactileButton>
+                        </>
+                      ) : (
+                        <TactileButton
+                          size="sm"
+                          variant="danger"
+                          className="knowledge-management__danger-outline"
+                          data-discard-upload-id={upload.id}
+                          data-discard-role="trigger"
+                          aria-label={`Discard ${upload.fileName}`}
+                          onClick={() => {
+                            discardFocusIntentRef.current = {
+                              uploadId: upload.id,
+                              target: 'keep',
+                            };
+                            setDiscardUploadId(upload.id);
+                          }}
+                        >
+                          Discard upload
                         </TactileButton>
                       )}
                     </div>

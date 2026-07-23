@@ -73,6 +73,39 @@ function snapshotWithTitle(title: string): KnowledgeManagementSnapshot {
   };
 }
 
+function snapshotWithReadyUpload(
+  state: 'ready' | 'cancelled' = 'ready',
+): KnowledgeManagementSnapshot {
+  return {
+    ...snapshot,
+    uploads: {
+      items: [
+        {
+          id: 'upload-1',
+          requestId: 'upload-request-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 1_024,
+          checksum: 'a'.repeat(64),
+          state,
+          progress: state === 'ready' ? 100 : 50,
+          proposedTitle: 'Runbook',
+          proposedCategory: 'Operations',
+          proposedCategoryId: 'category-operations',
+          proposedDocumentType: 'sop',
+          pageCount: 4,
+          outlineSource: 'native',
+          outlineCount: 3,
+          duplicateDocumentId: 'document-1',
+          safeError: null,
+          expiresAt: '2026-07-23T01:00:00.000Z',
+          revision: 2,
+        },
+      ],
+      nextCursor: null,
+    },
+  };
+}
+
 function snapshotWithSearchState(
   state: 'pending' | 'ready' | 'failed',
   title = 'Runbook',
@@ -200,6 +233,59 @@ describe('useKnowledgeManagement', () => {
 
     await expect(publishResult).resolves.toBe(false);
     expect(result.current.snapshot).toBeNull();
+  });
+
+  it('refreshes authoritative upload state after cancelling one PDF', async () => {
+    const ready = snapshotWithReadyUpload();
+    const cancelled = snapshotWithReadyUpload('cancelled');
+    let snapshotReads = 0;
+    submitCommand.mockImplementation(async (input: { command: string }) => {
+      if (input.command !== 'knowledge.snapshot.read') {
+        return { ok: true, requestId: 'request-1', value: {} };
+      }
+      const value = snapshotReads === 0 ? ready : cancelled;
+      snapshotReads += 1;
+      return okSnapshot(value);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(ready));
+
+    let discarded = false;
+    await act(async () => {
+      discarded = await result.current.cancelUpload('upload-1');
+    });
+
+    expect(discarded).toBe(true);
+    expect(globalThis.api?.cancelKnowledgeUpload).toHaveBeenCalledWith('upload-1');
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.snapshot.read',
+      payload: { query: '', cursor: null, pageSize: 100 },
+      expectedRevision: null,
+    });
+    expect(result.current.snapshot).toEqual(cancelled);
+    expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the upload snapshot visible when cancellation fails', async () => {
+    const ready = snapshotWithReadyUpload();
+    submitCommand.mockImplementation(async (input: { command: string }) =>
+      input.command === 'knowledge.snapshot.read'
+        ? okSnapshot(ready)
+        : { ok: true, requestId: 'request-1', value: {} },
+    );
+    vi.mocked(globalThis.api!.cancelKnowledgeUpload!).mockResolvedValueOnce(false);
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(ready));
+
+    let discarded = true;
+    await act(async () => {
+      discarded = await result.current.cancelUpload('upload-1');
+    });
+
+    expect(discarded).toBe(false);
+    expect(result.current.snapshot).toEqual(ready);
+    expect(result.current.error).toBe('Relay could not cancel this PDF.');
+    expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledOnce();
   });
 
   it('submits a protected search retry and confirms a reordered document by identity', async () => {
