@@ -34,12 +34,83 @@ import {
 import './dynatrace-problems.css';
 
 type ProblemFilter = 'unaddressed' | 'addressed' | 'resolved';
+type HistorySort = 'newest' | 'addressed-first' | 'response-first' | 'no-response-first';
+type HistoryResponseFilter = 'all' | 'local-response' | 'addressed' | 'notes' | 'tickets' | 'none';
+
+type ProblemResponseSummary = {
+  addressed: boolean;
+  hasLocalResponse: boolean;
+  nocNoteCount: number;
+  responder: string;
+  ticketReferences: string[];
+};
+
+type HistoryPreferences = {
+  sort: HistorySort;
+  responseFilter: HistoryResponseFilter;
+};
 
 const FILTERS: Array<{ id: ProblemFilter; label: string }> = [
   { id: 'unaddressed', label: 'Unaddressed' },
   { id: 'addressed', label: 'Addressed locally' },
   { id: 'resolved', label: 'History' },
 ];
+
+const HISTORY_PREFERENCES_STORAGE_KEY = 'relay-dynatrace-history-preferences';
+const DEFAULT_HISTORY_PREFERENCES: HistoryPreferences = {
+  sort: 'newest',
+  responseFilter: 'all',
+};
+const EMPTY_RESPONSE_SUMMARY: ProblemResponseSummary = {
+  addressed: false,
+  hasLocalResponse: false,
+  nocNoteCount: 0,
+  responder: '',
+  ticketReferences: [],
+};
+const HISTORY_SORTS = new Set<HistorySort>([
+  'newest',
+  'addressed-first',
+  'response-first',
+  'no-response-first',
+]);
+const HISTORY_RESPONSE_FILTERS = new Set<HistoryResponseFilter>([
+  'all',
+  'local-response',
+  'addressed',
+  'notes',
+  'tickets',
+  'none',
+]);
+
+function readHistoryPreferences(): HistoryPreferences {
+  try {
+    const stored = globalThis.localStorage?.getItem(HISTORY_PREFERENCES_STORAGE_KEY);
+    if (!stored) return DEFAULT_HISTORY_PREFERENCES;
+    const parsed = JSON.parse(stored) as Partial<HistoryPreferences>;
+    return {
+      sort:
+        typeof parsed.sort === 'string' && HISTORY_SORTS.has(parsed.sort as HistorySort)
+          ? (parsed.sort as HistorySort)
+          : DEFAULT_HISTORY_PREFERENCES.sort,
+      responseFilter:
+        typeof parsed.responseFilter === 'string' &&
+        HISTORY_RESPONSE_FILTERS.has(parsed.responseFilter as HistoryResponseFilter)
+          ? (parsed.responseFilter as HistoryResponseFilter)
+          : DEFAULT_HISTORY_PREFERENCES.responseFilter,
+    };
+  } catch {
+    return DEFAULT_HISTORY_PREFERENCES;
+  }
+}
+
+function writeHistoryPreferences(preferences: HistoryPreferences): void {
+  try {
+    globalThis.localStorage?.setItem(HISTORY_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+  } catch {
+    // Preference persistence is best-effort; History remains fully usable without it.
+  }
+}
 
 function severityLabel(severity: DynatraceProblemSeverity): string {
   switch (severity) {
@@ -159,6 +230,92 @@ function problemSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): numb
   return b.startTime - a.startTime;
 }
 
+function summarizeProblemResponse(
+  state: DynatraceProblemStateRecord | undefined,
+  notes: DynatraceProblemNoteRecord[],
+): ProblemResponseSummary {
+  const ticketReferenceTimes = new Map<string, number>();
+  let nocNoteCount = 0;
+  let latestAttributedNote: DynatraceProblemNoteRecord | undefined;
+
+  for (const note of notes) {
+    const ticketReference = parseDynatraceTicketReferenceNote(note.note);
+    if (ticketReference) {
+      const createdAt = new Date(note.created).getTime();
+      const timestamp = Number.isFinite(createdAt) ? createdAt : 0;
+      const previousTimestamp = ticketReferenceTimes.get(ticketReference);
+      if (previousTimestamp === undefined || timestamp >= previousTimestamp) {
+        ticketReferenceTimes.set(ticketReference, timestamp);
+      }
+    } else {
+      nocNoteCount += 1;
+    }
+    if (
+      note.author?.trim() &&
+      (!latestAttributedNote ||
+        new Date(note.created).getTime() >= new Date(latestAttributedNote.created).getTime())
+    ) {
+      latestAttributedNote = note;
+    }
+  }
+
+  const addressed = isAddressed(state);
+  return {
+    addressed,
+    hasLocalResponse: addressed || notes.length > 0,
+    nocNoteCount,
+    responder: state?.addressedBy?.trim() || latestAttributedNote?.author?.trim() || '',
+    ticketReferences: [...ticketReferenceTimes]
+      .sort(([, aTimestamp], [, bTimestamp]) => bTimestamp - aTimestamp)
+      .map(([reference]) => reference),
+  };
+}
+
+function matchesHistoryResponseFilter(
+  summary: ProblemResponseSummary,
+  responseFilter: HistoryResponseFilter,
+): boolean {
+  switch (responseFilter) {
+    case 'local-response':
+      return summary.hasLocalResponse;
+    case 'addressed':
+      return summary.addressed;
+    case 'notes':
+      return summary.nocNoteCount > 0;
+    case 'tickets':
+      return summary.ticketReferences.length > 0;
+    case 'none':
+      return !summary.hasLocalResponse;
+    default:
+      return true;
+  }
+}
+
+function historyProblemSort(
+  a: DynatraceProblemRecord,
+  b: DynatraceProblemRecord,
+  sort: HistorySort,
+  responseSummaries: Map<string, ProblemResponseSummary>,
+): number {
+  const aSummary = responseSummaries.get(a.problemId);
+  const bSummary = responseSummaries.get(b.problemId);
+  let aRank = 0;
+  let bRank = 0;
+
+  if (sort === 'addressed-first') {
+    aRank = aSummary?.addressed ? 0 : 1;
+    bRank = bSummary?.addressed ? 0 : 1;
+  } else if (sort === 'response-first') {
+    aRank = aSummary?.hasLocalResponse ? 0 : 1;
+    bRank = bSummary?.hasLocalResponse ? 0 : 1;
+  } else if (sort === 'no-response-first') {
+    aRank = aSummary?.hasLocalResponse ? 1 : 0;
+    bRank = bSummary?.hasLocalResponse ? 1 : 0;
+  }
+
+  return aRank - bRank || problemSort(a, b);
+}
+
 function EntityList({ entities }: Readonly<{ entities: DynatraceEntityRef[] }>) {
   if (entities.length === 0) return <span className="dt-problems__muted">None reported</span>;
   const visible = entities.slice(0, 8);
@@ -174,6 +331,58 @@ function EntityList({ entities }: Readonly<{ entities: DynatraceEntityRef[] }>) 
         <span className="dt-problems__entity-more">+{entities.length - visible.length} more</span>
       )}
     </div>
+  );
+}
+
+function ProblemResponseMetadata({
+  summary,
+}: Readonly<{ summary: ProblemResponseSummary | undefined }>) {
+  if (!summary?.hasLocalResponse) {
+    return (
+      <span className="dt-problem-row__local-response dt-problem-row__local-response--empty">
+        No local response
+      </span>
+    );
+  }
+
+  const hasResponder = Boolean(summary.responder);
+  const hasNotes = summary.nocNoteCount > 0;
+  const ticketReference = summary.ticketReferences[0];
+
+  if (!hasResponder && !hasNotes && !ticketReference) {
+    return <span className="dt-problem-row__local-response">Addressed locally</span>;
+  }
+
+  return (
+    <span className="dt-problem-row__local-response">
+      {hasResponder && (
+        <strong className="dt-problem-row__response-author">{summary.responder}</strong>
+      )}
+      {hasNotes && (
+        <span className="dt-problem-row__response-part">
+          {hasResponder && (
+            <span className="dt-problem-row__response-separator" aria-hidden="true">
+              {' · '}
+            </span>
+          )}
+          <span className="dt-problem-row__response-count">
+            {summary.nocNoteCount} note{summary.nocNoteCount === 1 ? '' : 's'}
+          </span>
+        </span>
+      )}
+      {ticketReference && (
+        <span className="dt-problem-row__response-part dt-problem-row__response-part--ticket">
+          {(hasResponder || hasNotes) && (
+            <span className="dt-problem-row__response-separator" aria-hidden="true">
+              {' · '}
+            </span>
+          )}
+          <span className="dt-problem-row__response-ticket" title={ticketReference}>
+            {ticketReference}
+          </span>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -345,17 +554,26 @@ function getDispositionDetail(
 type ProblemQueueProps = {
   problems: DynatraceProblemRecord[];
   states: Map<string, DynatraceProblemStateRecord>;
+  responseSummaries: Map<string, ProblemResponseSummary>;
   selectedProblemId: string | null;
   sync: DynatraceProblemSyncRecord | null;
   totalProblemCount: number;
+  totalHistoryCount: number;
+  historyScopeCount: number;
   historyMode: boolean;
+  historySort: HistorySort;
+  historyResponseFilter: HistoryResponseFilter;
+  onHistorySortChange: (sort: HistorySort) => void;
+  onHistoryResponseFilterChange: (filter: HistoryResponseFilter) => void;
   onSelect: (problemId: string) => void;
 };
 
 type ProblemQueueRowProps = {
   problems: DynatraceProblemRecord[];
   states: Map<string, DynatraceProblemStateRecord>;
+  responseSummaries: Map<string, ProblemResponseSummary>;
   selectedProblemId: string | null;
+  historyMode: boolean;
   onSelect: (problemId: string) => void;
 };
 
@@ -363,10 +581,11 @@ const PROBLEM_QUEUE_ROW_HEIGHT = 124;
 
 const ProblemQueueRow = memo(
   ({ index, style, ariaAttributes, ...data }: RowComponentProps<ProblemQueueRowProps>) => {
-    const { problems, states, selectedProblemId, onSelect } = data;
+    const { problems, states, responseSummaries, selectedProblemId, historyMode, onSelect } = data;
     const problem = problems[index];
     if (!problem) return null;
     const addressed = isAddressed(states.get(problem.problemId));
+    const responseSummary = responseSummaries.get(problem.problemId);
     const selected = problem.problemId === selectedProblemId;
     const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
     const statusLabel = problem.status === 'CLOSED' ? 'Resolved' : severityLabel(problem.severity);
@@ -393,14 +612,18 @@ const ProblemQueueRow = memo(
               <span className="dt-problem-row__time">{formatDuration(problem)}</span>
             </span>
             <span className="dt-problem-row__title">{problem.title}</span>
-            {primaryEntity && (
-              <span className="dt-problem-row__entity-context">
-                <span>{primaryEntity.kind}</span>
-                <strong title={primaryEntity.name}>{primaryEntity.name}</strong>
-                {primaryEntity.additionalCount > 0 && (
-                  <small>+{primaryEntity.additionalCount}</small>
-                )}
-              </span>
+            {historyMode ? (
+              <ProblemResponseMetadata summary={responseSummary} />
+            ) : (
+              primaryEntity && (
+                <span className="dt-problem-row__entity-context">
+                  <span>{primaryEntity.kind}</span>
+                  <strong title={primaryEntity.name}>{primaryEntity.name}</strong>
+                  {primaryEntity.additionalCount > 0 && (
+                    <small>+{primaryEntity.additionalCount}</small>
+                  )}
+                </span>
+              )
             )}
             <span className="dt-problem-row__meta">
               <span>{problem.displayId || problem.problemId}</span>
@@ -417,15 +640,29 @@ const ProblemQueueRow = memo(
 function ProblemQueue({
   problems,
   states,
+  responseSummaries,
   selectedProblemId,
   sync,
   totalProblemCount,
+  totalHistoryCount,
+  historyScopeCount,
   historyMode,
+  historySort,
+  historyResponseFilter,
+  onHistorySortChange,
+  onHistoryResponseFilterChange,
   onSelect,
 }: Readonly<ProblemQueueProps>) {
   const rowProps = useMemo<ProblemQueueRowProps>(
-    () => ({ problems, states, selectedProblemId, onSelect }),
-    [onSelect, problems, selectedProblemId, states],
+    () => ({
+      problems,
+      states,
+      responseSummaries,
+      selectedProblemId,
+      historyMode,
+      onSelect,
+    }),
+    [historyMode, onSelect, problems, responseSummaries, selectedProblemId, states],
   );
   let queueContents: React.ReactNode;
   if (problems.length === 0) {
@@ -435,7 +672,10 @@ function ProblemQueue({
     if (integrationDisabled) {
       emptyTitle = 'Dynatrace Problems is not configured';
       emptyDescription = 'Configure the read-only integration in Settings on the Relay server.';
-    } else if (historyMode) {
+    } else if (historyMode && historyResponseFilter !== 'all' && historyScopeCount > 0) {
+      emptyTitle = 'No history matches this response filter';
+      emptyDescription = 'Choose another response filter to see the remaining resolved problems.';
+    } else if (historyMode && totalHistoryCount === 0) {
       emptyTitle = 'No resolved problems in the one-year history';
       emptyDescription =
         'Resolved problems will remain here with their local notes and disposition.';
@@ -487,8 +727,48 @@ function ProblemQueue({
           <span>{historyMode ? 'History' : 'Problem queue'}</span>
           {historyMode && <small>Resolved problems are retained for one year.</small>}
         </div>
-        <span>{problems.length} shown</span>
+        <span
+          role={historyMode ? 'status' : undefined}
+          aria-live={historyMode ? 'polite' : undefined}
+          aria-atomic={historyMode ? 'true' : undefined}
+        >
+          {problems.length} shown
+        </span>
       </div>
+      {historyMode && (
+        <div className="dt-problems__history-controls" aria-label="History organization controls">
+          <label className="dt-problems__history-control">
+            <span>Sort</span>
+            <select
+              aria-label="Sort history"
+              value={historySort}
+              onChange={(event) => onHistorySortChange(event.target.value as HistorySort)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="addressed-first">Locally addressed first</option>
+              <option value="response-first">Local response first</option>
+              <option value="no-response-first">No local response first</option>
+            </select>
+          </label>
+          <label className="dt-problems__history-control">
+            <span>Response</span>
+            <select
+              aria-label="Filter history by response"
+              value={historyResponseFilter}
+              onChange={(event) =>
+                onHistoryResponseFilterChange(event.target.value as HistoryResponseFilter)
+              }
+            >
+              <option value="all">All responses</option>
+              <option value="local-response">Has local response</option>
+              <option value="addressed">Addressed locally</option>
+              <option value="notes">Has NOC notes</option>
+              <option value="tickets">Has ticket</option>
+              <option value="none">No local response</option>
+            </select>
+          </label>
+        </div>
+      )}
       {queueContents}
     </section>
   );
@@ -786,6 +1066,9 @@ export const DynatraceProblemsTab: React.FC<{
   } = useDynatraceProblems();
   const [filter, setFilter] = useState<ProblemFilter>('unaddressed');
   const [query, setQuery] = useState('');
+  const [historyPreferences, setHistoryPreferences] =
+    useState<HistoryPreferences>(readHistoryPreferences);
+  const { sort: historySort, responseFilter: historyResponseFilter } = historyPreferences;
   const [profileDraft, setProfileDraft] = useState<string[]>([]);
   const [profileDraftDirty, setProfileDraftDirty] = useState(false);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
@@ -801,6 +1084,18 @@ export const DynatraceProblemsTab: React.FC<{
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
   useEffect(() => onConnectionStateChange(setConnectionState), []);
+
+  useEffect(() => {
+    writeHistoryPreferences(historyPreferences);
+  }, [historyPreferences]);
+
+  const handleHistorySortChange = useCallback((sort: HistorySort) => {
+    setHistoryPreferences((current) => ({ ...current, sort }));
+  }, []);
+
+  const handleHistoryResponseFilterChange = useCallback((responseFilter: HistoryResponseFilter) => {
+    setHistoryPreferences((current) => ({ ...current, responseFilter }));
+  }, []);
 
   const counts = useMemo(() => {
     let unaddressed = 0;
@@ -834,23 +1129,57 @@ export const DynatraceProblemsTab: React.FC<{
     if (!profileDraftDirty) setProfileDraft(savedProfiles);
   }, [profileDraftDirty, savedProfiles]);
 
-  const filteredProblems = useMemo(() => {
+  const responseSummaries = useMemo(() => {
+    const summaries = new Map<string, ProblemResponseSummary>();
+    for (const problem of problems) {
+      summaries.set(
+        problem.problemId,
+        summarizeProblemResponse(
+          stateByProblemId.get(problem.problemId),
+          notesByProblemId.get(problem.problemId) ?? [],
+        ),
+      );
+    }
+    return summaries;
+  }, [notesByProblemId, problems, stateByProblemId]);
+
+  const { filteredProblems, historyScopeCount } = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return problems
+    const scopedProblems = problems
       .filter((problem) => matchesFilter(problem, stateByProblemId.get(problem.problemId), filter))
       .filter((problem) => {
         if (!profileFilterConfigured && !profileDraftDirty) return true;
         return problem.alertingProfiles.some((profile) => profileDraft.includes(profile));
       })
-      .filter((problem) => !normalizedQuery || searchableText(problem).includes(normalizedQuery))
-      .sort(problemSort);
+      .filter((problem) => !normalizedQuery || searchableText(problem).includes(normalizedQuery));
+    const visibleProblems = scopedProblems
+      .filter(
+        (problem) =>
+          filter !== 'resolved' ||
+          matchesHistoryResponseFilter(
+            responseSummaries.get(problem.problemId) ?? EMPTY_RESPONSE_SUMMARY,
+            historyResponseFilter,
+          ),
+      )
+      .sort((a, b) =>
+        filter === 'resolved'
+          ? historyProblemSort(a, b, historySort, responseSummaries)
+          : problemSort(a, b),
+      );
+    return {
+      filteredProblems: visibleProblems,
+      historyScopeCount: filter === 'resolved' ? scopedProblems.length : 0,
+    };
   }, [
     filter,
+    historyResponseFilter,
+    historySort,
     problems,
     profileDraft,
     profileDraftDirty,
     profileFilterConfigured,
     query,
+    responseSummaries,
     stateByProblemId,
   ]);
 
@@ -1150,10 +1479,17 @@ export const DynatraceProblemsTab: React.FC<{
         <ProblemQueue
           problems={filteredProblems}
           states={stateByProblemId}
+          responseSummaries={responseSummaries}
           selectedProblemId={selectedProblemId}
           sync={sync}
           totalProblemCount={problems.length}
+          totalHistoryCount={counts.resolved}
+          historyScopeCount={historyScopeCount}
           historyMode={filter === 'resolved'}
+          historySort={historySort}
+          historyResponseFilter={historyResponseFilter}
+          onHistorySortChange={handleHistorySortChange}
+          onHistoryResponseFilterChange={handleHistoryResponseFilterChange}
           onSelect={setSelectedProblemId}
         />
         <ProblemDetail

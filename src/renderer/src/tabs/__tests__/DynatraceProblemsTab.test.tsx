@@ -53,6 +53,25 @@ const openProblem: DynatraceProblemRecord = {
   syncedAt: new Date().toISOString(),
 };
 
+const HISTORY_PREFERENCES_STORAGE_KEY = 'relay-dynatrace-history-preferences';
+
+function makeHistoryProblem(
+  problemId: string,
+  title: string,
+  startTime: number,
+): DynatraceProblemRecord {
+  return {
+    ...openProblem,
+    id: `pb-${problemId}`,
+    problemId,
+    displayId: `P-${problemId}`,
+    title,
+    status: 'CLOSED',
+    startTime,
+    endTime: startTime + 30 * 60_000,
+  };
+}
+
 function selectResolver(name = 'Ryan') {
   fireEvent.change(screen.getByRole('combobox', { name: 'Resolved by' }), {
     target: { value: name },
@@ -62,6 +81,7 @@ function selectResolver(name = 'Ryan') {
 describe('DynatraceProblemsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.removeItem(HISTORY_PREFERENCES_STORAGE_KEY);
     mocks.connectionState = 'online';
     mocks.hookValue = {
       problems: [openProblem],
@@ -235,6 +255,347 @@ describe('DynatraceProblemsTab', () => {
     const rows = within(queue).getAllByRole('button');
     expect(rows[0]).toHaveTextContent('Newer informational problem');
     expect(rows[1]).toHaveTextContent('Older availability problem');
+  });
+
+  it('sorts history by local disposition or response while keeping each group newest first', () => {
+    const newestWithoutResponse = makeHistoryProblem(
+      'no-response',
+      'Newest without local response',
+      400,
+    );
+    const newerWithNote = makeHistoryProblem('with-note', 'Newer with a NOC note', 300);
+    const olderAddressed = makeHistoryProblem('addressed', 'Older addressed locally', 100);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [olderAddressed, newestWithoutResponse, newerWithNote],
+      stateByProblemId: new Map([
+        [
+          olderAddressed.problemId,
+          {
+            id: 'state-addressed',
+            problemId: olderAddressed.problemId,
+            addressed: true,
+            addressedAt: '2026-07-22T20:00:00.000Z',
+            addressedBy: 'Ryan',
+          },
+        ],
+      ]),
+      notesByProblemId: new Map([
+        [
+          newerWithNote.problemId,
+          [
+            {
+              id: 'note-response',
+              problemId: newerWithNote.problemId,
+              note: 'Traffic shifted to the healthy pool.',
+              author: 'Tristan',
+              created: '2026-07-22T19:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*3/i }));
+
+    const queue = screen.getByRole('region', { name: 'Dynatrace problem history' });
+    const rowTitles = () =>
+      within(queue)
+        .getAllByRole('button')
+        .map((row) => row.textContent);
+
+    expect(rowTitles()).toEqual([
+      expect.stringContaining('Newest without local response'),
+      expect.stringContaining('Newer with a NOC note'),
+      expect.stringContaining('Older addressed locally'),
+    ]);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort history' }), {
+      target: { value: 'addressed-first' },
+    });
+    expect(rowTitles()).toEqual([
+      expect.stringContaining('Older addressed locally'),
+      expect.stringContaining('Newest without local response'),
+      expect.stringContaining('Newer with a NOC note'),
+    ]);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort history' }), {
+      target: { value: 'response-first' },
+    });
+    expect(rowTitles()).toEqual([
+      expect.stringContaining('Newer with a NOC note'),
+      expect.stringContaining('Older addressed locally'),
+      expect.stringContaining('Newest without local response'),
+    ]);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort history' }), {
+      target: { value: 'no-response-first' },
+    });
+    expect(rowTitles()).toEqual([
+      expect.stringContaining('Newest without local response'),
+      expect.stringContaining('Newer with a NOC note'),
+      expect.stringContaining('Older addressed locally'),
+    ]);
+  });
+
+  it('filters history by response type and exposes resolver, note count, and ticket metadata', () => {
+    const addressedWithTicket = makeHistoryProblem(
+      'addressed-ticket',
+      'Addressed with a ticket',
+      400,
+    );
+    const noteOnly = makeHistoryProblem('note-only', 'NOC note only', 300);
+    const ticketOnly = makeHistoryProblem('ticket-only', 'Ticket only', 200);
+    const noResponse = makeHistoryProblem('none', 'No local response', 100);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [addressedWithTicket, noteOnly, ticketOnly, noResponse],
+      stateByProblemId: new Map([
+        [
+          addressedWithTicket.problemId,
+          {
+            id: 'state-addressed-ticket',
+            problemId: addressedWithTicket.problemId,
+            addressed: true,
+            addressedAt: '2026-07-22T20:00:00.000Z',
+            addressedBy: 'Ryan',
+          },
+        ],
+      ]),
+      notesByProblemId: new Map([
+        [
+          addressedWithTicket.problemId,
+          [
+            {
+              id: 'ticket-addressed',
+              problemId: addressedWithTicket.problemId,
+              note: 'Ticket: INC0012345',
+              author: 'Ryan',
+              created: '2026-07-22T20:00:00.000Z',
+            },
+          ],
+        ],
+        [
+          noteOnly.problemId,
+          [
+            {
+              id: 'note-only',
+              problemId: noteOnly.problemId,
+              note: 'Restarted the unhealthy service.',
+              author: 'Tristan',
+              created: '2026-07-22T19:00:00.000Z',
+            },
+          ],
+        ],
+        [
+          ticketOnly.problemId,
+          [
+            {
+              id: 'ticket-only',
+              problemId: ticketOnly.problemId,
+              note: 'Ticket: REQ0042000',
+              author: 'Connor',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*4/i }));
+
+    const queue = screen.getByRole('region', { name: 'Dynatrace problem history' });
+    const resultStatus = within(queue).getByRole('status');
+    expect(resultStatus).toHaveTextContent('4 shown');
+    expect(
+      within(queue).getByRole('button', { name: /Addressed with a ticket/i }),
+    ).toHaveTextContent('Ryan · INC0012345');
+    expect(within(queue).getByRole('button', { name: /NOC note only/i })).toHaveTextContent(
+      'Tristan · 1 note',
+    );
+    expect(within(queue).getByRole('button', { name: /No local response/i })).toHaveTextContent(
+      'No local response',
+    );
+
+    const responseFilter = screen.getByRole('combobox', { name: 'Filter history by response' });
+    fireEvent.change(responseFilter, { target: { value: 'local-response' } });
+    expect(resultStatus).toHaveTextContent('3 shown');
+    expect(within(queue).getAllByRole('button')).toHaveLength(3);
+    expect(within(queue).queryByRole('button', { name: /No local response/i })).toBeNull();
+
+    fireEvent.change(responseFilter, { target: { value: 'notes' } });
+    expect(resultStatus).toHaveTextContent('1 shown');
+    expect(within(queue).getAllByRole('button')).toHaveLength(1);
+    expect(within(queue).getByRole('button', { name: /NOC note only/i })).toBeVisible();
+
+    fireEvent.change(responseFilter, { target: { value: 'tickets' } });
+    expect(within(queue).getAllByRole('button')).toHaveLength(2);
+    expect(within(queue).getByRole('button', { name: /Addressed with a ticket/i })).toBeVisible();
+    expect(within(queue).getByRole('button', { name: /Ticket only/i })).toBeVisible();
+
+    fireEvent.change(responseFilter, { target: { value: 'addressed' } });
+    expect(within(queue).getAllByRole('button')).toHaveLength(1);
+    expect(within(queue).getByRole('button', { name: /Addressed with a ticket/i })).toBeVisible();
+
+    fireEvent.change(responseFilter, { target: { value: 'none' } });
+    expect(within(queue).getAllByRole('button')).toHaveLength(1);
+    expect(within(queue).getByRole('button', { name: /No local response/i })).toBeVisible();
+  });
+
+  it('shows the newest ticket reference in compact History metadata', () => {
+    const multipleTickets = makeHistoryProblem('multiple-tickets', 'Multiple linked tickets', 200);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [multipleTickets],
+      notesByProblemId: new Map([
+        [
+          multipleTickets.problemId,
+          [
+            {
+              id: 'ticket-old',
+              problemId: multipleTickets.problemId,
+              note: 'Ticket: INC0011111',
+              author: 'Weston',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+            {
+              id: 'ticket-new',
+              problemId: multipleTickets.problemId,
+              note: 'Ticket: CHG0099999',
+              author: 'Weston',
+              created: '2026-07-22T20:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+
+    const row = screen.getByRole('button', { name: /Multiple linked tickets/i });
+    expect(row).toHaveTextContent('CHG0099999');
+    expect(row).not.toHaveTextContent('INC0011111');
+    expect(row.querySelector('.dt-problem-row__response-ticket')).toHaveAttribute(
+      'title',
+      'CHG0099999',
+    );
+  });
+
+  it('restores and persists History sort and response preferences', () => {
+    const ticketOnly = makeHistoryProblem('ticket-only', 'Ticket only', 200);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [ticketOnly],
+      notesByProblemId: new Map([
+        [
+          ticketOnly.problemId,
+          [
+            {
+              id: 'ticket-only',
+              problemId: ticketOnly.problemId,
+              note: 'Ticket: CHG0001234',
+              author: 'Weston',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+    localStorage.setItem(
+      HISTORY_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({ sort: 'response-first', responseFilter: 'tickets' }),
+    );
+
+    const { unmount } = render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+
+    const sort = screen.getByRole('combobox', { name: 'Sort history' });
+    const responseFilter = screen.getByRole('combobox', { name: 'Filter history by response' });
+    expect(sort).toHaveValue('response-first');
+    expect(responseFilter).toHaveValue('tickets');
+
+    fireEvent.change(sort, { target: { value: 'no-response-first' } });
+    fireEvent.change(responseFilter, { target: { value: 'none' } });
+    expect(JSON.parse(localStorage.getItem(HISTORY_PREFERENCES_STORAGE_KEY) ?? '{}')).toEqual({
+      sort: 'no-response-first',
+      responseFilter: 'none',
+    });
+
+    unmount();
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    expect(screen.getByRole('combobox', { name: 'Sort history' })).toHaveValue('no-response-first');
+    expect(screen.getByRole('combobox', { name: 'Filter history by response' })).toHaveValue(
+      'none',
+    );
+  });
+
+  it('distinguishes an empty response filter from an empty problem history', () => {
+    const ticketOnly = makeHistoryProblem('ticket-only', 'Ticket only', 200);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [ticketOnly],
+      notesByProblemId: new Map([
+        [
+          ticketOnly.problemId,
+          [
+            {
+              id: 'ticket-only',
+              problemId: ticketOnly.problemId,
+              note: 'Ticket: CHG0001234',
+              author: 'Weston',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter history by response' }), {
+      target: { value: 'notes' },
+    });
+
+    expect(screen.getByText('No history matches this response filter')).toBeVisible();
+    expect(screen.queryByText('No resolved problems in the one-year history')).toBeNull();
+  });
+
+  it('does not blame the response filter when search removes the History matches', () => {
+    const ticketOnly = makeHistoryProblem('ticket-only', 'Ticket only', 200);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [ticketOnly],
+      notesByProblemId: new Map([
+        [
+          ticketOnly.problemId,
+          [
+            {
+              id: 'ticket-only',
+              problemId: ticketOnly.problemId,
+              note: 'Ticket: CHG0001234',
+              author: 'Weston',
+              created: '2026-07-22T18:00:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter history by response' }), {
+      target: { value: 'tickets' },
+    });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search problems' }), {
+      target: { value: 'not present' },
+    });
+
+    expect(screen.getByText('No problems match this queue')).toBeVisible();
+    expect(screen.queryByText('No history matches this response filter')).toBeNull();
   });
 
   it('renders a bounded number of rows for a 3,000-problem queue', () => {

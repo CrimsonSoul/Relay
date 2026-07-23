@@ -121,4 +121,19 @@ describe('CloudStatusManager', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(update).not.toHaveBeenCalled();
   });
+
+  it('publishes unchanged degraded polls so clients can confirm consecutive snapshots', async () => {
+    const first = data([issue('warning')]);
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce({ ...first, lastUpdated: first.lastUpdated + 60_000 });
+    const manager = new CloudStatusManager(() => pb, fetchStatus);
+
+    await manager.refresh();
+    await manager.refresh();
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
 });

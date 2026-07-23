@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import {
   CURRENT_CLOUD_OUTAGE_WINDOW_MS,
+  getCurrentCloudIssues,
   getCurrentCloudOutages,
+  isCurrentCloudIssue,
   isCurrentCloudOutage,
 } from '../cloudStatus';
 
@@ -61,6 +63,40 @@ describe('current Cloud Status outages', () => {
     ).toBe(false);
     expect(isCurrentCloudOutage(item({ pubDate: 'not-a-date' }), NOW)).toBe(false);
     expect(isCurrentCloudOutage(item({ severity: 'warning' }), NOW)).toBe(false);
+  });
+
+  it('includes current warning and error records as active cloud issues', () => {
+    const outage = item({ id: 'outage' });
+    const degraded = item({ id: 'degraded', provider: 'azure', severity: 'warning' });
+
+    expect(isCurrentCloudIssue(outage, NOW)).toBe(true);
+    expect(isCurrentCloudIssue(degraded, NOW)).toBe(true);
+    expect(
+      getCurrentCloudIssues(
+        data([
+          outage,
+          degraded,
+          item({ id: 'info', severity: 'info' }),
+          item({ id: 'resolved', severity: 'resolved' }),
+        ]),
+        NOW,
+      ),
+    ).toEqual([outage, degraded]);
+  });
+
+  it('excludes stale and invalid warning records from active cloud issues', () => {
+    expect(
+      isCurrentCloudIssue(
+        item({
+          severity: 'warning',
+          pubDate: new Date(NOW - CURRENT_CLOUD_OUTAGE_WINDOW_MS - 1).toISOString(),
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+    expect(isCurrentCloudIssue(item({ severity: 'warning', pubDate: 'not-a-date' }), NOW)).toBe(
+      false,
+    );
   });
 
   it('keeps future-dated errors and selects only current outages', () => {

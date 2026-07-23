@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
   CLOUD_STATUS_PROVIDERS,
@@ -11,9 +11,10 @@ import { ProviderIcon } from '../components/icons/ProviderIcons';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { Tooltip } from '../components/Tooltip';
-import { getCurrentCloudOutages } from '../utils/cloudStatus';
+import { CURRENT_CLOUD_OUTAGE_WINDOW_MS, getCurrentCloudIssues } from '../utils/cloudStatus';
 
-type ProviderPosture = 'outage' | 'unknown' | 'clear';
+type ProviderPosture = 'outage' | 'degraded' | 'unknown' | 'clear';
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -53,36 +54,75 @@ function stripHtml(html: string): string {
   return new DOMParser().parseFromString(decoded, 'text/html').body.textContent ?? '';
 }
 
-function providerPosture(hasOutage: boolean, hasFeedError: boolean): ProviderPosture {
+function providerPosture(
+  hasOutage: boolean,
+  hasDegradation: boolean,
+  hasFeedError: boolean,
+): ProviderPosture {
   if (hasOutage) return 'outage';
+  if (hasDegradation) return 'degraded';
   if (hasFeedError) return 'unknown';
   return 'clear';
 }
 
 function postureLabel(posture: ProviderPosture): string {
   if (posture === 'outage') return 'Outage';
+  if (posture === 'degraded') return 'Degraded';
   if (posture === 'unknown') return 'Unknown';
-  return 'No outage';
+  return 'Operational';
 }
 
 function postureRank(posture: ProviderPosture): number {
   if (posture === 'outage') return 0;
-  if (posture === 'unknown') return 1;
-  return 2;
+  if (posture === 'degraded') return 1;
+  if (posture === 'unknown') return 2;
+  return 3;
 }
 
 function outageCountLabel(count: number): string {
   return `${count} active ${count === 1 ? 'outage' : 'outages'}`;
 }
 
+function degradedCountLabel(count: number): string {
+  return `${count} degraded ${count === 1 ? 'issue' : 'issues'}`;
+}
+
+function providerIssueCountLabel(count: number): string {
+  if (count === 0) return 'No active issues';
+  return `${count} active ${count === 1 ? 'issue' : 'issues'}`;
+}
+
+function providerDetailCountLabel(count: number, unavailable: boolean): string {
+  if (count > 0) return providerIssueCountLabel(count);
+  return unavailable ? 'Coverage unavailable' : 'No active issues';
+}
+
+function providerDetailDescription(count: number, unavailable: boolean): string {
+  if (unavailable) return 'Relay cannot currently verify this provider feed.';
+  if (count === 0) return 'No current outage or degradation is reported.';
+  return 'Current provider incidents, ordered newest first.';
+}
+
+function activeIssueCountLabel(outageCount: number, degradedCount: number): string {
+  const labels: string[] = [];
+  if (outageCount > 0) labels.push(outageCountLabel(outageCount));
+  if (degradedCount > 0) labels.push(degradedCountLabel(degradedCount));
+  return labels.length > 0 ? labels.join(' · ') : 'No active vendor issues';
+}
+
 function sortProviders(
   providers: readonly CloudStatusProvider[],
   outageProviders: ReadonlySet<CloudStatusProvider>,
+  degradedProviders: ReadonlySet<CloudStatusProvider>,
   errorProviders: ReadonlySet<CloudStatusProvider>,
 ): CloudStatusProvider[] {
   return [...providers].sort((a, b) => {
-    const aRank = postureRank(providerPosture(outageProviders.has(a), errorProviders.has(a)));
-    const bRank = postureRank(providerPosture(outageProviders.has(b), errorProviders.has(b)));
+    const aRank = postureRank(
+      providerPosture(outageProviders.has(a), degradedProviders.has(a), errorProviders.has(a)),
+    );
+    const bRank = postureRank(
+      providerPosture(outageProviders.has(b), degradedProviders.has(b), errorProviders.has(b)),
+    );
     return aRank - bRank || providers.indexOf(a) - providers.indexOf(b);
   });
 }
@@ -125,59 +165,66 @@ const ProviderActions: React.FC<{ provider: CloudStatusProvider }> = ({ provider
 const ProviderRow: React.FC<{
   provider: CloudStatusProvider;
   hasOutage: boolean;
+  hasDegradation: boolean;
   hasFeedError: boolean;
-}> = ({ provider, hasOutage, hasFeedError }) => {
-  const posture = providerPosture(hasOutage, hasFeedError);
+  issueCount: number;
+  onSelect: (provider: CloudStatusProvider) => void;
+  buttonRef: (node: HTMLButtonElement | null) => void;
+}> = ({ provider, hasOutage, hasDegradation, hasFeedError, issueCount, onSelect, buttonRef }) => {
+  const posture = providerPosture(hasOutage, hasDegradation, hasFeedError);
+  const stateId = `cloud-status-${provider}-state`;
+  const countId = `cloud-status-${provider}-count`;
   return (
     <article className={`cloud-status-provider cloud-status-provider--${posture}`}>
-      <span
-        className={`cloud-status-provider__signal cloud-status-provider__signal--${posture}`}
-        aria-hidden="true"
-      />
-      <span className="cloud-status-provider__name">
-        <ProviderIcon provider={provider} size={16} />
-        {providerLabel(provider)}
-      </span>
-      <span className={`cloud-status-provider__state cloud-status-provider__state--${posture}`}>
-        {postureLabel(posture)}
-      </span>
-      <ProviderActions provider={provider} />
-    </article>
-  );
-};
-
-const ProviderChip: React.FC<{
-  provider: CloudStatusProvider;
-  hasOutage: boolean;
-  hasFeedError: boolean;
-}> = ({ provider, hasOutage, hasFeedError }) => {
-  const posture = providerPosture(hasOutage, hasFeedError);
-  return (
-    <article
-      className={`cloud-status-provider-chip cloud-status-provider-chip--${posture}`}
-      aria-label={`${providerLabel(provider)} - ${postureLabel(posture)}`}
-    >
-      <span className="cloud-status-provider-chip__identity">
-        <ProviderIcon provider={provider} size={15} />
-        <span className="cloud-status-provider-chip__name">{providerLabel(provider)}</span>
-      </span>
-      <span
-        className={`cloud-status-provider-chip__state cloud-status-provider-chip__state--${posture}`}
+      <button
+        ref={buttonRef}
+        type="button"
+        className="cloud-status-provider__open"
+        onClick={() => onSelect(provider)}
+        aria-label={`View ${providerLabel(provider)} status details`}
+        aria-describedby={`${stateId} ${countId}`}
       >
-        {postureLabel(posture)}
-      </span>
-      <ProviderActions provider={provider} />
+        <span
+          className={`cloud-status-provider__signal cloud-status-provider__signal--${posture}`}
+          aria-hidden="true"
+        />
+        <span className="cloud-status-provider__identity">
+          <span className="cloud-status-provider__name">
+            <ProviderIcon provider={provider} size={16} />
+            {providerLabel(provider)}
+          </span>
+          <span id={countId} className="cloud-status-provider__count">
+            {providerDetailCountLabel(issueCount, hasFeedError)}
+          </span>
+        </span>
+        <span
+          id={stateId}
+          className={`cloud-status-provider__state cloud-status-provider__state--${posture}`}
+        >
+          {postureLabel(posture)}
+        </span>
+        <span className="cloud-status-provider__chevron" aria-hidden="true">
+          ›
+        </span>
+      </button>
     </article>
   );
 };
 
 const OutageRow: React.FC<{ item: CloudStatusItem }> = ({ item }) => {
   const description = useMemo(() => stripHtml(item.description), [item.description]);
+  const degraded = item.severity === 'warning';
+  const severityLabel = degraded ? 'Degraded' : 'Outage';
   return (
-    <article className="cloud-status-outage">
+    <article className={`cloud-status-outage${degraded ? ' cloud-status-outage--degraded' : ''}`}>
       <div className="cloud-status-outage__meta">
-        <span className="cloud-status-outage__severity">Outage</span>
-        <span className="cloud-status-outage__provider">{providerLabel(item.provider)}</span>
+        <span
+          className={`cloud-status-outage__severity${
+            degraded ? ' cloud-status-outage__severity--degraded' : ''
+          }`}
+        >
+          {severityLabel}
+        </span>
         <time dateTime={item.pubDate}>{formatLocalTime(item.pubDate)}</time>
       </div>
       <h3>{item.title}</h3>
@@ -204,40 +251,24 @@ type StatusSummary = {
 
 function statusSummary(
   outageCount: number,
+  degradedCount: number,
   hasFeedErrors: boolean,
   snapshotUnavailable: boolean,
 ): StatusSummary {
   if (snapshotUnavailable) return { tone: 'unknown', label: 'Coverage unavailable' };
-  if (outageCount > 0) return { tone: 'outage', label: outageCountLabel(outageCount) };
+  if (outageCount > 0) {
+    return { tone: 'outage', label: activeIssueCountLabel(outageCount, degradedCount) };
+  }
+  if (degradedCount > 0) {
+    return { tone: 'degraded', label: degradedCountLabel(degradedCount) };
+  }
   if (hasFeedErrors) return { tone: 'unknown', label: 'Coverage incomplete' };
-  return { tone: 'clear', label: 'No active vendor outages' };
-}
-
-function allClearCopy(
-  hasFeedErrors: boolean,
-  snapshotUnavailable: boolean,
-): { title: string; detail: string } {
-  if (snapshotUnavailable) {
-    return {
-      title: 'No status snapshot available',
-      detail: 'Relay has not received provider status data yet.',
-    };
-  }
-  if (hasFeedErrors) {
-    return {
-      title: 'No reported outages from available feeds',
-      detail: 'Relay is showing the status available from responding provider feeds.',
-    };
-  }
-  return {
-    title: 'No reported outages',
-    detail: 'Relay is receiving status from every monitored provider.',
-  };
+  return { tone: 'clear', label: 'No active vendor issues' };
 }
 
 const CoverageStateIcon: React.FC<{ unknown: boolean }> = ({ unknown }) => (
   <svg
-    className={`cloud-status__all-clear-icon${unknown ? ' cloud-status__all-clear-icon--unknown' : ''}`}
+    className={`cloud-status__coverage-icon${unknown ? ' cloud-status__coverage-icon--unknown' : ''}`}
     width="40"
     height="40"
     viewBox="0 0 24 24"
@@ -282,23 +313,31 @@ const FeedUnavailableNotice: React.FC<{
 };
 
 type StatusWorkspaceProps = {
-  outages: CloudStatusItem[];
+  issues: CloudStatusItem[];
   providerOrder: CloudStatusProvider[];
+  providerIssueCounts: ReadonlyMap<CloudStatusProvider, number>;
   outageProviders: ReadonlySet<CloudStatusProvider>;
+  degradedProviders: ReadonlySet<CloudStatusProvider>;
   errorProviders: ReadonlySet<CloudStatusProvider>;
-  snapshotUnavailable: boolean;
+  selectedProvider: CloudStatusProvider | null;
+  onSelectProvider: (provider: CloudStatusProvider) => void;
+  onShowOverview: () => void;
+  onProviderButtonRef: (provider: CloudStatusProvider, node: HTMLButtonElement | null) => void;
 };
 
-const OutageWorkspace: React.FC<StatusWorkspaceProps> = ({
-  outages,
+const ProviderOverviewWorkspace: React.FC<StatusWorkspaceProps> = ({
   providerOrder,
+  providerIssueCounts,
   outageProviders,
+  degradedProviders,
   errorProviders,
+  onSelectProvider,
+  onProviderButtonRef,
 }) => (
-  <div className="cloud-status__workspace">
-    <section className="cloud-status__providers-panel" aria-label="Provider coverage">
+  <div className="cloud-status__workspace cloud-status__workspace--overview">
+    <section className="cloud-status__providers-panel" aria-label="Provider overview">
       <div className="cloud-status__section-heading">
-        <span>Provider coverage</span>
+        <span>Provider overview</span>
         <span>{CLOUD_STATUS_PROVIDER_ORDER.length} monitored</span>
       </div>
       <div className="cloud-status__provider-list">
@@ -307,73 +346,168 @@ const OutageWorkspace: React.FC<StatusWorkspaceProps> = ({
             key={provider}
             provider={provider}
             hasOutage={outageProviders.has(provider)}
+            hasDegradation={degradedProviders.has(provider)}
             hasFeedError={errorProviders.has(provider)}
+            issueCount={providerIssueCounts.get(provider) ?? 0}
+            onSelect={onSelectProvider}
+            buttonRef={(node) => onProviderButtonRef(provider, node)}
           />
-        ))}
-      </div>
-    </section>
-    <section className="cloud-status__outages-panel" aria-label="Active outages">
-      <div className="cloud-status__section-heading">
-        <span>Active outages</span>
-        <span>{outages.length} shown</span>
-      </div>
-      <div className="cloud-status__outage-list">
-        {outages.map((item) => (
-          <OutageRow key={item.id} item={item} />
         ))}
       </div>
     </section>
   </div>
 );
 
-const AllClearWorkspace: React.FC<Omit<StatusWorkspaceProps, 'outages'>> = ({
-  providerOrder,
+const ProviderDetailWorkspace: React.FC<StatusWorkspaceProps> = ({
+  issues,
   outageProviders,
+  degradedProviders,
   errorProviders,
-  snapshotUnavailable,
+  selectedProvider,
+  onShowOverview,
 }) => {
-  const hasFeedErrors = errorProviders.size > 0;
-  const copy = allClearCopy(hasFeedErrors, snapshotUnavailable);
+  const backButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selectedProvider) backButtonRef.current?.focus();
+  }, [selectedProvider]);
+
+  if (!selectedProvider) return null;
+
+  const selectedIssues = issues.filter((item) => item.provider === selectedProvider);
+  const posture = providerPosture(
+    outageProviders.has(selectedProvider),
+    degradedProviders.has(selectedProvider),
+    errorProviders.has(selectedProvider),
+  );
+  const label = providerLabel(selectedProvider);
+  const unavailable = posture === 'unknown';
 
   return (
-    <div className="cloud-status__workspace cloud-status__workspace--clear">
-      <section className="cloud-status__all-clear" aria-label="Provider coverage">
-        <div className="cloud-status__section-heading">
-          <span>Provider coverage</span>
-          <span>{CLOUD_STATUS_PROVIDER_ORDER.length} monitored providers</span>
+    <div className="cloud-status__workspace cloud-status__workspace--detail">
+      <section className="cloud-status__provider-detail" aria-label={`${label} status details`}>
+        <div className="cloud-status__section-heading cloud-status__section-heading--detail">
+          <button
+            ref={backButtonRef}
+            type="button"
+            className="cloud-status__back"
+            onClick={onShowOverview}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            All providers
+          </button>
+          <span>{providerDetailCountLabel(selectedIssues.length, unavailable)}</span>
         </div>
-        <div className="cloud-status__all-clear-body">
-          <CoverageStateIcon unknown={hasFeedErrors} />
-          <h3>{copy.title}</h3>
-          <p>{copy.detail}</p>
-          <div className="cloud-status__provider-chips">
-            {providerOrder.map((provider) => (
-              <ProviderChip
-                key={provider}
-                provider={provider}
-                hasOutage={outageProviders.has(provider)}
-                hasFeedError={errorProviders.has(provider)}
-              />
+
+        <div className="cloud-status__provider-detail-header">
+          <div className="cloud-status__provider-detail-identity">
+            <ProviderIcon provider={selectedProvider} size={22} />
+            <div>
+              <h3>{label}</h3>
+              <p>{providerDetailDescription(selectedIssues.length, unavailable)}</p>
+            </div>
+          </div>
+          <span className={`cloud-status-provider__state cloud-status-provider__state--${posture}`}>
+            {postureLabel(posture)}
+          </span>
+          <ProviderActions provider={selectedProvider} />
+        </div>
+
+        {selectedIssues.length > 0 ? (
+          <div className="cloud-status__outage-list">
+            {selectedIssues.map((item) => (
+              <OutageRow key={item.id} item={item} />
             ))}
           </div>
-        </div>
+        ) : (
+          <div className="cloud-status__provider-detail-empty">
+            <CoverageStateIcon unknown={unavailable} />
+            <h3>
+              {unavailable
+                ? `Status feed unavailable for ${label}`
+                : `No active issues for ${label}`}
+            </h3>
+            <p>
+              {unavailable
+                ? 'Use the provider links above to verify its current public status.'
+                : 'Relay will surface new outages and degradations here when they are reported.'}
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );
 };
 
 const StatusWorkspace: React.FC<StatusWorkspaceProps> = (props) => {
-  if (props.outages.length === 0) {
-    return <AllClearWorkspace {...props} />;
+  if (props.selectedProvider) {
+    return <ProviderDetailWorkspace {...props} />;
   }
-  return <OutageWorkspace {...props} />;
+  return <ProviderOverviewWorkspace {...props} />;
 };
 
 export const CloudStatusTab: React.FC<{
   statusData: CloudStatusData | null;
   loading: boolean;
   refetch: () => void;
-}> = ({ statusData, loading, refetch }) => {
+  selectedProvider?: CloudStatusProvider | null;
+  onSelectedProviderChange?: (provider: CloudStatusProvider | null) => void;
+}> = ({
+  statusData,
+  loading,
+  refetch,
+  selectedProvider: controlledSelectedProvider,
+  onSelectedProviderChange,
+}) => {
+  const [issueEvaluationTime, setIssueEvaluationTime] = useState(() => Date.now());
+  const [internalSelectedProvider, setInternalSelectedProvider] =
+    useState<CloudStatusProvider | null>(null);
+  const selectedProvider =
+    controlledSelectedProvider === undefined
+      ? internalSelectedProvider
+      : controlledSelectedProvider;
+  const providerButtonRefs = useRef(new Map<CloudStatusProvider, HTMLButtonElement>());
+  const focusReturnProviderRef = useRef<CloudStatusProvider | null>(null);
+  const handleProviderButtonRef = useCallback(
+    (provider: CloudStatusProvider, node: HTMLButtonElement | null) => {
+      if (node) {
+        providerButtonRefs.current.set(provider, node);
+      } else {
+        providerButtonRefs.current.delete(provider);
+      }
+    },
+    [],
+  );
+  const handleSelectProvider = useCallback(
+    (provider: CloudStatusProvider) => {
+      if (controlledSelectedProvider === undefined) setInternalSelectedProvider(provider);
+      onSelectedProviderChange?.(provider);
+    },
+    [controlledSelectedProvider, onSelectedProviderChange],
+  );
+  const handleShowOverview = useCallback(() => {
+    focusReturnProviderRef.current = selectedProvider;
+    if (controlledSelectedProvider === undefined) setInternalSelectedProvider(null);
+    onSelectedProviderChange?.(null);
+  }, [controlledSelectedProvider, onSelectedProviderChange, selectedProvider]);
+  useEffect(() => {
+    if (selectedProvider !== null) return;
+    const provider = focusReturnProviderRef.current;
+    if (!provider) return;
+    focusReturnProviderRef.current = null;
+    providerButtonRefs.current.get(provider)?.focus();
+  }, [selectedProvider]);
   const errorProviders = useMemo(
     () =>
       new Set(
@@ -381,19 +515,60 @@ export const CloudStatusTab: React.FC<{
       ),
     [statusData],
   );
-  const outages = useMemo(
+  const issues = useMemo(
     () =>
       statusData
-        ? getCurrentCloudOutages(statusData).toSorted(
+        ? getCurrentCloudIssues(statusData, Math.max(issueEvaluationTime, Date.now())).toSorted(
             (a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime(),
           )
         : [],
-    [statusData],
+    [issueEvaluationTime, statusData],
   );
-  const outageProviders = useMemo(() => new Set(outages.map((item) => item.provider)), [outages]);
+  const nextIssueExpiration = useMemo(
+    () =>
+      issues.reduce((earliest, item) => {
+        const publishedAt = new Date(item.pubDate).getTime();
+        const expiresAt = publishedAt + CURRENT_CLOUD_OUTAGE_WINDOW_MS + 1;
+        return Math.min(earliest, expiresAt);
+      }, Number.POSITIVE_INFINITY),
+    [issues],
+  );
+  useEffect(() => {
+    if (!Number.isFinite(nextIssueExpiration)) return;
+    const delay = Math.min(MAX_TIMEOUT_MS, Math.max(1, nextIssueExpiration - Date.now()));
+    const timeoutId = window.setTimeout(() => setIssueEvaluationTime(Date.now()), delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [issueEvaluationTime, nextIssueExpiration]);
+  const outageCount = useMemo(
+    () => issues.filter((item) => item.severity === 'error').length,
+    [issues],
+  );
+  const degradedCount = issues.length - outageCount;
+  const providerIssueCounts = useMemo(() => {
+    const counts = new Map<CloudStatusProvider, number>();
+    for (const item of issues) {
+      counts.set(item.provider, (counts.get(item.provider) ?? 0) + 1);
+    }
+    return counts;
+  }, [issues]);
+  const outageProviders = useMemo(
+    () => new Set(issues.filter((item) => item.severity === 'error').map((item) => item.provider)),
+    [issues],
+  );
+  const degradedProviders = useMemo(
+    () =>
+      new Set(issues.filter((item) => item.severity === 'warning').map((item) => item.provider)),
+    [issues],
+  );
   const providerOrder = useMemo(
-    () => sortProviders(CLOUD_STATUS_PROVIDER_ORDER, outageProviders, errorProviders),
-    [errorProviders, outageProviders],
+    () =>
+      sortProviders(
+        CLOUD_STATUS_PROVIDER_ORDER,
+        outageProviders,
+        degradedProviders,
+        errorProviders,
+      ),
+    [degradedProviders, errorProviders, outageProviders],
   );
 
   if (!statusData && loading) return <TabFallback />;
@@ -401,14 +576,14 @@ export const CloudStatusTab: React.FC<{
   const snapshotUnavailable = statusData === null;
   const hasFeedErrors = errorProviders.size > 0;
   const updatedLabel = `Updated ${lastUpdatedLabel(statusData?.lastUpdated ?? 0)}`;
-  const summary = statusSummary(outages.length, hasFeedErrors, snapshotUnavailable);
+  const summary = statusSummary(outageCount, degradedCount, hasFeedErrors, snapshotUnavailable);
 
   return (
     <div className="cloud-status">
       <header className="cloud-status__header">
         <div>
           <div className="cloud-status__context">Service status</div>
-          <h2 className="cloud-status__title">External Outages</h2>
+          <h2 className="cloud-status__title">External Status</h2>
         </div>
         <div className="cloud-status__meta">
           <span>{updatedLabel}</span>
@@ -453,11 +628,16 @@ export const CloudStatusTab: React.FC<{
       />
 
       <StatusWorkspace
-        outages={outages}
+        issues={issues}
         providerOrder={providerOrder}
+        providerIssueCounts={providerIssueCounts}
         outageProviders={outageProviders}
+        degradedProviders={degradedProviders}
         errorProviders={errorProviders}
-        snapshotUnavailable={snapshotUnavailable}
+        selectedProvider={selectedProvider}
+        onSelectProvider={handleSelectProvider}
+        onShowOverview={handleShowOverview}
+        onProviderButtonRef={handleProviderButtonRef}
       />
 
       <StatusBar
@@ -466,7 +646,9 @@ export const CloudStatusTab: React.FC<{
         right={
           <span className="cloud-status__status-summary">
             {CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored ·{' '}
-            {snapshotUnavailable ? 'coverage unavailable' : outageCountLabel(outages.length)}
+            {snapshotUnavailable
+              ? 'coverage unavailable'
+              : activeIssueCountLabel(outageCount, degradedCount)}
           </span>
         }
       />

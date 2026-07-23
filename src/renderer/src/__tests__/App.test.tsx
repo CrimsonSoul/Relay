@@ -15,6 +15,7 @@ import {
   type KnowledgeOpenRequest,
 } from '../features/knowledge/knowledgeNavigation';
 import { WEB_RUNTIME } from '@shared/runtime';
+import type { CloudStatusProvider } from '@shared/ipc';
 
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
@@ -75,6 +76,11 @@ let lastKnowledgeWorkspaceProps: {
   servers: unknown[];
   onAddToAssembler: (contact: never) => void;
 } | null = null;
+let lastCloudStatusTabProps: {
+  selectedProvider?: CloudStatusProvider | null;
+  onSelectedProviderChange?: (provider: CloudStatusProvider | null) => void;
+} | null = null;
+let lastCloudStatusOpenProvider: ((provider: CloudStatusProvider) => void) | undefined;
 const mockDynatraceDashboards: DynatraceDashboardState[] = [
   {
     id: 'dt_1',
@@ -326,7 +332,10 @@ vi.mock('../features/knowledge/KnowledgeWorkspace', () => ({
 }));
 
 vi.mock('../tabs/CloudStatusTab', () => ({
-  CloudStatusTab: () => <div data-testid="cloud-status-tab" />,
+  CloudStatusTab: (props: NonNullable<typeof lastCloudStatusTabProps>) => {
+    lastCloudStatusTabProps = props;
+    return <div data-testid="cloud-status-tab" />;
+  },
 }));
 
 vi.mock('../tabs/AlertsTab', () => ({
@@ -431,11 +440,17 @@ vi.mock('../utils/logger', () => ({
 }));
 
 vi.mock('../hooks/useAppCloudStatus', () => ({
-  useAppCloudStatus: () => ({
-    statusData: null,
-    loading: false,
-    refetch: vi.fn(),
-  }),
+  useAppCloudStatus: (
+    _showToast: unknown,
+    onOpenProvider?: (provider: CloudStatusProvider) => void,
+  ) => {
+    lastCloudStatusOpenProvider = onOpenProvider;
+    return {
+      statusData: null,
+      loading: false,
+      refetch: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('../hooks/useDynatraceDashboards', () => ({
@@ -467,6 +482,8 @@ describe('MainApp', () => {
     lastSettingsModalProps = null;
     lastDataManagerModalProps = null;
     lastKnowledgeWorkspaceProps = null;
+    lastCloudStatusTabProps = null;
+    lastCloudStatusOpenProvider = undefined;
     lastPersonnelTabProps = null;
     lastPopoutBoardProps = null;
     localStorage.removeItem('relay-oncall-display-size');
@@ -488,6 +505,8 @@ describe('MainApp', () => {
     lastSidebarProps = null;
     lastSettingsModalProps = null;
     lastDataManagerModalProps = null;
+    lastCloudStatusTabProps = null;
+    lastCloudStatusOpenProvider = undefined;
     acknowledgeKnowledgeDestinationOpen('wiki');
     acknowledgeKnowledgeDestinationOpen('contacts');
     acknowledgeKnowledgeDestinationOpen('servers');
@@ -841,6 +860,20 @@ describe('MainApp', () => {
       fireEvent.keyDown(globalThis, { key: '5', metaKey: true });
     });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
+  });
+
+  it('opens the selected provider when a cloud-status toast action is used', async () => {
+    mockActiveTab = 'Status';
+    renderApp();
+    await vi.waitFor(() => expect(screen.getByTestId('cloud-status-tab')).toBeInTheDocument());
+
+    act(() => lastCloudStatusOpenProvider?.('azure'));
+
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
+    expect(lastCloudStatusTabProps?.selectedProvider).toBe('azure');
+
+    act(() => lastCloudStatusTabProps?.onSelectedProviderChange?.(null));
+    expect(lastCloudStatusTabProps?.selectedProvider).toBeNull();
   });
 
   it('navigates tab on Cmd+6 (Problems)', () => {

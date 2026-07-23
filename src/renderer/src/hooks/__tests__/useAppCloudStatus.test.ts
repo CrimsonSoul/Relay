@@ -81,8 +81,13 @@ function snapshot(data: CloudStatusData): CloudStatusSnapshotRecord {
   };
 }
 
+function nextPoll(data: CloudStatusData): CloudStatusData {
+  return { ...data, lastUpdated: data.lastUpdated + 60_000 };
+}
+
 describe('useAppCloudStatus', () => {
   const showToast = vi.fn();
+  const openProvider = vi.fn();
   const getCloudStatus = vi.fn();
 
   beforeEach(() => {
@@ -151,7 +156,7 @@ describe('useAppCloudStatus', () => {
 
   it('notifies only when a new outage arrives after the baseline', async () => {
     collectionState.data = [snapshot(status([item({ id: 'warning-1', severity: 'warning' })]))];
-    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
     await act(async () => Promise.resolve());
 
     collectionState.data = [
@@ -168,9 +173,16 @@ describe('useAppCloudStatus', () => {
       expect(showToast).toHaveBeenCalledWith(
         'AWS Outage: S3 outage',
         'error',
-        expect.objectContaining({ title: 'Cloud outage', delivery: 'cloud-outage' }),
+        expect.objectContaining({
+          title: 'Cloud outage',
+          delivery: 'cloud-outage',
+          action: expect.objectContaining({ label: 'View provider' }),
+        }),
       ),
     );
+    const options = showToast.mock.calls[0]?.[2];
+    options?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('aws');
   });
 
   it('does not repeat an active outage received over realtime', async () => {
@@ -240,7 +252,7 @@ describe('useAppCloudStatus', () => {
     expect(showToast).toHaveBeenCalledOnce();
   });
 
-  it.each(['warning', 'info', 'resolved'] as const)(
+  it.each(['info', 'resolved'] as const)(
     'does not notify for %s-only updates',
     async (severity) => {
       collectionState.data = [snapshot(status())];
@@ -254,6 +266,250 @@ describe('useAppCloudStatus', () => {
       expect(showToast).not.toHaveBeenCalled();
     },
   );
+
+  it('requires two consecutive snapshots before notifying for a degradation', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
+    await act(async () => Promise.resolve());
+
+    const degraded = status([
+      item({ id: 'degraded-1', severity: 'warning', title: 'Elevated API latency' }),
+    ]);
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'AWS Degraded: Elevated API latency',
+        'warning',
+        expect.objectContaining({
+          title: 'Cloud degradation',
+          delivery: 'cloud-degradation',
+          action: expect.objectContaining({ label: 'View provider' }),
+        }),
+      ),
+    );
+    const options = showToast.mock.calls[0]?.[2];
+    options?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('aws');
+  });
+
+  it('does not count the same provider poll twice', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const degraded = status([item({ severity: 'warning', title: 'Elevated API latency' })]);
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+  });
+
+  it('keeps a degradation already present at startup as a silent baseline', async () => {
+    const degraded = status([
+      item({ id: 'degraded-1', severity: 'warning', title: 'Elevated API latency' }),
+    ]);
+    collectionState.data = [snapshot(degraded)];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not repeat or update a degradation toast until the provider recovers', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const degraded = status([item({ severity: 'warning', title: 'Elevated API latency' })]);
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(degraded);
+    collectionState.data = [snapshot(confirmedDegradation)];
+    rerender();
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+
+    showToast.mockClear();
+    collectionState.data = [
+      snapshot({
+        ...status([
+          item({ severity: 'warning', title: 'Elevated API latency' }),
+          item({ id: 'degraded-2', severity: 'warning', title: 'Investigating latency' }),
+        ]),
+        lastUpdated: confirmedDegradation.lastUpdated + 60_000,
+      }),
+    ];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('becomes eligible again only after an operational snapshot', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const degraded = status([item({ severity: 'warning', title: 'Elevated API latency' })]);
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(degraded);
+    collectionState.data = [snapshot(confirmedDegradation)];
+    rerender();
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+
+    showToast.mockClear();
+    const operational = {
+      ...status(),
+      lastUpdated: confirmedDegradation.lastUpdated + 60_000,
+    };
+    collectionState.data = [snapshot(operational)];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    const reopenedDegradation = {
+      ...degraded,
+      lastUpdated: operational.lastUpdated + 60_000,
+    };
+    collectionState.data = [snapshot(reopenedDegradation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(reopenedDegradation))];
+    rerender();
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+  });
+
+  it('does not treat a provider feed error as recovery', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const degraded = status([item({ severity: 'warning', title: 'Elevated API latency' })]);
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(degraded);
+    collectionState.data = [snapshot(confirmedDegradation)];
+    rerender();
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+
+    showToast.mockClear();
+    collectionState.data = [
+      snapshot({
+        ...nextPoll(confirmedDegradation),
+        errors: [{ provider: 'aws', message: 'Feed unavailable' }],
+      }),
+    ];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    const returnedDegradation = {
+      ...degraded,
+      lastUpdated: confirmedDegradation.lastUpdated + 120_000,
+    };
+    collectionState.data = [snapshot(returnedDegradation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(returnedDegradation))];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not notify for scheduled maintenance', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const maintenance = status([
+      item({ severity: 'warning', title: 'Scheduled database maintenance' }),
+    ]);
+    collectionState.data = [snapshot(maintenance)];
+    rerender();
+    await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(maintenance))];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('treats emergency maintenance as an actionable degradation', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const emergency = status([
+      item({ severity: 'warning', title: 'Emergency maintenance affecting API traffic' }),
+    ]);
+    collectionState.data = [snapshot(emergency)];
+    rerender();
+    await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(emergency))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'AWS Degraded: Emergency maintenance affecting API traffic',
+        'warning',
+        expect.objectContaining({ delivery: 'cloud-degradation' }),
+      ),
+    );
+  });
+
+  it('batches simultaneous provider degradations in stable provider order', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
+    await act(async () => Promise.resolve());
+
+    const degraded = status([
+      item({
+        id: 'azure-degraded',
+        provider: 'azure',
+        severity: 'warning',
+        title: 'Storage latency',
+      }),
+      item({ id: 'aws-degraded', severity: 'warning', title: 'Elevated API latency' }),
+    ]);
+    collectionState.data = [snapshot(degraded)];
+    rerender();
+    await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'AWS Degraded: Elevated API latency (+1 more)',
+        'warning',
+        expect.objectContaining({ delivery: 'cloud-degradation' }),
+      ),
+    );
+    const options = showToast.mock.calls[0]?.[2];
+    options?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('aws');
+  });
 
   it('does not replay a cached outage when the same realtime snapshot arrives', async () => {
     const cached = status([item()]);

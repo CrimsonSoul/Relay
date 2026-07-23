@@ -25,7 +25,12 @@ import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { StartupErrorScreen } from './components/StartupErrorScreen';
 import { ConnectionManager } from './components/ConnectionManager';
-import { Contact, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
+import {
+  Contact,
+  type CloudStatusProvider,
+  type PbAuthSession,
+  type PublicRelayConfig,
+} from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
@@ -179,12 +184,6 @@ export function MainApp({
   const { data, boardSettings, setBoardSettings } = useAppData(showToast);
 
   const {
-    statusData: cloudStatusData,
-    loading: cloudStatusLoading,
-    refetch: cloudStatusRefetch,
-  } = useAppCloudStatus(showToast);
-
-  const {
     activeTab,
     setActiveTab,
     selectedGroupIds,
@@ -199,6 +198,20 @@ export function MainApp({
     handleRemoveManual,
     handleToggleGroup,
   } = useAppAssembler();
+  const [selectedCloudStatusProvider, setSelectedCloudStatusProvider] =
+    useState<CloudStatusProvider | null>(null);
+  const handleOpenCloudStatusProvider = useCallback(
+    (provider: CloudStatusProvider) => {
+      setSelectedCloudStatusProvider(provider);
+      setActiveTab('Status');
+    },
+    [setActiveTab],
+  );
+  const {
+    statusData: cloudStatusData,
+    loading: cloudStatusLoading,
+    refetch: cloudStatusRefetch,
+  } = useAppCloudStatus(showToast, handleOpenCloudStatusProvider);
   const [knowledgeDestination, setKnowledgeDestination] = useState<KnowledgeDestination>('home');
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
@@ -471,6 +484,8 @@ export function MainApp({
                       statusData={cloudStatusData}
                       loading={cloudStatusLoading}
                       refetch={cloudStatusRefetch}
+                      selectedProvider={selectedCloudStatusProvider}
+                      onSelectedProviderChange={setSelectedCloudStatusProvider}
                     />
                   </Suspense>
                 </ErrorBoundary>

@@ -73,7 +73,7 @@ export class CloudStatusManager {
       const next = await this.fetchStatus(this.snapshot);
       const nextHash = snapshotHash(next);
       this.snapshot = next;
-      if (nextHash !== this.contentHash) {
+      if (nextHash !== this.contentHash || isDegraded(next)) {
         await this.persistSnapshot(next, nextHash);
         this.contentHash = nextHash;
       }

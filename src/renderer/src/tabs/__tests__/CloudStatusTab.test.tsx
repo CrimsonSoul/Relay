@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
+import { CURRENT_CLOUD_OUTAGE_WINDOW_MS } from '../../utils/cloudStatus';
 
 vi.mock('../../components/icons/ProviderIcons', () => ({
   ProviderIcon: ({ provider }: { provider: string }) => (
@@ -77,24 +78,24 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={null} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
-    expect(screen.getByText('No status snapshot available')).toBeInTheDocument();
     expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
     expect(screen.getAllByText('Unknown')).toHaveLength(10);
-    expect(screen.queryByText('No reported outages')).not.toBeInTheDocument();
-    expect(screen.queryByText('No active vendor outages')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
+    expect(screen.queryByText('No active vendor issues')).not.toBeInTheDocument();
   });
 
-  it('uses precise all-clear copy and keeps compact provider coverage', () => {
-    const { container } = render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+  it('keeps a two-column provider overview without a global active-issues pane', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByRole('heading', { name: 'External Outages' })).toBeInTheDocument();
-    expect(screen.getByText('No reported outages')).toBeInTheDocument();
-    expect(screen.getByText('10 monitored providers')).toBeInTheDocument();
-    expect(screen.getByRole('article', { name: 'AWS - No outage' })).toBeInTheDocument();
-    expect(container.querySelector('svg.cloud-status__all-clear-icon')).toBeInTheDocument();
-    expect(container.querySelector('.cloud-status__all-clear-body')).not.toHaveTextContent('✓');
+    expect(screen.getByRole('heading', { name: 'External Status' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(10);
+    expect(
+      screen.getByRole('button', { name: 'View AWS status details' }),
+    ).toHaveAccessibleDescription('Operational No active issues');
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
@@ -102,10 +103,24 @@ describe('CloudStatusTab', () => {
     const data = makeStatusData({ errors: [{ provider: 'github', message: 'fetch failed' }] });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByText('No reported outages from available feeds')).toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
     expect(screen.getByText('Some provider feeds are unavailable.')).toBeInTheDocument();
-    expect(screen.getByRole('article', { name: 'GitHub - Unknown' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View GitHub status details' }),
+    ).toHaveAccessibleDescription('Unknown Coverage unavailable');
+  });
+
+  it('does not claim an unavailable provider has no active issues in the overview', () => {
+    const data = makeStatusData({
+      providers: { ...emptyProviders, aws: [makeItem()] },
+      errors: [{ provider: 'github', message: 'fetch failed' }],
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    const githubButton = screen.getByRole('button', { name: 'View GitHub status details' });
+    expect(githubButton).toHaveTextContent('Coverage unavailable');
+    expect(githubButton).not.toHaveTextContent('No active issues');
+    expect(githubButton).toHaveAccessibleDescription('Unknown Coverage unavailable');
   });
 
   it('refreshes manually and disables refresh while loading', () => {
@@ -121,7 +136,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByLabelText('Refresh cloud status')).toBeDisabled();
   });
 
-  it('shows and counts only outage records', () => {
+  it('summarizes current outage and degraded records in the provider overview', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -155,12 +170,162 @@ describe('CloudStatusTab', () => {
 
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByText('EC2 outage')).toBeInTheDocument();
-    expect(screen.getAllByText('Outage').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText('1 active outage')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.queryByText('EC2 outage')).not.toBeInTheDocument();
     expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Outage').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Degraded').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('1 active outage · 1 degraded issue')).toBeInTheDocument();
     expect(screen.queryByText('Admin notice')).not.toBeInTheDocument();
     expect(screen.queryByText('Recovered webhooks')).not.toBeInTheDocument();
+  });
+
+  it('drills into one provider and returns to the overview', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [makeItem({ id: 'aws-outage', title: 'EC2 outage', severity: 'error' })],
+        azure: [
+          makeItem({
+            id: 'azure-warning',
+            provider: 'azure',
+            title: 'Storage latency',
+            severity: 'warning',
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    expect(screen.queryByText('EC2 outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+
+    const awsButton = screen.getByRole('button', { name: 'View AWS status details' });
+    expect(awsButton).toHaveAccessibleDescription('Outage 1 active issue');
+    awsButton.focus();
+    fireEvent.click(awsButton);
+
+    expect(screen.getByRole('region', { name: 'AWS status details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AWS' })).toBeInTheDocument();
+    expect(screen.getByText('EC2 outage')).toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+    const allProvidersButton = screen.getByRole('button', { name: 'All providers' });
+    expect(allProvidersButton).toHaveFocus();
+    expect(allProvidersButton.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+
+    fireEvent.click(allProvidersButton);
+
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.queryByText('EC2 outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View AWS status details' })).toHaveFocus();
+  });
+
+  it('supports externally selecting a provider for notification navigation', () => {
+    const onSelectedProviderChange = vi.fn();
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [
+          makeItem({
+            id: 'azure-warning',
+            provider: 'azure',
+            title: 'Storage latency',
+            severity: 'warning',
+          }),
+        ],
+      },
+    });
+    const { rerender } = render(
+      <CloudStatusTab
+        statusData={data}
+        loading={false}
+        refetch={vi.fn()}
+        selectedProvider="azure"
+        onSelectedProviderChange={onSelectedProviderChange}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Azure status details' })).toBeInTheDocument();
+    expect(screen.getByText('Storage latency')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    expect(onSelectedProviderChange).toHaveBeenCalledWith(null);
+
+    rerender(
+      <CloudStatusTab
+        statusData={data}
+        loading={false}
+        refetch={vi.fn()}
+        selectedProvider={null}
+        onSelectedProviderChange={onSelectedProviderChange}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+  });
+
+  it('can inspect a healthy provider without hiding it from the overview', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'View ChatGPT status details' }));
+
+    expect(screen.getByRole('region', { name: 'ChatGPT status details' })).toBeInTheDocument();
+    expect(screen.getByText('No active issues for ChatGPT')).toBeInTheDocument();
+    expect(screen.getByText('Operational')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View ChatGPT status details' })).toHaveFocus();
+  });
+
+  it('summarizes a warning-only snapshot as degraded', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [
+          makeItem({
+            id: 'warning',
+            provider: 'azure',
+            title: 'Storage latency',
+            severity: 'warning',
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getAllByText('1 degraded issue').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
+  });
+
+  it('expires a degraded issue at the current-incident cutoff without a new snapshot', async () => {
+    const now = Date.now();
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [
+          makeItem({
+            provider: 'azure',
+            severity: 'warning',
+            title: 'Expiring latency advisory',
+            pubDate: new Date(now - CURRENT_CLOUD_OUTAGE_WINDOW_MS + 1_000).toISOString(),
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View Azure status details' }));
+    expect(screen.getByText('Expiring latency advisory')).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(1_001));
+
+    expect(screen.queryByText('Expiring latency advisory')).not.toBeInTheDocument();
+    expect(screen.getByText('No active issues for Azure')).toBeInTheDocument();
   });
 
   it('shows multiple-outage counts with plural copy', () => {
@@ -195,20 +360,27 @@ describe('CloudStatusTab', () => {
     );
 
     expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
-    expect(screen.getByText('Current GitHub outage')).toBeInTheDocument();
+    expect(screen.queryByText('Current GitHub outage')).not.toBeInTheDocument();
     expect(screen.getByText('1 active outage')).toBeInTheDocument();
     expect(
       Array.from(container.querySelectorAll('.cloud-status-provider__name'))
         .slice(0, 2)
         .map((node) => node.textContent),
     ).toEqual(['GitHub', 'AWS']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'View GitHub status details' }));
+    expect(screen.getByText('Current GitHub outage')).toBeInTheDocument();
+    expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
   });
 
-  it('orders outage providers before unknown and clear providers', () => {
+  it('orders outage providers before degraded, unknown, and operational providers', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
         azure: [makeItem({ provider: 'azure', severity: 'error' })],
+        cloudflare: [
+          makeItem({ provider: 'cloudflare', severity: 'warning', title: 'Elevated latency' }),
+        ],
       },
       errors: [{ provider: 'github', message: 'fetch failed' }],
     });
@@ -218,12 +390,12 @@ describe('CloudStatusTab', () => {
 
     expect(
       Array.from(container.querySelectorAll('.cloud-status-provider__name'))
-        .slice(0, 3)
+        .slice(0, 4)
         .map((node) => node.textContent),
-    ).toEqual(['Azure', 'GitHub', 'AWS']);
+    ).toEqual(['Azure', 'Cloudflare', 'GitHub', 'AWS']);
   });
 
-  it('shows outage details without expansion and opens the incident source', () => {
+  it('shows provider issue details and opens the incident source', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -238,6 +410,7 @@ describe('CloudStatusTab', () => {
     });
 
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
 
     expect(screen.getByText('Investigating & mitigating EC2')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View official status' }));
@@ -249,6 +422,7 @@ describe('CloudStatusTab', () => {
       providers: { ...emptyProviders, aws: [makeItem()] },
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Open AWS official status page' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open AWS on X' }));
@@ -262,10 +436,14 @@ describe('CloudStatusTab', () => {
     );
   });
 
-  it('keeps separate all-clear actions and omits unavailable X accounts', () => {
+  it('keeps separate provider actions and omits unavailable X accounts', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
 
+    fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
     expect(screen.getByRole('button', { name: 'Open AWS on X' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Claude status details' }));
     fireEvent.click(screen.getByRole('button', { name: 'Open Claude on Downdetector' }));
     expect(openExternal).toHaveBeenCalledWith('https://downdetector.com/status/claude-ai/');
     expect(screen.queryByRole('button', { name: 'Open Claude on X' })).not.toBeInTheDocument();
@@ -277,7 +455,7 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     expect(screen.queryByText('Incident feed')).not.toBeInTheDocument();
-    for (const label of ['DEGRADED', 'INFO', 'RESOLVED']) {
+    for (const label of ['INFO', 'RESOLVED']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
   });
@@ -293,14 +471,18 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('Updated Never')).toBeInTheDocument();
   });
 
-  it('keeps provider and outage counts in the status bar', () => {
+  it('keeps provider, outage, and degraded counts in the status bar', () => {
     const data = makeStatusData({
-      providers: { ...emptyProviders, aws: [makeItem()] },
+      providers: {
+        ...emptyProviders,
+        aws: [makeItem()],
+        azure: [makeItem({ id: 'azure-warning', provider: 'azure', severity: 'warning' })],
+      },
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '10 providers monitored · 1 active outage',
+      '10 providers monitored · 1 active outage · 1 degraded issue',
     );
   });
 });

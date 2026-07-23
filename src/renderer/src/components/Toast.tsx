@@ -11,7 +11,7 @@ import React, {
 import { createClientId } from '../utils/clientId';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
-export type ToastDelivery = 'routine' | 'cloud-outage' | 'dynatrace-problem';
+export type ToastDelivery = 'routine' | 'cloud-degradation' | 'cloud-outage' | 'dynatrace-problem';
 
 export type ToastOptions = {
   title?: string;
@@ -51,15 +51,31 @@ function isOperationalToast(toast: ToastMessage): boolean {
   return deliveryOf(toast) !== 'routine';
 }
 
+function deliveryPriority(delivery: ToastDelivery): number {
+  switch (delivery) {
+    case 'dynatrace-problem':
+      return 3;
+    case 'cloud-outage':
+      return 2;
+    case 'cloud-degradation':
+      return 1;
+    case 'routine':
+      return 0;
+  }
+}
+
 function toastReducer(current: ToastMessage[], action: ToastAction): ToastMessage[] {
   switch (action.type) {
     case 'show': {
-      if (deliveryOf(action.toast) !== 'dynatrace-problem') {
+      const incomingDelivery = deliveryOf(action.toast);
+      if (incomingDelivery === 'routine') {
         return [...current, action.toast];
       }
       return [
         ...current.map((toast) =>
-          deliveryOf(toast) === 'cloud-outage' && toast.state === 'open'
+          toast.state === 'open' &&
+          isOperationalToast(toast) &&
+          deliveryPriority(deliveryOf(toast)) < deliveryPriority(incomingDelivery)
             ? { ...toast, state: 'queued' as const }
             : toast,
         ),
@@ -84,6 +100,7 @@ function findNextOperationalId(toasts: ToastMessage[]): string | null {
   return (
     queued.find((toast) => deliveryOf(toast) === 'dynatrace-problem')?.id ??
     queued.find((toast) => deliveryOf(toast) === 'cloud-outage')?.id ??
+    queued.find((toast) => deliveryOf(toast) === 'cloud-degradation')?.id ??
     null
   );
 }
@@ -157,14 +174,17 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     (message: string, type: ToastType, options?: ToastOptions) => {
       const id = createClientId();
       const delivery = options?.delivery ?? 'routine';
-      if (delivery === 'dynatrace-problem') {
-        const interruptedCloud = toastsRef.current.find(
-          (toast) => deliveryOf(toast) === 'cloud-outage' && toast.state === 'open',
+      if (delivery !== 'routine') {
+        const interruptedToasts = toastsRef.current.filter(
+          (toast) =>
+            toast.state === 'open' &&
+            isOperationalToast(toast) &&
+            deliveryPriority(deliveryOf(toast)) < deliveryPriority(delivery),
         );
-        if (interruptedCloud) {
-          const timer = autoCloseTimersRef.current.get(interruptedCloud.id);
+        for (const interruptedToast of interruptedToasts) {
+          const timer = autoCloseTimersRef.current.get(interruptedToast.id);
           if (timer) globalThis.clearTimeout(timer);
-          autoCloseTimersRef.current.delete(interruptedCloud.id);
+          autoCloseTimersRef.current.delete(interruptedToast.id);
         }
       }
       dispatch({

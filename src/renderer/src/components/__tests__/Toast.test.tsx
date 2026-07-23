@@ -50,6 +50,17 @@ const OperationalToastTrigger: React.FC<{ onAction?: () => void }> = ({ onAction
       </button>
       <button
         onClick={() =>
+          showToast('Azure degradation', 'warning', {
+            title: 'Cloud degradation',
+            durationMs: 6_000,
+            delivery: 'cloud-degradation',
+          })
+        }
+      >
+        Degradation
+      </button>
+      <button
+        onClick={() =>
           showToast('Dynatrace one', 'error', {
             title: 'New Dynatrace problem',
             durationMs: 8_000,
@@ -216,6 +227,51 @@ describe('ToastProvider', () => {
     expect(screen.getByText('AWS outage')).toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(161));
     expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+  });
+
+  it('preempts a visible degradation with an outage and resumes its full duration', async () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Degradation' }));
+    await act(async () => vi.advanceTimersByTime(1_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+
+    expect(screen.queryByText('Azure degradation')).not.toBeInTheDocument();
+    expect(screen.getByText('AWS outage', { selector: '.toast-message' })).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(4_160));
+    expect(
+      screen.getByText('Azure degradation', { selector: '.toast-message' }),
+    ).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(5_999));
+    expect(screen.getByText('Azure degradation')).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(161));
+    expect(screen.queryByText('Azure degradation')).not.toBeInTheDocument();
+  });
+
+  it('orders Dynatrace, outage, then degradation regardless of arrival order', async () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Degradation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+
+    expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Azure degradation')).not.toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(screen.getByText('AWS outage', { selector: '.toast-message' })).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(4_160));
+    expect(
+      screen.getByText('Azure degradation', { selector: '.toast-message' }),
+    ).toBeInTheDocument();
   });
 
   it('does not let the interrupted cloud timer remove a queued outage', async () => {
