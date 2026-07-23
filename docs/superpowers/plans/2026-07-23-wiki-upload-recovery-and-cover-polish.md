@@ -259,7 +259,7 @@ Also render a snapshot containing `state: 'cancelled'` and assert that its filen
 Run:
 
 ```bash
-npx vitest run \
+node scripts/run-renderer-tests.mjs \
   src/renderer/src/features/knowledge/__tests__/useKnowledgeManagement.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeManagementWorkspace.test.tsx
 ```
@@ -371,7 +371,7 @@ Keep confirmation inline with the row so the filename, duplicate warning, publis
 Run:
 
 ```bash
-npx vitest run \
+node scripts/run-renderer-tests.mjs \
   src/renderer/src/features/knowledge/__tests__/useKnowledgeManagement.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeManagementWorkspace.test.tsx
 ```
@@ -429,7 +429,7 @@ it('gives shared tactile selects a legible Windows popup palette', () => {
 Run:
 
 ```bash
-npx vitest run src/renderer/src/features/knowledge/__tests__/KnowledgeManagementStyles.test.ts
+node scripts/run-renderer-tests.mjs src/renderer/src/features/knowledge/__tests__/KnowledgeManagementStyles.test.ts
 ```
 
 Expected: FAIL because the shared tactile select has no native popup palette.
@@ -456,7 +456,7 @@ Do not move Knowledge's custom chevron or duplicate these colors in management-o
 Run:
 
 ```bash
-npx vitest run \
+node scripts/run-renderer-tests.mjs \
   src/renderer/src/features/knowledge/__tests__/KnowledgeManagementStyles.test.ts \
   src/renderer/src/features/knowledge/__tests__/KnowledgeCatalogStyles.test.ts
 ```
@@ -549,7 +549,7 @@ Keep the `object-fit: contain` assertion.
 Run:
 
 ```bash
-npx vitest run \
+node scripts/run-renderer-tests.mjs \
   src/renderer/src/features/knowledge/__tests__/useKnowledgeCover.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeSopCard.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeCatalogStyles.test.ts
@@ -678,7 +678,7 @@ In reduced motion, set the ready sheet transform to `none` and remove its transi
 Run:
 
 ```bash
-npx vitest run \
+node scripts/run-renderer-tests.mjs \
   src/renderer/src/features/knowledge/__tests__/useKnowledgeCover.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeSopCard.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeCatalogStyles.test.ts
@@ -716,7 +716,7 @@ git commit -m "feat: polish wiki cover presentation"
 - [ ] **Step 1: Run the complete focused Knowledge set**
 
 ```bash
-npx vitest run \
+node scripts/run-renderer-tests.mjs \
   src/main/knowledge/__tests__/ManagedKnowledgeService.test.ts \
   src/renderer/src/features/knowledge/__tests__/useKnowledgeManagement.test.tsx \
   src/renderer/src/features/knowledge/__tests__/KnowledgeManagementWorkspace.test.tsx \
