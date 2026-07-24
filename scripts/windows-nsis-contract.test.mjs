@@ -295,10 +295,15 @@ describe('Windows packaging integration contract', () => {
   it('gives every Windows CI artifact a commit build ID and real smoke test', () => {
     for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
       const workflow = read(file);
-      const windowsJob = workflow.slice(workflow.indexOf('  package-windows:'));
+      const windowsJobAndFollowing = workflow.slice(workflow.indexOf('  package-windows:'));
+      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}(?:package-mac|release):\n/);
+      const windowsJob =
+        nextJobIndex === -1
+          ? windowsJobAndFollowing
+          : windowsJobAndFollowing.slice(0, nextJobIndex);
 
       expect(windowsJob).toContain('RELAY_BUILD_ID: r1-${{ github.sha }}');
-      expect(windowsJob).toContain('RELAY_BUILD_ID: r0-${{ github.sha }}');
+      expect(windowsJob).toContain('steps.previous.outputs.build_id');
       expect(windowsJob).toContain('scripts/windows-bootstrap-smoke.ps1');
       expect(windowsJob).toContain('-PreviousArtifact');
       expect(windowsJob).toContain('RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1');
@@ -309,6 +314,36 @@ describe('Windows packaging integration contract', () => {
       expect(windowsJob).toContain('scripts/windows-bootstrap-boundary-smoke.ps1');
       expect(windowsJob).toContain('RELAY_BOOTSTRAP_HARNESS_ROOT');
       expect(windowsJob).toContain('RELAY_BOOTSTRAP_BOUNDARY_CONFIRM: 1');
+    }
+  });
+
+  it('packages one real app and uses prior artifacts plus lightweight boundary fixtures', () => {
+    const previousArtifact = read('scripts/find-previous-windows-artifact.ps1');
+
+    expect(previousArtifact).toContain('status=success');
+    expect(previousArtifact).toContain('$CurrentSha');
+    expect(previousArtifact).toContain("$_.name -eq 'relay-windows'");
+    expect(previousArtifact).toContain('gh run download');
+    expect(previousArtifact).toContain('GITHUB_OUTPUT');
+    expect(previousArtifact).toContain("Write-StepOutput -Name 'found' -Value 'false'");
+
+    for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
+      const workflow = read(file);
+      const windowsJobAndFollowing = workflow.slice(workflow.indexOf('  package-windows:'));
+      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}(?:package-mac|release):\n/);
+      const windowsJob =
+        nextJobIndex === -1
+          ? windowsJobAndFollowing
+          : windowsJobAndFollowing.slice(0, nextJobIndex);
+
+      expect(workflow).toContain('actions: read');
+      expect(windowsJob).toContain('scripts/find-previous-windows-artifact.ps1');
+      expect(windowsJob.match(/npm run build/g)).toHaveLength(1);
+      expect(windowsJob).toContain('Cache rebuilt better-sqlite3');
+      expect(windowsJob).toContain('electron-builder install-app-deps');
+      expect(windowsJob).toContain('node scripts/package-windows.mjs --fixture');
+      expect(windowsJob).toContain('steps.previous.outputs.build_id');
+      expect(windowsJob).not.toContain('npm run package:win');
     }
   });
 

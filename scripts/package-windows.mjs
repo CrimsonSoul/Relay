@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -19,12 +19,16 @@ const launcherFile = 'RelayLauncher.exe';
 const launcherPath = join(generatedDir, launcherFile);
 const buildDefinesPath = join(generatedDir, 'relay-build.nsh');
 const buildIdentityPath = join(generatedDir, 'relay-build-id.txt');
+const fixtureAppDir = join(generatedDir, 'relay-fixture-app');
+const fixtureExecutablePath = join(fixtureAppDir, 'Relay.exe');
+const fixtureIdentityPath = join(fixtureAppDir, 'resources', 'relay-build-id.txt');
 
 function printUsage() {
   console.log(`Usage: node scripts/package-windows.mjs [electron-builder options]
 
 Options:
   --compile-launcher-only  Compile the stable launcher without packaging Relay
+  --fixture                Package a lightweight CI runtime fixture
   --help                   Show this help
 
 RELAY_BUILD_ID may provide a path-safe CI build identity. Other options are
@@ -82,11 +86,20 @@ export function resolveMakensisCommand(
 }
 
 export function resolveElectronBuilderArgs(args) {
-  const forwarded = args.filter((arg) => arg !== '--compile-launcher-only');
+  const forwarded = args.filter((arg) => arg !== '--compile-launcher-only' && arg !== '--fixture');
   const hasPublishPolicy = forwarded.some(
     (arg) => arg === '--publish' || arg.startsWith('--publish='),
   );
   return hasPublishPolicy ? forwarded : [...forwarded, '--publish', 'never'];
+}
+
+export function resolvePackageMode(args) {
+  const compileOnly = args.includes('--compile-launcher-only');
+  const fixture = args.includes('--fixture');
+  if (compileOnly && fixture) {
+    throw new Error('--fixture and --compile-launcher-only cannot be combined');
+  }
+  return { compileOnly, fixture };
 }
 
 async function compileLauncher(harness) {
@@ -107,6 +120,27 @@ async function compileLauncher(harness) {
   });
 }
 
+async function compileFixtureRuntime(buildId) {
+  await rm(fixtureAppDir, { recursive: true, force: true });
+  await mkdir(dirname(fixtureIdentityPath), { recursive: true });
+  const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
+  await run(
+    makensis.path,
+    [
+      '-WX',
+      '-INPUTCHARSET',
+      'UTF8',
+      `-DRELAY_FIXTURE_OUT=${fixtureExecutablePath}`,
+      join(projectDir, 'build', 'windows', 'relay-ci-fixture.nsi'),
+    ],
+    {
+      cwd: join(projectDir, 'build', 'windows'),
+      env: { ...process.env, ...(makensis.env ?? {}) },
+    },
+  );
+  await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');
+}
+
 async function writeBuildDefines(harness) {
   const buildId = resolveBuildId({ env: process.env, ...readGitState() });
   await mkdir(generatedDir, { recursive: true });
@@ -117,6 +151,7 @@ async function writeBuildDefines(harness) {
   );
   await writeFile(buildIdentityPath, `${buildId}\n`, 'utf8');
   console.log(`Windows runtime build ID: ${buildId}`);
+  return buildId;
 }
 
 export async function packageWindows(args = process.argv.slice(2)) {
@@ -126,13 +161,19 @@ export async function packageWindows(args = process.argv.slice(2)) {
   }
 
   const harness = resolveHarnessConfig(process.env);
-  const compileOnly = args.includes('--compile-launcher-only');
+  const { compileOnly, fixture } = resolvePackageMode(args);
   await compileLauncher(harness);
   if (compileOnly) return;
 
-  await writeBuildDefines(harness);
+  const buildId = await writeBuildDefines(harness);
+  if (fixture) {
+    await compileFixtureRuntime(buildId);
+  }
   const electronBuilderCli = require.resolve('electron-builder/out/cli/cli.js');
   const forwardedArgs = resolveElectronBuilderArgs(args);
+  if (fixture) {
+    forwardedArgs.push('--prepackaged', fixtureAppDir);
+  }
   await run(process.execPath, [
     electronBuilderCli,
     '--win',

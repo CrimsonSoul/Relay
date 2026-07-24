@@ -6,7 +6,11 @@ import {
   resolveBuildId,
   validateBuildId,
 } from './windows-package-contract.mjs';
-import { resolveElectronBuilderArgs, resolveMakensisCommand } from './package-windows.mjs';
+import {
+  resolveElectronBuilderArgs,
+  resolveMakensisCommand,
+  resolvePackageMode,
+} from './package-windows.mjs';
 
 describe('Windows package contract', () => {
   it('forwards release publish flags through the nested Windows package script', () => {
@@ -17,6 +21,21 @@ describe('Windows package contract', () => {
     expect(resolveElectronBuilderArgs([])).toEqual(['--publish', 'never']);
     expect(resolveElectronBuilderArgs(['--publish', 'always'])).toEqual(['--publish', 'always']);
     expect(resolveElectronBuilderArgs(['--publish=always'])).toEqual(['--publish=always']);
+  });
+
+  it('keeps lightweight fixture flags away from electron-builder', () => {
+    expect(resolvePackageMode(['--fixture', '--config.compression=store'])).toEqual({
+      compileOnly: false,
+      fixture: true,
+    });
+    expect(resolveElectronBuilderArgs(['--fixture', '--config.compression=store'])).toEqual([
+      '--config.compression=store',
+      '--publish',
+      'never',
+    ]);
+    expect(() => resolvePackageMode(['--fixture', '--compile-launcher-only'])).toThrow(
+      /cannot be combined/i,
+    );
   });
 
   it('marks untracked non-ignored package inputs as dirty', () => {
@@ -34,6 +53,20 @@ describe('Windows package contract', () => {
     expect(source).toContain("await writeFile(buildIdentityPath, `${buildId}\\n`, 'utf8')");
     expect(config).toContain("from: 'release/windows-bootstrap/relay-build-id.txt'");
     expect(config).toContain("to: 'relay-build-id.txt'");
+  });
+
+  it('builds lightweight harness payloads that preserve the launcher benchmark contract', () => {
+    const source = readFileSync('scripts/package-windows.mjs', 'utf8');
+    const fixture = readFileSync('build/windows/relay-ci-fixture.nsi', 'utf8');
+
+    expect(source).toContain('compileFixtureRuntime');
+    expect(source).toContain("'--prepackaged'");
+    expect(source).toContain("'relay-fixture-app'");
+    expect(fixture).toContain('RequestExecutionLevel user');
+    expect(fixture).toContain('SilentInstall silent');
+    expect(fixture).toContain('RELAY_BENCHMARK_RUN_ID');
+    expect(fixture).toContain('Relay\\startup-benchmark');
+    expect(fixture).toContain('.complete');
   });
 
   it('runs the bundled NSIS executable directly instead of spawning its Windows cmd wrapper', () => {

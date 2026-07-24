@@ -12,6 +12,7 @@ on:
       - main
 
 permissions:
+  actions: read
   contents: read
 
 # Rapid pushes to the same branch cancel superseded runs instead of queueing.
@@ -134,6 +135,21 @@ jobs:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
+      - name: Cache rebuilt better-sqlite3
+        id: better-sqlite-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: node_modules/better-sqlite3/build/Release
+          key: better-sqlite3-electron-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Electron native dependencies
+        if: steps.better-sqlite-cache.outputs.cache-hit != 'true'
+        run: npx electron-builder install-app-deps --platform=win32 --arch=x64
+
+      - name: Build Relay once
+        run: npm run build
+
       - name: Download PocketBase binary
         if: steps.pocketbase-cache.outputs.cache-hit != 'true'
         run: node scripts/download-pocketbase.mjs --platform=win32 --arch=x64
@@ -150,20 +166,34 @@ jobs:
             exit 1
           fi
 
-      # Branch artifacts use store-mode 7z payloads for the fastest preparation
-      # and packaging feedback. Releases retain normal until the opt-in same-host
-      # comparison report records and justifies a different production default.
-      - name: Build previous bootstrap fixture
+      - name: Find previous successful Windows artifact
+        id: previous
+        shell: pwsh
         env:
-          RELAY_BUILD_ID: r0-${{ github.sha }}
-        run: npm run package:win -- --config.compression=store
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          ./scripts/find-previous-windows-artifact.ps1
+          -Workflow build.yml
+          -Branch "${{ github.ref_name }}"
+          -CurrentSha "${{ github.sha }}"
+          -Destination "$env:RUNNER_TEMP\RelayPrevious.exe"
 
-      - name: Preserve previous bootstrap fixture
+      - name: Build lightweight previous fixture when no artifact exists
+        if: steps.previous.outputs.found != 'true'
+        env:
+          RELAY_BUILD_ID: ${{ steps.previous.outputs.build_id }}
+        run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
+
+      - name: Preserve lightweight previous fixture
+        if: steps.previous.outputs.found != 'true'
         shell: pwsh
         run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayPrevious.exe"
 
+      # Branch artifacts use store-mode 7z payloads for the fastest preparation
+      # and packaging feedback. Releases retain normal until the opt-in same-host
+      # comparison report records and justifies a different production default.
       - name: Build and package
-        run: npm run package:win -- --config.compression=store --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --config.compression=store --config.npmRebuild=false
 
       - name: Smoke test persistent bootstrap
         shell: pwsh
@@ -174,7 +204,7 @@ jobs:
           -Artifact ./release/Relay.exe
           -PreviousArtifact "$env:RUNNER_TEMP\RelayPrevious.exe"
           -ExpectedBuildId "r1-${{ github.sha }}"
-          -ExpectedPreviousBuildId "r0-${{ github.sha }}"
+          -ExpectedPreviousBuildId "${{ steps.previous.outputs.build_id }}"
 
       - name: Benchmark packaged startup paths
         shell: pwsh
@@ -238,7 +268,7 @@ jobs:
           RELAY_BUILD_ID: h0-${{ github.sha }}
           RELAY_BOOTSTRAP_HARNESS: 1
           RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
-        run: npm run package:win -- --config.compression=store --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
 
       - name: Preserve previous isolated boundary fixture
         shell: pwsh
@@ -249,7 +279,7 @@ jobs:
           RELAY_BUILD_ID: h1-${{ github.sha }}
           RELAY_BOOTSTRAP_HARNESS: 1
           RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
-        run: npm run package:win -- --config.compression=store --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
 
       - name: Exercise isolated activation boundaries and stable fallback
         shell: pwsh
