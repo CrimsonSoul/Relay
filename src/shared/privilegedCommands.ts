@@ -112,8 +112,6 @@ export type PrivilegedCommandPayloadMap = {
     uploadId: string;
     documentId: string;
     expectedRevision: number;
-    title: string;
-    category: string;
   };
   'knowledge.document.title.set': {
     documentId: string;
@@ -964,15 +962,10 @@ function normalizePayload(
         : null;
     }
     case 'knowledge.document.replace': {
-      if (
-        !hasExactKeys(payload, ['uploadId', 'documentId', 'expectedRevision', 'title', 'category'])
-      )
-        return null;
+      if (!hasExactKeys(payload, ['uploadId', 'documentId', 'expectedRevision'])) return null;
       const revision = normalizeKnowledgeDocumentRevision(payload);
-      const title = normalizedKnowledgeText(payload.title, 240);
-      const category = normalizedKnowledgeText(payload.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-      return revision && boundedIdentifier(payload.uploadId, 200) && title && category
-        ? { uploadId: payload.uploadId, ...revision, title, category }
+      return revision && boundedIdentifier(payload.uploadId, 200)
+        ? { uploadId: payload.uploadId, ...revision }
         : null;
     }
     case 'knowledge.document.title.set':

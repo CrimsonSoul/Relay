@@ -14,6 +14,7 @@ import { describeUrlForLog } from '../../shared/urlSecurity';
 import { setupWindowListeners } from '../handlers/windowHandlers';
 import { loggers } from '../logger';
 import { isAllowedRendererFileUrl } from '../utils/trustedSender';
+import { configureWindowsTaskbarWindow } from '../app/windowsTaskbarIdentity';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
 
 const mainDir = dirname(fileURLToPath(import.meta.url));
@@ -164,6 +165,11 @@ export class DynatraceWindowManager {
         allowRunningInsecureContent: false,
         spellcheck: false,
       },
+    });
+    configureWindowsTaskbarWindow(window, {
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
     });
     const view = new WebContentsView({
       webPreferences: {

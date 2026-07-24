@@ -266,14 +266,42 @@ describe('useKnowledgeManagement', () => {
     expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps the upload snapshot visible when cancellation fails', async () => {
+  it('discards a server-backed upload when its local queue entry is unavailable', async () => {
+    const ready = snapshotWithReadyUpload();
+    const cancelled = snapshotWithReadyUpload('cancelled');
+    let serverCancelled = false;
+    submitCommand.mockImplementation(async (input: { command: string }) => {
+      if (input.command === 'knowledge.upload.file.cancel') {
+        serverCancelled = true;
+        return { ok: true, requestId: 'cancel-upload-1', value: {} };
+      }
+      return okSnapshot(serverCancelled ? cancelled : ready);
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(ready));
+
+    let discarded = false;
+    await act(async () => {
+      discarded = await result.current.cancelUpload('upload-1');
+    });
+
+    expect(discarded).toBe(true);
+    expect(submitCommand).toHaveBeenCalledWith({
+      command: 'knowledge.upload.file.cancel',
+      payload: { uploadId: 'upload-1', expectedRevision: 2 },
+      expectedRevision: null,
+    });
+    expect(globalThis.api?.cancelKnowledgeUpload).toHaveBeenCalledWith('upload-1');
+    expect(result.current.snapshot).toEqual(cancelled);
+  });
+
+  it('keeps the upload snapshot visible when protected cancellation fails', async () => {
     const ready = snapshotWithReadyUpload();
     submitCommand.mockImplementation(async (input: { command: string }) =>
       input.command === 'knowledge.snapshot.read'
         ? okSnapshot(ready)
-        : { ok: true, requestId: 'request-1', value: {} },
+        : { ok: false, requestId: 'cancel-upload-1', error: 'unauthorized' },
     );
-    vi.mocked(globalThis.api!.cancelKnowledgeUpload!).mockResolvedValueOnce(false);
     const { result } = renderHook(() => useKnowledgeManagement());
     await waitFor(() => expect(result.current.snapshot).toEqual(ready));
 
@@ -284,7 +312,8 @@ describe('useKnowledgeManagement', () => {
 
     expect(discarded).toBe(false);
     expect(result.current.snapshot).toEqual(ready);
-    expect(result.current.error).toBe('Relay could not cancel this PDF.');
+    expect(result.current.error).toBe('Wiki publisher access is required.');
+    expect(globalThis.api?.cancelKnowledgeUpload).not.toHaveBeenCalled();
     expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledOnce();
   });
 

@@ -9,6 +9,7 @@ import { setupSecurityHeaders } from './securityHeaders';
 import { setupContextMenu } from './contextMenu';
 import { attachWindowLifecycleListeners } from './processLifecycle';
 import { describeUrlForLog } from '@shared/urlSecurity';
+import { configureWindowsTaskbarWindow } from './windowsTaskbarIdentity';
 
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
@@ -165,6 +166,11 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
       }),
     },
   });
+  configureWindowsTaskbarWindow(mainWindow, {
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    execPath: process.execPath,
+  });
   setMainWindow(mainWindow);
   loggers.main.info('Main window created', {
     width: devTestWindowSize?.width ?? DEFAULT_MAIN_WINDOW_SIZE.width,
@@ -292,6 +298,11 @@ export async function createAuxWindow(route: string): Promise<void> {
       sandbox: true,
       webSecurity: true,
     },
+  });
+  configureWindowsTaskbarWindow(auxWindow, {
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    execPath: process.execPath,
   });
 
   setupWindowListeners(auxWindow);

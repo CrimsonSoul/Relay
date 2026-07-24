@@ -539,6 +539,44 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     [execute, reauthenticate],
   );
 
+  const cancelUpload = useCallback(
+    async (uploadId: string): Promise<boolean> => {
+      const upload = snapshot?.uploads.items.find(({ id }) => id === uploadId);
+      if (!upload) {
+        return runUploadControl(
+          `cancel:${uploadId}`,
+          globalThis.api?.cancelKnowledgeUpload
+            ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
+            : undefined,
+          'Relay could not cancel this PDF.',
+          true,
+        );
+      }
+
+      const cancelled = await execute(
+        {
+          command: 'knowledge.upload.file.cancel',
+          payload: { uploadId, expectedRevision: upload.revision },
+          expectedRevision: null,
+        },
+        `cancel:${uploadId}`,
+        (authoritative) =>
+          !authoritative.uploads.items.some(
+            (candidate) => candidate.id === uploadId && candidate.state !== 'cancelled',
+          ),
+        ['uploads'],
+        false,
+      );
+      if (!cancelled) return false;
+
+      if (globalThis.api?.cancelKnowledgeUpload) {
+        await globalThis.api.cancelKnowledgeUpload(uploadId).catch(() => false);
+      }
+      return true;
+    },
+    [execute, runUploadControl, snapshot?.uploads.items],
+  );
+
   return {
     canManage,
     snapshot,
@@ -585,15 +623,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           : undefined,
         'Choose the same unchanged PDF to resume this upload.',
       ),
-    cancelUpload: (uploadId: string) =>
-      runUploadControl(
-        `cancel:${uploadId}`,
-        globalThis.api?.cancelKnowledgeUpload
-          ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
-          : undefined,
-        'Relay could not cancel this PDF.',
-        true,
-      ),
+    cancelUpload,
     cancelUploadBatch: (batchId: string) =>
       runUploadControl(
         `cancel-batch:${batchId}`,
@@ -645,17 +675,12 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         ['documents', 'uploads'],
         true,
       ),
-    replace: (
-      uploadId: string,
-      documentId: string,
-      expectedRevision: number,
-      title: string,
-      category: string,
-    ) =>
-      execute(
+    replace: (uploadId: string, documentId: string, expectedRevision: number) => {
+      const current = snapshot?.documents.items.find(({ id }) => id === documentId);
+      return execute(
         {
           command: 'knowledge.document.replace',
-          payload: { uploadId, documentId, expectedRevision, title, category },
+          payload: { uploadId, documentId, expectedRevision },
           expectedRevision: null,
         },
         `replace:${documentId}`,
@@ -667,12 +692,18 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
             (document) =>
               document.id === documentId &&
               document.revision > expectedRevision &&
-              document.displayTitle === title.trim().replace(/\s+/g, ' ') &&
-              knowledgeCategoryKey(document.category) === knowledgeCategoryKey(category),
+              (!current ||
+                (document.displayTitle === current.displayTitle &&
+                  document.categoryId === current.categoryId &&
+                  document.documentType === current.documentType &&
+                  document.fileName === current.fileName &&
+                  document.publishedAt === current.publishedAt &&
+                  document.publishedByName === current.publishedByName)),
           ),
         ['documents', 'uploads'],
         true,
-      ),
+      );
+    },
     setTitle: (documentId: string, expectedRevision: number, title: string) =>
       execute(
         {

@@ -2181,8 +2181,7 @@
   accent-color: var(--accent);
 }
 
-.knowledge-management-row__identity h2,
-.knowledge-audit-row h2 {
+.knowledge-management-row__identity h2 {
   overflow: hidden;
   margin: var(--space-1) 0 0;
   color: var(--color-text-primary);
@@ -2192,8 +2191,7 @@
   white-space: nowrap;
 }
 
-.knowledge-management-row__identity p,
-.knowledge-audit-row p {
+.knowledge-management-row__identity p {
   overflow: hidden;
   margin: var(--space-1) 0 0;
   color: var(--color-text-quaternary);
@@ -2489,6 +2487,16 @@
   flex: 0 0 auto;
 }
 
+.knowledge-management-row__identity .knowledge-management-row__replacement-note {
+  overflow: visible;
+  margin-top: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .knowledge-management-row__delete {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto auto;
@@ -2677,40 +2685,6 @@
   padding: var(--space-4);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-surface);
-}
-
-.knowledge-audit-row {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 78px;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-surface);
-}
-
-.knowledge-audit-row__mark {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-dim);
-}
-
-.knowledge-audit-row > div:last-child {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--color-text-quaternary);
-  font-family: var(--font-family-base);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.knowledge-audit-row > div:last-child strong {
-  color: var(--color-text-secondary);
 }
 
 .knowledge-tab--loading {
@@ -2965,15 +2939,6 @@
 
   .knowledge-management__rail button span {
     font-size: var(--text-sm);
-  }
-
-  .knowledge-audit-row {
-    grid-template-columns: 8px minmax(0, 1fr);
-  }
-
-  .knowledge-audit-row > div:last-child {
-    align-items: flex-start;
-    grid-column: 2;
   }
 }
 

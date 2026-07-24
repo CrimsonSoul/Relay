@@ -119,7 +119,7 @@ describe('KnowledgeManagementWorkspace', () => {
     });
   });
 
-  it('presents the dedicated document, upload, trash, and audit workspace', () => {
+  it('presents the dedicated document, category, upload, and trash workspace without audit UI', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'Manage Wiki' })).toBeInTheDocument();
@@ -132,6 +132,7 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByRole('button', { name: /Documents 1/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Uploads 0/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Categories 2/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Audit/i })).not.toBeInTheDocument();
     expect(screen.getByText('Checkout runbook')).toBeInTheDocument();
     expect(screen.getByText('Runbook.pdf')).toBeInTheDocument();
     const documentEyebrow = screen
@@ -159,7 +160,6 @@ describe('KnowledgeManagementWorkspace', () => {
       expect.stringContaining('categories'),
       expect.stringContaining('uploads'),
       expect.stringContaining('trash'),
-      expect.stringContaining('audit'),
     ]);
     expect(screen.getByRole('button', { name: 'Edit' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Replace PDF' })).toBeVisible();
@@ -549,20 +549,14 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByLabelText('Documents management section').scrollTop).toBe(180);
   });
 
-  it('stages PDFs and loads audit history when the workspace opens', () => {
+  it('stages PDFs without loading or exposing retained audit history', () => {
     render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
-    expect(readAudit).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Add PDFs' }));
-    fireEvent.click(screen.getByRole('button', { name: /Audit 0/ }));
 
     expect(stagePdfs).toHaveBeenCalledOnce();
-    expect(readAudit).toHaveBeenCalledOnce();
-    expect(screen.getByLabelText('Audit management section')).toHaveClass(
-      'knowledge-management__content',
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+    expect(readAudit).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Audit management section')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Documents management section')).toHaveClass(
       'knowledge-management__content',
     );
@@ -797,6 +791,20 @@ describe('KnowledgeManagementWorkspace', () => {
       ...current,
       snapshot: {
         ...current.snapshot!,
+        documents: {
+          ...current.snapshot!.documents,
+          items: current.snapshot!.documents.items.map((document) =>
+            document.id === 'document-1'
+              ? {
+                  ...document,
+                  displayTitle: 'Existing failover manual',
+                  category: 'Uncategorized',
+                  categoryId: 'category-uncategorized',
+                  documentType: 'cheatsheet',
+                }
+              : document,
+          ),
+        },
         uploads: {
           nextCursor: null,
           items: [
@@ -867,7 +875,24 @@ describe('KnowledgeManagementWorkspace', () => {
         'A published document named Runbook.pdf already exists.',
       ),
     ).toHaveClass('knowledge-management-row__duplicate');
+    expect(
+      within(reviewRow as HTMLElement).getByText(
+        'Replacing it keeps its existing title, category, and document type.',
+      ),
+    ).toBeVisible();
     expect(within(reviewRow as HTMLElement).queryByText('Filename already exists')).toBeNull();
+    expect(within(reviewRow as HTMLElement).getByLabelText('Display title')).toHaveValue(
+      'Existing failover manual',
+    );
+    expect(within(reviewRow as HTMLElement).getByLabelText('Display title')).toBeDisabled();
+    expect(within(reviewRow as HTMLElement).getByLabelText('Category')).toHaveValue(
+      'category-uncategorized',
+    );
+    expect(within(reviewRow as HTMLElement).getByLabelText('Category')).toBeDisabled();
+    expect(within(reviewRow as HTMLElement).getByLabelText('Document type')).toHaveValue(
+      'cheatsheet',
+    );
+    expect(within(reviewRow as HTMLElement).getByLabelText('Document type')).toBeDisabled();
 
     const replaceButton = within(reviewRow as HTMLElement).getByRole('button', {
       name: 'Replace existing',
@@ -883,13 +908,7 @@ describe('KnowledgeManagementWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Replace existing' }));
 
-    expect(replace).toHaveBeenCalledWith(
-      'upload-1',
-      'document-1',
-      2,
-      'Checkout runbook',
-      'Operations',
-    );
+    expect(replace).toHaveBeenCalledWith('upload-1', 'document-1', 2);
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard Runbook.pdf' }));
 

@@ -95,6 +95,7 @@ import { setupStartupIpc, shouldExitAfterStartupBenchmark } from './app/startupI
 import { assertRequiredStartupSucceeded, runStartupSequence } from './app/startupSequence';
 import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
 import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
+import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
@@ -113,6 +114,10 @@ if (process.platform === 'win32') {
   const portableUserData = join(app.getPath('appData'), 'Relay');
   app.setPath('userData', portableUserData);
 }
+configureWindowsApplicationIdentity(app, {
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+});
 
 // Validate environment early
 validateEnv();

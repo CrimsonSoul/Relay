@@ -170,6 +170,8 @@ describe('Windows NSIS bootstrap contract', () => {
 
     expect(source).toContain('$DESKTOP\\Relay.lnk');
     expect(source).toContain('$SMPROGRAMS\\Relay\\Relay.lnk');
+    expect(source.match(/CreateShortCut "\$DESKTOP\\Relay\.lnk"/g)).toHaveLength(1);
+    expect(source).not.toContain('$COMMONDESKTOP');
     expect(source).toContain('!define RELAY_ROOT "$LOCALAPPDATA\\Relay"');
     expect(source).toContain('StrCpy $RelayLauncher "$RelayRoot\\Relay.exe"');
     expect(source).toContain('RequestExecutionLevel user');

@@ -639,8 +639,6 @@ class ConnectedHarness {
         uploadId: 'upload2',
         documentId: publish.id,
         expectedRevision: publish.revision,
-        title: 'Managed Failover',
-        category: 'Operations',
       },
     )) as KnowledgeDocumentRecord;
     await this.indexer.whenIdleForTest();
@@ -826,8 +824,6 @@ describe('Wiki search main-process failure isolation release gate', () => {
           uploadId: 'upload2',
           documentId: published.id,
           expectedRevision: published.revision,
-          title: 'Mutation B',
-          category: 'Operations',
         },
       )) as KnowledgeDocumentRecord;
       await harness.indexer.whenIdleForTest();

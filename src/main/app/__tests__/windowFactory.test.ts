@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
   const mockIsMinimized = vi.fn(() => false);
   const mockOn = vi.fn();
   const mockOnce = vi.fn();
+  const mockSetAppDetails = vi.fn();
 
   let lastOpts: Record<string, unknown> | null = null;
 
@@ -42,6 +43,7 @@ const mocks = vi.hoisted(() => {
       isMinimized: mockIsMinimized,
       on: mockOn,
       once: mockOnce,
+      setAppDetails: mockSetAppDetails,
       isDestroyed: vi.fn(() => false),
     };
   }
@@ -66,6 +68,7 @@ const mocks = vi.hoisted(() => {
     mockIsMinimized,
     mockOn,
     mockOnce,
+    mockSetAppDetails,
     MockBrowserWindow,
     getLastOptions: () => lastOpts,
     resetLastOptions: () => {

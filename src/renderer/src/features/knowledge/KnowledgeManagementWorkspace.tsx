@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   knowledgeCategoryKey,
-  type KnowledgeAuditAction,
   type KnowledgeCategoryRecord,
   type KnowledgeDocumentType,
   type KnowledgeManagementErrorCode,
@@ -15,7 +14,7 @@ import { SearchInput } from '../../components/SearchInput';
 import { useKnowledgeManagement } from './useKnowledgeManagement';
 import { KnowledgeCategoryManager } from './KnowledgeCategoryManager';
 
-type Section = 'documents' | 'categories' | 'uploads' | 'trash' | 'audit';
+type Section = 'documents' | 'categories' | 'uploads' | 'trash';
 type Draft = { title: string; categoryId: string; documentType: KnowledgeDocumentType };
 type DraftErrors = Partial<Record<'title' | 'categoryId', string>>;
 type UploadDraft = {
@@ -26,26 +25,6 @@ type UploadDraft = {
 type RetryFocusIntent = { documentId: string; operationId: number; settled: boolean };
 
 const NEW_CATEGORY_VALUE = '__new_category__';
-
-const ACTION_LABELS: Record<KnowledgeAuditAction, string> = {
-  'upload-validated': 'Validated upload',
-  published: 'Published document',
-  replaced: 'Replaced PDF',
-  'title-changed': 'Changed title',
-  'category-changed': 'Moved document',
-  'category-renamed': 'Renamed category',
-  'category-created': 'Created category',
-  'category-reordered': 'Reordered categories',
-  'category-deleted': 'Deleted category',
-  'document-type-changed': 'Changed document details',
-  'documents-reassigned': 'Reassigned documents',
-  trashed: 'Moved to trash',
-  restored: 'Restored document',
-  deleted: 'Deleted permanently',
-  'upload-expired': 'Expired staged upload',
-  'migration-completed': 'Completed migration',
-  'recovery-completed': 'Completed recovery',
-};
 
 const SEARCH_READINESS_LABELS = {
   pending: 'Indexing search',
@@ -149,7 +128,6 @@ export function KnowledgeManagementWorkspace({
   onLibraryChanged,
 }: Readonly<WorkspaceProps>) {
   const management = useKnowledgeManagement(onLibraryChanged);
-  const { canManage, readAudit } = management;
   const [section, setSection] = useState<Section>('documents');
   const sectionRef = useRef<Section>('documents');
   const [query, setQuery] = useState('');
@@ -168,7 +146,6 @@ export function KnowledgeManagementWorkspace({
     categories: 0,
     uploads: 0,
     trash: 0,
-    audit: 0,
   });
   const focusSectionAfterChangeRef = useRef(false);
   const documentsHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -213,10 +190,6 @@ export function KnowledgeManagementWorkspace({
     ({ searchIndexState }) => searchIndexState === 'ready',
   ).length;
   const categories = snapshot?.categories ?? [];
-
-  useEffect(() => {
-    if (canManage) void readAudit();
-  }, [canManage, readAudit]);
 
   useEffect(() => {
     if (cancelBatchConfirmation || !restoreBatchCancelFocusRef.current) return;
@@ -447,7 +420,6 @@ export function KnowledgeManagementWorkspace({
       ...queueItems.map((item) => item.uploadId ?? item.id),
     ]).size,
     trash: trash.length,
-    audit: management.auditEvents.length,
   };
 
   if (!management.canManage) {
@@ -527,7 +499,7 @@ export function KnowledgeManagementWorkspace({
 
       <div className="knowledge-management__workspace">
         <nav className="knowledge-management__rail" aria-label="Knowledge management">
-          {(['documents', 'categories', 'uploads', 'trash', 'audit'] as const).map((id) => (
+          {(['documents', 'categories', 'uploads', 'trash'] as const).map((id) => (
             <button
               type="button"
               aria-current={section === id ? 'page' : undefined}
@@ -997,15 +969,24 @@ export function KnowledgeManagementWorkspace({
                 <EmptyPanel>No uploads queued or awaiting review. Add PDFs to begin.</EmptyPanel>
               )}
               {uploads.map((upload) => {
-                const draft = uploadDrafts[upload.id] ?? {
+                const duplicate = documents.find(({ id }) => id === upload.duplicateDocumentId);
+                const proposedDraft = uploadDrafts[upload.id] ?? {
                   title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
                   category: upload.proposedCategory || 'General',
                   documentType: 'sop',
                 };
+                const draft = duplicate
+                  ? {
+                      title: duplicate.displayTitle,
+                      category: duplicate.category,
+                      documentType: duplicate.documentType,
+                    }
+                  : proposedDraft;
                 const selectedCategory = categories.find(
-                  ({ normalizedName }) => normalizedName === knowledgeCategoryKey(draft.category),
+                  ({ id, normalizedName }) =>
+                    id === duplicate?.categoryId ||
+                    normalizedName === knowledgeCategoryKey(draft.category),
                 );
-                const duplicate = documents.find(({ id }) => id === upload.duplicateDocumentId);
                 const requiresAction = Boolean(upload.duplicateDocumentId);
                 return (
                   <article
@@ -1034,6 +1015,11 @@ export function KnowledgeManagementWorkspace({
                           {`A published document named ${upload.fileName} already exists.`}
                         </p>
                       )}
+                      {duplicate && (
+                        <p className="knowledge-management-row__replacement-note">
+                          Replacing it keeps its existing title, category, and document type.
+                        </p>
+                      )}
                     </div>
                     <div className="knowledge-management-row__editor">
                       <label>
@@ -1041,10 +1027,11 @@ export function KnowledgeManagementWorkspace({
                         <input
                           className="tactile-input"
                           value={draft.title}
+                          disabled={Boolean(duplicate)}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
                               ...current,
-                              [upload.id]: { ...draft, title: event.target.value },
+                              [upload.id]: { ...proposedDraft, title: event.target.value },
                             }))
                           }
                         />
@@ -1054,12 +1041,13 @@ export function KnowledgeManagementWorkspace({
                         <select
                           className="tactile-input"
                           value={selectedCategory?.id ?? NEW_CATEGORY_VALUE}
+                          disabled={Boolean(duplicate)}
                           onChange={(event) => {
                             const category = selectedUploadCategory(categories, event.target.value);
                             setUploadDrafts((current) => ({
                               ...current,
                               [upload.id]: {
-                                ...draft,
+                                ...proposedDraft,
                                 category,
                               },
                             }));
@@ -1073,7 +1061,7 @@ export function KnowledgeManagementWorkspace({
                           <option value={NEW_CATEGORY_VALUE}>Create new category…</option>
                         </select>
                       </label>
-                      {!selectedCategory && (
+                      {!duplicate && !selectedCategory && (
                         <label>
                           New category name
                           <input
@@ -1082,7 +1070,10 @@ export function KnowledgeManagementWorkspace({
                             onChange={(event) =>
                               setUploadDrafts((current) => ({
                                 ...current,
-                                [upload.id]: { ...draft, category: event.target.value },
+                                [upload.id]: {
+                                  ...proposedDraft,
+                                  category: event.target.value,
+                                },
                               }))
                             }
                           />
@@ -1095,11 +1086,12 @@ export function KnowledgeManagementWorkspace({
                           name={`knowledge-upload-document-type-${upload.id}`}
                           autoComplete="off"
                           value={draft.documentType}
+                          disabled={Boolean(duplicate)}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
                               ...current,
                               [upload.id]: {
-                                ...draft,
+                                ...proposedDraft,
                                 documentType: event.target.value as KnowledgeDocumentType,
                               },
                             }))
@@ -1115,16 +1107,10 @@ export function KnowledgeManagementWorkspace({
                         <TactileButton
                           size="sm"
                           variant="primary"
-                          disabled={upload.state !== 'ready' || !draft.category.trim()}
+                          disabled={upload.state !== 'ready'}
                           loading={management.busy === `replace:${duplicate.id}`}
                           onClick={() =>
-                            void management.replace(
-                              upload.id,
-                              duplicate.id,
-                              duplicate.revision,
-                              draft.title,
-                              draft.category,
-                            )
+                            void management.replace(upload.id, duplicate.id, duplicate.revision)
                           }
                         >
                           Replace existing
@@ -1304,38 +1290,6 @@ export function KnowledgeManagementWorkspace({
                     onClick={() => void management.loadMore('trash')}
                   >
                     Load more trash
-                  </TactileButton>
-                </div>
-              )}
-            </div>
-          )}
-
-          {snapshot && section === 'audit' && (
-            <div className="knowledge-management-list knowledge-management-list--audit">
-              {management.auditEvents.length === 0 && (
-                <EmptyPanel>No audit events in the retained history.</EmptyPanel>
-              )}
-              {management.auditEvents.map((event) => (
-                <article className="knowledge-audit-row" key={event.id}>
-                  <span className="knowledge-audit-row__mark" aria-hidden="true" />
-                  <div>
-                    <h2>{ACTION_LABELS[event.action]}</h2>
-                    <p>{event.title || event.fileName || event.category || 'Wiki'}</p>
-                  </div>
-                  <div>
-                    <strong>{event.actorDisplayName}</strong>
-                    <span>{formatDate(event.occurredAt)}</span>
-                  </div>
-                </article>
-              ))}
-              {management.auditNextCursor && (
-                <div className="knowledge-management-more">
-                  <TactileButton
-                    size="sm"
-                    loading={management.busy === 'more:audit'}
-                    onClick={() => void management.loadMoreAudit()}
-                  >
-                    Load more activity
                   </TactileButton>
                 </div>
               )}

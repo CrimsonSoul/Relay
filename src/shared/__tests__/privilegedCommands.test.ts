@@ -307,6 +307,29 @@ describe('privileged command validation', () => {
     ).toBeNull();
   });
 
+  it('keeps replacement payloads limited to the upload and stable document identity', () => {
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.replace', {
+        uploadId: 'upload_1',
+        documentId: 'doc_1',
+        expectedRevision: 3,
+      }),
+    ).toEqual({
+      uploadId: 'upload_1',
+      documentId: 'doc_1',
+      expectedRevision: 3,
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.replace', {
+        uploadId: 'upload_1',
+        documentId: 'doc_1',
+        expectedRevision: 3,
+        title: 'Replacement title',
+        category: 'Replacement category',
+      }),
+    ).toBeNull();
+  });
+
   it('normalizes every resumable upload command with exact bounded payloads', () => {
     expect(
       normalizePrivilegedCommandPayload('knowledge.upload.batch.begin', {

@@ -164,7 +164,7 @@ describe('Knowledge Management visual system', () => {
     const select = ruleBody(css, '.knowledge-management select');
     const categoryTool = ruleBody(css, '.knowledge-management__category-tool');
     const row = ruleBody(css, '.knowledge-management-row');
-    const title = ruleBody(css, '.knowledge-management-row__identity h2,\n.knowledge-audit-row h2');
+    const title = ruleBody(css, '.knowledge-management-row__identity h2');
     const status = ruleBody(css, '.knowledge-management-status');
 
     expect(railButton).toContain('border: 1px solid transparent;');
@@ -194,6 +194,7 @@ describe('Knowledge Management visual system', () => {
     expect(row).toContain('padding: var(--space-3) var(--space-4);');
     expect(title).toContain('font-size: var(--text-md);');
     expect(status).toContain('border-radius: 2px;');
+    expect(css).not.toContain('.knowledge-audit-row');
   });
 
   it('keeps upload queue emphasis flat and scoped', () => {
@@ -266,7 +267,7 @@ describe('Knowledge Management visual system', () => {
         '2xs',
       ],
       ['.knowledge-management :is(input, select, textarea)', 'sm'],
-      ['.knowledge-management-row__identity h2,\n.knowledge-audit-row h2', 'md'],
+      ['.knowledge-management-row__identity h2', 'md'],
       ['.knowledge-management-row__meta', 'xs'],
       ['.knowledge-upload-queue__summary h2,\n.knowledge-management-section-heading h2', 'lg'],
       ['.knowledge-upload-file__state strong', 'sm'],

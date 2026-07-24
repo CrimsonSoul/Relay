@@ -304,29 +304,31 @@ export class ManagedKnowledgeService {
     uploadId: string;
     documentId: string;
     expectedRevision: number;
-    title: string;
-    category: string;
   }): Promise<KnowledgeManagementDocumentView> {
     const [upload, current] = await Promise.all([
       this.readyUpload(input.uploadId, input.actor),
       this.getDocument(input.documentId),
     ]);
     this.assertRevision(current, input.expectedRevision);
-    const title = normalizedText(input.title, 240);
-    const category = await this.resolveOrCreateCategoryByName(input.category);
     const [bytes, coverBytes] = await Promise.all([
       this.readAndVerifyUpload(upload),
       this.readAndVerifyCover(upload),
     ]);
-    const publishedAt = this.timestamp();
+    const contentUpdatedAt = this.timestamp();
     const metadata = {
-      category: category.name,
-      categoryId: category.id,
+      sourceKey: current.sourceKey,
+      category: current.category,
+      categoryId: current.categoryId,
       documentType: current.documentType,
-      title,
+      title: current.title,
+      displayTitle: current.displayTitle,
       fileName: current.fileName,
-      publishedAt,
-      actor: input.actor,
+      contentUpdatedAt,
+      publishedAt: current.publishedAt,
+      actor: {
+        accountId: current.publishedByAccountId,
+        displayName: current.publishedByName,
+      },
       revision: current.revision + 1,
     };
     const saved = await this.pb
@@ -863,32 +865,36 @@ export class ManagedKnowledgeService {
     bytes: Uint8Array,
     coverBytes: Uint8Array,
     metadata: {
+      sourceKey?: string;
       category: string;
-      categoryId: string;
+      categoryId: string | null;
       documentType: KnowledgeDocumentType;
       title: string;
+      displayTitle?: string;
       fileName: string;
+      contentUpdatedAt?: string;
       publishedAt: string;
       actor: Actor;
       revision: number;
     },
   ): FormData {
     const form = new FormData();
+    const contentUpdatedAt = metadata.contentUpdatedAt ?? metadata.publishedAt;
     const values = {
-      sourceKey: sourceKey(metadata.category, metadata.fileName),
+      sourceKey: metadata.sourceKey ?? sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
       categoryId: metadata.categoryId,
       documentType: metadata.documentType,
       title: metadata.title,
-      displayTitle: metadata.title,
+      displayTitle: metadata.displayTitle ?? metadata.title,
       fileName: metadata.fileName,
       checksum: upload.checksum,
       byteSize: upload.byteSize,
       pageCount: upload.pageCount,
       outline: JSON.stringify(upload.outline),
       outlineSource: upload.outlineSource,
-      sourceModifiedAt: metadata.publishedAt,
-      indexedAt: metadata.publishedAt,
+      sourceModifiedAt: contentUpdatedAt,
+      indexedAt: contentUpdatedAt,
       searchIndexState: 'pending',
       searchIndexChecksum: '',
       searchIndexVersion: 0,
@@ -925,25 +931,29 @@ export class ManagedKnowledgeService {
     saved: Record<string, unknown>,
     upload: UploadRecord,
     metadata: {
+      sourceKey?: string;
       category: string;
-      categoryId: string;
+      categoryId: string | null;
       documentType: KnowledgeDocumentType;
       title: string;
+      displayTitle?: string;
       fileName: string;
+      contentUpdatedAt?: string;
       publishedAt: string;
       actor: Actor;
       revision: number;
     },
     existing?: KnowledgeDocumentRecord,
   ): KnowledgeDocumentRecord {
+    const contentUpdatedAt = metadata.contentUpdatedAt ?? metadata.publishedAt;
     return {
       id: String(saved.id),
-      sourceKey: sourceKey(metadata.category, metadata.fileName),
+      sourceKey: metadata.sourceKey ?? sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
       categoryId: metadata.categoryId,
       documentType: metadata.documentType,
       title: metadata.title,
-      displayTitle: metadata.title,
+      displayTitle: metadata.displayTitle ?? metadata.title,
       fileName: metadata.fileName,
       pdf: String(saved.pdf || metadata.fileName),
       cover: String(saved.cover || upload.cover || '') || null,
@@ -952,8 +962,8 @@ export class ManagedKnowledgeService {
       pageCount: upload.pageCount ?? 1,
       outline: upload.outline,
       outlineSource: upload.outlineSource ?? 'none',
-      sourceModifiedAt: metadata.publishedAt,
-      indexedAt: metadata.publishedAt,
+      sourceModifiedAt: contentUpdatedAt,
+      indexedAt: contentUpdatedAt,
       searchIndexState: 'pending',
       searchIndexChecksum: null,
       searchIndexVersion: 0,

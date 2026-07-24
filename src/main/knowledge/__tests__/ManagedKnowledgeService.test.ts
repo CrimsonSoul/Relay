@@ -371,7 +371,22 @@ describe('ManagedKnowledgeService', () => {
     });
   });
 
-  it('replaces PDF bytes while preserving the stable document and relative-link filename', async () => {
+  it('replaces only file-derived content while preserving every existing document field', async () => {
+    const originalPublishedAt = '2025-11-03T14:30:00.000Z';
+    documents.getOne.mockResolvedValueOnce(
+      document({
+        sourceKey: 'Custom/Stable-Runbook.pdf',
+        category: 'Uncategorized',
+        categoryId: 'category-uncategorized',
+        documentType: 'cheatsheet',
+        title: 'Original embedded title',
+        displayTitle: 'Pinned operations title',
+        publishedByAccountId: 'account-original-publisher',
+        publishedByName: 'Original Publisher',
+        publishedAt: originalPublishedAt,
+      }),
+    );
+
     await expect(
       service().replace({
         actor: ACTOR,
@@ -379,13 +394,16 @@ describe('ManagedKnowledgeService', () => {
         uploadId: 'upload-1',
         documentId: 'document-1',
         expectedRevision: 3,
-        title: 'Runbook revised',
-        category: 'Operations',
       }),
     ).resolves.toMatchObject({
       id: 'document-1',
       fileName: 'Runbook.pdf',
-      displayTitle: 'Runbook revised',
+      category: 'Uncategorized',
+      categoryId: 'category-uncategorized',
+      documentType: 'cheatsheet',
+      displayTitle: 'Pinned operations title',
+      publishedByName: 'Original Publisher',
+      publishedAt: originalPublishedAt,
       revision: 4,
       searchIndexState: 'pending',
       searchIndexChecksum: null,
@@ -397,9 +415,14 @@ describe('ManagedKnowledgeService', () => {
       requestKey: null,
     });
     const replacementForm = documents.update.mock.calls.at(-1)?.[1] as FormData;
-    expect(replacementForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
-    expect(replacementForm.get('categoryId')).toBe('category-operations');
-    expect(replacementForm.get('documentType')).toBe('sop');
+    expect(replacementForm.get('sourceKey')).toBe('Custom/Stable-Runbook.pdf');
+    expect(replacementForm.get('title')).toBe('Original embedded title');
+    expect(replacementForm.get('displayTitle')).toBe('Pinned operations title');
+    expect(replacementForm.get('publishedByAccountId')).toBe('account-original-publisher');
+    expect(replacementForm.get('publishedByName')).toBe('Original Publisher');
+    expect(replacementForm.get('publishedAt')).toBe(originalPublishedAt);
+    expect(replacementForm.get('categoryId')).toBe('category-uncategorized');
+    expect(replacementForm.get('documentType')).toBe('cheatsheet');
     expect(replacementForm.get('searchIndexState')).toBe('pending');
     expect(replacementForm.get('searchIndexVersion')).toBe('0');
     expect(replacementForm.get('publishedByOperatorId')).toBe('');
