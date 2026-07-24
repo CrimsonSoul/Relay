@@ -72,9 +72,25 @@ describe('TeamCard', () => {
     expect(screen.getByText('1 active')).toBeInTheDocument();
   });
 
-  it('warns when a team has a primary but no backup coverage', () => {
-    render(<TeamCard {...defaultProps()} rows={[makeRow({ role: 'Primary' })]} />);
-    expect(screen.getByText('No backup')).toBeInTheDocument();
+  it('does not show a health chip for a team with primary-only coverage', () => {
+    const { container } = render(
+      <TeamCard {...defaultProps()} rows={[makeRow({ role: 'Primary' })]} />,
+    );
+    expect(screen.queryByText('No backup')).not.toBeInTheDocument();
+    expect(screen.queryByText('Covered')).not.toBeInTheDocument();
+    expect(container.querySelector('.team-health-badge')).not.toBeInTheDocument();
+  });
+
+  it('does not show a health chip for a team with primary and backup coverage', () => {
+    const { container } = render(
+      <TeamCard
+        {...defaultProps()}
+        rows={[makeRow({ role: 'Primary' }), makeRow({ id: 'r2', role: 'Backup' })]}
+      />,
+    );
+    expect(screen.queryByText('No backup')).not.toBeInTheDocument();
+    expect(screen.queryByText('Covered')).not.toBeInTheDocument();
+    expect(container.querySelector('.team-health-badge')).not.toBeInTheDocument();
   });
 
   it('shows empty state when rows are empty', () => {

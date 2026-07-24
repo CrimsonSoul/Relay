@@ -61,7 +61,6 @@ export async function renderKnowledgeCover(data: Uint8Array): Promise<Uint8Array
   } catch {
     throw new Error('render-failed');
   } finally {
-    if (document) await document.destroy();
-    else await loadingTask.destroy();
+    await loadingTask.destroy();
   }
 }

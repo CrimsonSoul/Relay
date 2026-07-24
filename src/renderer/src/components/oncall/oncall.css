@@ -778,9 +778,7 @@
   box-shadow: none;
 }
 
-/* No coverage / no backup → the rail screams regardless of team color */
-.card-surface.team-card-body:has(.team-health-badge--danger),
-.card-surface.team-card-body:has(.team-health-badge--danger):hover,
+/* Vacant teams keep the alarm rail regardless of their assigned team color. */
 .card-surface.team-card-body:has(.team-health-badge--muted),
 .card-surface.team-card-body:has(.team-health-badge--muted):hover {
   border-left-color: var(--alarm);
@@ -839,11 +837,6 @@
   color: var(--color-warning);
   background: transparent;
   border: 1px solid var(--color-border-strong);
-}
-
-.team-health-badge--danger {
-  color: #000;
-  background: var(--alarm);
 }
 
 .team-health-badge--muted {

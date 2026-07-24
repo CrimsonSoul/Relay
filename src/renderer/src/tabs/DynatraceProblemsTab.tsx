@@ -776,11 +776,16 @@ function ProblemQueue({
 
 type ProblemSavingAction = 'address' | 'response' | 'refresh' | 'profile' | null;
 
+type PendingDispositionResponse = {
+  noteId: string;
+  resolver: DynatraceProblemResolver;
+};
+
 type ProblemDetailProps = {
   problem: DynatraceProblemRecord | undefined;
   state: DynatraceProblemStateRecord | undefined;
   notes: DynatraceProblemNoteRecord[];
-  hasSavedResponse: boolean;
+  hasPendingDispositionResponse: boolean;
   resolverDraft: DynatraceProblemResolver | '';
   ticketDraft: string;
   noteDraft: string;
@@ -794,11 +799,48 @@ type ProblemDetailProps = {
   onOpenDynatrace: (problem: DynatraceProblemRecord) => void;
 };
 
+type ProblemResolverSelectProps = {
+  label: string;
+  value: DynatraceProblemResolver | '';
+  disabled: boolean;
+  onChange: (value: DynatraceProblemResolver | '') => void;
+};
+
+function ProblemResolverSelect({
+  label,
+  value,
+  disabled,
+  onChange,
+}: Readonly<ProblemResolverSelectProps>) {
+  return (
+    <label className="dt-problem-resolver">
+      <span>{label}</span>
+      <select
+        name="dynatrace-problem-resolver"
+        autoComplete="off"
+        value={value}
+        onChange={(event) => onChange(event.target.value as DynatraceProblemResolver | '')}
+        disabled={disabled}
+        required
+      >
+        <option value="" disabled>
+          Select your name
+        </option>
+        {DYNATRACE_PROBLEM_RESOLVERS.map((resolver) => (
+          <option key={resolver} value={resolver}>
+            {resolver}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function ProblemDetail({
   problem,
   state,
   notes,
-  hasSavedResponse,
+  hasPendingDispositionResponse,
   resolverDraft,
   ticketDraft,
   noteDraft,
@@ -825,12 +867,13 @@ function ProblemDetail({
   const addressed = isAddressed(state);
   const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
   const hasDraftedResponse = ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
-  const responseRequirementMet = hasDraftedResponse || hasSavedResponse;
+  const responseRequirementMet = hasDraftedResponse || hasPendingDispositionResponse;
   const resolverRequirementMet = resolverDraft.length > 0;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
   const statusLabel =
     problem.status === 'CLOSED' ? 'Resolved by Dynatrace' : severityLabel(problem.severity);
   const resolved = problem.status === 'CLOSED';
+  const canComposeResponse = !addressed || resolved;
   const dispositionDetail = getDispositionDetail(
     addressed,
     responseRequirementMet,
@@ -898,28 +941,12 @@ function ProblemDetail({
           {!resolved && (
             <div className="dt-problem-detail__response-actions">
               {!addressed && (
-                <label className="dt-problem-resolver">
-                  <span>Resolved by</span>
-                  <select
-                    name="dynatrace-problem-resolver"
-                    autoComplete="off"
-                    value={resolverDraft}
-                    onChange={(event) =>
-                      onResolverDraftChange(event.target.value as DynatraceProblemResolver | '')
-                    }
-                    disabled={!mutationsEnabled || savingAction !== null}
-                    required
-                  >
-                    <option value="" disabled>
-                      Select your name
-                    </option>
-                    {DYNATRACE_PROBLEM_RESOLVERS.map((resolver) => (
-                      <option key={resolver} value={resolver}>
-                        {resolver}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <ProblemResolverSelect
+                  label="Resolved by"
+                  value={resolverDraft}
+                  onChange={onResolverDraftChange}
+                  disabled={!mutationsEnabled || savingAction !== null}
+                />
               )}
               <button
                 type="button"
@@ -945,69 +972,83 @@ function ProblemDetail({
             <span>Local response history</span>
             <span>{notes.length}</span>
           </div>
-          <div className="dt-problem-ticket-composer">
-            <label htmlFor="dt-problem-ticket-number">Service Desk ticket number</label>
-            <div className="dt-problem-ticket-composer__control">
-              <input
-                id="dt-problem-ticket-number"
-                name="dynatrace-problem-ticket"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={ticketDraft}
-                onChange={(event) => onTicketDraftChange(event.target.value)}
-                maxLength={MAX_DYNATRACE_TICKET_REFERENCE_LENGTH}
-                disabled={!mutationsEnabled || savingAction !== null}
-                placeholder="INC, REQ, CHG, or other ticket number"
-              />
-            </div>
-            <small>
-              Relay records the ticket number for notation only. It does not create or update a
-              Service Desk ticket.
-            </small>
-          </div>
-          <label className="dt-problem-note-composer">
-            <span>Add a note</span>
-            <textarea
-              name="dynatrace-problem-note"
-              autoComplete="off"
-              value={noteDraft}
-              onChange={(event) => onNoteDraftChange(event.target.value)}
-              placeholder="Record investigation details, mitigation, ownership, or next steps"
-              maxLength={5_000}
-              disabled={!mutationsEnabled || savingAction !== null}
-            />
-          </label>
-          <div className="dt-problem-note-composer__actions">
-            <span>{noteDraft.length.toLocaleString()} / 5,000</span>
-            <button
-              type="button"
-              onClick={onSaveResponse}
-              disabled={
-                !mutationsEnabled ||
-                !hasDraftedResponse ||
-                !resolverRequirementMet ||
-                savingAction !== null
-              }
-            >
-              {savingAction === 'response' ? 'Saving…' : 'Save response'}
-            </button>
-          </div>
-          {connectionState === 'offline' && (
-            <div className="dt-problems__offline-note">
-              You are offline. Changes will sync when Relay reconnects.
-            </div>
-          )}
-          {(connectionState === 'connecting' || connectionState === 'reconnecting') && (
-            <div className="dt-problems__offline-note">
-              Relay is reconnecting. Wait for the connection to settle before changing local status
-              or adding notes.
-            </div>
-          )}
-          {connectionState === 'auth-failed' && (
-            <div className="dt-problems__offline-note">
-              Sign in to the Relay server before changing local status or adding notes.
-            </div>
+          {canComposeResponse && (
+            <>
+              {resolved && (
+                <ProblemResolverSelect
+                  label="Response by"
+                  value={resolverDraft}
+                  onChange={onResolverDraftChange}
+                  disabled={!mutationsEnabled || savingAction !== null}
+                />
+              )}
+              <div className="dt-problem-ticket-composer">
+                <label htmlFor="dt-problem-ticket-number">Service Desk ticket number</label>
+                <div className="dt-problem-ticket-composer__control">
+                  <input
+                    id="dt-problem-ticket-number"
+                    name="dynatrace-problem-ticket"
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={ticketDraft}
+                    onChange={(event) => onTicketDraftChange(event.target.value)}
+                    maxLength={MAX_DYNATRACE_TICKET_REFERENCE_LENGTH}
+                    disabled={!mutationsEnabled || savingAction !== null}
+                    placeholder="INC, REQ, CHG, or other ticket number"
+                  />
+                </div>
+                <small>
+                  Relay records the ticket number for notation only. It does not create or update a
+                  Service Desk ticket.
+                </small>
+              </div>
+              <label className="dt-problem-note-composer">
+                <span>Add a note</span>
+                <textarea
+                  name="dynatrace-problem-note"
+                  autoComplete="off"
+                  value={noteDraft}
+                  onChange={(event) => onNoteDraftChange(event.target.value)}
+                  placeholder="Record investigation details, mitigation, ownership, or next steps"
+                  maxLength={5_000}
+                  disabled={!mutationsEnabled || savingAction !== null}
+                />
+              </label>
+              <div className="dt-problem-note-composer__actions">
+                <span>{noteDraft.length.toLocaleString()} / 5,000</span>
+                {resolved && (
+                  <button
+                    type="button"
+                    onClick={onSaveResponse}
+                    disabled={
+                      !mutationsEnabled ||
+                      !hasDraftedResponse ||
+                      !resolverRequirementMet ||
+                      savingAction !== null
+                    }
+                  >
+                    {savingAction === 'response' ? 'Saving…' : 'Save response'}
+                  </button>
+                )}
+              </div>
+              {connectionState === 'offline' && (
+                <div className="dt-problems__offline-note">
+                  You are offline. Changes will sync when Relay reconnects.
+                </div>
+              )}
+              {(connectionState === 'connecting' || connectionState === 'reconnecting') && (
+                <div className="dt-problems__offline-note">
+                  Relay is reconnecting. Wait for the connection to settle before changing local
+                  status or adding notes.
+                </div>
+              )}
+              {connectionState === 'auth-failed' && (
+                <div className="dt-problems__offline-note">
+                  Sign in to the Relay server before changing local status or adding notes.
+                </div>
+              )}
+            </>
           )}
           <div className="dt-problem-notes" aria-live="polite">
             {notes.length === 0 ? (
@@ -1075,11 +1116,9 @@ export const DynatraceProblemsTab: React.FC<{
   const [ticketDraft, setTicketDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [resolverDraft, setResolverDraft] = useState<DynatraceProblemResolver | ''>('');
-  const [savedResponse, setSavedResponse] = useState<{
-    problemId: string;
-    noteId: string;
-    resolver: DynatraceProblemResolver;
-  } | null>(null);
+  const [pendingDispositionResponses, setPendingDispositionResponses] = useState<
+    Record<string, PendingDispositionResponse>
+  >({});
   const [savingAction, setSavingAction] = useState<ProblemSavingAction>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
@@ -1192,7 +1231,6 @@ export const DynatraceProblemsTab: React.FC<{
     setTicketDraft('');
     setNoteDraft('');
     setResolverDraft('');
-    setSavedResponse(null);
   }, [selectedProblemId]);
 
   const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
@@ -1202,12 +1240,12 @@ export const DynatraceProblemsTab: React.FC<{
   const selectedNotes = selectedProblem
     ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
     : [];
-  const savedResponseNoteId =
-    selectedProblem &&
-    resolverDraft &&
-    savedResponse?.problemId === selectedProblem.problemId &&
-    savedResponse.resolver === resolverDraft
-      ? savedResponse.noteId
+  const selectedPendingDispositionResponse = selectedProblem
+    ? pendingDispositionResponses[selectedProblem.problemId]
+    : undefined;
+  const pendingDispositionResponseNoteId =
+    selectedPendingDispositionResponse?.resolver === resolverDraft
+      ? selectedPendingDispositionResponse.noteId
       : '';
   const addSelectedProblemNote = useCallback(
     (problemId: string, note: string) =>
@@ -1224,7 +1262,10 @@ export const DynatraceProblemsTab: React.FC<{
     [showToast],
   );
 
-  const saveDraftedResponses = async (problemId: string) => {
+  const saveDraftedResponses = async (
+    problemId: string,
+    onResponsePersisted?: (noteId: string) => void,
+  ) => {
     let responseNoteId = '';
     if (ticketDraft.trim()) {
       const ticketNote = await addSelectedProblemNote(
@@ -1232,11 +1273,13 @@ export const DynatraceProblemsTab: React.FC<{
         formatDynatraceTicketReferenceNote(ticketDraft),
       );
       responseNoteId = ticketNote.id;
+      if (responseNoteId) onResponsePersisted?.(responseNoteId);
       setTicketDraft('');
     }
     if (noteDraft.trim()) {
       const nocNote = await addSelectedProblemNote(problemId, noteDraft);
       responseNoteId ||= nocNote.id;
+      if (responseNoteId) onResponsePersisted?.(responseNoteId);
       setNoteDraft('');
     }
     if (!responseNoteId) {
@@ -1257,12 +1300,7 @@ export const DynatraceProblemsTab: React.FC<{
       return;
     setSavingAction('response');
     try {
-      const responseNoteId = await saveDraftedResponses(selectedProblem.problemId);
-      setSavedResponse({
-        problemId: selectedProblem.problemId,
-        noteId: responseNoteId,
-        resolver: resolverDraft,
-      });
+      await saveDraftedResponses(selectedProblem.problemId);
       showToast('Local response saved', 'success');
     } catch (saveError) {
       showToast(
@@ -1282,7 +1320,7 @@ export const DynatraceProblemsTab: React.FC<{
       return;
     }
     const hasDraftedResponse = Boolean(ticketDraft.trim() || noteDraft.trim());
-    if (nextAddressed && !hasDraftedResponse && !savedResponseNoteId) {
+    if (nextAddressed && !hasDraftedResponse && !pendingDispositionResponseNoteId) {
       showToast(
         'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
         'warning',
@@ -1291,11 +1329,17 @@ export const DynatraceProblemsTab: React.FC<{
     }
     setSavingAction('address');
     try {
-      let responseNoteId: string | undefined;
+      let responseNoteId = pendingDispositionResponseNoteId || undefined;
       if (nextAddressed) {
-        responseNoteId = hasDraftedResponse
-          ? await saveDraftedResponses(selectedProblem.problemId)
-          : savedResponseNoteId;
+        const resolver = resolverDraft as DynatraceProblemResolver;
+        if (hasDraftedResponse) {
+          responseNoteId = await saveDraftedResponses(selectedProblem.problemId, (noteId) => {
+            setPendingDispositionResponses((current) => ({
+              ...current,
+              [selectedProblem.problemId]: { noteId, resolver },
+            }));
+          });
+        }
       }
       await setAddressed(
         selectedProblem.problemId,
@@ -1303,7 +1347,12 @@ export const DynatraceProblemsTab: React.FC<{
         responseNoteId,
         nextAddressed ? resolverDraft : undefined,
       );
-      setSavedResponse(null);
+      setPendingDispositionResponses((current) => {
+        if (!current[selectedProblem.problemId]) return current;
+        const next = { ...current };
+        delete next[selectedProblem.problemId];
+        return next;
+      });
       setResolverDraft('');
       showToast(
         nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
@@ -1496,7 +1545,7 @@ export const DynatraceProblemsTab: React.FC<{
           problem={selectedProblem}
           state={selectedState}
           notes={selectedNotes}
-          hasSavedResponse={Boolean(savedResponseNoteId)}
+          hasPendingDispositionResponse={Boolean(pendingDispositionResponseNoteId)}
           resolverDraft={resolverDraft}
           ticketDraft={ticketDraft}
           noteDraft={noteDraft}

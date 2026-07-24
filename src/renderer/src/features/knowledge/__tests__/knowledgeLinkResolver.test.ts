@@ -173,6 +173,21 @@ describe('resolveKnowledgeLink', () => {
     });
   });
 
+  it('upgrades an authored scheme-less dotted hostname to HTTPS', () => {
+    expect(resolve('access.rv.com')).toEqual({
+      kind: 'web',
+      url: 'https://access.rv.com/',
+      hostname: 'access.rv.com',
+    });
+  });
+
+  it.each([' access.rv.com', 'access.rv.com ', '/access.rv.com', '\\\\access.rv.com\\share'])(
+    'rejects an unsafe scheme-less hostname form: %s',
+    (rawUrl) => {
+      expect(resolve(rawUrl)).toEqual({ kind: 'unavailable', reason: 'unsupported' });
+    },
+  );
+
   it.each([
     ' https://example.com/runbook',
     'https://example.com/runbook ',

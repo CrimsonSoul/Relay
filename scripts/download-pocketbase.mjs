@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PB_VERSION = '0.25.9';
+const PB_VERSION = '0.39.9';
 const RESOURCES_DIR = join(__dirname, '..', 'resources', 'pocketbase');
 const POSIX_CHMOD_PATH = '/bin/chmod';
 const POSIX_UNZIP_PATH = '/usr/bin/unzip';

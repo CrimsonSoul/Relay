@@ -15,14 +15,14 @@ describe('download-pocketbase script', () => {
       let checksumUrl = '';
 
       await expect(
-        mod.verifyChecksum(zipPath, 'pocketbase_0.25.9_windows_amd64.zip', async (url) => {
+        mod.verifyChecksum(zipPath, 'pocketbase_0.39.9_windows_amd64.zip', async (url) => {
           checksumUrl = url;
           throw new Error('stop after url capture');
         }),
       ).rejects.toThrow(/checksums file not available/i);
 
       expect(checksumUrl).toBe(
-        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/checksums.txt',
+        'https://github.com/pocketbase/pocketbase/releases/download/v0.39.9/checksums.txt',
       );
     } finally {
       await rm(tmp, { recursive: true, force: true });
@@ -38,7 +38,7 @@ describe('download-pocketbase script', () => {
       const mod = await import(scriptUrl);
 
       await expect(
-        mod.verifyChecksum(zipPath, 'pocketbase_0.25.9_windows_amd64.zip', async () => {
+        mod.verifyChecksum(zipPath, 'pocketbase_0.39.9_windows_amd64.zip', async () => {
           throw new Error('checksums unavailable');
         }),
       ).rejects.toThrow(/checksums file not available/i);
@@ -82,17 +82,17 @@ describe('download-pocketbase script', () => {
 
     expect(
       mod.__downloadTestHooks.resolveRedirect(
-        'pocketbase_0.25.9_windows_amd64.zip',
-        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/',
+        'pocketbase_0.39.9_windows_amd64.zip',
+        'https://github.com/pocketbase/pocketbase/releases/download/v0.39.9/',
       ),
     ).toBe(
-      'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/pocketbase_0.25.9_windows_amd64.zip',
+      'https://github.com/pocketbase/pocketbase/releases/download/v0.39.9/pocketbase_0.39.9_windows_amd64.zip',
     );
 
     expect(() =>
       mod.__downloadTestHooks.resolveRedirect(
-        'http://example.test/pocketbase_0.25.9_windows_amd64.zip',
-        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/',
+        'http://example.test/pocketbase_0.39.9_windows_amd64.zip',
+        'https://github.com/pocketbase/pocketbase/releases/download/v0.39.9/',
       ),
     ).toThrow(/refusing insecure pocketbase download url/i);
   });

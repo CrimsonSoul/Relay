@@ -8,6 +8,21 @@ import {
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 const WINDOWS_ABSOLUTE_PATH = /^[a-z]:[\\/]/i;
+const COMMON_WEB_SUFFIXES = new Set([
+  'app',
+  'biz',
+  'cloud',
+  'com',
+  'dev',
+  'edu',
+  'gov',
+  'info',
+  'int',
+  'io',
+  'mil',
+  'net',
+  'org',
+]);
 
 export type KnowledgeLinkUnavailableReason = 'not-found' | 'ambiguous' | 'unsupported';
 
@@ -131,6 +146,33 @@ function resolveWebLink(rawUrl: string): KnowledgeResolvedLink {
   }
 }
 
+function resolveSchemeLessWebLink(rawUrl: string): KnowledgeResolvedLink | null {
+  if (
+    rawUrl !== rawUrl.trim() ||
+    rawUrl.startsWith('/') ||
+    rawUrl.startsWith('\\') ||
+    rawUrl.includes('\\')
+  ) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(`https://${rawUrl}`);
+    const labels = parsedUrl.hostname.split('.');
+    const suffix = labels.at(-1) ?? '';
+    if (
+      labels.length < 2 ||
+      labels.some((label) => label.length === 0) ||
+      (suffix.length !== 2 && !COMMON_WEB_SUFFIXES.has(suffix))
+    ) {
+      return null;
+    }
+    return resolveWebLink(parsedUrl.toString());
+  } catch {
+    return null;
+  }
+}
+
 export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): KnowledgeResolvedLink {
   const { rawUrl, currentDocument, documents } = input;
   if (
@@ -169,7 +211,9 @@ export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): Knowledg
   if (!parsedPath) return unavailable('unsupported');
 
   const fileName = parsedPath.path.split('/').at(-1) ?? '';
-  if (!/\.pdf$/i.test(fileName)) return unavailable('unsupported');
+  if (!/\.pdf$/i.test(fileName)) {
+    return resolveSchemeLessWebLink(rawUrl) ?? unavailable('unsupported');
+  }
 
   const authoredPathContext = resolveAuthoredPathContext(
     currentDocument.sourceKey,

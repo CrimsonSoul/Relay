@@ -53,27 +53,13 @@ export const TeamCard = React.memo(
         return { label: 'Empty', tone: 'muted' };
       }
 
-      const hasPrimary = validRows.some((row) => row.role.toLowerCase().includes('primary'));
-      const hasBackup = validRows.some((row) => {
-        const role = row.role.toLowerCase();
-        return (
-          role.includes('secondary') ||
-          role.includes('backup') ||
-          role.includes('weekend') ||
-          role.includes('after')
-        );
-      });
       const missingContact = validRows.some((row) => !row.contact.trim());
 
       if (missingContact) {
         return { label: 'Needs contact', tone: 'watch' };
       }
 
-      if (hasPrimary && !hasBackup) {
-        return { label: 'No backup', tone: 'danger' };
-      }
-
-      return { label: 'Covered', tone: 'ok' };
+      return null;
     }, [teamRows]);
 
     const isEmpty =
@@ -203,9 +189,11 @@ export const TeamCard = React.memo(
                 <span>{team}</span>
               </Tooltip>
             </div>
-            <span className={`team-health-badge team-health-badge--${health.tone}`}>
-              {health.label}
-            </span>
+            {health && (
+              <span className={`team-health-badge team-health-badge--${health.tone}`}>
+                {health.label}
+              </span>
+            )}
           </div>
           <div className="team-card-rows">
             {isEmpty

@@ -257,6 +257,11 @@ export function KnowledgePdfViewer({
     let loadingTask: PDFDocumentLoadingTask | null = null;
     let loadedPdf: PDFDocumentProxy | null = null;
     let loadingTaskDestroyed = false;
+    const destroyLoadingTask = async () => {
+      if (!loadingTask || loadingTaskDestroyed) return;
+      loadingTaskDestroyed = true;
+      await loadingTask.destroy();
+    };
     const generation = pdfGenerationRef.current + 1;
     const documentIdentity = `${documentId}:${documentChecksum}`;
     const preserveViewState = loadedDocumentIdentityRef.current === documentIdentity;
@@ -310,7 +315,7 @@ export function KnowledgePdfViewer({
         });
         loadedPdf = await loadingTask.promise;
         if (disposed) {
-          if (!loadingTaskDestroyed) await loadedPdf.destroy();
+          await destroyLoadingTask();
           return;
         }
         const session: KnowledgePdfSession = {
@@ -343,12 +348,7 @@ export function KnowledgePdfViewer({
         pendingSearchRequestRef.current = null;
         onPdfSessionChange?.(null);
       }
-      if (loadedPdf) {
-        loadedPdf.destroy().catch(() => undefined);
-      } else if (loadingTask) {
-        loadingTaskDestroyed = true;
-        loadingTask.destroy().catch(() => undefined);
-      }
+      void destroyLoadingTask().catch(() => undefined);
     };
   }, [active, documentChecksum, documentId, onPdfSessionChange, retryKey]);
 

@@ -140,13 +140,13 @@ describe('KnowledgePdfViewer', () => {
   const renderTask = { promise: Promise.resolve(), cancel: vi.fn() };
   const annotationMocks = new Map<number, ReturnType<typeof vi.fn>>();
   const operatorListMocks = new Map<number, ReturnType<typeof vi.fn>>();
-  const resolveUrl = vi.fn(
-    (): KnowledgeResolvedLink => ({ kind: 'unavailable', reason: 'unsupported' }),
-  );
+  const resolveUrl = vi.fn((): KnowledgeResolvedLink => ({
+    kind: 'unavailable',
+    reason: 'unsupported',
+  }));
   const onActivateResolvedLink = vi.fn();
   const onDestinationChange = vi.fn();
   const onPageChange = vi.fn();
-  const destroy = vi.fn(async () => undefined);
   const loadingDestroy = vi.fn(async () => undefined);
   const getDestination = vi.fn(async () => null);
   const getPageIndex = vi.fn(async () => 0);
@@ -178,9 +178,7 @@ describe('KnowledgePdfViewer', () => {
         width: 600 * scale,
         height: 800 * scale,
         scale,
-        convertToViewportPoint: (_x: number, top: number) => [0, (800 - top) * scale],
-        convertToViewportRectangle: (rect: number[]) =>
-          rect.map((coordinate) => coordinate * scale),
+        convertToViewportPoint: (x: number, y: number) => [x * scale, (800 - y) * scale],
       }),
       render: vi.fn(() => renderTask),
       getTextContent: vi.fn(async () => ({ items: [], styles: {} })),
@@ -196,7 +194,6 @@ describe('KnowledgePdfViewer', () => {
       getPage,
       getDestination,
       getPageIndex,
-      destroy,
       ...overrides,
     };
   }
@@ -396,7 +393,7 @@ describe('KnowledgePdfViewer', () => {
     const onPdfSessionChange = vi.fn();
     const replacementLoad = deferred<ReturnType<typeof pdf>>();
     const firstPdf = pdf();
-    const replacementPdf = pdf({ destroy: vi.fn(async () => undefined) });
+    const replacementPdf = pdf();
     getDocumentMock
       .mockReturnValueOnce({ promise: Promise.resolve(firstPdf), destroy: loadingDestroy } as never)
       .mockReturnValueOnce({ promise: replacementLoad.promise, destroy: loadingDestroy } as never);
@@ -444,8 +441,8 @@ describe('KnowledgePdfViewer', () => {
   it('never publishes a late PDF session from a superseded load', async () => {
     const onPdfSessionChange = vi.fn();
     const staleLoad = deferred<ReturnType<typeof pdf>>();
-    const currentPdf = pdf({ destroy: vi.fn(async () => undefined) });
-    const stalePdf = pdf({ destroy: vi.fn(async () => undefined) });
+    const currentPdf = pdf();
+    const stalePdf = pdf();
     getDocumentMock
       .mockReturnValueOnce({ promise: staleLoad.promise, destroy: loadingDestroy } as never)
       .mockReturnValueOnce({
@@ -476,6 +473,7 @@ describe('KnowledgePdfViewer', () => {
     expect(onPdfSessionChange).not.toHaveBeenCalledWith(
       expect.objectContaining({ pdf: stalePdf, checksum: 'a'.repeat(64) }),
     );
+    expect(loadingDestroy).toHaveBeenCalledOnce();
   });
 
   it('groups the compact reader controls and exposes secondary options from View', async () => {
@@ -599,7 +597,7 @@ describe('KnowledgePdfViewer', () => {
     expect(screen.queryByText(/not cached on this laptop/i)).not.toBeInTheDocument();
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
   });
 
   it('uses instant scrolling for a Single-page destination when reduced motion is requested', async () => {
@@ -639,7 +637,7 @@ describe('KnowledgePdfViewer', () => {
     expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('single');
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
 
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0 }));
     scrollTo.mockClear();
@@ -657,7 +655,7 @@ describe('KnowledgePdfViewer', () => {
     expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('continuous');
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
   });
 
   it('consumes a saved Single target before manual navigation and restores the manual page', async () => {
@@ -727,7 +725,7 @@ describe('KnowledgePdfViewer', () => {
     expect(onPageChange.mock.calls).toEqual([[2]]);
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
   });
 
   it('scrolls a fresh same-page Single target to the top without reacting to stable rerenders', async () => {
@@ -781,7 +779,7 @@ describe('KnowledgePdfViewer', () => {
     expect(getAnnotations(2)).toHaveBeenCalledTimes(3);
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
   });
 
   it('uses continuous previous and next controls without feeding observer updates back into scroll', async () => {
@@ -942,7 +940,7 @@ describe('KnowledgePdfViewer', () => {
     );
     expect(scrollTo).not.toHaveBeenCalled();
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
     offsetTop.mockRestore();
   });
 
@@ -1018,7 +1016,7 @@ describe('KnowledgePdfViewer', () => {
     expect(container.querySelectorAll('.knowledge-page')).toHaveLength(1);
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(getDocumentMock).toHaveBeenCalledOnce();
-    expect(destroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).not.toHaveBeenCalled();
   });
 
   it('loads the selected PDF through Relay with script execution disabled and renders selectable text', async () => {
@@ -1394,13 +1392,11 @@ describe('KnowledgePdfViewer', () => {
   });
 
   it('ignores late annotation work from an interrupted page render', async () => {
-    resolveUrl.mockImplementation(
-      (url): KnowledgeResolvedLink => ({
-        kind: 'web',
-        url,
-        hostname: new URL(url).hostname,
-      }),
-    );
+    resolveUrl.mockImplementation((url): KnowledgeResolvedLink => ({
+      kind: 'web',
+      url,
+      hostname: new URL(url).hostname,
+    }));
     const firstPageAnnotations = deferred<unknown[]>();
     getAnnotations(1).mockReturnValueOnce(firstPageAnnotations.promise);
     getAnnotations(2).mockResolvedValueOnce([
@@ -1425,13 +1421,11 @@ describe('KnowledgePdfViewer', () => {
   });
 
   it('invalidates active annotation work when the same document checksum changes', async () => {
-    resolveUrl.mockImplementation(
-      (url): KnowledgeResolvedLink => ({
-        kind: 'web',
-        url,
-        hostname: new URL(url).hostname,
-      }),
-    );
+    resolveUrl.mockImplementation((url): KnowledgeResolvedLink => ({
+      kind: 'web',
+      url,
+      hostname: new URL(url).hostname,
+    }));
     const staleAnnotations = deferred<unknown[]>();
     const stalePage = page(1);
     stalePage.getAnnotations = vi.fn(() => staleAnnotations.promise);
@@ -1511,13 +1505,8 @@ describe('KnowledgePdfViewer', () => {
     const secondPdfLoad = deferred<ReturnType<typeof pdf>>();
     getDocumentMock
       .mockReturnValueOnce({
-        promise: Promise.resolve(
-          pdf({
-            getPage: firstPdfGetPage,
-            destroy: firstPdfDestroy,
-          }),
-        ),
-        destroy: loadingDestroy,
+        promise: Promise.resolve(pdf({ getPage: firstPdfGetPage })),
+        destroy: firstPdfDestroy,
       } as never)
       .mockReturnValueOnce({
         promise: secondPdfLoad.promise,
@@ -1895,12 +1884,11 @@ describe('KnowledgePdfViewer', () => {
     expect(getKnowledgePdf).toHaveBeenCalledTimes(2);
   });
 
-  it('destroys an opened document through a single ownership path on unmount', async () => {
+  it('destroys an opened document through its loading task on unmount', async () => {
     const { unmount } = renderComponent();
     await screen.findByText('Page 1 of 3');
 
     unmount();
-    expect(destroy).toHaveBeenCalledOnce();
-    expect(loadingDestroy).not.toHaveBeenCalled();
+    expect(loadingDestroy).toHaveBeenCalledOnce();
   });
 });

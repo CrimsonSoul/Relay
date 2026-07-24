@@ -135,6 +135,8 @@ describe('DynatraceProblemsTab', () => {
     expect(
       screen.getByText(/Choose your name, then add a ticket or note below/i),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
   });
 
   it('requires one listed resolver and a drafted response before enabling local resolution', async () => {
@@ -746,22 +748,44 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('saves a standalone ticket through the unified response action', async () => {
+  it('saves a ticket response from the selected History problem', async () => {
+    const historyProblem = makeHistoryProblem('history-ticket', 'Resolved payment problem', 200);
+    mocks.hookValue = { ...mocks.hookValue, problems: [historyProblem] };
+
     render(<DynatraceProblemsTab relayMode="client" />);
-    await screen.findByRole('heading', { name: openProblem.title });
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    await screen.findByRole('heading', { name: historyProblem.title });
+
     fireEvent.change(screen.getByLabelText('Service Desk ticket number'), {
       target: { value: 'REQ0042000' },
     });
     const save = screen.getByRole('button', { name: 'Save response' });
     expect(save).toBeDisabled();
-    selectResolver();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Response by' }), {
+      target: { value: 'Ryan' },
+    });
     fireEvent.click(save);
 
     await waitFor(() =>
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: REQ0042000', 'Ryan'),
+      expect(mocks.addNote).toHaveBeenCalledWith(
+        historyProblem.problemId,
+        'Ticket: REQ0042000',
+        'Ryan',
+      ),
     );
     expect(screen.queryByRole('button', { name: 'Add ticket reference' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add note' })).not.toBeInTheDocument();
+  });
+
+  it('does not expose the response action when History has no selected problem', () => {
+    mocks.hookValue = { ...mocks.hookValue, problems: [] };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /History\s*0/i }));
+
+    expect(screen.getByText('Select a problem')).toBeVisible();
+    expect(screen.queryByRole('combobox', { name: 'Response by' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
   });
 
   it('retains ticket and note drafts and does not address when ticket persistence fails', async () => {
@@ -786,6 +810,75 @@ describe('DynatraceProblemsTab', () => {
     expect(mocks.setAddressed).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Service Desk ticket number')).toHaveValue('INC0012345');
     expect(screen.getByLabelText('Add a note')).toHaveValue('Keep this draft for retry.');
+  });
+
+  it('retries a failed disposition without saving the response twice', async () => {
+    mocks.setAddressed.mockRejectedValueOnce(new Error('Unable to save the local disposition.'));
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Traffic shifted to the secondary pool.' },
+    });
+    selectResolver();
+    const address = screen.getByRole('button', { name: 'Mark addressed locally' });
+    fireEvent.click(address);
+
+    await waitFor(() =>
+      expect(mocks.showToast).toHaveBeenCalledWith(
+        'Unable to save the local disposition.',
+        'error',
+      ),
+    );
+    expect(mocks.addNote).toHaveBeenCalledTimes(1);
+    expect(address).toBeEnabled();
+
+    fireEvent.click(address);
+
+    await waitFor(() => expect(mocks.setAddressed).toHaveBeenCalledTimes(2));
+    expect(mocks.addNote).toHaveBeenCalledTimes(1);
+    expect(mocks.setAddressed).toHaveBeenLastCalledWith(
+      openProblem.problemId,
+      true,
+      'new-response-note',
+      'Ryan',
+    );
+  });
+
+  it('retries only the unsaved note when a two-part response partially fails', async () => {
+    mocks.addNote
+      .mockResolvedValueOnce({ id: 'ticket-response-note' })
+      .mockRejectedValueOnce(new Error('Unable to queue the NOC note.'))
+      .mockResolvedValueOnce({ id: 'noc-response-note' });
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Service Desk ticket number'), {
+      target: { value: 'INC0012345' },
+    });
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Traffic shifted to the secondary pool.' },
+    });
+    selectResolver();
+    const address = screen.getByRole('button', { name: 'Mark addressed locally' });
+    fireEvent.click(address);
+
+    await waitFor(() =>
+      expect(mocks.showToast).toHaveBeenCalledWith('Unable to queue the NOC note.', 'error'),
+    );
+    expect(screen.getByLabelText('Service Desk ticket number')).toHaveValue('');
+    expect(screen.getByLabelText('Add a note')).toHaveValue(
+      'Traffic shifted to the secondary pool.',
+    );
+
+    fireEvent.click(address);
+
+    await waitFor(() => expect(mocks.setAddressed).toHaveBeenCalledTimes(1));
+    expect(mocks.addNote.mock.calls.map(([, value]) => value)).toEqual([
+      'Ticket: INC0012345',
+      'Traffic shifted to the secondary pool.',
+      'Traffic shifted to the secondary pool.',
+    ]);
   });
 
   it('queues ticket then note then addressed state in order while offline', async () => {
@@ -823,52 +916,31 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('saves a standalone note through the unified response action', async () => {
+  it('shows Return to queue as the only action for an addressed open problem', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      stateByProblemId: new Map([
+        [
+          openProblem.problemId,
+          {
+            id: 'state-addressed',
+            problemId: openProblem.problemId,
+            addressed: true,
+            addressedAt: '2026-07-23T18:00:00.000Z',
+            addressedBy: 'Ryan',
+          },
+        ],
+      ]),
+    };
+
     render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /Addressed locally\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
-    fireEvent.change(screen.getByLabelText('Add a note'), {
-      target: { value: 'Escalated to the payments team.' },
-    });
-    const save = screen.getByRole('button', { name: 'Save response' });
-    expect(save).toBeDisabled();
-    selectResolver();
-    fireEvent.click(save);
-
-    await waitFor(() => {
-      expect(mocks.addNote).toHaveBeenCalledWith(
-        'problem-1',
-        'Escalated to the payments team.',
-        'Ryan',
-      );
-    });
-    expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
-  });
-
-  it('keeps an attributed saved response eligible for local resolution', async () => {
-    render(<DynatraceProblemsTab relayMode="client" />);
-    await screen.findByRole('heading', { name: openProblem.title });
-
-    fireEvent.change(screen.getByLabelText('Add a note'), {
-      target: { value: 'Mitigation is complete.' },
-    });
-    selectResolver();
-    fireEvent.click(screen.getByRole('button', { name: 'Save response' }));
-
-    const address = screen.getByRole('button', { name: 'Mark addressed locally' });
-    await waitFor(() => expect(address).toBeEnabled());
-    expect(screen.getByLabelText('Add a note')).toHaveValue('');
-    fireEvent.click(address);
-
-    await waitFor(() => {
-      expect(mocks.addNote).toHaveBeenCalledTimes(1);
-      expect(mocks.setAddressed).toHaveBeenCalledWith(
-        'problem-1',
-        true,
-        'new-response-note',
-        'Ryan',
-      );
-    });
+    expect(screen.getByRole('button', { name: 'Return to queue' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Service Desk ticket number')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a note')).not.toBeInTheDocument();
   });
 
   it('does not mark addressed without a resolver selection', async () => {

@@ -12,8 +12,7 @@ export type KnowledgeLinkItem = {
   id: string;
   rect: readonly [number, number, number, number];
   action:
-    | { kind: 'destination'; destination: KnowledgePdfDestination }
-    | { kind: 'url'; url: string };
+    { kind: 'destination'; destination: KnowledgePdfDestination } | { kind: 'url'; url: string };
 };
 
 type KnowledgeLinkLayerProps = {
@@ -107,19 +106,20 @@ function projectedStyle(
   viewport: PageViewport,
   rect: readonly [number, number, number, number],
 ): CSSProperties | null {
-  const projected = viewport.convertToViewportRectangle([...rect]);
-  const coordinates = finiteRectangle(projected);
+  const [x1, y1] = viewport.convertToViewportPoint(rect[0], rect[1]);
+  const [x2, y2] = viewport.convertToViewportPoint(rect[2], rect[3]);
+  const coordinates = finiteRectangle([x1, y1, x2, y2]);
   if (!coordinates) return null;
 
-  const [x1, y1, x2, y2] = coordinates;
-  const left = Math.min(x1, x2);
-  const top = Math.min(y1, y2);
+  const [projectedX1, projectedY1, projectedX2, projectedY2] = coordinates;
+  const left = Math.min(projectedX1, projectedX2);
+  const top = Math.min(projectedY1, projectedY2);
 
   return {
     left,
     top,
-    width: Math.max(x1, x2) - left,
-    height: Math.max(y1, y2) - top,
+    width: Math.max(projectedX1, projectedX2) - left,
+    height: Math.max(projectedY1, projectedY2) - top,
   };
 }
 

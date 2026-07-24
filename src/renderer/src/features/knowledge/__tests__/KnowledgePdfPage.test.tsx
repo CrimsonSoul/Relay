@@ -39,9 +39,10 @@ describe('KnowledgePdfPage', () => {
   const onActivateResolvedLink = vi.fn();
   const onActivateDestination = vi.fn();
   const onStatus = vi.fn();
-  const resolveUrl = vi.fn(
-    (): KnowledgeResolvedLink => ({ kind: 'unavailable', reason: 'unsupported' }),
-  );
+  const resolveUrl = vi.fn((): KnowledgeResolvedLink => ({
+    kind: 'unavailable',
+    reason: 'unsupported',
+  }));
   const firstRenderTask = { promise: Promise.resolve(), cancel: vi.fn() };
   const secondRenderTask = { promise: Promise.resolve(), cancel: vi.fn() };
   const pageCleanup = vi.fn();
@@ -49,8 +50,7 @@ describe('KnowledgePdfPage', () => {
     width: 600 * scale,
     height: 800 * scale,
     scale,
-    convertToViewportPoint: (_x: number, top: number) => [0, (800 - top) * scale],
-    convertToViewportRectangle: (rect: number[]) => rect.map((coordinate) => coordinate * scale),
+    convertToViewportPoint: (x: number, y: number) => [x * scale, (800 - y) * scale],
   }));
   const renderPage = vi.fn();
   const page = {

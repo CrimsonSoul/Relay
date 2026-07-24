@@ -13,8 +13,8 @@ vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
   AnnotationType: { LINK: 2, FILEATTACHMENT: 17, WIDGET: 20 },
 }));
 
-function viewport(convertToViewportRectangle = vi.fn((rect: number[]) => rect)) {
-  return { convertToViewportRectangle } as never;
+function viewport(convertToViewportPoint = vi.fn((x: number, y: number) => [x, y])) {
+  return { convertToViewportPoint } as never;
 }
 
 function renderLayer(
@@ -204,9 +204,10 @@ describe('KnowledgeLinkLayer', () => {
         unsafeUrl: 'javascript:alert(1)',
       },
     ]);
-    const resolveUrl = vi.fn(
-      (): KnowledgeResolvedLink => ({ kind: 'unavailable', reason: 'unsupported' }),
-    );
+    const resolveUrl = vi.fn((): KnowledgeResolvedLink => ({
+      kind: 'unavailable',
+      reason: 'unsupported',
+    }));
     const onActivateResolvedLink = vi.fn();
 
     renderLayer([item], { resolveUrl, onActivateResolvedLink });
@@ -265,8 +266,12 @@ describe('KnowledgeLinkLayer', () => {
     expect(onActivateResolvedLink).not.toHaveBeenCalled();
   });
 
-  it('projects link rectangles through the viewport and normalizes reversed coordinates', () => {
-    const convertToViewportRectangle = vi.fn(() => [90, 180, 10, 20]);
+  it('projects link rectangles with the PDF.js 6 point API and normalizes reversed coordinates', () => {
+    const convertToViewportPoint = vi
+      .fn<(x: number, y: number) => number[]>()
+      .mockReturnValueOnce([90, 180])
+      .mockReturnValueOnce([10, 20]);
+
     renderLayer(
       [
         {
@@ -275,10 +280,11 @@ describe('KnowledgeLinkLayer', () => {
           action: { kind: 'destination', destination: 'target' },
         },
       ],
-      { viewport: viewport(convertToViewportRectangle) },
+      { viewport: { convertToViewportPoint } as never },
     );
 
-    expect(convertToViewportRectangle).toHaveBeenCalledWith([1, 2, 3, 4]);
+    expect(convertToViewportPoint).toHaveBeenNthCalledWith(1, 1, 2);
+    expect(convertToViewportPoint).toHaveBeenNthCalledWith(2, 3, 4);
     expect(screen.getByRole('button')).toHaveStyle({
       left: '10px',
       top: '20px',
@@ -293,8 +299,12 @@ describe('KnowledgeLinkLayer', () => {
       rect: [1, 2, 3, 4],
       action: { kind: 'destination', destination: 'target' },
     };
-    const firstViewport = viewport(vi.fn(() => [10, 20, 30, 40]));
-    const secondViewport = viewport(vi.fn(() => [20, 40, 60, 80]));
+    const firstViewport = viewport(
+      vi.fn().mockReturnValueOnce([10, 20]).mockReturnValueOnce([30, 40]),
+    );
+    const secondViewport = viewport(
+      vi.fn().mockReturnValueOnce([20, 40]).mockReturnValueOnce([60, 80]),
+    );
     const { rerender, props } = renderLayer([item], { viewport: firstViewport });
 
     expect(screen.getByRole('button')).toHaveStyle({ left: '10px', width: '20px' });

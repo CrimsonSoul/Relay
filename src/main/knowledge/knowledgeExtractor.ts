@@ -162,7 +162,6 @@ export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeEx
   } catch (error) {
     throw normalizedExtractionError(error);
   } finally {
-    if (document) await document.destroy();
-    else await loadingTask.destroy();
+    await loadingTask.destroy();
   }
 }

@@ -46,7 +46,6 @@ export async function extractKnowledgeSearchPages(
     }
     return pages;
   } finally {
-    if (document) await document.destroy();
-    else await loadingTask.destroy();
+    await loadingTask.destroy();
   }
 }

@@ -10,7 +10,7 @@ High-level structure of the Relay Electron application.
 | Renderer      | React 19                                                |
 | Language      | TypeScript 6                                            |
 | Build         | Vite 7 + electron-vite 5                                |
-| Data store    | PocketBase 0.25.9 with SQLite, PocketBase JS SDK 0.26.8 |
+| Data store    | PocketBase 0.39.9 with SQLite, PocketBase JS SDK 0.27.0 |
 | Validation    | Zod 4                                                   |
 | Testing       | Vitest 4 + Playwright                                   |
 

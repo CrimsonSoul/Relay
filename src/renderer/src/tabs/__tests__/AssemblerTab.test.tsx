@@ -336,16 +336,16 @@ describe('AssemblerTab', () => {
   it('uses one primary bridge action and outlined operational utility actions', () => {
     render(<AssemblerTab {...defaultProps} />);
 
+    const startBridge = screen.getByRole('button', { name: 'Start Bridge' });
+    const schedule = screen.getByRole('button', { name: 'Schedule' });
+
     expect(screen.getByRole('button', { name: 'History' })).toHaveClass(
       'assembler-utility-action',
       'tactile-button--secondary',
     );
-    expect(screen.getByRole('button', { name: 'Start Bridge' })).toHaveClass(
-      'tactile-button--primary',
-    );
-    expect(screen.getByRole('button', { name: 'Schedule' })).toHaveClass(
-      'tactile-button--secondary',
-    );
+    expect(startBridge).toHaveClass('tactile-button--primary');
+    expect(schedule).toHaveClass('tactile-button--secondary');
+    expect(schedule.compareDocumentPosition(startBridge)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('matches the operational toolbar spacing and control geometry', () => {
