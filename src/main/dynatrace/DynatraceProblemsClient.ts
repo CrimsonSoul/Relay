@@ -13,8 +13,7 @@ const POLL_INTERVAL_MS = 250;
 const MAX_PROBLEMS = 10_000;
 
 export type DynatraceProblemsQueryScope =
-  | { mode: 'reconcile' }
-  | { mode: 'incremental'; lookbackMinutes: number };
+  { mode: 'reconcile' } | { mode: 'incremental'; lookbackMinutes: number };
 
 const PROBLEMS_QUERY_FIELDS = `| fields problemId=event.id,
     displayId=display_id,

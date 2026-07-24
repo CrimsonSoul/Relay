@@ -1314,8 +1314,7 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     const uploadPatch = mockUpdate.mock.calls.find(([id]) => id === 'upload-col-id')?.[1] as
-      | { fields?: Array<Record<string, unknown>> }
-      | undefined;
+      { fields?: Array<Record<string, unknown>> } | undefined;
     expect(uploadPatch?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1363,8 +1362,7 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     const patch = mockUpdate.mock.calls.find(([id]) => id === 'documents-col-id')?.[1] as
-      | { indexes?: string[] }
-      | undefined;
+      { indexes?: string[] } | undefined;
     expect(patch?.indexes).toContain(activeOnlyIndex);
     expect(patch?.indexes).not.toContain(oldIndex);
     expect(

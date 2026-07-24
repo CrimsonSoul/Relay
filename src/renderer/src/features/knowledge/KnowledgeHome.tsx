@@ -119,8 +119,7 @@ export function KnowledgeHome({
   const handleOpen = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       const destination = event.currentTarget.dataset.destination as
-        | KnowledgeHomeDestination
-        | undefined;
+        KnowledgeHomeDestination | undefined;
       if (destination) onOpen(destination);
     },
     [onOpen],

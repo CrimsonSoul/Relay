@@ -16,10 +16,7 @@ const maximumBatchBytes = KNOWLEDGE_UPLOAD_MAX_FILES * KNOWLEDGE_MAX_PDF_BYTES;
 const rootInitializations = new Map<string, Promise<void>>();
 
 export type WebKnowledgeStagingErrorCode =
-  | 'invalid-request'
-  | 'invalid-file'
-  | 'conflict'
-  | 'upload-failed';
+  'invalid-request' | 'invalid-file' | 'conflict' | 'upload-failed';
 
 export class WebKnowledgeStagingError extends Error {
   constructor(readonly code: WebKnowledgeStagingErrorCode) {

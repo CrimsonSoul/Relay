@@ -23,7 +23,10 @@ describe('migrateKnowledgeCategories', () => {
       return saved;
     });
     const documentUpdate = vi.fn(async (id: string, patch: Record<string, unknown>) => {
-      Object.assign(documents.find((document) => document.id === id)!, patch);
+      Object.assign(
+        documents.find((document) => document.id === id)!,
+        patch,
+      );
       return documents.find((document) => document.id === id);
     });
     const stateUpdate = vi.fn(async (_id: string, patch: Record<string, unknown>) => {

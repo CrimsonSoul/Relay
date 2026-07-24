@@ -79,8 +79,7 @@ interface CollectionDef {
 }
 
 export type CollectionBootstrapResult =
-  | { privilegedRuntimeReady: true }
-  | { privilegedRuntimeReady: false; reason: string };
+  { privilegedRuntimeReady: true } | { privilegedRuntimeReady: false; reason: string };
 
 type AuthCollectionOptions = {
   authRule: string | null;

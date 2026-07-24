@@ -8,9 +8,7 @@ export type KnowledgeUploadCapacityProbe = {
 };
 
 export type KnowledgeUploadAdmissionErrorCode =
-  | 'invalid-request'
-  | 'conflict'
-  | 'insufficient-storage';
+  'invalid-request' | 'conflict' | 'insufficient-storage';
 
 function admissionMessage(code: KnowledgeUploadAdmissionErrorCode): string {
   if (code === 'insufficient-storage') {

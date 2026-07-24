@@ -11,10 +11,7 @@ const RELAUNCH_LOOP_WINDOW_MS = 10 * 60_000;
 const RELAUNCH_LOOP_LIMIT = 3;
 
 export type AppRelaunchReason =
-  | 'app-reconfigure'
-  | 'fatal-main-process-error'
-  | 'repeated-gpu-process-failures'
-  | string;
+  'app-reconfigure' | 'fatal-main-process-error' | 'repeated-gpu-process-failures' | string;
 
 export type AppQuitReason =
   | 'activate-window-create-failed'

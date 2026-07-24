@@ -40,11 +40,7 @@ export type KnowledgeDocumentSearchMatch = KnowledgeDocumentSearchResult & {
 };
 
 export type KnowledgeDocumentSearchState =
-  | 'idle'
-  | 'indexing'
-  | 'ready'
-  | 'partial'
-  | 'unavailable';
+  'idle' | 'indexing' | 'ready' | 'partial' | 'unavailable';
 
 export type KnowledgeDocumentSearchSnapshot = {
   query: string;

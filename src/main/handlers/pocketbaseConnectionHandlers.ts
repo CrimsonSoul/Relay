@@ -26,8 +26,7 @@ type AuthFailure = {
 };
 
 type AuthAttemptResult =
-  | { ok: true; result: PbConnectionResult }
-  | { ok: false; failure: AuthFailure };
+  { ok: true; result: PbConnectionResult } | { ok: false; failure: AuthFailure };
 type LoadedRelayConfig = NonNullable<ReturnType<AppConfig['load']>>;
 
 function delay(ms: number): Promise<void> {

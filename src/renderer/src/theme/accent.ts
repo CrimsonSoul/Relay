@@ -1,14 +1,5 @@
 export type PresetAccentId =
-  | 'red'
-  | 'orange'
-  | 'yellow'
-  | 'blue'
-  | 'cyan'
-  | 'green'
-  | 'lime'
-  | 'pink'
-  | 'purple'
-  | 'violet';
+  'red' | 'orange' | 'yellow' | 'blue' | 'cyan' | 'green' | 'lime' | 'pink' | 'purple' | 'violet';
 
 export type AccentId = PresetAccentId | 'custom';
 export type AccentScheduleSlotId = 'day' | 'swing' | 'night';

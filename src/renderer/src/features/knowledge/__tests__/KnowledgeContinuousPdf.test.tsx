@@ -115,9 +115,10 @@ function createPdf(
 }
 
 describe('KnowledgeContinuousPdf', () => {
-  const resolveUrl = vi.fn(
-    (): KnowledgeResolvedLink => ({ kind: 'unavailable', reason: 'unsupported' }),
-  );
+  const resolveUrl = vi.fn((): KnowledgeResolvedLink => ({
+    kind: 'unavailable',
+    reason: 'unsupported',
+  }));
   const onActivateResolvedLink = vi.fn();
   const onActivateDestination = vi.fn();
   const onCurrentPageChange = vi.fn();

@@ -1514,7 +1514,9 @@ test.describe('Vital Critical Path', () => {
 
   test('Knowledge PDF links use the compact Wiki Library drawer without losing reader state', async () => {
     test.setTimeout(120_000);
-    const authenticatedDocuments = await (await makePbClient(pbPort))
+    const authenticatedDocuments = await (
+      await makePbClient(pbPort)
+    )
       .collection('knowledge_documents')
       .getFullList<{ title: string }>({ requestKey: null });
     expect(authenticatedDocuments.map(({ title }) => title)).toContain(CONTINUOUS_READER_TITLE);

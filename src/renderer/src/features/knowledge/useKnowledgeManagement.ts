@@ -56,8 +56,7 @@ function normalizeAuditPage(value: unknown): KnowledgePage<KnowledgeAuditEventVi
 }
 
 type SnapshotRead =
-  | { snapshot: KnowledgeManagementSnapshot; error: null }
-  | { snapshot: null; error: string };
+  { snapshot: KnowledgeManagementSnapshot; error: null } | { snapshot: null; error: string };
 
 type MutationConfirmation = (snapshot: KnowledgeManagementSnapshot) => boolean;
 type ConfirmationCollection = 'documents' | 'trash' | 'uploads';

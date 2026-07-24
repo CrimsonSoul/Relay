@@ -145,11 +145,7 @@ type KnowledgeUploadCoordinatorOptions = {
 };
 
 export type KnowledgeUploadCoordinatorErrorCode =
-  | 'unauthorized'
-  | 'invalid-request'
-  | 'conflict'
-  | 'not-found'
-  | 'unavailable';
+  'unauthorized' | 'invalid-request' | 'conflict' | 'not-found' | 'unavailable';
 
 export class KnowledgeUploadCoordinatorError extends Error {
   constructor(

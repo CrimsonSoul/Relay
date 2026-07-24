@@ -31,10 +31,7 @@ export type DynatraceProblemSeverity =
   | 'RESOURCE_CONTENTION';
 
 export type DynatraceProblemImpactLevel =
-  | 'APPLICATION'
-  | 'ENVIRONMENT'
-  | 'INFRASTRUCTURE'
-  | 'SERVICES';
+  'APPLICATION' | 'ENVIRONMENT' | 'INFRASTRUCTURE' | 'SERVICES';
 
 export type DynatraceEntityRef = {
   id: string;

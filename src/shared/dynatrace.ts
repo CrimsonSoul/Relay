@@ -1,9 +1,5 @@
 export type DynatraceRuntimeState =
-  | 'live'
-  | 'authenticating'
-  | 'blocked'
-  | 'load-failed'
-  | 'closed';
+  'live' | 'authenticating' | 'blocked' | 'load-failed' | 'closed';
 
 export type DynatraceNavigationKind = 'dynatrace' | 'microsoft-auth' | 'blocked';
 

@@ -4,8 +4,7 @@ export type WebRateLimit = {
 };
 
 export type WebRateLimitResult =
-  | { allowed: true; remaining: number }
-  | { allowed: false; remaining: 0; retryAfterMs: number };
+  { allowed: true; remaining: number } | { allowed: false; remaining: 0; retryAfterMs: number };
 
 type Bucket = {
   count: number;

@@ -438,8 +438,7 @@ function normalizeKnowledgeUploadRevision(
   const id = payload[idKey];
   if (!boundedIdentifier(id, 200) || !nonNegativeInteger(payload.expectedRevision)) return null;
   return { [idKey]: id, expectedRevision: payload.expectedRevision } as
-    | { uploadId: string; expectedRevision: number }
-    | { batchId: string; expectedRevision: number };
+    { uploadId: string; expectedRevision: number } | { batchId: string; expectedRevision: number };
 }
 
 function normalizeKnowledgeCursor(value: unknown): string | null | undefined {

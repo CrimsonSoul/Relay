@@ -349,8 +349,7 @@ export type PbConnectionResult =
     };
 
 export type SetupTestConnectionResult =
-  | { ok: true }
-  | { ok: false; error: 'invalid-url' | 'unreachable' | 'auth-failed' };
+  { ok: true } | { ok: false; error: 'invalid-url' | 'unreachable' | 'auth-failed' };
 
 export type DiscoveredRelayServer = { name: string; host: string; port: number; url: string };
 
@@ -407,8 +406,7 @@ export type OfflineMutationApplied = {
 };
 
 export type OfflineMutationResult =
-  | ({ ok: true } & OfflineMutationApplied)
-  | { ok: false; error: string };
+  ({ ok: true } & OfflineMutationApplied) | { ok: false; error: string };
 
 export type PendingSyncStatus = {
   pendingCount: number;

@@ -44,9 +44,7 @@ export type KnowledgeLifecycleState = 'active' | 'trashed';
 export type KnowledgeLibraryMode = 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
 export type KnowledgeDocumentType = 'sop' | 'cheatsheet';
 export type KnowledgeSearchIndexError =
-  | 'no-searchable-text'
-  | 'extraction-failed'
-  | 'storage-unavailable';
+  'no-searchable-text' | 'extraction-failed' | 'storage-unavailable';
 
 export type KnowledgeCategoryRecord = {
   id: string;
@@ -111,11 +109,7 @@ export type KnowledgeUploadState =
 export type KnowledgeUploadBatchState = 'active' | 'ready' | 'cancelled' | 'expired' | 'completed';
 
 export type KnowledgeUploadQueueItemState =
-  | 'planning'
-  | 'paused'
-  | KnowledgeUploadState
-  | 'paused-network'
-  | 'source-required';
+  'planning' | 'paused' | KnowledgeUploadState | 'paused-network' | 'source-required';
 
 export type KnowledgeManagementErrorCode =
   | 'offline'
@@ -313,8 +307,7 @@ export type KnowledgeIndexStatus = {
 export type KnowledgeOpenWebLinkError = 'invalid-url' | 'rate-limited' | 'open-failed';
 
 export type KnowledgeOpenWebLinkResult =
-  | { ok: true }
-  | { ok: false; error: KnowledgeOpenWebLinkError };
+  { ok: true } | { ok: false; error: KnowledgeOpenWebLinkError };
 
 export type KnowledgePdfRequest = {
   documentId: string;

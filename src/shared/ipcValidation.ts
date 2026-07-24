@@ -99,12 +99,10 @@ export const KnowledgeSearchRequestSchema = z
     limit: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   })
   .strict()
-  .transform(
-    (input): KnowledgeSearchRequest => ({
-      ...input,
-      limit: boundedSearchLimit(input.scope, input.limit),
-    }),
-  );
+  .transform((input): KnowledgeSearchRequest => ({
+    ...input,
+    limit: boundedSearchLimit(input.scope, input.limit),
+  }));
 
 const privilegedPasswordSchema = z
   .string()

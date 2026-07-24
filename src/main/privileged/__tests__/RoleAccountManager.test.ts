@@ -82,8 +82,8 @@ describe('RoleAccountManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     accountCollection.getFullList.mockResolvedValue(accounts);
-    accountCollection.getOne.mockImplementation(
-      async (id: string) => accounts.find((entry) => entry.id === id)!,
+    accountCollection.getOne.mockImplementation(async (id: string) =>
+      accounts.find((entry) => entry.id === id)!,
     );
     stateCollection.getFirstListItem.mockResolvedValue(state());
     stateCollection.update.mockImplementation(async (_id: string, data: Record<string, unknown>) =>

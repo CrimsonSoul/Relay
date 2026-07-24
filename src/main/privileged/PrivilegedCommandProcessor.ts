@@ -187,8 +187,7 @@ type AuthorizedCommand = {
 };
 
 type AuthorizationResult =
-  | { ok: true; authorized: AuthorizedCommand }
-  | { ok: false; error: PrivilegedCommandError };
+  { ok: true; authorized: AuthorizedCommand } | { ok: false; error: PrivilegedCommandError };
 
 const silentLogger = { warn: () => undefined };
 
