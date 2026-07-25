@@ -70,6 +70,7 @@ describe('WebBridge', () => {
     await expect(bridge.saveConfig({})).resolves.toBe(false);
     await expect(bridge.createBackup()).resolves.toMatchObject({ success: false });
     await expect(bridge.getPrivilegedSession()).resolves.toMatchObject({ state: 'signed-out' });
+    expect((bridge as unknown as Record<string, unknown>).openPath).toBeUndefined();
   });
 
   it('uses exact routes and unsubscribes event listeners', async () => {

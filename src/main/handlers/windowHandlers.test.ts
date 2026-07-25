@@ -118,7 +118,6 @@ vi.mock('../rateLimiter', () => ({
   },
 }));
 
-import { validatePath } from '../utils/pathSafety';
 import { rateLimiters } from '../rateLimiter';
 import { readFile, stat, unlink } from 'node:fs/promises';
 import { loggers } from '../logger';
@@ -197,109 +196,8 @@ describe('windowHandlers', () => {
     });
   });
 
-  describe('OPEN_PATH', () => {
-    it('opens a valid path with allowed extension', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'exports/report.csv');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('blocks path traversal attempts', async () => {
-      vi.mocked(validatePath).mockResolvedValue(false);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, '../../etc/passwd');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('blocks files with unsafe extensions', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'malware.exe');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('blocks .sh files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'script.sh');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('allows .pdf files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'document.pdf');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('allows .json files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'data.json');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('allows .txt files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'notes.txt');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('allows .png files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'image.png');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('returns early when rate limited', async () => {
-      vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: false });
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'report.csv');
-
-      expect(validatePath).not.toHaveBeenCalled();
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('returns early when getDataRoot is not provided', async () => {
-      vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
-
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'report.csv');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('returns early for non-string paths', async () => {
-      await expect(handlers[IPC_CHANNELS.OPEN_PATH]({}, 42)).resolves.toBeUndefined();
-
-      expect(validatePath).not.toHaveBeenCalled();
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
+  it('does not register a generic file-path opening channel', () => {
+    expect(handlers).not.toHaveProperty('fs:openPath');
   });
 
   describe('OPEN_EXTERNAL', () => {
@@ -320,6 +218,31 @@ describe('windowHandlers', () => {
       expect(result).toBe(true);
     });
 
+    it('canonicalizes trusted mixed-case HTTPS URLs before opening them', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'HTTPS://STATUS.OPENAI.COM/incidents/1',
+      );
+
+      expect(shell.openExternal).toHaveBeenCalledWith('https://status.openai.com/incidents/1');
+      expect(result).toBe(true);
+    });
+
+    it.each([
+      ['credentials', 'https://user:password@status.openai.com/incidents/1'],
+      ['surrounding whitespace', ' https://status.openai.com/incidents/1 '],
+      ['control characters', 'https://status.openai.com/incidents/1\n'],
+      ['C1 control characters', 'https://status.openai.com/incidents/1\u0085'],
+      ['custom port', 'https://status.openai.com:8443/incidents/1'],
+      ['HTTP', ['http', '://status.openai.com/incidents/1'].join('')],
+      ['oversized value', `https://status.openai.com/${'a'.repeat(2_082)}`],
+    ])('blocks trusted-host web URLs with %s', async (_case, url) => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url);
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
     it('returns false when shell.openExternal throws (no protocol handler)', async () => {
       vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error('no handler for msteams:'));
 
@@ -337,13 +260,22 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).toHaveBeenCalledWith('https://downdetector.com/status/github/');
     });
 
+    it.each(['https://x.com/relay', 'https://twitter.com/relay'])(
+      'allows trusted social URL %s',
+      async (url) => {
+        await expect(handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url)).resolves.toBe(true);
+
+        expect(shell.openExternal).toHaveBeenCalledWith(url);
+      },
+    );
+
     it('opens trusted HTTPS Dynatrace tenant URLs', async () => {
       for (const url of [
         'https://abc123.apps.dynatrace.com',
         'https://abc123.live.dynatrace.com/ui/apps/dynatrace.classic.problems',
       ]) {
         await expect(handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url)).resolves.toBe(true);
-        expect(shell.openExternal).toHaveBeenCalledWith(url);
+        expect(shell.openExternal).toHaveBeenCalledWith(new URL(url).toString());
       }
     });
 

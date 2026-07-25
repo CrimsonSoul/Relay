@@ -50,6 +50,13 @@ describe('preload Knowledge web link bridge', () => {
     expect(api.runtime).toEqual(ELECTRON_RUNTIME);
   });
 
+  it('does not expose a generic file-path opening capability', () => {
+    const bridge = api as unknown as Record<string, unknown>;
+
+    expect(bridge.openPath).toBeUndefined();
+    expect(electronMocks.invoke).not.toHaveBeenCalledWith('fs:openPath', expect.anything());
+  });
+
   it('exposes race-safe startup state coordination', async () => {
     const snapshot = {
       generation: 1,

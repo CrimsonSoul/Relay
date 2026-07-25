@@ -1,14 +1,13 @@
 import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { writeFile, readFile, stat } from 'node:fs/promises';
-import { basename, extname, normalize, parse, resolve, join } from 'node:path';
+import { basename, extname, parse, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS, MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
 import { isDynatraceHost } from '@shared/dynatrace';
 import { getErrorMessage } from '@shared/types';
 import { describeUrlForLog } from '@shared/urlSecurity';
 import { loggers } from '../logger';
-import { validatePath } from '../utils/pathSafety';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { rateLimiters } from '../rateLimiter';
@@ -107,21 +106,6 @@ function sanitizePngSuggestedName(suggestedName: unknown): string {
   return `${stem || 'alert'}.png`;
 }
 
-/** Safe file extensions allowed for shell.openPath */
-const SAFE_OPEN_EXTENSIONS = new Set([
-  '.csv',
-  '.json',
-  '.txt',
-  '.log',
-  '.md',
-  '.pdf',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.svg',
-]);
-
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   ...Object.values(CLOUD_STATUS_PROVIDERS).map((provider) =>
     new URL(provider.statusUrl).hostname.toLowerCase(),
@@ -133,33 +117,54 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'twitter.com',
   'downdetector.com',
 ]);
+const MAX_EXTERNAL_URL_LENGTH = 2_081;
+const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
 
-function isAllowedExternalUrl(url: string): boolean {
+function normalizeAllowedExternalUrl(value: unknown): string | null {
+  if (
+    typeof value !== 'string' ||
+    value.length > MAX_EXTERNAL_URL_LENGTH ||
+    value.trim() !== value ||
+    CONTROL_CHARACTER_PATTERN.test(value)
+  ) {
+    return null;
+  }
+
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(value);
+    const canonicalUrl = parsed.toString();
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.port ||
+      CONTROL_CHARACTER_PATTERN.test(canonicalUrl)
+    ) {
+      return null;
+    }
+
     if (parsed.protocol === 'mailto:') {
       const address = parsed.pathname;
       const at = address.indexOf('@');
       const dotAfterAt = address.indexOf('.', at + 1);
-      return (
-        parsed.search === '' &&
+      return parsed.search === '' &&
         at > 0 &&
         dotAfterAt > at + 1 &&
         dotAfterAt < address.length - 1 &&
         !address.includes(' ') &&
         address.indexOf('@', at + 1) === -1
-      );
+        ? canonicalUrl
+        : null;
     }
     if (parsed.protocol === 'msteams:') {
       // Teams desktop client deep links only
-      return parsed.hostname.toLowerCase() === 'teams.microsoft.com';
+      return parsed.hostname.toLowerCase() === 'teams.microsoft.com' ? canonicalUrl : null;
     }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (parsed.protocol !== 'https:') return null;
     const hostname = parsed.hostname.toLowerCase();
-    if (parsed.protocol === 'https:' && isDynatraceHost(hostname)) return true;
-    return ALLOWED_EXTERNAL_HOSTS.has(hostname);
+    if (isDynatraceHost(hostname) || ALLOWED_EXTERNAL_HOSTS.has(hostname)) return canonicalUrl;
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -169,36 +174,13 @@ export function setupWindowHandlers(
   getDataRoot?: () => Promise<string>,
 ) {
   const brandAssets = getDataRoot ? new BrandAssetService(getDataRoot) : null;
-  // Shell / File Operations
-  ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (event, path: string) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_PATH)) return;
-    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
-    if (!getDataRoot) return;
-    if (typeof path !== 'string' || path.trim().length === 0) {
-      loggers.security.error('Blocked opening invalid path');
-      return;
-    }
-    const root = await getDataRoot();
-    const resolvedPath = resolve(root, normalize(path));
-
-    if (!(await validatePath(resolvedPath, root))) {
-      loggers.security.error(`Blocked access to path outside data root: ${path}`);
-      return;
-    }
-    const ext = extname(resolvedPath).toLowerCase();
-    if (!SAFE_OPEN_EXTENSIONS.has(ext)) {
-      loggers.security.error(`Blocked opening file with unsafe extension: ${path}`);
-      return;
-    }
-    await shell.openPath(resolvedPath);
-  });
-
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (event, url: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_EXTERNAL)) return false;
     if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
     try {
-      if (typeof url === 'string' && isAllowedExternalUrl(url)) {
-        await shell.openExternal(url);
+      const normalizedUrl = normalizeAllowedExternalUrl(url);
+      if (normalizedUrl) {
+        await shell.openExternal(normalizedUrl);
         return true;
       }
       loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);

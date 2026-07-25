@@ -358,7 +358,6 @@ export function createWebBridge(
   const bridge = {
     runtime: session.runtime,
     platform: browserPlatform(),
-    openPath: async () => undefined,
     openExternal: async (url) => actions.openExternal(url),
     onAuthRequested: noopSubscription,
     submitAuth: async () => false,

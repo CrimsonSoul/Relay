@@ -13,8 +13,6 @@ const api: BridgeAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.STARTUP_STATE_CHANGED, handler);
   },
   markStartupRendererMounted: () => ipcRenderer.send(IPC_CHANNELS.STARTUP_RENDERER_MOUNTED),
-  /** Path validation and sandboxing constraints are enforced on the main process side. */
-  openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
 
   onAuthRequested: (callback) => {

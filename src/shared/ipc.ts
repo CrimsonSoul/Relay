@@ -436,8 +436,6 @@ export type BridgeAPI = {
   getStartupState?: () => Promise<StartupSnapshot>;
   onStartupStateChanged?: (callback: (snapshot: StartupSnapshot) => void) => () => void;
   markStartupRendererMounted?: () => void;
-  /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
-  openPath: (path: string) => Promise<void>;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
   openExternal: (url: string) => Promise<boolean>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => () => void;
@@ -646,7 +644,6 @@ export const IPC_CHANNELS = {
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_MAXIMIZE_CHANGE: 'window:maximizeChange',
   WINDOW_OPEN_AUX: 'window:openAux',
-  OPEN_PATH: 'fs:openPath',
   OPEN_EXTERNAL: 'shell:openExternal',
   AUTH_REQUESTED: 'auth:requested',
   AUTH_SUBMIT: 'auth:submit',
