@@ -256,7 +256,7 @@ export function KnowledgeCategoryManager({
                   aria-label={`Delete ${category.name}`}
                 >
                   <label>
-                    Reassign documents to
+                    Reassign documents to{' '}
                     <select
                       className="tactile-input"
                       value={replacementId}

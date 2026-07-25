@@ -548,6 +548,7 @@ describe('KnowledgeTab', () => {
     render(<KnowledgeTab active relayMode="client" />);
 
     const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
+    expect(workspace.tagName).toBe('SECTION');
     const libraryToggle = screen.getByRole('button', { name: 'Wiki reader sidebar' });
     expect(screen.queryByRole('button', { name: 'Search this guide' })).not.toBeInTheDocument();
     expect(workspace).toHaveAttribute('data-library-drawer', 'closed');

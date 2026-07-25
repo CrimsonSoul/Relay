@@ -92,6 +92,7 @@ export const ContactCard = memo(
           {action}
           {hasNotes && onNotesClick && (
             <button
+              type="button"
               className="contact-entry-notes-btn"
               onClick={(e) => {
                 e.stopPropagation();

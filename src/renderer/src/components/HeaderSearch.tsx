@@ -526,6 +526,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
         {query ? (
           <Tooltip content="Clear search" position="bottom">
             <button
+              type="button"
               className="header-search-bar-clear"
               onClick={clearSearch}
               onMouseDown={(e) => e.preventDefault()}

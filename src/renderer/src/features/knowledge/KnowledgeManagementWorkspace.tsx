@@ -638,7 +638,7 @@ export function KnowledgeManagementWorkspace({
                     {editingId === document.id ? (
                       <div className="knowledge-management-row__editor">
                         <label>
-                          Display title
+                          Display title{' '}
                           <input
                             className="tactile-input"
                             ref={editTitleRef}
@@ -665,7 +665,7 @@ export function KnowledgeManagementWorkspace({
                           )}
                         </label>
                         <label>
-                          Category
+                          Category{' '}
                           <select
                             className="tactile-input"
                             ref={editCategoryRef}
@@ -707,7 +707,7 @@ export function KnowledgeManagementWorkspace({
                           )}
                         </label>
                         <label>
-                          Document type
+                          Document type{' '}
                           <select
                             className="tactile-input"
                             value={editDraft.documentType}
@@ -1037,7 +1037,7 @@ export function KnowledgeManagementWorkspace({
                     </div>
                     <div className="knowledge-management-row__editor">
                       <label>
-                        Display title
+                        Display title{' '}
                         <input
                           className="tactile-input"
                           value={draft.title}
@@ -1051,7 +1051,7 @@ export function KnowledgeManagementWorkspace({
                         />
                       </label>
                       <label>
-                        Category
+                        Category{' '}
                         <select
                           className="tactile-input"
                           value={selectedCategory?.id ?? NEW_CATEGORY_VALUE}
@@ -1077,7 +1077,7 @@ export function KnowledgeManagementWorkspace({
                       </label>
                       {!hasReplacementIntent && !selectedCategory && (
                         <label>
-                          New category name
+                          New category name{' '}
                           <input
                             className="tactile-input"
                             value={draft.category}
@@ -1094,7 +1094,7 @@ export function KnowledgeManagementWorkspace({
                         </label>
                       )}
                       <label>
-                        Document type
+                        Document type{' '}
                         <select
                           className="tactile-input"
                           name={`knowledge-upload-document-type-${upload.id}`}
@@ -1249,7 +1249,7 @@ export function KnowledgeManagementWorkspace({
                       }}
                     >
                       <label>
-                        Confirm your password
+                        Confirm your password{' '}
                         <input
                           className="tactile-input"
                           type="password"

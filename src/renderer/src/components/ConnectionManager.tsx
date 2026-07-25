@@ -41,6 +41,7 @@ export function ConnectionManager({
       <div className="app-state">
         {!isWeb && (
           <button
+            type="button"
             className="app-state__close-btn"
             onClick={() => globalThis.window.api?.windowClose()}
             aria-label="Close"

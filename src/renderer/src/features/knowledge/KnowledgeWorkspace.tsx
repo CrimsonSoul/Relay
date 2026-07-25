@@ -111,8 +111,8 @@ function KnowledgeDestinationNav({
             <path d="M9 20v-6h6v6" />
           </svg>
         </span>
-        <span className="knowledge-workspace-shell__home-context">{'Knowledge '}</span>
-        Home
+        <span className="knowledge-workspace-shell__home-context">Knowledge</span>
+        {' ' /* Keep the breadcrumb boundary explicit for JSX whitespace semantics. */}Home
       </button>
       <span className="knowledge-workspace-shell__navigation-divider" aria-hidden="true" />
       {CONTENT_DESTINATIONS.map(({ id, label }) => (

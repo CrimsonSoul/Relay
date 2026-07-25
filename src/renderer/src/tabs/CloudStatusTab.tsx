@@ -237,8 +237,8 @@ const OutageRow: React.FC<{ item: CloudStatusItem }> = ({ item }) => {
           )
         }
       >
-        View official status
-        <span aria-hidden="true"> ↗</span>
+        View official status{' ' /* Keep text separate from the decorative glyph. */}
+        <span aria-hidden="true">↗</span>
       </button>
     </article>
   );

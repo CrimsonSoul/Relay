@@ -148,6 +148,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                 <span className="assembler-sidebar-groups-title">Contact groups</span>
                 <Tooltip content="Create new group">
                   <button
+                    type="button"
                     onClick={() => setIsSaveGroupOpen(true)}
                     className="assembler-sidebar-add-btn"
                     title="Create new group"

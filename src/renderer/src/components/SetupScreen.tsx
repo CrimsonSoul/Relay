@@ -17,6 +17,7 @@ interface SetupScreenProps {
 function CloseButton() {
   return (
     <button
+      type="button"
       className="setup-close-btn"
       onClick={() => globalThis.window.api?.windowClose()}
       aria-label="Close"
@@ -283,7 +284,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
           </p>
         </div>
         <div className="setup-mode-cards">
-          <button onClick={() => setMode('server')} className="setup-mode-card">
+          <button type="button" onClick={() => setMode('server')} className="setup-mode-card">
             <div className="setup-mode-card__icon setup-mode-card__icon--server">
               <ServerIcon />
             </div>
@@ -300,7 +301,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
               <SubmitArrow />
             </span>
           </button>
-          <button onClick={() => setMode('client')} className="setup-mode-card">
+          <button type="button" onClick={() => setMode('client')} className="setup-mode-card">
             <div className="setup-mode-card__icon setup-mode-card__icon--client">
               <ClientIcon />
             </div>

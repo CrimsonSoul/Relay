@@ -29,6 +29,7 @@ export function StartupErrorScreen({
     <div className="app-state">
       {canConfigureConnection && (
         <button
+          type="button"
           className="app-state__close-btn"
           onClick={() => globalThis.window.api?.windowClose()}
           aria-label="Close"

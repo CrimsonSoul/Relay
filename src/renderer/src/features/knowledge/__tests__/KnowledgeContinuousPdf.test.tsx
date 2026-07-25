@@ -201,7 +201,7 @@ describe('KnowledgeContinuousPdf', () => {
     const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
 
     expect(shells).toHaveLength(8);
-    expect(screen.getByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Continuous PDF pages' }).tagName).toBe('SECTION');
     expect(screen.getAllByTestId('rendered-pdf-page')).toHaveLength(3);
     expect(container.querySelector('.knowledge-page-placeholder')).toHaveAttribute(
       'aria-hidden',

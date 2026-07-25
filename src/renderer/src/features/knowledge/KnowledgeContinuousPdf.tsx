@@ -244,10 +244,9 @@ export const KnowledgeContinuousPdf = forwardRef<
   ]);
 
   return (
-    <div
+    <section
       ref={viewportRef}
       className="knowledge-continuous-pdf knowledge-viewer__viewport"
-      role="region"
       tabIndex={-1}
       aria-label="Continuous PDF pages"
     >
@@ -287,6 +286,6 @@ export const KnowledgeContinuousPdf = forwardRef<
           </div>
         );
       })}
-    </div>
+    </section>
   );
 });

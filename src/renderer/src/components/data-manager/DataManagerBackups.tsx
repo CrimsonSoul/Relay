@@ -108,7 +108,11 @@ export const DataManagerBackups: React.FC = () => {
         <div className="data-manager-import-result data-manager-import-result--error">
           <div className="data-manager-import-result-header">
             <span>{error}</span>
-            <button className="data-manager-import-close-btn" onClick={() => setError(null)}>
+            <button
+              type="button"
+              className="data-manager-import-close-btn"
+              onClick={() => setError(null)}
+            >
               Dismiss
             </button>
           </div>

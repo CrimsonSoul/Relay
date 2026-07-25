@@ -152,7 +152,7 @@ export function AlertReminderManagerModal({
               type="checkbox"
               checked={showCompleted}
               onChange={(event) => setShowCompleted(event.target.checked)}
-            />
+            />{' '}
             Show completed alarms
           </label>
           <TactileButton variant="primary" size="sm" onClick={onScheduleNew}>

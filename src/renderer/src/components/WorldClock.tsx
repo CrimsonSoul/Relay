@@ -157,6 +157,7 @@ export const WorldClock: React.FC = () => {
     <div className="world-clock-container">
       <Tooltip content="Show world clocks" position="bottom">
         <button
+          type="button"
           ref={triggerRef}
           className={`world-clock-trigger${isOpen ? ' world-clock-trigger--active' : ''}`}
           onClick={toggle}

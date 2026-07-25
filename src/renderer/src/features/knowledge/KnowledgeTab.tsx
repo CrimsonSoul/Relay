@@ -657,9 +657,8 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   return (
     <div className="knowledge-tab">
-      <div
+      <section
         className="knowledge-workspace"
-        role="region"
         aria-label="Wiki reader workspace"
         data-library-drawer={libraryDrawerOpen ? 'open' : 'closed'}
         data-library-collapsed={String(desktopLibraryCollapsed)}
@@ -816,7 +815,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
           searchNavigationRequest={documentSearch.navigationRequest}
           searchMatches={documentSearch.highlightMatches}
         />
-      </div>
+      </section>
     </div>
   );
 }
