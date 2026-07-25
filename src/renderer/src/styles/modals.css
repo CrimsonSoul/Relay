@@ -364,7 +364,7 @@
 
 .search-dropdown-results {
   flex: 1;
-  overflow-y: overlay;
+  overflow-y: auto;
   list-style: none;
   margin: 0;
   padding: 8px;

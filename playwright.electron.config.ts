@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: './tests/e2e',
   testMatch: [
     'critical-path.spec.ts',
+    'css-visual-contracts.spec.ts',
     'knowledge-pdf-layout.spec.ts',
     'setup-auth.spec.ts',
     'redesign-screenshots.spec.ts',

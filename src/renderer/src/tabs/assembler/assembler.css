@@ -64,7 +64,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  overflow-y: overlay;
+  overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
   padding: 0;
@@ -732,7 +732,7 @@
 
   .assembler-sidebar .assembler-sidebar-panel {
     overflow-x: hidden;
-    overflow-y: overlay;
+    overflow-y: auto;
   }
 
   .assembler-sidebar .assembler-sidebar-groups-header {

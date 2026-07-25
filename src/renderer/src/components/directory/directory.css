@@ -31,7 +31,7 @@
 
 .detail-panel-body {
   flex: 1;
-  overflow-y: overlay;
+  overflow-y: auto;
   padding: 24px 28px 28px 28px;
   display: flex;
   flex-direction: column;
@@ -67,8 +67,7 @@
   font-size: var(--text-lg);
   font-weight: 700;
   color: var(--color-text-primary);
-  overflow-wrap: break-word;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .detail-panel-title {

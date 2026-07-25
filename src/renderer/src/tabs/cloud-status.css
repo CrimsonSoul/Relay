@@ -60,6 +60,8 @@
 
 .cloud-status__refresh {
   display: inline-flex;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -72,11 +74,6 @@
     border-color var(--transition-fast),
     background var(--transition-fast),
     color var(--transition-fast);
-}
-
-.cloud-status__refresh {
-  width: 40px;
-  height: 40px;
 }
 
 .cloud-status__refresh:hover:not(:disabled) {

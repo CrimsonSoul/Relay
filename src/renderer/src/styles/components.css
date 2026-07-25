@@ -984,7 +984,7 @@ body.modal-open {
   border: 1px solid var(--color-border-strong);
   border-radius: 2px;
   max-height: 200px;
-  overflow-y: overlay;
+  overflow-y: auto;
   z-index: 99999;
   box-shadow: var(--shadow-modal);
   padding: 4px;
@@ -1100,7 +1100,7 @@ body.modal-open {
 
 .group-selector-list {
   max-height: 200px;
-  overflow-y: overlay;
+  overflow-y: auto;
 }
 
 .group-selector-item {
@@ -1311,7 +1311,7 @@ body.modal-open {
   padding: 16px 20px;
   border-radius: 10px;
   max-width: 600px;
-  overflow: overlay;
+  overflow: auto;
   text-align: left;
 }
 
@@ -1896,7 +1896,6 @@ body.modal-open {
   background: transparent;
   border: 1px solid var(--color-border-strong);
   border-radius: 2px;
-  word-break: break-word;
   overflow-wrap: anywhere;
   line-height: 1.5;
 }
@@ -3472,7 +3471,7 @@ body.modal-open {
   pointer-events: none;
   max-width: 320px;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* ============================================================================

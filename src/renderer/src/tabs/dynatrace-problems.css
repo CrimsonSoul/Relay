@@ -264,7 +264,9 @@
 }
 
 .dt-profile-picker__bulk-actions span {
+  margin-left: auto;
   color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
   font-size: var(--text-2xs);
 }
 
@@ -310,11 +312,6 @@
 
 .dt-profile-picker__bulk-actions button:hover:not(:disabled) {
   color: var(--accent-bright);
-}
-
-.dt-profile-picker__bulk-actions span {
-  margin-left: auto;
-  font-family: var(--font-family-mono);
 }
 
 .dt-profile-picker__list {

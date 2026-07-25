@@ -1670,6 +1670,9 @@
 }
 
 .knowledge-page__text-layer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
   color-scheme: only light;
   position: absolute;
   inset: 0;
@@ -1688,12 +1691,6 @@
   white-space: pre;
   cursor: text;
   transform-origin: 0 0;
-}
-
-.knowledge-page__text-layer {
-  --min-font-size: 1;
-  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
-  --min-font-size-inv: calc(1 / var(--min-font-size));
 }
 
 .knowledge-page__text-layer > :not(.markedContent),
