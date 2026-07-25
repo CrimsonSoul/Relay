@@ -8,6 +8,7 @@ import {
   setKnowledgeSearchService,
 } from '../app/appState';
 import { loggers } from '../logger';
+import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
 import { KnowledgeSearchService } from './KnowledgeSearchService';
 
 const AUTH_DEADLINE_MS = 15_000;
@@ -110,6 +111,7 @@ async function restartRuntime(
     }
     setKnowledgeSearchService(service);
     if (!config) return;
+    installMainProcessEventSource();
     if (config.mode === 'server') {
       await service.start(getPbClient());
       return;

@@ -100,6 +100,36 @@ describe('knowledge search runtime', () => {
     });
   });
 
+  it('installs EventSource before client-mode PocketBase realtime connects', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
+    try {
+      Object.defineProperty(globalThis, 'EventSource', {
+        configurable: true,
+        value: undefined,
+        writable: true,
+      });
+      mocks.getAppConfig.mockReturnValue({
+        load: () => ({
+          mode: 'client',
+          serverUrl: 'https://relay.example.com',
+          secret: 'client-secret',
+        }),
+      });
+      const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
+
+      await restartKnowledgeSearchRuntime();
+
+      expect(globalThis.EventSource).toEqual(expect.any(Function));
+      expect(mocks.serviceInstances[0]?.connect).toHaveBeenCalledWith(expect.anything());
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, 'EventSource', originalDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'EventSource');
+      }
+    }
+  });
+
   it('reuses the existing superuser PocketBase client in server mode', async () => {
     mocks.getAppConfig.mockReturnValue({ load: () => ({ mode: 'server' }) });
     const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');

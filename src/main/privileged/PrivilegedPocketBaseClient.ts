@@ -1,5 +1,4 @@
 import PocketBase, { BaseAuthStore, ClientResponseError } from 'pocketbase';
-import { EventSource as MainProcessEventSource } from 'eventsource';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
@@ -8,6 +7,7 @@ import {
 } from '@shared/privilegedAccess';
 import { normalizeRoleUsername } from '@shared/roleAccounts';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
+import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
 
 export type PrivilegedAuthenticationErrorCode = 'invalid-credentials' | 'offline';
 
@@ -215,12 +215,6 @@ function defaultCreateClient(
   authStore: BaseAuthStore,
 ): PrivilegedPocketBaseClientAdapter {
   return new PocketBase(serverUrl, authStore) as PrivilegedPocketBaseClientAdapter;
-}
-
-function installMainProcessEventSource(): void {
-  if (typeof globalThis.EventSource === 'undefined') {
-    globalThis.EventSource = MainProcessEventSource as unknown as typeof globalThis.EventSource;
-  }
 }
 
 export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {

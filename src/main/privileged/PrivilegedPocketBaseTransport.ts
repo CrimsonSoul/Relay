@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { EventSource as MainProcessEventSource } from 'eventsource';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
@@ -37,6 +36,7 @@ import type {
   StoredPrivilegedCommand,
 } from './PrivilegedCommandProcessor';
 import type { PrivilegedClientTransport } from './privilegedRuntime';
+import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
 
 type UnknownRecord = Record<string, unknown> & { id: string };
 
@@ -84,12 +84,6 @@ const COMMAND_ERRORS = new Set<PrivilegedCommandError>([
   'conflict',
   'server-error',
 ]);
-
-function installMainProcessEventSource(): void {
-  if (typeof globalThis.EventSource === 'undefined') {
-    globalThis.EventSource = MainProcessEventSource as unknown as typeof globalThis.EventSource;
-  }
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
