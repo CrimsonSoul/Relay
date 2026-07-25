@@ -124,7 +124,7 @@ export class KnowledgeUploadScheduler {
 
   pauseBatch(batchId: string): void {
     this.pausedBatches.add(batchId);
-    for (const task of Array.from(this.tasks.values())) {
+    for (const task of this.tasks.values()) {
       if (task.batchId !== batchId || this.completed.has(task.uploadId)) continue;
       this.abort(task.uploadId);
       task.onState('paused', null, 0);
@@ -154,7 +154,7 @@ export class KnowledgeUploadScheduler {
   }
 
   cancelBatch(batchId: string): void {
-    for (const task of this.tasks.values()) {
+    for (const task of Array.from(this.tasks.values())) {
       if (task.batchId === batchId) this.cancelUpload(task.uploadId);
     }
     this.pausedBatches.delete(batchId);

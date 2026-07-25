@@ -204,4 +204,22 @@ describe('KnowledgeUploadScheduler', () => {
     expect(value.finalize).not.toHaveBeenCalled();
     expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
   });
+
+  it('does not cancel same-batch uploads enqueued re-entrantly during cancellation', async () => {
+    const scheduler = new KnowledgeUploadScheduler();
+    const reentrantTask = task({ uploadId: 'upload-2' });
+    const originalTask = task({
+      onState: vi.fn((state) => {
+        if (state === 'cancelled') scheduler.enqueue(reentrantTask);
+      }),
+    });
+
+    scheduler.enqueue(originalTask);
+    scheduler.cancelBatch(originalTask.batchId);
+    await scheduler.whenIdle();
+
+    expect(stateCalls(originalTask)).toContainEqual(['cancelled', null, 0]);
+    expect(stateCalls(reentrantTask)).not.toContainEqual(['cancelled', null, 0]);
+    expect(reentrantTask.finalize).toHaveBeenCalledOnce();
+  });
 });
