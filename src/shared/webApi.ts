@@ -92,6 +92,12 @@ export const WebKnowledgeUploadBeginSchema = z
       )
       .min(1)
       .max(KNOWLEDGE_UPLOAD_MAX_FILES),
+    replacementDocumentId: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u)
+      .optional(),
   })
   .strict();
 

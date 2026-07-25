@@ -189,7 +189,10 @@ const api: BridgeAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
   },
   openKnowledgeWebLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_OPEN_WEB_LINK, url),
-  selectAndQueueKnowledgePdfs: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE),
+  selectAndQueueKnowledgePdfs: (replacementDocumentId) =>
+    replacementDocumentId
+      ? ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE, replacementDocumentId)
+      : ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE),
   getKnowledgeUploadQueue: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET),
   pauseKnowledgeUploadBatch: (batchId) =>
     ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_PAUSE, batchId),

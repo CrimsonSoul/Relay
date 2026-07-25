@@ -35,4 +35,36 @@ describe('KnowledgeMutationCoordinator', () => {
 
     expect(mutate).toHaveBeenCalledTimes(2);
   });
+
+  it('serializes unrelated mutations so document revisions cannot race', async () => {
+    const coordinator = new KnowledgeMutationCoordinator();
+    let releaseFirst: (() => void) | undefined;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstMutate = vi.fn(async () => {
+      await firstPending;
+      return 'first';
+    });
+    const secondMutate = vi.fn(async () => 'second');
+
+    const first = coordinator.run({
+      requestId: 'request-1',
+      action: 'replaced',
+      mutate: firstMutate,
+    });
+    const second = coordinator.run({
+      requestId: 'request-2',
+      action: 'trashed',
+      mutate: secondMutate,
+    });
+
+    await Promise.resolve();
+    expect(firstMutate).toHaveBeenCalledOnce();
+    expect(secondMutate).not.toHaveBeenCalled();
+
+    releaseFirst?.();
+    await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
+    expect(secondMutate).toHaveBeenCalledOnce();
+  });
 });

@@ -72,7 +72,7 @@ function manifest(
 
 function queueStore(initial?: KnowledgeUploadQueueState) {
   let value: KnowledgeUploadQueueState = initial ?? {
-    version: 1,
+    version: 2,
     restartRecovery: false,
     entries: [],
   };
@@ -167,6 +167,47 @@ describe('KnowledgeUploadService', () => {
     await service.whenIdle();
   });
 
+  it('persists an explicit replacement target and sends it with the file manifest', async () => {
+    const store = queueStore();
+    const { runtime, submitPublicCommand } = commandRuntime();
+    const selectFiles = vi.fn(async () => ['/private/work/Differently Named.pdf']);
+    const replacementCandidate = candidate('/private/work/Differently Named.pdf');
+    replacementCandidate.fileName = 'Differently Named.pdf';
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      selectFiles,
+      inspectCandidate: vi.fn(async () => replacementCandidate),
+      planSource: vi.fn(async () => ({
+        ...replacementCandidate,
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    await service.start();
+    await service.selectAndQueue(undefined, 'document-1');
+    await service.whenIdle();
+
+    expect(selectFiles).toHaveBeenCalledWith(undefined, true);
+    expect(store.current().entries[0]).toMatchObject({
+      replacementDocumentId: 'document-1',
+      source: { fileName: 'Differently Named.pdf' },
+    });
+    expect(
+      submitPublicCommand.mock.calls.find(
+        ([request]) => request.command === 'knowledge.upload.file.begin',
+      )?.[0],
+    ).toMatchObject({
+      payload: { replacementDocumentId: 'document-1' },
+    });
+  });
+
   it('returns a safe queue immediately and hashes/uploads in the background', async () => {
     let releasePlan!: () => void;
     const planning = new Promise<void>((resolve) => {
@@ -238,6 +279,246 @@ describe('KnowledgeUploadService', () => {
     });
   });
 
+  it('waits for planning and authoritatively cancels the resulting replacement upload', async () => {
+    let releasePlan!: () => void;
+    let markPlanStarted!: () => void;
+    const planning = new Promise<void>((resolve) => {
+      releasePlan = resolve;
+    });
+    const planStarted = new Promise<void>((resolve) => {
+      markPlanStarted = resolve;
+    });
+    const store = queueStore();
+    const { runtime, submitPublicCommand } = commandRuntime();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => candidate('/private/work/Replacement.pdf')),
+      planSource: vi.fn(async () => {
+        markPlanStarted();
+        await planning;
+        return {
+          ...candidate('/private/work/Replacement.pdf'),
+          checksum: manifest().checksum,
+          chunkCount: 1,
+        };
+      }),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    await service.queuePaths(['/private/work/Replacement.pdf'], view.deviceId, 'document-existing');
+    await planStarted;
+    const cancellation = service.cancelUpload('local-1');
+    let cancelled = false;
+    void cancellation.then(() => {
+      cancelled = true;
+    });
+    await Promise.resolve();
+    expect(cancelled).toBe(false);
+
+    releasePlan();
+    await cancellation;
+    await service.whenIdle();
+
+    const commands = submitPublicCommand.mock.calls.map(([request]) => request.command);
+    expect(commands).toContain('knowledge.upload.file.begin');
+    expect(commands).toContain('knowledge.upload.file.cancel');
+    expect(commands.indexOf('knowledge.upload.file.begin')).toBeLessThan(
+      commands.indexOf('knowledge.upload.file.cancel'),
+    );
+    expect(service.snapshot().items[0]).toMatchObject({
+      uploadId: 'upload-1',
+      state: 'cancelled',
+    });
+  });
+
+  it('keeps the local upload non-terminal when authoritative file cancellation fails', async () => {
+    const store = queueStore();
+    const { runtime, submitPublicCommand } = commandRuntime();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => candidate()),
+      planSource: vi.fn(async () => ({
+        ...candidate(),
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    await service.queuePaths(['/private/work/First.pdf'], view.deviceId);
+    await service.whenIdle();
+    submitPublicCommand.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }));
+
+    await expect(service.cancelUpload('local-1')).rejects.toThrow('offline');
+    expect(service.snapshot().items[0]?.state).not.toBe('cancelled');
+  });
+
+  it('keeps a batch non-terminal when authoritative batch cancellation fails', async () => {
+    const store = queueStore();
+    const { runtime, submitPublicCommand } = commandRuntime();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => candidate()),
+      planSource: vi.fn(async () => ({
+        ...candidate(),
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    await service.queuePaths(['/private/work/First.pdf'], view.deviceId);
+    await service.whenIdle();
+    submitPublicCommand.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }));
+
+    await expect(service.cancelBatch('batch-1')).rejects.toThrow('offline');
+    expect(service.snapshot().items[0]?.state).not.toBe('cancelled');
+  });
+
+  it('cancels the server batch when file preparation failed after batch creation', async () => {
+    const store = queueStore();
+    const { runtime, submitPublicCommand } = commandRuntime();
+    const submit = submitPublicCommand.getMockImplementation()!;
+    submitPublicCommand.mockImplementation(async (request) => {
+      if (request.command === 'knowledge.upload.file.begin') {
+        throw Object.assign(new Error('offline'), { status: 0 });
+      }
+      return submit(request);
+    });
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => candidate()),
+      planSource: vi.fn(async () => ({
+        ...candidate(),
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    await service.queuePaths(['/private/work/First.pdf'], view.deviceId);
+    await service.whenIdle();
+    expect(service.snapshot().items[0]).toMatchObject({
+      batchId: 'batch-1',
+      uploadId: null,
+      state: 'paused-network',
+    });
+
+    await service.cancelUpload('local-1');
+
+    expect(submitPublicCommand.mock.calls.map(([request]) => request.command)).toContain(
+      'knowledge.upload.batch.cancel',
+    );
+    expect(service.snapshot().items[0]?.state).toBe('cancelled');
+  });
+
+  it('refreshes a multi-file batch revision before fallback cancellation', async () => {
+    const store = queueStore();
+    let batchRevision = 0;
+    let firstUpload: KnowledgeUploadManifestView | null = null;
+    const submitPublicCommand = vi.fn(
+      async (request: { command: string; payload?: Record<string, unknown> }) => {
+        if (request.command === 'knowledge.upload.batch.begin') {
+          return {
+            ok: true,
+            requestId: 'batch-begin',
+            value: batch({ fileCount: 2, totalBytes: 24, revision: batchRevision }),
+          } as const;
+        }
+        if (request.command === 'knowledge.upload.status') {
+          return {
+            ok: true,
+            requestId: 'status',
+            value: {
+              batch: batch({ fileCount: 2, totalBytes: 24, revision: batchRevision }),
+              uploads: firstUpload ? [firstUpload] : [],
+            },
+          } as const;
+        }
+        if (request.command === 'knowledge.upload.file.begin') {
+          if (request.payload?.fileName === 'Second.pdf') {
+            throw Object.assign(new Error('offline'), { status: 0 });
+          }
+          batchRevision = 1;
+          firstUpload = manifest({ id: 'upload-first', fileName: 'First.pdf' });
+          return { ok: true, requestId: 'file-begin', value: firstUpload } as const;
+        }
+        if (request.command === 'knowledge.upload.batch.cancel') {
+          expect(request.payload).toMatchObject({ batchId: 'batch-1', expectedRevision: 1 });
+          return { ok: true, requestId: 'batch-cancel', value: undefined } as const;
+        }
+        throw new Error(`Unexpected command ${request.command}`);
+      },
+    );
+    const runtime = {
+      getView: vi.fn(() => view),
+      createPrivilegedRecord: vi.fn(),
+      submitPublicCommand,
+    };
+    const scheduler = {
+      enqueue: vi.fn(),
+      whenIdle: vi.fn(async () => undefined),
+      cancelUpload: vi.fn(),
+      cancelBatch: vi.fn(),
+    };
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      scheduler: scheduler as never,
+      inspectCandidate: vi.fn(async (path: string) => {
+        const value = candidate(path);
+        value.fileName = path.includes('Second') ? 'Second.pdf' : 'First.pdf';
+        return value;
+      }),
+      planSource: vi.fn(async (value) => ({
+        ...value,
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1')
+        .mockReturnValueOnce('local-2'),
+    });
+
+    await service.queuePaths(
+      ['/private/work/First.pdf', '/private/work/Second.pdf'],
+      view.deviceId,
+    );
+    await service.whenIdle();
+    expect(service.snapshot().items[1]).toMatchObject({
+      id: 'local-2',
+      batchId: 'batch-1',
+      uploadId: null,
+      state: 'paused-network',
+    });
+
+    await service.cancelUpload('local-2');
+
+    expect(scheduler.cancelBatch).toHaveBeenCalledWith('batch-1');
+    expect(service.snapshot().items.map(({ state }) => state)).toEqual(['cancelled', 'cancelled']);
+  });
+
   it('restores an encrypted queue and uploads only server-declared missing chunks', async () => {
     const checksum = manifest({ byteSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES + 2 }).checksum;
     const restoredManifest = manifest({
@@ -247,7 +528,7 @@ describe('KnowledgeUploadService', () => {
       missingChunkIndexes: [1],
     });
     const store = queueStore({
-      version: 1,
+      version: 2,
       restartRecovery: true,
       entries: [
         {
@@ -296,7 +577,7 @@ describe('KnowledgeUploadService', () => {
   it('requires the unchanged source after restart and never uploads stale bytes', async () => {
     const checksum = manifest().checksum;
     const store = queueStore({
-      version: 1,
+      version: 2,
       restartRecovery: true,
       entries: [
         {
@@ -336,7 +617,7 @@ describe('KnowledgeUploadService', () => {
   it('reconciles a published server upload before accepting the next batch', async () => {
     const checksum = manifest().checksum;
     const store = queueStore({
-      version: 1,
+      version: 2,
       restartRecovery: true,
       entries: [
         {
@@ -384,7 +665,7 @@ describe('KnowledgeUploadService', () => {
   it('reconciles a locally ready upload after the server publishes it', async () => {
     const checksum = manifest().checksum;
     const store = queueStore({
-      version: 1,
+      version: 2,
       restartRecovery: false,
       entries: [
         {
@@ -424,7 +705,7 @@ describe('KnowledgeUploadService', () => {
   it('does not persist or emit an unchanged server status during queue polling', async () => {
     const checksum = manifest().checksum;
     const store = queueStore({
-      version: 1,
+      version: 2,
       restartRecovery: false,
       entries: [
         {

@@ -28,6 +28,7 @@ const upload: KnowledgeUploadManifestRecord = {
   outlineSource: null,
   proposedTitle: '',
   proposedCategory: '',
+  replacementDocumentId: null,
   duplicateDocumentId: null,
   safeError: null,
   lastActivityAt: '2026-07-15T20:00:00.000Z',

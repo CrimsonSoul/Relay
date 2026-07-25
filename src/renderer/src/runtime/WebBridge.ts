@@ -187,8 +187,9 @@ async function knowledgeBinary(
   return knowledgeSuccess(kind, data, checksum, source);
 }
 
-function validSelectedPdfs(files: readonly File[]): boolean {
+function validSelectedPdfs(files: readonly File[], replacementDocumentId?: string): boolean {
   if (files.length < 1 || files.length > KNOWLEDGE_UPLOAD_MAX_FILES) return false;
+  if (replacementDocumentId && files.length !== 1) return false;
   const names = new Set<string>();
   let total = 0;
   for (const file of files) {
@@ -213,14 +214,20 @@ async function uploadKnowledgePdfs(
   request: WebBridgeRequest,
   fetcher: typeof fetch,
   csrfToken: string,
+  replacementDocumentId?: string,
 ): Promise<KnowledgeUploadSelectionResult> {
-  if (!validSelectedPdfs(files)) return { ok: false, error: 'invalid-file' };
+  if (!validSelectedPdfs(files, replacementDocumentId)) {
+    return { ok: false, error: 'invalid-file' };
+  }
   let batchId: string | null = null;
   try {
     const batch = WebKnowledgeUploadStagingBatchSchema.parse(
       await request('/knowledge/upload/begin', {
         method: 'POST',
-        body: { files: files.map((file) => ({ name: file.name, size: file.size })) },
+        body: {
+          files: files.map((file) => ({ name: file.name, size: file.size })),
+          ...(replacementDocumentId ? { replacementDocumentId } : {}),
+        },
       }),
     );
     batchId = batch.batchId;
@@ -619,10 +626,10 @@ export function createWebBridge(
       subscribe('knowledge-index-status-changed', callback),
     openKnowledgeWebLink: async (url) =>
       actions.openExternal(url) ? { ok: true } : { ok: false, error: 'invalid-url' },
-    selectAndQueueKnowledgePdfs: async () => {
-      const files = await actions.selectPdfs();
+    selectAndQueueKnowledgePdfs: async (replacementDocumentId) => {
+      const files = await actions.selectPdfs(Boolean(replacementDocumentId));
       return files.length
-        ? uploadKnowledgePdfs(files, request, fetcher, session.csrfToken)
+        ? uploadKnowledgePdfs(files, request, fetcher, session.csrfToken, replacementDocumentId)
         : { ok: false, error: 'cancelled' };
     },
     getKnowledgeUploadQueue: async () =>

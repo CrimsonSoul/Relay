@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loggers } from '../../logger';
 import { PrivilegedCommandSafeError } from '../../privileged/PrivilegedCommandProcessor';
 import { KnowledgeUploadAdmissionError } from '../KnowledgeUploadCapacity';
+import { KnowledgeUploadCoordinatorError } from '../KnowledgeUploadCoordinator';
 import { ManagedKnowledgeFilenameConflictError } from '../ManagedKnowledgeService';
 import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagementCommands';
 
@@ -276,6 +277,43 @@ describe('registerKnowledgeManagementCommands', () => {
       ),
     ).rejects.toThrow('publication-failed');
     expect(searchIndexer.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes upload discard behind an in-flight replacement', async () => {
+    let releaseReplacement: (() => void) | undefined;
+    const replacementPending = new Promise<void>((resolve) => {
+      releaseReplacement = resolve;
+    });
+    service.replace.mockImplementationOnce(async () => {
+      await replacementPending;
+      return replacedIdentity;
+    });
+    uploadCoordinator.cancelFile.mockRejectedValueOnce(
+      new KnowledgeUploadCoordinatorError('conflict', 2),
+    );
+
+    const replacement = handlers.get('knowledge.document.replace')!(
+      { ...context, requestId: 'command-request-replace' } as never,
+      {
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 1,
+      } as never,
+    );
+    await vi.waitFor(() => expect(service.replace).toHaveBeenCalledOnce());
+
+    const discard = handlers.get('knowledge.upload.file.cancel')!(
+      { ...context, requestId: 'command-request-discard' } as never,
+      { uploadId: 'upload-1', expectedRevision: 1 } as never,
+    );
+    await Promise.resolve();
+    expect(uploadCoordinator.cancelFile).not.toHaveBeenCalled();
+    const discardFailure = expect(discard).rejects.toMatchObject({ currentRevision: 2 });
+
+    releaseReplacement?.();
+    await expect(replacement).resolves.toEqual(replacedIdentity);
+    await discardFailure;
+    expect(uploadCoordinator.cancelFile).toHaveBeenCalledOnce();
   });
 
   it('registers retry with the existing Wiki management capability', async () => {

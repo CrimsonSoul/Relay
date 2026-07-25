@@ -65,6 +65,7 @@ export type KnowledgeUploadManifestRecord = {
   proposedCategory: string;
   proposedCategoryId: string | null;
   proposedDocumentType: KnowledgeDocumentType;
+  replacementDocumentId?: string | null;
   duplicateDocumentId: string | null;
   safeError: KnowledgeManagementErrorCode | null;
   lastActivityAt: string;
@@ -172,6 +173,7 @@ export type BeginKnowledgeUploadFileInput = {
   byteSize: number;
   checksum: string;
   chunkCount: number;
+  replacementDocumentId?: string | null;
 };
 
 export type FinalizeKnowledgeUploadInput = { uploadId: string; expectedRevision: number };
@@ -272,6 +274,7 @@ export class KnowledgeUploadCoordinator {
   private readonly now: () => number;
   private readonly queued = new Set<string>();
   private readonly pending: string[] = [];
+  private readonly mutations = new Map<string, Promise<void>>();
   private worker: Promise<void> | null = null;
   private accepting = true;
   private disposed = false;
@@ -322,51 +325,55 @@ export class KnowledgeUploadCoordinator {
     input: BeginKnowledgeUploadFileInput,
   ): Promise<KnowledgeUploadManifestView> {
     this.assertAvailable();
-    const existing = await this.repository.findUploadByRequest(actor.accountId, input.requestId);
-    if (existing) {
-      if (!sameFileDeclaration(existing, input)) this.conflict(existing.revision);
-      return this.viewUpload(existing);
-    }
-    const batch = await this.requireBatch(input.batchId);
-    this.authorize(batch, actor, false);
-    if (batch.state !== 'active') this.conflict(batch.revision);
-    this.validateFileDeclaration(input);
-    const uploads = await this.repository.listUploads(batch.id);
-    const declaredBytes = uploads.reduce((total, upload) => total + upload.byteSize, 0);
-    if (uploads.length >= batch.fileCount || declaredBytes + input.byteSize > batch.totalBytes) {
-      throw new KnowledgeUploadCoordinatorError('invalid-request');
-    }
-    const now = isoDate(this.now());
-    const created = await this.repository.createUpload({
-      ...input,
-      accountId: actor.accountId,
-      deviceId: actor.deviceId,
-      actorDisplayName: actor.displayName,
-      operatorId: '',
-      operatorName: '',
-      chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
-      state: 'uploading',
-      pdf: null,
-      cover: null,
-      pageCount: null,
-      outline: [],
-      outlineSource: null,
-      proposedTitle: '',
-      proposedCategory: '',
-      proposedCategoryId: null,
-      proposedDocumentType: 'sop',
-      duplicateDocumentId: null,
-      safeError: null,
-      lastActivityAt: now,
-      readyAt: null,
-      expiresAt: batch.expiresAt,
-      revision: 0,
+    return this.withMutation(`batch:${input.batchId}`, async () => {
+      const existing = await this.repository.findUploadByRequest(actor.accountId, input.requestId);
+      if (existing) {
+        if (!sameFileDeclaration(existing, input)) this.conflict(existing.revision);
+        return this.viewUpload(existing);
+      }
+      const batch = await this.requireBatch(input.batchId);
+      this.authorize(batch, actor, false);
+      if (batch.state !== 'active') this.conflict(batch.revision);
+      this.validateFileDeclaration(input);
+      const uploads = await this.repository.listUploads(batch.id);
+      const declaredBytes = uploads.reduce((total, upload) => total + upload.byteSize, 0);
+      if (uploads.length >= batch.fileCount || declaredBytes + input.byteSize > batch.totalBytes) {
+        throw new KnowledgeUploadCoordinatorError('invalid-request');
+      }
+      const now = isoDate(this.now());
+      const { replacementDocumentId, ...manifestInput } = input;
+      const created = await this.repository.createUpload({
+        ...manifestInput,
+        accountId: actor.accountId,
+        deviceId: actor.deviceId,
+        actorDisplayName: actor.displayName,
+        operatorId: '',
+        operatorName: '',
+        chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+        state: 'uploading',
+        pdf: null,
+        cover: null,
+        pageCount: null,
+        outline: [],
+        outlineSource: null,
+        proposedTitle: '',
+        proposedCategory: '',
+        proposedCategoryId: null,
+        proposedDocumentType: 'sop',
+        replacementDocumentId: replacementDocumentId ?? null,
+        duplicateDocumentId: replacementDocumentId ?? null,
+        safeError: null,
+        lastActivityAt: now,
+        readyAt: null,
+        expiresAt: batch.expiresAt,
+        revision: 0,
+      });
+      await this.touchBatch(batch);
+      return manifestView(
+        created,
+        Array.from({ length: created.chunkCount }, (_, index) => index),
+      );
     });
-    await this.touchBatch(batch);
-    return manifestView(
-      created,
-      Array.from({ length: created.chunkCount }, (_, index) => index),
-    );
   }
 
   async status(
@@ -388,25 +395,27 @@ export class KnowledgeUploadCoordinator {
     input: FinalizeKnowledgeUploadInput,
   ): Promise<KnowledgeUploadManifestView> {
     this.assertAvailable();
-    const upload = await this.requireUpload(input.uploadId);
-    this.authorize(upload, actor, true);
-    if (['assembling', 'extracting'].includes(upload.state)) {
+    return this.withMutation(`upload:${input.uploadId}`, async () => {
+      const upload = await this.requireUpload(input.uploadId);
+      this.authorize(upload, actor, true);
+      if (['assembling', 'extracting'].includes(upload.state)) {
+        this.enqueue(upload.id);
+        return this.viewUpload(upload);
+      }
+      if (upload.state === 'ready') return this.viewUpload(upload);
+      if (upload.state === 'cancelled') this.conflict(upload.revision);
+      if (upload.revision !== input.expectedRevision) this.conflict(upload.revision);
+      const view = await this.viewUpload(upload);
+      if (view.missingChunkIndexes.length > 0) this.conflict(upload.revision);
+      const claimed = await this.repository.updateUpload(upload.id, {
+        state: 'assembling',
+        safeError: null,
+        lastActivityAt: isoDate(this.now()),
+        revision: upload.revision + 1,
+      });
       this.enqueue(upload.id);
-      return this.viewUpload(upload);
-    }
-    if (upload.state === 'ready') return this.viewUpload(upload);
-    if (upload.state === 'cancelled') this.conflict(upload.revision);
-    if (upload.revision !== input.expectedRevision) this.conflict(upload.revision);
-    const view = await this.viewUpload(upload);
-    if (view.missingChunkIndexes.length > 0) this.conflict(upload.revision);
-    const claimed = await this.repository.updateUpload(upload.id, {
-      state: 'assembling',
-      safeError: null,
-      lastActivityAt: isoDate(this.now()),
-      revision: upload.revision + 1,
+      return manifestView(claimed, []);
     });
-    this.enqueue(upload.id);
-    return manifestView(claimed, []);
   }
 
   async cancelFile(
@@ -414,37 +423,16 @@ export class KnowledgeUploadCoordinator {
     input: FinalizeKnowledgeUploadInput,
   ): Promise<void> {
     this.assertAvailable();
-    const upload = await this.requireUpload(input.uploadId);
-    this.authorize(upload, actor, true);
-    if (upload.state !== 'cancelled') {
-      if (upload.revision !== input.expectedRevision) this.conflict(upload.revision);
-      await this.repository.updateUpload(upload.id, {
-        state: 'cancelled',
-        lastActivityAt: isoDate(this.now()),
-        revision: upload.revision + 1,
-      });
+    const observed = await this.requireUpload(input.uploadId);
+    this.authorize(observed, actor, true);
+    if (observed.state === 'published') this.conflict(observed.revision);
+    if (observed.state !== 'cancelled' && observed.revision !== input.expectedRevision) {
+      this.conflict(observed.revision);
     }
-    await this.repository.clearStagedPdf(upload.id);
-    await this.repository.deleteChunks(upload.id);
-  }
-
-  async cancelBatch(
-    actor: KnowledgeUploadActor,
-    input: CancelKnowledgeUploadBatchInput,
-  ): Promise<void> {
-    this.assertAvailable();
-    const batch = await this.requireBatch(input.batchId);
-    this.authorize(batch, actor, true);
-    if (batch.state !== 'cancelled') {
-      if (batch.revision !== input.expectedRevision) this.conflict(batch.revision);
-      await this.repository.updateBatch(batch.id, {
-        state: 'cancelled',
-        lastActivityAt: isoDate(this.now()),
-        revision: batch.revision + 1,
-      });
-    }
-    const uploads = await this.repository.listUploads(batch.id);
-    for (const upload of uploads) {
+    const batchId = await this.withMutation(`upload:${input.uploadId}`, async () => {
+      const upload = await this.requireUpload(input.uploadId);
+      this.authorize(upload, actor, true);
+      if (upload.state === 'published') this.conflict(upload.revision);
       if (upload.state !== 'cancelled') {
         await this.repository.updateUpload(upload.id, {
           state: 'cancelled',
@@ -454,6 +442,57 @@ export class KnowledgeUploadCoordinator {
       }
       await this.repository.clearStagedPdf(upload.id);
       await this.repository.deleteChunks(upload.id);
+      return upload.batchId;
+    });
+    await this.completeBatchIfSettled(batchId);
+  }
+
+  async cancelBatch(
+    actor: KnowledgeUploadActor,
+    input: CancelKnowledgeUploadBatchInput,
+  ): Promise<void> {
+    this.assertAvailable();
+    const observed = await this.requireBatch(input.batchId);
+    this.authorize(observed, actor, true);
+    if (
+      ['expired', 'completed'].includes(observed.state) ||
+      (observed.state !== 'cancelled' && observed.revision !== input.expectedRevision)
+    ) {
+      this.conflict(observed.revision);
+    }
+    const uploadIds = await this.withMutation(`batch:${input.batchId}`, async () => {
+      const batch = await this.requireBatch(input.batchId);
+      this.authorize(batch, actor, true);
+      const uploads = await this.repository.listUploads(batch.id);
+      if (
+        ['expired', 'completed'].includes(batch.state) ||
+        uploads.some((upload) => upload.state === 'published')
+      ) {
+        this.conflict(batch.revision);
+      }
+      if (batch.state !== 'cancelled') {
+        await this.repository.updateBatch(batch.id, {
+          state: 'cancelled',
+          lastActivityAt: isoDate(this.now()),
+          revision: batch.revision + 1,
+        });
+      }
+      return uploads.map((upload) => upload.id);
+    });
+    for (const uploadId of uploadIds) {
+      await this.withMutation(`upload:${uploadId}`, async () => {
+        const upload = await this.requireUpload(uploadId);
+        if (upload.state === 'published') this.conflict(upload.revision);
+        if (upload.state !== 'cancelled') {
+          await this.repository.updateUpload(upload.id, {
+            state: 'cancelled',
+            lastActivityAt: isoDate(this.now()),
+            revision: upload.revision + 1,
+          });
+        }
+        await this.repository.clearStagedPdf(upload.id);
+        await this.repository.deleteChunks(upload.id);
+      });
     }
   }
 
@@ -547,17 +586,18 @@ export class KnowledgeUploadCoordinator {
       let bytes: Uint8Array;
       if (upload.state === 'assembling') {
         bytes = await this.assemble(upload);
-        if (await this.wasCancelled(upload.id)) return;
-        upload = await this.repository.storeStagedPdf(upload, bytes);
-        if (await this.wasCancelled(upload.id)) {
-          await this.repository.clearStagedPdf(upload.id);
-          return;
-        }
-        upload = await this.repository.updateUpload(upload.id, {
-          state: 'extracting',
-          lastActivityAt: isoDate(this.now()),
-          revision: upload.revision + 1,
+        const extracting = await this.withMutation(`upload:${upload.id}`, async () => {
+          const current = await this.requireUpload(upload.id);
+          if (current.state !== 'assembling') return null;
+          const staged = await this.repository.storeStagedPdf(current, bytes);
+          return this.repository.updateUpload(staged.id, {
+            state: 'extracting',
+            lastActivityAt: isoDate(this.now()),
+            revision: staged.revision + 1,
+          });
         });
+        if (!extracting) return;
+        upload = extracting;
       } else if (upload.state === 'extracting') {
         bytes = await this.repository.readStagedPdf(upload);
         this.validateCompletePdf(upload, bytes);
@@ -565,45 +605,52 @@ export class KnowledgeUploadCoordinator {
         return;
       }
       const extraction = await this.extractor.extract(bytes);
-      if (await this.wasCancelled(upload.id)) return;
       this.validateExtraction(extraction);
-      upload = await this.repository.storeStagedCover(upload, extraction.coverPng);
-      if (await this.wasCancelled(upload.id)) {
-        await this.repository.clearStagedPdf(upload.id);
-        return;
-      }
-      const duplicateDocumentId = await this.repository.findDuplicateDocumentId(upload.fileName);
+      const duplicateDocumentId =
+        upload.replacementDocumentId ??
+        upload.duplicateDocumentId ??
+        (await this.repository.findDuplicateDocumentId(upload.fileName));
       const now = isoDate(this.now());
-      await this.repository.updateUpload(upload.id, {
-        state: 'ready',
-        pdf: upload.pdf,
-        cover: upload.cover,
-        pageCount: extraction.pageCount,
-        outline: extraction.outline,
-        outlineSource: extraction.outlineSource,
-        proposedTitle: extraction.metadataTitle || upload.fileName.replace(/\.pdf$/i, ''),
-        proposedCategory: upload.proposedCategory || 'General',
-        proposedCategoryId: upload.proposedCategoryId,
-        proposedDocumentType: upload.proposedDocumentType,
-        duplicateDocumentId,
-        safeError: null,
-        lastActivityAt: now,
-        readyAt: now,
-        expiresAt: isoDate(this.now() + KNOWLEDGE_UPLOAD_RETENTION_MS),
-        revision: upload.revision + 1,
+      const ready = await this.withMutation(`upload:${upload.id}`, async () => {
+        const current = await this.requireUpload(upload.id);
+        if (current.state !== 'extracting') return false;
+        const staged = await this.repository.storeStagedCover(current, extraction.coverPng);
+        await this.repository.updateUpload(staged.id, {
+          state: 'ready',
+          pdf: staged.pdf,
+          cover: staged.cover,
+          pageCount: extraction.pageCount,
+          outline: extraction.outline,
+          outlineSource: extraction.outlineSource,
+          proposedTitle: extraction.metadataTitle || staged.fileName.replace(/\.pdf$/i, ''),
+          proposedCategory: staged.proposedCategory || 'General',
+          proposedCategoryId: staged.proposedCategoryId,
+          proposedDocumentType: staged.proposedDocumentType,
+          duplicateDocumentId,
+          safeError: null,
+          lastActivityAt: now,
+          readyAt: now,
+          expiresAt: isoDate(this.now() + KNOWLEDGE_UPLOAD_RETENTION_MS),
+          revision: staged.revision + 1,
+        });
+        return true;
       });
+      if (!ready) return;
       await this.repository.deleteChunks(upload.id);
       await this.completeBatchIfSettled(upload.batchId);
     } catch (error) {
-      const current = await this.repository.getUpload(upload.id);
-      if (!current || current.state === 'cancelled') return;
-      await this.repository.updateUpload(upload.id, {
-        state: 'failed',
-        safeError: safeProcessingError(error),
-        lastActivityAt: isoDate(this.now()),
-        revision: current.revision + 1,
+      const failed = await this.withMutation(`upload:${upload.id}`, async () => {
+        const current = await this.repository.getUpload(upload.id);
+        if (!current || !['assembling', 'extracting'].includes(current.state)) return false;
+        await this.repository.updateUpload(upload.id, {
+          state: 'failed',
+          safeError: safeProcessingError(error),
+          lastActivityAt: isoDate(this.now()),
+          revision: current.revision + 1,
+        });
+        return true;
       });
-      await this.completeBatchIfSettled(upload.batchId);
+      if (failed) await this.completeBatchIfSettled(upload.batchId);
     }
   }
 
@@ -675,26 +722,41 @@ export class KnowledgeUploadCoordinator {
   }
 
   private async completeBatchIfSettled(batchId: string): Promise<void> {
-    const batch = await this.repository.getBatch(batchId);
-    if (!batch || batch.state !== 'active') return;
-    const uploads = await this.repository.listUploads(batch.id);
-    if (
-      uploads.length !== batch.fileCount ||
-      uploads.some((upload) =>
-        ['queued', 'uploading', 'assembling', 'extracting'].includes(upload.state),
-      )
-    ) {
-      return;
-    }
-    await this.repository.updateBatch(batch.id, {
-      state: 'ready',
-      lastActivityAt: isoDate(this.now()),
-      revision: batch.revision + 1,
+    await this.withMutation(`batch:${batchId}`, async () => {
+      const batch = await this.repository.getBatch(batchId);
+      if (!batch || batch.state !== 'active') return;
+      const uploads = await this.repository.listUploads(batch.id);
+      if (
+        uploads.length !== batch.fileCount ||
+        uploads.some((upload) =>
+          ['queued', 'uploading', 'assembling', 'extracting'].includes(upload.state),
+        )
+      ) {
+        return;
+      }
+      await this.repository.updateBatch(batch.id, {
+        state: 'ready',
+        lastActivityAt: isoDate(this.now()),
+        revision: batch.revision + 1,
+      });
     });
   }
 
-  private async wasCancelled(uploadId: string): Promise<boolean> {
-    return (await this.repository.getUpload(uploadId))?.state === 'cancelled';
+  private async withMutation<T>(key: string, action: () => Promise<T>): Promise<T> {
+    const previous = this.mutations.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => gate);
+    this.mutations.set(key, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await action();
+    } finally {
+      release();
+      if (this.mutations.get(key) === tail) this.mutations.delete(key);
+    }
   }
 
   private async touchBatch(batch: KnowledgeUploadBatchRecord): Promise<void> {
@@ -721,7 +783,8 @@ export class KnowledgeUploadCoordinator {
     ) {
       return;
     }
-    if (record.accountId !== actor.accountId || record.deviceId !== actor.deviceId) {
+    const ownsAccount = record.accountId === actor.accountId;
+    if (!ownsAccount || (!allowAdministratorCrossAccount && record.deviceId !== actor.deviceId)) {
       throw new KnowledgeUploadCoordinatorError('unauthorized');
     }
   }

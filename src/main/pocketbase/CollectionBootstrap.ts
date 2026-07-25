@@ -925,6 +925,7 @@ const COLLECTIONS: CollectionDef[] = [
         values: ['sop', 'cheatsheet'],
         maxSelect: 1,
       },
+      { type: 'text', name: 'replacementDocumentId', required: false, max: 200 },
       { type: 'text', name: 'duplicateDocumentId', max: 200 },
       {
         type: 'select',

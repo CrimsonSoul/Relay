@@ -304,7 +304,11 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
     'knowledge.manage',
     (context, payload) =>
       translateUploadError(() =>
-        options.uploadCoordinator.cancelFile(uploadActor(context), payload),
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'upload-cancelled',
+          mutate: () => options.uploadCoordinator.cancelFile(uploadActor(context), payload),
+        }),
       ),
   );
   options.registrar.registerCommand(
@@ -312,7 +316,11 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
     'knowledge.manage',
     (context, payload) =>
       translateUploadError(() =>
-        options.uploadCoordinator.cancelBatch(uploadActor(context), payload),
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'upload-cancelled',
+          mutate: () => options.uploadCoordinator.cancelBatch(uploadActor(context), payload),
+        }),
       ),
   );
 

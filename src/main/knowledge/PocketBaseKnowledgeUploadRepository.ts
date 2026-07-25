@@ -53,6 +53,7 @@ function uploadRecord(value: KnowledgeUploadManifestRecord): KnowledgeUploadMani
         : null,
     outline: Array.isArray(value.outline) ? value.outline : [],
     outlineSource: value.outlineSource || null,
+    replacementDocumentId: value.replacementDocumentId || null,
     duplicateDocumentId: value.duplicateDocumentId || null,
     safeError: value.safeError || null,
     readyAt: value.readyAt || null,

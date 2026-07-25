@@ -151,6 +151,43 @@ describe('WebBridge', () => {
     expect(pdf.ok && new TextDecoder().decode(pdf.data)).toBe('%PDF-first!!');
   });
 
+  it('binds a single browser PDF upload to its replacement document', async () => {
+    const file = new File(['%PDF-replace'], 'Different Filename.pdf', {
+      type: 'application/pdf',
+    });
+    const actions = createBrowserActions({ pickPdfFiles: async () => [file] });
+    const selectPdfs = vi.spyOn(actions, 'selectPdfs');
+    const request = vi.fn(async (path: string) => {
+      if (path === '/knowledge/upload/begin') {
+        return {
+          batchId: 'batch-replacement',
+          files: [{ id: 'file-replacement', name: file.name, size: file.size }],
+        };
+      }
+      if (path === '/knowledge/upload/commit') return { ok: true, uploads: [] };
+      return EMPTY_STATUS;
+    });
+    const bridge = createWebBridge(SESSION, {
+      actions,
+      request,
+      fetcher: vi.fn(async () => new Response(null, { status: 200 })),
+    });
+
+    await expect(bridge.selectAndQueueKnowledgePdfs('document-target')).resolves.toEqual({
+      ok: true,
+      uploads: [],
+    });
+
+    expect(selectPdfs).toHaveBeenCalledWith(true);
+    expect(request).toHaveBeenCalledWith('/knowledge/upload/begin', {
+      method: 'POST',
+      body: {
+        files: [{ name: file.name, size: file.size }],
+        replacementDocumentId: 'document-target',
+      },
+    });
+  });
+
   it('multiplexes subscriptions over one event stream and closes it when idle', () => {
     const instances: Array<{
       addEventListener: ReturnType<typeof vi.fn>;

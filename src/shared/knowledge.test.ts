@@ -25,6 +25,7 @@ import {
   normalizeKnowledgeCategoryRecord,
   normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
+  normalizeKnowledgeManagementUploadView,
 } from './knowledge';
 import { normalizeKnowledgeSearchText } from './knowledgeSearch';
 import { IPC_CHANNELS } from './ipc';
@@ -447,6 +448,71 @@ describe('knowledge contracts', () => {
     expect(snapshot?.documents.items[0]).not.toHaveProperty('pdf');
     expect(snapshot?.documents.items[0]).not.toHaveProperty('outline');
     expect(snapshot?.categories).toEqual([category('Operations', 100)]);
+  });
+
+  it('validates optional replacement summaries while accepting older upload views', () => {
+    const replacementDocument = {
+      id: 'document-1',
+      checksum: 'b'.repeat(64),
+      category: 'Operations',
+      categoryId: 'category-operations',
+      documentType: 'sop',
+      displayTitle: 'Existing runbook',
+      fileName: 'Existing.pdf',
+      byteSize: 1_024,
+      pageCount: 4,
+      lifecycleState: 'active',
+      revision: 3,
+      publishedByName: 'Publisher',
+      publishedAt: '2026-07-16T01:00:00.000Z',
+      trashedByName: null,
+      trashedAt: null,
+      searchIndexState: 'ready',
+      searchIndexChecksum: 'b'.repeat(64),
+      searchIndexVersion: 1,
+      searchIndexedAt: '2026-07-16T01:00:00.000Z',
+      searchIndexError: null,
+      updated: '2026-07-16T01:00:00.000Z',
+    };
+    const upload = {
+      id: 'upload-1',
+      requestId: 'request-1',
+      fileName: 'Replacement.pdf',
+      byteSize: 2_048,
+      checksum: 'c'.repeat(64),
+      state: 'ready',
+      progress: 100,
+      proposedTitle: 'Replacement',
+      proposedCategory: 'Operations',
+      proposedCategoryId: 'category-operations',
+      proposedDocumentType: 'sop',
+      pageCount: 5,
+      outlineSource: 'native',
+      duplicateDocumentId: replacementDocument.id,
+      safeError: null,
+      expiresAt: '2026-07-23T01:00:00.000Z',
+      revision: 2,
+      outlineCount: 3,
+    };
+
+    expect(
+      normalizeKnowledgeManagementUploadView({ ...upload, replacementDocument }),
+    ).toMatchObject({
+      duplicateDocumentId: replacementDocument.id,
+      replacementDocument: {
+        id: replacementDocument.id,
+        revision: replacementDocument.revision,
+      },
+    });
+    expect(normalizeKnowledgeManagementUploadView(upload)).not.toHaveProperty(
+      'replacementDocument',
+    );
+    expect(
+      normalizeKnowledgeManagementUploadView({
+        ...upload,
+        replacementDocument: { ...replacementDocument, revision: 0 },
+      }),
+    ).toBeNull();
   });
 
   it('keeps legacy PocketBase documents visible in management snapshots', () => {

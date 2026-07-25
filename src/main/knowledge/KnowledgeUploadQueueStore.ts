@@ -22,6 +22,7 @@ export type KnowledgeUploadQueueEntry = {
   accountId: string;
   deviceId: string;
   localSourceId?: string;
+  replacementDocumentId?: string;
   source: KnowledgeUploadQueueSource;
   acknowledgedChunkIndexes: number[];
   state: KnowledgeUploadQueueItemState;
@@ -30,7 +31,7 @@ export type KnowledgeUploadQueueEntry = {
 };
 
 export type KnowledgeUploadQueueState = {
-  version: 1;
+  version: 2;
   restartRecovery: boolean;
   entries: KnowledgeUploadQueueEntry[];
 };
@@ -93,12 +94,12 @@ const SAFE_ERRORS: Array<KnowledgeManagementErrorCode | null> = [
 export function createEmptyKnowledgeUploadQueue(
   restartRecovery: boolean,
 ): KnowledgeUploadQueueState {
-  return { version: 1, restartRecovery, entries: [] };
+  return { version: 2, restartRecovery, entries: [] };
 }
 
 function cloneQueue(queue: KnowledgeUploadQueueState): KnowledgeUploadQueueState {
   return {
-    version: 1,
+    version: 2,
     restartRecovery: queue.restartRecovery,
     entries: queue.entries.map((entry) => ({
       ...entry,
@@ -146,6 +147,8 @@ function normalizePersistedEntry(
     !boundedString(value.accountId, 200) ||
     !boundedString(value.deviceId, 200) ||
     (value.localSourceId !== undefined && !boundedString(value.localSourceId, 200)) ||
+    (value.replacementDocumentId !== undefined &&
+      !boundedString(value.replacementDocumentId, 200)) ||
     !boundedString(canonicalPath, 4_096) ||
     !boundedString(source.fileName, 240) ||
     !numberInRange(source.byteSize, 1, KNOWLEDGE_MAX_PDF_BYTES) ||
@@ -174,6 +177,9 @@ function normalizePersistedEntry(
     accountId: value.accountId,
     deviceId: value.deviceId,
     ...(typeof value.localSourceId === 'string' ? { localSourceId: value.localSourceId } : {}),
+    ...(typeof value.replacementDocumentId === 'string'
+      ? { replacementDocumentId: value.replacementDocumentId }
+      : {}),
     source: {
       canonicalPath,
       fileName: source.fileName,
@@ -210,14 +216,18 @@ export class KnowledgeUploadQueueStore {
       if (isMissingFile(error)) return createEmptyKnowledgeUploadQueue(true);
       return createEmptyKnowledgeUploadQueue(true);
     }
-    if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+    if (
+      !isRecord(parsed) ||
+      ![1, 2].includes(parsed.version as number) ||
+      !Array.isArray(parsed.entries)
+    ) {
       return createEmptyKnowledgeUploadQueue(true);
     }
     const entries = parsed.entries.map((entry) => normalizePersistedEntry(entry, this.safeStorage));
     if (entries.length > KNOWLEDGE_UPLOAD_MAX_FILES || entries.some((entry) => entry === null)) {
       return createEmptyKnowledgeUploadQueue(true);
     }
-    return { version: 1, restartRecovery: true, entries: entries as KnowledgeUploadQueueEntry[] };
+    return { version: 2, restartRecovery: true, entries: entries as KnowledgeUploadQueueEntry[] };
   }
 
   async save(queue: KnowledgeUploadQueueState): Promise<void> {
@@ -226,7 +236,7 @@ export class KnowledgeUploadQueueStore {
       return;
     }
     const persisted: PersistedQueue = {
-      version: 1,
+      version: 2,
       restartRecovery: true,
       entries: queue.entries.map((entry) => {
         const { canonicalPath, ...source } = entry.source;

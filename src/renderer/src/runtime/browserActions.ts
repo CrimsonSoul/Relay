@@ -6,7 +6,7 @@ type BrowserActionsOptions = {
   executeCopy?: (command: string) => boolean;
   AudioConstructor?: typeof Audio;
   pickImage?: (maxBytes: number) => Promise<string | null>;
-  pickPdfFiles?: () => Promise<File[]>;
+  pickPdfFiles?: (single: boolean) => Promise<File[]>;
 };
 
 function normalizedExternalUrl(value: string): string | null {
@@ -97,12 +97,12 @@ function pickBrowserImage(maxBytes: number): Promise<string | null> {
   });
 }
 
-function pickBrowserPdfs(): Promise<File[]> {
+function pickBrowserPdfs(single = false): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/pdf,.pdf';
-    input.multiple = true;
+    input.multiple = !single;
     input.hidden = true;
     document.body.append(input);
     let settled = false;
@@ -195,8 +195,8 @@ export function createBrowserActions(options: BrowserActionsOptions = {}) {
       return (options.pickImage ?? pickBrowserImage)(maxBytes);
     },
 
-    selectPdfs(): Promise<File[]> {
-      return (options.pickPdfFiles ?? pickBrowserPdfs)();
+    selectPdfs(single = false): Promise<File[]> {
+      return (options.pickPdfFiles ?? pickBrowserPdfs)(single);
     },
   };
 }

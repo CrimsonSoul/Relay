@@ -281,6 +281,7 @@ export type KnowledgeManagementDocumentView = Pick<
 
 export type KnowledgeManagementUploadView = Omit<KnowledgeUploadView, 'outline'> & {
   outlineCount: number;
+  replacementDocument?: KnowledgeManagementDocumentView | null;
 };
 
 export type KnowledgePage<T> = {
@@ -991,6 +992,13 @@ export function normalizeKnowledgeManagementUploadView(
   const safeError = value.safeError as KnowledgeManagementErrorCode | null;
   const proposedCategoryId = value.proposedCategoryId || null;
   const proposedDocumentType = value.proposedDocumentType ?? 'sop';
+  const replacementDocumentValue = value.replacementDocument;
+  let replacementDocument: KnowledgeManagementDocumentView | null | undefined;
+  if (replacementDocumentValue === null) {
+    replacementDocument = null;
+  } else if (replacementDocumentValue !== undefined) {
+    replacementDocument = normalizeKnowledgeManagementDocumentView(replacementDocumentValue);
+  }
   const validStates: KnowledgeUploadState[] = [
     'queued',
     'uploading',
@@ -1027,7 +1035,10 @@ export function normalizeKnowledgeManagementUploadView(
     !Number.isInteger(value.revision) ||
     (value.revision as number) < 0 ||
     !Number.isInteger(value.outlineCount) ||
-    (value.outlineCount as number) < 0
+    (value.outlineCount as number) < 0 ||
+    (replacementDocumentValue !== undefined &&
+      replacementDocumentValue !== null &&
+      replacementDocument === null)
   ) {
     return null;
   }
@@ -1050,6 +1061,7 @@ export function normalizeKnowledgeManagementUploadView(
     expiresAt: value.expiresAt,
     revision: value.revision as number,
     outlineCount: value.outlineCount as number,
+    ...(replacementDocumentValue !== undefined ? { replacementDocument } : {}),
   };
 }
 

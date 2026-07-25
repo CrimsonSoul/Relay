@@ -900,6 +900,9 @@ describe('ensureCollections', () => {
     }
     expect(commands?.createRule).toContain('accountId = @request.auth.id');
     expect(pairingRequests?.createRule).toContain('accountId = @request.auth.id');
+    expect(uploads?.fields).toContainEqual(
+      expect.objectContaining({ name: 'replacementDocumentId', required: false }),
+    );
   });
 
   it('keeps challenge secrets server-hidden and scopes one-time pairing requests to the account', async () => {
@@ -1341,6 +1344,12 @@ describe('ensureCollections', () => {
           name: 'batchId',
           type: 'relation',
           collectionId: 'batch-col-id',
+        }),
+        expect.objectContaining({
+          name: 'replacementDocumentId',
+          type: 'text',
+          required: false,
+          max: 200,
         }),
       ]),
     );

@@ -358,6 +358,23 @@ describe('privileged command validation', () => {
       chunkCount: 13,
     });
     expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        batchId: 'batch1',
+        fileName: 'Replacement.pdf',
+        byteSize: 5,
+        checksum: 'a'.repeat(64),
+        chunkCount: 1,
+        replacementDocumentId: 'document-1',
+      }),
+    ).toEqual({
+      batchId: 'batch1',
+      fileName: 'Replacement.pdf',
+      byteSize: 5,
+      checksum: 'a'.repeat(64),
+      chunkCount: 1,
+      replacementDocumentId: 'document-1',
+    });
+    expect(
       normalizePrivilegedCommandPayload('knowledge.upload.status', { batchId: 'batch1' }),
     ).toEqual({
       batchId: 'batch1',

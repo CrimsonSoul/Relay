@@ -31,7 +31,12 @@ import {
 } from '@shared/knowledge';
 
 type Actor = { accountId: string; displayName: string };
-type UploadRecord = KnowledgeUploadView & { pdf: string; cover: string; accountId: string };
+type UploadRecord = KnowledgeUploadView & {
+  pdf: string;
+  cover: string;
+  accountId: string;
+  replacementDocumentId?: string | null;
+};
 type StoredUploadRecord = Partial<KnowledgeUploadView> & {
   id: string;
   requestId: string;
@@ -41,6 +46,7 @@ type StoredUploadRecord = Partial<KnowledgeUploadView> & {
   state: KnowledgeUploadView['state'];
   expiresAt: string;
   revision: number;
+  replacementDocumentId?: string | null;
 };
 
 export class ManagedKnowledgeFilenameConflictError extends Error {
@@ -211,10 +217,11 @@ export class ManagedKnowledgeService {
       }),
     ]);
     const query = normalizeKnowledgeSearchText(input.query);
+    const activeDocuments = documents.filter(({ lifecycleState }) => lifecycleState === 'active');
+    const activeDocumentIds = new Set(activeDocuments.map(({ id }) => id));
+    const activeDocumentById = new Map(activeDocuments.map((document) => [document.id, document]));
     const activeDocumentIdByFilename = new Map(
-      documents
-        .filter(({ lifecycleState }) => lifecycleState === 'active')
-        .map(({ fileName, id }) => [fileName, id]),
+      activeDocuments.map(({ fileName, id }) => [fileName, id]),
     );
     const matches = documents.filter((document) => {
       const text = normalizeKnowledgeSearchText(
@@ -243,9 +250,25 @@ export class ManagedKnowledgeService {
         pageSize,
       ),
       uploads: {
-        items: uploadItems.map((item) =>
-          uploadView(item, activeDocumentIdByFilename.get(item.fileName) ?? null),
-        ),
+        items: uploadItems.map((item) => {
+          const explicitReplacementDocumentId = item.replacementDocumentId || null;
+          const storedReplacementId =
+            item.duplicateDocumentId && activeDocumentIds.has(item.duplicateDocumentId)
+              ? item.duplicateDocumentId
+              : null;
+          const replacementDocumentId =
+            explicitReplacementDocumentId ??
+            storedReplacementId ??
+            activeDocumentIdByFilename.get(item.fileName) ??
+            null;
+          const replacementDocument = replacementDocumentId
+            ? activeDocumentById.get(replacementDocumentId)
+            : undefined;
+          return {
+            ...uploadView(item, replacementDocumentId),
+            replacementDocument: replacementDocument ? documentView(replacementDocument) : null,
+          };
+        }),
         nextCursor:
           uploadStart + pageSize < sortedUploads.length ? (uploadItems.at(-1)?.id ?? null) : null,
       },
@@ -261,6 +284,9 @@ export class ManagedKnowledgeService {
     documentType?: KnowledgeDocumentType;
   }): Promise<KnowledgeManagementDocumentView> {
     const upload = await this.readyUpload(input.uploadId, input.actor);
+    if (upload.replacementDocumentId) {
+      throw new Error('Knowledge replacement cannot be published as a new document.');
+    }
     await this.assertUniqueFilename(upload.fileName);
     const title = normalizedText(input.title, 240);
     const category = await this.resolveOrCreateCategoryByName(input.category);
@@ -293,7 +319,7 @@ export class ManagedKnowledgeService {
       actor: input.actor,
       revision: 1,
     });
-    await this.completeUpload(upload.id);
+    await this.completeUpload(upload);
     await this.audit(input.requestId, 'published', document, input.actor);
     return documentView(document);
   }
@@ -309,6 +335,16 @@ export class ManagedKnowledgeService {
       this.readyUpload(input.uploadId, input.actor),
       this.getDocument(input.documentId),
     ]);
+    const replacementTargetMatches = upload.replacementDocumentId
+      ? upload.replacementDocumentId === input.documentId
+      : upload.fileName === current.fileName;
+    if (
+      !replacementTargetMatches ||
+      current.id !== input.documentId ||
+      current.lifecycleState !== 'active'
+    ) {
+      throw new Error('Knowledge replacement target is unavailable.');
+    }
     this.assertRevision(current, input.expectedRevision);
     const [bytes, coverBytes] = await Promise.all([
       this.readAndVerifyUpload(upload),
@@ -337,7 +373,7 @@ export class ManagedKnowledgeService {
         requestKey: null,
       });
     const document = this.documentFromSaved(saved, upload, metadata, current);
-    await this.completeUpload(upload.id);
+    await this.completeUpload(upload);
     await this.audit(input.requestId, 'replaced', document, input.actor);
     return documentView(document);
   }
@@ -1039,10 +1075,17 @@ export class ManagedKnowledgeService {
     return documentView(document);
   }
 
-  private completeUpload(id: string): Promise<unknown> {
-    return this.pb
-      .collection(KNOWLEDGE_UPLOADS_COLLECTION)
-      .update(id, { state: 'published', pdf: null, cover: null }, { requestKey: null });
+  private completeUpload(upload: UploadRecord): Promise<unknown> {
+    return this.pb.collection(KNOWLEDGE_UPLOADS_COLLECTION).update(
+      upload.id,
+      {
+        state: 'published',
+        pdf: null,
+        cover: null,
+        revision: upload.revision + 1,
+      },
+      { requestKey: null },
+    );
   }
 
   private async audit(

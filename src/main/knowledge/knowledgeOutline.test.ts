@@ -62,6 +62,21 @@ describe('normalizeNativeKnowledgeOutline', () => {
     expect(first[0]?.label).toBe('Checks');
     expect(first[0]?.id).toBe(second[0]?.id);
   });
+
+  it('omits contents navigation from a native PDF outline', async () => {
+    const result = await normalizeNativeKnowledgeOutline(
+      [
+        { title: 'Table of Contents', dest: 'contents', items: [] },
+        { title: 'Overview', dest: 'overview', items: [] },
+      ],
+      async (destination) =>
+        destination === 'contents' ? { pageIndex: 1, top: 700 } : { pageIndex: 2, top: 700 },
+    );
+
+    const labels = result.map(({ label }) => label);
+    expect(labels).not.toContain('Table of Contents');
+    expect(labels).toContain('Overview');
+  });
 });
 
 function textItem(str: string, x: number, y: number, size: number, fontName = 'Body') {
@@ -127,6 +142,235 @@ describe('inferKnowledgeOutline', () => {
         top: 700,
       })),
     );
+  });
+
+  it('parses Word contents rows with embedded dot leaders without listing the contents heading', () => {
+    const pages: KnowledgeTextPage[] = Array.from({ length: 8 }, (_, pageIndex) => ({
+      pageIndex,
+      height: 800,
+      items: [],
+    }));
+    pages[1]?.items.push(
+      textItem('Table of Contents', 60, 700, 16, 'Heading-Bold'),
+      textItem(
+        'Table of Contents ........................................................ 2',
+        60,
+        675,
+        12,
+      ),
+      textItem('Purpose, Scope, and Responsibilities', 60, 650, 12),
+      textItem('................................................................ 3', 300, 650, 12),
+      textItem(
+        'Understanding Oracle Terms and Tickets ........................................................',
+        60,
+        625,
+        12,
+      ),
+      textItem('4', 550, 625, 12),
+      textItem('How to Open and Set Up Oracle', 60, 600, 12),
+      textItem('........................................................', 300, 600, 12),
+      textItem('8', 550, 600, 12),
+    );
+    const expected = [
+      ['Purpose, Scope, and Responsibilities', 3],
+      ['Understanding Oracle Terms and Tickets', 4],
+      ['How to Open and Set Up Oracle', 8],
+    ] as const;
+    expected.forEach(([label, pageNumber]) => {
+      pages[pageNumber - 1]?.items.push(
+        textItem(label, 60, 700, 20, 'Heading-Bold'),
+        textItem(
+          `This paragraph contains the ordinary operating details for section ${pageNumber}.`,
+          60,
+          650,
+          10,
+        ),
+      );
+    });
+
+    expect(
+      inferKnowledgeOutline(pages).map(({ label, pageIndex }) => ({
+        label,
+        page: pageIndex + 1,
+      })),
+    ).toEqual(expected.map(([label, page]) => ({ label, page })));
+  });
+
+  it('rejoins a wrapped Word contents label when the heading also wraps on the target page', () => {
+    const fullLabel = 'Completing a Very Long XStore Request That Wraps';
+    const pages: KnowledgeTextPage[] = Array.from({ length: 3 }, (_, pageIndex) => ({
+      pageIndex,
+      height: 800,
+      items: [],
+    }));
+    pages[1]?.items.push(
+      textItem('Table of Contents', 60, 700, 16, 'Heading-Bold'),
+      textItem('Completing a Very Long XStore', 60, 650, 12),
+      ...contentsRow('Request That Wraps', 3, 630),
+      ...contentsRow('Resolution', 3, 600),
+    );
+    pages[2]?.items.push(
+      textItem('Completing a Very Long XStore', 60, 700, 20, 'Heading-Bold'),
+      textItem('Request That Wraps', 60, 678, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the wrapped section.',
+        60,
+        650,
+        10,
+      ),
+      textItem('Resolution', 60, 580, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the resolution section.',
+        60,
+        530,
+        10,
+      ),
+    );
+
+    expect(inferKnowledgeOutline(pages).map(({ label }) => label)).toEqual([
+      fullLabel,
+      'Resolution',
+    ]);
+  });
+
+  it('rejoins a three-line Word contents label using an exact wrapped target match', () => {
+    const fullLabel = 'Completing a Very Long XStore Request That Wraps Across Three Lines';
+    const pages: KnowledgeTextPage[] = Array.from({ length: 3 }, (_, pageIndex) => ({
+      pageIndex,
+      height: 800,
+      items: [],
+    }));
+    pages[1]?.items.push(
+      textItem('Table of Contents', 60, 700, 16, 'Heading-Bold'),
+      textItem('Completing a Very Long XStore', 60, 660, 12),
+      textItem('Request That Wraps Across', 60, 640, 12),
+      ...contentsRow('Three Lines', 3, 620),
+      ...contentsRow('Resolution', 3, 590),
+    );
+    pages[2]?.items.push(
+      textItem('Completing a Very Long XStore', 60, 700, 20, 'Heading-Bold'),
+      textItem('Request That Wraps Across', 60, 678, 20, 'Heading-Bold'),
+      textItem('Three Lines', 60, 656, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the wrapped section.',
+        60,
+        610,
+        10,
+      ),
+      textItem('Resolution', 60, 560, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the resolution section.',
+        60,
+        510,
+        10,
+      ),
+    );
+
+    expect(inferKnowledgeOutline(pages).map(({ label }) => label)).toEqual([
+      fullLabel,
+      'Resolution',
+    ]);
+  });
+
+  it('uses the matching target line after a rejected adjacent contents label', () => {
+    const pages: KnowledgeTextPage[] = Array.from({ length: 3 }, (_, pageIndex) => ({
+      pageIndex,
+      height: 800,
+      items: [],
+    }));
+    pages[0]?.items.push(
+      textItem('Table of Contents', 60, 700, 16, 'Heading-Bold'),
+      ...contentsRow('Overview', 3, 650),
+      ...contentsRow('Resolution', 3, 620),
+    );
+    pages[2]?.items.push(
+      textItem('Table of Contents', 60, 700, 20, 'Heading-Bold'),
+      textItem('Overview', 60, 678, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the overview section.',
+        60,
+        630,
+        10,
+      ),
+      textItem('Resolution', 60, 580, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the resolution section.',
+        60,
+        530,
+        10,
+      ),
+    );
+
+    expect(inferKnowledgeOutline(pages)).toEqual([
+      expect.objectContaining({ label: 'Overview', top: 678 }),
+      expect.objectContaining({ label: 'Resolution', top: 580 }),
+    ]);
+  });
+
+  it('rejoins a wrapped contents label whose final fragment has two characters', () => {
+    const pages: KnowledgeTextPage[] = Array.from({ length: 3 }, (_, pageIndex) => ({
+      pageIndex,
+      height: 800,
+      items: [],
+    }));
+    pages[0]?.items.push(
+      textItem('Table of Contents', 60, 700, 16, 'Heading-Bold'),
+      textItem('Configure the', 60, 650, 12),
+      ...contentsRow('UI', 3, 630),
+      ...contentsRow('Resolution', 3, 600),
+    );
+    pages[2]?.items.push(
+      textItem('Configure the', 60, 700, 20, 'Heading-Bold'),
+      textItem('UI', 60, 678, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the interface section.',
+        60,
+        630,
+        10,
+      ),
+      textItem('Resolution', 60, 580, 20, 'Heading-Bold'),
+      textItem(
+        'This paragraph contains the ordinary operational details for the resolution section.',
+        60,
+        530,
+        10,
+      ),
+    );
+
+    expect(inferKnowledgeOutline(pages).map(({ label }) => label)).toEqual([
+      'Configure the UI',
+      'Resolution',
+    ]);
+  });
+
+  it('does not infer an unparseable contents heading as a document section', () => {
+    const result = inferKnowledgeOutline([
+      {
+        pageIndex: 0,
+        height: 800,
+        items: [
+          textItem('Table of Contents', 60, 700, 16, 'Heading-Bold'),
+          textItem('Overview without a page leader', 60, 650, 12),
+        ],
+      },
+      {
+        pageIndex: 1,
+        height: 800,
+        items: [
+          textItem('Overview', 60, 700, 20, 'Heading-Bold'),
+          textItem(
+            'This paragraph contains enough ordinary body text to establish the document body size.',
+            60,
+            650,
+            10,
+          ),
+        ],
+      },
+    ]);
+
+    const labels = result.map(({ label }) => label);
+    expect(labels).not.toContain('Table of Contents');
+    expect(labels).toContain('Overview');
   });
 
   it('uses horizontal geometry to preserve real spaces without splitting adjacent text runs', () => {
@@ -315,5 +559,32 @@ describe('inferKnowledgeOutline', () => {
 
   it('returns no fabricated outline for pages without usable text', () => {
     expect(inferKnowledgeOutline([{ pageIndex: 0, height: 800, items: [] }])).toEqual([]);
+  });
+
+  it('uses page-level navigation when inferred PDF coordinates are negative', () => {
+    const result = inferKnowledgeOutline([
+      {
+        pageIndex: 0,
+        height: 792,
+        items: [
+          textItem(
+            'This paragraph establishes the ordinary body size for the readable document.',
+            60,
+            500,
+            12,
+          ),
+          textItem('Visible heading', 60, -50, 24, 'Heading-Bold'),
+        ],
+      },
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        label: 'Visible heading',
+        pageIndex: 0,
+        level: 1,
+        top: null,
+      }),
+    ]);
   });
 });

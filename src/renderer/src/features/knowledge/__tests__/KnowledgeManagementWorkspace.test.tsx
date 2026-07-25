@@ -599,6 +599,47 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByText('1 PDF queued.')).toBeInTheDocument();
   });
 
+  it('keeps the selected document bound to the Replace PDF upload', async () => {
+    const stageForReplacement = vi.fn(async () => ({
+      ok: true as const,
+      uploads: [
+        {
+          id: 'local-replacement-upload',
+          uploadId: null,
+          batchId: 'batch-replacement',
+          fileName: 'A differently named replacement.pdf',
+          byteSize: 1_024,
+          acknowledgedBytes: 0,
+          chunkCount: 1,
+          acknowledgedChunkCount: 0,
+          state: 'queued' as const,
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: false,
+        },
+      ],
+    }));
+    useKnowledgeManagementMock.mockReturnValue({
+      ...useKnowledgeManagementMock(),
+      stagePdfs: stageForReplacement,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace PDF' }));
+
+    await waitFor(() => expect(stageForReplacement).toHaveBeenCalledWith('document-1'));
+  });
+
+  it('disables Replace PDF while the upload picker is already active', () => {
+    useKnowledgeManagementMock.mockReturnValue({
+      ...useKnowledgeManagementMock(),
+      busy: 'upload',
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Replace PDF' })).toBeDisabled();
+  });
+
   it('publishes an upload into an existing category selected from the category list', () => {
     const publish = vi.fn(async () => true);
     const current = useKnowledgeManagementMock();
@@ -866,14 +907,12 @@ describe('KnowledgeManagementWorkspace', () => {
       .getByRole('heading', { name: 'Runbook.pdf' })
       .closest('.knowledge-management-row--upload');
     expect(reviewRow).not.toBeNull();
-    expect(within(reviewRow as HTMLElement).getByText('Duplicate found')).toHaveClass(
+    expect(within(reviewRow as HTMLElement).getByText('Replacement ready')).toHaveClass(
       'knowledge-management-status',
       'is-action-required',
     );
     expect(
-      within(reviewRow as HTMLElement).getByText(
-        'A published document named Runbook.pdf already exists.',
-      ),
+      within(reviewRow as HTMLElement).getByText('This PDF will replace Existing failover manual.'),
     ).toHaveClass('knowledge-management-row__duplicate');
     expect(
       within(reviewRow as HTMLElement).getByText(
@@ -924,6 +963,181 @@ describe('KnowledgeManagementWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm discard Runbook.pdf' }));
 
     await waitFor(() => expect(cancelUpload).toHaveBeenCalledWith('upload-1'));
+  });
+
+  it('shows replacement transfer state until the upload is ready for action', () => {
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        uploads: {
+          nextCursor: null,
+          items: [
+            {
+              id: 'upload-1',
+              requestId: 'request-1',
+              fileName: 'Replacement.pdf',
+              byteSize: 1_024,
+              checksum: 'a'.repeat(64),
+              state: 'extracting',
+              progress: 80,
+              proposedTitle: 'Replacement',
+              proposedCategory: 'Operations',
+              pageCount: 4,
+              outlineSource: 'native',
+              outlineCount: 3,
+              duplicateDocumentId: 'document-1',
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 2,
+            },
+          ],
+        },
+      },
+      uploadQueue: {
+        restartRecovery: false,
+        activeBatchId: 'batch-1',
+        totalBytes: 1_024,
+        acknowledgedBytes: 1_024,
+        items: [
+          {
+            id: 'local-1',
+            uploadId: 'upload-1',
+            batchId: 'batch-1',
+            fileName: 'Replacement.pdf',
+            byteSize: 1_024,
+            acknowledgedBytes: 1_024,
+            chunkCount: 1,
+            acknowledgedChunkCount: 1,
+            state: 'extracting',
+            safeError: null,
+            retryCount: 0,
+            restartRecovery: false,
+          },
+        ],
+      },
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    const queueRow = screen.getByText('Replacement.pdf', { selector: 'strong' }).closest('article');
+    expect(queueRow).not.toBeNull();
+    expect(within(queueRow as HTMLElement).getByText('Indexing')).toHaveClass(
+      'knowledge-management-status',
+      'is-extracting',
+    );
+    expect(within(queueRow as HTMLElement).queryByText('Action required')).toBeNull();
+
+    const reviewRow = screen
+      .getByRole('heading', { name: 'Replacement.pdf' })
+      .closest('.knowledge-management-row--upload');
+    expect(reviewRow).not.toBeNull();
+    expect(within(reviewRow as HTMLElement).getByText('extracting')).toHaveClass(
+      'knowledge-management-status',
+      'is-extracting',
+    );
+    expect(within(reviewRow as HTMLElement).queryByText('Replacement ready')).toBeNull();
+    expect(
+      within(reviewRow as HTMLElement).getByRole('button', { name: 'Replace existing' }),
+    ).toBeDisabled();
+  });
+
+  it('keeps replacement actionable when its document is outside the current page', () => {
+    const replace = vi.fn(async () => true);
+    const current = useKnowledgeManagementMock();
+    const replacementDocument = current.snapshot!.documents.items[0]!;
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [], nextCursor: 'document-page-2' },
+        uploads: {
+          items: [
+            {
+              id: 'upload-off-page',
+              requestId: 'request-off-page',
+              fileName: 'Differently Named.pdf',
+              byteSize: 1_024,
+              checksum: 'b'.repeat(64),
+              state: 'ready',
+              progress: 100,
+              proposedTitle: 'Different source title',
+              proposedCategory: 'General',
+              pageCount: 2,
+              outlineSource: 'none',
+              outlineCount: 0,
+              duplicateDocumentId: replacementDocument.id,
+              replacementDocument,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 2,
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+      replace,
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    expect(
+      screen.getByText(`This PDF will replace ${replacementDocument.displayTitle}.`),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Replace existing' }));
+
+    expect(replace).toHaveBeenCalledWith(
+      'upload-off-page',
+      replacementDocument.id,
+      replacementDocument.revision,
+    );
+  });
+
+  it('only allows discard when the selected replacement document is no longer available', () => {
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [], nextCursor: null },
+        uploads: {
+          items: [
+            {
+              id: 'upload-orphaned-replacement',
+              requestId: 'request-orphaned-replacement',
+              fileName: 'Replacement.pdf',
+              byteSize: 1_024,
+              checksum: 'b'.repeat(64),
+              state: 'ready',
+              progress: 100,
+              proposedTitle: 'Replacement',
+              proposedCategory: 'Operations',
+              pageCount: 2,
+              outlineSource: 'none',
+              outlineCount: 0,
+              duplicateDocumentId: 'document-no-longer-active',
+              replacementDocument: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 2,
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    expect(
+      screen.getByText(
+        'The document selected for replacement is no longer available. Discard this upload and try again.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Replace existing' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Discard Replacement.pdf' })).toBeEnabled();
   });
 
   it('keeps cancelled upload records out of review', () => {

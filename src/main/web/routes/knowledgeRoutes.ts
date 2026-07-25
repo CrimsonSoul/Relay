@@ -211,7 +211,10 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
       try {
         const session = uploadSession(options, sessionId);
         return session
-          ? { status: 200, body: await session.begin(body.files) }
+          ? {
+              status: 200,
+              body: await session.begin(body.files, body.replacementDocumentId),
+            }
           : { status: 403, body: { ok: false, error: 'unauthorized' } };
       } catch (error) {
         return stagingFailure(error);

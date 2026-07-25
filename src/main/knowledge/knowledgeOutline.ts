@@ -65,9 +65,21 @@ function validDestination(
   );
 }
 
+function inferredDestinationTop(value: number): number | null {
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function isContentsHeading(value: string): boolean {
+  return /^(?:table of )?contents:?$/i.test(value.trim());
+}
+
 function normalizeNativeLabel(value: string): string | null {
   const label = value.trim().replace(/\s+/g, ' ');
-  return label.length > 0 && label.length <= KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH ? label : null;
+  return label.length > 0 &&
+    label.length <= KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH &&
+    !isContentsHeading(label)
+    ? label
+    : null;
 }
 
 async function visitNativeEntries(
@@ -220,23 +232,108 @@ type KnowledgeContentsRow = {
   pageIndex: number;
 };
 
-function parseContentsRow(line: KnowledgeTextLine, pageCount: number): KnowledgeContentsRow | null {
-  const items = line.items.filter((item) => item.str.trim());
-  const leaderIndex = items.findIndex((item) => /^\.{3,}$/.test(item.str.trim()));
-  if (leaderIndex < 1) return null;
+function adjacentWrappedLines(upper: KnowledgeTextLine, lower: KnowledgeTextLine): boolean {
+  const verticalGap = upper.top - lower.top;
+  return (
+    Math.abs(upper.fontSize - lower.fontSize) <= 2 &&
+    verticalGap > 0 &&
+    verticalGap <= Math.max(upper.fontSize, lower.fontSize) * 2
+  );
+}
 
-  const destination = items.at(-1)?.str.trim() ?? '';
-  if (!/^\d{1,4}$/.test(destination)) return null;
-  if (!items.slice(leaderIndex, -1).every((item) => /^\.{3,}$/.test(item.str.trim()))) {
+function wrappedLinesMatchLabel(
+  lines: KnowledgeTextLine[],
+  start: number,
+  normalizedLabel: string,
+): boolean {
+  let combined = '';
+  for (let offset = 0; offset < 3; offset += 1) {
+    const line = lines[start + offset];
+    if (!line) return false;
+    const previous = offset > 0 ? lines[start + offset - 1] : null;
+    if (previous && !adjacentWrappedLines(previous, line)) return false;
+
+    const label = normalizeNativeLabel(`${combined} ${line.text}`);
+    if (!label) return false;
+    combined = label;
+    const normalizedCombined = normalizeKnowledgeSearchText(combined);
+    if (normalizedCombined === normalizedLabel) return true;
+    if (normalizedCombined.length >= normalizedLabel.length) return false;
+  }
+  return false;
+}
+
+function matchingContentsTarget(
+  lines: KnowledgeTextLine[],
+  row: KnowledgeContentsRow,
+): KnowledgeTextLine | undefined {
+  const normalizedLabel = normalizeKnowledgeSearchText(row.label);
+  const targetLines = lines
+    .filter((line) => line.pageIndex === row.pageIndex)
+    .toSorted((left, right) => right.top - left.top);
+
+  for (let start = 0; start < targetLines.length; start += 1) {
+    const first = targetLines[start];
+    if (first && wrappedLinesMatchLabel(targetLines, start, normalizedLabel)) return first;
+  }
+
+  return undefined;
+}
+
+function splitContentsRow(text: string): { label: string; pageNumber: number } | null {
+  let destinationStart = text.length;
+  while (
+    destinationStart > 0 &&
+    text.length - destinationStart < 4 &&
+    text[destinationStart - 1] !== undefined &&
+    text[destinationStart - 1]! >= '0' &&
+    text[destinationStart - 1]! <= '9'
+  ) {
+    destinationStart -= 1;
+  }
+  if (
+    destinationStart === text.length ||
+    (destinationStart > 0 &&
+      text[destinationStart - 1] !== undefined &&
+      text[destinationStart - 1]! >= '0' &&
+      text[destinationStart - 1]! <= '9')
+  ) {
     return null;
   }
 
-  const pageNumber = Number(destination);
-  const label = joinLineItems(items.slice(0, leaderIndex)).trim();
+  const beforeDestination = text.slice(0, destinationStart).trimEnd();
+  let leaderStart = beforeDestination.length;
+  let dotCount = 0;
+  while (leaderStart > 0) {
+    const character = beforeDestination[leaderStart - 1];
+    if (character === '.') {
+      dotCount += 1;
+      leaderStart -= 1;
+    } else if (character !== undefined && /\s/.test(character) && dotCount > 0) {
+      leaderStart -= 1;
+    } else {
+      break;
+    }
+  }
+  if (dotCount < 3) return null;
+
+  return {
+    label: beforeDestination.slice(0, leaderStart).trim(),
+    pageNumber: Number(text.slice(destinationStart)),
+  };
+}
+
+function parseContentsRow(line: KnowledgeTextLine, pageCount: number): KnowledgeContentsRow | null {
+  const items = line.items.filter((item) => item.str.trim());
+  const row = splitContentsRow(joinLineItems(items).trim());
+  if (!row) return null;
+
+  const { label, pageNumber } = row;
   if (
     pageNumber < 1 ||
     pageNumber > pageCount ||
-    label.length < 3 ||
+    isContentsHeading(label) ||
+    label.length < 2 ||
     label.length > KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH ||
     label.split(/\s+/).length > 20
   ) {
@@ -250,14 +347,40 @@ function inferContentsOutline(
   lines: KnowledgeTextLine[],
   pageCount: number,
 ): KnowledgeOutlineNode[] {
-  const contentsHeadings = lines.filter((line) =>
-    /^(?:table of )?contents$/i.test(line.text.trim()),
-  );
+  const contentsHeadings = lines.filter((line) => isContentsHeading(line.text));
 
   for (const heading of contentsHeadings) {
-    const rows = lines
+    const pageLines = lines
       .filter((line) => line.pageIndex === heading.pageIndex && line.top < heading.top)
-      .map((line) => parseContentsRow(line, pageCount))
+      .toSorted((left, right) => right.top - left.top);
+    const rows = pageLines
+      .map((line, index) => {
+        const row = parseContentsRow(line, pageCount);
+        if (!row) return null;
+        let followingLine = line;
+        const precedingLabels: string[] = [];
+        let bestCombined: KnowledgeContentsRow | null = null;
+
+        for (let offset = 1; offset <= 2; offset += 1) {
+          const preceding = pageLines[index - offset];
+          if (!preceding || parseContentsRow(preceding, pageCount)) break;
+          const verticalGap = preceding.top - followingLine.top;
+          const similarFontSize = Math.abs(preceding.fontSize - followingLine.fontSize) <= 2;
+          const closeEnough =
+            verticalGap > 0 &&
+            verticalGap <= Math.max(preceding.fontSize, followingLine.fontSize) * 2;
+          const precedingLabel = normalizeNativeLabel(preceding.text);
+          if (!similarFontSize || !closeEnough || !precedingLabel) break;
+          precedingLabels.unshift(precedingLabel);
+          const combinedLabel = normalizeNativeLabel(`${precedingLabels.join(' ')} ${row.label}`);
+          if (!combinedLabel) break;
+          const combined = { ...row, label: combinedLabel };
+          if (matchingContentsTarget(lines, combined)) bestCombined = combined;
+          followingLine = preceding;
+        }
+
+        return bestCombined ?? row;
+      })
       .filter((row): row is KnowledgeContentsRow => row !== null);
     if (rows.length < 2) continue;
     if (
@@ -268,13 +391,8 @@ function inferContentsOutline(
     }
 
     return rows.slice(0, KNOWLEDGE_MAX_OUTLINE_NODES).map((row, index) => {
-      const normalizedLabel = normalizeKnowledgeSearchText(row.label);
-      const target = lines.find(
-        (line) =>
-          line.pageIndex === row.pageIndex &&
-          normalizeKnowledgeSearchText(line.text) === normalizedLabel,
-      );
-      const top = target?.top ?? null;
+      const target = matchingContentsTarget(lines, row);
+      const top = target ? inferredDestinationTop(target.top) : null;
       return {
         id: stableNodeId(`contents|${index}|${row.label}|${row.pageIndex}|${top ?? 'page'}`),
         label: row.label,
@@ -365,7 +483,9 @@ export function inferKnowledgeOutline(pages: KnowledgeTextPage[]): KnowledgeOutl
   const repeatedMargins = repeatedMarginLabels(lines, pages.length);
   const usableLines = lines.filter(
     (line) =>
-      !repeatedMargins.has(normalizeKnowledgeSearchText(line.text)) && !isPageNumber(line.text),
+      !isContentsHeading(line.text) &&
+      !repeatedMargins.has(normalizeKnowledgeSearchText(line.text)) &&
+      !isPageNumber(line.text),
   );
   const bodySize = predominantBodySize(usableLines);
   if (bodySize <= 0) return [];
@@ -382,11 +502,14 @@ export function inferKnowledgeOutline(pages: KnowledgeTextPage[]): KnowledgeOutl
   );
   const largestSize = candidateSizes[0];
 
-  return candidates.slice(0, KNOWLEDGE_MAX_OUTLINE_NODES).map((line, index) => ({
-    id: stableNodeId(`${index}|${line.text}|${line.pageIndex}|${line.top}`),
-    label: line.text,
-    level: line.fontSize === largestSize ? 1 : 2,
-    pageIndex: line.pageIndex,
-    top: line.top,
-  }));
+  return candidates.slice(0, KNOWLEDGE_MAX_OUTLINE_NODES).map((line, index) => {
+    const top = inferredDestinationTop(line.top);
+    return {
+      id: stableNodeId(`${index}|${line.text}|${line.pageIndex}|${top ?? 'page'}`),
+      label: line.text,
+      level: line.fontSize === largestSize ? 1 : 2,
+      pageIndex: line.pageIndex,
+      top,
+    };
+  });
 }

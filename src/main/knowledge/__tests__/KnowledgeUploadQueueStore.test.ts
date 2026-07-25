@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +23,7 @@ afterEach(async () => {
 
 function queue(): KnowledgeUploadQueueState {
   return {
-    version: 1,
+    version: 2,
     restartRecovery: true,
     entries: [
       {
@@ -35,6 +35,7 @@ function queue(): KnowledgeUploadQueueState {
         uploadRevision: 2,
         accountId: 'account-1',
         deviceId: 'device-1',
+        replacementDocumentId: 'document-target',
         source: {
           canonicalPath: '/Users/publisher/Documents/Runbook.pdf',
           fileName: 'Runbook.pdf',
@@ -73,6 +74,7 @@ describe('KnowledgeUploadQueueStore', () => {
 
     await expect(store.load()).resolves.toEqual(queue());
     const persisted = await readFile(store.path, 'utf8');
+    expect(JSON.parse(persisted)).toMatchObject({ version: 2 });
     expect(persisted).not.toContain('/Users/publisher/Documents');
     expect(persisted).not.toContain('Runbook.pdf%PDF-');
     expect(persisted).toContain('encryptedSourcePath');
@@ -94,6 +96,22 @@ describe('KnowledgeUploadQueueStore', () => {
 
     await expect(store.load()).resolves.toEqual({ ...queue(), restartRecovery: false });
     await expect(stat(store.path)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('migrates legacy version-one queues without dropping replacement intent', async () => {
+    const dataDir = await tempDirectory();
+    const safeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(value),
+      decryptString: (value: Buffer) => value.toString('utf8'),
+    };
+    const store = new KnowledgeUploadQueueStore({ dataDir, safeStorage });
+    await store.save(queue());
+    const legacy = JSON.parse(await readFile(store.path, 'utf8')) as Record<string, unknown>;
+    legacy.version = 1;
+    await writeFile(store.path, JSON.stringify(legacy), 'utf8');
+
+    await expect(store.load()).resolves.toEqual(queue());
   });
 
   it('returns an empty bounded queue when no persisted state exists', async () => {

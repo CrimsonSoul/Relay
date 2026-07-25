@@ -114,6 +114,7 @@ describe('preload Knowledge web link bridge', () => {
   it('exposes only selection, safe queue state, and identifier-based Knowledge controls', async () => {
     const callback = vi.fn();
     await api.selectAndQueueKnowledgePdfs();
+    await api.selectAndQueueKnowledgePdfs('document-1');
     await api.getKnowledgeUploadQueue();
     await api.pauseKnowledgeUploadBatch('batch-1');
     await api.resumeKnowledgeUploadBatch('batch-1');
@@ -136,6 +137,7 @@ describe('preload Knowledge web link bridge', () => {
     unsubscribe();
 
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:selectAndStage');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:selectAndStage', 'document-1');
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadQueue');
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchPause', 'batch-1');
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchResume', 'batch-1');

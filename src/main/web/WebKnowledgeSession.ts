@@ -86,7 +86,10 @@ export class WebKnowledgeSession {
       rootDir: options.rootDir,
       sessionId: options.sessionId,
       localSourceId: this.localSourceId,
-      queuePaths: (paths, localSourceId) => this.upload.queuePaths(paths, localSourceId),
+      queuePaths: (paths, localSourceId, replacementDocumentId) =>
+        replacementDocumentId
+          ? this.upload.queuePaths(paths, localSourceId, replacementDocumentId)
+          : this.upload.queuePaths(paths, localSourceId),
     });
     this.stopRuntime = options.runtime.onSessionChanged((view: PrivilegedSessionView) => {
       this.upload.handleSessionChanged(view);
@@ -100,9 +103,10 @@ export class WebKnowledgeSession {
 
   async begin(
     files: ReadonlyArray<{ name: string; size: number }>,
+    replacementDocumentId?: string,
   ): Promise<WebKnowledgeStagingBatch> {
     await this.ensureReady();
-    return this.staging.begin(files);
+    return this.staging.begin(files, replacementDocumentId);
   }
 
   async append(input: AppendInput): Promise<void> {

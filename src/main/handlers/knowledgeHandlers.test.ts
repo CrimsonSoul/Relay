@@ -258,12 +258,18 @@ describe('knowledgeHandlers', () => {
     });
   });
 
-  it('requires a trusted sender and forwards only the no-argument upload selection request', async () => {
+  it('forwards only a bounded replacement document identity to upload selection', async () => {
     selectAndQueue.mockResolvedValue({ ok: false, error: 'cancelled' });
     await expect(
-      handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, '/renderer/cannot/pass/a/path.pdf'),
+      handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, 'document-1'),
     ).resolves.toEqual({ ok: false, error: 'cancelled' });
-    expect(selectAndQueue).toHaveBeenCalledWith();
+    expect(selectAndQueue).toHaveBeenCalledWith(undefined, 'document-1');
+
+    selectAndQueue.mockClear();
+    await expect(
+      handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, '/renderer/cannot/pass/a/path.pdf'),
+    ).resolves.toEqual({ ok: false, error: 'invalid-file' });
+    expect(selectAndQueue).not.toHaveBeenCalled();
 
     trusted.mockReturnValueOnce(false);
     await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({})).resolves.toEqual({

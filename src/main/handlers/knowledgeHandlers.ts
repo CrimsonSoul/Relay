@@ -126,18 +126,29 @@ export function setupKnowledgeHandlers(
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE, async (event) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)) {
-      return { ok: false, error: 'unauthorized' } as const;
-    }
-    if (!rateLimiters.fsOperations.tryConsume().allowed) {
-      return { ok: false, error: 'upload-failed' } as const;
-    }
-    const uploadService = getUploadService();
-    return uploadService
-      ? uploadService.selectAndQueue()
-      : ({ ok: false, error: 'offline' } as const);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE,
+    async (event, replacementDocumentId?: unknown) => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)) {
+        return { ok: false, error: 'unauthorized' } as const;
+      }
+      const replacement =
+        replacementDocumentId === undefined
+          ? undefined
+          : KnowledgeUploadControlIdSchema.safeParse(replacementDocumentId).data;
+      if (replacementDocumentId !== undefined && !replacement) {
+        return { ok: false, error: 'invalid-file' } as const;
+      }
+      if (!rateLimiters.fsOperations.tryConsume().allowed) {
+        return { ok: false, error: 'upload-failed' } as const;
+      }
+      const uploadService = getUploadService();
+      if (!uploadService) return { ok: false, error: 'offline' } as const;
+      return replacement
+        ? uploadService.selectAndQueue(undefined, replacement)
+        : uploadService.selectAndQueue();
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET, async (event) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET)) {

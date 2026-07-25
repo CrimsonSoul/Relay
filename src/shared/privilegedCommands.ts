@@ -95,6 +95,7 @@ export type PrivilegedCommandPayloadMap = {
     byteSize: number;
     checksum: string;
     chunkCount: number;
+    replacementDocumentId?: string | null;
   };
   'knowledge.upload.status': { batchId: string };
   'knowledge.upload.file.finalize': { uploadId: string; expectedRevision: number };
@@ -452,6 +453,16 @@ function normalizeKnowledgeDocumentRevision(
   return boundedIdentifier(payload.documentId, 200) && nonNegativeInteger(payload.expectedRevision)
     ? { documentId: payload.documentId, expectedRevision: payload.expectedRevision }
     : null;
+}
+
+function normalizeOptionalReplacementDocumentId(
+  payload: Record<string, unknown>,
+  present: boolean,
+): string | null | undefined {
+  if (!present || payload.replacementDocumentId === null) return null;
+  return boundedIdentifier(payload.replacementDocumentId, 200)
+    ? payload.replacementDocumentId
+    : undefined;
 }
 
 function normalizeKnowledgeRevisions(
@@ -897,8 +908,14 @@ function normalizePayload(
         : null;
     }
     case 'knowledge.upload.file.begin': {
+      const hasReplacementDocumentId = Object.hasOwn(payload, 'replacementDocumentId');
       if (
-        !hasExactKeys(payload, ['batchId', 'fileName', 'byteSize', 'checksum', 'chunkCount']) ||
+        !hasExactKeys(
+          payload,
+          hasReplacementDocumentId
+            ? ['batchId', 'fileName', 'byteSize', 'checksum', 'chunkCount', 'replacementDocumentId']
+            : ['batchId', 'fileName', 'byteSize', 'checksum', 'chunkCount'],
+        ) ||
         !boundedIdentifier(payload.batchId, 200) ||
         !Number.isInteger(payload.byteSize) ||
         (payload.byteSize as number) < 1 ||
@@ -911,13 +928,18 @@ function normalizePayload(
         return null;
       }
       const fileName = normalizeKnowledgePdfFileName(payload.fileName);
-      return fileName
+      const replacementDocumentId = normalizeOptionalReplacementDocumentId(
+        payload,
+        hasReplacementDocumentId,
+      );
+      return fileName && replacementDocumentId !== undefined
         ? {
             batchId: payload.batchId,
             fileName,
             byteSize: payload.byteSize as number,
             checksum: payload.checksum,
             chunkCount: payload.chunkCount as number,
+            ...(hasReplacementDocumentId ? { replacementDocumentId } : {}),
           }
         : null;
     }

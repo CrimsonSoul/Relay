@@ -323,7 +323,7 @@ export function KnowledgeManagementWorkspace({
   };
 
   const replacePdf = async (document: KnowledgeManagementDocumentView) => {
-    const result = await management.stagePdfs();
+    const result = await management.stagePdfs(document.id);
     if (!result.ok) return;
     openSection('uploads');
     setNotice(
@@ -756,7 +756,7 @@ export function KnowledgeManagementWorkspace({
                           <TactileButton
                             size="sm"
                             onClick={() => void replacePdf(document)}
-                            loading={management.busy === `replace:${document.id}`}
+                            loading={management.busy === 'upload'}
                           >
                             Replace PDF
                           </TactileButton>
@@ -890,7 +890,9 @@ export function KnowledgeManagementWorkspace({
                       const queuedUpload = uploads.find((upload) => upload.id === id);
                       const state = queuedUpload?.state ?? item.state;
                       const progress = queueProgress(item);
-                      const requiresAction = Boolean(queuedUpload?.duplicateDocumentId);
+                      const requiresAction = Boolean(
+                        queuedUpload?.duplicateDocumentId && state === 'ready',
+                      );
                       return (
                         <article className="knowledge-upload-file" key={item.id}>
                           <div className="knowledge-upload-file__state">
@@ -969,7 +971,9 @@ export function KnowledgeManagementWorkspace({
                 <EmptyPanel>No uploads queued or awaiting review. Add PDFs to begin.</EmptyPanel>
               )}
               {uploads.map((upload) => {
-                const duplicate = documents.find(({ id }) => id === upload.duplicateDocumentId);
+                const duplicate =
+                  upload.replacementDocument ??
+                  documents.find(({ id }) => id === upload.duplicateDocumentId);
                 const proposedDraft = uploadDrafts[upload.id] ?? {
                   title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
                   category: upload.proposedCategory || 'General',
@@ -987,7 +991,15 @@ export function KnowledgeManagementWorkspace({
                     id === duplicate?.categoryId ||
                     normalizedName === knowledgeCategoryKey(draft.category),
                 );
-                const requiresAction = Boolean(upload.duplicateDocumentId);
+                const hasReplacementIntent = Boolean(upload.duplicateDocumentId);
+                const replacementUnavailable = hasReplacementIntent && !duplicate;
+                const requiresAction = Boolean(hasReplacementIntent && upload.state === 'ready');
+                let statusLabel: string = upload.state;
+                if (requiresAction) {
+                  statusLabel = replacementUnavailable
+                    ? 'Replacement unavailable'
+                    : 'Replacement ready';
+                }
                 return (
                   <article
                     className="knowledge-management-row knowledge-management-row--upload"
@@ -999,7 +1011,7 @@ export function KnowledgeManagementWorkspace({
                           requiresAction ? 'action-required' : upload.state
                         }`}
                       >
-                        {requiresAction ? 'Duplicate found' : upload.state}
+                        {statusLabel}
                       </span>
                       <h2>{upload.fileName}</h2>
                       <p>
@@ -1012,7 +1024,9 @@ export function KnowledgeManagementWorkspace({
                             className="knowledge-management-row__duplicate-marker"
                             aria-hidden="true"
                           />
-                          {`A published document named ${upload.fileName} already exists.`}
+                          {duplicate
+                            ? `This PDF will replace ${duplicate.displayTitle}.`
+                            : 'The document selected for replacement is no longer available. Discard this upload and try again.'}
                         </p>
                       )}
                       {duplicate && (
@@ -1027,7 +1041,7 @@ export function KnowledgeManagementWorkspace({
                         <input
                           className="tactile-input"
                           value={draft.title}
-                          disabled={Boolean(duplicate)}
+                          disabled={hasReplacementIntent}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
                               ...current,
@@ -1041,7 +1055,7 @@ export function KnowledgeManagementWorkspace({
                         <select
                           className="tactile-input"
                           value={selectedCategory?.id ?? NEW_CATEGORY_VALUE}
-                          disabled={Boolean(duplicate)}
+                          disabled={hasReplacementIntent}
                           onChange={(event) => {
                             const category = selectedUploadCategory(categories, event.target.value);
                             setUploadDrafts((current) => ({
@@ -1061,7 +1075,7 @@ export function KnowledgeManagementWorkspace({
                           <option value={NEW_CATEGORY_VALUE}>Create new category…</option>
                         </select>
                       </label>
-                      {!duplicate && !selectedCategory && (
+                      {!hasReplacementIntent && !selectedCategory && (
                         <label>
                           New category name
                           <input
@@ -1086,7 +1100,7 @@ export function KnowledgeManagementWorkspace({
                           name={`knowledge-upload-document-type-${upload.id}`}
                           autoComplete="off"
                           value={draft.documentType}
-                          disabled={Boolean(duplicate)}
+                          disabled={hasReplacementIntent}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
                               ...current,
@@ -1103,7 +1117,7 @@ export function KnowledgeManagementWorkspace({
                       </label>
                     </div>
                     <div className="knowledge-management-row__actions">
-                      {duplicate ? (
+                      {duplicate && (
                         <TactileButton
                           size="sm"
                           variant="primary"
@@ -1115,15 +1129,12 @@ export function KnowledgeManagementWorkspace({
                         >
                           Replace existing
                         </TactileButton>
-                      ) : (
+                      )}
+                      {!duplicate && !hasReplacementIntent && (
                         <TactileButton
                           size="sm"
                           variant="primary"
-                          disabled={
-                            upload.state !== 'ready' ||
-                            Boolean(upload.duplicateDocumentId) ||
-                            !draft.category.trim()
-                          }
+                          disabled={upload.state !== 'ready' || !draft.category.trim()}
                           loading={management.busy === `publish:${upload.id}`}
                           onClick={() => void publishUpload(upload)}
                         >

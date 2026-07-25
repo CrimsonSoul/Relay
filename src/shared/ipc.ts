@@ -582,7 +582,9 @@ export type BridgeAPI = {
   cancelKnowledgeSearch: (requestId: string) => void;
   onKnowledgeIndexStatusChanged: (callback: (status: KnowledgeIndexStatus) => void) => () => void;
   openKnowledgeWebLink: (url: string) => Promise<KnowledgeOpenWebLinkResult>;
-  selectAndQueueKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
+  selectAndQueueKnowledgePdfs: (
+    replacementDocumentId?: string,
+  ) => Promise<KnowledgeUploadSelectionResult>;
   getKnowledgeUploadQueue: () => Promise<KnowledgeUploadQueueView>;
   pauseKnowledgeUploadBatch: (batchId: string) => Promise<boolean>;
   resumeKnowledgeUploadBatch: (batchId: string) => Promise<boolean>;

@@ -117,6 +117,16 @@ function isTerminal(state: KnowledgeUploadQueueItemState): boolean {
   return state === 'cancelled' || state === 'published' || state === 'ready';
 }
 
+function validReplacementSelection(
+  paths: readonly string[],
+  replacementDocumentId?: string,
+): boolean {
+  return (
+    !replacementDocumentId ||
+    (paths.length === 1 && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(replacementDocumentId))
+  );
+}
+
 function needsServerReconciliation(state: KnowledgeUploadQueueItemState): boolean {
   return state !== 'cancelled' && state !== 'published';
 }
@@ -193,6 +203,7 @@ export class KnowledgeUploadService {
   private readonly createId: () => string;
   private queue = createEmptyKnowledgeUploadQueue(false);
   private preparationTail: Promise<void> = Promise.resolve();
+  private readonly preparationsByLocalId = new Map<string, Promise<void>>();
   private persistTail: Promise<void> = Promise.resolve();
   private activeSessionKey: string | null | undefined;
   private localSourceId: string | null = null;
@@ -232,24 +243,31 @@ export class KnowledgeUploadService {
     }
   }
 
-  async selectAndQueue(window?: BrowserWindow): Promise<KnowledgeUploadSelectionResult> {
+  async selectAndQueue(
+    window?: BrowserWindow,
+    replacementDocumentId?: string,
+  ): Promise<KnowledgeUploadSelectionResult> {
     if (this.disposed) return { ok: false, error: 'offline' };
     const runtime = this.getRuntime();
     const session = activeUploadSession(runtime);
     if (!runtime || !session) {
       return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
     }
-    const paths = await this.selectFiles(window, false);
+    const paths = await this.selectFiles(window, Boolean(replacementDocumentId));
     if (paths.length === 0) return { ok: false, error: 'cancelled' };
-    return this.queuePaths(paths, session.localSourceId);
+    return this.queuePaths(paths, session.localSourceId, replacementDocumentId);
   }
 
   async queuePaths(
     paths: readonly string[],
     localSourceId: string,
+    replacementDocumentId?: string,
   ): Promise<KnowledgeUploadSelectionResult> {
     if (this.disposed) return { ok: false, error: 'offline' };
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(localSourceId)) {
+      return { ok: false, error: 'invalid-file' };
+    }
+    if (!validReplacementSelection(paths, replacementDocumentId)) {
       return { ok: false, error: 'invalid-file' };
     }
     if (this.localSourceId && this.localSourceId !== localSourceId) {
@@ -291,6 +309,7 @@ export class KnowledgeUploadService {
       accountId: session.accountId,
       deviceId: session.deviceId,
       localSourceId: session.localSourceId,
+      ...(replacementDocumentId ? { replacementDocumentId } : {}),
       source: {
         ...candidate,
         checksum: null,
@@ -301,7 +320,7 @@ export class KnowledgeUploadService {
       safeError: null,
       retryCount: 0,
     }));
-    this.queue = { version: 1, restartRecovery: false, entries };
+    this.queue = { version: 2, restartRecovery: false, entries };
     await this.persist();
     this.emit();
     for (const entry of entries) this.enqueuePreparation(entry.localId, false);
@@ -415,15 +434,50 @@ export class KnowledgeUploadService {
   }
 
   async cancelUpload(id: string): Promise<void> {
-    const entry = this.findEntry(id);
+    const pendingEntry = this.findEntry(id);
+    if (!pendingEntry) return;
+    await this.awaitPendingPreparation(pendingEntry.localId);
+    const entry = this.findEntry(pendingEntry.localId);
     if (!entry) return;
+    let cancelWholeBatch = false;
     if (entry.uploadId) {
       await this.command({
         command: 'knowledge.upload.file.cancel',
         payload: { uploadId: entry.uploadId, expectedRevision: entry.uploadRevision },
         expectedRevision: null,
-      }).catch(() => undefined);
+      });
       this.scheduler.cancelUpload(entry.uploadId);
+    } else if (entry.batchId) {
+      const status = await this.status(entry.batchId);
+      entry.batchRevision = status.batch.revision;
+      const upload = this.matchManifest(status, entry);
+      if (upload) {
+        entry.uploadId = upload.id;
+        entry.uploadRevision = upload.revision;
+        await this.command({
+          command: 'knowledge.upload.file.cancel',
+          payload: { uploadId: upload.id, expectedRevision: upload.revision },
+          expectedRevision: null,
+        });
+        this.scheduler.cancelUpload(upload.id);
+      } else {
+        await this.command({
+          command: 'knowledge.upload.batch.cancel',
+          payload: { batchId: entry.batchId, expectedRevision: status.batch.revision },
+          expectedRevision: null,
+        });
+        this.scheduler.cancelBatch(entry.batchId);
+        cancelWholeBatch = true;
+      }
+    }
+    if (cancelWholeBatch) {
+      for (const candidate of this.queue.entries) {
+        if (candidate.batchRequestId === entry.batchRequestId) {
+          this.updateEntry(candidate, { state: 'cancelled', safeError: null });
+        }
+      }
+      await this.persistAndEmit();
+      return;
     }
     this.updateEntry(entry, { state: 'cancelled', safeError: null });
     await this.persistAndEmit();
@@ -434,16 +488,24 @@ export class KnowledgeUploadService {
       (candidate) => candidate.batchId === id || candidate.batchRequestId === id,
     );
     if (!entry) return;
-    if (entry.batchId) {
+    const localIds = this.queue.entries
+      .filter((candidate) => candidate.batchRequestId === entry.batchRequestId)
+      .map((candidate) => candidate.localId);
+    await Promise.all(localIds.map((localId) => this.awaitPendingPreparation(localId)));
+    const current = this.findEntry(entry.localId);
+    if (!current) return;
+    if (current.batchId) {
+      const status = await this.status(current.batchId);
+      current.batchRevision = status.batch.revision;
       await this.command({
         command: 'knowledge.upload.batch.cancel',
-        payload: { batchId: entry.batchId, expectedRevision: entry.batchRevision },
+        payload: { batchId: current.batchId, expectedRevision: status.batch.revision },
         expectedRevision: null,
-      }).catch(() => undefined);
-      this.scheduler.cancelBatch(entry.batchId);
+      });
+      this.scheduler.cancelBatch(current.batchId);
     }
     for (const candidate of this.queue.entries) {
-      if (candidate.batchRequestId === entry.batchRequestId) {
+      if (candidate.batchRequestId === current.batchRequestId) {
         this.updateEntry(candidate, { state: 'cancelled', safeError: null });
       }
     }
@@ -488,9 +550,25 @@ export class KnowledgeUploadService {
 
   private enqueuePreparation(localId: string, restore: boolean): void {
     if (this.disposed) return;
-    this.preparationTail = this.preparationTail
+    const preparation = this.preparationTail
       .then(() => this.prepare(localId, restore))
       .catch(() => undefined);
+    this.preparationTail = preparation;
+    this.preparationsByLocalId.set(localId, preparation);
+    void preparation.then(() => {
+      if (this.preparationsByLocalId.get(localId) === preparation) {
+        this.preparationsByLocalId.delete(localId);
+      }
+    });
+  }
+
+  private async awaitPendingPreparation(localId: string): Promise<void> {
+    while (true) {
+      const preparation = this.preparationsByLocalId.get(localId);
+      if (!preparation) return;
+      await preparation;
+      if (this.preparationsByLocalId.get(localId) === preparation) return;
+    }
   }
 
   private async prepare(localId: string, restore: boolean): Promise<void> {
@@ -585,6 +663,11 @@ export class KnowledgeUploadService {
     plan: KnowledgePdfSourcePlan,
   ): Promise<{ status: KnowledgeUploadBatchStatusView; upload: KnowledgeUploadManifestView }> {
     const status = await this.status(batchId);
+    if (entry.batchId !== status.batch.id || entry.batchRevision !== status.batch.revision) {
+      entry.batchId = status.batch.id;
+      entry.batchRevision = status.batch.revision;
+      await this.persistAndEmit();
+    }
     const existing = this.matchManifest(status, entry);
     if (existing) return { status, upload: existing };
     const result = await this.command({
@@ -595,6 +678,9 @@ export class KnowledgeUploadService {
         byteSize: plan.byteSize,
         checksum: plan.checksum,
         chunkCount: plan.chunkCount,
+        ...(entry.replacementDocumentId
+          ? { replacementDocumentId: entry.replacementDocumentId }
+          : {}),
       },
       expectedRevision: null,
     });

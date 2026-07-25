@@ -27,7 +27,13 @@ export class WebKnowledgeStagingError extends Error {
 
 type FileDeclaration = { name: string; size: number };
 type StagedFile = FileDeclaration & { id: string; path: string; received: number };
-type ActiveBatch = { id: string; files: StagedFile[]; committed: boolean };
+type ActiveBatch = {
+  id: string;
+  dir: string;
+  files: StagedFile[];
+  replacementDocumentId?: string;
+  committed: boolean;
+};
 
 export type WebKnowledgeStagingBatch = {
   batchId: string;
@@ -41,6 +47,7 @@ type WebKnowledgeUploadStagingOptions = {
   queuePaths: (
     paths: readonly string[],
     localSourceId: string,
+    replacementDocumentId?: string,
   ) => Promise<KnowledgeUploadSelectionResult>;
   createId?: () => string;
   validatePath?: (path: string) => Promise<void>;
@@ -56,6 +63,10 @@ type AppendInput = {
 
 function safeId(value: string): boolean {
   return /^[A-Za-z0-9_-]{1,200}$/u.test(value);
+}
+
+function safeDocumentId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(value);
 }
 
 function safeFileName(value: string): boolean {
@@ -103,6 +114,7 @@ export class WebKnowledgeUploadStaging {
   private readonly createId: () => string;
   private readonly validatePath: (path: string) => Promise<void>;
   private batch: ActiveBatch | null = null;
+  private readonly committedDirs = new Set<string>();
   private disposed = false;
 
   constructor(private readonly options: WebKnowledgeUploadStagingOptions) {
@@ -114,12 +126,17 @@ export class WebKnowledgeUploadStaging {
     this.validatePath = options.validatePath ?? defaultValidatePath;
   }
 
-  async begin(declarations: readonly FileDeclaration[]): Promise<WebKnowledgeStagingBatch> {
+  async begin(
+    declarations: readonly FileDeclaration[],
+    replacementDocumentId?: string,
+  ): Promise<WebKnowledgeStagingBatch> {
     this.assertAvailable();
     if (this.batch) throw new WebKnowledgeStagingError('conflict');
     if (
       declarations.length < 1 ||
       declarations.length > KNOWLEDGE_UPLOAD_MAX_FILES ||
+      (replacementDocumentId !== undefined &&
+        (!safeDocumentId(replacementDocumentId) || declarations.length !== 1)) ||
       declarations.some(
         (file) =>
           !safeFileName(file.name) ||
@@ -137,26 +154,34 @@ export class WebKnowledgeUploadStaging {
     }
 
     await initializeRoot(this.options.rootDir);
-    await rm(this.sessionDir, { recursive: true, force: true });
-    await mkdir(this.sessionDir, { recursive: false, mode: 0o700 });
     const batchId = this.createId();
+    if (!safeId(batchId)) throw new WebKnowledgeStagingError('upload-failed');
+    const batchDir = join(this.sessionDir, batchId);
+    await mkdir(this.sessionDir, { recursive: true, mode: 0o700 });
+    await mkdir(batchDir, { recursive: false, mode: 0o700 });
     const files: StagedFile[] = [];
     try {
       for (const declaration of declarations) {
         const id = this.createId();
         if (!safeId(id)) throw new WebKnowledgeStagingError('upload-failed');
-        const path = join(this.sessionDir, declaration.name);
+        const path = join(batchDir, declaration.name);
         const handle = await open(path, 'wx', 0o600);
         await handle.close();
         files.push({ ...declaration, id, path, received: 0 });
       }
     } catch (error) {
-      await rm(this.sessionDir, { recursive: true, force: true });
+      await rm(batchDir, { recursive: true, force: true });
       throw error instanceof WebKnowledgeStagingError
         ? error
         : new WebKnowledgeStagingError('upload-failed');
     }
-    this.batch = { id: batchId, files, committed: false };
+    this.batch = {
+      id: batchId,
+      dir: batchDir,
+      files,
+      ...(replacementDocumentId ? { replacementDocumentId } : {}),
+      committed: false,
+    };
     return {
       batchId,
       files: files.map(({ id, name, size }) => ({ id, name, size })),
@@ -232,15 +257,24 @@ export class WebKnowledgeUploadStaging {
     }
     try {
       for (const file of batch.files) await this.validatePath(file.path);
-      const result = await this.options.queuePaths(
-        batch.files.map((file) => file.path),
-        this.options.localSourceId,
-      );
+      const paths = batch.files.map((file) => file.path);
+      const result = batch.replacementDocumentId
+        ? await this.options.queuePaths(
+            paths,
+            this.options.localSourceId,
+            batch.replacementDocumentId,
+          )
+        : await this.options.queuePaths(paths, this.options.localSourceId);
       if (!result.ok) {
         await this.abortCurrent();
         return result;
       }
       batch.committed = true;
+      this.batch = null;
+      const staleDirs = [...this.committedDirs];
+      this.committedDirs.clear();
+      this.committedDirs.add(batch.dir);
+      await Promise.all(staleDirs.map((dir) => rm(dir, { recursive: true, force: true })));
       return result;
     } catch (error) {
       await this.abortCurrent();
@@ -261,6 +295,7 @@ export class WebKnowledgeUploadStaging {
     if (this.disposed) return;
     this.disposed = true;
     this.batch = null;
+    this.committedDirs.clear();
     await rm(this.sessionDir, { recursive: true, force: true });
   }
 
@@ -269,7 +304,11 @@ export class WebKnowledgeUploadStaging {
   }
 
   private async abortCurrent(): Promise<void> {
+    const batchDir = this.batch?.dir;
     this.batch = null;
-    await rm(this.sessionDir, { recursive: true, force: true });
+    if (batchDir) await rm(batchDir, { recursive: true, force: true });
+    if (this.committedDirs.size === 0) {
+      await rm(this.sessionDir, { recursive: true, force: true });
+    }
   }
 }

@@ -1156,16 +1156,32 @@ test.describe('Vital Critical Path', () => {
     const paymentRow = window.locator('.knowledge-management-row', {
       hasText: 'Payment API Degradation Guide',
     });
-    const replacementPath = path.join(fixtureDir, 'Payment API Degradation Guide.pdf');
-    fs.writeFileSync(
-      replacementPath,
-      buildKnowledgePdfFixture({ title: 'Replacement flow evidence', pageCount: 1 }),
-      { mode: 0o600 },
-    );
+    const pb = await makeSuperuserPbClient(pbPort);
+    const originalDocument = await pb.collection('knowledge_documents').getFirstListItem<{
+      id: string;
+      sourceKey: string;
+      category: string;
+      categoryId: string;
+      documentType: string;
+      title: string;
+      displayTitle: string;
+      fileName: string;
+      checksum: string;
+      revision: number;
+      publishedByAccountId: string;
+      publishedByName: string;
+      publishedAt: string;
+    }>('fileName = "Payment API Degradation Guide.pdf"', { requestKey: null });
+    const replacementPath = path.join(fixtureDir, 'Replacement flow evidence.pdf');
+    const replacementBytes = buildKnowledgePdfFixture({
+      title: 'Replacement flow evidence',
+      pageCount: 1,
+    });
+    fs.writeFileSync(replacementPath, replacementBytes, { mode: 0o600 });
     await installServerKnowledgeDialogFixture([replacementPath]);
     await paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }).click();
     const replacementRow = window.locator('.knowledge-management-row--upload', {
-      hasText: 'Payment API Degradation Guide.pdf',
+      hasText: 'Replacement flow evidence.pdf',
     });
     const replaceExisting = replacementRow.getByRole('button', {
       name: 'Replace existing',
@@ -1174,6 +1190,61 @@ test.describe('Vital Critical Path', () => {
     await expect(replaceExisting).toBeEnabled({ timeout: 30_000 });
     await replaceExisting.click();
     await expect(replacementRow).not.toBeVisible();
+    await expect
+      .poll(async () => {
+        const current = await pb
+          .collection('knowledge_documents')
+          .getOne<{ revision: number }>(originalDocument.id, { requestKey: null });
+        return current.revision;
+      })
+      .toBe(originalDocument.revision + 1);
+    const replacedDocument = await pb
+      .collection('knowledge_documents')
+      .getOne<typeof originalDocument>(originalDocument.id, { requestKey: null });
+    expect(replacedDocument).toMatchObject({
+      id: originalDocument.id,
+      sourceKey: originalDocument.sourceKey,
+      category: originalDocument.category,
+      categoryId: originalDocument.categoryId,
+      documentType: originalDocument.documentType,
+      title: originalDocument.title,
+      displayTitle: originalDocument.displayTitle,
+      fileName: originalDocument.fileName,
+      publishedByAccountId: originalDocument.publishedByAccountId,
+      publishedByName: originalDocument.publishedByName,
+      publishedAt: originalDocument.publishedAt,
+      revision: originalDocument.revision + 1,
+    });
+    expect(replacedDocument.checksum).toBe(
+      crypto.createHash('sha256').update(replacementBytes).digest('hex'),
+    );
+    expect(replacedDocument.checksum).not.toBe(originalDocument.checksum);
+    await expect(
+      pb.collection('knowledge_documents').getFullList({
+        filter: 'fileName = "Replacement flow evidence.pdf"',
+        requestKey: null,
+      }),
+    ).resolves.toHaveLength(0);
+
+    const discardPath = path.join(fixtureDir, originalDocument.fileName);
+    fs.writeFileSync(
+      discardPath,
+      buildKnowledgePdfFixture({ title: 'Discard flow evidence', pageCount: 1 }),
+      { mode: 0o600 },
+    );
+    await installServerKnowledgeDialogFixture([discardPath]);
+    await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+    const discardRow = window.locator('.knowledge-management-row--upload', {
+      hasText: originalDocument.fileName,
+    });
+    await expect(
+      discardRow.getByRole('button', { name: 'Replace existing', exact: true }),
+    ).toBeEnabled({ timeout: 30_000 });
+    await discardRow.getByRole('button', { name: `Discard ${originalDocument.fileName}` }).click();
+    await discardRow
+      .getByRole('button', { name: `Confirm discard ${originalDocument.fileName}` })
+      .click();
+    await expect(discardRow).not.toBeVisible();
 
     const publishPath = path.join(fixtureDir, 'Operational publish evidence.pdf');
     fs.writeFileSync(

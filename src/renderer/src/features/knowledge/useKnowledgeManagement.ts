@@ -362,30 +362,33 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     ],
   );
 
-  const stagePdfs = useCallback(async (): Promise<KnowledgeUploadSelectionResult> => {
-    if (!canManage || !globalThis.api?.selectAndQueueKnowledgePdfs) {
-      return { ok: false, error: canManage ? 'upload-failed' : 'unauthorized' };
-    }
-    setBusy('upload');
-    setError(null);
-    try {
-      const result = await globalThis.api.selectAndQueueKnowledgePdfs();
-      if (!result.ok && result.error !== 'cancelled') {
-        setError(
-          result.error === 'invalid-file'
-            ? 'Choose up to 100 valid PDF files with unique filenames.'
-            : 'Relay could not queue the selected PDF files.',
-        );
+  const stagePdfs = useCallback(
+    async (replacementDocumentId?: string): Promise<KnowledgeUploadSelectionResult> => {
+      if (!canManage || !globalThis.api?.selectAndQueueKnowledgePdfs) {
+        return { ok: false, error: canManage ? 'upload-failed' : 'unauthorized' };
       }
-      if (result.ok) {
-        await refreshUploadQueue();
-        await refresh();
+      setBusy('upload');
+      setError(null);
+      try {
+        const result = await globalThis.api.selectAndQueueKnowledgePdfs(replacementDocumentId);
+        if (!result.ok && result.error !== 'cancelled') {
+          setError(
+            result.error === 'invalid-file'
+              ? 'Choose up to 100 valid PDF files with unique filenames.'
+              : 'Relay could not queue the selected PDF files.',
+          );
+        }
+        if (result.ok) {
+          await refreshUploadQueue();
+          await refresh();
+        }
+        return result;
+      } finally {
+        setBusy(null);
       }
-      return result;
-    } finally {
-      setBusy(null);
-    }
-  }, [canManage, refresh, refreshUploadQueue]);
+    },
+    [canManage, refresh, refreshUploadQueue],
+  );
 
   const runUploadControl = useCallback(
     async (
@@ -407,6 +410,9 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           await Promise.all([refresh(), refreshUploadQueue()]);
         }
         return true;
+      } catch {
+        setError(message);
+        return false;
       } finally {
         setBusy(null);
       }

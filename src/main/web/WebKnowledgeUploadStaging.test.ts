@@ -60,6 +60,83 @@ describe('WebKnowledgeUploadStaging', () => {
     expect(await missing(join(rootDir, 'session-a'))).toBe(true);
   });
 
+  it('carries a replacement target into the durable upload queue', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-replacement-'));
+    const queuePaths = vi.fn(async () => ({ ok: true, uploads: [] }) as const);
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'session-replacement',
+      localSourceId: 'web-session-replacement',
+      queuePaths,
+      createId: vi.fn().mockReturnValueOnce('batch-replacement').mockReturnValueOnce('file-1'),
+    });
+
+    const batch = await staging.begin(
+      [{ name: 'Different Filename.pdf', size: 12 }],
+      'document-target',
+    );
+    await staging.append({
+      fileId: batch.files[0]!.id,
+      offset: 0,
+      contentType: 'application/octet-stream',
+      contentLength: 12,
+      body: await chunks('%PDF-first!!'),
+    });
+    await staging.commit(batch.batchId);
+
+    expect(queuePaths).toHaveBeenCalledWith(
+      [expect.stringContaining('Different Filename.pdf')],
+      'web-session-replacement',
+      'document-target',
+    );
+    await staging.dispose();
+  });
+
+  it('accepts consecutive committed uploads in one browser session', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-consecutive-'));
+    const queuePaths = vi.fn(async () => ({ ok: true, uploads: [] }) as const);
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'session-consecutive',
+      localSourceId: 'web-session-consecutive',
+      queuePaths,
+      createId: vi
+        .fn()
+        .mockReturnValueOnce('batch-first')
+        .mockReturnValueOnce('file-first')
+        .mockReturnValueOnce('batch-second')
+        .mockReturnValueOnce('file-second'),
+    });
+
+    const first = await staging.begin([{ name: 'First.pdf', size: 12 }]);
+    await staging.append({
+      fileId: first.files[0]!.id,
+      offset: 0,
+      contentType: 'application/octet-stream',
+      contentLength: 12,
+      body: await chunks('%PDF-first!!'),
+    });
+    await staging.commit(first.batchId);
+    const firstPath = queuePaths.mock.calls[0]![0][0]!;
+
+    const second = await staging.begin([{ name: 'Second.pdf', size: 13 }]);
+    await staging.append({
+      fileId: second.files[0]!.id,
+      offset: 0,
+      contentType: 'application/octet-stream',
+      contentLength: 13,
+      body: await chunks('%PDF-second!!'),
+    });
+    await staging.commit(second.batchId);
+    const secondPath = queuePaths.mock.calls[1]![0][0]!;
+
+    expect(queuePaths).toHaveBeenCalledTimes(2);
+    expect(firstPath).not.toBe(secondPath);
+    expect(await missing(firstPath)).toBe(true);
+    expect(await readFile(secondPath, 'utf8')).toBe('%PDF-second!!');
+    await staging.dispose();
+  });
+
   it('rejects unordered or oversized chunks and removes the partial batch', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-'));
     const staging = new WebKnowledgeUploadStaging({

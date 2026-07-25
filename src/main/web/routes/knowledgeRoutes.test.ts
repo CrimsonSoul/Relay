@@ -141,9 +141,16 @@ describe('Relay Web Knowledge routes', () => {
     const begin = await fetch(`${origin}/relay-api/v1/knowledge/upload/begin`, {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ files: [{ name: 'Runbook.pdf', size: 12 }] }),
+      body: JSON.stringify({
+        files: [{ name: 'Runbook.pdf', size: 12 }],
+        replacementDocumentId: 'document-target',
+      }),
     });
     expect(begin.status).toBe(200);
+    expect(knowledgeSession.begin).toHaveBeenCalledWith(
+      [{ name: 'Runbook.pdf', size: 12 }],
+      'document-target',
+    );
 
     const chunk = await fetch(
       `${origin}/relay-api/v1/knowledge/upload/chunk?fileId=file-1&offset=0`,

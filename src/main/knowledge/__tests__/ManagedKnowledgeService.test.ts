@@ -71,6 +71,7 @@ function upload(overrides: Record<string, unknown> = {}) {
     pageCount: 2,
     outline: [],
     outlineSource: 'none',
+    replacementDocumentId: null,
     duplicateDocumentId: null,
     safeError: null,
     expiresAt: '2026-07-17T01:00:00.000Z',
@@ -226,6 +227,11 @@ describe('ManagedKnowledgeService', () => {
         fileName: 'Trashed.pdf',
         lifecycleState: 'trashed',
       }),
+      document({
+        id: 'document-target',
+        fileName: 'Original Target.pdf',
+        lifecycleState: 'active',
+      }),
     ]);
     uploads.getFullList.mockResolvedValueOnce([
       upload({
@@ -242,6 +248,18 @@ describe('ManagedKnowledgeService', () => {
         id: 'upload-trashed',
         fileName: 'Trashed.pdf',
         duplicateDocumentId: 'document-trashed',
+      }),
+      upload({
+        id: 'upload-targeted-replacement',
+        fileName: 'Replacement.pdf',
+        replacementDocumentId: 'document-target',
+        duplicateDocumentId: 'document-target',
+      }),
+      upload({
+        id: 'upload-unavailable-replacement',
+        fileName: 'Replacement.pdf',
+        replacementDocumentId: 'document-deleted',
+        duplicateDocumentId: 'document-deleted',
       }),
     ]);
 
@@ -261,7 +279,25 @@ describe('ManagedKnowledgeService', () => {
       { id: 'upload-current', duplicateDocumentId: 'document-current' },
       { id: 'upload-deleted', duplicateDocumentId: null },
       { id: 'upload-trashed', duplicateDocumentId: null },
+      { id: 'upload-targeted-replacement', duplicateDocumentId: 'document-target' },
+      { id: 'upload-unavailable-replacement', duplicateDocumentId: 'document-deleted' },
     ]);
+    expect(
+      snapshot.uploads.items.find(({ id }) => id === 'upload-targeted-replacement'),
+    ).toMatchObject({
+      replacementDocument: {
+        id: 'document-target',
+        displayTitle: 'Runbook',
+        fileName: 'Original Target.pdf',
+        revision: 3,
+      },
+    });
+    expect(
+      snapshot.uploads.items.find(({ id }) => id === 'upload-unavailable-replacement'),
+    ).toMatchObject({
+      duplicateDocumentId: 'document-deleted',
+      replacementDocument: null,
+    });
   });
 
   it('publishes a ready upload with attribution and an audit event', async () => {
@@ -301,7 +337,7 @@ describe('ManagedKnowledgeService', () => {
     expect(publishForm.get('trashedByOperatorId')).toBe('');
     expect(uploads.update).toHaveBeenCalledWith(
       'upload-1',
-      { state: 'published', pdf: null, cover: null },
+      { state: 'published', pdf: null, cover: null, revision: 2 },
       { requestKey: null },
     );
     expect(audits.create).toHaveBeenCalledWith(
@@ -315,6 +351,27 @@ describe('ManagedKnowledgeService', () => {
       }),
       { requestKey: null },
     );
+  });
+
+  it('rejects publishing an upload that was explicitly staged as a replacement', async () => {
+    uploads.getOne.mockResolvedValueOnce(
+      upload({
+        fileName: 'Different Name.pdf',
+        replacementDocumentId: 'document-target',
+        duplicateDocumentId: 'document-target',
+      }),
+    );
+
+    await expect(
+      service().publish({
+        actor: ACTOR,
+        requestId: 'request-publish-replacement',
+        uploadId: 'upload-1',
+        title: 'Different Name',
+        category: 'Operations',
+      }),
+    ).rejects.toThrow('Knowledge replacement cannot be published as a new document.');
+    expect(documents.create).not.toHaveBeenCalled();
   });
 
   it('publishes directly into Quick Guides when requested', async () => {
@@ -373,6 +430,12 @@ describe('ManagedKnowledgeService', () => {
 
   it('replaces only file-derived content while preserving every existing document field', async () => {
     const originalPublishedAt = '2025-11-03T14:30:00.000Z';
+    uploads.getOne.mockResolvedValueOnce(
+      upload({
+        replacementDocumentId: 'document-1',
+        duplicateDocumentId: 'document-1',
+      }),
+    );
     documents.getOne.mockResolvedValueOnce(
       document({
         sourceKey: 'Custom/Stable-Runbook.pdf',
@@ -426,6 +489,79 @@ describe('ManagedKnowledgeService', () => {
     expect(replacementForm.get('searchIndexState')).toBe('pending');
     expect(replacementForm.get('searchIndexVersion')).toBe('0');
     expect(replacementForm.get('publishedByOperatorId')).toBe('');
+  });
+
+  it('rejects a replace command that redirects an explicitly bound upload', async () => {
+    uploads.getOne.mockResolvedValueOnce(
+      upload({
+        replacementDocumentId: 'document-target',
+        duplicateDocumentId: 'document-target',
+      }),
+    );
+
+    await expect(
+      service().replace({
+        actor: ACTOR,
+        requestId: 'request-retarget',
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
+    ).rejects.toThrow('Knowledge replacement target is unavailable.');
+    expect(documents.update).not.toHaveBeenCalled();
+  });
+
+  it('replaces the current same-filename document when a generic upload has a stale duplicate ID', async () => {
+    uploads.getOne.mockResolvedValueOnce(
+      upload({
+        fileName: 'Runbook.pdf',
+        replacementDocumentId: null,
+        duplicateDocumentId: 'document-stale',
+      }),
+    );
+
+    await expect(
+      service().replace({
+        actor: ACTOR,
+        requestId: 'request-current-filename-target',
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
+    ).resolves.toMatchObject({
+      id: 'document-1',
+      fileName: 'Runbook.pdf',
+      revision: 4,
+    });
+    expect(documents.update).toHaveBeenCalledOnce();
+  });
+
+  it('rejects replacement after the bound document is trashed', async () => {
+    uploads.getOne.mockResolvedValueOnce(
+      upload({
+        replacementDocumentId: 'document-1',
+        duplicateDocumentId: 'document-1',
+      }),
+    );
+    documents.getOne.mockResolvedValueOnce(
+      document({
+        lifecycleState: 'trashed',
+        trashedByAccountId: ACTOR.accountId,
+        trashedByName: ACTOR.displayName,
+        trashedAt: NOW,
+      }),
+    );
+
+    await expect(
+      service().replace({
+        actor: ACTOR,
+        requestId: 'request-trashed-target',
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
+    ).rejects.toThrow('Knowledge replacement target is unavailable.');
+    expect(documents.update).not.toHaveBeenCalled();
   });
 
   it('trashes with account attribution while leaving legacy identity blank', async () => {

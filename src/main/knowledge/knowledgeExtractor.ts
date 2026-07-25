@@ -32,16 +32,26 @@ async function resolvePdfDestination(
   document: PDFDocumentProxy,
   destination: NativeKnowledgeOutlineEntry['dest'],
 ): Promise<KnowledgeDestination | null> {
-  const resolved =
-    typeof destination === 'string' ? await document.getDestination(destination) : destination;
+  let resolved: Awaited<ReturnType<PDFDocumentProxy['getDestination']>> | null;
+  try {
+    resolved =
+      typeof destination === 'string' ? await document.getDestination(destination) : destination;
+  } catch {
+    return null;
+  }
   if (!Array.isArray(resolved) || resolved.length < 2) return null;
 
   const reference = resolved[0];
   let pageIndex: number;
   if (Number.isInteger(reference)) pageIndex = reference as number;
-  else if (reference && typeof reference === 'object')
-    pageIndex = await document.getPageIndex(reference);
-  else return null;
+  else if (reference && typeof reference === 'object') {
+    try {
+      pageIndex = await document.getPageIndex(reference);
+    } catch {
+      return null;
+    }
+  } else return null;
+  if (pageIndex < 0 || pageIndex >= document.numPages) return null;
 
   const type = destinationType(resolved[1]);
   let topCandidate: unknown = null;

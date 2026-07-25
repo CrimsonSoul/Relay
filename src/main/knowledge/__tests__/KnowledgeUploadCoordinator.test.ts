@@ -234,6 +234,41 @@ function stageChunks(
 }
 
 describe('KnowledgeUploadCoordinator', () => {
+  it('binds an explicit replacement target without relying on the PDF filename', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const batch = await coordinator.beginBatch(publisher, {
+      requestId: 'replacement-batch',
+      fileCount: 1,
+      totalBytes: bytes.byteLength,
+    });
+
+    const upload = await coordinator.beginFile(publisher, {
+      requestId: 'replacement-file',
+      batchId: batch.id,
+      fileName: 'A Different Filename.pdf',
+      byteSize: bytes.byteLength,
+      checksum: checksum(bytes),
+      chunkCount: 1,
+      replacementDocumentId: 'document-target',
+    });
+
+    expect(upload.duplicateDocumentId).toBe('document-target');
+    expect(repository.uploads.get(upload.id)?.duplicateDocumentId).toBe('document-target');
+    expect(repository.uploads.get(upload.id)?.replacementDocumentId).toBe('document-target');
+    stageChunks(repository, upload.id, batch.id, bytes);
+    await coordinator.finalize(publisher, {
+      uploadId: upload.id,
+      expectedRevision: upload.revision,
+    });
+    await coordinator.whenIdle();
+    expect(repository.uploads.get(upload.id)).toMatchObject({
+      state: 'ready',
+      duplicateDocumentId: 'document-target',
+      replacementDocumentId: 'document-target',
+    });
+  });
+
   it('admits one idempotent account-bound batch and file manifest', async () => {
     const { capacity, coordinator, repository } = createCoordinator();
     const bytes = Buffer.from('%PDF-test');
@@ -291,6 +326,25 @@ describe('KnowledgeUploadCoordinator', () => {
     await expect(
       coordinator.status({ ...publisher, accountId: 'other-account' }, batch.id),
     ).rejects.toMatchObject({ code: 'unauthorized' });
+  });
+
+  it('lets a publisher discard the same-account upload from another paired device', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    await repository.updateUpload(upload.id, { state: 'ready' });
+    const alternateDevice = { ...publisher, deviceId: 'web-session-device' };
+
+    await expect(coordinator.status(alternateDevice, batch.id)).resolves.toMatchObject({
+      batch: { id: batch.id },
+    });
+    await expect(
+      coordinator.cancelFile(alternateDevice, {
+        uploadId: upload.id,
+        expectedRevision: upload.revision,
+      }),
+    ).resolves.toBeUndefined();
+    expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
   });
 
   it('treats the effective Owner as the devices-and-knowledge capability superset cross-account', async () => {
@@ -423,6 +477,234 @@ describe('KnowledgeUploadCoordinator', () => {
     expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
     expect(repository.batches.get(batch.id)?.state).toBe('cancelled');
     expect(repository.staged.has(upload.id)).toBe(false);
+    expect(repository.chunks.has(upload.id)).toBe(false);
+  });
+
+  it('settles a one-file batch when the file is discarded without a separate batch cancel', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    stageChunks(repository, upload.id, batch.id, bytes);
+
+    await coordinator.cancelFile(publisher, {
+      uploadId: upload.id,
+      expectedRevision: upload.revision,
+    });
+
+    expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
+    expect(repository.batches.get(batch.id)?.state).toBe('ready');
+    expect(repository.staged.has(upload.id)).toBe(false);
+    expect(repository.chunks.has(upload.id)).toBe(false);
+  });
+
+  it('keeps a discarded upload cancelled when in-flight extraction finishes later', async () => {
+    let releaseExtraction!: () => void;
+    let markExtractionStarted!: () => void;
+    const extractionGate = new Promise<void>((resolve) => {
+      releaseExtraction = resolve;
+    });
+    const extractionStarted = new Promise<void>((resolve) => {
+      markExtractionStarted = resolve;
+    });
+    const repository = new MemoryRepository();
+    const coordinator = new KnowledgeUploadCoordinator({
+      repository,
+      capacity: { assertBatch: vi.fn(async () => undefined) },
+      extractor: {
+        extract: vi.fn(async () => {
+          markExtractionStarted();
+          await extractionGate;
+          return {
+            metadataTitle: 'Replacement title',
+            pageCount: 2,
+            outline: [],
+            outlineSource: 'none' as const,
+            coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+          };
+        }),
+        stop: vi.fn(async () => undefined),
+      },
+      now: () => NOW,
+    });
+    const bytes = Buffer.from('%PDF-replacement');
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    stageChunks(repository, upload.id, batch.id, bytes);
+
+    await coordinator.finalize(publisher, {
+      uploadId: upload.id,
+      expectedRevision: upload.revision,
+    });
+    await extractionStarted;
+    const extracting = repository.uploads.get(upload.id)!;
+    expect(extracting.state).toBe('extracting');
+
+    await coordinator.cancelFile(publisher, {
+      uploadId: upload.id,
+      expectedRevision: extracting.revision,
+    });
+    releaseExtraction();
+    await coordinator.whenIdle();
+
+    expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
+    expect(repository.staged.has(upload.id)).toBe(false);
+    expect(repository.stagedCovers.has(upload.id)).toBe(false);
+    expect(repository.chunks.has(upload.id)).toBe(false);
+    expect(repository.events).not.toContain(`upload:${upload.id}:ready`);
+  });
+
+  it('lets an accepted discard win when the worker already started its ready write', async () => {
+    let releaseReadyWrite!: () => void;
+    let markReadyWriteStarted!: () => void;
+    let markCancelObserved!: () => void;
+    const readyWriteGate = new Promise<void>((resolve) => {
+      releaseReadyWrite = resolve;
+    });
+    const readyWriteStarted = new Promise<void>((resolve) => {
+      markReadyWriteStarted = resolve;
+    });
+    const cancelObserved = new Promise<void>((resolve) => {
+      markCancelObserved = resolve;
+    });
+    const repository = new MemoryRepository();
+    const updateUpload = repository.updateUpload.bind(repository);
+    repository.updateUpload = async (id, patch) => {
+      if (patch.state === 'ready') {
+        markReadyWriteStarted();
+        await readyWriteGate;
+      }
+      return updateUpload(id, patch);
+    };
+    const getUpload = repository.getUpload.bind(repository);
+    let observeCancel = false;
+    repository.getUpload = async (id) => {
+      const upload = await getUpload(id);
+      if (observeCancel && upload?.state === 'extracting') {
+        observeCancel = false;
+        markCancelObserved();
+      }
+      return upload;
+    };
+    const { coordinator } = createCoordinator(repository);
+    const bytes = Buffer.from('%PDF-replacement');
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    stageChunks(repository, upload.id, batch.id, bytes);
+
+    await coordinator.finalize(publisher, {
+      uploadId: upload.id,
+      expectedRevision: upload.revision,
+    });
+    await readyWriteStarted;
+    const extracting = repository.uploads.get(upload.id)!;
+    expect(extracting.state).toBe('extracting');
+
+    observeCancel = true;
+    const cancellation = coordinator.cancelFile(publisher, {
+      uploadId: upload.id,
+      expectedRevision: extracting.revision,
+    });
+    await cancelObserved;
+    releaseReadyWrite();
+    await cancellation;
+    await coordinator.whenIdle();
+
+    expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
+    expect(repository.staged.has(upload.id)).toBe(false);
+    expect(repository.stagedCovers.has(upload.id)).toBe(false);
+    expect(repository.chunks.has(upload.id)).toBe(false);
+    expect(repository.events).toEqual(
+      expect.arrayContaining([
+        `upload:${upload.id}:ready`,
+        `upload:${upload.id}:cancelled`,
+        `clear:${upload.id}`,
+      ]),
+    );
+    expect(repository.events.indexOf(`upload:${upload.id}:ready`)).toBeLessThan(
+      repository.events.indexOf(`upload:${upload.id}:cancelled`),
+    );
+  });
+
+  it('rejects stale file and batch cancellation after an upload is published', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    await repository.updateUpload(upload.id, { state: 'published', revision: 2 });
+    await repository.updateBatch(batch.id, { state: 'ready', revision: 2 });
+
+    await expect(
+      coordinator.cancelFile(publisher, {
+        uploadId: upload.id,
+        expectedRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict', currentRevision: 2 });
+    await expect(
+      coordinator.cancelBatch(publisher, {
+        batchId: batch.id,
+        expectedRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict', currentRevision: 2 });
+    expect(repository.uploads.get(upload.id)?.state).toBe('published');
+    expect(repository.batches.get(batch.id)?.state).toBe('ready');
+  });
+
+  it('cancels a file whose manifest creation was already in flight', async () => {
+    let releaseCreate!: () => void;
+    let markCreateStarted!: () => void;
+    let markCancelObserved!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const createStarted = new Promise<void>((resolve) => {
+      markCreateStarted = resolve;
+    });
+    const cancelObserved = new Promise<void>((resolve) => {
+      markCancelObserved = resolve;
+    });
+    const repository = new MemoryRepository();
+    const createUpload = repository.createUpload.bind(repository);
+    repository.createUpload = async (record) => {
+      markCreateStarted();
+      await createGate;
+      return createUpload(record);
+    };
+    const getBatch = repository.getBatch.bind(repository);
+    let observeCancel = false;
+    repository.getBatch = async (id) => {
+      const current = await getBatch(id);
+      if (observeCancel) {
+        observeCancel = false;
+        markCancelObserved();
+      }
+      return current;
+    };
+    const { coordinator } = createCoordinator(repository);
+    const bytes = Buffer.from('%PDF-race');
+    const batch = await coordinator.beginBatch(publisher, {
+      requestId: 'batch-race',
+      fileCount: 1,
+      totalBytes: bytes.byteLength,
+    });
+    const beginning = coordinator.beginFile(publisher, {
+      requestId: 'file-race',
+      batchId: batch.id,
+      fileName: 'Race.pdf',
+      byteSize: bytes.byteLength,
+      checksum: checksum(bytes),
+      chunkCount: 1,
+    });
+    await createStarted;
+
+    observeCancel = true;
+    const cancellation = coordinator.cancelBatch(publisher, {
+      batchId: batch.id,
+      expectedRevision: batch.revision,
+    });
+    await cancelObserved;
+    releaseCreate();
+    const upload = await beginning;
+    await cancellation;
+
+    expect(repository.batches.get(batch.id)?.state).toBe('cancelled');
+    expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
     expect(repository.chunks.has(upload.id)).toBe(false);
   });
 

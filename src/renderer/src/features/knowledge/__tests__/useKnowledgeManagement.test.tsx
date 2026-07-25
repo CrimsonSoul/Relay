@@ -317,6 +317,23 @@ describe('useKnowledgeManagement', () => {
     expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledOnce();
   });
 
+  it('surfaces a safe error when local queue cancellation rejects', async () => {
+    globalThis.api!.cancelKnowledgeUpload = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    let discarded = true;
+    await act(async () => {
+      discarded = await result.current.cancelUpload('local-upload-1');
+    });
+
+    expect(discarded).toBe(false);
+    expect(result.current.error).toBe('Relay could not cancel this PDF.');
+    expect(result.current.busy).toBeNull();
+  });
+
   it('submits a protected search retry and confirms a reordered document by identity', async () => {
     const failed = snapshotWithSearchState('failed');
     const other = {
