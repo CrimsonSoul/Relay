@@ -78,19 +78,25 @@ function matchingDeclarations(source: string, property: string, value: string): 
   return matches;
 }
 
-function topLevelRuleLocation(rule: Rule): {
-  ruleIndex: number;
-  previousSelector: string | undefined;
-  nextSelector: string | undefined;
+function significantNodeSignature(node: Rule | AtRule | undefined): string | undefined {
+  if (!node) return undefined;
+  if (node.type === 'rule') return node.selectors.join(', ');
+  const parameters = node.params ? ` ${node.params}` : '';
+  return `@${node.name}${parameters}`;
+}
+
+function topLevelRuleNeighbors(rule: Rule): {
+  previousSibling: string | undefined;
+  nextSibling: string | undefined;
 } {
   if (rule.parent?.type !== 'root') throw new Error(`${rule.selector} is not a top-level rule`);
-  const rules = rule.parent.nodes.filter((node): node is Rule => node.type === 'rule');
-  const ruleIndex = rules.indexOf(rule);
-  const selectorAt = (index: number) => rules[index]?.selectors.join(', ');
+  const significantNodes = rule.parent.nodes.filter(
+    (node): node is Rule | AtRule => node.type === 'rule' || node.type === 'atrule',
+  );
+  const ruleIndex = significantNodes.indexOf(rule);
   return {
-    ruleIndex,
-    previousSelector: selectorAt(ruleIndex - 1),
-    nextSelector: selectorAt(ruleIndex + 1),
+    previousSibling: significantNodeSignature(significantNodes[ruleIndex - 1]),
+    nextSibling: significantNodeSignature(significantNodes[ruleIndex + 1]),
   };
 }
 
@@ -122,15 +128,30 @@ describe('CSS zero-warning contracts', () => {
     ).toEqual(['green']);
   });
 
+  it('treats at-rules as significant cascade siblings', () => {
+    const source = `
+      .before { color: red; }
+      @media (max-width: 800px) { .conditional { color: blue; } }
+      .target { color: green; }
+      @supports (display: grid) { .supported { display: grid; } }
+      .after { color: purple; }
+    `;
+    const target = exactRules(source, '.target')[0];
+
+    expect(topLevelRuleNeighbors(target)).toEqual({
+      previousSibling: '@media (max-width: 800px)',
+      nextSibling: '@supports (display: grid)',
+    });
+  });
+
   it('keeps each formerly duplicated selector in its original cascade position and order', () => {
     const contracts = [
       {
         source: cssSources.cloudStatus,
         selector: '.cloud-status__refresh',
         location: {
-          ruleIndex: 8,
-          previousSelector: '.cloud-status__meta > span',
-          nextSelector: '.cloud-status__refresh:hover:not(:disabled)',
+          previousSibling: '.cloud-status__meta > span',
+          nextSibling: '.cloud-status__refresh:hover:not(:disabled)',
         },
         declarations: [
           ['display', 'inline-flex'],
@@ -154,10 +175,9 @@ describe('CSS zero-warning contracts', () => {
         source: cssSources.knowledge,
         selector: '.knowledge-page__text-layer',
         location: {
-          ruleIndex: 195,
-          previousSelector:
+          previousSibling:
             '.knowledge-page__error button:hover, .knowledge-page__error button:focus-visible',
-          nextSelector: '.knowledge-page__text-layer :is(span, br)',
+          nextSibling: '.knowledge-page__text-layer :is(span, br)',
         },
         declarations: [
           ['--min-font-size', '1'],
@@ -179,9 +199,8 @@ describe('CSS zero-warning contracts', () => {
         source: cssSources.dynatraceProblems,
         selector: '.dt-profile-picker__bulk-actions span',
         location: {
-          ruleIndex: 32,
-          previousSelector: '.dt-profile-picker',
-          nextSelector: '.dt-profile-picker__search',
+          previousSibling: '.dt-profile-picker',
+          nextSibling: '.dt-profile-picker__search',
         },
         declarations: [
           ['margin-left', 'auto'],
@@ -198,7 +217,7 @@ describe('CSS zero-warning contracts', () => {
       expect(declarationEntries(rules[0]), `${selector} declaration values and order`).toEqual(
         expectedDeclarations,
       );
-      expect(topLevelRuleLocation(rules[0]), `${selector} top-level rule location`).toEqual(
+      expect(topLevelRuleNeighbors(rules[0]), `${selector} top-level rule location`).toEqual(
         location,
       );
     }

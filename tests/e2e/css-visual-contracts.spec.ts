@@ -303,6 +303,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         .fixture-error .error-page-stack {
           box-sizing: border-box;
           width: 100%;
+          height: 70px;
           margin: 0 0 12px;
         }
         .fixture-row {
@@ -312,18 +313,32 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
           min-height: 92px;
           border: 1px solid var(--color-border);
         }
+        .fixture-oncall .oncall-masonry {
+          flex: 0 0 160px;
+        }
+        .fixture-oncall-tail {
+          min-height: 180px;
+          flex: 0 0 180px;
+        }
         .fixture-detail-section {
           min-height: 72px;
         }
-        /*
-         * Deterministic classic-scrollbar emulation for overlay-scrollbar hosts: a native classic
-         * scrollbar consumes inline space inside the border box, so a transparent 16px end border
-         * gives the production scroll owner the same exact client-width constraint.
-         */
-        .classic-scrollbar-model [data-scroll-contract],
+        /* Add only the classic-scrollbar pressure that the current host has not already consumed. */
+        .classic-scrollbar-model [data-scroll-contract] {
+          box-sizing: border-box;
+          border-inline-end-style: solid !important;
+          border-inline-end-color: transparent !important;
+          border-inline-end-width: calc(
+            var(--relay-native-inline-end-border) + var(--relay-emulated-inline-gutter)
+          ) !important;
+        }
         .classic-scrollbar-model [data-horizontal-contract] {
           box-sizing: border-box;
-          border-inline-end: ${classicScrollbarWidth}px solid transparent !important;
+          border-block-end-style: solid !important;
+          border-block-end-color: transparent !important;
+          border-block-end-width: calc(
+            var(--relay-native-block-end-border) + var(--relay-emulated-block-gutter)
+          ) !important;
         }
       </style>
       <main class="layout-contracts">
@@ -364,7 +379,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         <section class="personnel-tab-root fixture-oncall" data-scroll-contract="oncall-root">
           <header class="oncall-page-header">
             <div><div class="oncall-page-context">On-Call</div><h2>Coverage</h2></div>
-            <button class="tactile-button" data-inline-control>Manage</button>
+            <button class="tactile-button" data-inline-control data-leading-control>Manage</button>
           </header>
           <ul class="oncall-masonry" data-scroll-contract="oncall-masonry">
             <div class="oncall-masonry-column" data-row-kind="oncall">
@@ -373,6 +388,9 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
               </li>
             </div>
           </ul>
+          <footer class="fixture-oncall-tail" data-oncall-root-last>
+            End of on-call coverage
+          </footer>
         </section>
 
         <section class="combobox fixture-menu">
@@ -429,48 +447,35 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
 
     const capture = async (mode: 'overlay' | 'classic', scrollToEnd: boolean) =>
       window.evaluate(
-        ({ requestedMode, shouldScrollToEnd }) => {
-          globalThis.document.body.classList.toggle(
-            'classic-scrollbar-model',
-            requestedMode === 'classic',
-          );
-
-          const snapshots = Array.from(
+        ({ requestedMode, shouldScrollToEnd, targetClassicWidth }) => {
+          globalThis.document.body.classList.remove('classic-scrollbar-model');
+          const scrollOwners = Array.from(
             globalThis.document.querySelectorAll('[data-scroll-contract]'),
-            (element) => {
-              if (!(element instanceof globalThis.HTMLElement)) {
-                throw new Error('Invalid scroll contract element');
-              }
-              if (shouldScrollToEnd) element.scrollTop = element.scrollHeight;
-              const styles = globalThis.getComputedStyle(element);
-              const rect = element.getBoundingClientRect();
-              const controls = Array.from(
-                element.querySelectorAll('[data-inline-control], [data-row-control]'),
-              );
-              const lastRow = element.querySelector('[data-last-row]');
-              const maxScrollTop = element.scrollHeight - element.clientHeight;
-              return {
-                id: element.dataset.scrollContract,
-                clientWidth: element.clientWidth,
-                offsetWidth: element.offsetWidth,
-                overflowX: styles.overflowX,
-                overflowY: styles.overflowY,
-                inlineEndBorderWidth: Number.parseFloat(styles.borderInlineEndWidth),
-                scrollbarGutter: styles.scrollbarGutter,
-                scrollTop: element.scrollTop,
-                maxScrollTop,
-                clientHeight: element.clientHeight,
-                scrollHeight: element.scrollHeight,
-                controlsWithinClientWidth: controls.every(
-                  (control) =>
-                    control.getBoundingClientRect().right <=
-                    rect.left + element.clientLeft + element.clientWidth + 1,
-                ),
-                lastRowVisible:
-                  !lastRow || lastRow.getBoundingClientRect().bottom <= rect.bottom + 1,
-              };
-            },
           );
+          const gutterMetrics = new Map<
+            (typeof scrollOwners)[number],
+            { nativeGutter: number; emulatedGutter: number; nativeInlineEndBorder: number }
+          >();
+          for (const element of scrollOwners) {
+            if (!(element instanceof globalThis.HTMLElement)) {
+              throw new Error('Invalid scroll contract element');
+            }
+            const styles = globalThis.getComputedStyle(element);
+            const inlineStartBorder = Number.parseFloat(styles.borderInlineStartWidth);
+            const inlineEndBorder = Number.parseFloat(styles.borderInlineEndWidth);
+            const nativeGutter = Math.max(
+              0,
+              element.offsetWidth - element.clientWidth - inlineStartBorder - inlineEndBorder,
+            );
+            const emulatedGutter = Math.max(0, targetClassicWidth - nativeGutter);
+            element.style.setProperty('--relay-native-inline-end-border', `${inlineEndBorder}px`);
+            element.style.setProperty('--relay-emulated-inline-gutter', `${emulatedGutter}px`);
+            gutterMetrics.set(element, {
+              nativeGutter,
+              emulatedGutter,
+              nativeInlineEndBorder: inlineEndBorder,
+            });
+          }
 
           const error = globalThis.document.querySelector('[data-horizontal-contract]');
           const control = globalThis.document.querySelector('[data-error-control]');
@@ -480,26 +485,104 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
           ) {
             throw new Error('Missing error layout contract');
           }
-          if (shouldScrollToEnd) error.scrollLeft = error.scrollWidth;
+          const nativeErrorStyles = globalThis.getComputedStyle(error);
+          const blockStartBorder = Number.parseFloat(nativeErrorStyles.borderBlockStartWidth);
+          const blockEndBorder = Number.parseFloat(nativeErrorStyles.borderBlockEndWidth);
+          const nativeErrorGutter = Math.max(
+            0,
+            error.offsetHeight - error.clientHeight - blockStartBorder - blockEndBorder,
+          );
+          const emulatedErrorGutter = Math.max(0, targetClassicWidth - nativeErrorGutter);
+          error.style.setProperty('--relay-native-block-end-border', `${blockEndBorder}px`);
+          error.style.setProperty('--relay-emulated-block-gutter', `${emulatedErrorGutter}px`);
+
+          globalThis.document.body.classList.toggle(
+            'classic-scrollbar-model',
+            requestedMode === 'classic',
+          );
+
+          const snapshots = scrollOwners.map((element) => {
+            if (!(element instanceof globalThis.HTMLElement)) {
+              throw new Error('Invalid scroll contract element');
+            }
+            element.scrollTop = shouldScrollToEnd ? element.scrollHeight : 0;
+            const styles = globalThis.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            const controls = Array.from(
+              element.querySelectorAll('[data-inline-control], [data-row-control]'),
+            );
+            const leadingControl = element.querySelector('[data-leading-control]');
+            const terminalContent =
+              element.dataset.scrollContract === 'oncall-root'
+                ? element.querySelector('[data-oncall-root-last]')
+                : element.querySelector('[data-last-row]');
+            const maxScrollTop = element.scrollHeight - element.clientHeight;
+            const viewportTop = rect.top + element.clientTop;
+            const viewportBottom = viewportTop + element.clientHeight;
+            const isVerticallyVisible = (candidate: typeof terminalContent) => {
+              if (!candidate) return undefined;
+              const candidateRect = candidate.getBoundingClientRect();
+              return (
+                candidateRect.top >= viewportTop - 1 && candidateRect.bottom <= viewportBottom + 1
+              );
+            };
+            const metrics = gutterMetrics.get(element);
+            if (!metrics) throw new Error('Missing vertical gutter metrics');
+            return {
+              id: element.dataset.scrollContract,
+              clientWidth: element.clientWidth,
+              offsetWidth: element.offsetWidth,
+              overflowX: styles.overflowX,
+              overflowY: styles.overflowY,
+              inlineEndBorderWidth: Number.parseFloat(styles.borderInlineEndWidth),
+              scrollbarGutter: styles.scrollbarGutter,
+              nativeGutter: metrics.nativeGutter,
+              emulatedGutter: metrics.emulatedGutter,
+              totalClassicGutter: metrics.nativeGutter + metrics.emulatedGutter,
+              nativeInlineEndBorder: metrics.nativeInlineEndBorder,
+              scrollTop: element.scrollTop,
+              maxScrollTop,
+              clientHeight: element.clientHeight,
+              scrollHeight: element.scrollHeight,
+              controlsWithinClientWidth: controls.every(
+                (control) =>
+                  control.getBoundingClientRect().right <=
+                  rect.left + element.clientLeft + element.clientWidth + 1,
+              ),
+              leadingControlVisible: isVerticallyVisible(leadingControl),
+              terminalContentVisible: isVerticallyVisible(terminalContent),
+            };
+          });
+
+          error.scrollLeft = shouldScrollToEnd ? error.scrollWidth : 0;
+          const errorStyles = globalThis.getComputedStyle(error);
           return {
             mode: requestedMode,
             snapshots,
             error: {
               clientWidth: error.clientWidth,
               offsetWidth: error.offsetWidth,
-              inlineEndBorderWidth: Number.parseFloat(
-                globalThis.getComputedStyle(error).borderInlineEndWidth,
-              ),
+              clientHeight: error.clientHeight,
+              offsetHeight: error.offsetHeight,
+              blockEndBorderWidth: Number.parseFloat(errorStyles.borderBlockEndWidth),
+              nativeBlockEndBorder: blockEndBorder,
+              nativeGutter: nativeErrorGutter,
+              emulatedGutter: emulatedErrorGutter,
+              totalClassicGutter: nativeErrorGutter + emulatedErrorGutter,
               scrollWidth: error.scrollWidth,
               scrollLeft: error.scrollLeft,
               maxScrollLeft: error.scrollWidth - error.clientWidth,
-              overflowX: globalThis.getComputedStyle(error).overflowX,
+              overflowX: errorStyles.overflowX,
               controlLeft: control.getBoundingClientRect().left,
               controlWidth: control.getBoundingClientRect().width,
             },
           };
         },
-        { requestedMode: mode, shouldScrollToEnd: scrollToEnd },
+        {
+          requestedMode: mode,
+          shouldScrollToEnd: scrollToEnd,
+          targetClassicWidth: classicScrollbarWidth,
+        },
       );
 
     const before = {
@@ -565,6 +648,37 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
     expect(before.classic.snapshots).toHaveLength(8);
     expect(after.overlay.snapshots).toHaveLength(8);
     expect(after.classic.snapshots).toHaveLength(8);
+    for (const phase of [before.classic, after.classic]) {
+      for (const snapshot of phase.snapshots) {
+        expect(snapshot.emulatedGutter, snapshot.id).toBe(
+          Math.max(0, classicScrollbarWidth - snapshot.nativeGutter),
+        );
+        expect(snapshot.totalClassicGutter, snapshot.id).toBe(classicScrollbarWidth);
+      }
+    }
+    for (const phase of [before.classic, after.classic]) {
+      expect(phase.error.emulatedGutter).toBe(
+        Math.max(0, classicScrollbarWidth - phase.error.nativeGutter),
+      );
+      expect(phase.error.totalClassicGutter).toBe(classicScrollbarWidth);
+      expect(phase.error.blockEndBorderWidth).toBe(
+        phase.error.nativeBlockEndBorder + phase.error.emulatedGutter,
+      );
+    }
+    expect(before.classic.error.clientWidth).toBe(before.overlay.error.clientWidth);
+    expect(before.classic.error.clientHeight).toBe(
+      before.overlay.error.clientHeight - before.classic.error.emulatedGutter,
+    );
+    expect(before.classic.error.offsetWidth).toBe(before.overlay.error.offsetWidth);
+    expect(before.classic.error.offsetHeight).toBe(before.overlay.error.offsetHeight);
+    for (const mode of ['overlay', 'classic'] as const) {
+      const oncallAtTop = findSnapshot(before[mode].snapshots, 'oncall-root');
+      const oncallAtEnd = findSnapshot(after[mode].snapshots, 'oncall-root');
+      expect(oncallAtTop?.scrollTop, `${mode} oncall root top`).toBe(0);
+      expect(oncallAtTop?.leadingControlVisible, `${mode} oncall root header`).toBe(true);
+      expect(oncallAtEnd?.scrollTop, `${mode} oncall root max`).toBe(oncallAtEnd?.maxScrollTop);
+      expect(oncallAtEnd?.terminalContentVisible, `${mode} oncall root tail`).toBe(true);
+    }
     expect(
       Object.fromEntries(
         before.overlay.snapshots.map(({ id, inlineEndBorderWidth }) => [id, inlineEndBorderWidth]),
@@ -586,7 +700,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       popout: 424,
       'oncall-root': 424,
       'oncall-masonry': 360,
-      combobox: 283,
+      combobox: 282,
       'group-list': 284,
       'search-results': 402,
       'detail-body': 303,
@@ -611,12 +725,13 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
 
     for (const overlaySnapshot of before.overlay.snapshots) {
       const classicSnapshot = findSnapshot(before.classic.snapshots, overlaySnapshot.id);
+      const outerOncall = findSnapshot(before.classic.snapshots, 'oncall-root');
       const nestedParentReduction =
-        overlaySnapshot.id === 'oncall-masonry' ? classicScrollbarWidth : 0;
-      const ownClassicReduction = classicScrollbarWidth - overlaySnapshot.inlineEndBorderWidth;
-      expect(classicSnapshot?.inlineEndBorderWidth, overlaySnapshot.id).toBe(classicScrollbarWidth);
-      expect(ownClassicReduction, overlaySnapshot.id).toBeGreaterThanOrEqual(15);
-      expect(ownClassicReduction, overlaySnapshot.id).toBeLessThanOrEqual(17);
+        overlaySnapshot.id === 'oncall-masonry' ? (outerOncall?.emulatedGutter ?? 0) : 0;
+      const ownClassicReduction = classicSnapshot?.emulatedGutter ?? 0;
+      expect(classicSnapshot?.inlineEndBorderWidth, overlaySnapshot.id).toBe(
+        (classicSnapshot?.nativeInlineEndBorder ?? 0) + ownClassicReduction,
+      );
       expect(classicSnapshot?.offsetWidth, overlaySnapshot.id).toBe(
         overlaySnapshot.offsetWidth - nestedParentReduction,
       );
@@ -624,17 +739,11 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         overlaySnapshot.clientWidth - ownClassicReduction - nestedParentReduction,
       );
     }
-    expect(before.overlay.error.inlineEndBorderWidth).toBe(0);
-    expect(before.classic.error.inlineEndBorderWidth).toBe(classicScrollbarWidth);
-    expect(before.classic.error.offsetWidth).toBe(before.overlay.error.offsetWidth);
-    expect(before.classic.error.clientWidth).toBe(
-      before.overlay.error.clientWidth -
-        (classicScrollbarWidth - before.overlay.error.inlineEndBorderWidth),
-    );
 
     const scrollableIds = [
       'assembler',
       'popout',
+      'oncall-root',
       'oncall-masonry',
       'combobox',
       'group-list',
@@ -650,7 +759,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         );
         expect(result?.scrollTop, `${mode} ${id}`).toBe(result?.maxScrollTop);
         expect(result?.scrollTop, `${mode} ${id}`).toBeGreaterThan(0);
-        expect(result?.lastRowVisible, `${mode} ${id}`).toBe(true);
+        expect(result?.terminalContentVisible, `${mode} ${id}`).toBe(true);
       }
       expect(findSnapshot(after[mode].snapshots, 'assembler')?.overflowX).toBe('hidden');
       expect(findSnapshot(after[mode].snapshots, 'oncall-root')?.controlsWithinClientWidth).toBe(
@@ -670,6 +779,8 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       expect(after[mode].error.scrollLeft, mode).toBe(after[mode].error.maxScrollLeft);
       expect(after[mode].error.scrollLeft, mode).toBeGreaterThan(0);
     }
+    expect(after.classic.error.clientHeight).toBe(before.classic.error.clientHeight);
+    expect(after.classic.error.offsetHeight).toBe(before.classic.error.offsetHeight);
   } finally {
     await app.close();
   }
