@@ -33,6 +33,7 @@ export function WebReauthenticationOverlay({
   );
 
   useLayoutEffect(() => {
+    const mountedDialog = dialogRef.current;
     const previouslyFocused = previouslyFocusedRef.current;
     const containFocus = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -66,6 +67,7 @@ export function WebReauthenticationOverlay({
     return () => {
       globalThis.document.removeEventListener('keydown', containFocus, true);
       queueMicrotask(() => {
+        if (mountedDialog?.isConnected) return;
         if (previouslyFocused?.isConnected) previouslyFocused.focus();
       });
     };

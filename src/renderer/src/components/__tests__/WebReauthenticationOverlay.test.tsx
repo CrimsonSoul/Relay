@@ -1,9 +1,44 @@
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { WebReauthenticationOverlay } from '../WebReauthenticationOverlay';
 
 describe('WebReauthenticationOverlay', () => {
+  it('keeps initial focus inside the open modal during StrictMode effect replay', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open protected gate
+          </button>
+          {open && (
+            <WebReauthenticationOverlay
+              onAuthenticate={vi.fn(async () => false)}
+              onAuthenticated={vi.fn()}
+              onDiscard={vi.fn()}
+            />
+          )}
+        </>
+      );
+    }
+
+    render(
+      <StrictMode>
+        <Harness />
+      </StrictMode>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Open protected gate' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const passphrase = screen.getByLabelText('Connection passphrase');
+    await Promise.resolve();
+
+    expect(passphrase).toHaveFocus();
+    expect(screen.getByRole('dialog', { name: 'Sign in to keep working' })).toBeInTheDocument();
+  });
+
   it('contains keyboard focus and consumes Escape without dismissing the security gate', async () => {
     const onDiscard = vi.fn();
     render(
