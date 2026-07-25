@@ -363,10 +363,16 @@ npm run test:renderer -- --coverage
 Security scanners are not tied to public tokens in the repo. For local checks, pass credentials through the environment or your OS secret store:
 
 ```bash
-npm exec --yes snyk -- test --all-projects --dev
-npm exec --yes snyk -- code test
-sonar-scanner
+npm run test:coverage:sonar
+npm run security:sonar -- -Dsonar.organization=<organization>
+npm run security:snyk
 ```
+
+`security:sonar` uses the pinned SonarScanner for NPM and reads `SONAR_TOKEN` plus the optional `SONAR_HOST_URL` from the environment. `security:snyk` runs the pinned Snyk Open Source and Snyk Code gates and reads `SNYK_TOKEN`; pass `--org=<organization>` to either underlying Snyk command when the account default is not the intended organization. The Open Source gate includes development dependencies because Relay's build and packaging toolchain is part of its supply-chain surface. `security:snyk:monitor` publishes an Open Source dependency snapshot after the gates pass.
+
+`test:coverage:sonar` generates both LCOV reports without applying the repository's historical aggregate thresholds. The remote SonarQube quality gate enforces coverage on new code, while `npm run test:coverage` remains the explicit local aggregate-threshold check.
+
+The `Security and Code Quality` GitHub Actions workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs for pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is likewise named `test`. The full-baseline Snyk CLI gate runs on `test` pushes, then publishes a dependency snapshot with the `test` target reference. Snyk's native GitHub integration owns new-issue pull-request checks. SonarQube receives the unit and renderer LCOV reports and waits for the remote quality gate. Scanner credentials are scoped only to their scanner steps and remain in GitHub Actions secrets, while organization and host identifiers are stored as repository variables.
 
 ### Screenshot Refresh
 

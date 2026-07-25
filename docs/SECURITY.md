@@ -168,6 +168,19 @@ Currently enforced limits include:
 
 `fileImport`, `dataMutation`, and `dataReload` are defined as reusable global buckets but have no current production call sites; do not rely on those definitions as enforced controls. Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
 
+## Automated Security And Quality Gates
+
+Relay's `Security and Code Quality` workflow provides two complementary gates:
+
+- SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, and blocks on the configured remote quality gate.
+- Snyk's native GitHub integration blocks newly introduced pull-request findings. The push-triggered Snyk CLI gate blocks any current high- or critical-severity Open Source or Snyk Code finding, including findings in development dependencies, and then publishes a dependency snapshot identified as `test`.
+
+The workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs on pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is also named `test`. The Snyk CLI baseline runs on `test` pushes while the native integration owns pull requests. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
+
+GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled for the repository. Snyk is the scanner and pull-request security gate; GitHub remains the source of secret-blocking and dependency-fix automation so duplicate Snyk dependency upgrade pull requests are unnecessary.
+
+Treat a failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
+
 ## Secrets And Local Data
 
 ### Connection Passphrase Storage

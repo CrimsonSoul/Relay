@@ -60,7 +60,7 @@ export function collectRuntimeResources(frameTree) {
   };
 
   visit(frameTree);
-  return [...resources].sort();
+  return [...resources].sort((left, right) => left.localeCompare(right));
 }
 
 export function selectGpuDiagnostics({ accelerated, features, basic }) {

@@ -58,10 +58,21 @@ describe('collectRuntimeResources', () => {
     };
 
     expect(collectRuntimeResources(frameTree)).toEqual([
-      'SettingsModal-123.js',
       'index-abc.js',
       'index-def.css',
+      'SettingsModal-123.js',
     ]);
+  });
+
+  it('sorts mixed-case resource names for human-readable reporting', () => {
+    expect(
+      collectRuntimeResources({
+        resources: [
+          { url: 'file:///dist/renderer/assets/Zebra.js' },
+          { url: 'file:///dist/renderer/assets/alpha.js' },
+        ],
+      }),
+    ).toEqual(['alpha.js', 'Zebra.js']);
   });
 });
 

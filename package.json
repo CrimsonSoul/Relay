@@ -31,8 +31,14 @@
     "test:cache": "vitest run --config vitest.cache.config.ts",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:coverage:sonar": "vitest run --coverage --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0 && npm run test:renderer -- --coverage --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0",
     "test:renderer": "node scripts/run-renderer-tests.mjs",
     "test:knowledge-upload-soak": "node scripts/knowledge-upload-soak.mjs",
+    "security:sonar": "sonar-scanner-npm",
+    "security:snyk:open-source": "snyk test --dev --severity-threshold=high",
+    "security:snyk:code": "snyk code test --severity-threshold=high",
+    "security:snyk:monitor": "snyk monitor --dev",
+    "security:snyk": "npm run security:snyk:open-source && npm run security:snyk:code",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
@@ -83,6 +89,9 @@
     "tmp": "0.2.7",
     "inflight": "npm:lru-cache@7.18.3",
     "undici": "7.29.0",
+    "electron-vite": {
+      "esbuild": "0.28.1"
+    },
     "vite": {
       "esbuild": "0.28.1"
     }
@@ -90,6 +99,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.61.1",
+    "@sonar/scan": "5.0.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "7.0.0",
     "@testing-library/react": "^16.3.2",
@@ -117,6 +127,7 @@
     "png-to-ico": "^3.0.2",
     "prettier": "^3.9.6",
     "read-excel-file": "9.3.4",
+    "snyk": "1.1306.1",
     "typescript": "6.0.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.10",
