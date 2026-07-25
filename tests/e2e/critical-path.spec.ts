@@ -1030,8 +1030,8 @@ test.describe('Vital Critical Path', () => {
     await setServerWindowWidth(540);
     await expectBottomGutter(12);
     const railButtons = rail.getByRole('button');
-    await expect(railButtons).toHaveCount(5);
-    for (const section of ['Documents', 'Categories', 'Uploads', 'Trash', 'Audit']) {
+    await expect(railButtons).toHaveCount(4);
+    for (const section of ['Documents', 'Categories', 'Uploads', 'Trash']) {
       const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
       await expect(button.locator('span')).toHaveText(section.toLowerCase());
       expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
@@ -1418,28 +1418,19 @@ test.describe('Vital Critical Path', () => {
     await expect(rail.getByRole('button', { name: /^Trash 0$/ })).toBeVisible();
   });
 
-  test('Knowledge management audit workflow loads and paginates retained activity', async () => {
+  test('Knowledge management keeps retained audit records out of the retired navigation', async () => {
     await seedKnowledgeAuditFixtures(27);
-    const { content, rail, root } = await openOwnerKnowledgeManagement();
+    const { content, rail } = await openOwnerKnowledgeManagement();
 
-    await rail.getByRole('button', { name: /^Audit 0$/ }).click();
-    const auditRows = content.locator('.knowledge-audit-row');
-    await expect(auditRows).toHaveCount(25);
-    await expect(rail.getByRole('button', { name: /^Audit 25$/ })).toBeVisible();
-    await expect(content).toHaveCSS('overflow-y', 'auto');
-    await expect
-      .poll(() => content.evaluate((element) => element.scrollHeight > element.clientHeight))
-      .toBe(true);
-    const rootScrollTop = await root.evaluate((element) => element.scrollTop);
-    await content.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
-    await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-    expect(await root.evaluate((element) => element.scrollTop)).toBe(rootScrollTop);
-    const loadMore = window.getByRole('button', { name: 'Load more activity', exact: true });
-    await expect(loadMore).toBeVisible();
-    await loadMore.click();
-    await expect(auditRows).toHaveCount(27);
-    await expect(rail.getByRole('button', { name: /^Audit 27$/ })).toBeVisible();
-    await expect(loadMore).not.toBeVisible();
+    const sectionNames = await rail.getByRole('button').evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const label = button.getAttribute('aria-label');
+        return label?.slice(0, label.lastIndexOf(' '));
+      }),
+    );
+    expect(sectionNames).toEqual(['Documents', 'Categories', 'Uploads', 'Trash']);
+    await expect(rail.getByRole('button', { name: /^Audit \d+$/ })).toHaveCount(0);
+    await expect(content.locator('.knowledge-audit-row')).toHaveCount(0);
   });
 
   test('Vital 1: App Launch & Compose Tab', async () => {
@@ -2150,14 +2141,35 @@ test.describe('Vital Critical Path', () => {
   test('Service Status uses the operational queue layout', async () => {
     await goToTab(window, 'sidebar-status', 'Service Status');
 
-    await expect(window.getByRole('heading', { name: 'External Outages' })).toBeVisible();
-    await expect(window.getByRole('status')).toContainText(/monitored providers/);
-    await expect(window.getByRole('region', { name: 'Provider coverage' })).toBeVisible();
     await expect(
-      window.getByRole('button', { name: /official status page/ }).first(),
+      window.getByRole('heading', { name: 'External Status', exact: true }),
     ).toBeVisible();
-    await expect(window.getByRole('button', { name: / on X$/ }).first()).toBeVisible();
-    await expect(window.getByRole('button', { name: / on Downdetector$/ }).first()).toBeVisible();
+    await expect(window.getByRole('status')).toContainText(/monitored providers/);
+    const overview = window.getByRole('region', { name: 'Provider overview', exact: true });
+    await expect(overview).toBeVisible();
+    await overview
+      .getByRole('button', { name: 'View Cloudflare status details', exact: true })
+      .click();
+    const cloudflare = window.getByRole('region', {
+      name: 'Cloudflare status details',
+      exact: true,
+    });
+    await expect(cloudflare).toBeVisible();
+    await expect(
+      cloudflare.getByRole('button', {
+        name: 'Open Cloudflare official status page',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      cloudflare.getByRole('button', { name: 'Open Cloudflare on X', exact: true }),
+    ).toBeVisible();
+    await expect(
+      cloudflare.getByRole('button', {
+        name: 'Open Cloudflare on Downdetector',
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(window.getByText('ADP', { exact: true })).toHaveCount(0);
   });
 

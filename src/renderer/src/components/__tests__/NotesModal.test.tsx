@@ -165,13 +165,25 @@ describe('NotesModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it('does not call onClose if onSave returns falsy', async () => {
-    const onSave = vi.fn().mockResolvedValue(false);
+  it('does not call onClose after a falsy save settles', async () => {
+    let resolveSave!: (value: boolean) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     const onClose = vi.fn();
     render(<NotesModal {...defaultProps} onSave={onSave} onClose={onClose} />);
 
     fireEvent.click(screen.getByText('Save Notes'));
+    expect(await screen.findByText('Saving...')).toBeInTheDocument();
 
+    await act(async () => {
+      resolveSave(false);
+    });
+
+    expect(await screen.findByText('Save Notes')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
 

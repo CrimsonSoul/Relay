@@ -76,11 +76,26 @@ function conditionalExport(packagePath, condition) {
   return path.join(packagePath, fallback ?? 'index.js');
 }
 
+function resolveNpmCliPath() {
+  const nodeDirectory = path.dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    path.join(nodeDirectory, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js'),
+    path.resolve(nodeDirectory, '../node_modules/npm/bin/npm-cli.js'),
+  ]
+    .filter(Boolean)
+    .map((candidate) => path.resolve(candidate));
+  const npmCliPath = candidates.find((candidate) => existsSync(candidate));
+
+  assert.ok(npmCliPath, `expected an npm CLI installed alongside ${process.execPath}`);
+  return npmCliPath;
+}
+
 const braceExpansionInstalls = packageDirectories('brace-expansion');
 
 test('npm reports no extraneous, invalid, or unmet required dependencies', () => {
-  const npmCliPath = process.env.npm_execpath;
-  assert.ok(npmCliPath, 'expected npm_execpath when running the dependency contract');
+  const npmCliPath = resolveNpmCliPath();
   const result = spawnSync(process.execPath, [npmCliPath, 'ls', '--all', '--json'], {
     cwd: repositoryRoot,
     encoding: 'utf8',

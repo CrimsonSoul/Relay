@@ -283,21 +283,19 @@ describe('DirectoryTab', () => {
     expect(screen.getByTestId('collapsible-header')).toBeInTheDocument();
   });
 
-  // eslint-disable-next-line sonarjs/parameterized-tests -- Empty-state copy, filtered count, and add-contact affordance are independent renderer contracts with different fixtures.
-  it('shows empty state when no contacts', () => {
+  it.each([
+    ['shows empty state when no contacts', 'No contacts found'],
+    ['renders ADD CONTACT button', 'ADD CONTACT'],
+    ['shows "Select a contact" placeholder when no contact selected', 'Select a contact'],
+  ])('%s', (_caseName, expectedText) => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('No contacts found')).toBeInTheDocument();
+    expect(screen.getByText(expectedText)).toBeInTheDocument();
   });
 
   it('renders status bar with showing count', () => {
     const contacts = [makeContact()];
     render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByText('Showing 0 of 1')).toBeInTheDocument();
-  });
-
-  it('renders ADD CONTACT button', () => {
-    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('ADD CONTACT')).toBeInTheDocument();
   });
 
   it('provides an independent local contact filter', () => {
@@ -313,11 +311,6 @@ describe('DirectoryTab', () => {
   it('gives the add contact button a tooltip', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByText('ADD CONTACT')).toHaveAttribute('data-tooltip', 'Add contact');
-  });
-
-  it('shows "Select a contact" placeholder when no contact selected', () => {
-    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('Select a contact')).toBeInTheDocument();
   });
 
   it('shows the virtual list', () => {

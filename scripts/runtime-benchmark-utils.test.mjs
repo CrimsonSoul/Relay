@@ -9,9 +9,13 @@ import {
 
 describe('calculateSampleWindowSeconds', () => {
   it('reports the actual interval between endpoint samples', () => {
-    expect(
-      calculateSampleWindowSeconds([{ sampledAtMs: 250.25 }, { sampledAtMs: 10_251.75 }]),
-    ).toBeCloseTo(10.002, 3);
+    const result = calculateSampleWindowSeconds([
+      { sampledAtMs: 250.25 },
+      { sampledAtMs: 10_251.75 },
+    ]);
+
+    expect(typeof result).toBe('number');
+    expect(String(result)).toBe('10.002');
   });
 });
 

@@ -182,17 +182,20 @@ describe('AlertBodyEditor', () => {
 
   it('does nothing when image selection is cancelled', async () => {
     const bridge = window.api as NonNullable<typeof window.api>;
-    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
-      success: false,
-      error: 'Cancelled',
+    let resolveSelection!: (result: { success: boolean; error: string }) => void;
+    const selection = new Promise<{ success: boolean; error: string }>((resolve) => {
+      resolveSelection = resolve;
     });
+    vi.mocked(bridge.selectAlertBodyImage).mockReturnValue(selection);
 
     render(<AlertBodyEditor {...defaultProps} />);
     fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
 
-    await vi.waitFor(() => {
-      expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    await act(async () => {
+      resolveSelection({ success: false, error: 'Cancelled' });
     });
+
     expect(document.execCommand).not.toHaveBeenCalledWith(
       'insertHTML',
       false,

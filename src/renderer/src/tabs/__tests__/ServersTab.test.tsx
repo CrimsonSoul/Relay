@@ -154,26 +154,21 @@ const makeServer = (overrides: Partial<Server> = {}): Server => ({
 });
 
 describe('ServersTab', () => {
-  // eslint-disable-next-line sonarjs/parameterized-tests -- Mount safety, empty-state content, and selection guidance are distinct contracts with different query intent.
-  it('renders without crashing', () => {
+  it.each([
+    ['renders without crashing', 'collapsible-header'],
+    ['shows virtual list', 'virtual-list'],
+  ])('%s', (_caseName, expectedTestId) => {
     render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByTestId('collapsible-header')).toBeInTheDocument();
+    expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
   });
 
-  // eslint-disable-next-line sonarjs/parameterized-tests -- Empty-state content, selection guidance, and the add action are independent UI diagnostics.
-  it('shows empty state when no servers', () => {
+  it.each([
+    ['shows empty state when no servers', 'No infrastructure found'],
+    ['shows "Select a server" placeholder when no server selected', 'Select a server'],
+    ['renders ADD SERVER button', 'ADD SERVER'],
+  ])('%s', (_caseName, expectedText) => {
     render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByText('No infrastructure found')).toBeInTheDocument();
-  });
-
-  it('shows "Select a server" placeholder when no server selected', () => {
-    render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByText('Select a server')).toBeInTheDocument();
-  });
-
-  it('renders ADD SERVER button', () => {
-    render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByText('ADD SERVER')).toBeInTheDocument();
+    expect(screen.getByText(expectedText)).toBeInTheDocument();
   });
 
   it('provides an independent local server filter', () => {
@@ -190,11 +185,6 @@ describe('ServersTab', () => {
     const servers = [makeServer()];
     render(<ServersTab servers={servers} contacts={[]} />);
     expect(screen.getByText('Showing 0 of 1')).toBeInTheDocument();
-  });
-
-  it('shows virtual list', () => {
-    render(<ServersTab servers={[]} contacts={[]} />);
-    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
   });
 
   it('uses the approved compact record height', () => {
