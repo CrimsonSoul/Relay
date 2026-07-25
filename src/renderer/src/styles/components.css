@@ -985,6 +985,7 @@ body.modal-open {
   border-radius: 2px;
   max-height: 200px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   z-index: 99999;
   box-shadow: var(--shadow-modal);
   padding: 4px;
@@ -1101,6 +1102,7 @@ body.modal-open {
 .group-selector-list {
   max-height: 200px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .group-selector-item {

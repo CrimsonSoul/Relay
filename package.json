@@ -122,6 +122,7 @@
     "jsdom": "29.1.1",
     "lint-staged": "17.2.0",
     "png-to-ico": "^3.0.2",
+    "postcss": "8.5.23",
     "prettier": "^3.9.6",
     "read-excel-file": "9.3.4",
     "snyk": "1.1306.1",

@@ -103,6 +103,7 @@
   padding: 16px 24px;
   background: var(--color-bg-app);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   position: relative;
 }
 
@@ -520,6 +521,7 @@
   padding: 16px 24px 0;
   background: transparent;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .oncall-page-header,
@@ -978,6 +980,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .oncall-masonry-column {

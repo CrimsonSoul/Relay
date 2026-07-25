@@ -256,93 +256,354 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
   }
 });
 
-test('standard scroll containers preserve vertical reachability and narrow scrollbar styling', async () => {
+test('stable gutters preserve representative Relay flex, grid, menu, and modal topology', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
   try {
-    const selectors = [
-      'detail-panel-body',
-      'popout-board',
-      'personnel-tab-root',
-      'oncall-masonry',
-      'combobox-dropdown',
-      'group-selector-list',
-      'error-page-stack',
-      'search-dropdown-results',
-      'assembler-sidebar-panel',
-    ];
     await window.setContent(`
       <style>
         ${themeCss}
         ${componentsCss}
         ${scrollCss}
-        html, body { margin: 0; }
-        .scroll-contract {
-          display: block !important;
-          width: 120px !important;
-          height: 60px !important;
-          min-height: 0 !important;
-          max-height: 60px !important;
-          padding: 0 !important;
+        html, body {
+          margin: 0;
+          background: var(--color-bg-app);
+          color: var(--color-text-primary);
         }
-        .scroll-content { width: 50px; height: 200px; }
+        .layout-contracts {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 20px;
+          width: 920px;
+          padding: 20px;
+        }
+        .fixture-assembler {
+          width: 440px;
+          height: 300px;
+        }
+        .fixture-oncall {
+          box-sizing: border-box;
+          width: 440px;
+          height: 300px;
+        }
+        .fixture-menu {
+          width: 300px;
+        }
+        .fixture-modal {
+          width: 420px;
+          height: 260px;
+        }
+        .fixture-detail {
+          height: 300px;
+          margin-left: 0;
+        }
+        .fixture-error {
+          width: 420px;
+        }
+        .fixture-error .error-page-stack {
+          box-sizing: border-box;
+          width: 100%;
+          margin: 0 0 12px;
+        }
+        .fixture-row {
+          min-height: 56px;
+        }
+        .fixture-team-card {
+          min-height: 92px;
+          border: 1px solid var(--color-border);
+        }
+        .fixture-detail-section {
+          min-height: 72px;
+        }
       </style>
-      ${selectors
-        .map((className) => {
-          const container = `<div data-scroll-contract="${className}" class="${className} scroll-contract"><div class="scroll-content"></div></div>`;
-          return className === 'assembler-sidebar-panel'
-            ? `<div class="assembler-sidebar">${container}</div>`
-            : container;
-        })
-        .join('')}
+      <main class="layout-contracts">
+        <section class="assembler-layout fixture-assembler" aria-label="Compose layout">
+          <aside class="assembler-groups-pane">
+            <div class="assembler-sidebar">
+              <div class="assembler-sidebar-inner">
+                <div
+                  class="assembler-sidebar-panel"
+                  data-scroll-contract="assembler"
+                  data-fill-target="assembler-rows"
+                >
+                  <div class="assembler-sidebar-groups">
+                    <div class="assembler-sidebar-groups-header">
+                      <span class="assembler-sidebar-groups-title">Contact groups</span>
+                      <button class="assembler-sidebar-add-btn" data-inline-control>+</button>
+                    </div>
+                    <div
+                      id="assembler-rows"
+                      class="assembler-sidebar-group-list"
+                      data-row-kind="assembler"
+                    >
+                      <button class="sig-grp fixture-row" data-row-control>Primary group</button>
+                    </div>
+                  </div>
+                  <div class="sig-sidebar-footer"><span>1 group</span></div>
+                </div>
+              </div>
+            </div>
+          </aside>
+          <div class="assembler-recipients-pane"></div>
+        </section>
+
+        <section class="personnel-tab-root fixture-oncall" data-scroll-contract="oncall-root">
+          <header class="oncall-page-header">
+            <div><div class="oncall-page-context">On-Call</div><h2>Coverage</h2></div>
+            <button class="tactile-button" data-inline-control>Manage</button>
+          </header>
+          <ul
+            class="oncall-masonry"
+            data-scroll-contract="oncall-masonry"
+            data-fill-target="oncall-rows"
+          >
+            <div id="oncall-rows" class="oncall-masonry-column" data-row-kind="oncall">
+              <li class="oncall-masonry-item fixture-team-card">
+                <button class="tactile-button" data-row-control>Primary team</button>
+              </li>
+            </div>
+          </ul>
+        </section>
+
+        <section class="combobox fixture-menu">
+          <div
+            class="combobox-dropdown"
+            data-scroll-contract="combobox"
+            data-fill-target="combobox-rows"
+            id="combobox-rows"
+            data-row-kind="combobox"
+          >
+            <button class="combobox-option fixture-row" data-row-control>Primary option</button>
+          </div>
+        </section>
+
+        <section class="group-selector fixture-menu">
+          <div
+            class="group-selector-list"
+            data-scroll-contract="group-list"
+            data-fill-target="group-rows"
+            id="group-rows"
+            data-row-kind="group"
+          >
+            <button class="group-selector-item fixture-row" data-row-control>Primary group</button>
+          </div>
+        </section>
+
+        <section class="search-dropdown fixture-modal">
+          <div class="search-dropdown-context">Search Relay</div>
+          <ul
+            class="search-dropdown-results"
+            data-scroll-contract="search-results"
+            data-fill-target="search-rows"
+            id="search-rows"
+            data-row-kind="search"
+          >
+            <li class="search-dropdown-item fixture-row">
+              <button class="search-dropdown-hitbox" data-row-control>Primary result</button>
+            </li>
+          </ul>
+        </section>
+
+        <aside class="detail-panel fixture-detail">
+          <div
+            class="detail-panel-body"
+            data-scroll-contract="detail-body"
+            data-fill-target="detail-rows"
+            id="detail-rows"
+            data-row-kind="detail"
+          >
+            <section class="detail-panel-field fixture-detail-section">
+              <button class="tactile-button" data-row-control>Primary detail action</button>
+            </section>
+          </div>
+        </aside>
+
+        <section class="fixture-error">
+          <pre class="error-page-stack" data-horizontal-contract>Short error</pre>
+          <button class="tactile-button" data-error-control>Try Again</button>
+        </section>
+      </main>
     `);
 
-    const results = await window.evaluate(() =>
-      Array.from(globalThis.document.querySelectorAll('[data-scroll-contract]'), (element) => {
-        if (!(element instanceof globalThis.HTMLElement)) {
-          throw new Error('Invalid scroll contract element');
-        }
-        const styles = globalThis.getComputedStyle(element);
-        element.scrollTop = 40;
-        return {
-          selector: element.dataset.scrollContract,
-          overflowX: styles.overflowX,
-          overflowY: styles.overflowY,
-          scrollTop: element.scrollTop,
-          clientHeight: element.clientHeight,
-          scrollHeight: element.scrollHeight,
-        };
-      }),
-    );
-
-    expect(results).toHaveLength(selectors.length);
-    expect(
-      results.filter(
-        ({ overflowY, scrollTop, clientHeight, scrollHeight }) =>
-          overflowY !== 'auto' || scrollTop === 0 || scrollHeight <= clientHeight,
-      ),
-    ).toEqual([]);
-    expect(results.find(({ selector }) => selector === 'assembler-sidebar-panel')?.overflowX).toBe(
-      'hidden',
-    );
-
-    const scrollbarContract = await window.evaluate(() => {
-      const probe = globalThis.document.querySelector('[data-scroll-contract]');
-      if (!(probe instanceof globalThis.HTMLElement)) throw new Error('Missing scrollbar probe');
-      const styles = globalThis.getComputedStyle(probe);
-      const webkitScrollbar = globalThis.getComputedStyle(probe, '::-webkit-scrollbar');
+    const before = await window.evaluate(() => {
+      const snapshots = Array.from(
+        globalThis.document.querySelectorAll('[data-scroll-contract]'),
+        (element) => {
+          if (!(element instanceof globalThis.HTMLElement)) {
+            throw new Error('Invalid scroll contract element');
+          }
+          const styles = globalThis.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          const controls = Array.from(
+            element.querySelectorAll('[data-inline-control], [data-row-control]'),
+          );
+          return {
+            id: element.dataset.scrollContract,
+            clientWidth: element.clientWidth,
+            overflowX: styles.overflowX,
+            overflowY: styles.overflowY,
+            scrollbarGutter: styles.scrollbarGutter,
+            controlsWithinClientWidth: controls.every(
+              (control) => control.getBoundingClientRect().right <= rect.left + element.clientWidth,
+            ),
+          };
+        },
+      );
+      const error = globalThis.document.querySelector('[data-horizontal-contract]');
+      const control = globalThis.document.querySelector('[data-error-control]');
+      if (
+        !(error instanceof globalThis.HTMLElement) ||
+        !(control instanceof globalThis.HTMLElement)
+      ) {
+        throw new Error('Missing error layout contract');
+      }
       return {
-        scrollbarWidth: styles.scrollbarWidth,
-        webkitWidth: webkitScrollbar.width,
-        webkitHeight: webkitScrollbar.height,
+        snapshots,
+        error: {
+          clientWidth: error.clientWidth,
+          controlLeft: control.getBoundingClientRect().left,
+          controlWidth: control.getBoundingClientRect().width,
+        },
       };
     });
-    expect(scrollbarContract).toEqual({
-      scrollbarWidth: 'thin',
-      webkitWidth: '6px',
-      webkitHeight: '6px',
+
+    await window.evaluate(() => {
+      const makeRow = (kind: string, index: number) => {
+        const button = globalThis.document.createElement('button');
+        button.dataset.rowControl = 'true';
+        button.textContent = `${kind} row ${index}`;
+
+        if (kind === 'assembler') {
+          button.className = 'sig-grp fixture-row';
+          return button;
+        }
+        if (kind === 'combobox') {
+          button.className = 'combobox-option fixture-row';
+          return button;
+        }
+        if (kind === 'group') {
+          button.className = 'group-selector-item fixture-row';
+          return button;
+        }
+
+        const wrapper = globalThis.document.createElement(kind === 'search' ? 'li' : 'section');
+        if (kind === 'oncall') wrapper.className = 'oncall-masonry-item fixture-team-card';
+        if (kind === 'search') wrapper.className = 'search-dropdown-item fixture-row';
+        if (kind === 'detail') wrapper.className = 'detail-panel-field fixture-detail-section';
+        button.className = kind === 'search' ? 'search-dropdown-hitbox' : 'tactile-button';
+        wrapper.append(button);
+        return wrapper;
+      };
+
+      for (const target of globalThis.document.querySelectorAll('[data-row-kind]')) {
+        if (!(target instanceof globalThis.HTMLElement)) continue;
+        const kind = target.dataset.rowKind;
+        if (!kind) continue;
+        for (let index = 0; index < 12; index += 1) {
+          target.append(makeRow(kind, index));
+        }
+        const finalRow = target.lastElementChild;
+        if (finalRow instanceof globalThis.HTMLElement) finalRow.dataset.lastRow = 'true';
+      }
+
+      const error = globalThis.document.querySelector('[data-horizontal-contract]');
+      if (error) error.textContent = `Error: ${'unbroken'.repeat(100)}`;
     });
+
+    const after = await window.evaluate(() => {
+      const snapshots = Array.from(
+        globalThis.document.querySelectorAll('[data-scroll-contract]'),
+        (element) => {
+          if (!(element instanceof globalThis.HTMLElement)) {
+            throw new Error('Invalid scroll contract element');
+          }
+          const styles = globalThis.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          const controls = Array.from(
+            element.querySelectorAll('[data-inline-control], [data-row-control]'),
+          );
+          element.scrollTop = element.scrollHeight;
+          const lastRow = element.querySelector('[data-last-row]');
+          return {
+            id: element.dataset.scrollContract,
+            clientWidth: element.clientWidth,
+            overflowX: styles.overflowX,
+            overflowY: styles.overflowY,
+            scrollbarGutter: styles.scrollbarGutter,
+            scrollTop: element.scrollTop,
+            clientHeight: element.clientHeight,
+            scrollHeight: element.scrollHeight,
+            controlsWithinClientWidth: controls.every(
+              (control) => control.getBoundingClientRect().right <= rect.left + element.clientWidth,
+            ),
+            lastRowReachable: !lastRow || lastRow.getBoundingClientRect().bottom <= rect.bottom + 1,
+          };
+        },
+      );
+      const error = globalThis.document.querySelector('[data-horizontal-contract]');
+      const control = globalThis.document.querySelector('[data-error-control]');
+      if (
+        !(error instanceof globalThis.HTMLElement) ||
+        !(control instanceof globalThis.HTMLElement)
+      ) {
+        throw new Error('Missing error layout contract');
+      }
+      error.scrollLeft = error.scrollWidth;
+      return {
+        snapshots,
+        error: {
+          clientWidth: error.clientWidth,
+          scrollWidth: error.scrollWidth,
+          scrollLeft: error.scrollLeft,
+          overflowX: globalThis.getComputedStyle(error).overflowX,
+          controlLeft: control.getBoundingClientRect().left,
+          controlWidth: control.getBoundingClientRect().width,
+        },
+      };
+    });
+
+    expect(before.snapshots).toHaveLength(7);
+    expect(after.snapshots).toHaveLength(7);
+    for (const beforeSnapshot of before.snapshots) {
+      const afterSnapshot = after.snapshots.find(({ id }) => id === beforeSnapshot.id);
+      expect(afterSnapshot, beforeSnapshot.id).toBeDefined();
+      expect(beforeSnapshot.scrollbarGutter, beforeSnapshot.id).toBe('stable');
+      expect(afterSnapshot?.scrollbarGutter, beforeSnapshot.id).toBe('stable');
+      expect(afterSnapshot?.clientWidth, beforeSnapshot.id).toBe(beforeSnapshot.clientWidth);
+      expect(beforeSnapshot.controlsWithinClientWidth, beforeSnapshot.id).toBe(true);
+      expect(afterSnapshot?.controlsWithinClientWidth, beforeSnapshot.id).toBe(true);
+    }
+
+    for (const id of [
+      'assembler',
+      'oncall-masonry',
+      'combobox',
+      'group-list',
+      'search-results',
+      'detail-body',
+    ]) {
+      const result = after.snapshots.find((snapshot) => snapshot.id === id);
+      expect(result?.overflowY, id).toBe('auto');
+      expect(result?.scrollHeight, id).toBeGreaterThan(
+        result?.clientHeight ?? Number.MAX_SAFE_INTEGER,
+      );
+      expect(result?.scrollTop, id).toBeGreaterThan(0);
+      expect(result?.lastRowReachable, id).toBe(true);
+    }
+    expect(after.snapshots.find(({ id }) => id === 'assembler')?.overflowX).toBe('hidden');
+    expect(after.snapshots.find(({ id }) => id === 'oncall-root')?.controlsWithinClientWidth).toBe(
+      true,
+    );
+
+    expect(after.error).toMatchObject({
+      clientWidth: before.error.clientWidth,
+      overflowX: 'auto',
+      controlLeft: before.error.controlLeft,
+      controlWidth: before.error.controlWidth,
+    });
+    expect(after.error.scrollWidth).toBeGreaterThan(after.error.clientWidth);
+    expect(after.error.scrollLeft).toBeGreaterThan(0);
   } finally {
     await app.close();
   }

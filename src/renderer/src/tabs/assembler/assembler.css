@@ -66,6 +66,7 @@
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
   flex-shrink: 0;
   padding: 0;
   border: none;

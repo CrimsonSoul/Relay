@@ -2144,7 +2144,9 @@ test.describe('Vital Critical Path', () => {
     await expect(
       window.getByRole('heading', { name: 'External Status', exact: true }),
     ).toBeVisible();
-    await expect(window.getByRole('status')).toContainText(/monitored providers/);
+    const providerSummary = window.getByRole('status').filter({ hasText: 'monitored providers' });
+    await expect(providerSummary).toHaveCount(1);
+    await expect(providerSummary).toContainText(/monitored providers/);
     const overview = window.getByRole('region', { name: 'Provider overview', exact: true });
     await expect(overview).toBeVisible();
     await overview
