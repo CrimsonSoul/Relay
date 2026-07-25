@@ -15,6 +15,10 @@ const MAX_PROBLEMS = 10_000;
 export type DynatraceProblemsQueryScope =
   { mode: 'reconcile' } | { mode: 'incremental'; lookbackMinutes: number };
 
+const DEFAULT_PROBLEMS_QUERY_SCOPE: Readonly<DynatraceProblemsQueryScope> = {
+  mode: 'reconcile',
+};
+
 const PROBLEMS_QUERY_FIELDS = `| fields problemId=event.id,
     displayId=display_id,
     title=event.name,
@@ -333,7 +337,7 @@ export class DynatraceProblemsClient {
 
   async fetchProblems(
     config: DynatraceProblemsConfig,
-    scope: DynatraceProblemsQueryScope = { mode: 'reconcile' },
+    scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
   ): Promise<DynatraceProblemsFetchResult> {
     const syncedAt = new Date().toISOString();
     const records = await this.runQuery(config, buildProblemsQuery(config.alertingProfiles, scope));

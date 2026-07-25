@@ -7,6 +7,11 @@ function decodeHtmlPart(eml: string): string {
   return Buffer.from(encoded.replaceAll('\r\n', ''), 'base64').toString('utf8');
 }
 
+function decodeMimeSubject(eml: string): string {
+  const encoded = /^Subject: =\?UTF-8\?B\?([^?]+)\?=$/m.exec(eml)?.[1] ?? '';
+  return Buffer.from(encoded, 'base64').toString('utf8');
+}
+
 describe('alertLinks', () => {
   it('normalizes a safe URL and supports explicit LAN HTTP destinations', () => {
     expect(sanitizeAlertClickUrl('status.example.com/board')).toBe(
@@ -68,6 +73,18 @@ describe('alertLinks', () => {
     expect(eml).not.toMatch(/(^|\r\n)To:/);
     expect(eml).not.toContain('Bcc: injected@example.com');
     expect(decodeHtmlPart(eml)).toContain('<a href="https://status.example.com/board"');
+  });
+
+  it('preserves a non-BMP alert subject through UTF-8 MIME encoding', () => {
+    const eml = buildAlertOutlookEml({
+      subject: '🚨 POS Alert',
+      imageDataUrl: 'data:image/png;base64,QUJD',
+      width: 1280,
+      height: 1200,
+      now: new Date('2026-07-02T12:00:00.000Z'),
+    });
+
+    expect(decodeMimeSubject(eml)).toBe('🚨 POS Alert');
   });
 
   it('rejects malformed image data instead of building a draft', () => {

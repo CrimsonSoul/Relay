@@ -364,6 +364,70 @@ describe('PrivilegedServerQueue', () => {
     );
   });
 
+  it.each([
+    ['accountId', ['account-admin']],
+    ['challengeId', ['challenge-1']],
+    ['code', ['ABCD2345']],
+    ['fingerprint', ['f'.repeat(64)]],
+    ['hostname', ['RYAN-LAPTOP']],
+    ['deviceLabel', ['Ryan work laptop']],
+  ])('rejects a pairing record with a string-coercible %s array', async (field, malformedValue) => {
+    const pairingRecord: Record<string, unknown> = {
+      id: 'pairing-record',
+      requestId: 'pairing-request-1',
+      accountId: 'account-admin',
+      displayNameSnapshot: 'Forged Name',
+      challengeId: 'challenge-1',
+      code: 'ABCD2345',
+      publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+      fingerprint: 'f'.repeat(64),
+      hostname: 'RYAN-LAPTOP',
+      deviceLabel: 'Ryan work laptop',
+      state: 'pending',
+      [field]: malformedValue,
+    };
+    const updatePairing = vi.fn(async () => ({}));
+    const pb = {
+      collection: vi.fn((name: string) => ({
+        getFullList: vi.fn(async () =>
+          name === RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION ? [pairingRecord] : [],
+        ),
+        getOne: vi.fn(async () => ({
+          id: 'account-admin',
+          username: 'ryan',
+          displayName: 'Ryan Bledsoe',
+          storedRole: 'administrator',
+          active: true,
+          mustChangePassword: false,
+          credentialVersion: 1,
+          revision: 3,
+        })),
+        update: updatePairing,
+      })),
+    };
+    const pairingService = {
+      completePairing: vi.fn(async () => ({
+        deviceId: 'device-1',
+        fingerprint: 'f'.repeat(64),
+        pairedAt: '2026-07-15T12:00:00.000Z',
+      })),
+    };
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: { process: vi.fn() } as never,
+      pairingService: pairingService as never,
+      pb: pb as never,
+    });
+
+    await queue.drain();
+
+    expect(pairingService.completePairing).not.toHaveBeenCalled();
+    expect(updatePairing).toHaveBeenCalledWith(
+      'pairing-record',
+      expect.objectContaining({ state: 'failed' }),
+      { requestKey: null },
+    );
+  });
+
   it('terminally rejects malformed pending commands without aborting the queue drain', async () => {
     const malformedCommand = {
       id: 'malformed-command',

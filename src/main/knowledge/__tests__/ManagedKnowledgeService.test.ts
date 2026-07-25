@@ -384,6 +384,44 @@ describe('ManagedKnowledgeService', () => {
     );
   });
 
+  it('falls back from malformed PocketBase file and timestamp values', () => {
+    const managedService = service() as unknown as {
+      documentFromSaved(
+        saved: Record<string, unknown>,
+        uploadRecord: unknown,
+        metadata: Record<string, unknown>,
+      ): Record<string, unknown>;
+    };
+
+    expect(
+      managedService.documentFromSaved(
+        {
+          id: 'document-2',
+          pdf: { name: 'forged.pdf' },
+          cover: ['forged.png'],
+          created: ['2025-01-02T03:04:05.000Z'],
+          updated: { toString: () => '2025-02-03T04:05:06.000Z' },
+        },
+        upload(),
+        {
+          category: 'Operations',
+          categoryId: 'category-operations',
+          documentType: 'sop',
+          title: 'Checkout Runbook',
+          fileName: 'Replacement.pdf',
+          publishedAt: NOW,
+          actor: ACTOR,
+          revision: 1,
+        },
+      ),
+    ).toMatchObject({
+      pdf: 'Replacement.pdf',
+      cover: 'upload.png',
+      created: NOW,
+      updated: NOW,
+    });
+  });
+
   it('rejects publishing an upload that was explicitly staged as a replacement', async () => {
     uploads.getOne.mockResolvedValueOnce(
       upload({

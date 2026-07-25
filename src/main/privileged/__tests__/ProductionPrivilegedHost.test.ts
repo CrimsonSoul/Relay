@@ -121,5 +121,34 @@ describe('ProductionPrivilegedHost', () => {
         source: { browserFamily: 'Other', addressLabel: PRIVATE_ADDRESS_C },
       }),
     ).toThrow('Invalid web session');
+    expect(() =>
+      host.createWebRuntime({
+        sessionId: 'session-control',
+        source: { browserFamily: 'Other', addressLabel: 'unsafe\u0007address' },
+      }),
+    ).toThrow('Invalid web session');
+  });
+
+  it('accepts bounded browser session metadata measured in Unicode code points', async () => {
+    const createRuntime = vi.fn(() => ({
+      dispose: vi.fn(),
+      getView: signedOut,
+      handleAuthorityChanged: vi.fn(),
+    }));
+    const host = new ProductionPrivilegedHost({
+      createRuntime: createRuntime as never,
+      disposeShared: vi.fn(),
+    });
+    const sessionId = `${'s'.repeat(127)}😀`;
+
+    expect(() =>
+      host.createWebRuntime({
+        sessionId,
+        source: { browserFamily: 'Chrome', addressLabel: PRIVATE_ADDRESS_A },
+      }),
+    ).not.toThrow();
+    expect(createRuntime).toHaveBeenCalledWith(expect.objectContaining({ kind: 'web', sessionId }));
+
+    await host.dispose();
   });
 });

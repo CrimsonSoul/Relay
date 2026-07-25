@@ -174,6 +174,11 @@ describe('WebKnowledgeUploadStaging', () => {
     await expect(staging.begin([{ name: '../escape.pdf', size: 12 }])).rejects.toMatchObject({
       code: 'invalid-file',
     });
+    await expect(staging.begin([{ name: 'Unsafe\u0007Name.pdf', size: 12 }])).rejects.toMatchObject(
+      {
+        code: 'invalid-file',
+      },
+    );
     const batch = await staging.begin([{ name: 'Runbook.pdf', size: 6 }]);
     await staging.append({
       fileId: batch.files[0]!.id,
@@ -185,6 +190,24 @@ describe('WebKnowledgeUploadStaging', () => {
     await expect(staging.commit(batch.batchId)).rejects.toMatchObject({ code: 'invalid-file' });
     expect(queuePaths).not.toHaveBeenCalled();
     expect(await missing(join(rootDir, 'session-c'))).toBe(true);
+  });
+
+  it('accepts a maximum-length PDF filename measured in Unicode code points', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-unicode-'));
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'session-unicode',
+      localSourceId: 'web-session-unicode',
+      queuePaths: vi.fn(),
+      createId: vi.fn().mockReturnValueOnce('batch-unicode').mockReturnValueOnce('file-unicode'),
+    });
+    const fileName = `${'a'.repeat(235)}😀.pdf`;
+
+    await expect(staging.begin([{ name: fileName, size: 12 }])).resolves.toMatchObject({
+      files: [{ name: fileName }],
+    });
+
+    await staging.dispose();
   });
 
   it('cleans abandoned staging data when a new gateway starts', async () => {

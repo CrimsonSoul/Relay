@@ -395,6 +395,26 @@ describe('privileged command validation', () => {
     ).toEqual({ batchId: 'batch1', expectedRevision: 3 });
   });
 
+  it('accepts a maximum-length Knowledge PDF filename measured in Unicode code points', () => {
+    const fileName = `${'a'.repeat(235)}😀.pdf`;
+
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        batchId: 'batch1',
+        fileName,
+        byteSize: 5,
+        checksum: 'a'.repeat(64),
+        chunkCount: 1,
+      }),
+    ).toEqual({
+      batchId: 'batch1',
+      fileName,
+      byteSize: 5,
+      checksum: 'a'.repeat(64),
+      chunkCount: 1,
+    });
+  });
+
   it('rejects unsafe or inconsistent resumable upload payloads', () => {
     const validFile = {
       batchId: 'batch1',

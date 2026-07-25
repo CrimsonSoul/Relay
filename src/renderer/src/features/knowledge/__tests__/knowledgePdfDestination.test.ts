@@ -74,6 +74,13 @@ describe('resolveKnowledgePdfDestination', () => {
     });
   });
 
+  it.each([
+    ['destination type array', [0, ['XYZ'], 0, 640]],
+    ['destination name array', [0, { name: ['FitH'] }, 510]],
+  ])('rejects a malformed %s instead of string-coercing it', async (_label, destination) => {
+    await expect(resolveKnowledgePdfDestination(pdf(), destination)).resolves.toBeNull();
+  });
+
   it('returns null when a named destination is missing', async () => {
     await expect(resolveKnowledgePdfDestination(pdf(), 'missing')).resolves.toBeNull();
   });

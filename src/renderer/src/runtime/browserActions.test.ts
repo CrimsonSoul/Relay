@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createBrowserActions } from './browserActions';
+import { createBrowserActions, sanitizeDownloadName } from './browserActions';
 
 describe('browser actions', () => {
   beforeEach(() => {
@@ -58,6 +58,13 @@ describe('browser actions', () => {
     expect(anchor?.download).toBe('Shift_bridge_.ics');
     expect(anchor?.href).toContain('data:text/calendar');
     expect(click).toHaveBeenCalledOnce();
+  });
+
+  it('sanitizes controls without splitting a non-BMP character at the download-name limit', () => {
+    const maximumCodePointName = `${'a'.repeat(119)}😀`;
+
+    expect(sanitizeDownloadName(maximumCodePointName)).toBe(maximumCodePointName);
+    expect(sanitizeDownloadName('alert\u0007name.txt')).toBe('alert_name.txt');
   });
 
   it('uses only built-in audio and browser tabs', async () => {

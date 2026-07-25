@@ -21,11 +21,12 @@ type ProductionPrivilegedHostOptions = {
 };
 
 function validBounded(value: string, max: number): boolean {
+  const characters = [...value];
   return (
-    value.length > 0 &&
-    value.length <= max &&
-    [...value].every((character) => {
-      const code = character.charCodeAt(0);
+    characters.length > 0 &&
+    characters.length <= max &&
+    characters.every((character) => {
+      const code = character.codePointAt(0) ?? 0;
       return code >= 32 && code !== 127;
     })
   );

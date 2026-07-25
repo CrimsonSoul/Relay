@@ -24,11 +24,13 @@ function normalizedExternalUrl(value: string): string | null {
 export function sanitizeDownloadName(value: string): string {
   const reserved = new Set(['\\', '/', ':', '*', '?', '"', '<', '>', '|']);
   let normalized = [...value.normalize('NFKC')]
-    .map((character) => (character.charCodeAt(0) < 32 || reserved.has(character) ? '_' : character))
+    .map((character) =>
+      (character.codePointAt(0) ?? 0) < 32 || reserved.has(character) ? '_' : character,
+    )
     .join('')
     .replace(/\s+/gu, '_')
-    .replace(/_+/gu, '_')
-    .slice(0, MAX_DOWNLOAD_NAME_LENGTH);
+    .replace(/_+/gu, '_');
+  normalized = [...normalized].slice(0, MAX_DOWNLOAD_NAME_LENGTH).join('');
   while (normalized.startsWith('.') || normalized.startsWith('_')) normalized = normalized.slice(1);
   while (normalized.endsWith('.') || normalized.endsWith(' ')) normalized = normalized.slice(0, -1);
   return normalized || 'relay-download';

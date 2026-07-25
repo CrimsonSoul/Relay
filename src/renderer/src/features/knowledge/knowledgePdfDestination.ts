@@ -13,11 +13,14 @@ export function clampKnowledgePdfPageIndex(pageIndex: number, pageCount: number)
   return Math.min(Math.max(0, integerPageIndex), boundedPageCount - 1);
 }
 
-function destinationType(value: unknown): string {
-  if (value && typeof value === 'object' && 'name' in value) {
-    return String((value as { name: unknown }).name);
+function destinationType(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  if (!Array.isArray(value) && typeof value === 'object' && 'name' in value) {
+    const name = (value as { name: unknown }).name;
+    return typeof name === 'string' ? name : null;
   }
-  return String(value ?? '');
+  return null;
 }
 
 export async function resolveKnowledgePdfDestination(
@@ -39,6 +42,7 @@ export async function resolveKnowledgePdfDestination(
     if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= pdf.numPages) return null;
 
     const type = destinationType(resolved[1]);
+    if (type === null) return null;
     let topCandidate: unknown = null;
     if (type === 'XYZ') topCandidate = resolved[3];
     else if (type === 'FitH' || type === 'FitBH') topCandidate = resolved[2];

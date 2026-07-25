@@ -409,13 +409,14 @@ function normalizedKnowledgeText(value: unknown, max: number): string | null {
 function normalizeKnowledgePdfFileName(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().replace(/\s+/g, ' ');
-  const hasControlCharacters = Array.from(normalized).some((character) => {
-    const code = character.charCodeAt(0);
+  const characters = Array.from(normalized);
+  const hasControlCharacters = characters.some((character) => {
+    const code = character.codePointAt(0) ?? 0;
     return code < 32 || code === 127;
   });
   if (
     !normalized ||
-    normalized.length > 240 ||
+    characters.length > 240 ||
     !normalized.toLocaleLowerCase('en').endsWith('.pdf') ||
     normalized.includes('/') ||
     normalized.includes('\\') ||

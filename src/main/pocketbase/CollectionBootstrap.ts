@@ -1251,17 +1251,28 @@ function managedIndexName(definition: string): string {
   return /\bINDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/i.exec(definition)?.[1] ?? definition;
 }
 
+type PatchCollectionDefinitionOptions = Readonly<{
+  pb: PocketBase;
+  colId: string;
+  colName: string;
+  expectedSchemaFields: FieldDef[];
+  expectedIndexes?: string[];
+  expectedRules?: CollectionRules;
+  expectedAuth?: AuthCollectionOptions;
+  snapshot?: ExistingCollection;
+}>;
+
 /** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */
-async function patchCollectionDefinition(
-  pb: PocketBase,
-  colId: string,
-  colName: string,
-  expectedSchemaFields: FieldDef[],
-  expectedIndexes: string[] = [],
-  expectedRules: CollectionRules = DEFAULT_AUTH_RULES,
-  expectedAuth?: AuthCollectionOptions,
-  snapshot?: ExistingCollection,
-): Promise<boolean> {
+async function patchCollectionDefinition({
+  pb,
+  colId,
+  colName,
+  expectedSchemaFields,
+  expectedIndexes = [],
+  expectedRules = DEFAULT_AUTH_RULES,
+  expectedAuth,
+  snapshot,
+}: PatchCollectionDefinitionOptions): Promise<boolean> {
   const colFull =
     snapshot ?? ((await pb.collections.getOne(colId)) as unknown as ExistingCollection);
   const fields = colFull.fields || [];
@@ -1361,16 +1372,16 @@ async function patchManagedCollection(
   const col = allCols.find((candidate) => candidate.name === def.name);
   if (!col) return false;
   try {
-    return await patchCollectionDefinition(
+    return await patchCollectionDefinition({
       pb,
-      col.id,
-      def.name,
-      serializeManagedFields(def, collectionIds),
-      def.indexes,
-      def.rules ?? DEFAULT_AUTH_RULES,
-      def.auth,
-      hasCompleteCollectionSnapshot(col, def.auth) ? col : undefined,
-    );
+      colId: col.id,
+      colName: def.name,
+      expectedSchemaFields: serializeManagedFields(def, collectionIds),
+      expectedIndexes: def.indexes,
+      expectedRules: def.rules ?? DEFAULT_AUTH_RULES,
+      expectedAuth: def.auth,
+      snapshot: hasCompleteCollectionSnapshot(col, def.auth) ? col : undefined,
+    });
   } catch (err) {
     logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
     throw new Error(`Failed to patch collection: ${def.name}`, { cause: err });

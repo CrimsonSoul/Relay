@@ -388,7 +388,8 @@ function normalizeKnowledgeSearchIndexMetadata(
   const searchIndexError = value.searchIndexError === '' ? null : (value.searchIndexError ?? null);
 
   if (
-    !['pending', 'ready', 'failed'].includes(String(searchIndexState)) ||
+    typeof searchIndexState !== 'string' ||
+    !['pending', 'ready', 'failed'].includes(searchIndexState) ||
     (searchIndexChecksum !== null &&
       (typeof searchIndexChecksum !== 'string' || !SHA256_PATTERN.test(searchIndexChecksum))) ||
     !Number.isInteger(searchIndexVersion) ||

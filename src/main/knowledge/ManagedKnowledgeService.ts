@@ -81,6 +81,13 @@ function normalizedText(value: string, max: number): string {
   return normalized;
 }
 
+function firstNonEmptyString(...values: readonly unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return '';
+}
+
 function sourceKey(category: string, fileName: string): string {
   return `${category}/${fileName}`;
 }
@@ -991,8 +998,8 @@ export class ManagedKnowledgeService {
       title: metadata.title,
       displayTitle: metadata.displayTitle ?? metadata.title,
       fileName: metadata.fileName,
-      pdf: String(saved.pdf || metadata.fileName),
-      cover: String(saved.cover || upload.cover || '') || null,
+      pdf: firstNonEmptyString(saved.pdf, metadata.fileName),
+      cover: firstNonEmptyString(saved.cover, upload.cover) || null,
       checksum: upload.checksum,
       byteSize: upload.byteSize,
       pageCount: upload.pageCount ?? 1,
@@ -1014,9 +1021,9 @@ export class ManagedKnowledgeService {
       trashedByName: null,
       trashedAt: null,
       created: canonicalTimestamp(
-        String(saved.created || existing?.created || metadata.publishedAt),
+        firstNonEmptyString(saved.created, existing?.created, metadata.publishedAt),
       ),
-      updated: canonicalTimestamp(String(saved.updated || metadata.publishedAt)),
+      updated: canonicalTimestamp(firstNonEmptyString(saved.updated, metadata.publishedAt)),
     };
   }
 

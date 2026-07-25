@@ -254,6 +254,16 @@ describe('knowledge contracts', () => {
     ).toBeNull();
   });
 
+  it('rejects a string-coercible array for the search-index state', () => {
+    expect(
+      normalizeKnowledgeDocumentRecord({
+        ...validRecord,
+        ...blankPocketBaseSearchIndexMetadata,
+        searchIndexState: ['pending'],
+      }),
+    ).toBeNull();
+  });
+
   it('canonicalizes PocketBase timestamps for ready search-index metadata', () => {
     const ready = {
       ...validRecord,

@@ -66,7 +66,7 @@ function base64EncodeUtf8(value: string): string {
   let binary = '';
   const chunkSize = 0x8000;
   for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...Array.from(bytes.subarray(index, index + chunkSize)));
+    binary += String.fromCodePoint(...Array.from(bytes.subarray(index, index + chunkSize)));
   }
   return btoa(binary);
 }

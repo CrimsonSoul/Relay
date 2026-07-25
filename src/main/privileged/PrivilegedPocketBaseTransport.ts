@@ -97,6 +97,11 @@ function optionalBoundedString(value: unknown, max: number): boolean {
   return value === undefined || value === null || value === '' || boundedString(value, max);
 }
 
+function storedString(value: unknown): string {
+  if (typeof value !== 'string') throw new TypeError('Invalid stored string value.');
+  return value;
+}
+
 function isStoredRoleClaim(value: unknown): value is PrivilegedRole {
   return value === 'owner' || value === 'admin' || value === 'publisher';
 }
@@ -774,10 +779,16 @@ export class PrivilegedServerQueue {
   private async processPairing(record: UnknownRecord): Promise<void> {
     const collection = this.pb.collection(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION);
     try {
+      const accountId = storedString(record.accountId);
+      const challengeId = storedString(record.challengeId);
+      const code = storedString(record.code);
+      const fingerprint = storedString(record.fingerprint);
+      const hostname = storedString(record.hostname);
+      const deviceLabel = storedString(record.deviceLabel);
       const account = normalizeAccount(
         await this.pb
           .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-          .getOne(String(record.accountId ?? ''), { requestKey: null }),
+          .getOne(accountId, { requestKey: null }),
       );
       if (!account?.active) throw new TypeError('Pairing account is unavailable.');
       await collection.update(
@@ -786,14 +797,14 @@ export class PrivilegedServerQueue {
         { requestKey: null },
       );
       const result = await this.pairingService.completePairing({
-        challengeId: String(record.challengeId ?? ''),
-        accountId: String(record.accountId ?? ''),
-        authenticatedAccountId: String(record.accountId ?? ''),
-        code: String(record.code ?? ''),
+        challengeId,
+        accountId,
+        authenticatedAccountId: accountId,
+        code,
         publicJwk: record.publicKey,
-        fingerprint: String(record.fingerprint ?? ''),
-        hostname: String(record.hostname ?? ''),
-        deviceLabel: String(record.deviceLabel ?? ''),
+        fingerprint,
+        hostname,
+        deviceLabel,
       });
       await collection.update(
         record.id,
