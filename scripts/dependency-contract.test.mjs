@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -68,6 +69,17 @@ function conditionalExport(packagePath, condition) {
 }
 
 const braceExpansionInstalls = packageDirectories('brace-expansion');
+
+test('npm reports no extraneous, invalid, or unmet required dependencies', () => {
+  const result = spawnSync('npm', ['ls', '--all', '--json'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    maxBuffer: 100 * 1024 * 1024,
+  });
+  const tree = JSON.parse(result.stdout);
+
+  assert.deepEqual(tree.problems ?? [], []);
+});
 
 test('the dependency tree includes brace-expansion for compatibility verification', () => {
   assert.ok(braceExpansionInstalls.length > 0, 'expected at least one brace-expansion install');
