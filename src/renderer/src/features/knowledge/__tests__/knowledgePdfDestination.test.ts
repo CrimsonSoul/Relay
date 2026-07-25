@@ -55,6 +55,20 @@ describe('resolveKnowledgePdfDestination', () => {
   });
 
   it.each([
+    ['array', []],
+    ['missing generation', { num: 17 }],
+    ['fractional object number', { num: 17.5, gen: 0 }],
+    ['negative generation', { num: 17, gen: -1 }],
+  ])('rejects a malformed %s page reference before PDF.js lookup', async (_label, reference) => {
+    const document = pdf({ pageIndex: 0 });
+
+    await expect(
+      resolveKnowledgePdfDestination(document, [reference, { name: 'XYZ' }, 0, 640]),
+    ).resolves.toBeNull();
+    expect(document.getPageIndex).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['FitH', [0, { name: 'FitH' }, 510], 510],
     ['FitBH', [0, { name: 'FitBH' }, 490], 490],
   ])('reads the %s top coordinate from array element 2', async (_type, destination, top) => {

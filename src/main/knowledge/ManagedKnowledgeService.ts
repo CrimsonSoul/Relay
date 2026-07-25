@@ -88,6 +88,13 @@ function firstNonEmptyString(...values: readonly unknown[]): string {
   return '';
 }
 
+function knowledgeDocumentId(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError('PocketBase did not return a Knowledge document ID.');
+  }
+  return value;
+}
+
 function sourceKey(category: string, fileName: string): string {
   return `${category}/${fileName}`;
 }
@@ -990,7 +997,7 @@ export class ManagedKnowledgeService {
   ): KnowledgeDocumentRecord {
     const contentUpdatedAt = metadata.contentUpdatedAt ?? metadata.publishedAt;
     return {
-      id: String(saved.id),
+      id: knowledgeDocumentId(saved.id),
       sourceKey: metadata.sourceKey ?? sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
       categoryId: metadata.categoryId,

@@ -31,6 +31,20 @@ function destinationType(value: unknown): string | null {
   return null;
 }
 
+function isPdfReference(value: unknown): value is { num: number; gen: number } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    'num' in value &&
+    Number.isInteger(value.num) &&
+    value.num >= 0 &&
+    'gen' in value &&
+    Number.isInteger(value.gen) &&
+    value.gen >= 0
+  );
+}
+
 async function resolvePdfDestination(
   document: PDFDocumentProxy,
   destination: NativeKnowledgeOutlineEntry['dest'],
@@ -47,7 +61,7 @@ async function resolvePdfDestination(
   const reference = resolved[0];
   let pageIndex: number;
   if (Number.isInteger(reference)) pageIndex = reference as number;
-  else if (reference && typeof reference === 'object') {
+  else if (isPdfReference(reference)) {
     try {
       pageIndex = await document.getPageIndex(reference);
     } catch {

@@ -384,6 +384,35 @@ describe('ManagedKnowledgeService', () => {
     );
   });
 
+  it.each([
+    ['object', { synthetic: 'document-forged' }],
+    ['array', ['document-forged']],
+    ['empty string', ''],
+  ])(
+    'rejects a malformed %s PocketBase document ID before upload completion or audit',
+    async (_label, malformedId) => {
+      documents.create.mockResolvedValueOnce({
+        id: malformedId,
+        pdf: 'stored-new.pdf',
+        created: NOW,
+        updated: NOW,
+      });
+
+      await expect(
+        service().publish({
+          actor: ACTOR,
+          requestId: 'request-malformed-document-id',
+          uploadId: 'upload-1',
+          title: 'Checkout Runbook',
+          category: 'Operations',
+        }),
+      ).rejects.toThrow('PocketBase did not return a Knowledge document ID.');
+
+      expect(uploads.update).not.toHaveBeenCalled();
+      expect(audits.create).not.toHaveBeenCalled();
+    },
+  );
+
   it('falls back from malformed PocketBase file and timestamp values', () => {
     const managedService = service() as unknown as {
       documentFromSaved(
@@ -558,6 +587,34 @@ describe('ManagedKnowledgeService', () => {
     expect(replacementForm.get('searchIndexState')).toBe('pending');
     expect(replacementForm.get('searchIndexVersion')).toBe('0');
     expect(replacementForm.get('publishedByOperatorId')).toBe('');
+  });
+
+  it('rejects a malformed replacement result ID before upload completion or audit', async () => {
+    uploads.getOne.mockResolvedValueOnce(
+      upload({
+        replacementDocumentId: 'document-1',
+        duplicateDocumentId: 'document-1',
+      }),
+    );
+    documents.update.mockResolvedValueOnce({
+      id: { synthetic: 'document-1' },
+      pdf: 'stored-replacement.pdf',
+      created: NOW,
+      updated: NOW,
+    });
+
+    await expect(
+      service().replace({
+        actor: ACTOR,
+        requestId: 'request-malformed-replacement-id',
+        uploadId: 'upload-1',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
+    ).rejects.toThrow('PocketBase did not return a Knowledge document ID.');
+
+    expect(uploads.update).not.toHaveBeenCalled();
+    expect(audits.create).not.toHaveBeenCalled();
   });
 
   it('rejects a replace command that redirects an explicitly bound upload', async () => {

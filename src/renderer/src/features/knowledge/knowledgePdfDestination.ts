@@ -23,6 +23,20 @@ function destinationType(value: unknown): string | null {
   return null;
 }
 
+function isPdfReference(value: unknown): value is { num: number; gen: number } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    'num' in value &&
+    Number.isInteger(value.num) &&
+    value.num >= 0 &&
+    'gen' in value &&
+    Number.isInteger(value.gen) &&
+    value.gen >= 0
+  );
+}
+
 export async function resolveKnowledgePdfDestination(
   pdf: Pick<PDFDocumentProxy, 'numPages' | 'getDestination' | 'getPageIndex'>,
   destination: KnowledgePdfDestination,
@@ -35,7 +49,7 @@ export async function resolveKnowledgePdfDestination(
     const reference = resolved[0];
     let pageIndex: number;
     if (Number.isInteger(reference)) pageIndex = reference as number;
-    else if (reference && typeof reference === 'object') {
+    else if (isPdfReference(reference)) {
       pageIndex = await pdf.getPageIndex(reference);
     } else return null;
 
