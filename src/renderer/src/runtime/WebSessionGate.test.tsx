@@ -122,6 +122,7 @@ describe('WebSessionGate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText('Relay shell · Web')).toBeVisible();
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase asserts the exact web-session login payload.
     expect(client.login).toHaveBeenCalledWith({ passphrase: 'fixture-passphrase' });
     expect(client.activate).toHaveBeenCalledWith(SESSION);
     expect(appLoader).toHaveBeenCalledOnce();
@@ -141,6 +142,7 @@ describe('WebSessionGate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reauthenticate' }));
 
     await vi.waitFor(() => {
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase asserts the reauthentication payload.
       expect(client.login).toHaveBeenCalledWith({ passphrase: 'reauth-passphrase' });
       expect(mockLoadAuthSession).toHaveBeenCalledWith(SESSION.auth);
     });

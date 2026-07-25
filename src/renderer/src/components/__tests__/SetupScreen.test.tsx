@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SetupScreen } from '../SetupScreen';
 
@@ -114,6 +114,7 @@ describe('SetupScreen', () => {
     ).toBeInTheDocument();
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- The input contract, explanatory copy, and submit action are distinct server-form requirements with separate diagnostics.
   it('shows Save & Start Server button in server mode', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Server'));
@@ -547,9 +548,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'server', port: 9090 });
@@ -572,9 +571,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({ mode: 'server', bindHost: '127.0.0.1' });
   });
@@ -589,9 +586,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'client', serverUrl: CLIENT_URL });
@@ -608,9 +603,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'client', serverUrl: CLIENT_URL });
@@ -627,9 +620,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
@@ -647,9 +638,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
@@ -666,9 +655,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(screen.getByText(/Public HTTP is not production safe/)).toBeInTheDocument();
     expect(onComplete).not.toHaveBeenCalled();
@@ -685,9 +672,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
@@ -707,11 +692,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    // Use act to flush the synchronous state update (setLoading(true))
-    // but don't await the full promise (it never resolves)
-    act(() => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
     expect(screen.getByText('Starting Server...')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Starting Server/i })).toBeDisabled();
@@ -727,9 +708,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    act(() => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(screen.getByText('Connecting...')).toBeInTheDocument();
   });
@@ -744,11 +723,9 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
-    expect(screen.getByText('Save & Start Server')).toBeInTheDocument();
+    expect(await screen.findByText('Save & Start Server')).toBeInTheDocument();
   });
 
   it('resets loading state when onComplete throws in client mode', async () => {
@@ -761,11 +738,9 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
-    expect(screen.getByText('Save & Connect')).toBeInTheDocument();
+    expect(await screen.findByText('Save & Connect')).toBeInTheDocument();
   });
 
   it('clears previous error on new submission attempt', () => {

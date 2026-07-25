@@ -10,6 +10,7 @@ import { WebSessionStore } from '../WebSessionStore';
 import { registerPrivilegedRoutes, type WebPrivilegedRouteSession } from './privilegedRoutes';
 
 const LOOPBACK = '127.0.0.1';
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises protected web routes.
 const PASSWORD = 'Test-access-value-123!';
 
 async function freePort(): Promise<number> {

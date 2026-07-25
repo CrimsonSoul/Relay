@@ -246,14 +246,16 @@ describe('PrivilegedDeviceStore', () => {
     expect(logged).not.toContain('sensitive:');
   });
 
-  it('fails safely when an existing registry loses owner-only permissions', async () => {
-    if (process.platform === 'win32') return;
-    const { store } = await createBoundDevice();
-    await chmod(join(dataDir, 'privileged-device-keys.json'), 0o644);
+  it.skipIf(process.platform === 'win32')(
+    'fails safely when an existing registry loses owner-only permissions',
+    async () => {
+      const { store } = await createBoundDevice();
+      await chmod(join(dataDir, 'privileged-device-keys.json'), 0o644);
 
-    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
-    await expect(store.create(ACCOUNT_ID, 'Replacement')).rejects.toMatchObject({
-      code: 'pairing-required',
-    });
-  });
+      await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+      await expect(store.create(ACCOUNT_ID, 'Replacement')).rejects.toMatchObject({
+        code: 'pairing-required',
+      });
+    },
+  );
 });

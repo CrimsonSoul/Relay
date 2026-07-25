@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
@@ -153,9 +153,7 @@ describe('ConnectionManager', () => {
     fireEvent.change(screen.getByLabelText('Connection passphrase'), {
       target: { value: 'correct-value' },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
     expect(onWebReauthenticate).toHaveBeenCalledWith('correct-value');
     expect(screen.getByLabelText('Unsaved work')).toHaveValue('Draft');
   });

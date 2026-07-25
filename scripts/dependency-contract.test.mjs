@@ -9,46 +9,54 @@ const { test } = process.env.VITEST ? await import('vitest') : await import('nod
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const rootNodeModules = path.join(repositoryRoot, 'node_modules');
 
+function markNodeModulesVisited(nodeModulesPath, visited) {
+  try {
+    const realPath = path.resolve(nodeModulesPath);
+    if (visited.has(realPath)) return false;
+    visited.add(realPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function visitPackage(packagePath, packageName, matches, visited) {
+  const packageJsonPath = path.join(packagePath, 'package.json');
+  if (!existsSync(packageJsonPath)) return;
+
+  if (path.basename(packagePath) === packageName) matches.push(packagePath);
+
+  const nestedNodeModules = path.join(packagePath, 'node_modules');
+  if (existsSync(nestedNodeModules)) {
+    visitNodeModules(nestedNodeModules, packageName, matches, visited);
+  }
+}
+
+function visitScope(scopePath, packageName, matches, visited) {
+  for (const entry of readdirSync(scopePath, { withFileTypes: true })) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    visitPackage(path.join(scopePath, entry.name), packageName, matches, visited);
+  }
+}
+
+function visitNodeModules(nodeModulesPath, packageName, matches, visited) {
+  if (!markNodeModulesVisited(nodeModulesPath, visited)) return;
+
+  for (const entry of readdirSync(nodeModulesPath, { withFileTypes: true })) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+
+    const entryPath = path.join(nodeModulesPath, entry.name);
+    if (entry.name.startsWith('@')) {
+      visitScope(entryPath, packageName, matches, visited);
+    } else {
+      visitPackage(entryPath, packageName, matches, visited);
+    }
+  }
+}
+
 function packageDirectories(packageName) {
   const matches = [];
-  const visited = new Set();
-
-  function visitNodeModules(nodeModulesPath) {
-    let realPath;
-    try {
-      realPath = path.resolve(nodeModulesPath);
-      if (visited.has(realPath)) return;
-      visited.add(realPath);
-    } catch {
-      return;
-    }
-
-    for (const entry of readdirSync(nodeModulesPath, { withFileTypes: true })) {
-      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-
-      if (entry.name.startsWith('@')) {
-        const scopePath = path.join(nodeModulesPath, entry.name);
-        for (const scopedEntry of readdirSync(scopePath, { withFileTypes: true })) {
-          if (!scopedEntry.isDirectory() && !scopedEntry.isSymbolicLink()) continue;
-          visitPackage(path.join(scopePath, scopedEntry.name));
-        }
-      } else {
-        visitPackage(path.join(nodeModulesPath, entry.name));
-      }
-    }
-  }
-
-  function visitPackage(packagePath) {
-    const packageJsonPath = path.join(packagePath, 'package.json');
-    if (!existsSync(packageJsonPath)) return;
-
-    if (path.basename(packagePath) === packageName) matches.push(packagePath);
-
-    const nestedNodeModules = path.join(packagePath, 'node_modules');
-    if (existsSync(nestedNodeModules)) visitNodeModules(nestedNodeModules);
-  }
-
-  visitNodeModules(rootNodeModules);
+  visitNodeModules(rootNodeModules, packageName, matches, new Set());
   return matches.sort();
 }
 
@@ -71,7 +79,9 @@ function conditionalExport(packagePath, condition) {
 const braceExpansionInstalls = packageDirectories('brace-expansion');
 
 test('npm reports no extraneous, invalid, or unmet required dependencies', () => {
-  const result = spawnSync('npm', ['ls', '--all', '--json'], {
+  const npmCliPath = process.env.npm_execpath;
+  assert.ok(npmCliPath, 'expected npm_execpath when running the dependency contract');
+  const result = spawnSync(process.execPath, [npmCliPath, 'ls', '--all', '--json'], {
     cwd: repositoryRoot,
     encoding: 'utf8',
     maxBuffer: 100 * 1024 * 1024,

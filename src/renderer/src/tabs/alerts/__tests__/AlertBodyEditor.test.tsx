@@ -147,34 +147,16 @@ describe('AlertBodyEditor', () => {
     expect(editor.innerHTML).toBe('<p>New content</p>');
   });
 
-  it('applies bold formatting on mouseDown', () => {
+  it.each([
+    ['Bold (Cmd+B)', 'bold'],
+    ['Italic (Cmd+I)', 'italic'],
+    ['Underline (Cmd+U)', 'underline'],
+    ['Bullet List', 'insertUnorderedList'],
+    ['Numbered List', 'insertOrderedList'],
+  ])('applies %s formatting on mouseDown', (buttonTitle, command) => {
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Bold (Cmd+B)'));
-    expect(document.execCommand).toHaveBeenCalledWith('bold');
-  });
-
-  it('applies italic formatting on mouseDown', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Italic (Cmd+I)'));
-    expect(document.execCommand).toHaveBeenCalledWith('italic');
-  });
-
-  it('applies underline formatting on mouseDown', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Underline (Cmd+U)'));
-    expect(document.execCommand).toHaveBeenCalledWith('underline');
-  });
-
-  it('applies bullet list formatting', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Bullet List'));
-    expect(document.execCommand).toHaveBeenCalledWith('insertUnorderedList');
-  });
-
-  it('applies numbered list formatting', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Numbered List'));
-    expect(document.execCommand).toHaveBeenCalledWith('insertOrderedList');
+    fireEvent.mouseDown(screen.getByTitle(buttonTitle));
+    expect(document.execCommand).toHaveBeenCalledWith(command);
   });
 
   it('selects and inserts an alert image block through the toolbar', async () => {
@@ -186,9 +168,7 @@ describe('AlertBodyEditor', () => {
     });
 
     render(<AlertBodyEditor {...defaultProps} />);
-    await act(async () => {
-      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
-    });
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
 
     await vi.waitFor(() => {
       expect(document.execCommand).toHaveBeenCalledWith(
@@ -208,9 +188,7 @@ describe('AlertBodyEditor', () => {
     });
 
     render(<AlertBodyEditor {...defaultProps} />);
-    await act(async () => {
-      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
-    });
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
 
     await vi.waitFor(() => {
       expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
@@ -231,9 +209,7 @@ describe('AlertBodyEditor', () => {
     });
 
     render(<AlertBodyEditor {...defaultProps} />);
-    await act(async () => {
-      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
-    });
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
 
     await vi.waitFor(() => {
       expect(showToastMock).toHaveBeenCalledWith('Image must be under 5MB', 'error');
@@ -275,32 +251,15 @@ describe('AlertBodyEditor', () => {
     );
   });
 
-  it('handles Cmd+1 keydown to apply first highlight', () => {
+  it.each([
+    ['Cmd+1 highlight', { key: '1', metaKey: true }],
+    ['Cmd+0 clear', { key: '0', metaKey: true }],
+    ['unmodified key', { key: '1' }],
+    ['Ctrl shortcut', { key: '2', ctrlKey: true }],
+  ])('handles the %s keydown path without crashing', (_case, init) => {
     render(<AlertBodyEditor {...defaultProps} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '1', metaKey: true });
-    // Should not crash — highlight needs selection which is empty in test
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Cmd+0 keydown to clear highlight', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '0', metaKey: true });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('ignores keydown without metaKey or ctrlKey', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '1' });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Ctrl+key shortcuts (non-Mac)', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '2', ctrlKey: true });
+    fireEvent.keyDown(editor, init);
     expect(editor).toBeInTheDocument();
   });
 
@@ -453,40 +412,16 @@ describe('AlertBodyEditor', () => {
     expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('ABCDE');
   });
 
-  it('handles Ctrl+3 to apply third highlight type', () => {
+  it.each([
+    ['Ctrl+3 highlight', { key: '3', ctrlKey: true }],
+    ['Cmd+4 highlight', { key: '4', metaKey: true }],
+    ['Cmd+5 highlight', { key: '5', metaKey: true }],
+    ['Cmd+6 out-of-range', { key: '6', metaKey: true }],
+    ['Cmd+9 out-of-range', { key: '9', metaKey: true }],
+  ])('handles the %s keydown path without crashing', (_case, init) => {
     render(<AlertBodyEditor {...defaultProps} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '3', ctrlKey: true });
-    // Should not crash — highlight needs selection which may be empty
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Ctrl+4 to apply fourth highlight type', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '4', metaKey: true });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Ctrl+5 to apply fifth highlight type', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '5', metaKey: true });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('ignores Cmd+6 (no sixth highlight)', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '6', metaKey: true });
-    // No highlight for index 5, should be a no-op
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('ignores Cmd+9 (out of highlight range)', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '9', metaKey: true });
+    fireEvent.keyDown(editor, init);
     expect(editor).toBeInTheDocument();
   });
 

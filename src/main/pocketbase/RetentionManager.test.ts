@@ -163,7 +163,7 @@ describe('RetentionManager', () => {
       const callsAfterStop = getFullList.mock.calls.length;
       await vi.advanceTimersByTimeAsync(intervalMs * 2);
 
-      expect(getFullList.mock.calls.length).toBe(callsAfterStop);
+      expect(getFullList.mock.calls).toHaveLength(callsAfterStop);
     });
 
     it('skips overlapping runs and logs a warning', async () => {
@@ -226,7 +226,7 @@ describe('RetentionManager', () => {
       const callsAfterStop = getFullList.mock.calls.length;
       await vi.advanceTimersByTimeAsync(intervalMs * 5);
 
-      expect(getFullList.mock.calls.length).toBe(callsAfterStop);
+      expect(getFullList.mock.calls).toHaveLength(callsAfterStop);
     });
 
     it('is safe to call when not started', () => {

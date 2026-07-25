@@ -39,7 +39,7 @@ describe('useKnowledgeCover', () => {
 
   it('requests visible cover bytes and revokes its object URL on unmount', async () => {
     const view = render(<Harness />);
-    await waitFor(() => expect(screen.getByText('blob:first')).toBeInTheDocument());
+    expect(await screen.findByText('blob:first')).toBeInTheDocument();
     expect(screen.getByText('loading')).toBeInTheDocument();
     fireEvent.load(screen.getByRole('img', { name: 'Cover' }));
     expect(screen.getByText('ready')).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe('useKnowledgeCover', () => {
 
   it('records valid natural dimensions and resets them when the cover changes', async () => {
     const view = render(<Harness />);
-    await waitFor(() => expect(screen.getByText('blob:first')).toBeInTheDocument());
+    expect(await screen.findByText('blob:first')).toBeInTheDocument();
     const image = screen.getByRole('img', { name: 'Cover' });
     Object.defineProperties(image, {
       naturalWidth: { configurable: true, value: 612 },
@@ -82,12 +82,12 @@ describe('useKnowledgeCover', () => {
     view.rerender(<Harness checksum={'b'.repeat(64)} />);
 
     expect(screen.getByTestId('aspect-ratio')).toHaveTextContent('no-ratio');
-    await waitFor(() => expect(screen.getByText('blob:second')).toBeInTheDocument());
+    expect(await screen.findByText('blob:second')).toBeInTheDocument();
   });
 
   it('keeps the fallback ratio when natural dimensions are invalid', async () => {
     render(<Harness />);
-    await waitFor(() => expect(screen.getByText('blob:first')).toBeInTheDocument());
+    expect(await screen.findByText('blob:first')).toBeInTheDocument();
 
     fireEvent.load(screen.getByRole('img', { name: 'Cover' }));
 

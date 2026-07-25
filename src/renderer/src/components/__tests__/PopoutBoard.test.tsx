@@ -191,25 +191,14 @@ describe('PopoutBoard', () => {
     expect(screen.queryByText('Update Weekly Schedule')).not.toBeInTheDocument();
   });
 
-  it('renders alert chip for day 0 (first-responder)', () => {
-    personnelReturn.dayOfWeek = 0;
+  it.each([
+    [0, 'Update First Responder'],
+    [1, 'Update Weekly Schedule'],
+    [3, 'Update SQL DBA'],
+  ])('renders the day %i alert chip %s', (day, label) => {
+    personnelReturn.dayOfWeek = day;
     render(<PopoutBoard {...defaultProps} />);
-    expect(screen.getByText('Update First Responder')).toBeInTheDocument();
-    // Restore
-    personnelReturn.dayOfWeek = 2;
-  });
-
-  it('renders alert chip for day 1 (general)', () => {
-    personnelReturn.dayOfWeek = 1;
-    render(<PopoutBoard {...defaultProps} />);
-    expect(screen.getByText('Update Weekly Schedule')).toBeInTheDocument();
-    personnelReturn.dayOfWeek = 2;
-  });
-
-  it('renders danger alert chips for day 3 and 4', () => {
-    personnelReturn.dayOfWeek = 3;
-    render(<PopoutBoard {...defaultProps} />);
-    expect(screen.getByText('Update SQL DBA')).toBeInTheDocument();
+    expect(screen.getByText(label)).toBeInTheDocument();
     personnelReturn.dayOfWeek = 2;
   });
 

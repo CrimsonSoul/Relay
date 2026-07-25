@@ -66,6 +66,7 @@ describe('RelayWebGateway', () => {
     const loginResponse = await fetch(`${origin}/relay-api/v1/session/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin },
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase exercises the HTTP login boundary end to end.
       body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
     });
     expect(loginResponse.status).toBe(200);

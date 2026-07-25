@@ -73,23 +73,13 @@ describe('formatPhoneNumber', () => {
     expect(formatPhoneNumber('123456')).toBe('123456');
   });
 
-  it('handles multiple numbers separated by commas', () => {
-    const result = formatPhoneNumber('5551234567,5559876543');
-    expect(result).toBe('(555) 123-4567, (555) 987-6543');
-  });
-
-  it('handles multiple numbers separated by semicolons', () => {
-    const result = formatPhoneNumber('5551234567;5559876543');
-    expect(result).toBe('(555) 123-4567, (555) 987-6543');
-  });
-
-  it('handles multiple numbers separated by slashes', () => {
-    const result = formatPhoneNumber('5551234567/5559876543');
-    expect(result).toBe('(555) 123-4567, (555) 987-6543');
-  });
-
-  it('handles multiple numbers separated by pipes', () => {
-    const result = formatPhoneNumber('5551234567|5559876543');
+  it.each([
+    ['comma', ','],
+    ['semicolon', ';'],
+    ['slash', '/'],
+    ['pipe', '|'],
+  ])('handles multiple numbers separated by a %s', (_case, separator) => {
+    const result = formatPhoneNumber(`5551234567${separator}5559876543`);
     expect(result).toBe('(555) 123-4567, (555) 987-6543');
   });
 

@@ -11,7 +11,7 @@ describe('calculateSampleWindowSeconds', () => {
   it('reports the actual interval between endpoint samples', () => {
     expect(
       calculateSampleWindowSeconds([{ sampledAtMs: 250.25 }, { sampledAtMs: 10_251.75 }]),
-    ).toBe(10.002);
+    ).toBeCloseTo(10.002, 3);
   });
 });
 

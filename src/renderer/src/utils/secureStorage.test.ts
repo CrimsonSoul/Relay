@@ -158,7 +158,7 @@ describe('secureStorage', () => {
 
   it('clear handles empty localStorage', () => {
     secureStorage.clear();
-    expect(localStorage.length).toBe(0);
+    expect(localStorage).toHaveLength(0);
   });
 
   // --- Edge cases for obfuscation ---

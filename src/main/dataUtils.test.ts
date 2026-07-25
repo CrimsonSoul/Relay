@@ -61,28 +61,14 @@ describe('dataUtils', () => {
       expect(result).toEqual({ dataRoot: '/custom/path' });
     });
 
-    it('returns empty object for empty config {}', async () => {
-      vi.mocked(fsPromises.readFile).mockResolvedValueOnce('{}');
-      const result = await loadConfigAsync();
-      expect(result).toEqual({});
-    });
-
-    it('returns empty object when config is not a plain object (array)', async () => {
-      vi.mocked(fsPromises.readFile).mockResolvedValueOnce('[]');
-      const result = await loadConfigAsync();
-      expect(result).toEqual({});
-    });
-
-    it('returns empty object when config is null', async () => {
-      vi.mocked(fsPromises.readFile).mockResolvedValueOnce('null');
-      const result = await loadConfigAsync();
-      expect(result).toEqual({});
-    });
-
-    it('returns empty object when dataRoot is not a string', async () => {
-      vi.mocked(fsPromises.readFile).mockResolvedValueOnce('{"dataRoot":123}');
-      const result = await loadConfigAsync();
-      expect(result).toEqual({});
+    it.each([
+      ['empty config', '{}'],
+      ['an array', '[]'],
+      ['null', 'null'],
+      ['a non-string dataRoot', '{"dataRoot":123}'],
+    ])('returns an empty object for %s', async (_case, serializedConfig) => {
+      vi.mocked(fsPromises.readFile).mockResolvedValueOnce(serializedConfig);
+      await expect(loadConfigAsync()).resolves.toEqual({});
     });
 
     it('uses app userData path', async () => {

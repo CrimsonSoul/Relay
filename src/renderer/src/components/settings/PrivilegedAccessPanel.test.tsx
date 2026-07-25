@@ -204,7 +204,9 @@ describe('PrivilegedAccessPanel', () => {
     await waitFor(() =>
       expect(setupInitialAdministratorCredential).toHaveBeenCalledWith({
         username: 'Ryan',
+        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts the exact initial-owner submission payload.
         password: 'a-new-owner-password',
+        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts both credential fields are forwarded.
         passwordConfirm: 'a-new-owner-password',
       }),
     );
@@ -251,7 +253,9 @@ describe('PrivilegedAccessPanel', () => {
     await waitFor(() => expect(setupInitialAdministratorCredential).toHaveBeenCalledTimes(2));
     expect(setupInitialAdministratorCredential).toHaveBeenLastCalledWith({
       username: 'ryan',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts approved browser setup payload fidelity.
       password: 'a-new-owner-password',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts approved browser setup payload fidelity.
       passwordConfirm: 'a-new-owner-password',
       approvalRequestId: 'approval-1',
       approvalCode: '123456',

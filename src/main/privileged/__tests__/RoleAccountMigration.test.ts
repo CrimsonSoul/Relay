@@ -131,6 +131,7 @@ function legacyFixture(overrides: Record<string, FakeRecord[]> = {}): MigrationF
         active: true,
         mustChangePassword: false,
         credentialVersion: 7,
+        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Synthetic opaque hash verifies migration preserves existing credential material.
         passwordHash: 'ryan-existing-hash',
       },
       {
@@ -140,6 +141,7 @@ function legacyFixture(overrides: Record<string, FakeRecord[]> = {}): MigrationF
         active: true,
         mustChangePassword: false,
         credentialVersion: 4,
+        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Synthetic opaque hash verifies migration preserves each account independently.
         passwordHash: 'charles-existing-hash',
       },
     ],
@@ -191,6 +193,7 @@ describe('RoleAccountMigration', () => {
       storedRole: 'administrator',
       legacyOperatorId: 'ryan-op',
       credentialVersion: 7,
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Expected synthetic hash asserts exact migration preservation.
       passwordHash: 'ryan-existing-hash',
     });
     expect(fixture.record('relay_privileged_accounts', 'account-charles')).toMatchObject({
@@ -199,6 +202,7 @@ describe('RoleAccountMigration', () => {
       storedRole: 'administrator',
       legacyOperatorId: 'charles-op',
       credentialVersion: 4,
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Expected synthetic hash asserts exact migration preservation.
       passwordHash: 'charles-existing-hash',
     });
     expect(fixture.record('relay_privileged_devices', 'device-charles').accountId).toBe(
@@ -356,6 +360,7 @@ describe('RoleAccountMigration', () => {
           active: true,
           mustChangePassword: false,
           credentialVersion: 2,
+          // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Synthetic opaque hash verifies publisher credential migration.
           passwordHash: 'paris-existing-hash',
         },
       ],
@@ -380,6 +385,7 @@ describe('RoleAccountMigration', () => {
       active: true,
       mustChangePassword: false,
       credentialVersion: 2,
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Expected synthetic hash asserts publisher migration preservation.
       passwordHash: 'paris-existing-hash',
     });
     expect(fixture.record('relay_privileged_state', 'privileged-state')).toMatchObject({

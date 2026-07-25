@@ -81,6 +81,7 @@ describe('PrivilegedAccessProvider', () => {
 
     expect(api.loginPrivileged).toHaveBeenCalledWith({
       username: 'Ryan',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential asserts context-to-bridge payload fidelity.
       password: 'a-long-private-password',
     });
     expect(result.current.session).toEqual(active);

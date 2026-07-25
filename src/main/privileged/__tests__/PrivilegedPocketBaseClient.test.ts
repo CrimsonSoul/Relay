@@ -8,6 +8,7 @@ import {
 } from '../PrivilegedPocketBaseClient';
 
 const USERNAME = 'ryan';
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises PocketBase authentication behavior.
 const PASSWORD = 'Test-access-value-123!';
 const RAW_TOKEN = 'raw-privileged-token-value';
 

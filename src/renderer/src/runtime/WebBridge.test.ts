@@ -99,7 +99,9 @@ describe('WebBridge', () => {
     });
     const bridge = createWebBridge(SESSION, { request });
 
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the protected login route mapping.
     await bridge.loginPrivileged({ username: 'ryan', password: 'Test-access-value-123!' });
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the separate reauthentication route mapping.
     await bridge.reauthenticatePrivileged({ password: 'Test-access-value-123!' });
     await bridge.submitPrivilegedCommand({
       command: 'administration.snapshot.read',

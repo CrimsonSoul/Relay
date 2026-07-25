@@ -119,24 +119,14 @@ describe('AlertHistoryModal', () => {
     expect(screen.queryByTestId('history-modal')).not.toBeInTheDocument();
   });
 
-  it('renders the title', () => {
+  it.each([
+    ['title', 'Alert History'],
+    ['severity', 'ISSUE'],
+    ['subject', 'Server Outage'],
+    ['sender', 'From: IT'],
+  ])('renders the history entry %s', (_field, expectedText) => {
     render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('Alert History')).toBeInTheDocument();
-  });
-
-  it('renders history entry with severity', () => {
-    render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('ISSUE')).toBeInTheDocument();
-  });
-
-  it('renders history entry subject', () => {
-    render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('Server Outage')).toBeInTheDocument();
-  });
-
-  it('renders sender info', () => {
-    render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('From: IT')).toBeInTheDocument();
+    expect(screen.getByText(expectedText)).toBeInTheDocument();
   });
 
   it('shows (no subject) when subject is empty', () => {
@@ -260,35 +250,16 @@ describe('AlertHistoryModal', () => {
     expect(screen.queryByText('Firewall maintenance')).not.toBeInTheDocument();
   });
 
-  it('tags severity chip with data-sev for ISSUE', () => {
-    const { container } = render(<AlertHistoryModal {...defaultProps} />);
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('ISSUE');
-  });
-
-  it('tags severity chip with data-sev for INFO', () => {
-    const { container } = render(
-      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'INFO' })]} />,
-    );
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('INFO');
-  });
-
-  it('tags severity chip with data-sev for RESOLVED', () => {
-    const { container } = render(
-      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'RESOLVED' })]} />,
-    );
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('RESOLVED');
-  });
-
-  it('tags severity chip with data-sev for MAINTENANCE', () => {
-    const { container } = render(
-      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'MAINTENANCE' })]} />,
-    );
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('MAINTENANCE');
-  });
+  it.each(['ISSUE', 'INFO', 'RESOLVED', 'MAINTENANCE'] as const)(
+    'tags the severity chip with data-sev for %s',
+    (severity) => {
+      const { container } = render(
+        <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity })]} />,
+      );
+      const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
+      expect(sevEl?.getAttribute('data-sev')).toBe(severity);
+    },
+  );
 
   it('does not show extra content (label editor) by default', () => {
     render(<AlertHistoryModal {...defaultProps} />);

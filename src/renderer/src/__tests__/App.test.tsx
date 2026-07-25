@@ -720,49 +720,38 @@ describe('MainApp', () => {
 
   it('opens settings on Cmd+, keydown', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: ',', metaKey: true });
-    });
+    fireEvent.keyDown(globalThis, { key: ',', metaKey: true });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Settings');
   });
 
-  it('navigates tab on Cmd+1', () => {
+  it.each([
+    ['1', 'Compose'],
+    ['2', 'Alerts'],
+    ['3', 'Personnel'],
+    ['4', 'Knowledge'],
+    ['5', 'Status'],
+    ['6', 'Problems'],
+  ])('navigates on Cmd+%s to %s', (key, destination) => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '1', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
+    fireEvent.keyDown(globalThis, { key, metaKey: true });
+    expect(mockSetActiveTab).toHaveBeenCalledWith(destination);
   });
 
-  it('navigates tab on Cmd+2', () => {
+  it.each(['7', '8', '9'])('does not assign Cmd+%s', (key) => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '2', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
-  });
-
-  it('does not assign Cmd+7', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
-    });
+    fireEvent.keyDown(globalThis, { key, metaKey: true });
     expect(mockSetActiveTab).not.toHaveBeenCalled();
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
-    });
+    fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
     expect(screen.getByTestId('shortcuts-modal')).toBeInTheDocument();
   });
 
   it('closes shortcuts modal', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
-    });
+    fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
     fireEvent.click(screen.getByText('close-shortcuts'));
     expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument();
   });
@@ -838,30 +827,6 @@ describe('MainApp', () => {
     globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
   });
 
-  it('navigates tab on Cmd+3 (On-Call)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '3', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
-  });
-
-  it('navigates tab on Cmd+4 (Knowledge)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '4', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
-  });
-
-  it('navigates tab on Cmd+5 (Status)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '5', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
-  });
-
   it('opens the selected provider when a cloud-status toast action is used', async () => {
     mockActiveTab = 'Status';
     renderApp();
@@ -876,35 +841,12 @@ describe('MainApp', () => {
     expect(lastCloudStatusTabProps?.selectedProvider).toBeNull();
   });
 
-  it('navigates tab on Cmd+6 (Problems)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Problems');
-  });
-
-  it('does not assign Cmd+9', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '9', metaKey: true });
-    });
-    expect(mockSetActiveTab).not.toHaveBeenCalled();
-  });
-
-  it('does not assign Cmd+8', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '8', metaKey: true });
-    });
-    expect(mockSetActiveTab).not.toHaveBeenCalled();
-  });
-
   it('focuses search on Cmd+K', () => {
     renderApp();
-    let handled = true;
-    act(() => {
-      handled = fireEvent.keyDown(globalThis, { key: 'k', metaKey: true, cancelable: true });
+    const handled = fireEvent.keyDown(globalThis, {
+      key: 'k',
+      metaKey: true,
+      cancelable: true,
     });
     expect(handled).toBe(false);
   });

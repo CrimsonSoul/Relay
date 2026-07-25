@@ -11,6 +11,7 @@ import {
 } from '../PrivilegedSessionManager';
 
 const USERNAME = 'ryan';
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises session authentication behavior.
 const PASSWORD = 'Test-access-value-123!';
 const START_TIME = new Date('2026-07-15T12:00:00.000Z').getTime();
 

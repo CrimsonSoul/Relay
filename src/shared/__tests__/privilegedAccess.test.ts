@@ -71,6 +71,7 @@ describe('privileged access contracts', () => {
       email: 'account-ryan@relay.invalid',
       token: 'must-not-survive',
       privateKey: 'must-not-survive',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic secret field verifies normalization strips credential material.
       passwordHash: 'must-not-survive',
     });
 
@@ -139,6 +140,7 @@ describe('privileged access contracts', () => {
           createdAt: '2026-07-15T20:00:00.000Z',
           updatedAt: '2026-07-15T21:00:00.000Z',
           email: 'account-ryan@relay.invalid',
+          // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic secret field verifies snapshot normalization strips credential material.
           passwordHash: 'must-not-survive',
           token: 'must-not-survive',
         },

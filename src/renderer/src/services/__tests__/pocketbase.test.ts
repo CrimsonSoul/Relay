@@ -519,7 +519,7 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(60_000);
 
       // No further probes after the health check was stopped
-      expect(fetchMock.mock.calls.length).toBe(callsAfterStart);
+      expect(fetchMock.mock.calls).toHaveLength(callsAfterStart);
     });
 
     it('stopHealthCheck is safe to call when no health check is running', () => {
@@ -565,7 +565,7 @@ describe('pocketbase service', () => {
       const callsAfterFirst = fetchSpy.mock.calls.length;
 
       await vi.advanceTimersByTimeAsync(5_000); // degraded cadence
-      expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfterFirst + 1);
 
       fetchSpy.mockResolvedValue({ ok: true }); // server back
       await vi.advanceTimersByTimeAsync(5_000);
@@ -573,9 +573,9 @@ describe('pocketbase service', () => {
 
       const callsWhenOnline = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000); // online cadence is 30s — nothing yet
-      expect(fetchSpy.mock.calls.length).toBe(callsWhenOnline);
+      expect(fetchSpy.mock.calls).toHaveLength(callsWhenOnline);
       await vi.advanceTimersByTimeAsync(25_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsWhenOnline + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(callsWhenOnline + 1);
     });
 
     it('probes immediately on a window online event', async () => {
@@ -587,7 +587,7 @@ describe('pocketbase service', () => {
       const before = fetchSpy.mock.calls.length;
       globalThis.window.dispatchEvent(new Event('online'));
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchSpy.mock.calls.length).toBe(before + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(before + 1);
     });
 
     it('probes immediately on a window offline event', async () => {
@@ -599,7 +599,7 @@ describe('pocketbase service', () => {
       const before = fetchSpy.mock.calls.length;
       globalThis.window.dispatchEvent(new Event('offline'));
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchSpy.mock.calls.length).toBe(before + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(before + 1);
     });
   });
 
@@ -659,7 +659,7 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(states).not.toContain('reconnecting'); // no spurious teardown
-      expect(fetchSpy.mock.calls.length).toBe(before); // no extra probe
+      expect(fetchSpy.mock.calls).toHaveLength(before); // no extra probe
       expect(getConnectionState()).toBe('online');
       unsub();
     });
@@ -739,9 +739,9 @@ describe('pocketbase service', () => {
 
       const callsAfter = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfter); // NOT the 5s degraded cadence
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfter); // NOT the 5s degraded cadence
       await vi.advanceTimersByTimeAsync(25_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfter + 1); // 30s cadence
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfter + 1); // 30s cadence
       expect(getConnectionState()).toBe('auth-failed'); // no flap back to online
     });
 
@@ -795,9 +795,9 @@ describe('pocketbase service', () => {
       // The latched authentication failure retains the relaxed cadence.
       const callsAfterOutage = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfterOutage);
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfterOutage);
       await vi.advanceTimersByTimeAsync(25_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfterOutage + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfterOutage + 1);
     });
   });
 

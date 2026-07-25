@@ -189,7 +189,7 @@ describe('ToastProvider', () => {
     // Show a second toast by clicking again (message same but creates new toast)
     fireEvent.click(trigger);
     const toasts = screen.getAllByText('First');
-    expect(toasts.length).toBe(2);
+    expect(toasts).toHaveLength(2);
   });
 
   it('queues cloud outages until the active Dynatrace problem closes', async () => {

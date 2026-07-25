@@ -2524,7 +2524,17 @@ test.describe('Vital Critical Path', () => {
     const email = `vital.test.${suffix}@example.com`;
 
     await createContactFromKnowledge(window, pbPort, name, email);
+    await expect
+      .poll(() => hasContactDirect(pbPort, email), { message: `contact ${email} should exist` })
+      .toBe(true);
+    expect(await hasContactDirect(pbPort, email), `contact ${email} should exist`).toBe(true);
     await deleteContactFromKnowledge(window, pbPort, email);
+    await expect
+      .poll(() => hasContactDirect(pbPort, email), {
+        message: `contact ${email} should be deleted`,
+      })
+      .toBe(false);
+    expect(await hasContactDirect(pbPort, email), `contact ${email} should be deleted`).toBe(false);
   });
 
   test('Vital 4: On-Call Management (Add/Rename/Remove Card)', async () => {

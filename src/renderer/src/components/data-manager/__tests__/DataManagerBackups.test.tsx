@@ -75,7 +75,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockResolvedValue({ success: true, data: 'new-backup.zip' });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -86,8 +86,8 @@ describe('DataManagerBackups', () => {
   it('shows confirmation dialog before restore', async () => {
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
@@ -99,8 +99,8 @@ describe('DataManagerBackups', () => {
 
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -111,8 +111,8 @@ describe('DataManagerBackups', () => {
   it('cancels restore confirmation', async () => {
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Cancel'));
@@ -132,7 +132,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockResolvedValue({ success: false, error: 'Disk full' });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -144,7 +144,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockResolvedValue({ success: false });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -156,7 +156,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockRejectedValue(new Error('unexpected'));
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -168,8 +168,8 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockResolvedValue({ success: false, error: 'Corrupt backup' });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -181,8 +181,8 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockResolvedValue({ success: false });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -194,8 +194,8 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockRejectedValue(new Error('unexpected'));
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {

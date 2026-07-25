@@ -201,6 +201,7 @@ describe('windowHandlers', () => {
   });
 
   describe('OPEN_EXTERNAL', () => {
+    // eslint-disable-next-line sonarjs/parameterized-tests -- Denial, trusted opening, and canonicalization assert different security outcomes and side effects.
     it('blocks unknown http URL and returns false', async () => {
       const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'http://example.com');
 
@@ -345,20 +346,12 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
-    it('blocks file: protocol', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'file:///etc/passwd');
-
-      expect(shell.openExternal).not.toHaveBeenCalled();
-    });
-
-    it('blocks javascript: protocol', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'javascript:alert(1)');
-
-      expect(shell.openExternal).not.toHaveBeenCalled();
-    });
-
-    it('blocks ftp: protocol', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'ftp://files.example.com');
+    it.each([
+      ['file', 'file:///etc/passwd'],
+      ['javascript', 'javascript:alert(1)'],
+      ['ftp', 'ftp://files.example.com'],
+    ])('blocks the %s protocol', async (_protocol, url) => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url);
 
       expect(shell.openExternal).not.toHaveBeenCalled();
     });
@@ -507,37 +500,39 @@ describe('windowHandlers', () => {
       expect(shell.openPath).not.toHaveBeenCalled();
     });
 
-    it('falls back to the Outlook application name on macOS', async () => {
-      if (process.platform !== 'darwin') return;
-      const { writeFile } = await import('node:fs/promises');
-      vi.mocked(writeFile).mockResolvedValue(undefined);
-      vi.mocked(execFile)
-        .mockImplementationOnce((_file, _args, callback) => {
-          if (typeof callback === 'function') callback(new Error('bundle missing'), '', '');
-          return {} as ReturnType<typeof execFile>;
-        })
-        .mockImplementationOnce((_file, _args, callback) => {
-          if (typeof callback === 'function') callback(null, '', '');
-          return {} as ReturnType<typeof execFile>;
-        });
+    it.skipIf(process.platform !== 'darwin')(
+      'falls back to the Outlook application name on macOS',
+      async () => {
+        const { writeFile } = await import('node:fs/promises');
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        vi.mocked(execFile)
+          .mockImplementationOnce((_file, _args, callback) => {
+            if (typeof callback === 'function') callback(new Error('bundle missing'), '', '');
+            return {} as ReturnType<typeof execFile>;
+          })
+          .mockImplementationOnce((_file, _args, callback) => {
+            if (typeof callback === 'function') callback(null, '', '');
+            return {} as ReturnType<typeof execFile>;
+          });
 
-      const result = await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, validEml);
+        const result = await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, validEml);
 
-      const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string];
-      expect(result).toBe(true);
-      expect(execFile).toHaveBeenNthCalledWith(
-        1,
-        '/usr/bin/open',
-        ['-b', 'com.microsoft.Outlook', filePath],
-        expect.any(Function),
-      );
-      expect(execFile).toHaveBeenNthCalledWith(
-        2,
-        '/usr/bin/open',
-        ['-a', 'Microsoft Outlook', filePath],
-        expect.any(Function),
-      );
-    });
+        const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string];
+        expect(result).toBe(true);
+        expect(execFile).toHaveBeenNthCalledWith(
+          1,
+          '/usr/bin/open',
+          ['-b', 'com.microsoft.Outlook', filePath],
+          expect.any(Function),
+        );
+        expect(execFile).toHaveBeenNthCalledWith(
+          2,
+          '/usr/bin/open',
+          ['-a', 'Microsoft Outlook', filePath],
+          expect.any(Function),
+        );
+      },
+    );
 
     it('returns false when the draft cannot be opened', async () => {
       const { writeFile } = await import('node:fs/promises');

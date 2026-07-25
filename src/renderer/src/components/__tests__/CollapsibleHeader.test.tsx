@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { CollapsibleHeader, useCollapsibleHeader } from '../CollapsibleHeader';
 
@@ -96,31 +96,25 @@ describe('useCollapsibleHeader', () => {
     expect(screen.getByTestId('status')).toHaveTextContent('expanded');
   });
 
-  it('collapses when scroll exceeds threshold', async () => {
+  it('collapses when scroll exceeds threshold', () => {
     render(<ScrollTestComponent />);
     const container = screen.getByTestId('container');
     // Simulate scroll beyond threshold
     Object.defineProperty(container, 'scrollTop', { value: 100, configurable: true });
-    await act(async () => {
-      fireEvent.scroll(container);
-    });
+    fireEvent.scroll(container);
     expect(screen.getByTestId('status')).toHaveTextContent('collapsed');
   });
 
-  it('uncollapses when scroll is below threshold', async () => {
+  it('uncollapses when scroll is below threshold', () => {
     render(<ScrollTestComponent />);
     const container = screen.getByTestId('container');
     // Scroll past threshold
     Object.defineProperty(container, 'scrollTop', { value: 100, configurable: true });
-    await act(async () => {
-      fireEvent.scroll(container);
-    });
+    fireEvent.scroll(container);
     expect(screen.getByTestId('status')).toHaveTextContent('collapsed');
     // Scroll back
     Object.defineProperty(container, 'scrollTop', { value: 10, configurable: true });
-    await act(async () => {
-      fireEvent.scroll(container);
-    });
+    fireEvent.scroll(container);
     expect(screen.getByTestId('status')).toHaveTextContent('expanded');
   });
 });

@@ -590,7 +590,7 @@ describe('cloudStatusHandlers', () => {
 
     const result2 = await handler();
     // Should not have made more fetch calls
-    expect(mockFetch.mock.calls.length).toBe(callCount1);
+    expect(mockFetch.mock.calls).toHaveLength(callCount1);
     expect(result1).toEqual(result2);
   });
 });

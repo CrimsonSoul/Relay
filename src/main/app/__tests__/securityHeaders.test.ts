@@ -129,23 +129,14 @@ describe('setupSecurityHeaders', () => {
       expect(csp).toMatch(/default-src 'self'/);
     });
 
-    it("sets object-src to 'none'", () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      expect(csp).toContain("object-src 'none'");
-    });
-
-    it("sets base-uri to 'self'", () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      expect(csp).toContain("base-uri 'self'");
-    });
-
-    it("sets form-action to 'self'", () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      expect(csp).toContain("form-action 'self'");
-    });
+    it.each(["object-src 'none'", "base-uri 'self'", "form-action 'self'"])(
+      'sets the %s CSP directive',
+      (directive) => {
+        const headers = getResponseHeaders();
+        const csp = headers['Content-Security-Policy']![0];
+        expect(csp).toContain(directive);
+      },
+    );
   });
 
   describe('connect-src dynamic PocketBase URLs', () => {
@@ -176,7 +167,8 @@ describe('setupSecurityHeaders', () => {
     });
 
     it('uses serverUrl in client mode with http', () => {
-      const httpUrl = 'http://myserver.local:8090'; // eslint-disable-line sonarjs/no-clear-text-protocols
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- Deliberate trusted-LAN HTTP fixture verifies the CSP derives matching HTTP and WS origins.
+      const httpUrl = 'http://myserver.local:8090';
       mockAppConfig = {
         load: () => ({ mode: 'client', serverUrl: httpUrl }),
       };
@@ -185,6 +177,7 @@ describe('setupSecurityHeaders', () => {
       const csp = headers['Content-Security-Policy']![0];
       const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
       expect(connectSrc).toContain(httpUrl);
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The expected clear-text WS origin is the behavior under test for a trusted-LAN HTTP server.
       expect(connectSrc).toContain('ws://myserver.local:8090');
     });
 

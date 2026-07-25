@@ -232,7 +232,7 @@ describe('DataManagerExport', () => {
   it('has two selects (category and format)', () => {
     render(<DataManagerExport {...defaultExportProps} />);
     const selects = screen.getAllByRole('combobox');
-    expect(selects.length).toBe(2);
+    expect(selects).toHaveLength(2);
   });
 
   it('calls setExportFormat when format select changes', () => {

@@ -826,7 +826,7 @@ describe('KnowledgeTab', () => {
       });
     });
 
-    await waitFor(() => expect(screen.getByText(/Indexed Jul 14/i)).toBeInTheDocument());
+    expect(await screen.findByText(/Indexed Jul 14/i)).toBeInTheDocument();
     expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
     expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
     expect(toastMocks.showToast).not.toHaveBeenCalled();

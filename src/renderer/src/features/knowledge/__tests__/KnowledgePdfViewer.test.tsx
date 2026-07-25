@@ -272,6 +272,14 @@ describe('KnowledgePdfViewer', () => {
     } as never);
   });
 
+  afterEach(() => {
+    delete globalThis.api;
+    localStorage.clear();
+    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it.each(['continuous', 'single'] as const)(
     'navigates a search result to its exact highlight in %s mode',
     async (mode) => {
@@ -524,14 +532,6 @@ describe('KnowledgePdfViewer', () => {
     expect(screen.getByRole('dialog', { name: 'View options' })).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('dialog', { name: 'View options' })).not.toBeInTheDocument();
-  });
-
-  afterEach(() => {
-    delete globalThis.api;
-    localStorage.clear();
-    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
   });
 
   it('defaults to Continuous view and tracks the most visible page', async () => {
@@ -1009,7 +1009,7 @@ describe('KnowledgePdfViewer', () => {
     const continuousViewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
     Object.defineProperty(continuousViewport, 'clientWidth', { configurable: true, value: 648 });
     fitPdfWidth();
-    await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+    expect(await screen.findByText('100%')).toBeInTheDocument();
 
     selectPdfViewMode('Single page');
     expect(await screen.findByLabelText('Page 2')).toBeVisible();

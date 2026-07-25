@@ -137,6 +137,7 @@ describe('AlertForm', () => {
     expect(brandingToggle).toContain('border-radius: 2px');
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Selector presence, guided section structure, and instructional copy are separate UI contracts with different assertions.
   it('renders the severity selector', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByTestId('severity-selector')).toBeInTheDocument();
@@ -270,6 +271,7 @@ describe('AlertForm', () => {
     expect(charCount).toBeInTheDocument();
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Default toggle state, interaction behavior, and populated stepper rendering exercise distinct update-number paths.
   it('renders update number toggle (OFF by default)', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByText('OFF')).toBeInTheDocument();

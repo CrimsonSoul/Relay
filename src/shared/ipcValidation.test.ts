@@ -240,6 +240,7 @@ describe('KnowledgeSearchRequestSchema', () => {
 });
 
 describe('privileged IPC schemas', () => {
+  // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential exercises password schema preservation and bounds.
   const password = 'Test-access-value-123!';
 
   it('accepts bounded login and reauthentication inputs without trimming passwords', () => {

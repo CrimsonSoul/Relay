@@ -521,7 +521,13 @@ describe('useDataManager', () => {
   // Category-to-collection mapping
   // -------------------------------------------------------------------------
   describe('category mapping', () => {
-    it('maps groups to bridge_groups collection for export', async () => {
+    it.each([
+      ['groups', 'bridge_groups'],
+      ['oncall', 'oncall'],
+      ['bridge_history', 'bridge_history'],
+      ['alert_history', 'alert_history'],
+      ['notes', 'notes'],
+    ] as const)('maps the %s category to the %s collection', async (category, collection) => {
       setupDownloadMocks();
 
       const { result } = renderHook(() => useDataManager());
@@ -529,71 +535,11 @@ describe('useDataManager', () => {
       await act(async () => {
         await result.current.exportData({
           format: 'json',
-          category: 'groups',
+          category,
         });
       });
 
-      expect(mockExportToJson).toHaveBeenCalledWith('bridge_groups');
-    });
-
-    it('maps oncall category correctly', async () => {
-      setupDownloadMocks();
-
-      const { result } = renderHook(() => useDataManager());
-
-      await act(async () => {
-        await result.current.exportData({
-          format: 'json',
-          category: 'oncall',
-        });
-      });
-
-      expect(mockExportToJson).toHaveBeenCalledWith('oncall');
-    });
-
-    it('maps bridge_history category correctly', async () => {
-      setupDownloadMocks();
-
-      const { result } = renderHook(() => useDataManager());
-
-      await act(async () => {
-        await result.current.exportData({
-          format: 'json',
-          category: 'bridge_history',
-        });
-      });
-
-      expect(mockExportToJson).toHaveBeenCalledWith('bridge_history');
-    });
-
-    it('maps alert_history category correctly', async () => {
-      setupDownloadMocks();
-
-      const { result } = renderHook(() => useDataManager());
-
-      await act(async () => {
-        await result.current.exportData({
-          format: 'json',
-          category: 'alert_history',
-        });
-      });
-
-      expect(mockExportToJson).toHaveBeenCalledWith('alert_history');
-    });
-
-    it('maps notes category correctly', async () => {
-      setupDownloadMocks();
-
-      const { result } = renderHook(() => useDataManager());
-
-      await act(async () => {
-        await result.current.exportData({
-          format: 'json',
-          category: 'notes',
-        });
-      });
-
-      expect(mockExportToJson).toHaveBeenCalledWith('notes');
+      expect(mockExportToJson).toHaveBeenCalledWith(collection);
     });
   });
 

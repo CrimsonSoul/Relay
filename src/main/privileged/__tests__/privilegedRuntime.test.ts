@@ -37,6 +37,7 @@ vi.mock('../../knowledge/registerKnowledgeManagementCommands', async (importOrig
 const USERNAME = 'ryan';
 const ACCOUNT_ID = 'account-admin';
 const DEVICE_ID = 'device-work-laptop';
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises the privileged runtime boundary.
 const PASSWORD = 'Test-access-value-123!';
 const START_TIME = new Date('2026-07-15T12:00:00.000Z').getTime();
 

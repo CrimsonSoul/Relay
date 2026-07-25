@@ -154,11 +154,13 @@ const makeServer = (overrides: Partial<Server> = {}): Server => ({
 });
 
 describe('ServersTab', () => {
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Mount safety, empty-state content, and selection guidance are distinct contracts with different query intent.
   it('renders without crashing', () => {
     render(<ServersTab servers={[]} contacts={[]} />);
     expect(screen.getByTestId('collapsible-header')).toBeInTheDocument();
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Empty-state content, selection guidance, and the add action are independent UI diagnostics.
   it('shows empty state when no servers', () => {
     render(<ServersTab servers={[]} contacts={[]} />);
     expect(screen.getByText('No infrastructure found')).toBeInTheDocument();

@@ -10,6 +10,7 @@ import {
 } from '@shared/privilegedAccess';
 import { PrivilegedAccountManager } from '../PrivilegedAccountManager';
 
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture verifies account credential updates.
 const PASSWORD = 'New-secure-access-123!';
 const NOW = '2026-07-17T15:00:00.000Z';
 

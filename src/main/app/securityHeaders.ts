@@ -26,7 +26,6 @@ export function setupSecurityHeaders(isDev: boolean): void {
         if (origins) return `${origins.http} ${origins.ws}`;
       }
       // Not yet configured — allow localhost on common PB ports for setup flow
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
       return 'http://127.0.0.1:8090 ws://127.0.0.1:8090';
     })();
 

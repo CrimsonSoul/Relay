@@ -283,6 +283,7 @@ describe('DirectoryTab', () => {
     expect(screen.getByTestId('collapsible-header')).toBeInTheDocument();
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Empty-state copy, filtered count, and add-contact affordance are independent renderer contracts with different fixtures.
   it('shows empty state when no contacts', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByText('No contacts found')).toBeInTheDocument();

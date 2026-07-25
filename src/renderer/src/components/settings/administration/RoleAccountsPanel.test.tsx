@@ -263,7 +263,9 @@ describe('RoleAccountsPanel', () => {
     await waitFor(() =>
       expect(setupPrivilegedCredential).toHaveBeenCalledWith({
         accountId: 'account-charles',
+        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts the exact administrator credential payload.
         password: 'a-new-admin-password',
+        // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts both credential fields are forwarded.
         passwordConfirm: 'a-new-admin-password',
       }),
     );
@@ -304,7 +306,9 @@ describe('RoleAccountsPanel', () => {
     await waitFor(() => expect(setupPrivilegedCredential).toHaveBeenCalledTimes(2));
     expect(setupPrivilegedCredential).toHaveBeenLastCalledWith({
       accountId: 'account-charles',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake password asserts approved recovery payload fidelity.
       password: 'a-new-admin-password',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation asserts approved recovery payload fidelity.
       passwordConfirm: 'a-new-admin-password',
       approvalRequestId: 'approval-2',
       approvalCode: '123456',

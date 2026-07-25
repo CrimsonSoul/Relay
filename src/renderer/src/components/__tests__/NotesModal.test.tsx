@@ -159,9 +159,7 @@ describe('NotesModal', () => {
     const textarea = screen.getByLabelText('Note') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: '  Hello World  ' } });
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('Save Notes'));
-    });
+    fireEvent.click(screen.getByText('Save Notes'));
 
     expect(onSave).toHaveBeenCalledWith('Hello World', []);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -172,9 +170,7 @@ describe('NotesModal', () => {
     const onClose = vi.fn();
     render(<NotesModal {...defaultProps} onSave={onSave} onClose={onClose} />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('Save Notes'));
-    });
+    fireEvent.click(screen.getByText('Save Notes'));
 
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -190,11 +186,9 @@ describe('NotesModal', () => {
 
     render(<NotesModal {...defaultProps} onSave={onSave} />);
 
-    act(() => {
-      fireEvent.click(screen.getByText('Save Notes'));
-    });
+    fireEvent.click(screen.getByText('Save Notes'));
 
-    await waitFor(() => expect(screen.getByText('Saving...')).toBeInTheDocument());
+    expect(await screen.findByText('Saving...')).toBeInTheDocument();
 
     await act(async () => {
       resolveSave(true);

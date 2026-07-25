@@ -136,36 +136,14 @@ describe('backupHandlers', () => {
       expect(result).toEqual({ success: true });
     });
 
-    it('rejects names with path traversal (..)', async () => {
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, '../etc/passwd.zip');
-
-      expect(mockBackupManager.restore).not.toHaveBeenCalled();
-      expect(result).toEqual({ success: false, error: 'Invalid backup name' });
-    });
-
-    it('rejects names without .zip extension', async () => {
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.tar.gz');
-
-      expect(mockBackupManager.restore).not.toHaveBeenCalled();
-      expect(result).toEqual({ success: false, error: 'Invalid backup name' });
-    });
-
-    it('rejects names with special characters', async () => {
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'back up!.zip');
-
-      expect(mockBackupManager.restore).not.toHaveBeenCalled();
-      expect(result).toEqual({ success: false, error: 'Invalid backup name' });
-    });
-
-    it('rejects non-string name', async () => {
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 42);
-
-      expect(mockBackupManager.restore).not.toHaveBeenCalled();
-      expect(result).toEqual({ success: false, error: 'Invalid backup name' });
-    });
-
-    it('rejects names with path separators', async () => {
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'sub/dir/backup.zip');
+    it.each([
+      ['path traversal', '../etc/passwd.zip'],
+      ['a non-zip extension', 'backup.tar.gz'],
+      ['special characters', 'back up!.zip'],
+      ['a non-string value', 42],
+      ['path separators', 'sub/dir/backup.zip'],
+    ])('rejects backup names with %s', async (_case, name) => {
+      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, name);
 
       expect(mockBackupManager.restore).not.toHaveBeenCalled();
       expect(result).toEqual({ success: false, error: 'Invalid backup name' });

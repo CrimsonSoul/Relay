@@ -1014,6 +1014,7 @@ describe('AlertsTab', () => {
     });
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Modal launch, upcoming-reminder summary, and multi-reminder manager routing are distinct workflows and assertions.
   it('opens the schedule modal without an operator provider', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('SCHEDULE ALARM'));

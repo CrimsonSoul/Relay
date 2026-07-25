@@ -178,6 +178,7 @@ describe('useCollection', () => {
     await waitFor(() => expect(mockSubscribe).toHaveBeenCalledWith('*', expect.any(Function)));
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Create, update, and delete events require different fixtures and state assertions; separate tests identify the broken transition.
   it('applies create event from realtime subscription', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1')]);
     let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};

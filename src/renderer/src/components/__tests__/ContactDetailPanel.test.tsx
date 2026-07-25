@@ -16,7 +16,11 @@ const mockContact: Contact = {
 };
 
 describe('ContactDetailPanel', () => {
-  it('renders contact name', () => {
+  it.each([
+    ['name', 'Alice Smith'],
+    ['email', 'alice@example.com'],
+    ['title', 'Engineer'],
+  ])('renders contact %s', (_field, expectedValue) => {
     render(
       <ContactDetailPanel
         contact={mockContact}
@@ -26,33 +30,7 @@ describe('ContactDetailPanel', () => {
         onDelete={vi.fn()}
       />,
     );
-    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
-  });
-
-  it('renders contact email', () => {
-    render(
-      <ContactDetailPanel
-        contact={mockContact}
-        groups={[]}
-        onEditNotes={vi.fn()}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('alice@example.com')).toBeInTheDocument();
-  });
-
-  it('renders contact title', () => {
-    render(
-      <ContactDetailPanel
-        contact={mockContact}
-        groups={[]}
-        onEditNotes={vi.fn()}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Engineer')).toBeInTheDocument();
+    expect(screen.getByText(expectedValue)).toBeInTheDocument();
   });
 
   it('renders groups', () => {

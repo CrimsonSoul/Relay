@@ -540,9 +540,7 @@ describe('KnowledgeManagementWorkspace', () => {
       ],
     });
 
-    await waitFor(() =>
-      expect(screen.getByLabelText('Uploads management section')).toBeInTheDocument(),
-    );
+    expect(await screen.findByLabelText('Uploads management section')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
     expect(screen.getByLabelText('Categories management section').scrollTop).toBe(72);
     fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));

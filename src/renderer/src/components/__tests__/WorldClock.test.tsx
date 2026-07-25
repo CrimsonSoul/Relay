@@ -30,107 +30,75 @@ describe('WorldClock', () => {
     vi.useRealTimers();
   });
 
-  it('renders without crashing', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('renders without crashing', () => {
+    render(<WorldClock />);
     const container = document.querySelector('.world-clock-container');
     expect(container).toBeTruthy();
   });
 
-  it('renders the primary clock as a clickable trigger', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('renders the primary clock as a clickable trigger', () => {
+    render(<WorldClock />);
     const trigger = document.querySelector('.world-clock-trigger');
     expect(trigger).toBeTruthy();
     expect(trigger?.getAttribute('aria-haspopup')).toBe('true');
     expect(trigger?.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('does not render secondary zones inline', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('does not render secondary zones inline', () => {
+    render(<WorldClock />);
     const secondary = document.querySelector('.world-clock-secondary');
     expect(secondary).toBeNull();
   });
 
-  it('shows CST label for America/Chicago timezone', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('shows CST label for America/Chicago timezone', () => {
+    render(<WorldClock />);
     // CST is the known label for America/Chicago
     expect(screen.getByText(/CST/)).toBeInTheDocument();
   });
 
-  it('opens popover with secondary zones on click', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('opens popover with secondary zones on click', () => {
+    render(<WorldClock />);
     const trigger = document.querySelector('.world-clock-trigger')!;
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
+    fireEvent.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     const popover = document.querySelector('.world-clock-popover');
     expect(popover).toBeTruthy();
     // With CST as primary, should have 3 secondary zones (PST, MST, EST)
     const items = document.querySelectorAll('.world-clock-popover-item');
-    expect(items.length).toBe(3);
+    expect(items).toHaveLength(3);
   });
 
-  it('closes popover on Escape', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('closes popover on Escape', () => {
+    render(<WorldClock />);
     const trigger = document.querySelector('.world-clock-trigger')!;
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
+    fireEvent.click(trigger);
     expect(document.querySelector('.world-clock-popover')).toBeTruthy();
-    await act(async () => {
-      fireEvent.keyDown(document, { key: 'Escape' });
-    });
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(document.querySelector('.world-clock-popover')).toBeNull();
   });
 
-  it('toggles popover on repeated clicks', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('toggles popover on repeated clicks', () => {
+    render(<WorldClock />);
     const trigger = document.querySelector('.world-clock-trigger')!;
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
+    fireEvent.click(trigger);
     expect(document.querySelector('.world-clock-popover')).toBeTruthy();
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
+    fireEvent.click(trigger);
     expect(document.querySelector('.world-clock-popover')).toBeNull();
   });
 
-  it('closes popover when backdrop is mousedown', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+  it('closes popover when backdrop is mousedown', () => {
+    render(<WorldClock />);
     const trigger = document.querySelector('.world-clock-trigger')!;
-    await act(async () => {
-      fireEvent.click(trigger);
-    });
+    fireEvent.click(trigger);
     expect(document.querySelector('.world-clock-popover')).toBeTruthy();
 
     const backdrop = document.querySelector('.world-clock-backdrop')!;
-    await act(async () => {
-      fireEvent.mouseDown(backdrop);
-    });
+    fireEvent.mouseDown(backdrop);
     expect(document.querySelector('.world-clock-popover')).toBeNull();
   });
 
   it('updates time when minute changes', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+    render(<WorldClock />);
 
     // Advance by 61 seconds to cross a minute boundary
     await act(async () => {
@@ -146,9 +114,7 @@ describe('WorldClock', () => {
     const intervalSpy = vi.spyOn(globalThis, 'setInterval');
     vi.setSystemTime(new Date('2026-01-15T12:00:30Z'));
 
-    await act(async () => {
-      render(<WorldClock />);
-    });
+    render(<WorldClock />);
 
     expect(intervalSpy).not.toHaveBeenCalled();
     const initialTime = document.querySelector('.world-clock-primary-time')?.textContent;
@@ -165,9 +131,7 @@ describe('WorldClock', () => {
   });
 
   it('resynchronizes immediately when the window becomes visible', async () => {
-    await act(async () => {
-      render(<WorldClock />);
-    });
+    render(<WorldClock />);
     const initialTime = document.querySelector('.world-clock-primary-time')?.textContent;
 
     vi.setSystemTime(new Date('2026-01-15T12:05:00Z'));
@@ -184,9 +148,7 @@ describe('WorldClock', () => {
 
   it('stops minute wakeups while hidden and restarts them when visible', async () => {
     vi.setSystemTime(new Date('2026-01-15T12:00:30Z'));
-    await act(async () => {
-      render(<WorldClock />);
-    });
+    render(<WorldClock />);
     const initialTime = document.querySelector('.world-clock-primary-time')?.textContent;
 
     Object.defineProperty(document, 'visibilityState', {
@@ -220,12 +182,10 @@ describe('WorldClock with no timezone context', () => {
     vi.useRealTimers();
   });
 
-  it('falls back to local timezone when context provides null', async () => {
+  it('falls back to local timezone when context provides null', () => {
     // The existing mock returns timezone: 'America/Chicago'
     // This test verifies the component renders in that case
-    await act(async () => {
-      render(<WorldClock />);
-    });
+    render(<WorldClock />);
     const container = document.querySelector('.world-clock-container');
     expect(container).toBeTruthy();
     // Should show time string

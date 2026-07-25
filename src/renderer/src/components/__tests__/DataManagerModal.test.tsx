@@ -108,17 +108,13 @@ describe('DataManagerModal', () => {
     expect(screen.getByTestId('overview')).toBeInTheDocument();
   });
 
-  it('switches to Import tab when Import is clicked', () => {
+  it.each([
+    ['Import', 'import-btn'],
+    ['Export', 'export-btn'],
+  ])('switches to the %s tab when clicked', (tabName, expectedTestId) => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
-    fireEvent.click(screen.getByText('Import'));
-    expect(screen.getByTestId('import-btn')).toBeInTheDocument();
-    expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
-  });
-
-  it('switches to Export tab when Export is clicked', () => {
-    render(<DataManagerModal isOpen={true} onClose={onClose} />);
-    fireEvent.click(screen.getByText('Export'));
-    expect(screen.getByTestId('export-btn')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(tabName));
+    expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
     expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
   });
 
