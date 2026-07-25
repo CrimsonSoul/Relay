@@ -469,7 +469,7 @@ function hasValidRoleAssignments(
     }
   }
   const owner = accounts.find(({ accountId }) => accountId === ownerAccountId);
-  if (!owner || owner.storedRole !== 'administrator' || !owner.active) return false;
+  if (owner?.storedRole !== 'administrator' || !owner.active) return false;
   if (publisherAccountId === null) return true;
   return accounts.some(
     ({ accountId, storedRole }) => accountId === publisherAccountId && storedRole === 'publisher',

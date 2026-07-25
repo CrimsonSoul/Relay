@@ -328,7 +328,7 @@ export class KnowledgeSearchService {
   private totalChunkBytes = 0;
   private availability: KnowledgeSearchAvailability | null = null;
   private pb: SearchPocketBase | null = null;
-  private unsubscribers: Array<() => void | Promise<void>> = [];
+  private readonly unsubscribers: Array<() => void | Promise<void>> = [];
   private disconnectOwner: {
     pb: SearchPocketBase;
     handler: (subscriptions: string[]) => void;
@@ -522,7 +522,7 @@ export class KnowledgeSearchService {
       if (!this.isCurrentConnection(epoch, pb)) return;
       const initialSnapshot = parseSnapshot(rawDocuments, rawChunks, this.limits);
       const buffer = this.eventBuffer;
-      if (!initialSnapshot || !buffer || buffer.epoch !== epoch || buffer.failureReason !== null) {
+      if (!initialSnapshot || buffer?.epoch !== epoch || buffer.failureReason !== null) {
         throw new Error('invalid-snapshot');
       }
       const snapshot = replaySnapshotEvents(initialSnapshot, buffer.events.values(), this.limits);
@@ -625,7 +625,7 @@ export class KnowledgeSearchService {
 
   private flushBufferedEvents(epoch: number): void {
     const buffer = this.eventBuffer;
-    if (!buffer || buffer.epoch !== epoch) return;
+    if (buffer?.epoch !== epoch) return;
     this.eventBuffer = null;
     if (buffer.failureReason) return;
     for (const { event } of buffer.events.values()) {
@@ -876,8 +876,8 @@ export class KnowledgeSearchService {
     const pb = this.pb;
     const disconnectOwner = this.disconnectOwner;
     if (
-      disconnectOwner?.pb.realtime &&
-      disconnectOwner.pb.realtime.onDisconnect === disconnectOwner.handler
+      disconnectOwner !== null &&
+      disconnectOwner.pb.realtime?.onDisconnect === disconnectOwner.handler
     ) {
       disconnectOwner.pb.realtime.onDisconnect = disconnectOwner.previous;
     }

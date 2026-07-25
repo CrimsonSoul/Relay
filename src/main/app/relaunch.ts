@@ -10,17 +10,9 @@ const RELAUNCH_HISTORY_FILE = 'relaunch-history.json';
 const RELAUNCH_LOOP_WINDOW_MS = 10 * 60_000;
 const RELAUNCH_LOOP_LIMIT = 3;
 
-export type AppRelaunchReason =
-  'app-reconfigure' | 'fatal-main-process-error' | 'repeated-gpu-process-failures' | string;
+export type AppRelaunchReason = string & Record<never, never>;
 
-export type AppQuitReason =
-  | 'activate-window-create-failed'
-  | 'all-windows-closed'
-  | 'bootstrap-failed'
-  | 'critical-startup-data-root'
-  | 'single-instance-lock-unavailable'
-  | 'startup-failed'
-  | string;
+export type AppQuitReason = string & Record<never, never>;
 
 type AppRelaunchOptions = {
   exitCode?: number;

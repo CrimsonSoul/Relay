@@ -81,7 +81,7 @@ export function resolveMakensisCommand(
   return {
     ...makensis,
     path: joinPath(nsisDir, 'makensis.exe'),
-    env: { ...(makensis.env ?? {}), NSISDIR: nsisDir },
+    env: { ...makensis.env, NSISDIR: nsisDir },
   };
 }
 
@@ -116,7 +116,7 @@ async function compileLauncher(harness) {
   defines.push(join(projectDir, 'build', 'windows', 'relay-launcher.nsi'));
   await run(makensis.path, defines, {
     cwd: join(projectDir, 'build', 'windows'),
-    env: { ...process.env, ...(makensis.env ?? {}) },
+    env: { ...process.env, ...makensis.env },
   });
 }
 
@@ -135,7 +135,7 @@ async function compileFixtureRuntime(buildId) {
     ],
     {
       cwd: join(projectDir, 'build', 'windows'),
-      env: { ...process.env, ...(makensis.env ?? {}) },
+      env: { ...process.env, ...makensis.env },
     },
   );
   await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');

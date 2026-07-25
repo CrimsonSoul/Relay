@@ -38,7 +38,6 @@ import {
 } from './PrivilegedPocketBaseClient';
 import {
   PrivilegedDeviceStore,
-  type LoadedDeviceKey,
   type PendingDeviceKey,
   type PrivilegedDeviceKeyStore,
 } from './PrivilegedDeviceStore';
@@ -150,7 +149,7 @@ export class PrivilegedRuntime {
   private readonly clientTransport?: PrivilegedClientTransport;
   private readonly commandProcessor?: CommandProcessorPort;
   private readonly pairingService?: PairingServicePort;
-  private readonly resolvePairingTarget?: PrivilegedRuntimeOptions['resolvePairingTarget'];
+  private readonly resolvePairingTarget: PrivilegedRuntimeOptions['resolvePairingTarget'];
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly additionalDisposable?: { dispose(): void | Promise<void> };
@@ -566,7 +565,7 @@ export class PrivilegedRuntime {
   }
 }
 
-export type { LoadedDeviceKey };
+export type { LoadedDeviceKey } from './PrivilegedDeviceStore';
 
 export type ProductionPrivilegedRuntimeOptions = {
   config: RelayConfig;

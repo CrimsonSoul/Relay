@@ -125,7 +125,7 @@ export function useOnCallManager(
       onBoardSettingsChange?.((prev) => ({
         ...prev,
         record: prev.record
-          ? { ...prev.record, ...(updates.record ?? {}), teamOrder }
+          ? { ...prev.record, ...updates.record, teamOrder }
           : (updates.record ?? prev.record),
         recordId: recordId ?? prev.recordId,
         status: 'ready',

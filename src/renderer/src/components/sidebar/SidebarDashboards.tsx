@@ -125,10 +125,7 @@ export function SidebarDashboards({
     const items = itemRefs.current.filter(Boolean);
     if (!items.length) return;
 
-    const focusedIndex = Math.max(
-      0,
-      items.findIndex((item) => item === document.activeElement),
-    );
+    const focusedIndex = Math.max(0, items.indexOf(document.activeElement as HTMLElement));
 
     switch (event.key) {
       case 'ArrowDown':

@@ -21,7 +21,7 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const mainEntry = path.join(root, 'dist/main/index.js');
 const warmRunCount = 5;
 const launchTimeoutMs = 60_000;
-const terminateOwnedWindowsBenchmarkScript = String.raw`
+const terminateOwnedWindowsBenchmarkScript = `
 $ErrorActionPreference = 'Stop'
 $targetPid = [int]$env:RELAY_BENCHMARK_TARGET_PID
 $identityToken = $env:RELAY_BENCHMARK_PROCESS_TOKEN
@@ -124,7 +124,7 @@ foreach ($target in @($pinnedTargets | Sort-Object -Property Depth -Descending))
 }
 exit 0
 `;
-const probeRuntimeProcessWindowsScript = String.raw`
+const probeRuntimeProcessWindowsScript = `
 $ErrorActionPreference = 'Stop'
 $targetPath = [IO.Path]::GetFullPath($env:RELAY_BENCHMARK_RUNTIME_EXECUTABLE)
 $records = @(Get-CimInstance Win32_Process)
@@ -342,7 +342,7 @@ function listCompleteRuntimeBuilds(runtimeRoot) {
 
 function readCurrentBuildId(statePath) {
   try {
-    const match = fs.readFileSync(statePath, 'utf8').match(/^current=(.+)$/m);
+    const match = /^current=(.+)$/m.exec(fs.readFileSync(statePath, 'utf8'));
     const buildId = match?.[1]?.trim();
     return isBuildId(buildId) ? buildId : null;
   } catch (error) {

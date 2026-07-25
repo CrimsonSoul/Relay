@@ -61,7 +61,7 @@ function parseTimeStr(timeStr: string): number {
 function checkTimeConstraints(tw: string, currentTime: number): boolean {
   // Composed RegExp to avoid SonarJS complexity complaints while fixing ReDoS
   const timeP = String.raw`(\d{1,2}[:.]?\d{2}|\d{1,4})`;
-  const meridiem = String.raw`(am|pm)?`;
+  const meridiem = `(am|pm)?`;
   const sep = String.raw`\s*(?:-|to|through)\s*`;
   const timeRegex = new RegExp(String.raw`${timeP}\s*${meridiem}${sep}${timeP}\s*${meridiem}`);
 

@@ -312,20 +312,28 @@ const FeedUnavailableNotice: React.FC<{
   );
 };
 
-type StatusWorkspaceProps = {
-  issues: CloudStatusItem[];
-  providerOrder: CloudStatusProvider[];
-  providerIssueCounts: ReadonlyMap<CloudStatusProvider, number>;
+type ProviderHealthProps = {
   outageProviders: ReadonlySet<CloudStatusProvider>;
   degradedProviders: ReadonlySet<CloudStatusProvider>;
   errorProviders: ReadonlySet<CloudStatusProvider>;
-  selectedProvider: CloudStatusProvider | null;
+};
+
+type ProviderOverviewWorkspaceProps = ProviderHealthProps & {
+  providerOrder: CloudStatusProvider[];
+  providerIssueCounts: ReadonlyMap<CloudStatusProvider, number>;
   onSelectProvider: (provider: CloudStatusProvider) => void;
-  onShowOverview: () => void;
   onProviderButtonRef: (provider: CloudStatusProvider, node: HTMLButtonElement | null) => void;
 };
 
-const ProviderOverviewWorkspace: React.FC<StatusWorkspaceProps> = ({
+type ProviderDetailWorkspaceProps = ProviderHealthProps & {
+  issues: CloudStatusItem[];
+  selectedProvider: CloudStatusProvider | null;
+  onShowOverview: () => void;
+};
+
+type StatusWorkspaceProps = ProviderOverviewWorkspaceProps & ProviderDetailWorkspaceProps;
+
+const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
   providerOrder,
   providerIssueCounts,
   outageProviders,
@@ -358,7 +366,7 @@ const ProviderOverviewWorkspace: React.FC<StatusWorkspaceProps> = ({
   </div>
 );
 
-const ProviderDetailWorkspace: React.FC<StatusWorkspaceProps> = ({
+const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
   issues,
   outageProviders,
   degradedProviders,

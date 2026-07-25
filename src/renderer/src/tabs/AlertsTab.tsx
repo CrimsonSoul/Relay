@@ -33,7 +33,7 @@ const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_FALLBACK_SCALE = 1;
-const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
+const ALERT_SEVERITIES = new Set<Severity>(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']);
 
 interface AlertFormState {
   severity: Severity;
@@ -174,7 +174,7 @@ type AlertsTabProps = {
 };
 
 function normalizeLoadedSeverity(severity: ReminderAlertLoadDetail['severity']): Severity {
-  return ALERT_SEVERITIES.includes(severity as Severity) ? (severity as Severity) : 'INFO';
+  return ALERT_SEVERITIES.has(severity as Severity) ? (severity as Severity) : 'INFO';
 }
 
 export const AlertsTab: React.FC<AlertsTabProps> = ({

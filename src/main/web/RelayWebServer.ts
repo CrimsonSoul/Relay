@@ -136,7 +136,7 @@ export class RelayWebServer {
       send(response, 400, 'Invalid path');
       return;
     }
-    if (pathname.split('/').some((segment) => segment === '..')) {
+    if (pathname.split('/').includes('..')) {
       send(response, 400, 'Invalid path');
       return;
     }

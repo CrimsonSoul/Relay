@@ -552,12 +552,10 @@ export class KnowledgeUploadCoordinator {
     if (this.queued.has(uploadId)) return;
     this.queued.add(uploadId);
     this.pending.push(uploadId);
-    if (!this.worker) {
-      this.worker = this.runWorker().finally(() => {
-        this.worker = null;
-        if (this.pending.length > 0) this.enqueuePendingWorker();
-      });
-    }
+    this.worker ??= this.runWorker().finally(() => {
+      this.worker = null;
+      if (this.pending.length > 0) this.enqueuePendingWorker();
+    });
   }
 
   private enqueuePendingWorker(): void {
@@ -724,7 +722,7 @@ export class KnowledgeUploadCoordinator {
   private async completeBatchIfSettled(batchId: string): Promise<void> {
     await this.withMutation(`batch:${batchId}`, async () => {
       const batch = await this.repository.getBatch(batchId);
-      if (!batch || batch.state !== 'active') return;
+      if (batch?.state !== 'active') return;
       const uploads = await this.repository.listUploads(batch.id);
       if (
         uploads.length !== batch.fileCount ||

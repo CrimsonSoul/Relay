@@ -59,9 +59,7 @@ export const DataManagerBackups: React.FC = () => {
       const result = await api.createBackup();
       if (result.success) {
         if (mounted.current) await loadBackups();
-      } else {
-        if (mounted.current) setError(result.error ?? 'Failed to create backup');
-      }
+      } else if (mounted.current) setError(result.error ?? 'Failed to create backup');
     } catch {
       if (mounted.current) setError('Failed to create backup');
     } finally {
@@ -76,11 +74,9 @@ export const DataManagerBackups: React.FC = () => {
       const result = await api.restoreBackup(backup.name);
       if (result.success) {
         globalThis.location.reload();
-      } else {
-        if (mounted.current) {
-          setError(result.error ?? 'Restore failed');
-          setRestoring(false);
-        }
+      } else if (mounted.current) {
+        setError(result.error ?? 'Restore failed');
+        setRestoring(false);
       }
     } catch {
       if (mounted.current) {

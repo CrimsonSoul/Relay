@@ -85,12 +85,10 @@ export function DynatraceProblemNotificationManager({
     for (const problem of newOpenProblems) {
       pendingProblemsRef.current.set(problem.problemId, problem);
     }
-    if (notificationTimerRef.current === null) {
-      notificationTimerRef.current = window.setTimeout(
-        flushNotifications,
-        NOTIFICATION_BATCH_DELAY_MS,
-      );
-    }
+    notificationTimerRef.current ??= window.setTimeout(
+      flushNotifications,
+      NOTIFICATION_BATCH_DELAY_MS,
+    );
   }, [flushNotifications, loading, problems]);
 
   useEffect(

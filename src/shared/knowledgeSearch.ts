@@ -105,12 +105,17 @@ const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const POCKETBASE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
-const SEARCH_INDEX_STATES: KnowledgeSearchIndexState[] = ['pending', 'ready', 'failed'];
-const SEARCH_MATCH_KINDS: KnowledgeSearchMatchKind[] = ['exact', 'tokens', 'prefix', 'fuzzy'];
-const SEARCH_AVAILABILITY: KnowledgeSearchAvailability[] = ['ready', 'cached'];
+const SEARCH_INDEX_STATES = new Set<KnowledgeSearchIndexState>(['pending', 'ready', 'failed']);
+const SEARCH_MATCH_KINDS = new Set<KnowledgeSearchMatchKind>([
+  'exact',
+  'tokens',
+  'prefix',
+  'fuzzy',
+]);
+const SEARCH_AVAILABILITY = new Set<KnowledgeSearchAvailability>(['ready', 'cached']);
 const SEARCH_RESPONSE_ERRORS: KnowledgeSearchResponse extends { ok: false; error: infer T }
-  ? T[]
-  : never = ['invalid-query', 'unavailable', 'timeout', 'cancelled'];
+  ? Set<T>
+  : never = new Set(['invalid-query', 'unavailable', 'timeout', 'cancelled']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -194,9 +199,7 @@ export function normalizeKnowledgeSearchTextWithRanges(value: string): {
       if (whitespace && (text.length === 0 || text.endsWith(' '))) continue;
       const emitted = whitespace ? ' ' : character;
       text += emitted;
-      for (let codeUnit = 0; codeUnit < emitted.length; codeUnit += 1) {
-        sourceRanges.push(sourceRange);
-      }
+      sourceRanges.push(...Array.from({ length: emitted.length }, () => sourceRange));
     }
   }
 
@@ -339,7 +342,7 @@ export function normalizeKnowledgeSearchResult(value: unknown): KnowledgeSearchR
     !isNonNegativeInteger(value.pageIndex) ||
     !isPositiveInteger(value.passageNumber) ||
     !boundedString(value.excerpt, KNOWLEDGE_SEARCH_MAX_EXCERPT_TEXT) ||
-    !SEARCH_MATCH_KINDS.includes(value.matchKind as KnowledgeSearchMatchKind) ||
+    !SEARCH_MATCH_KINDS.has(value.matchKind as KnowledgeSearchMatchKind) ||
     !boundedCodePointString(value.highlightText, KNOWLEDGE_SEARCH_MAX_QUERY_CODE_POINTS) ||
     !isNonNegativeInteger(value.normalizedStart) ||
     !isPositiveInteger(value.normalizedEnd) ||
@@ -377,7 +380,7 @@ export function normalizeKnowledgeSearchResponse(value: unknown): KnowledgeSearc
     return null;
   }
   if (!value.ok) {
-    return SEARCH_RESPONSE_ERRORS.includes(value.error as never)
+    return SEARCH_RESPONSE_ERRORS.has(value.error as never)
       ? {
           ok: false,
           requestId: value.requestId,
@@ -386,7 +389,7 @@ export function normalizeKnowledgeSearchResponse(value: unknown): KnowledgeSearc
       : null;
   }
   if (
-    !SEARCH_AVAILABILITY.includes(value.availability as KnowledgeSearchAvailability) ||
+    !SEARCH_AVAILABILITY.has(value.availability as KnowledgeSearchAvailability) ||
     typeof value.normalizedQuery !== 'string' ||
     !isKnowledgeSearchQueryWithinCodePointLimit(value.normalizedQuery) ||
     value.normalizedQuery !== normalizeKnowledgeSearchQuery(value.normalizedQuery) ||
@@ -408,5 +411,5 @@ export function normalizeKnowledgeSearchResponse(value: unknown): KnowledgeSearc
 }
 
 export function isKnowledgeSearchIndexState(value: unknown): value is KnowledgeSearchIndexState {
-  return SEARCH_INDEX_STATES.includes(value as KnowledgeSearchIndexState);
+  return SEARCH_INDEX_STATES.has(value as KnowledgeSearchIndexState);
 }

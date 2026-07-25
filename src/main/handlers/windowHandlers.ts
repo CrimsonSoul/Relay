@@ -151,7 +151,7 @@ function normalizeAllowedExternalUrl(value: unknown): string | null {
         dotAfterAt > at + 1 &&
         dotAfterAt < address.length - 1 &&
         !address.includes(' ') &&
-        address.indexOf('@', at + 1) === -1
+        !address.includes('@', at + 1)
         ? canonicalUrl
         : null;
     }

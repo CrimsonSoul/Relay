@@ -164,6 +164,10 @@ function checksumOf(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+function escapeFilter(value: string): string {
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
+}
+
 function safeError(error: unknown): KnowledgeManagementErrorCode {
   const message = error instanceof Error ? error.message : '';
   if (message === 'encrypted-pdf') return 'encrypted-pdf';
@@ -359,7 +363,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
         const duplicate = await options.pb
           .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
           .getFullList<{ id: string }>({
-            filter: `fileName="${record.fileName.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}" && lifecycleState="active"`,
+            filter: `fileName="${escapeFilter(record.fileName)}" && lifecycleState="active"`,
             fields: 'id',
             requestKey: null,
           });

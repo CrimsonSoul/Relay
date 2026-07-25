@@ -14,7 +14,10 @@ const DEFAULT_DOCUMENTS = [
 ];
 
 function escapePdfText(value) {
-  return value.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+  return value
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('(', String.raw`\(`)
+    .replaceAll(')', String.raw`\)`);
 }
 
 export function buildSeedKnowledgePdf(title) {

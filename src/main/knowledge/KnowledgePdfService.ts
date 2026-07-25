@@ -138,7 +138,7 @@ export class KnowledgePdfService {
     if (!pb) return { ok: false, error: 'not-found' };
     const raw = await this.getRecord(pb, request.documentId);
     const record = asKnowledgeRecord(raw);
-    if (!record || record.checksum !== request.checksum) {
+    if (record?.checksum !== request.checksum) {
       return { ok: false, error: 'invalid-document' };
     }
 
@@ -171,7 +171,7 @@ export class KnowledgePdfService {
       }
       const raw = await this.getRecord(pb, request.documentId);
       const record = asKnowledgeRecord(raw);
-      if (!record || record.checksum !== request.checksum) {
+      if (record?.checksum !== request.checksum) {
         return { ok: false, error: 'invalid-document' };
       }
       return await this.downloadProtectedPdf(pb, raw, record, true);

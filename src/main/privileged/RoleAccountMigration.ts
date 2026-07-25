@@ -671,8 +671,7 @@ export class RoleAccountMigration {
       await this.listRecords<MigrationStateRecord>(RELAY_PRIVILEGED_STATE_COLLECTION),
     );
     if (
-      !committedState ||
-      committedState.ownerAccountId !== planned.ownerAccountId ||
+      committedState?.ownerAccountId !== planned.ownerAccountId ||
       committedState.publisherAccountId !== (planned.publisherAccountId ?? '') ||
       Number(committedState.identityMigrationVersion) < ROLE_ACCOUNT_MIGRATION_VERSION ||
       committedState.assignmentVersion !== nextAssignmentVersion
@@ -779,8 +778,7 @@ export class RoleAccountMigration {
       const account = committedById.get(planned.record.id);
       const revision = nonNegativeInteger(planned.record.revision) ? planned.record.revision : 0;
       if (
-        !account ||
-        account.username !== planned.username ||
+        account?.username !== planned.username ||
         account.displayName !== planned.displayName ||
         account.storedRole !== planned.storedRole ||
         account.legacyOperatorId !== planned.operatorId ||
@@ -930,8 +928,7 @@ export class RoleAccountMigration {
     }
     const owner = accounts.find(({ id }) => id === state.ownerAccountId);
     if (
-      !owner ||
-      owner.username !== 'ryan' ||
+      owner?.username !== 'ryan' ||
       owner.displayName !== RYAN_DISPLAY_NAME ||
       owner.storedRole !== 'administrator'
     ) {
@@ -940,7 +937,7 @@ export class RoleAccountMigration {
     const charles = accounts.find(
       (account) => account.username === 'charles' && account.displayName === CHARLES_DISPLAY_NAME,
     );
-    if (!charles || charles.storedRole !== 'administrator') {
+    if (charles?.storedRole !== 'administrator') {
       return { reason: 'Converted accounts do not contain Charles as an Administrator.' };
     }
     const usernames = accounts.map((account) =>
@@ -963,7 +960,7 @@ export class RoleAccountMigration {
     }
     if (nonEmptyString(state.publisherAccountId)) {
       const publisher = accounts.find(({ id }) => id === state.publisherAccountId);
-      if (!publisher || publisher.storedRole !== 'publisher') {
+      if (publisher?.storedRole !== 'publisher') {
         return { reason: 'Converted Publisher pointer is invalid.' };
       }
     }

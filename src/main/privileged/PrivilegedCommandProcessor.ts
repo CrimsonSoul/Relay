@@ -516,7 +516,7 @@ export class PrivilegedCommandProcessor {
   > {
     if (deviceId === null) return { ok: true, device: null };
     const device = await this.repository.getDevice(account.id, deviceId);
-    if (!device || device.state !== 'active' || device.accountId !== account.id) {
+    if (device?.state !== 'active' || device.accountId !== account.id) {
       return { ok: false, error: 'pairing-required' };
     }
     if (!envelope) return { ok: false, error: 'invalid-request' };
@@ -529,7 +529,7 @@ export class PrivilegedCommandProcessor {
     envelope: SignedPrivilegedCommandEnvelope,
   ): 'invalid-request' | 'pairing-required' | null {
     const parsed = parsePublicP256Key(device.publicKey);
-    if (!parsed || parsed.fingerprint !== device.fingerprint) {
+    if (parsed?.fingerprint !== device.fingerprint) {
       return 'pairing-required';
     }
     try {

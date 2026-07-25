@@ -71,7 +71,7 @@ function parseAuthoredPath(value: string): ParsedAuthoredPath | null {
 
   try {
     return {
-      path: decodeURIComponent(encodedPath).replace(/\\/g, '/'),
+      path: decodeURIComponent(encodedPath).replaceAll('\\', '/'),
       pageNumber: parsePageNumber(fragment),
     };
   } catch {
@@ -84,7 +84,7 @@ function isAbsoluteAuthorPath(path: string): boolean {
 }
 
 function resolveRelativeSourceKey(currentSourceKey: string, authoredPath: string): string | null {
-  const sourceSegments = currentSourceKey.replace(/\\/g, '/').split('/');
+  const sourceSegments = currentSourceKey.replaceAll('\\', '/').split('/');
   sourceSegments.pop();
 
   const resolvedSegments = sourceSegments.filter((segment) => segment.length > 0);
@@ -236,7 +236,8 @@ export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): Knowledg
   const normalizedSourceKey = normalizeKnowledgeSearchText(authoredPathContext.resolvedSourceKey);
   const sourceKeyMatches = fileNameMatches.filter(
     (document) =>
-      normalizeKnowledgeSearchText(document.sourceKey.replace(/\\/g, '/')) === normalizedSourceKey,
+      normalizeKnowledgeSearchText(document.sourceKey.replaceAll('\\', '/')) ===
+      normalizedSourceKey,
   );
 
   if (sourceKeyMatches.length !== 1) return unavailable('ambiguous');

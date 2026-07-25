@@ -82,8 +82,10 @@ export function renderBuildDefines({ buildId, launcherFile, harnessRoot }) {
     `!define RELAY_LAUNCHER_FILE "${launcherFile}"`,
   ];
   if (harnessRoot) {
-    defines.push('!define RELAY_BOOTSTRAP_HARNESS');
-    defines.push(`!define RELAY_BOOTSTRAP_HARNESS_ROOT "${validateHarnessRoot(harnessRoot)}"`);
+    defines.push(
+      '!define RELAY_BOOTSTRAP_HARNESS',
+      `!define RELAY_BOOTSTRAP_HARNESS_ROOT "${validateHarnessRoot(harnessRoot)}"`,
+    );
   }
   return [...defines, ''].join('\n');
 }

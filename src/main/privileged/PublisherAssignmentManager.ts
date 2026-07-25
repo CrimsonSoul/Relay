@@ -64,7 +64,7 @@ export class PublisherAssignmentNotificationError extends Error {
 }
 
 function escapeFilter(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 export class PublisherAssignmentManager {

@@ -1167,8 +1167,8 @@ function reconcileManagedFields(
   const reconciled = fields.map((field) => {
     const expected = expectedByName.get(field.name);
     if (!expected) return field;
-    const differs = Object.entries(expected).some(([key, expectedValue]) =>
-      fieldValueMatches(field[key as keyof FieldDef], expectedValue) ? false : true,
+    const differs = Object.entries(expected).some(
+      ([key, expectedValue]) => !fieldValueMatches(field[key as keyof FieldDef], expectedValue),
     );
     if (!differs) return field;
     const replacement = { ...field, ...expected };
@@ -1196,12 +1196,12 @@ function hasCompleteCollectionSnapshot(
 ): boolean {
   if (!Array.isArray(collection.fields) || !Array.isArray(collection.indexes)) return false;
   for (const rule of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'] as const) {
-    if (!Object.prototype.hasOwnProperty.call(collection, rule)) return false;
+    if (!Object.hasOwn(collection, rule)) return false;
   }
   if (!expectedAuth) return true;
   return (
-    Object.prototype.hasOwnProperty.call(collection, 'authRule') &&
-    Object.prototype.hasOwnProperty.call(collection, 'manageRule') &&
+    Object.hasOwn(collection, 'authRule') &&
+    Object.hasOwn(collection, 'manageRule') &&
     typeof collection.passwordAuth?.enabled === 'boolean' &&
     Array.isArray(collection.passwordAuth.identityFields)
   );
@@ -1337,7 +1337,7 @@ async function createManagedCollection(
       fields: serializeManagedFields(def, collectionIds),
       ...(def.indexes ? { indexes: def.indexes } : {}),
       ...(def.rules ?? DEFAULT_AUTH_RULES),
-      ...(def.auth ?? {}),
+      ...def.auth,
     });
     const createdId = (createdCollection as unknown as { id?: unknown }).id;
     if (typeof createdId !== 'string' || !createdId) {

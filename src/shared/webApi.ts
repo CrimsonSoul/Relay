@@ -10,8 +10,7 @@ import type {
   PublicRelayConfig,
 } from './ipc';
 import type { PrivilegedCommandResult } from './privilegedCommands';
-import type { PrivilegedSessionView } from './privilegedAccess';
-import type { PrivilegedPairingChallengeView } from './privilegedAccess';
+import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
 import { getDynatraceStartUrlError, type DynatraceDashboardState } from './dynatrace';
 import {
   MAX_DYNATRACE_ALERTING_PROFILES,

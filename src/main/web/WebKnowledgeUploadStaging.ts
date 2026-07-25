@@ -247,8 +247,7 @@ export class WebKnowledgeUploadStaging {
     this.assertAvailable();
     const batch = this.batch;
     if (
-      !batch ||
-      batch.id !== batchId ||
+      batch?.id !== batchId ||
       batch.committed ||
       batch.files.some((file) => file.received !== file.size)
     ) {

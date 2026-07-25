@@ -86,8 +86,8 @@ function optimisticRecord(
   const now = new Date().toISOString();
   return {
     record: {
-      ...(existing ?? {}),
-      ...(input.data ?? {}),
+      ...existing,
+      ...input.data,
       id,
       created: existing?.created ?? now,
       updated: now,

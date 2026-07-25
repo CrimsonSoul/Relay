@@ -44,7 +44,7 @@ const getHighlightsIntersectingRange = (range: Range, editorRoot: HTMLElement) =
 const findHighlightAncestor = (node: HTMLElement, editorRoot: HTMLElement) => {
   let current = node.parentElement;
   while (current && current !== editorRoot) {
-    if (current.hasAttribute('data-hl')) return current;
+    if (current.dataset.hl !== undefined) return current;
     current = current.parentElement;
   }
   return null;
@@ -98,7 +98,7 @@ const liftHighlightOutOfAncestors = (highlight: HTMLElement, editorRoot: HTMLEle
     appendHighlightedFragment(replacement, ancestor, beforeContents);
     replacement.appendChild(lifted);
     appendHighlightedFragment(replacement, ancestor, afterContents);
-    parent.replaceChild(replacement, ancestor);
+    ancestor.replaceWith(replacement);
 
     ancestor = findHighlightAncestor(highlight, editorRoot);
   }

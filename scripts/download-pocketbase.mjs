@@ -13,7 +13,7 @@ const PB_VERSION = '0.39.9';
 const RESOURCES_DIR = join(__dirname, '..', 'resources', 'pocketbase');
 const POSIX_CHMOD_PATH = '/bin/chmod';
 const POSIX_UNZIP_PATH = '/usr/bin/unzip';
-const WINDOWS_POWERSHELL_PATH = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+const WINDOWS_POWERSHELL_PATH = String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`;
 
 function parseArg(name) {
   const prefix = `--${name}=`;

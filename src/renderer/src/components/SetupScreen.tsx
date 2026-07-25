@@ -395,7 +395,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 >
                   {discovering ? 'Searching…' : 'Find servers on this network'}
                 </button>
-                {discovered && discovered.length === 0 && (
+                {discovered?.length === 0 && (
                   <p className="setup-config__hint">
                     No servers found — enter the address shown on the server&apos;s status bar.
                   </p>

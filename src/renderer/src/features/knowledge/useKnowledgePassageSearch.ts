@@ -124,7 +124,7 @@ export function useKnowledgePassageSearch(
           if (!active || generationRef.current !== generation) return;
           invoked = false;
           const response = normalizeKnowledgeSearchResponse(rawResponse);
-          if (response === null || response.requestId !== requestId) {
+          if (response?.requestId !== requestId) {
             setModel(unavailableModel(requestId));
             return;
           }

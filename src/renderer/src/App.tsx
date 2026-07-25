@@ -48,7 +48,7 @@ import {
   clampOnCallFontScale,
   getStoredOnCallFontScale,
   ON_CALL_FONT_SCALE_STORAGE_KEY,
-  setOnCallFontScale,
+  setOnCallFontScale as persistOnCallFontScale,
 } from './theme/onCallDisplay';
 import {
   requestKnowledgeDocumentOpen,
@@ -161,16 +161,16 @@ export function MainApp({
   const isDynatracePopout = popoutRoute === 'dynatrace';
   const dynatracePopoutName = searchParams.get('name')?.trim() || '';
   const dynatrace = useDynatraceDashboards(showToast, { enabled: !isPopout });
-  const [onCallFontScale, setOnCallFontScaleState] = useState(() => getStoredOnCallFontScale());
+  const [onCallFontScale, setOnCallFontScale] = useState(() => getStoredOnCallFontScale());
   const handleOnCallFontScaleChange = useCallback((scale: number) => {
-    setOnCallFontScale(scale);
-    setOnCallFontScaleState(clampOnCallFontScale(scale));
+    persistOnCallFontScale(scale);
+    setOnCallFontScale(clampOnCallFontScale(scale));
   }, []);
 
   useEffect(() => {
     const handleFontScaleStorage = (event: StorageEvent) => {
       if (event.key !== ON_CALL_FONT_SCALE_STORAGE_KEY) return;
-      setOnCallFontScaleState(clampOnCallFontScale(event.newValue));
+      setOnCallFontScale(clampOnCallFontScale(event.newValue));
     };
 
     globalThis.addEventListener('storage', handleFontScaleStorage);

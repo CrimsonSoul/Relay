@@ -636,15 +636,15 @@ export function isKnowledgeChecksum(value: unknown): value is string {
   return typeof value === 'string' && SHA256_PATTERN.test(value);
 }
 
-const KNOWLEDGE_UPLOAD_BATCH_STATES: KnowledgeUploadBatchState[] = [
+const KNOWLEDGE_UPLOAD_BATCH_STATES = new Set<KnowledgeUploadBatchState>([
   'active',
   'ready',
   'cancelled',
   'expired',
   'completed',
-];
+]);
 
-const KNOWLEDGE_UPLOAD_MANIFEST_STATES: KnowledgeUploadManifestView['state'][] = [
+const KNOWLEDGE_UPLOAD_MANIFEST_STATES = new Set<KnowledgeUploadManifestView['state']>([
   'queued',
   'uploading',
   'assembling',
@@ -653,9 +653,9 @@ const KNOWLEDGE_UPLOAD_MANIFEST_STATES: KnowledgeUploadManifestView['state'][] =
   'failed',
   'cancelled',
   'published',
-];
+]);
 
-const KNOWLEDGE_UPLOAD_QUEUE_STATES: KnowledgeUploadQueueItemState[] = [
+const KNOWLEDGE_UPLOAD_QUEUE_STATES = new Set<KnowledgeUploadQueueItemState>([
   'planning',
   'paused',
   ...KNOWLEDGE_UPLOAD_MANIFEST_STATES,
@@ -663,9 +663,9 @@ const KNOWLEDGE_UPLOAD_QUEUE_STATES: KnowledgeUploadQueueItemState[] = [
   'published',
   'paused-network',
   'source-required',
-];
+]);
 
-const KNOWLEDGE_MANAGEMENT_ERRORS: Array<KnowledgeManagementErrorCode | null> = [
+const KNOWLEDGE_MANAGEMENT_ERRORS = new Set<KnowledgeManagementErrorCode | null>([
   null,
   'offline',
   'unauthorized',
@@ -683,7 +683,7 @@ const KNOWLEDGE_MANAGEMENT_ERRORS: Array<KnowledgeManagementErrorCode | null> = 
   'conflict',
   'not-found',
   'server-error',
-];
+]);
 
 function nullableBoundedString(value: unknown, max: number): value is string | null {
   return value === null || boundedString(value, max);
@@ -712,7 +712,7 @@ export function normalizeKnowledgeUploadBatchView(value: unknown): KnowledgeUplo
     !Number.isInteger(value.totalBytes) ||
     (value.totalBytes as number) < 1 ||
     (value.totalBytes as number) > maxBatchBytes ||
-    !KNOWLEDGE_UPLOAD_BATCH_STATES.includes(state) ||
+    !KNOWLEDGE_UPLOAD_BATCH_STATES.has(state) ||
     !boundedString(value.createdAt, 100) ||
     !boundedString(value.lastActivityAt, 100) ||
     !boundedString(value.expiresAt, 100) ||
@@ -754,7 +754,7 @@ export function normalizeKnowledgeUploadManifestView(
     !Number.isInteger(chunkCount) ||
     chunkCount !== expectedChunkCount ||
     !Array.isArray(value.missingChunkIndexes) ||
-    !KNOWLEDGE_UPLOAD_MANIFEST_STATES.includes(state) ||
+    !KNOWLEDGE_UPLOAD_MANIFEST_STATES.has(state) ||
     typeof value.proposedTitle !== 'string' ||
     value.proposedTitle.length > 240 ||
     typeof value.proposedCategory !== 'string' ||
@@ -768,7 +768,7 @@ export function normalizeKnowledgeUploadManifestView(
     !Array.isArray(value.outline) ||
     (outlineSource !== null && !['native', 'inferred', 'none'].includes(outlineSource)) ||
     !nullableBoundedString(value.duplicateDocumentId, 200) ||
-    !KNOWLEDGE_MANAGEMENT_ERRORS.includes(safeError) ||
+    !KNOWLEDGE_MANAGEMENT_ERRORS.has(safeError) ||
     !boundedString(value.lastActivityAt, 100) ||
     !nullableBoundedString(value.readyAt, 100) ||
     !boundedString(value.expiresAt, 100) ||
@@ -848,8 +848,8 @@ function normalizeKnowledgeUploadQueueItem(value: unknown): KnowledgeUploadQueue
     !Number.isInteger(value.acknowledgedChunkCount) ||
     (value.acknowledgedChunkCount as number) < 0 ||
     (value.acknowledgedChunkCount as number) > (value.chunkCount as number) ||
-    !KNOWLEDGE_UPLOAD_QUEUE_STATES.includes(state) ||
-    !KNOWLEDGE_MANAGEMENT_ERRORS.includes(safeError) ||
+    !KNOWLEDGE_UPLOAD_QUEUE_STATES.has(state) ||
+    !KNOWLEDGE_MANAGEMENT_ERRORS.has(safeError) ||
     !Number.isInteger(value.retryCount) ||
     (value.retryCount as number) < 0 ||
     (value.retryCount as number) > KNOWLEDGE_UPLOAD_MAX_RETRIES ||
@@ -887,7 +887,7 @@ export function normalizeKnowledgeUploadQueueView(value: unknown): KnowledgeUplo
     (value.acknowledgedBytes as number) < 0 ||
     (value.acknowledgedBytes as number) > (value.totalBytes as number) ||
     items.length > KNOWLEDGE_UPLOAD_MAX_FILES ||
-    items.some((item) => item === null)
+    items.includes(null)
   ) {
     return null;
   }
@@ -1030,7 +1030,7 @@ export function normalizeKnowledgeManagementUploadView(
     (value.pageCount !== null && (!Number.isInteger(value.pageCount) || value.pageCount <= 0)) ||
     (outlineSource !== null && !['native', 'inferred', 'none'].includes(outlineSource)) ||
     !optionalBoundedString(value.duplicateDocumentId, 200) ||
-    !KNOWLEDGE_MANAGEMENT_ERRORS.includes(safeError) ||
+    !KNOWLEDGE_MANAGEMENT_ERRORS.has(safeError) ||
     !boundedString(value.expiresAt, 100) ||
     !Number.isInteger(value.revision) ||
     (value.revision as number) < 0 ||
@@ -1123,7 +1123,7 @@ function normalizeKnowledgePage<T>(
 ): KnowledgePage<T> | null {
   if (!isRecord(value) || !Array.isArray(value.items)) return null;
   const items = value.items.map(normalizeItem);
-  if (items.some((item) => item === null)) return null;
+  if (items.includes(null)) return null;
   if (value.nextCursor !== null && !boundedString(value.nextCursor, 200)) return null;
   return { items: items as T[], nextCursor: value.nextCursor };
 }

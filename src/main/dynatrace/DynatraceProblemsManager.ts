@@ -65,7 +65,7 @@ const PROBLEM_COMPARISON_FIELDS = [
 ].join(',');
 
 function escapeFilter(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function parsedTimestamp(value: string | undefined): number | null {

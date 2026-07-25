@@ -24,7 +24,7 @@ export class PrivilegedDeviceConflictError extends Error {
 }
 
 function escapeFilter(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function normalizedLabel(value: string): string {

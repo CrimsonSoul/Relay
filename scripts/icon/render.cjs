@@ -2,7 +2,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 app.disableHardwareAcceleration();
-const variant = process.argv[process.argv.length - 1];
+const variant = process.argv.at(-1);
 const outputByVariant = {
   mac: path.join(__dirname, 'icon-mac-1024.png'),
   win: path.join(__dirname, 'icon-win-1024.png'),

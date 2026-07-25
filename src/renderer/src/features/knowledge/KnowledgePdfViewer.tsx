@@ -683,8 +683,7 @@ export function KnowledgePdfViewer({
       const identity = pdfIdentityRef.current;
       const activeDocument = activeDocumentRef.current;
       if (
-        !pendingRequest ||
-        pendingRequest.result.id !== resultId ||
+        pendingRequest?.result.id !== resultId ||
         pendingRequest.pageIndex !== readyPageIndex ||
         identity?.generation !== pendingRequest.generation ||
         identity.documentId !== pendingRequest.documentId ||

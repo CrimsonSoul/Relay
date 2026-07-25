@@ -229,7 +229,7 @@ export class KnowledgeSearchIndexer {
     } catch {
       // pump() contains per-document failures; this only protects the public boundary.
     }
-    await Promise.allSettled([...this.removalOperations]);
+    await Promise.allSettled(this.removalOperations);
     this.resolveIdleWaiters();
   }
 
@@ -397,7 +397,7 @@ export class KnowledgeSearchIndexer {
     patch: SearchIndexPatch,
   ): Promise<boolean> {
     const current = await this.readActiveDocument(documentId);
-    if (!current || current.checksum !== checksum || this.isCancelled(documentId)) return false;
+    if (current?.checksum !== checksum || this.isCancelled(documentId)) return false;
     await this.storageCall(() =>
       this.pb
         .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
@@ -416,8 +416,7 @@ export class KnowledgeSearchIndexer {
     try {
       const current = await this.readActiveDocument(documentId);
       if (
-        !current ||
-        current.checksum !== checksum ||
+        current?.checksum !== checksum ||
         (expectedRevision !== undefined && current.revision !== expectedRevision) ||
         (preserveCurrent && this.isCurrent(current)) ||
         this.isCancelled(documentId)

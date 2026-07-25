@@ -25,7 +25,9 @@ type RelayWebGatewayOptions = {
   hostname?: string;
   getInterfaceAddresses?: () => string[];
   operationalServices?: OperationalServices;
-  authorizeCapability?: ConstructorParameters<typeof WebRouter>[0]['authorizeCapability'];
+  authorizeCapability?: NonNullable<
+    ConstructorParameters<typeof WebRouter>[0]['authorizeCapability']
+  >;
   privilegedHost?: ProductionPrivilegedHost | null;
   getAccountManager?: () => Pick<
     PrivilegedAccountManager,

@@ -97,7 +97,8 @@ export type DynatraceProblemsFetchResult = {
 };
 
 function dqlStringLiteral(value: string): string {
-  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
+  return `"${escaped}"`;
 }
 
 function buildProblemsQuery(

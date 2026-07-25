@@ -3,7 +3,10 @@ import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { useToast } from '../../components/Toast';
 import { buildBridgeIcs, IcsAttendee } from '../../utils/ics';
-import { getOrganizerEmail, setOrganizerEmail } from '../../utils/organizerEmail';
+import {
+  getOrganizerEmail,
+  setOrganizerEmail as persistOrganizerEmail,
+} from '../../utils/organizerEmail';
 import { getRelayRuntime } from '../../runtime/relayRuntime';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
@@ -43,7 +46,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
   const [startValue, setStartValue] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [subject, setSubject] = useState('');
-  const [organizerEmail, setOrganizerEmailValue] = useState('');
+  const [organizerEmail, setOrganizerEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [subjectError, setSubjectError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,7 +58,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       setStartValue(toDateTimeLocalValue(nextHalfHour()));
       setDurationMinutes(60);
       setSubject(`${now.getMonth() + 1}/${now.getDate()} – Bridge`);
-      setOrganizerEmailValue(getOrganizerEmail());
+      setOrganizerEmail(getOrganizerEmail());
       setEmailError('');
       setSubjectError('');
       setIsSubmitting(false);
@@ -76,7 +79,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
     setSubjectError('');
     setIsSubmitting(true);
     try {
-      setOrganizerEmail(organizerEmail);
+      persistOrganizerEmail(organizerEmail);
       const ics = buildBridgeIcs({
         subject,
         start: new Date(startValue),
@@ -179,7 +182,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
             type="text"
             className="tactile-input"
             value={organizerEmail}
-            onChange={(e) => setOrganizerEmailValue(e.target.value)}
+            onChange={(e) => setOrganizerEmail(e.target.value)}
             placeholder="you@example.com"
           />
           {emailError && <div className="schedule-bridge-error">{emailError}</div>}

@@ -24,7 +24,7 @@ import {
   getStoredCustomAccents,
   normalizeHexAccent,
   removeCustomAccent,
-  setAccent,
+  setAccent as persistAccent,
   setAccentScheduleEnabled,
   setAccentScheduleSlot,
   setCustomAccent,
@@ -645,7 +645,7 @@ export const SettingsModal: React.FC<Props> = ({
   const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
   const [showConnectionSecret, setShowConnectionSecret] = useState(false);
-  const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
+  const [accent, setAccent] = useState<AccentId>(() => getStoredAccent());
   const [savedCustomAccents, setSavedCustomAccents] = useState<string[]>(() =>
     getStoredCustomAccents(),
   );
@@ -653,7 +653,7 @@ export const SettingsModal: React.FC<Props> = ({
     getStoredCustomAccent(),
   );
   const [customAccentInput, setCustomAccentInput] = useState(() => getStoredCustomAccent() ?? '');
-  const [accentSchedule, setAccentScheduleState] = useState(() => getStoredAccentSchedule());
+  const [accentSchedule, setAccentSchedule] = useState(() => getStoredAccentSchedule());
   const settingsSections = useMemo(
     () =>
       SETTINGS_SECTIONS.filter(
@@ -678,8 +678,8 @@ export const SettingsModal: React.FC<Props> = ({
   }, [activeSection, privilegedSession.role, privilegedSession.state]);
 
   const handleAccentSelect = (id: AccentId) => {
+    persistAccent(id);
     setAccent(id);
-    setAccentState(id);
     if (id !== 'custom') setActiveCustomAccent(getStoredCustomAccent());
   };
 
@@ -698,7 +698,7 @@ export const SettingsModal: React.FC<Props> = ({
     setSavedCustomAccents(getStoredCustomAccents());
     setActiveCustomAccent(saved);
     setCustomAccentInput(saved);
-    setAccentState('custom');
+    setAccent('custom');
   };
 
   const handleSavedCustomAccentSelect = (hex: string) => {
@@ -706,7 +706,7 @@ export const SettingsModal: React.FC<Props> = ({
     if (!selected) return;
     setActiveCustomAccent(selected);
     setCustomAccentInput(selected);
-    setAccentState('custom');
+    setAccent('custom');
   };
 
   const handleCustomAccentRemove = (hex: string) => {
@@ -714,7 +714,7 @@ export const SettingsModal: React.FC<Props> = ({
     const nextActiveCustomAccent = getStoredCustomAccent();
     setSavedCustomAccents(remainingCustomAccents);
     setActiveCustomAccent(nextActiveCustomAccent);
-    setAccentState(getStoredAccent());
+    setAccent(getStoredAccent());
     if (nextActiveCustomAccent) setCustomAccentInput(nextActiveCustomAccent);
   };
 
@@ -748,13 +748,13 @@ export const SettingsModal: React.FC<Props> = ({
     accentScheduleChoices.find((option) => option.value === choice)?.swatch ?? '#ffffff';
 
   const syncAccentStateFromStorage = () => {
-    setAccentState(getStoredAccent());
+    setAccent(getStoredAccent());
     setActiveCustomAccent(getStoredCustomAccent());
   };
 
   const handleAccentScheduleToggle = () => {
     const nextSchedule = setAccentScheduleEnabled(!accentSchedule.enabled);
-    setAccentScheduleState(nextSchedule);
+    setAccentSchedule(nextSchedule);
     syncAccentStateFromStorage();
   };
 
@@ -763,7 +763,7 @@ export const SettingsModal: React.FC<Props> = ({
     choice: AccentScheduleChoice,
   ) => {
     const nextSchedule = setAccentScheduleSlot(slotId, choice);
-    setAccentScheduleState(nextSchedule);
+    setAccentSchedule(nextSchedule);
     syncAccentStateFromStorage();
   };
 

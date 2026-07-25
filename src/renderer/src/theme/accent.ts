@@ -245,7 +245,7 @@ function applyCustomAccent(hex: string): void {
   document.documentElement.style.setProperty('--accent-hover', tokens.hover);
   document.documentElement.style.setProperty('--accent-bright', tokens.bright);
   document.documentElement.style.setProperty('--on-accent', tokens.onAccent);
-  document.documentElement.setAttribute('data-accent', 'custom');
+  document.documentElement.dataset.accent = 'custom';
 }
 
 /**
@@ -399,7 +399,7 @@ function apply(id: AccentId): void {
     }
   }
   clearCustomAccentProperties();
-  document.documentElement.setAttribute('data-accent', id);
+  document.documentElement.dataset.accent = id;
 }
 
 let scheduleTimer: ReturnType<typeof window.setTimeout> | null = null;

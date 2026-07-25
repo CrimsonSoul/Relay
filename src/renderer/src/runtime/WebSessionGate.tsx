@@ -108,7 +108,7 @@ export function WebSessionGate({
 
   useEffect(() => {
     let active = true;
-    if (!resolutionRef.current || resolutionRef.current.attempt !== attempt) {
+    if (resolutionRef.current?.attempt !== attempt) {
       resolutionRef.current = { attempt, promise: resolveSession(client, appLoader) };
     }
     void resolutionRef.current.promise.then(

@@ -534,7 +534,7 @@ function nextIndexedChunksForDocument(
   const indexedChunks: IndexedChunk[] = [];
   for (const chunkId of chunkIds) {
     const source = snapshot.sourceChunks.get(chunkId);
-    if (!source || source.checksum !== document.record.checksum) continue;
+    if (source?.checksum !== document.record.checksum) continue;
     const previous = previousChunks.get(chunkId);
     const indexed =
       previous?.record === source
@@ -764,9 +764,9 @@ function excerptForHighlight(chunk: IndexedChunk, start: number, end: number): s
   const rawStart = chunk.sourceRanges[start]?.start ?? 0;
   const rawEnd = chunk.sourceRanges[end - 1]?.end ?? rawStart + 1;
   const source = chunk.record.text;
-  const beforeAll = [...source.slice(0, rawStart)];
+  const beforeAll = Array.from(source.slice(0, rawStart));
   const match = source.slice(rawStart, rawEnd);
-  const afterAll = [...source.slice(rawEnd)];
+  const afterAll = Array.from(source.slice(rawEnd));
   const before = beforeAll.slice(-120);
   const after = afterAll.slice(0, 120);
   const truncatedBefore = before.length < beforeAll.length;

@@ -203,7 +203,7 @@ export class KnowledgeCoverService {
         requestKey: null,
       });
       const record = normalizeKnowledgeDocumentRecord(raw);
-      if (!record || record.checksum !== request.checksum || !record.cover) return null;
+      if (record?.checksum !== request.checksum || !record.cover) return null;
       const token = await pb.files.getToken({ requestKey: null });
       const url = pb.files.getURL(raw, record.cover, { token });
       const data = await this.fetchBytes(url);

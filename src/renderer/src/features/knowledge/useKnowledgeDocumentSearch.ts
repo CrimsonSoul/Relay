@@ -77,7 +77,7 @@ export function useKnowledgeDocumentSearch(
   currentPageIndexRef.current = currentPageIndex;
   const requestKeyRef = useRef(0);
   const activationGenerationRef = useRef(0);
-  const [query, setQueryState] = useState('');
+  const [query, setQuery] = useState('');
   const [snapshot, setSnapshot] = useState<KnowledgeDocumentSearchSnapshot>(() =>
     emptySnapshot(session?.pdf.numPages ?? 0),
   );
@@ -107,7 +107,7 @@ export function useKnowledgeDocumentSearch(
   useEffect(() => {
     const activeSession = sessionRef.current;
     activationGenerationRef.current += 1;
-    setQueryState('');
+    setQuery('');
     setActiveResultId(null);
     activeResultRef.current = null;
     setNavigationRequest(null);
@@ -144,9 +144,9 @@ export function useKnowledgeDocumentSearch(
     controllerRef.current?.setCurrentPage(currentPageIndex);
   }, [currentPageIndex]);
 
-  const setQuery = useCallback((nextQuery: string) => {
+  const updateQuery = useCallback((nextQuery: string) => {
     activationGenerationRef.current += 1;
-    setQueryState(nextQuery);
+    setQuery(nextQuery);
     setActiveResultId(null);
     activeResultRef.current = null;
     setNavigationRequest(null);
@@ -229,7 +229,7 @@ export function useKnowledgeDocumentSearch(
   useEffect(() => {
     if (!activeResultId || activeResultIndex >= 0) return;
     const previous = activeResultRef.current;
-    if (!previous || previous.id !== activeResultId) {
+    if (previous?.id !== activeResultId) {
       setActiveResultId(null);
       setNavigationRequest(null);
       return;
@@ -309,7 +309,7 @@ export function useKnowledgeDocumentSearch(
 
   const clear = useCallback(() => {
     activationGenerationRef.current += 1;
-    setQueryState('');
+    setQuery('');
     setActiveResultId(null);
     activeResultRef.current = null;
     setNavigationRequest(null);
@@ -378,7 +378,7 @@ export function useKnowledgeDocumentSearch(
     activeResultIndex,
     activeResult,
     navigationRequest,
-    setQuery,
+    setQuery: updateQuery,
     activateResult,
     activateNext,
     activatePrevious,

@@ -23,7 +23,7 @@ type PocketBaseKnowledgeUploadRepositoryOptions = {
 type StoredChunkRecord = Omit<KnowledgeUploadChunkRecord, 'fileName'> & { chunk: string };
 
 function escapeFilterValue(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function batchRecord(value: KnowledgeUploadBatchRecord): KnowledgeUploadBatchRecord {

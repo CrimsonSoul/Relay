@@ -29,7 +29,7 @@ export type WebSessionRecord = {
 
 type WebSessionEntry = WebSessionRecord & {
   refreshAuth: WebSessionCreateInput['refresh'];
-  disposeAuth?: WebSessionCreateInput['dispose'];
+  disposeAuth?: NonNullable<WebSessionCreateInput['dispose']>;
   cleanups: Set<() => void | Promise<void>>;
   eventSinks: Set<(event: string, data: unknown) => void>;
 };
@@ -168,7 +168,7 @@ export class WebSessionStore {
   }
 
   async finishedDisposals(): Promise<void> {
-    await Promise.all([...this.pendingDisposals]);
+    await Promise.all(this.pendingDisposals);
   }
 
   private getEntry(id: string, touch: boolean): WebSessionEntry | null {

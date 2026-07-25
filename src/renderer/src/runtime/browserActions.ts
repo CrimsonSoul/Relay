@@ -38,7 +38,7 @@ function copyField(text: string): HTMLTextAreaElement {
   const field = document.createElement('textarea');
   field.value = text;
   field.readOnly = true;
-  field.setAttribute('data-relay-copy-fallback', '');
+  field.dataset.relayCopyFallback = '';
   field.setAttribute('aria-label', 'Copy failed. Press Ctrl or Command plus C to copy this text.');
   field.style.position = 'fixed';
   field.style.inset = '1rem';

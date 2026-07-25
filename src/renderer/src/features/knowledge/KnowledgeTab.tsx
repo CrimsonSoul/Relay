@@ -532,7 +532,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       }
 
       if (
-        !selectedDocument ||
+        selectedDocument === null ||
         selectedDocumentIdRef.current !== selectedDocument.id ||
         !documentsRef.current.some((document) => document.id === selectedDocument.id)
       ) {

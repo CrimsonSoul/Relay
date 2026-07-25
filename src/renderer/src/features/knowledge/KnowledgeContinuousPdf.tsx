@@ -23,7 +23,7 @@ type KnowledgeContinuousPdfProps = {
   onCurrentPageChange: (pageIndex: number) => void;
   searchMatchesByPage?: ReadonlyMap<number, readonly KnowledgeDocumentSearchMatch[]>;
   activeSearchResultId?: string | null;
-  onActiveSearchHighlightReady?: KnowledgePdfPageProps['onActiveSearchHighlightReady'];
+  onActiveSearchHighlightReady?: NonNullable<KnowledgePdfPageProps['onActiveSearchHighlightReady']>;
 };
 
 type PageMetric = {

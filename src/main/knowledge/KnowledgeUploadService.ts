@@ -410,7 +410,7 @@ export class KnowledgeUploadService {
 
   async reselectSource(id: string, window?: BrowserWindow): Promise<boolean> {
     const entry = this.findEntry(id);
-    if (!entry || !entry.source.checksum) return false;
+    if (!entry?.source.checksum) return false;
     const paths = await this.selectFiles(window, true);
     if (paths.length !== 1) return false;
     try {
@@ -601,8 +601,7 @@ export class KnowledgeUploadService {
     entry: KnowledgeUploadQueueEntry,
   ): session is ActiveUploadSession {
     return Boolean(
-      session &&
-      session.accountId === entry.accountId &&
+      session?.accountId === entry.accountId &&
       session.localSourceId === this.entryLocalSourceId(entry),
     );
   }

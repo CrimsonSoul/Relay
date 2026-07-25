@@ -50,7 +50,7 @@ function normalizeAuditPage(value: unknown): KnowledgePage<KnowledgeAuditEventVi
   if (!Array.isArray(items)) return null;
   if (nextCursor !== null && typeof nextCursor !== 'string') return null;
   const normalized = items.map(normalizeKnowledgeAuditEventView);
-  return normalized.some((item) => item === null)
+  return normalized.includes(null)
     ? null
     : { items: normalized as KnowledgeAuditEventView[], nextCursor };
 }

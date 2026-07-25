@@ -268,7 +268,7 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
 }
 
 function escapeFilter(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
 }
 
 function normalizeAccount(value: unknown): RelayPrivilegedAccountRecord | null {
@@ -528,7 +528,7 @@ export class PocketBasePrivilegedRepository
       const current = normalizeStoredCommand(
         await collection.getOne(commandId, { requestKey: null }),
       );
-      if (!current || current.bodyHash !== bodyHash) return false;
+      if (current?.bodyHash !== bodyHash) return false;
       if (current.state === 'processing' && (!staleBefore || current.updated > staleBefore))
         return false;
       await collection.update(commandId, { state: 'processing' }, { requestKey: null });

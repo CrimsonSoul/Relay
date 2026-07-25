@@ -24,7 +24,7 @@ export type KnowledgeCatalogInput = {
   documents: KnowledgeDocumentRecord[];
   categories: KnowledgeCategoryRecord[];
   query: string;
-  categoryId: string | 'all';
+  categoryId: string;
   documentType: KnowledgeDocumentType | 'all';
   sort: 'recent' | 'title';
 };

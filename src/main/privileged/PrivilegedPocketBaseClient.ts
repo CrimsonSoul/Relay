@@ -251,7 +251,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     installMainProcessEventSource();
     await this.stopAuthorityMonitor();
     const authenticatedAccount = this.getAccount();
-    if (!authenticatedAccount || authenticatedAccount.id !== accountId) {
+    if (authenticatedAccount?.id !== accountId) {
       throw new PrivilegedAuthenticationError('invalid-credentials');
     }
 
@@ -296,7 +296,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
           ]);
           const account = normalizeAccountRecord(rawAccount);
           const state = normalizeStateRecord(rawState);
-          if (!account || account.id !== accountId || !state) {
+          if (account?.id !== accountId || !state) {
             throw new PrivilegedAuthenticationError('invalid-credentials');
           }
           if (!isCurrent()) return;
@@ -420,7 +420,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
         .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
         .authWithPassword(normalizedUsername, password, { requestKey: null });
       const account = normalizeAccountRecord(response.record);
-      if (!account || account.username !== normalizedUsername) {
+      if (account?.username !== normalizedUsername) {
         this.clear();
         throw new PrivilegedAuthenticationError('invalid-credentials');
       }

@@ -117,7 +117,7 @@ export function KnowledgeLibrary({
   onOpenDocument: (request: KnowledgeOpenRequest) => void;
 }>) {
   const [query, setQuery] = useState('');
-  const [categoryId, setCategoryId] = useState<string | 'all'>('all');
+  const [categoryId, setCategoryId] = useState<string>('all');
   const [documentType, setDocumentType] = useState<KnowledgeDocumentType | 'all'>('all');
   const [sort, setSort] = useState<'recent' | 'title'>('recent');
   const activeQuery = query.trim().length > 0;

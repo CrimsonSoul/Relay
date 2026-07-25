@@ -55,7 +55,7 @@ type PersistedSource = Omit<KnowledgeUploadQueueSource, 'canonicalPath'> & {
 type PersistedEntry = Omit<KnowledgeUploadQueueEntry, 'source'> & { source: PersistedSource };
 type PersistedQueue = Omit<KnowledgeUploadQueueState, 'entries'> & { entries: PersistedEntry[] };
 
-const QUEUE_STATES: KnowledgeUploadQueueItemState[] = [
+const QUEUE_STATES = new Set<KnowledgeUploadQueueItemState>([
   'planning',
   'paused',
   'queued',
@@ -69,9 +69,9 @@ const QUEUE_STATES: KnowledgeUploadQueueItemState[] = [
   'published',
   'paused-network',
   'source-required',
-];
+]);
 
-const SAFE_ERRORS: Array<KnowledgeManagementErrorCode | null> = [
+const SAFE_ERRORS = new Set<KnowledgeManagementErrorCode | null>([
   null,
   'offline',
   'unauthorized',
@@ -89,7 +89,7 @@ const SAFE_ERRORS: Array<KnowledgeManagementErrorCode | null> = [
   'conflict',
   'not-found',
   'server-error',
-];
+]);
 
 export function createEmptyKnowledgeUploadQueue(
   restartRecovery: boolean,
@@ -161,8 +161,8 @@ function normalizePersistedEntry(
     !Array.isArray(acknowledged) ||
     acknowledged.some((index) => !numberInRange(index, 0, (source.chunkCount as number) - 1)) ||
     new Set(acknowledged).size !== acknowledged.length ||
-    !QUEUE_STATES.includes(value.state as KnowledgeUploadQueueItemState) ||
-    !SAFE_ERRORS.includes(value.safeError as KnowledgeManagementErrorCode | null) ||
+    !QUEUE_STATES.has(value.state as KnowledgeUploadQueueItemState) ||
+    !SAFE_ERRORS.has(value.safeError as KnowledgeManagementErrorCode | null) ||
     !numberInRange(value.retryCount, 0, Number.MAX_SAFE_INTEGER)
   ) {
     return null;
@@ -224,7 +224,7 @@ export class KnowledgeUploadQueueStore {
       return createEmptyKnowledgeUploadQueue(true);
     }
     const entries = parsed.entries.map((entry) => normalizePersistedEntry(entry, this.safeStorage));
-    if (entries.length > KNOWLEDGE_UPLOAD_MAX_FILES || entries.some((entry) => entry === null)) {
+    if (entries.length > KNOWLEDGE_UPLOAD_MAX_FILES || entries.includes(null)) {
       return createEmptyKnowledgeUploadQueue(true);
     }
     return { version: 2, restartRecovery: true, entries: entries as KnowledgeUploadQueueEntry[] };
