@@ -1,16 +1,12 @@
 # Product
 
-## Register
-
-product
-
 ## Users
 
-Relay is used by on-call and operations staff who need to assemble notifications, inspect alerts, manage contacts, and keep a local or LAN Relay server running without losing context. They are often working under time pressure, scanning dense information, and using keyboard-heavy workflows.
+Relay is used by on-call and operations staff who assemble bridge recipients, create incident communications, manage coverage, review service health and Dynatrace Problems, and consult shared Wiki, Contacts, and Servers data. They often work under time pressure, scan dense information, and rely on keyboard-heavy workflows.
 
 ## Product Purpose
 
-Relay is a desktop command center for operational messaging and alert handling. Success means a user can understand current system state, select the right recipients, preview outbound communication, and act with confidence from one focused surface.
+Relay is an operations command center that keeps incident communications, on-call coverage, service health, and shared operational context in one focused workspace. Success means an operator can understand current conditions, reach the right people, consult trusted guidance, and act with confidence without stitching together disconnected tools.
 
 ## Brand Personality
 
@@ -22,7 +18,7 @@ Avoid generic SaaS card grids, landing-page composition, fake hardware motifs, b
 
 ## Design Principles
 
-1. Preserve the command-console shell: black canvas, restrained red accent, dense scan-friendly chrome, and familiar sidebar-plus-header structure.
+1. Preserve the command-console shell: black canvas, a restrained swappable accent, dense scan-friendly chrome, and a familiar sidebar-plus-header structure.
 2. Make workflow state visible at the point of action: delivery confidence, recipient selection, validation, alerts, and server/runtime state should sit near the controls they affect.
 3. Use sharp hierarchy, not decoration: spacing, borders, rails, type weight, and semantic color should organize information before adding new components.
 4. Keep controls tactile and consistent: same button geometry, icon style, focus treatment, and disabled/loading/error states across screens.

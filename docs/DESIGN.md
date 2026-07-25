@@ -5,7 +5,7 @@ Current visual and interaction conventions for the Relay renderer.
 ## Overview
 
 Relay uses the **Accent Ink** design language: a softened charcoal canvas,
-typography-first hierarchy through Outfit weight contrast, and a single swappable
+typography-first hierarchy through IBM Plex Sans weight contrast, and a single swappable
 accent color as the only active-state signal. All tokens live in
 `src/renderer/src/styles/theme.css`.
 
@@ -33,9 +33,9 @@ The design rests on four principles:
 
 1. **Softened charcoal canvas.** App background is `#09090b`. Surfaces step up
    gently (`#111114`, `#19191d`). Elevated floating surfaces sit at `#222227`.
-2. **Typography-first hierarchy.** Weight contrast replaces surface contrast. Display
-   headings use weight 200; body text uses 500; emphasis uses 700–800. No heading
-   background fills.
+2. **Typography-first hierarchy.** Weight contrast replaces surface contrast. Rare
+   display titles use weight 200; body text uses 500; emphasis uses 700–800. No
+   heading background fills.
 3. **Four text-dimming tiers.** Primary `#eee9ec` -> secondary `#beb6bb` ->
    tertiary `#928a90` -> quaternary `#847c82`. Quaternary is the legibility floor
    (>= 4.5 : 1 on the charcoal canvas); do not use a lighter shade for readable
@@ -45,26 +45,17 @@ The design rests on four principles:
 
 ---
 
-## 2. Display Headings
+## 2. Heading Hierarchy
 
-Large section titles follow the ink heading pattern:
+The app header breadcrumb provides top-level tab identity. Pane headings use
+`.toolbar-title`: an uppercase, `0.12em`, weight-800 accent eyebrow matching section
+labels such as the Compose sidebar's GROUPS heading.
 
-- `font-size: var(--text-display)` — fluid `clamp(34px, 3vw, 56px)`
-- `font-weight: 200`
-- `text-transform: lowercase`
-- `letter-spacing: -0.02em`
-- Accent period appended via `::after { content: '.'; color: var(--accent); font-weight: 800 }`
-
-**Reference utilities** defining the canonical pattern:
-
-- **`.display-heading`** — standalone section headings (`utilities.css`); existing components implement the same declarations locally — use the utility class for new work
-- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (reference utility in `utilities.css`); existing components implement the same declarations locally — use the utility class for new work
-
-**Where the device lives:** the display treatment (lowercase + accent period) is
-reserved for the `relay.` wordmark in the sidebar — tab identity comes from the
-header breadcrumb. `.toolbar-title` (`components.css`) is a pane-header eyebrow
-(uppercase, 0.12em, weight 800, accent), matching section eyebrows like the
-compose sidebar's GROUPS heading.
+The giant lowercase treatment with an accent period belongs to the `relay.` sidebar
+wordmark and is not the default for tabs or panes. `.display-heading` and
+`.collapsible-header-title` retain that older styling for compatibility, but new
+surfaces should use the breadcrumb and eyebrow hierarchy unless a design explicitly
+calls for a standalone display title.
 
 ---
 
@@ -97,8 +88,8 @@ but is superseded by `.ink-rail`.
 
 ## 4. Elevated-Surface Rule
 
-Boxes with a background fill (`#222227` + `1px #39363c` border + shadow) are
-reserved exclusively for **floating surfaces** that sit above the canvas:
+The elevated combination (`--color-bg-surface-elevated` + strong border + shadow) is
+reserved for **floating surfaces** that sit above the canvas:
 
 - Modals and confirm dialogs
 - Popovers and tooltips
@@ -106,23 +97,24 @@ reserved exclusively for **floating surfaces** that sit above the canvas:
 - Toast/reminder overlays
 - Drag ghost elements
 
-Inline content areas (list rows, tab panels, cards in masonry, split-panel columns)
-use a transparent background against the `#09090b` canvas, differentiated only by
-typography weight and edge rails. Do not give inline surfaces an elevated background.
+Inline content should not imitate elevation. Dense rows and panels should prefer a
+transparent canvas with dividers or edge rails. When grouping needs a filled boundary,
+use the lower-level `--color-bg-surface` or `--color-bg-card` tokens with the existing
+border treatment and no shadow; Knowledge launcher cards and filter/tool surfaces are
+current examples.
 
 The relevant token is `--color-bg-surface-elevated: #222227` combined with
 `--border-strong: 1px solid #39363c` and an appropriate `--shadow-*` value.
 
-**Corner radius scales with surface size:** window-scale surfaces (modals,
-dialogs) keep their soft radius; control-scale floating surfaces (toasts,
-context menus, dropdowns at chip/button size) use the same 2px corners as
-controls. A small rounded box next to square chips reads as foreign.
+Shared controls, cards, and generic modals use 2px corners. Reuse the radius already
+owned by an existing component instead of inferring more rounding from surface size.
+A rounded one-off surface next to square chips reads as foreign.
 
 ---
 
 ## 5. Accent System
 
-### Schemes
+### Preset Schemes
 
 Ten schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
 `:root[data-accent="…"]` overrides in `theme.css`:
@@ -136,7 +128,7 @@ Ten schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
 | `cyan`   | Cyan                 | `#06b6d4`         |
 | `green`  | Green                | `#22c55e`         |
 | `lime`   | Lime                 | `#84cc16`         |
-| `pink`   | Pink                 | `#d8b2b9`         |
+| `pink`   | Pink                 | `#fc8da9`         |
 | `purple` | Purple               | `#a855f7`         |
 | `violet` | Violet               | `#8b5cf6`         |
 
@@ -144,19 +136,29 @@ The orange and yellow schemes are deliberately tuned as non-semantic operator
 preferences so they stay distinguishable from the fixed `--alarm` red-orange
 (`#ff4539`) and `--color-warning` amber (`#ffb000`).
 
+Settings can also save up to four custom hexadecimal accents. A custom accent derives
+its hover and bright variants at runtime, lifts `--accent-bright` until it meets the
+dark-canvas contrast floor, and chooses black or white for `--on-accent` according to
+which has the stronger contrast against the fill.
+
+Accent scheduling is workstation-local and optional. It assigns a preset or saved
+custom color to three fixed `America/Chicago` windows: Day (6 AM–2 PM CT), Swing
+(2 PM–10 PM CT), and Night (10 PM–6 AM CT). When enabled, the active slot overrides
+the manually stored accent and is reevaluated at the next slot boundary.
+
 ### How It Works
 
-`data-accent` on `<html>` switches the three base variables. All derived values
-recompute automatically:
+For presets, `data-accent` on `<html>` switches the base variables. Custom colors set
+the same properties inline after deriving accessible variants:
 
-| Token             | Source                                                     |
-| ----------------- | ---------------------------------------------------------- |
-| `--accent`        | scheme base color                                          |
-| `--accent-hover`  | lighter midtone                                            |
-| `--accent-bright` | brightest; used for text on dark (>= 4.5 : 1 on `#09090b`) |
-| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`       |
-| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`        |
-| `--on-accent`     | `#000000` — text/icon color on a filled accent background  |
+| Token             | Source                                                          |
+| ----------------- | --------------------------------------------------------------- |
+| `--accent`        | scheme base color                                               |
+| `--accent-hover`  | lighter midtone                                                 |
+| `--accent-bright` | brightest; used for text on dark (>= 4.5 : 1 on `#09090b`)      |
+| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`            |
+| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`             |
+| `--on-accent`     | `#000000` for presets; computed black or white for custom fills |
 
 Legacy aliases (`--color-accent`, `--color-accent-hover`, etc.) forward to the live
 tokens and remain functional.
@@ -166,16 +168,24 @@ tokens and remain functional.
 ```ts
 ACCENT_SCHEMES; // AccentScheme[] — id, label, swatch
 ACCENT_STORAGE_KEY; // 'relay-accent'
+CUSTOM_ACCENT_STORAGE_KEY; // 'relay-custom-accent' — active custom color
+CUSTOM_ACCENTS_STORAGE_KEY; // 'relay-custom-accents'
+ACCENT_SCHEDULE_STORAGE_KEY; // 'relay-accent-schedule'
+ACCENT_SCHEDULE_SLOTS; // Day, Swing, and Night in America/Chicago
 DEFAULT_ACCENT; // 'red'
 
 getStoredAccent(); // → AccentId — reads localStorage, falls back to 'red'
 setAccent(id); // persist + apply immediately
-initAccent(); // apply stored scheme; also wires window 'storage' listener
+setCustomAccent(hex); // normalize, save, and apply a custom accent
+setAccentScheduleEnabled(enabled); // persist and apply schedule state
+setAccentScheduleSlot(slotId, choice); // assign a preset or saved custom color
+initAccent(); // apply schedule or stored accent; wire cross-window storage sync
 ```
 
-`initAccent()` wires a `window.addEventListener('storage', …)` handler so the kiosk
-pop-out window stays in sync with the main window via the shared `localStorage` key.
-Call it once at renderer startup.
+`initAccent()` applies the scheduled slot when scheduling is enabled, otherwise it
+applies the stored manual accent. It also schedules the next boundary check and wires
+a `window.addEventListener('storage', …)` handler so the kiosk pop-out stays in sync
+with the main window. Call it once at renderer startup.
 
 ---
 
@@ -183,16 +193,16 @@ Call it once at renderer startup.
 
 These colors are **never** changed by accent scheme selection:
 
-| Token                    | Value                               | Use                                                       |
-| ------------------------ | ----------------------------------- | --------------------------------------------------------- |
-| `--alarm`                | `#ff4539`                           | Genuine system problems only                              |
-| `--alarm-bright`         | `#ff6b61`                           | Alarm hover / text on dark                                |
-| `--alarm-dim`            | `color-mix(alarm 12%, transparent)` | Alarm fill tint                                           |
-| `--ok`                   | `#2bb24c`                           | Positive / resolved / healthy                             |
-| `--color-warning`        | `#ffb000`                           | Non-critical caution                                      |
-| `--color-warning-subtle` | `rgba(255,176,0,0.12)`              | Warning tint background                                   |
-| `--info`                 | `#1565c0`                           | Informational blue (matches the email card's INFO banner) |
-| `--info-bright`          | `#42a5f5`                           | Info lifted for black-ink fills / text on dark            |
+| Token                    | Value                                               | Use                                                       |
+| ------------------------ | --------------------------------------------------- | --------------------------------------------------------- |
+| `--alarm`                | `#ff4539`                                           | Genuine system problems only                              |
+| `--alarm-bright`         | `#ff6b61`                                           | Alarm hover / text on dark                                |
+| `--alarm-dim`            | `color-mix(in srgb, var(--alarm) 12%, transparent)` | Alarm fill tint                                           |
+| `--ok`                   | `#2bb24c`                                           | Positive / resolved / healthy                             |
+| `--color-warning`        | `#ffb000`                                           | Non-critical caution                                      |
+| `--color-warning-subtle` | `rgba(255,176,0,0.12)`                              | Warning tint background                                   |
+| `--info`                 | `#1565c0`                                           | Informational blue (matches the email card's INFO banner) |
+| `--info-bright`          | `#42a5f5`                                           | Info lifted for black-ink fills / text on dark            |
 
 **Rule:** use `--alarm` only when the user has a real problem to act on. Never use it
 for decorative highlights. Never use `--accent` for severity or urgency signals.
@@ -223,12 +233,13 @@ severity fills) always use `#000` for their label text (not `--on-accent`).
 
 ### TactileButton (`src/renderer/src/components/TactileButton.tsx`)
 
-All four variants use 2 px border-radius and `font-weight: 700`:
+All four variants use 2px corners. Secondary and ghost use weight 700; primary and
+danger use weight 800:
 
 | Variant               | Background  | Border                  | Text color                                  |
 | --------------------- | ----------- | ----------------------- | ------------------------------------------- |
 | `secondary` (default) | transparent | `--color-border-strong` | `--color-text-secondary` → primary on hover |
-| `primary`             | `--accent`  | `--accent`              | `--on-accent` (`#000`), weight 800          |
+| `primary`             | `--accent`  | `--accent`              | `--on-accent`, weight 800                   |
 | `ghost`               | transparent | transparent             | `--color-text-tertiary` → primary on hover  |
 | `danger`              | `--alarm`   | `--alarm`               | `#000000`, weight 800; fixed — not themed   |
 
@@ -262,7 +273,8 @@ On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 
 ### Fonts
 
-- **UI font:** `Outfit Variable` — loaded as variable font; fallback `Outfit, sans-serif`
+- **UI font:** `IBM Plex Sans` — locally bundled weights 400, 500, 600, and 700 plus
+  400 italic; fallback `'Segoe UI', system-ui, sans-serif`
 - **Mono font:** `JetBrains Mono` — reserved for genuinely technical surfaces only:
   the kiosk clock (`.popout-kiosk-timestamp`), `kbd`/`code`/`pre` and keycap chips
   (`.shortcuts-modal-key`), host:port addresses (`.setup-config__discover-addr`),
@@ -316,7 +328,7 @@ preview card that matches the actual sent alert email. Its hardcoded colors (whi
 background, dark text, literal severity colors) are correct and intentional. Never
 apply ink tokens, accent variables, or theme changes inside these fences.
 
-The card's base font rides `--font-family-base` and so moved to Outfit with the
+The card's base font rides `--font-family-base` and therefore uses IBM Plex Sans with the
 redesign; this is intentional. The fenced rules themselves are unchanged from the
 pre-redesign baseline.
 
@@ -411,9 +423,9 @@ Static design values must stay in CSS.
 - **Color + shape:** State must be communicated by at least two signals — color alone
   is insufficient. Rail color is supplemented by label text or icon change.
 - **Contrast floors:** Text quaternary (`#847c82`) is the minimum for any readable
-  text on `#09090b`. Accent-bright colors in each scheme are verified >= 4.5 : 1
-  on the charcoal canvas. `--on-accent` (`#000`) on accent-fill buttons meets
-  contrast requirements.
+  text on `#09090b`. Accent-bright colors in each preset and custom scheme meet at
+  least 4.5 : 1 on the charcoal canvas. Presets use black `--on-accent`; custom
+  accents choose black or white according to the stronger fill contrast.
 - **Reduced motion:** Animations that flash or pulse (e.g., critical reminder overlay)
   include a `@media (prefers-reduced-motion: reduce)` override.
 - Clickable non-button elements need semantic ARIA roles and keyboard handlers.

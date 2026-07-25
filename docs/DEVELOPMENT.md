@@ -19,22 +19,25 @@ For runtime structure, see `docs/architecture.md`.
 
 These files define the current workflow and should win over stale assumptions:
 
-| File                                               | Purpose                                                     |
-| -------------------------------------------------- | ----------------------------------------------------------- |
-| `package.json`                                     | Scripts and tool entry points                               |
-| `eslint.config.js`                                 | Lint rules and per-layer restrictions                       |
-| `vitest.config.ts`                                 | Main/shared test config                                     |
-| `vitest.renderer.config.ts`                        | Renderer test config                                        |
-| `src/shared/ipc.ts`                                | Bridge API and IPC channel definitions                      |
-| `src/shared/ipcValidation.ts`                      | Shared IPC validation helpers                               |
-| `src/shared/dynatrace.ts`                          | Dynatrace URL validation and navigation classification      |
-| `src/renderer/src/services/pocketbase.ts`          | Renderer PocketBase client and connection state             |
-| `src/renderer/src/hooks/useCollection.ts`          | Realtime collection subscription and offline cache fallback |
-| `src/renderer/src/hooks/useOptimisticList.ts`      | Optimistic list state over realtime data                    |
-| `src/renderer/src/hooks/useClientPresence.ts`      | Client heartbeat, client-count state, and connect toasts    |
-| `src/renderer/src/hooks/useDynatraceDashboards.ts` | Renderer state for dashboard settings and launch actions    |
-| `src/main/dynatrace/DynatraceWindowManager.ts`     | Relay-framed Dynatrace popout windows and navigation policy |
-| `src/main/dynatrace/DynatraceDashboardStore.ts`    | Local dashboard URL and popout bounds storage               |
+| File                                                 | Purpose                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------- |
+| `package.json`                                       | Scripts and tool entry points                               |
+| `eslint.config.js`                                   | Lint rules and per-layer restrictions                       |
+| `vitest.config.ts`                                   | Main/shared test config                                     |
+| `vitest.cache.config.ts`                             | Main-process cache test config                              |
+| `vitest.renderer.config.ts`                          | Renderer test config                                        |
+| `src/shared/ipc.ts`                                  | Bridge API and IPC channel definitions                      |
+| `src/shared/ipcValidation.ts`                        | Shared IPC validation helpers                               |
+| `src/shared/dynatrace.ts`                            | Dynatrace URL validation and navigation classification      |
+| `src/renderer/src/services/pocketbase.ts`            | Renderer PocketBase client and connection state             |
+| `src/renderer/src/stores/collectionStore.ts`         | Collection fetch, realtime, reconnect, and cache lifecycle  |
+| `src/renderer/src/stores/collectionStoreRegistry.ts` | Shared collection-store registry and query identity         |
+| `src/renderer/src/hooks/useCollection.ts`            | React adapter over the shared collection store              |
+| `src/renderer/src/hooks/useOptimisticList.ts`        | Optimistic list state over realtime data                    |
+| `src/renderer/src/hooks/useClientPresence.ts`        | Client heartbeat, client-count state, and connect toasts    |
+| `src/renderer/src/hooks/useDynatraceDashboards.ts`   | Renderer state for dashboard settings and launch actions    |
+| `src/main/dynatrace/DynatraceWindowManager.ts`       | Relay-framed Dynatrace popout windows and navigation policy |
+| `src/main/dynatrace/DynatraceDashboardStore.ts`      | Local dashboard URL and popout bounds storage               |
 
 ## Startup Performance
 
@@ -77,7 +80,7 @@ Current conventions:
 - Call `requireOnline()` before writes that should fail fast while offline
 - Route API failures through `handleApiError()`
 
-In Relay, normal record CRUD is performed directly from the renderer via the PocketBase SDK. It does not go through Electron IPC.
+In Relay, normal record reads and online writes go directly from the renderer to PocketBase. Standard writes pass through `mutationGateway.ts`: it uses the PocketBase SDK while online, routes offline-capable desktop mutations through validated IPC into the main-process queue, and rejects offline writes in Relay Web.
 
 ### Adding A Service
 
@@ -115,7 +118,7 @@ Current examples:
 - Cloud status aggregation
 - Clipboard and shell/file-system actions
 - Alert image and logo persistence
-- Offline cache reads and sync triggers
+- Offline mutation enqueueing, cache reads, and sync triggers
 - Backup creation and restore
 - Renderer-to-main logging
 
@@ -135,7 +138,7 @@ documented status API.
 
 ### Setup And Transport Security
 
-Server setup defaults to a local-only PocketBase listener (`127.0.0.1`). Use the direct LAN access option only when the server should accept connections from other machines on the network.
+New server setup enables direct LAN access by default and binds PocketBase to `0.0.0.0`. Clear **Allow direct LAN access** during setup to bind only to `127.0.0.1`. Keep the LAN-bound default only on trusted operator-controlled networks; use host firewall and network controls to limit which stations can reach the PocketBase port.
 
 Client setup normalizes host-only server entries to HTTPS. Explicit HTTP URLs are accepted for trusted LAN targets such as private IPs, `.local` names, and single-label machine names. Public HTTP URLs are rejected unless the insecure HTTP opt-in is selected.
 
@@ -198,9 +201,9 @@ Use:
 
 ### Realtime Collections
 
-`useCollection()` is the standard pattern for list data backed by PocketBase realtime subscriptions.
+`CollectionStore` in `src/renderer/src/stores/collectionStore.ts` owns the shared lifecycle for list data backed by PocketBase. `useCollection()` resolves a store through `collectionStoreRegistry.ts` and exposes its immutable snapshot to React with `useSyncExternalStore`.
 
-It handles:
+The store handles:
 
 - Initial full fetch
 - Realtime subscription setup
@@ -218,8 +221,8 @@ Current behavior:
 - The sidebar client block uses the same button styling and hover affordance as other sidebar footer items
 - Hovering the block shows active client hostnames
 - New client sessions trigger toast notifications
-- Client mode writes a heartbeat every 15 seconds and hides the server-only client-count block
-- Records older than 45 seconds are treated as inactive
+- Client mode writes a heartbeat every 30 seconds and hides the server-only client-count block
+- Records older than 90 seconds are treated as inactive
 
 The server is intentionally excluded from the count. Desktop client and browser records are considered active clients. Browser records use a bounded `Web · Browser · address` label and the same expiry window.
 
@@ -324,27 +327,32 @@ The demo seed intentionally writes historical `author` and `addressedBy` snapsho
 
 ### Test Suites
 
-Relay uses two Vitest configurations:
+Relay uses three Vitest configurations:
 
-| Suite       | Config                      | Environment |
-| ----------- | --------------------------- | ----------- |
-| Main/shared | `vitest.config.ts`          | Node        |
-| Renderer    | `vitest.renderer.config.ts` | jsdom       |
+| Suite               | Config                      | Environment |
+| ------------------- | --------------------------- | ----------- |
+| Main/shared/scripts | `vitest.config.ts`          | Node        |
+| Main-process cache  | `vitest.cache.config.ts`    | Node        |
+| Renderer            | `vitest.renderer.config.ts` | jsdom       |
 
 Common commands:
 
 ```bash
 npm test
 npm run test:unit
+npm run test:cache
 npm run test:renderer
 npm run test:coverage
 npm run test:electron
 npm run test:web
+npm run test:knowledge-upload-soak
 ```
+
+`npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
 
 `npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
-Coverage thresholds are currently 80% for lines, functions, branches, and statements in both Vitest configs.
+Coverage thresholds are currently 80% for lines, functions, branches, and statements in the main/shared and renderer configs. The cache config has no independent coverage threshold.
 
 Renderer coverage is run through the renderer test wrapper:
 

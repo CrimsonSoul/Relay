@@ -36,10 +36,11 @@ Relay has three main application layers and one optional browser gateway:
 Relay uses PocketBase as the application data store.
 
 - The renderer initializes a PocketBase client in `src/renderer/src/services/pocketbase.ts`
-- Feature services such as `contactService.ts`, `serverService.ts`, and `oncallService.ts` call PocketBase directly
-- Realtime subscriptions are handled in the renderer through `useCollection`
+- Feature services such as `contactService.ts`, `serverService.ts`, and `oncallService.ts` read from PocketBase directly
+- `CollectionStore` in `src/renderer/src/stores/collectionStore.ts` owns collection fetches, realtime subscriptions, reconnect reconciliation, and offline snapshot fallback; `useCollection` is its React adapter
+- Standard writes pass through `mutationGateway.ts`: online writes use the PocketBase SDK directly, while offline-capable desktop writes use validated IPC to enter the main-process queue
 
-This means day-to-day collection CRUD does not go through Electron IPC.
+Ordinary online collection CRUD therefore stays on the renderer-to-PocketBase path. Electron IPC is still part of the desktop offline-write path; Relay Web rejects writes while offline instead of exposing that queue.
 
 ### IPC Surface
 
@@ -51,8 +52,8 @@ IPC is reserved for operations the renderer should not perform directly, includi
 - Cloud status aggregation
 - Clipboard and file-system actions
 - Backup and restore
-- Offline cache reads and sync triggers
-- Wiki PDF/status reads inside the Knowledge workspace
+- Offline mutation enqueueing, cache reads, and sync triggers
+- Wiki PDF/status/search actions inside the Knowledge workspace
 - Privileged sign-in, pairing, session, and typed-command actions
 - Logging bridge events
 
@@ -88,7 +89,7 @@ Current behavior:
 - Bootstrap required collections on startup
 - Start backup and retention on a shared 24-hour schedule after PocketBase is healthy
 
-The backup/retention schedule runs once at startup and then every 24 hours. Each cycle re-authenticates the superuser, creates a backup, then runs retention cleanup — backup always precedes pruning so retention can never delete data that has not been captured in a backup. An overlap guard skips a cycle if the previous one is still running. Regular backups (keep 10) and pre-restore safety backups (keep 3) are pruned on separate budgets so a burst of restores cannot evict scheduled backups.
+The backup/retention schedule first runs about 30 seconds after startup and then every 24 hours. Each cycle re-authenticates the superuser and attempts a regular backup if one is due before running retention cleanup. A failed authentication or backup is logged, but cleanup still proceeds; the schedule does not guarantee that every retained record was captured by that cycle's backup. An overlap guard skips a cycle if the previous one is still running. Regular backups (keep 10) and pre-restore safety backups (keep 3) are pruned on separate budgets so a burst of restores cannot evict scheduled backups.
 
 Relay currently bootstraps required collections in code. It does not rely on checked-in migration files.
 
@@ -106,7 +107,7 @@ Server mode responsibilities:
 Client mode responsibilities:
 
 - Connect to an existing Relay server URL
-- Write a `client_presence` heartbeat every 15 seconds with the client hostname
+- Write a `client_presence` heartbeat every 30 seconds with the client hostname
 - Hide the client-count sidebar block because it is server-only operator context
 
 Relay Web responsibilities:
@@ -117,7 +118,7 @@ Relay Web responsibilities:
 - Adapt system actions through a bounded same-origin API while capability-gating desktop-only operations
 - Require a desktop viewport at least 1,024 pixels wide
 
-Presence records expire from the UI after 45 seconds without a heartbeat. The collection stores desktop clients and browser sessions, so the Relay server itself is not counted.
+Presence records expire from the UI after 90 seconds without a heartbeat. The collection stores desktop clients and browser sessions, so the Relay server itself is not counted.
 
 Relay Web is a backup access path, not an independent frontend. The same React components, PocketBase services, realtime subscriptions, and feature state are used in both runtimes. The Electron preload adapter and browser session adapter implement the runtime boundary. Native window management, connection reconfiguration, backup/restore, offline cache/replay, native alarm selection, and image clipboard capture remain desktop-only.
 
@@ -132,7 +133,7 @@ Offline behavior is handled by:
 Responsibilities:
 
 - Keep a local cache of collection snapshots for offline reads
-- Queue writes that occur while disconnected
+- Accept validated offline-capable desktop writes through IPC and queue them while disconnected
 - Replay queued changes when the connection returns
 - Record conflicts in the `conflict_log` collection
 
@@ -196,7 +197,9 @@ Upload manifests and chunks live in account- and device-bound PocketBase collect
 
 Clients subscribe to `knowledge_documents` metadata through the same realtime and offline snapshot path as other read models. PDF bytes do not ride the metadata stream: the renderer requests one validated document/checksum pair through trusted IPC, and the main process authenticates to the Relay server's protected file endpoint.
 
-Wiki opens to the M3 catalog instead of immediately opening a document. Its renderer model derives Recently Updated from timestamps, groups large SOP cover cards by category order, keeps cheatsheets in compact scan rows, and applies search, category, type, and sort controls together. Covers are requested through Intersection Observer only as cards enter the viewport. Opening either document type transitions into the existing focused reader; returning to Wiki preserves catalog filters and search state.
+Wiki full-text search is a derived, optional subsystem. After the required workspace is ready, the server indexer reads checksum-validated protected PDFs, extracts bounded passages in a worker, and writes them to the server-owned `knowledge_search_chunks` collection keyed by document, checksum, page, passage, and index version. The main-process search service reconciles document and chunk snapshots over authenticated PocketBase realtime, keeps a bounded desktop snapshot for cached search, and serves validated search/cancellation requests through the Electron IPC or Relay Web runtime adapters. Search bootstrap or indexing failure makes search unavailable without changing the authoritative PDF library; the index can be rebuilt from managed documents.
+
+Wiki opens to its catalog instead of immediately opening a document. Its renderer model derives Recently Updated from timestamps, groups large SOP Manual cover cards by category order, keeps Quick Guides in compact scan rows, and applies search, category, type, and sort controls together. Covers are requested through Intersection Observer only as cards enter the viewport. Opening either document type transitions into the existing focused reader; returning to Wiki preserves catalog filters and search state.
 
 Category creation, renaming, complete-set reordering, delete-with-reassignment, combined document title/category/type edits, and bulk category assignment are six explicit signed commands under `knowledge.manage`. Owner, Administrator, and Publisher sessions receive the same Wiki-management operations. The server revalidates capability, expected revisions, stable IDs, category uniqueness, and reassignment completeness before writing. Category metadata remains renderer-read-only and is not added to the offline mutation queue.
 
@@ -271,7 +274,7 @@ This keeps React views thin and moves data operations into testable modules.
 
 ## Storage Model
 
-Relay bootstraps the PocketBase collections it needs at runtime. The core collections include:
+Relay bootstraps the PocketBase collections it needs at runtime. The representative collections below show the major data boundaries; `src/main/pocketbase/CollectionBootstrap.ts` is the complete source of truth.
 
 | Collection                            | Purpose                                             |
 | ------------------------------------- | --------------------------------------------------- |
@@ -288,6 +291,8 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 | `client_presence`                     | Active client heartbeat records                     |
 | `conflict_log`                        | Offline sync conflict records                       |
 | `knowledge_documents`                 | Read-only PDF metadata and protected mirror         |
+| `knowledge_categories`                | Ordered Wiki category metadata                      |
+| `knowledge_search_chunks`             | Optional, server-owned derived PDF search passages  |
 | `relay_privileged_accounts`           | Main-only username authentication for role accounts |
 | `relay_privileged_state`              | Singleton Owner and Publisher account-ID pointers   |
 | `relay_privileged_devices`            | Paired workstation public keys and revocation state |
@@ -297,7 +302,7 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 
 Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local workstation convenience and contains external URLs rather than shared operational data.
 
-`knowledge_documents` is server-owned: authenticated users can list/view records, but API create/update/delete rules are disabled. It is readable through Relay's metadata cache allowlist and deliberately excluded from writable-cache and offline-mutation allowlists.
+`knowledge_documents` and `knowledge_search_chunks` are server-owned: authenticated users can list/view records, but API create/update/delete rules are disabled. Document metadata is readable through Relay's metadata cache allowlist and deliberately excluded from writable-cache and offline-mutation allowlists. Search chunks are derived from managed PDFs and may be stored in the separate bounded desktop search snapshot; clients never write them directly.
 
 `standalone_notes` is not a managed runtime collection. An existing installation may still contain archived rows from the removed Notes tab; Relay deliberately does not patch, synchronize, import, export, seed, clear, or delete that collection. Keeping those rows inert makes rollback or an explicit future archival export possible without confusing them with the contextual `notes` collection.
 

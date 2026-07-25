@@ -43,7 +43,7 @@ The renderer runs with:
 - `nodeIntegration: false`
 - `sandbox: true`
 
-The renderer does not import Node.js or Electron APIs directly. System-level operations go through the preload bridge. PocketBase data CRUD is performed with the PocketBase SDK rather than IPC.
+The renderer does not import Node.js or Electron APIs directly. System-level operations go through the preload bridge. Ordinary reads and online writes use the PocketBase SDK directly. Offline-capable desktop writes use the validated preload bridge to enter the main-process mutation queue; Relay Web rejects writes while offline.
 
 ### Relay Web Gateway
 
@@ -79,7 +79,7 @@ The service uses cleartext HTTP. Session credentials, operational data, and resp
 
 ### CSP Meta Fallback
 
-`electron.vite.config.ts` injects a `<meta http-equiv="Content-Security-Policy">` tag into `dist/renderer/index.html` at build time. This mirrors the production response-header CSP (`securityHeaders.ts`) and provides a defense-in-depth layer for the packaged `file://` load path where session-level headers take effect but the meta tag adds a second enforcement point.
+`electron.vite.config.ts` injects a `<meta http-equiv="Content-Security-Policy">` tag into `dist/renderer/index.html` at build time. It is a defense-in-depth fallback for the packaged `file://` load path, not an exact copy of the response-header policy. Because the configured PocketBase origin is not known at build time, the meta policy permits the supported HTTP(S)/WebSocket schemes in `connect-src` and omits the runtime header's `form-action` directive. A meta tag also cannot provide the non-CSP response headers. The session-level policy in `src/main/app/securityHeaders.ts` is authoritative at runtime: it narrows `connect-src` to the configured PocketBase origin, includes `form-action 'self'`, and installs the remaining security headers.
 
 ### Navigation And Window Controls
 
@@ -142,7 +142,7 @@ Key files:
 - `src/main/utils/pathValidation.ts`
 - `src/main/utils/pathSafety.ts`
 
-Knowledge Base publishing has no configured source root or watched folder. The native file picker returns selected paths only to the main process. Relay accepts regular, non-symbolic PDF files within the size limit, records their canonical identity, and reopens them with no-follow semantics. Before every bounded chunk read it revalidates the canonical path, device, inode, size, modification time, PDF signature, and whole-file checksum. A moved or changed source becomes `source-required` instead of uploading replacement bytes under an existing manifest.
+Wiki publishing has no configured source root or watched folder. The native file picker returns selected paths only to the main process. Relay accepts regular, non-symbolic PDF files within the size limit, records their canonical identity, and reopens them with no-follow semantics. Before every bounded chunk read it revalidates the canonical path, device, inode, size, modification time, PDF signature, and whole-file checksum. A moved or changed source becomes `source-required` instead of uploading replacement bytes under an existing manifest.
 
 ### Cache IPC Validation
 
@@ -156,26 +156,23 @@ Checks include:
 
 ### Rate Limiting
 
-`src/main/rateLimiter.ts` applies token-bucket rate limiting to expensive or sensitive IPC paths.
+`src/main/rateLimiter.ts` provides global and caller-keyed token buckets. Security coverage is determined by handler call sites, not merely by a configured bucket.
 
-Current buckets:
+Currently enforced limits include:
 
-| Bucket            | Purpose                         |
-| ----------------- | ------------------------------- |
-| `fileImport`      | Import operations               |
-| `dataMutation`    | Mutation-oriented IPC handlers  |
-| `dataReload`      | Full reload requests            |
-| `fsOperations`    | File and shell actions          |
-| `network`         | Outbound network requests       |
-| `rendererLogging` | Renderer-to-main log forwarding |
+| Boundary                 | Enforced operations                                                                                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, and Wiki external-link opening (`fsOperations`); cloud-status network refreshes (`network`); renderer log forwarding (`rendererLogging`) |
+| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                 |
+| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                        |
 
-When a request is blocked, the limiter returns `retryAfterMs` and logs the event through the IPC logger.
+`fileImport`, `dataMutation`, and `dataReload` are defined as reusable global buckets but have no current production call sites; do not rely on those definitions as enforced controls. Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
 
 ## Secrets And Local Data
 
 ### Connection Passphrase Storage
 
-`src/main/config/AppConfig.ts` stores the Relay connection passphrase encrypted with Electron `safeStorage` when available. A plaintext fallback exists for environments where Electron encryption is unavailable, such as headless CI.
+`src/main/config/AppConfig.ts` stores the Relay connection passphrase encrypted with Electron `safeStorage` when available. Packaged builds fail closed and refuse to write the passphrase when OS encryption is unavailable. A plaintext compatibility path exists only in unpackaged development and test environments such as headless CI.
 
 Settings displays the local server URL and passphrase so operators can connect Relay clients without hunting through config files. Treat that screen as sensitive local operator context and avoid sharing screenshots that expose real passphrases.
 
@@ -199,7 +196,7 @@ Recommended deployment assumption:
 
 ### PocketBase Network Exposure
 
-New server setup binds PocketBase to `127.0.0.1` by default. Direct LAN access requires an explicit setup opt-in and should be used only on trusted operator-controlled networks.
+New server setup enables direct LAN access by default and binds PocketBase to `0.0.0.0`. Clear **Allow direct LAN access** during setup to bind only to `127.0.0.1`. A LAN-bound server accepts connections on every interface permitted by the host firewall, so use it only on trusted operator-controlled networks and restrict the PocketBase port to approved stations.
 
 Client setup accepts HTTPS Relay server URLs by default and also supports HTTP for trusted LAN targets, including private IP addresses, `.local` names, and single-label machine names used for NOC desktop-to-laptop deployments. Public HTTP requires the explicit insecure HTTP opt-in. Use HTTPS when Relay traffic leaves the trusted LAN so the shared Relay passphrase is not sent over cleartext WAN links.
 
@@ -213,7 +210,7 @@ Unknown collections are left in place and logged as unmanaged. Startup must not 
 
 ### Privileged Access Boundary
 
-Ordinary Relay use has no account selector and requires no role-account sign-in. Reading shared data, composing bridges, and making ordinary operational updates remain available through the shared app session. New ordinary records are unattributed; a protected role account is required only for administration and Knowledge Base publishing.
+Ordinary Relay use has no account selector and requires no role-account sign-in. Reading shared data, composing bridges, and making ordinary operational updates remain available through the shared app session. New ordinary records are unattributed; a protected role account is required only for administration and Wiki publishing.
 
 Protected identity is username-based. `relay_privileged_accounts.username` is the sign-in identity; display names are presentation-only and email is not an accepted login or recovery identity. PocketBase may retain an internal `@relay.invalid` email value because the collection is an auth collection, but Relay enables password authentication only for normalized usernames.
 
@@ -242,7 +239,7 @@ The server PC is the recovery trust boundary. Fresh bootstrap creates inactive `
 
 ### Administration Authorization Matrix
 
-Only an active Owner or Administrator may load the administration snapshot. Owner-only account commands are enforced again in the main-process handler: an Administrator cannot create, rename, activate/deactivate, or transfer ownership among Administrator accounts. Administrators may manage the Publisher account and assignment. A Publisher session can invoke Knowledge Base management commands only. Ordinary app-user credentials cannot list or mutate protected accounts.
+Only an active Owner or Administrator may load the administration snapshot. Owner-only account commands are enforced again in the main-process handler: an Administrator cannot create, rename, activate/deactivate, or transfer ownership among Administrator accounts. Administrators may manage the Publisher account and assignment. A Publisher session can invoke Wiki management commands only. Ordinary app-user credentials cannot list or mutate protected accounts.
 
 | Protected action                      | Effective role                     | Additional requirement                                         |
 | ------------------------------------- | ---------------------------------- | -------------------------------------------------------------- |
@@ -254,7 +251,7 @@ Only an active Owner or Administrator may load the administration snapshot. Owne
 | Device revoke                         | Owner or Administrator             | Current device revision and single-use reauthentication proof  |
 | Dynatrace URL/profile replacement     | Owner or Administrator             | Current setting revision                                       |
 | Dynatrace token replacement           | Owner or Administrator             | Current setting revision and single-use reauthentication proof |
-| Knowledge Base document management    | Owner, Administrator, or Publisher | Active protected session                                       |
+| Wiki document management              | Owner, Administrator, or Publisher | Active protected session                                       |
 
 The administration snapshot exposes only `Configured` or `Not configured` for secrets. Replacement fields start blank and are cleared on submit, cancellation, failure, session lock, and unmount. No endpoint reveals an existing password or token. Device views expose only a short fingerprint suffix; public keys and signing metadata remain server-side.
 
@@ -274,9 +271,9 @@ Before upgrading an existing installation, create a consistent copy with the Poc
 
 Keep the consistent pre-migration backup until the upgraded installation has passed the same checks. If planning defers, do not touch the live installation. If a commit or post-commit check fails, stop Relay and restore the whole pre-migration PocketBase backup before starting the previous build; do not hand-edit collections or run an older build against a partially converted database. A retry with the new build is safe only after the copied database has been inspected and the migration's converted-state validation succeeds.
 
-### Knowledge Base Documents
+### Managed Wiki Documents
 
-The Knowledge Base is read-only during ordinary use. `knowledge_documents` has authenticated list/view rules and no direct client create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only allowlisted, capability-checked server commands publish or mutate managed documents.
+The Wiki is read-only during ordinary use. `knowledge_documents` has authenticated list/view rules and no direct client create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only allowlisted, capability-checked server commands publish or mutate managed documents.
 
 `knowledge_categories` is also renderer-read-only and remains outside `WRITABLE_CACHE_COLLECTIONS`. Owner, Administrator, and Publisher category/document changes use strict signed payloads under `knowledge.manage`; the server rechecks the account capability, expected revisions, case-insensitive category uniqueness, document membership, and mandatory reassignment before mutation. The system fallback category cannot be deleted. No category operation enters the ordinary offline-write replay path.
 
@@ -296,6 +293,10 @@ PDF.js can flatten URI, Launch/GoToR, and recoverable JavaScript actions into th
 
 Only an explicit operator click on a resolved HTTP(S) overlay can invoke `openKnowledgeWebLink`. The dedicated main-process handler requires a trusted sender, shares Relay's existing external-action rate limiter, parses a bounded URL, permits only HTTP(S) with a hostname, and rejects credentials, control characters, oversized values, and malformed URLs before calling `shell.openExternal`. This narrow action does not broaden or replace the unchanged provider allowlist on the general `OPEN_EXTERNAL` channel.
 
+Full-text search is an optional derived-data boundary. A server worker extracts bounded PDF passages into `knowledge_search_chunks`, which stores both original and normalized passage text. The collection is server-owned: authenticated clients may list/view it for search, but direct client create/update/delete rules are disabled. The main-process search service validates and bounds snapshots, reconciles realtime events, and may copy document metadata and chunks into the desktop offline search snapshot. Search requests are schema-validated and cancellable through trusted IPC; Relay Web adds authenticated same-origin routing and a per-session route limit.
+
+Each stored passage field is capped at 1,600 characters. The search service accepts at most 100,000 chunks and 128 MiB of passage text in a snapshot; queries are limited to 120 Unicode code points and results/excerpts are bounded before reaching the renderer. Bootstrap and indexing are best-effort, so failure disables search without weakening PDF publication or read controls. The extracted text is duplicated operational content in PocketBase, local search snapshots, and backups; Relay does not encrypt those stores itself. Continue to rely on managed-device access controls and full-disk encryption for confidential runbooks.
+
 Knowledge metadata uses the normal authenticated PocketBase/realtime path and may be stored in the read-only offline snapshot. PDF caches are content-addressed, checksum-validated, bounded to 2 GiB, and pruned through Relay's existing daily maintenance cycle. Cover files use the PDF checksum as their cache key, are PNG-signature and size validated before atomic promotion, permit only two concurrent generation/download jobs, and are confined to a separate 100 MiB cache of referenced checksums. These controls protect integrity and limit disk use, but they are not encryption: continue to rely on managed-device access controls and full-disk encryption for confidential runbooks. HTTP remains appropriate only on the trusted LAN deployment described above; use HTTPS if traffic crosses that boundary.
 
 ## Backups, Sync, And Resilience
@@ -303,6 +304,8 @@ Knowledge metadata uses the normal authenticated PocketBase/realtime path and ma
 ### Backup Safety
 
 `src/main/handlers/backupHandlers.ts` validates backup filenames before restore and rejects traversal attempts.
+
+Scheduled maintenance attempts a backup if one is due before retention cleanup, but authentication or backup failure is logged and does not stop cleanup. Do not treat the daily maintenance order as proof that every pruned record has a current restore point; monitor backup creation and verify restores independently. See `docs/architecture.md` for the schedule and retention flow.
 
 ### Offline Cache And Replay
 
@@ -324,7 +327,8 @@ This design provides:
 
 Current behavior:
 
-- Uncaught exceptions show a blocking dialog with `Quit` and `Continue`
+- Packaged Windows builds notify open windows and automatically relaunch after the first fatal uncaught exception unless fatal relaunch is explicitly disabled
+- Other platforms and unpackaged runs show a blocking dialog with `Quit` and `Continue`
 - Repeated unhandled rejections within a rolling window trigger a renderer stability warning
 
 ### Log Redaction

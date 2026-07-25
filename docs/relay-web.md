@@ -22,9 +22,9 @@ Phones and narrow tablet layouts are intentionally unsupported. Relay shows a fo
 
 The browser session remains signed in for up to one hour without activity and eight hours total. When it expires, Relay asks for the passphrase in place without discarding the mounted workspace.
 
-## Supported Experience
+## Supported experience
 
-Relay Web stays close to desktop parity by running the shared React renderer through a browser-safe runtime adapter. Core Compose, Alerts, On-Call, People, Servers, Knowledge, Service Status, Problems, settings, realtime updates, and protected workflows remain available.
+Relay Web stays close to desktop parity by running the shared React renderer through a browser-safe runtime adapter. Compose, Alerts, On-Call, Knowledge (Wiki, Contacts, and Servers), Service Status, Dynatrace Problems, Settings, realtime updates, and protected workflows remain available.
 
 Browser sessions appear in the server's client-presence list as `Web · Browser · address`. The address is sanitized before display.
 
@@ -34,16 +34,17 @@ The following device-specific operations stay on the desktop app:
 - Server/client connection setup and reconfiguration
 - Backup creation, restore, and backup retention controls
 - Offline cache reads, queued offline mutations, and offline file caching
+- Restart-persistent Wiki upload queues and **Reselect PDF** recovery; Relay Web upload queues are scoped to the current browser/server session
 - Native alarm-file selection
 - Image clipboard capture
 
-## Notifications And Service Status
+## Notifications and service status
 
-Relay Web shows the same in-app toasts and alarm sounds while its tab is open. It does not request browser notification permission, install a service worker, or send operating-system push notifications.
+Relay Web shows in-app toasts while its workspace is mounted. Built-in alarm audio plays while the tab is open when permitted by the browser's autoplay policy; visual alarms remain available if audio is blocked. Relay Web does not request browser notification permission, install a service worker, or send operating-system push notifications.
 
-Dynatrace Problems always take priority when a toast could show both a Problem and a provider event. Provider toasts are limited to current outage-severity events from the last seven days. The Service Status page uses that same outage-focused seven-day window and retains the official status, X, and Downdetector links.
+Dynatrace Problems always take priority when a toast could show both a Problem and a provider event. Provider status considers current errors and warnings from the last seven days. Relay notifies on newly observed outages and on confirmed degradations after two consecutive observations; planned or scheduled maintenance is excluded. The Service Status page uses that same current-issue window and retains the official status, X, and Downdetector links.
 
-## Network And Security Boundary
+## Network and security boundary
 
 Relay Web is an HTTP service for a managed trusted LAN or private VPN. HTTP does not encrypt browser traffic.
 
