@@ -212,7 +212,7 @@ export class ManagedKnowledgeService {
       this.readCategories(),
       this.readDocuments(),
       this.pb.collection(KNOWLEDGE_UPLOADS_COLLECTION).getFullList<StoredUploadRecord>({
-        filter: `accountId="${escapeFilter(input.accountId)}"`,
+        filter: `accountId="${escapeFilter(input.accountId)}" && state!="published" && state!="cancelled"`,
         requestKey: null,
       }),
     ]);
@@ -229,9 +229,9 @@ export class ManagedKnowledgeService {
       );
       return !query || query.split(' ').every((term) => text.includes(term));
     });
-    const sortedUploads = uploads.toSorted((left, right) =>
-      right.expiresAt.localeCompare(left.expiresAt),
-    );
+    const sortedUploads = uploads
+      .filter(({ state }) => state !== 'published' && state !== 'cancelled')
+      .toSorted((left, right) => right.expiresAt.localeCompare(left.expiresAt));
     const uploadStart = input.cursor
       ? Math.max(0, sortedUploads.findIndex(({ id }) => id === input.cursor) + 1)
       : 0;

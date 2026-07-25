@@ -215,6 +215,37 @@ describe('ManagedKnowledgeService', () => {
     expect(normalizeKnowledgeManagementSnapshot(snapshot)).not.toBeNull();
   });
 
+  it('paginates actionable uploads before terminal history so the next replacement stays reviewable', async () => {
+    documents.getFullList.mockResolvedValueOnce([document()]);
+    uploads.getFullList.mockResolvedValueOnce([
+      ...Array.from({ length: 25 }, (_, index) =>
+        upload({
+          id: `upload-terminal-${index}`,
+          requestId: `request-terminal-${index}`,
+          state: index % 2 === 0 ? 'published' : 'cancelled',
+        }),
+      ),
+      upload({
+        id: 'upload-next-replacement',
+        requestId: 'request-next-replacement',
+        fileName: 'Runbook.pdf',
+        replacementDocumentId: 'document-1',
+        duplicateDocumentId: 'document-1',
+      }),
+    ]);
+
+    const snapshot = await service().snapshot({
+      accountId: ACTOR.accountId,
+      query: '',
+      cursor: null,
+      pageSize: 25,
+    });
+
+    expect(snapshot.uploads.items.map(({ id }) => id)).toEqual(['upload-next-replacement']);
+    expect(snapshot.uploads.nextCursor).toBeNull();
+    expect(normalizeKnowledgeManagementSnapshot(snapshot)).not.toBeNull();
+  });
+
   it('resolves upload filename conflicts from the current active document set', async () => {
     documents.getFullList.mockResolvedValueOnce([
       document({

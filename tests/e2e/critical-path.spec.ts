@@ -1226,6 +1226,63 @@ test.describe('Vital Critical Path', () => {
       }),
     ).resolves.toHaveLength(0);
 
+    const secondReplacementPath = path.join(fixtureDir, 'Second replacement flow evidence.pdf');
+    const secondReplacementBytes = buildKnowledgePdfFixture({
+      title: 'Second replacement flow evidence',
+      pageCount: 2,
+    });
+    fs.writeFileSync(secondReplacementPath, secondReplacementBytes, { mode: 0o600 });
+    await installServerKnowledgeDialogFixture([secondReplacementPath]);
+    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+    await expect(
+      paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }),
+    ).toBeVisible();
+    await paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }).click();
+    const secondReplacementRow = window.locator('.knowledge-management-row--upload', {
+      hasText: 'Second replacement flow evidence.pdf',
+    });
+    const secondReplaceExisting = secondReplacementRow.getByRole('button', {
+      name: 'Replace existing',
+      exact: true,
+    });
+    await expect(secondReplaceExisting).toBeEnabled({ timeout: 30_000 });
+    await secondReplaceExisting.click();
+    await expect(secondReplacementRow).not.toBeVisible();
+    await expect
+      .poll(async () => {
+        const current = await pb
+          .collection('knowledge_documents')
+          .getOne<{ revision: number }>(originalDocument.id, { requestKey: null });
+        return current.revision;
+      })
+      .toBe(originalDocument.revision + 2);
+    const twiceReplacedDocument = await pb
+      .collection('knowledge_documents')
+      .getOne<typeof originalDocument>(originalDocument.id, { requestKey: null });
+    expect(twiceReplacedDocument).toMatchObject({
+      id: originalDocument.id,
+      sourceKey: originalDocument.sourceKey,
+      category: originalDocument.category,
+      categoryId: originalDocument.categoryId,
+      documentType: originalDocument.documentType,
+      title: originalDocument.title,
+      displayTitle: originalDocument.displayTitle,
+      fileName: originalDocument.fileName,
+      publishedByAccountId: originalDocument.publishedByAccountId,
+      publishedByName: originalDocument.publishedByName,
+      publishedAt: originalDocument.publishedAt,
+      revision: originalDocument.revision + 2,
+    });
+    expect(twiceReplacedDocument.checksum).toBe(
+      crypto.createHash('sha256').update(secondReplacementBytes).digest('hex'),
+    );
+    await expect(
+      pb.collection('knowledge_documents').getFullList({
+        filter: 'fileName = "Second replacement flow evidence.pdf"',
+        requestKey: null,
+      }),
+    ).resolves.toHaveLength(0);
+
     const discardPath = path.join(fixtureDir, originalDocument.fileName);
     fs.writeFileSync(
       discardPath,
