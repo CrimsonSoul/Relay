@@ -118,4 +118,38 @@ describe('redactSensitiveData', () => {
     const redacted = redactSensitiveData(input) as Record<string, unknown>;
     expect(redacted.clientSecret).toBe('[REDACTED]');
   });
+
+  it('redacts short country-code email addresses in log strings', () => {
+    const redacted = redactSensitiveData({ message: 'Contact a@b.co for help.' }) as Record<
+      string,
+      unknown
+    >;
+
+    expect(redacted.message).toBe('Contact [REDACTED_EMAIL] for help.');
+  });
+
+  it('redacts email addresses with modern long top-level domains in log strings', () => {
+    const redacted = redactSensitiveData({
+      message: 'Contact deployment@relay.technology for help.',
+    }) as Record<string, unknown>;
+
+    expect(redacted.message).toBe('Contact [REDACTED_EMAIL] for help.');
+  });
+
+  it('redacts multiple punctuated email addresses independently in log strings', () => {
+    const redacted = redactSensitiveData({
+      message: 'Primary (ops@relay.io), backup support@help.dev; thank you.',
+    }) as Record<string, unknown>;
+
+    expect(redacted.message).toBe(
+      'Primary ([REDACTED_EMAIL]), backup [REDACTED_EMAIL]; thank you.',
+    );
+  });
+
+  it('leaves a 20,000-character non-matching log string unchanged', () => {
+    const message = 'x'.repeat(20_000);
+    const redacted = redactSensitiveData({ message }) as Record<string, unknown>;
+
+    expect(redacted.message).toBe(message);
+  });
 });

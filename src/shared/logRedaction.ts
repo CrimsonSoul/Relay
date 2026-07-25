@@ -7,8 +7,7 @@ const CIRCULAR = '[Circular]';
 
 // Patterns for detecting PII in string values (applied to bounded log data only)
 const EMAIL_PATTERN =
-  // eslint-disable-next-line sonarjs/slow-regex -- applied to short, bounded log strings; backtracking risk is negligible
-  /[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,6}/g;
+  /[a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}\.[a-zA-Z]{2,63}/g;
 const PHONE_PATTERN = /(?:\+?\d(?:[\d\s\-().]*\d){6,})/g;
 
 const SENSITIVE_KEY_PATTERNS = [
