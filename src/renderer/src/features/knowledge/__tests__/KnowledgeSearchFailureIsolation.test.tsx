@@ -591,7 +591,7 @@ async function assertCoreProductionSurfaces(
   expect(onOpenDocument).toHaveBeenCalledWith(expect.objectContaining({ documentId: 'oracle' }));
 
   const reader = screen.getByRole('region', { name: 'Reader sentinel' });
-  const exact = within(reader).getByRole('option', { name: /Use RF failover now/ });
+  const exact = within(reader).getByRole('button', { name: /Use RF failover now/ });
   expect(exact).toBeVisible();
   fireEvent.click(exact);
   expect(screen.getByTestId('reader-navigation')).toHaveTextContent(exactMatch().id);

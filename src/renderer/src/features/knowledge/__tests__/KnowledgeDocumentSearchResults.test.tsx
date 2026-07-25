@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   KnowledgeDocumentSearchMatch,
@@ -58,6 +58,32 @@ function displayResults(
 }
 
 describe('KnowledgeDocumentSearchResults', () => {
+  it('exposes native list items with tabbable result actions and the current location', () => {
+    const currentSnapshot = snapshot();
+    render(
+      <KnowledgeDocumentSearchResults
+        snapshot={currentSnapshot}
+        results={displayResults(currentSnapshot)}
+        enhancedUnavailable={false}
+        activeResultIndex={1}
+        onActivate={vi.fn()}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+      />,
+    );
+
+    const list = screen.getByRole('list', { name: 'Matches' });
+    const items = within(list).getAllByRole('listitem');
+    const actions = within(list).getAllByRole('button');
+    expect(items).toHaveLength(2);
+    expect(actions).toHaveLength(2);
+    expect(actions[0]).toHaveProperty('tabIndex', 0);
+    expect(actions[1]).toHaveProperty('tabIndex', 0);
+    expect(actions[1]).toHaveAttribute('aria-current', 'location');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.queryByRole('option')).toBeNull();
+  });
+
   it('shows progressive count and keeps found results actionable', () => {
     const onActivate = vi.fn();
     const onPrevious = vi.fn();
@@ -77,7 +103,7 @@ describe('KnowledgeDocumentSearchResults', () => {
 
     expect(screen.getByText('2 matches · 4 of 20 pages searched')).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole('option', { name: /Page 3, Lane recovery, Restart the lane service 1/ }),
+      screen.getByRole('button', { name: /Page 3, Lane recovery, Restart the lane service 1/ }),
     );
     expect(onActivate).toHaveBeenCalledWith(0);
     fireEvent.click(screen.getByRole('button', { name: 'Previous match' }));
@@ -131,7 +157,9 @@ describe('KnowledgeDocumentSearchResults', () => {
 
     expect(screen.getByText('2 matches · 2 pages unavailable')).toBeInTheDocument();
     expect(screen.getByText('Unavailable pages: 2, 5')).toBeInTheDocument();
-    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(
+      within(screen.getByRole('list', { name: 'Matches' })).getAllByRole('button'),
+    ).toHaveLength(2);
   });
 
   it('labels only fuzzy rows as close matches and announces enhanced unavailability compactly', () => {
@@ -172,10 +200,12 @@ describe('KnowledgeDocumentSearchResults', () => {
       />,
     );
 
-    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(
+      within(screen.getByRole('list', { name: 'Matches' })).getAllByRole('button'),
+    ).toHaveLength(2);
     expect(screen.getByText('Close match')).toBeInTheDocument();
     expect(screen.getByText('Full-text close matches are unavailable.')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Page 3/ })).not.toHaveTextContent('Close match');
+    expect(screen.getByRole('button', { name: /Page 3/ })).not.toHaveTextContent('Close match');
   });
 
   it('keeps the active result visible as arrow navigation advances', () => {
@@ -208,7 +238,9 @@ describe('KnowledgeDocumentSearchResults', () => {
       scrollIntoView.mockClear();
       rerender(<KnowledgeDocumentSearchResults {...props} activeResultIndex={8} />);
 
-      expect(screen.getAllByRole('option')[8]).toHaveAttribute('aria-selected', 'true');
+      expect(
+        within(screen.getByRole('list', { name: 'Matches' })).getAllByRole('button')[8],
+      ).toHaveAttribute('aria-current', 'location');
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
     } finally {
       if (originalScrollIntoView) {

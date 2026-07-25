@@ -81,7 +81,7 @@ export const KnowledgeContinuousPdf = forwardRef<
   ref,
 ) {
   const pageCount = Math.max(0, Math.floor(pdf.numPages));
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLElement>(null);
   const previousFocusRequestKeyRef = useRef(focusRequestKey);
   const scaleRef = useRef(scale);
   const observedCurrentPageIndexRef = useRef(activePageIndex);

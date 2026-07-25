@@ -1,5 +1,5 @@
 import { createRef, useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import type { KnowledgeSearchResult } from '@shared/knowledgeSearch';
@@ -129,8 +129,11 @@ describe('KnowledgeReaderSidebarBody', () => {
     const view = render(<Harness generationKey="generation-one" throwFuzzy />);
 
     expect(await screen.findAllByText('1 matches')).toHaveLength(2);
-    expect(screen.getAllByRole('option')).toHaveLength(1);
-    expect(screen.getByRole('option')).toHaveAttribute('aria-selected', 'false');
+    let resultActions = within(screen.getByRole('list', { name: 'Matches' })).getAllByRole(
+      'button',
+    );
+    expect(resultActions).toHaveLength(1);
+    expect(resultActions[0]).not.toHaveAttribute('aria-current');
     expect(screen.queryByText('Close match')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Next match' }));
     expect(onActivate).toHaveBeenLastCalledWith(0);
@@ -142,8 +145,9 @@ describe('KnowledgeReaderSidebarBody', () => {
     view.rerender(<Harness generationKey="generation-two" throwFuzzy={false} />);
 
     expect(await screen.findByText('2 matches')).toBeVisible();
-    expect(screen.getAllByRole('option')).toHaveLength(2);
-    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+    resultActions = within(screen.getByRole('list', { name: 'Matches' })).getAllByRole('button');
+    expect(resultActions).toHaveLength(2);
+    expect(resultActions[1]).toHaveAttribute('aria-current', 'location');
     expect(screen.getByText('Close match')).toBeVisible();
     consoleError.mockRestore();
   });

@@ -1,8 +1,17 @@
-import { useState, type ComponentProps } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
 
 type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']>>[0];
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 export function WebReauthenticationOverlay({
   onAuthenticate,
@@ -16,6 +25,51 @@ export function WebReauthenticationOverlay({
   const [passphrase, setPassphrase] = useState('');
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(
+    globalThis.document.activeElement instanceof HTMLElement
+      ? globalThis.document.activeElement
+      : null,
+  );
+
+  useLayoutEffect(() => {
+    const previouslyFocused = previouslyFocusedRef.current;
+    const containFocus = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+        return;
+      }
+
+      const activeElement = globalThis.document.activeElement;
+      if (event.shiftKey && (activeElement === first || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (activeElement === last || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    globalThis.document.addEventListener('keydown', containFocus, true);
+    return () => {
+      globalThis.document.removeEventListener('keydown', containFocus, true);
+      queueMicrotask(() => {
+        if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      });
+    };
+  }, []);
 
   const submit = async (event: FormSubmitEvent) => {
     event.preventDefault();
@@ -37,6 +91,7 @@ export function WebReauthenticationOverlay({
 
   return (
     <div
+      ref={dialogRef}
       className="web-reauthentication"
       role="dialog"
       aria-modal="true"

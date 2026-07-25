@@ -10,7 +10,7 @@ export type ContinuousPdfPageVisibility = {
 type ContinuousPdfPageOptions = {
   active: boolean;
   pageCount: number;
-  rootRef: RefObject<HTMLDivElement | null>;
+  rootRef: RefObject<HTMLElement | null>;
   initialPageIndex: number;
   overscanPages?: number;
   reducedMotion: boolean;

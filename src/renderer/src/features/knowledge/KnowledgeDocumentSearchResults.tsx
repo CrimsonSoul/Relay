@@ -66,23 +66,23 @@ export function KnowledgeDocumentSearchResultRows({
     const index = allResults.indexOf(result);
     const content = displayText(result);
     return (
-      <button
-        type="button"
-        role="option"
-        aria-selected={index === activeResultIndex}
-        aria-label={`Page ${content.pageIndex + 1}, ${content.section}, ${content.excerpt}`}
-        key={result.id}
-        onClick={() => onActivate(index)}
-      >
-        <span className="knowledge-document-search__row-heading">
-          <span>{content.section}</span>
-          {result.source === 'fuzzy' && (
-            <span className="knowledge-document-search__match-kind">Close match</span>
-          )}
-        </span>
-        <strong>{content.excerpt}</strong>
-        <span>Page {content.pageIndex + 1}</span>
-      </button>
+      <li key={result.id}>
+        <button
+          type="button"
+          aria-current={index === activeResultIndex ? 'location' : undefined}
+          aria-label={`Page ${content.pageIndex + 1}, ${content.section}, ${content.excerpt}`}
+          onClick={() => onActivate(index)}
+        >
+          <span className="knowledge-document-search__row-heading">
+            <span>{content.section}</span>
+            {result.source === 'fuzzy' && (
+              <span className="knowledge-document-search__match-kind">Close match</span>
+            )}
+          </span>
+          <strong>{content.excerpt}</strong>
+          <span>Page {content.pageIndex + 1}</span>
+        </button>
+      </li>
     );
   });
 }
@@ -115,7 +115,7 @@ export function KnowledgeDocumentSearchResults({
 }: Readonly<Props>) {
   const hasResults = results.length > 0;
   const localResults = results.filter((result) => result.source === 'local-exact');
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLUListElement>(null);
   const activeResultId = results[activeResultIndex]?.id ?? null;
 
   useLayoutEffect(() => {
@@ -130,7 +130,7 @@ export function KnowledgeDocumentSearchResults({
       return;
     }
     resultsRef.current
-      ?.querySelector<HTMLElement>('button[aria-selected="true"]')
+      ?.querySelector<HTMLElement>('button[aria-current="location"]')
       ?.scrollIntoView?.({ block: 'nearest' });
   }, [activeResultId, activeResultIndex]);
 
@@ -170,12 +170,7 @@ export function KnowledgeDocumentSearchResults({
           Full-text close matches are unavailable.
         </p>
       )}
-      <div
-        ref={resultsRef}
-        className="knowledge-document-search__results"
-        role="listbox"
-        aria-label="Matches"
-      >
+      <ul ref={resultsRef} className="knowledge-document-search__results" aria-label="Matches">
         <KnowledgeDocumentSearchResultRows
           results={localResults}
           activeResultIndex={activeResultIndex}
@@ -190,7 +185,7 @@ export function KnowledgeDocumentSearchResults({
             onActivate={onActivate}
           />
         )}
-      </div>
+      </ul>
     </section>
   );
 }
