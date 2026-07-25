@@ -152,4 +152,14 @@ describe('redactSensitiveData', () => {
 
     expect(redacted.message).toBe(message);
   });
+
+  it('processes a long non-matching email candidate with bounded regex work', () => {
+    const message = 'a'.repeat(100_000);
+    const startedAt = performance.now();
+    const redacted = redactSensitiveData({ message }) as Record<string, unknown>;
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(redacted.message).toBe(message);
+    expect(elapsedMs).toBeLessThan(500);
+  });
 });
