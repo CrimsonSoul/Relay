@@ -256,9 +256,10 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
   }
 });
 
-test('stable gutters preserve representative Relay flex, grid, menu, and modal topology', async () => {
+test('stable gutters preserve Relay topology under overlay and classic scrollbar widths', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
+  const classicScrollbarWidth = 16;
 
   try {
     await window.setContent(`
@@ -278,11 +279,9 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
           width: 920px;
           padding: 20px;
         }
-        .fixture-assembler {
-          width: 440px;
-          height: 300px;
-        }
-        .fixture-oncall {
+        .fixture-assembler,
+        .fixture-oncall,
+        .fixture-popout {
           box-sizing: border-box;
           width: 440px;
           height: 300px;
@@ -316,27 +315,29 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
         .fixture-detail-section {
           min-height: 72px;
         }
+        /*
+         * Deterministic classic-scrollbar emulation for overlay-scrollbar hosts: a native classic
+         * scrollbar consumes inline space inside the border box, so a transparent 16px end border
+         * gives the production scroll owner the same exact client-width constraint.
+         */
+        .classic-scrollbar-model [data-scroll-contract],
+        .classic-scrollbar-model [data-horizontal-contract] {
+          box-sizing: border-box;
+          border-inline-end: ${classicScrollbarWidth}px solid transparent !important;
+        }
       </style>
       <main class="layout-contracts">
         <section class="assembler-layout fixture-assembler" aria-label="Compose layout">
           <aside class="assembler-groups-pane">
             <div class="assembler-sidebar">
               <div class="assembler-sidebar-inner">
-                <div
-                  class="assembler-sidebar-panel"
-                  data-scroll-contract="assembler"
-                  data-fill-target="assembler-rows"
-                >
+                <div class="assembler-sidebar-panel" data-scroll-contract="assembler">
                   <div class="assembler-sidebar-groups">
                     <div class="assembler-sidebar-groups-header">
                       <span class="assembler-sidebar-groups-title">Contact groups</span>
                       <button class="assembler-sidebar-add-btn" data-inline-control>+</button>
                     </div>
-                    <div
-                      id="assembler-rows"
-                      class="assembler-sidebar-group-list"
-                      data-row-kind="assembler"
-                    >
+                    <div class="assembler-sidebar-group-list" data-row-kind="assembler">
                       <button class="sig-grp fixture-row" data-row-control>Primary group</button>
                     </div>
                   </div>
@@ -348,17 +349,25 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
           <div class="assembler-recipients-pane"></div>
         </section>
 
+        <section class="popout-board fixture-popout" data-scroll-contract="popout">
+          <header class="oncall-page-header">
+            <div><div class="oncall-page-context">Popout</div><h2>Coverage board</h2></div>
+            <button class="tactile-button" data-inline-control>Manage</button>
+          </header>
+          <div data-row-kind="popout">
+            <section class="fixture-team-card">
+              <button class="tactile-button" data-row-control>Primary popout team</button>
+            </section>
+          </div>
+        </section>
+
         <section class="personnel-tab-root fixture-oncall" data-scroll-contract="oncall-root">
           <header class="oncall-page-header">
             <div><div class="oncall-page-context">On-Call</div><h2>Coverage</h2></div>
             <button class="tactile-button" data-inline-control>Manage</button>
           </header>
-          <ul
-            class="oncall-masonry"
-            data-scroll-contract="oncall-masonry"
-            data-fill-target="oncall-rows"
-          >
-            <div id="oncall-rows" class="oncall-masonry-column" data-row-kind="oncall">
+          <ul class="oncall-masonry" data-scroll-contract="oncall-masonry">
+            <div class="oncall-masonry-column" data-row-kind="oncall">
               <li class="oncall-masonry-item fixture-team-card">
                 <button class="tactile-button" data-row-control>Primary team</button>
               </li>
@@ -370,8 +379,6 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
           <div
             class="combobox-dropdown"
             data-scroll-contract="combobox"
-            data-fill-target="combobox-rows"
-            id="combobox-rows"
             data-row-kind="combobox"
           >
             <button class="combobox-option fixture-row" data-row-control>Primary option</button>
@@ -382,8 +389,6 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
           <div
             class="group-selector-list"
             data-scroll-contract="group-list"
-            data-fill-target="group-rows"
-            id="group-rows"
             data-row-kind="group"
           >
             <button class="group-selector-item fixture-row" data-row-control>Primary group</button>
@@ -395,8 +400,6 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
           <ul
             class="search-dropdown-results"
             data-scroll-contract="search-results"
-            data-fill-target="search-rows"
-            id="search-rows"
             data-row-kind="search"
           >
             <li class="search-dropdown-item fixture-row">
@@ -409,8 +412,6 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
           <div
             class="detail-panel-body"
             data-scroll-contract="detail-body"
-            data-fill-target="detail-rows"
-            id="detail-rows"
             data-row-kind="detail"
           >
             <section class="detail-panel-field fixture-detail-section">
@@ -426,49 +427,88 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
       </main>
     `);
 
-    const before = await window.evaluate(() => {
-      const snapshots = Array.from(
-        globalThis.document.querySelectorAll('[data-scroll-contract]'),
-        (element) => {
-          if (!(element instanceof globalThis.HTMLElement)) {
-            throw new Error('Invalid scroll contract element');
-          }
-          const styles = globalThis.getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          const controls = Array.from(
-            element.querySelectorAll('[data-inline-control], [data-row-control]'),
+    const capture = async (mode: 'overlay' | 'classic', scrollToEnd: boolean) =>
+      window.evaluate(
+        ({ requestedMode, shouldScrollToEnd }) => {
+          globalThis.document.body.classList.toggle(
+            'classic-scrollbar-model',
+            requestedMode === 'classic',
           );
+
+          const snapshots = Array.from(
+            globalThis.document.querySelectorAll('[data-scroll-contract]'),
+            (element) => {
+              if (!(element instanceof globalThis.HTMLElement)) {
+                throw new Error('Invalid scroll contract element');
+              }
+              if (shouldScrollToEnd) element.scrollTop = element.scrollHeight;
+              const styles = globalThis.getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              const controls = Array.from(
+                element.querySelectorAll('[data-inline-control], [data-row-control]'),
+              );
+              const lastRow = element.querySelector('[data-last-row]');
+              const maxScrollTop = element.scrollHeight - element.clientHeight;
+              return {
+                id: element.dataset.scrollContract,
+                clientWidth: element.clientWidth,
+                offsetWidth: element.offsetWidth,
+                overflowX: styles.overflowX,
+                overflowY: styles.overflowY,
+                inlineEndBorderWidth: Number.parseFloat(styles.borderInlineEndWidth),
+                scrollbarGutter: styles.scrollbarGutter,
+                scrollTop: element.scrollTop,
+                maxScrollTop,
+                clientHeight: element.clientHeight,
+                scrollHeight: element.scrollHeight,
+                controlsWithinClientWidth: controls.every(
+                  (control) =>
+                    control.getBoundingClientRect().right <=
+                    rect.left + element.clientLeft + element.clientWidth + 1,
+                ),
+                lastRowVisible:
+                  !lastRow || lastRow.getBoundingClientRect().bottom <= rect.bottom + 1,
+              };
+            },
+          );
+
+          const error = globalThis.document.querySelector('[data-horizontal-contract]');
+          const control = globalThis.document.querySelector('[data-error-control]');
+          if (
+            !(error instanceof globalThis.HTMLElement) ||
+            !(control instanceof globalThis.HTMLElement)
+          ) {
+            throw new Error('Missing error layout contract');
+          }
+          if (shouldScrollToEnd) error.scrollLeft = error.scrollWidth;
           return {
-            id: element.dataset.scrollContract,
-            clientWidth: element.clientWidth,
-            overflowX: styles.overflowX,
-            overflowY: styles.overflowY,
-            scrollbarGutter: styles.scrollbarGutter,
-            controlsWithinClientWidth: controls.every(
-              (control) => control.getBoundingClientRect().right <= rect.left + element.clientWidth,
-            ),
+            mode: requestedMode,
+            snapshots,
+            error: {
+              clientWidth: error.clientWidth,
+              offsetWidth: error.offsetWidth,
+              inlineEndBorderWidth: Number.parseFloat(
+                globalThis.getComputedStyle(error).borderInlineEndWidth,
+              ),
+              scrollWidth: error.scrollWidth,
+              scrollLeft: error.scrollLeft,
+              maxScrollLeft: error.scrollWidth - error.clientWidth,
+              overflowX: globalThis.getComputedStyle(error).overflowX,
+              controlLeft: control.getBoundingClientRect().left,
+              controlWidth: control.getBoundingClientRect().width,
+            },
           };
         },
+        { requestedMode: mode, shouldScrollToEnd: scrollToEnd },
       );
-      const error = globalThis.document.querySelector('[data-horizontal-contract]');
-      const control = globalThis.document.querySelector('[data-error-control]');
-      if (
-        !(error instanceof globalThis.HTMLElement) ||
-        !(control instanceof globalThis.HTMLElement)
-      ) {
-        throw new Error('Missing error layout contract');
-      }
-      return {
-        snapshots,
-        error: {
-          clientWidth: error.clientWidth,
-          controlLeft: control.getBoundingClientRect().left,
-          controlWidth: control.getBoundingClientRect().width,
-        },
-      };
-    });
+
+    const before = {
+      overlay: await capture('overlay', false),
+      classic: await capture('classic', false),
+    };
 
     await window.evaluate(() => {
+      globalThis.document.body.classList.remove('classic-scrollbar-model');
       const makeRow = (kind: string, index: number) => {
         const button = globalThis.document.createElement('button');
         button.dataset.rowControl = 'true';
@@ -489,6 +529,7 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
 
         const wrapper = globalThis.document.createElement(kind === 'search' ? 'li' : 'section');
         if (kind === 'oncall') wrapper.className = 'oncall-masonry-item fixture-team-card';
+        if (kind === 'popout') wrapper.className = 'fixture-team-card';
         if (kind === 'search') wrapper.className = 'search-dropdown-item fixture-row';
         if (kind === 'detail') wrapper.className = 'detail-panel-field fixture-detail-section';
         button.className = kind === 'search' ? 'search-dropdown-hitbox' : 'tactile-button';
@@ -511,99 +552,124 @@ test('stable gutters preserve representative Relay flex, grid, menu, and modal t
       if (error) error.textContent = `Error: ${'unbroken'.repeat(100)}`;
     });
 
-    const after = await window.evaluate(() => {
-      const snapshots = Array.from(
-        globalThis.document.querySelectorAll('[data-scroll-contract]'),
-        (element) => {
-          if (!(element instanceof globalThis.HTMLElement)) {
-            throw new Error('Invalid scroll contract element');
-          }
-          const styles = globalThis.getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          const controls = Array.from(
-            element.querySelectorAll('[data-inline-control], [data-row-control]'),
-          );
-          element.scrollTop = element.scrollHeight;
-          const lastRow = element.querySelector('[data-last-row]');
-          return {
-            id: element.dataset.scrollContract,
-            clientWidth: element.clientWidth,
-            overflowX: styles.overflowX,
-            overflowY: styles.overflowY,
-            scrollbarGutter: styles.scrollbarGutter,
-            scrollTop: element.scrollTop,
-            clientHeight: element.clientHeight,
-            scrollHeight: element.scrollHeight,
-            controlsWithinClientWidth: controls.every(
-              (control) => control.getBoundingClientRect().right <= rect.left + element.clientWidth,
-            ),
-            lastRowReachable: !lastRow || lastRow.getBoundingClientRect().bottom <= rect.bottom + 1,
-          };
-        },
-      );
-      const error = globalThis.document.querySelector('[data-horizontal-contract]');
-      const control = globalThis.document.querySelector('[data-error-control]');
-      if (
-        !(error instanceof globalThis.HTMLElement) ||
-        !(control instanceof globalThis.HTMLElement)
-      ) {
-        throw new Error('Missing error layout contract');
-      }
-      error.scrollLeft = error.scrollWidth;
-      return {
-        snapshots,
-        error: {
-          clientWidth: error.clientWidth,
-          scrollWidth: error.scrollWidth,
-          scrollLeft: error.scrollLeft,
-          overflowX: globalThis.getComputedStyle(error).overflowX,
-          controlLeft: control.getBoundingClientRect().left,
-          controlWidth: control.getBoundingClientRect().width,
-        },
-      };
+    const after = {
+      overlay: await capture('overlay', true),
+      classic: await capture('classic', true),
+    };
+    const findSnapshot = (
+      collection: (typeof before.overlay)['snapshots'],
+      id: string | undefined,
+    ) => collection.find((snapshot) => snapshot.id === id);
+
+    expect(before.overlay.snapshots).toHaveLength(8);
+    expect(before.classic.snapshots).toHaveLength(8);
+    expect(after.overlay.snapshots).toHaveLength(8);
+    expect(after.classic.snapshots).toHaveLength(8);
+    expect(
+      Object.fromEntries(
+        before.overlay.snapshots.map(({ id, inlineEndBorderWidth }) => [id, inlineEndBorderWidth]),
+      ),
+    ).toEqual({
+      assembler: 0,
+      popout: 0,
+      'oncall-root': 0,
+      'oncall-masonry': 0,
+      combobox: 1,
+      'group-list': 0,
+      'search-results': 0,
+      'detail-body': 0,
+    });
+    expect(
+      Object.fromEntries(before.classic.snapshots.map(({ id, clientWidth }) => [id, clientWidth])),
+    ).toEqual({
+      assembler: 263,
+      popout: 424,
+      'oncall-root': 424,
+      'oncall-masonry': 360,
+      combobox: 283,
+      'group-list': 284,
+      'search-results': 402,
+      'detail-body': 303,
     });
 
-    expect(before.snapshots).toHaveLength(7);
-    expect(after.snapshots).toHaveLength(7);
-    for (const beforeSnapshot of before.snapshots) {
-      const afterSnapshot = after.snapshots.find(({ id }) => id === beforeSnapshot.id);
-      expect(afterSnapshot, beforeSnapshot.id).toBeDefined();
-      expect(beforeSnapshot.scrollbarGutter, beforeSnapshot.id).toBe('stable');
-      expect(afterSnapshot?.scrollbarGutter, beforeSnapshot.id).toBe('stable');
-      expect(afterSnapshot?.clientWidth, beforeSnapshot.id).toBe(beforeSnapshot.clientWidth);
-      expect(beforeSnapshot.controlsWithinClientWidth, beforeSnapshot.id).toBe(true);
-      expect(afterSnapshot?.controlsWithinClientWidth, beforeSnapshot.id).toBe(true);
+    for (const mode of ['overlay', 'classic'] as const) {
+      for (const beforeSnapshot of before[mode].snapshots) {
+        const afterSnapshot = findSnapshot(after[mode].snapshots, beforeSnapshot.id);
+        expect(afterSnapshot, `${mode} ${beforeSnapshot.id}`).toBeDefined();
+        expect(beforeSnapshot.scrollbarGutter, `${mode} ${beforeSnapshot.id}`).toBe('stable');
+        expect(afterSnapshot?.scrollbarGutter, `${mode} ${beforeSnapshot.id}`).toBe('stable');
+        expect(afterSnapshot?.clientWidth, `${mode} ${beforeSnapshot.id}`).toBe(
+          beforeSnapshot.clientWidth,
+        );
+        expect(afterSnapshot?.offsetWidth, `${mode} ${beforeSnapshot.id}`).toBe(
+          beforeSnapshot.offsetWidth,
+        );
+        expect(beforeSnapshot.controlsWithinClientWidth, `${mode} ${beforeSnapshot.id}`).toBe(true);
+        expect(afterSnapshot?.controlsWithinClientWidth, `${mode} ${beforeSnapshot.id}`).toBe(true);
+      }
     }
 
-    for (const id of [
+    for (const overlaySnapshot of before.overlay.snapshots) {
+      const classicSnapshot = findSnapshot(before.classic.snapshots, overlaySnapshot.id);
+      const nestedParentReduction =
+        overlaySnapshot.id === 'oncall-masonry' ? classicScrollbarWidth : 0;
+      const ownClassicReduction = classicScrollbarWidth - overlaySnapshot.inlineEndBorderWidth;
+      expect(classicSnapshot?.inlineEndBorderWidth, overlaySnapshot.id).toBe(classicScrollbarWidth);
+      expect(ownClassicReduction, overlaySnapshot.id).toBeGreaterThanOrEqual(15);
+      expect(ownClassicReduction, overlaySnapshot.id).toBeLessThanOrEqual(17);
+      expect(classicSnapshot?.offsetWidth, overlaySnapshot.id).toBe(
+        overlaySnapshot.offsetWidth - nestedParentReduction,
+      );
+      expect(classicSnapshot?.clientWidth, overlaySnapshot.id).toBe(
+        overlaySnapshot.clientWidth - ownClassicReduction - nestedParentReduction,
+      );
+    }
+    expect(before.overlay.error.inlineEndBorderWidth).toBe(0);
+    expect(before.classic.error.inlineEndBorderWidth).toBe(classicScrollbarWidth);
+    expect(before.classic.error.offsetWidth).toBe(before.overlay.error.offsetWidth);
+    expect(before.classic.error.clientWidth).toBe(
+      before.overlay.error.clientWidth -
+        (classicScrollbarWidth - before.overlay.error.inlineEndBorderWidth),
+    );
+
+    const scrollableIds = [
       'assembler',
+      'popout',
       'oncall-masonry',
       'combobox',
       'group-list',
       'search-results',
       'detail-body',
-    ]) {
-      const result = after.snapshots.find((snapshot) => snapshot.id === id);
-      expect(result?.overflowY, id).toBe('auto');
-      expect(result?.scrollHeight, id).toBeGreaterThan(
-        result?.clientHeight ?? Number.MAX_SAFE_INTEGER,
+    ];
+    for (const mode of ['overlay', 'classic'] as const) {
+      for (const id of scrollableIds) {
+        const result = findSnapshot(after[mode].snapshots, id);
+        expect(result?.overflowY, `${mode} ${id}`).toBe('auto');
+        expect(result?.scrollHeight, `${mode} ${id}`).toBeGreaterThan(
+          result?.clientHeight ?? Number.MAX_SAFE_INTEGER,
+        );
+        expect(result?.scrollTop, `${mode} ${id}`).toBe(result?.maxScrollTop);
+        expect(result?.scrollTop, `${mode} ${id}`).toBeGreaterThan(0);
+        expect(result?.lastRowVisible, `${mode} ${id}`).toBe(true);
+      }
+      expect(findSnapshot(after[mode].snapshots, 'assembler')?.overflowX).toBe('hidden');
+      expect(findSnapshot(after[mode].snapshots, 'oncall-root')?.controlsWithinClientWidth).toBe(
+        true,
       );
-      expect(result?.scrollTop, id).toBeGreaterThan(0);
-      expect(result?.lastRowReachable, id).toBe(true);
     }
-    expect(after.snapshots.find(({ id }) => id === 'assembler')?.overflowX).toBe('hidden');
-    expect(after.snapshots.find(({ id }) => id === 'oncall-root')?.controlsWithinClientWidth).toBe(
-      true,
-    );
 
-    expect(after.error).toMatchObject({
-      clientWidth: before.error.clientWidth,
-      overflowX: 'auto',
-      controlLeft: before.error.controlLeft,
-      controlWidth: before.error.controlWidth,
-    });
-    expect(after.error.scrollWidth).toBeGreaterThan(after.error.clientWidth);
-    expect(after.error.scrollLeft).toBeGreaterThan(0);
+    for (const mode of ['overlay', 'classic'] as const) {
+      expect(after[mode].error).toMatchObject({
+        clientWidth: before[mode].error.clientWidth,
+        offsetWidth: before[mode].error.offsetWidth,
+        overflowX: 'auto',
+        controlLeft: before[mode].error.controlLeft,
+        controlWidth: before[mode].error.controlWidth,
+      });
+      expect(after[mode].error.scrollWidth, mode).toBeGreaterThan(after[mode].error.clientWidth);
+      expect(after[mode].error.scrollLeft, mode).toBe(after[mode].error.maxScrollLeft);
+      expect(after[mode].error.scrollLeft, mode).toBeGreaterThan(0);
+    }
   } finally {
     await app.close();
   }

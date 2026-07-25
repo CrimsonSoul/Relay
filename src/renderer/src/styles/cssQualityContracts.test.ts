@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import postcss, { type Declaration, type Root, type Rule } from 'postcss';
+import postcss, { type AtRule, type Declaration, type Root, type Rule } from 'postcss';
 import { describe, expect, it } from 'vitest';
 
 const cssPath = (relativePath: string) => resolve(process.cwd(), 'src/renderer/src', relativePath);
@@ -24,13 +24,29 @@ function parseCss(source: string): Root {
   return postcss.parse(source);
 }
 
-function exactRules(source: string, selector: string): Rule[] {
+function atRulePath(rule: Rule): string[] | undefined {
+  const path: string[] = [];
+  let parent = rule.parent;
+  while (parent && parent.type !== 'root') {
+    if (parent.type !== 'atrule') return undefined;
+    const atRule = parent as AtRule;
+    path.unshift(`${atRule.name} ${atRule.params}`.trim());
+    parent = parent.parent;
+  }
+  return parent?.type === 'root' ? path : undefined;
+}
+
+function exactRules(source: string, selector: string, expectedAtRulePath: string[] = []): Rule[] {
   const expectedSelectors = (postcss.parse(`${selector} {}`).first as Rule).selectors;
   const matches: Rule[] = [];
   parseCss(source).walkRules((rule) => {
+    const actualAtRulePath = atRulePath(rule);
     if (
+      actualAtRulePath &&
       rule.selectors.length === expectedSelectors.length &&
-      rule.selectors.every((candidate, index) => candidate === expectedSelectors[index])
+      rule.selectors.every((candidate, index) => candidate === expectedSelectors[index]) &&
+      actualAtRulePath.length === expectedAtRulePath.length &&
+      actualAtRulePath.every((atRule, index) => atRule === expectedAtRulePath[index])
     ) {
       matches.push(rule);
     }
@@ -46,8 +62,12 @@ function declarationValue(rule: Rule, property: string): string | undefined {
   return declarations(rule).find(({ prop }) => prop === property)?.value;
 }
 
-function declarationProperties(rule: Rule): string[] {
-  return declarations(rule).map(({ prop }) => prop);
+function normalizeValue(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function declarationEntries(rule: Rule): Array<[string, string]> {
+  return declarations(rule).map(({ prop, value }) => [prop, normalizeValue(value)]);
 }
 
 function matchingDeclarations(source: string, property: string, value: string): Declaration[] {
@@ -58,8 +78,20 @@ function matchingDeclarations(source: string, property: string, value: string): 
   return matches;
 }
 
-function sourceOffset(rule: Rule): number {
-  return rule.source?.start?.offset ?? Number.MAX_SAFE_INTEGER;
+function topLevelRuleLocation(rule: Rule): {
+  ruleIndex: number;
+  previousSelector: string | undefined;
+  nextSelector: string | undefined;
+} {
+  if (rule.parent?.type !== 'root') throw new Error(`${rule.selector} is not a top-level rule`);
+  const rules = rule.parent.nodes.filter((node): node is Rule => node.type === 'rule');
+  const ruleIndex = rules.indexOf(rule);
+  const selectorAt = (index: number) => rules[index]?.selectors.join(', ');
+  return {
+    ruleIndex,
+    previousSelector: selectorAt(ruleIndex - 1),
+    nextSelector: selectorAt(ruleIndex + 1),
+  };
 }
 
 describe('CSS zero-warning contracts', () => {
@@ -73,11 +105,18 @@ describe('CSS zero-warning contracts', () => {
       @media (max-width: 800px) {
         .target { color: blue; }
       }
+      @supports (display: grid) {
+        .target { color: purple; }
+      }
+      @layer components {
+        .target { color: yellow; }
+      }
+      .scope {
+        .target { color: black; }
+      }
     `;
 
-    expect(exactRules(source, '.target').map((rule) => declarationValue(rule, 'color'))).toEqual([
-      'blue',
-    ]);
+    expect(exactRules(source, '.target')).toEqual([]);
     expect(
       exactRules(source, '.peer, .target').map((rule) => declarationValue(rule, 'color')),
     ).toEqual(['green']);
@@ -88,57 +127,79 @@ describe('CSS zero-warning contracts', () => {
       {
         source: cssSources.cloudStatus,
         selector: '.cloud-status__refresh',
-        beforeSelector: '.cloud-status__refresh:hover:not(:disabled)',
-        properties: [
-          'display',
-          'width',
-          'height',
-          'align-items',
-          'justify-content',
-          'padding',
-          'border',
-          'border-radius',
-          'background',
-          'color',
-          'cursor',
-          'transition',
+        location: {
+          ruleIndex: 8,
+          previousSelector: '.cloud-status__meta > span',
+          nextSelector: '.cloud-status__refresh:hover:not(:disabled)',
+        },
+        declarations: [
+          ['display', 'inline-flex'],
+          ['width', '40px'],
+          ['height', '40px'],
+          ['align-items', 'center'],
+          ['justify-content', 'center'],
+          ['padding', '0'],
+          ['border', '1px solid transparent'],
+          ['border-radius', '2px'],
+          ['background', 'transparent'],
+          ['color', 'var(--color-text-secondary)'],
+          ['cursor', 'pointer'],
+          [
+            'transition',
+            'border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast)',
+          ],
         ],
       },
       {
         source: cssSources.knowledge,
         selector: '.knowledge-page__text-layer',
-        beforeSelector: '.knowledge-page__text-layer :is(span, br)',
-        properties: [
-          '--min-font-size',
-          '--text-scale-factor',
-          '--min-font-size-inv',
-          'color-scheme',
-          'position',
-          'inset',
-          'z-index',
-          'overflow',
-          'line-height',
-          'text-align',
-          'text-size-adjust',
-          'transform-origin',
-          'forced-color-adjust',
+        location: {
+          ruleIndex: 195,
+          previousSelector:
+            '.knowledge-page__error button:hover, .knowledge-page__error button:focus-visible',
+          nextSelector: '.knowledge-page__text-layer :is(span, br)',
+        },
+        declarations: [
+          ['--min-font-size', '1'],
+          ['--text-scale-factor', 'calc(var(--total-scale-factor) * var(--min-font-size))'],
+          ['--min-font-size-inv', 'calc(1 / var(--min-font-size))'],
+          ['color-scheme', 'only light'],
+          ['position', 'absolute'],
+          ['inset', '0'],
+          ['z-index', '1'],
+          ['overflow', 'clip'],
+          ['line-height', '1'],
+          ['text-align', 'initial'],
+          ['text-size-adjust', 'none'],
+          ['transform-origin', '0 0'],
+          ['forced-color-adjust', 'none'],
         ],
       },
       {
         source: cssSources.dynatraceProblems,
         selector: '.dt-profile-picker__bulk-actions span',
-        beforeSelector: '.dt-profile-picker__search',
-        properties: ['margin-left', 'color', 'font-family', 'font-size'],
+        location: {
+          ruleIndex: 32,
+          previousSelector: '.dt-profile-picker',
+          nextSelector: '.dt-profile-picker__search',
+        },
+        declarations: [
+          ['margin-left', 'auto'],
+          ['color', 'var(--color-text-tertiary)'],
+          ['font-family', 'var(--font-family-mono)'],
+          ['font-size', 'var(--text-2xs)'],
+        ],
       },
-    ];
+    ] as const;
 
-    for (const { source, selector, beforeSelector, properties } of contracts) {
+    for (const { source, selector, location, declarations: expectedDeclarations } of contracts) {
       const rules = exactRules(source, selector);
-      const followingRule = exactRules(source, beforeSelector)[0];
       expect(rules, selector).toHaveLength(1);
-      expect(declarationProperties(rules[0]), `${selector} declaration order`).toEqual(properties);
-      expect(sourceOffset(rules[0]), `${selector} cascade position`).toBeLessThan(
-        sourceOffset(followingRule),
+      expect(declarationEntries(rules[0]), `${selector} declaration values and order`).toEqual(
+        expectedDeclarations,
+      );
+      expect(topLevelRuleLocation(rules[0]), `${selector} top-level rule location`).toEqual(
+        location,
       );
     }
   });
@@ -165,7 +226,13 @@ describe('CSS zero-warning contracts', () => {
 
     for (const [source, selector, property, value] of scrollContracts) {
       expect(
-        exactRules(source, selector).some((rule) => declarationValue(rule, property) === value),
+        exactRules(
+          source,
+          selector,
+          selector === '.assembler-sidebar .assembler-sidebar-panel'
+            ? ['media (max-width: 1120px)']
+            : [],
+        ).some((rule) => declarationValue(rule, property) === value),
         `${selector}: ${property}: ${value}`,
       ).toBe(true);
     }
