@@ -216,7 +216,7 @@ export async function waitForComputeTask({
 }) {
   if (typeof fetcher !== 'function') throw new Error('A Fetch implementation is required.');
   if (typeof now !== 'function' || typeof sleep !== 'function') {
-    throw new Error('Sonar gate timing functions are required.');
+    throw new TypeError('Sonar gate timing functions are required.');
   }
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
   validateIdentifier(taskId, 'Sonar compute task identifier', SAFE_TASK_IDENTIFIER_PATTERN);
@@ -404,7 +404,7 @@ export async function waitForQualityGate({
 }) {
   if (typeof fetcher !== 'function') throw new Error('A Fetch implementation is required.');
   if (typeof now !== 'function' || typeof sleep !== 'function') {
-    throw new Error('Sonar gate timing functions are required.');
+    throw new TypeError('Sonar gate timing functions are required.');
   }
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
   validateIdentifier(analysisId, 'Sonar analysis identifier', SAFE_TASK_IDENTIFIER_PATTERN);

@@ -164,6 +164,34 @@ test('accepts only the scanner report for the configured HTTPS host and project'
   );
 });
 
+test('rejects invalid compute-task timing dependencies with TypeError', async () => {
+  const options = {
+    fetcher: async () => response(successfulBranchTask()),
+    serverUrl: `${HOST_URL}/`,
+    taskId: CE_TASK_ID,
+    projectKey: PROJECT_KEY,
+    scope: { branch: 'test' },
+    token: TOKEN,
+  };
+
+  await assert.rejects(waitForComputeTask({ ...options, now: null }), TypeError);
+  await assert.rejects(waitForComputeTask({ ...options, sleep: null }), TypeError);
+});
+
+test('rejects invalid quality-gate timing dependencies with TypeError', async () => {
+  const options = {
+    fetcher: async () => response({ projectStatus: { status: 'OK', conditions: [] } }),
+    serverUrl: `${HOST_URL}/`,
+    analysisId: ANALYSIS_ID,
+    projectKey: PROJECT_KEY,
+    scope: { pullRequest: '42' },
+    token: TOKEN,
+  };
+
+  await assert.rejects(waitForQualityGate({ ...options, now: null }), TypeError);
+  await assert.rejects(waitForQualityGate({ ...options, sleep: null }), TypeError);
+});
+
 test('waits for the exact branch compute task and never sends its token off-host', async () => {
   const statuses = ['PENDING', 'IN_PROGRESS', 'SUCCESS'];
   const requests = [];

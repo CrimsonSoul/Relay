@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import type { StartupSnapshot } from '@shared/ipc';
 
 export type DesktopStartupBridge = {
@@ -51,7 +51,9 @@ export function DesktopStartupGate({ bridge, loadApp }: DesktopStartupGateProps)
 
   appPromise.current ??= loadApp();
 
-  useEffect(() => {
+  // Rapid packaged relaunches must wire startup progress at commit time; a
+  // painted shell cannot depend on the browser eventually flushing passive effects.
+  useLayoutEffect(() => {
     let active = true;
     const acceptNewerSnapshot = (next: StartupSnapshot) => {
       if (!active) return;
@@ -72,7 +74,7 @@ export function DesktopStartupGate({ bridge, loadApp }: DesktopStartupGateProps)
     };
   }, [bridge]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true;
     void appPromise.current?.then(
       (module) => {
@@ -87,7 +89,7 @@ export function DesktopStartupGate({ bridge, loadApp }: DesktopStartupGateProps)
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (snapshot.phase !== 'ready' || !App || mountedReported.current) return;
     mountedReported.current = true;
     bridge.markStartupRendererMounted();

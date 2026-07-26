@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ComponentType } from 'react';
+import { useEffect, type ComponentType } from 'react';
 import type { StartupSnapshot } from '@shared/ipc';
 import { DesktopStartupGate, type DesktopStartupBridge } from './DesktopStartupGate';
 
@@ -65,7 +65,7 @@ describe('DesktopStartupGate', () => {
     );
 
     expect(screen.getByRole('status')).toHaveTextContent('Starting Relay');
-    await waitFor(() => expect(order).toEqual(['load', 'subscribe', 'read']));
+    expect(order).toEqual(['load', 'subscribe', 'read']);
   });
 
   it('keeps the shell after App loads until main reports ready', async () => {
@@ -130,5 +130,30 @@ describe('DesktopStartupGate', () => {
       emit({ ...preparing, sequence: 4, phase: 'ready', message: 'Still ready.' });
     });
     expect(bridge.markStartupRendererMounted).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the mounted application at commit before App passive effects', async () => {
+    const order: string[] = [];
+    const { bridge } = makeBridge({
+      ...preparing,
+      sequence: 3,
+      phase: 'ready',
+      message: 'Relay is ready.',
+    });
+    vi.mocked(bridge.markStartupRendererMounted).mockImplementation(() => {
+      order.push('renderer-mounted');
+    });
+    const App = () => {
+      useEffect(() => {
+        order.push('app-passive-effect');
+      }, []);
+      return <main>Operational workspace</main>;
+    };
+
+    render(<DesktopStartupGate bridge={bridge} loadApp={async () => ({ default: App })} />);
+
+    expect(await screen.findByText('Operational workspace')).toBeInTheDocument();
+    await waitFor(() => expect(order).toHaveLength(2));
+    expect(order).toEqual(['renderer-mounted', 'app-passive-effect']);
   });
 });
