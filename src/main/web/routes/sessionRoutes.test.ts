@@ -1,9 +1,16 @@
-import { createServer, type Server } from 'node:http';
+import { EventEmitter } from 'node:events';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { WebRequestSecurity } from '../WebRequestSecurity';
-import { WebRouter, WEB_SESSION_COOKIE_NAME } from '../WebRouter';
+import {
+  WebRouter,
+  WEB_SESSION_COOKIE_NAME,
+  type WebRoute,
+  type WebRouteContext,
+  type WebRouteResponse,
+} from '../WebRouter';
 import { WebSessionStore } from '../WebSessionStore';
 import { registerWebSessionRoutes } from './sessionRoutes';
 
@@ -105,6 +112,7 @@ describe('Relay Web session routes', () => {
       },
     });
     expect(body.session.csrfToken.length).toBeGreaterThanOrEqual(32);
+    expect(body.session).not.toHaveProperty('rateLimitId');
     expect(authenticate).toHaveBeenCalledWith(PASSPHRASE);
     expect(JSON.stringify(body)).not.toContain(PASSPHRASE);
   });
@@ -187,6 +195,30 @@ describe('Relay Web session routes', () => {
     expect(body.session.auth.token).toBe('refreshed-token');
   });
 
+  it('keeps one refresh budget across cookie and CSRF rotation', async () => {
+    const { origin, refresh } = await fixture();
+    const loginResponse = await login(origin);
+    let body = await loginResponse.json();
+    let cookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const response = await fetch(`${origin}/relay-api/v1/session/refresh`, {
+        method: 'POST',
+        headers: { cookie, origin, 'x-relay-csrf': body.session.csrfToken },
+      });
+      expect(response.status).toBe(200);
+      body = await response.json();
+      cookie = response.headers.get('set-cookie')!.split(';', 1)[0];
+    }
+
+    const limited = await fetch(`${origin}/relay-api/v1/session/refresh`, {
+      method: 'POST',
+      headers: { cookie, origin, 'x-relay-csrf': body.session.csrfToken },
+    });
+    expect(limited.status).toBe(429);
+    expect(refresh).toHaveBeenCalledTimes(30);
+  });
+
   it('logs out, clears the cookie, and disposes all session children', async () => {
     const { origin, dispose, sessions } = await fixture();
     const loginResponse = await login(origin);
@@ -203,6 +235,104 @@ describe('Relay Web session routes', () => {
     expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
     expect(sessions.size).toBe(0);
     expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it('revokes the rotated session when an already-authorized old-cookie logout commits later', async () => {
+    const sessions = new WebSessionStore();
+    const input = {
+      pbUrl: ['http', '://', 'relay-server', ':8090'].join(''),
+      auth: { token: 'ordinary-token', record: null },
+      publicConfig: { mode: 'server' as const, port: 8090 },
+      runtime: WEB_RUNTIME,
+      refresh: async () => ({ token: 'fresh-token', record: null }),
+      dispose: vi.fn(async () => undefined),
+    };
+    const session = sessions.create(input);
+    const routes: WebRoute[] = [];
+    registerWebSessionRoutes(
+      {
+        register: (route: WebRoute) => routes.push(route),
+      } as WebRouter,
+      { sessions, authenticate: async () => null },
+    );
+    const logoutRoute = routes.find((route) => route.path.endsWith('/session/logout'))!;
+
+    const refreshed = await sessions.refresh(session.id);
+    expect(refreshed).not.toBeNull();
+    const result = await logoutRoute.handler({
+      request: new EventEmitter() as IncomingMessage,
+      body: undefined,
+      session: null,
+      sessionId: session.id,
+      logicalSessionId: session.rateLimitId,
+      remoteAddress: LOOPBACK,
+      origin: ['http', '://', 'relay-server', ':8091'].join(''),
+    });
+
+    expect(result.status).toBe(200);
+    expect(sessions.size).toBe(0);
+    expect(sessions.get(refreshed!.id, { touch: false })).toBeNull();
+    expect(input.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('makes logout win when refresh rotates first after both HTTP requests were authorized', async () => {
+    let resolveRefresh!: (value: { token: string; record: { id: string } }) => void;
+    const { origin, sessions, refresh, dispose } = await fixture();
+    refresh.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const loginResponse = await login(origin);
+    const loginBody = await loginResponse.json();
+    const oldCookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    const requestHeaders = {
+      cookie: oldCookie,
+      origin,
+      'x-relay-csrf': loginBody.session.csrfToken,
+    };
+
+    let signalDestroyStarted!: () => void;
+    const destroyStarted = new Promise<void>((resolve) => {
+      signalDestroyStarted = resolve;
+    });
+    let releaseDestroy!: () => void;
+    const destroyGate = new Promise<void>((resolve) => {
+      releaseDestroy = resolve;
+    });
+    const destroyLogical = sessions.destroyByRateLimitId.bind(sessions);
+    vi.spyOn(sessions, 'destroyByRateLimitId').mockImplementation(async (rateLimitId) => {
+      signalDestroyStarted();
+      await destroyGate;
+      await destroyLogical(rateLimitId);
+    });
+
+    const refreshRequest = fetch(`${origin}/relay-api/v1/session/refresh`, {
+      method: 'POST',
+      headers: requestHeaders,
+    });
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    const logoutRequest = fetch(`${origin}/relay-api/v1/session/logout`, {
+      method: 'POST',
+      headers: requestHeaders,
+    });
+    await destroyStarted;
+
+    resolveRefresh({ token: 'rotated-token', record: { id: 'relay-user' } });
+    const refreshResponse = await refreshRequest;
+    expect(refreshResponse.status).toBe(200);
+    const rotatedCookie = refreshResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    releaseDestroy();
+
+    const logoutResponse = await logoutRequest;
+    expect(logoutResponse.status).toBe(200);
+    expect(sessions.size).toBe(0);
+    expect(dispose).toHaveBeenCalledOnce();
+    const rotatedBootstrap = await fetch(`${origin}/relay-api/v1/session/bootstrap`, {
+      headers: { cookie: rotatedCookie },
+    });
+    expect(rotatedBootstrap.status).toBe(401);
   });
 
   it('streams a heartbeat endpoint and closes it with the owning session', async () => {
@@ -225,5 +355,64 @@ describe('Relay Web session routes', () => {
 
     await sessions.destroy(sessionId);
     await expect(reader.read()).resolves.toMatchObject({ done: true });
+  });
+
+  it('bounds live event streams per session and reuses a permit after close', async () => {
+    const sessions = new WebSessionStore();
+    const session = sessions.create({
+      pbUrl: ['http', '://', 'relay-server', ':8090'].join(''),
+      auth: { token: 'ordinary-token', record: null },
+      publicConfig: { mode: 'server', port: 8090 },
+      runtime: WEB_RUNTIME,
+      refresh: async () => ({ token: 'fresh-token', record: null }),
+    });
+    const routes: WebRoute[] = [];
+    registerWebSessionRoutes(
+      {
+        register: (route: WebRoute) => routes.push(route),
+      } as WebRouter,
+      { sessions, authenticate: async () => null },
+    );
+    const eventRoute = routes.find((route) => route.path.endsWith('/session/events'))!;
+    const open = async () => {
+      const request = new EventEmitter() as IncomingMessage;
+      const response = Object.assign(new EventEmitter(), {
+        writableEnded: false,
+        statusCode: 0,
+        setHeader: vi.fn(),
+        write: vi.fn(() => true),
+        end: vi.fn(function (this: { writableEnded: boolean }) {
+          this.writableEnded = true;
+        }),
+      }) as unknown as ServerResponse;
+      const context: WebRouteContext = {
+        request,
+        body: undefined,
+        session,
+        sessionId: session.id,
+        remoteAddress: LOOPBACK,
+        origin: ['http', '://', 'relay-server', ':8091'].join(''),
+      };
+      const result = (await eventRoute.handler(context)) as WebRouteResponse;
+      result.stream?.(response);
+      return { request, response, result };
+    };
+
+    const first = await open();
+    const second = await open();
+    const rejected = await open();
+    expect(first.result.status).toBe(200);
+    expect(second.result.status).toBe(200);
+    expect(rejected.result).toMatchObject({
+      status: 429,
+      body: { ok: false, error: 'stream-limit' },
+    });
+    expect(rejected.result.stream).toBeUndefined();
+
+    first.request.emit('close');
+    const replacement = await open();
+    expect(replacement.result.status).toBe(200);
+
+    await sessions.destroy(session.id);
   });
 });

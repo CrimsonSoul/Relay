@@ -114,9 +114,17 @@ export class AppConfig {
       // Decrypt secret if stored encrypted
       let secret: string;
       const ss = getSafeStorage();
-      if (stored.encryptedSecret && ss?.isEncryptionAvailable()) {
+      const encryptionAvailable = ss?.isEncryptionAvailable() === true;
+      if (stored.encryptedSecret && ss && encryptionAvailable) {
         secret = ss.decryptString(Buffer.from(stored.encryptedSecret, 'base64'));
       } else if (stored.secret) {
+        if (isPackagedElectronRuntime() && !encryptionAvailable) {
+          loggers.main.error(
+            'Secure storage is unavailable; refusing to load plaintext Relay secret',
+            { path: this.configPath },
+          );
+          return null;
+        }
         secret = stored.secret;
       } else {
         loggers.main.error('Config has no readable secret', { path: this.configPath });
@@ -124,7 +132,7 @@ export class AppConfig {
       }
 
       const config = toRelayConfig(stored, secret);
-      if (stored.secret && ss?.isEncryptionAvailable()) {
+      if (stored.secret && encryptionAvailable) {
         this.save(config);
       }
       return config;

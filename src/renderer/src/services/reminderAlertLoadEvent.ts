@@ -16,7 +16,7 @@ export function hasLoadableReminderAlert(reminder: AlertReminderRecord): boolean
 }
 
 export function dispatchReminderAlertLoad(reminder: AlertReminderRecord): void {
-  window.dispatchEvent(
+  globalThis.dispatchEvent(
     new CustomEvent<ReminderAlertLoadDetail>(REMINDER_ALERT_LOAD_EVENT, {
       detail: {
         reminderId: reminder.id,

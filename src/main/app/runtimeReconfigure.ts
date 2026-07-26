@@ -34,6 +34,7 @@ import {
   createProductionPrivilegedRuntime,
 } from '../privileged/privilegedRuntime';
 import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
+import { clearRelayAppUserAuthCoordinator } from '../pocketbase/RelayAppUserAuthCoordinator';
 import type { StartupStateController } from './startupState';
 
 function tryClose(db: { close(): void } | null, label: string): void {
@@ -77,6 +78,7 @@ async function rebuildPrivilegedRuntime(
 }
 
 async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> {
+  clearRelayAppUserAuthCoordinator();
   cancelDeferredPocketBaseServices();
   const config = getAppConfig()?.load();
   await getRelayWebServerManager()?.stop();

@@ -85,8 +85,8 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
       }
     };
 
-    const intervalId = window.setInterval(refreshTimes, 30_000);
-    return () => window.clearInterval(intervalId);
+    const intervalId = globalThis.setInterval(refreshTimes, 30_000);
+    return () => globalThis.clearInterval(intervalId);
   }, [dueAtTouched, isOpen]);
 
   const handleSubmit = async (event: { preventDefault: () => void }) => {

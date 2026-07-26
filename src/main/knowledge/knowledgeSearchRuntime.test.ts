@@ -22,7 +22,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./KnowledgeSearchService', () => ({
   KnowledgeSearchService: mocks.KnowledgeSearchService,
 }));
-vi.mock('pocketbase', () => ({ default: mocks.PocketBase }));
+vi.mock('pocketbase', () => ({
+  BaseAuthStore: class MockBaseAuthStore {},
+  default: mocks.PocketBase,
+}));
 vi.mock('../app/appState', () => ({
   getAppConfig: mocks.getAppConfig,
   getOfflineCache: mocks.getOfflineCache,
@@ -53,20 +56,52 @@ function deferred<T>() {
 }
 
 describe('knowledge search runtime', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
     mocks.serviceInstances.length = 0;
+    const { clearRelayAppUserAuthCoordinator } =
+      await import('../pocketbase/RelayAppUserAuthCoordinator');
+    clearRelayAppUserAuthCoordinator();
     mocks.KnowledgeSearchService.mockImplementation(createService);
     mocks.getKnowledgeSearchService.mockReturnValue(null);
     mocks.getOfflineCache.mockReturnValue({ kind: 'cache' });
     mocks.getPbClient.mockReturnValue({ kind: 'server-client' });
     mocks.authWithPassword.mockResolvedValue({});
-    mocks.collection.mockReturnValue({ authWithPassword: mocks.authWithPassword });
     mocks.PocketBase.mockImplementation(
       class MockPocketBase {
-        collection = mocks.collection;
+        authStore = {
+          token: '',
+          record: null as Record<string, unknown> | null,
+          get isValid() {
+            return Boolean(this.token);
+          },
+          save(token: string, record?: Record<string, unknown> | null) {
+            this.token = token;
+            this.record = record ?? null;
+          },
+          clear() {
+            this.token = '';
+            this.record = null;
+          },
+        };
+
+        collection = (name: string) => {
+          mocks.collection(name);
+          return {
+            authWithPassword: async (...args: unknown[]) => {
+              const result = await mocks.authWithPassword(...args);
+              this.authStore.save('valid-token-search', {
+                id: 'relay-user',
+                email: 'relay@relay.app',
+                collectionId: '_pb_users_auth_',
+                collectionName: 'users',
+              });
+              return result;
+            },
+          };
+        };
       } as never,
     );
   });
@@ -130,6 +165,42 @@ describe('knowledge search runtime', () => {
     }
   });
 
+  it('hydrates the search client from the shared startup authentication window', async () => {
+    mocks.getAppConfig.mockReturnValue({
+      load: () => ({
+        mode: 'client',
+        serverUrl: 'https://relay.example.com',
+        secret: 'client-secret',
+      }),
+    });
+    const { primeRelayAppUserAuth } = await import('../pocketbase/RelayAppUserAuthCoordinator');
+    primeRelayAppUserAuth(
+      {
+        authStore: {
+          token: 'valid-token-bootstrap',
+          record: {
+            id: 'relay-user',
+            email: 'relay@relay.app',
+            collectionId: '_pb_users_auth_',
+            collectionName: 'users',
+          },
+          isValid: true,
+          save: vi.fn(),
+          clear: vi.fn(),
+        },
+      } as never,
+      'https://relay.example.com',
+      'client-secret',
+    );
+    const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
+
+    await restartKnowledgeSearchRuntime();
+
+    expect(mocks.authWithPassword).not.toHaveBeenCalled();
+    expect(mocks.warn).not.toHaveBeenCalled();
+    expect(mocks.serviceInstances[0]?.connect).toHaveBeenCalledWith(expect.anything());
+  });
+
   it('reuses the existing superuser PocketBase client in server mode', async () => {
     mocks.getAppConfig.mockReturnValue({ load: () => ({ mode: 'server' }) });
     const { restartKnowledgeSearchRuntime } = await import('./knowledgeSearchRuntime');
@@ -168,7 +239,7 @@ describe('knowledge search runtime', () => {
       expect(mocks.setKnowledgeSearchService).toHaveBeenCalledWith(service);
       expect(mocks.warn).toHaveBeenCalledWith(
         'Enhanced Wiki search is unavailable',
-        expect.objectContaining({ error: expect.any(Error) }),
+        expect.objectContaining({ authFailure: expect.any(Object) }),
       );
     },
   );
@@ -262,7 +333,7 @@ describe('knowledge search runtime', () => {
 
     expect(mocks.warn).toHaveBeenCalledWith(
       'Enhanced Wiki search is unavailable',
-      expect.objectContaining({ error: expect.any(Error) }),
+      expect.objectContaining({ authFailure: expect.any(Object) }),
     );
   });
 

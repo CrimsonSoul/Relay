@@ -1,5 +1,4 @@
 import PocketBase from 'pocketbase';
-import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import {
   getAppConfig,
   getKnowledgeSearchService,
@@ -9,6 +8,8 @@ import {
 } from '../app/appState';
 import { loggers } from '../logger';
 import { installMainProcessEventSource } from '../pocketbase/mainProcessEventSource';
+import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
+import { safePocketBaseAuthFailure } from '../app/pbErrors';
 import { KnowledgeSearchService } from './KnowledgeSearchService';
 
 const AUTH_DEADLINE_MS = 15_000;
@@ -124,8 +125,7 @@ async function restartRuntime(
     const deadline = timeoutAfter(AUTH_DEADLINE_MS, 'knowledge-search-auth-timeout');
     try {
       await Promise.race([
-        pb.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, config.secret, {
-          requestKey: null,
+        authenticateRelayAppUserShared(pb, config.serverUrl, config.secret, {
           signal: controller.signal,
         }),
         deadline.promise,
@@ -140,7 +140,9 @@ async function restartRuntime(
     if (generation !== lifecycleGeneration) return;
     await service.connect(pb);
   } catch (error) {
-    knowledgeLogger().warn('Enhanced Wiki search is unavailable', { error });
+    knowledgeLogger().warn('Enhanced Wiki search is unavailable', {
+      authFailure: safePocketBaseAuthFailure(error),
+    });
   }
 }
 

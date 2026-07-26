@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { KnowledgeManagementSnapshot } from '@shared/knowledge';
+import type { KnowledgeManagementSnapshot, KnowledgeUploadQueueView } from '@shared/knowledge';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
@@ -238,6 +238,30 @@ describe('useKnowledgeManagement', () => {
   it('refreshes authoritative upload state after cancelling one PDF', async () => {
     const ready = snapshotWithReadyUpload();
     const cancelled = snapshotWithReadyUpload('cancelled');
+    const localQueue = {
+      restartRecovery: false,
+      activeBatchId: 'batch-1',
+      totalBytes: 1_024,
+      acknowledgedBytes: 1_024,
+      items: [
+        {
+          id: 'local-upload-1',
+          uploadId: 'upload-1',
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 1_024,
+          acknowledgedBytes: 1_024,
+          chunkCount: 1,
+          acknowledgedChunkCount: 1,
+          state: 'ready' as const,
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: false,
+          cancelPending: false,
+        },
+      ],
+    };
+    globalThis.api!.getKnowledgeUploadQueue = vi.fn(async () => localQueue);
     let snapshotReads = 0;
     submitCommand.mockImplementation(async (input: { command: string }) => {
       if (input.command !== 'knowledge.snapshot.read') {
@@ -257,6 +281,9 @@ describe('useKnowledgeManagement', () => {
 
     expect(discarded).toBe(true);
     expect(globalThis.api?.cancelKnowledgeUpload).toHaveBeenCalledWith('upload-1');
+    expect(submitCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'knowledge.upload.file.cancel' }),
+    );
     expect(submitCommand).toHaveBeenCalledWith({
       command: 'knowledge.snapshot.read',
       payload: { query: '', cursor: null, pageSize: 100 },
@@ -291,7 +318,7 @@ describe('useKnowledgeManagement', () => {
       payload: { uploadId: 'upload-1', expectedRevision: 2 },
       expectedRevision: null,
     });
-    expect(globalThis.api?.cancelKnowledgeUpload).toHaveBeenCalledWith('upload-1');
+    expect(globalThis.api?.cancelKnowledgeUpload).not.toHaveBeenCalled();
     expect(result.current.snapshot).toEqual(cancelled);
   });
 
@@ -782,6 +809,7 @@ describe('useKnowledgeManagement', () => {
           safeError: 'offline' as const,
           retryCount: 8,
           restartRecovery: true,
+          cancelPending: false,
         },
       ],
     };
@@ -789,6 +817,207 @@ describe('useKnowledgeManagement', () => {
 
     expect(result.current.uploadQueue).toEqual(next);
     expect(JSON.stringify(result.current.uploadQueue)).not.toContain('/private/');
+  });
+
+  it('ignores a late upload queue response from the previous account', async () => {
+    const accountAQueue = deferred<KnowledgeUploadQueueView>();
+    const accountBQueue = deferred<KnowledgeUploadQueueView>();
+    const privateQueue: KnowledgeUploadQueueView = {
+      restartRecovery: true,
+      activeBatchId: 'batch-a',
+      totalBytes: 100,
+      acknowledgedBytes: 0,
+      items: [
+        {
+          id: 'local-a',
+          uploadId: 'upload-a',
+          batchId: 'batch-a',
+          fileName: 'Private A.pdf',
+          byteSize: 100,
+          acknowledgedBytes: 0,
+          chunkCount: 1,
+          acknowledgedChunkCount: 0,
+          state: 'paused',
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: true,
+          cancelPending: false,
+        },
+      ],
+    };
+    globalThis.api!.getKnowledgeUploadQueue = vi
+      .fn()
+      .mockReturnValueOnce(accountAQueue.promise)
+      .mockReturnValueOnce(accountBQueue.promise);
+    const { result, rerender } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledOnce());
+
+    currentSession = { ...publisherSession, accountId: 'account-other' };
+    rerender();
+    await waitFor(() => expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledTimes(2));
+
+    accountBQueue.resolve(uploadQueue);
+    await waitFor(() => expect(result.current.uploadQueue).toEqual(uploadQueue));
+    accountAQueue.resolve(privateQueue);
+    await act(async () => {
+      await accountAQueue.promise;
+    });
+
+    expect(result.current.uploadQueue).toEqual(uploadQueue);
+    expect(JSON.stringify(result.current.uploadQueue)).not.toContain('Private A.pdf');
+  });
+
+  it('invalidates queue responses and events after a same-account device change', async () => {
+    const oldDeviceQueue = deferred<KnowledgeUploadQueueView>();
+    const newDeviceQueue = deferred<KnowledgeUploadQueueView>();
+    const listeners: Array<(queue: KnowledgeUploadQueueView) => void> = [];
+    const privateQueue: KnowledgeUploadQueueView = {
+      restartRecovery: true,
+      activeBatchId: 'batch-old-device',
+      totalBytes: 100,
+      acknowledgedBytes: 0,
+      items: [
+        {
+          id: 'local-old-device',
+          uploadId: 'upload-old-device',
+          batchId: 'batch-old-device',
+          fileName: 'Old device.pdf',
+          byteSize: 100,
+          acknowledgedBytes: 0,
+          chunkCount: 1,
+          acknowledgedChunkCount: 0,
+          state: 'paused',
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: true,
+          cancelPending: false,
+        },
+      ],
+    };
+    globalThis.api!.getKnowledgeUploadQueue = vi
+      .fn()
+      .mockReturnValueOnce(oldDeviceQueue.promise)
+      .mockReturnValueOnce(newDeviceQueue.promise);
+    globalThis.api!.onKnowledgeUploadQueueChanged = vi.fn((listener) => {
+      listeners.push(listener);
+      return vi.fn();
+    });
+    const { result, rerender } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => {
+      expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledOnce();
+      expect(listeners).toHaveLength(1);
+    });
+
+    currentSession = { ...publisherSession, deviceId: 'device-2' };
+    rerender();
+    await waitFor(() => {
+      expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalledTimes(2);
+      expect(listeners).toHaveLength(2);
+    });
+
+    act(() => listeners[0]?.(privateQueue));
+    expect(result.current.uploadQueue).toEqual(uploadQueue);
+
+    newDeviceQueue.resolve(uploadQueue);
+    await waitFor(() => expect(result.current.uploadQueue).toEqual(uploadQueue));
+    oldDeviceQueue.resolve(privateQueue);
+    await act(async () => {
+      await oldDeviceQueue.promise;
+    });
+    act(() => listeners[0]?.(privateQueue));
+
+    expect(result.current.uploadQueue).toEqual(uploadQueue);
+    expect(JSON.stringify(result.current.uploadQueue)).not.toContain('Old device.pdf');
+  });
+
+  it('waits for queue hydration before choosing the local cancellation path', async () => {
+    const queueHydration = deferred<KnowledgeUploadQueueView>();
+    const localQueue: KnowledgeUploadQueueView = {
+      restartRecovery: false,
+      activeBatchId: 'batch-1',
+      totalBytes: 1_024,
+      acknowledgedBytes: 1_024,
+      items: [
+        {
+          id: 'local-upload-1',
+          uploadId: 'upload-1',
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 1_024,
+          acknowledgedBytes: 1_024,
+          chunkCount: 1,
+          acknowledgedChunkCount: 1,
+          state: 'ready',
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: false,
+          cancelPending: false,
+        },
+      ],
+    };
+    globalThis.api!.getKnowledgeUploadQueue = vi
+      .fn()
+      .mockReturnValueOnce(queueHydration.promise)
+      .mockResolvedValue(localQueue);
+    submitCommand.mockImplementation(async (input: { command: string }) =>
+      input.command === 'knowledge.snapshot.read'
+        ? okSnapshot(snapshotWithReadyUpload())
+        : { ok: true, requestId: 'unexpected-direct-cancel', value: {} },
+    );
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshotWithReadyUpload()));
+
+    let cancellation!: Promise<boolean>;
+    act(() => {
+      cancellation = result.current.cancelUpload('upload-1');
+    });
+    expect(submitCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'knowledge.upload.file.cancel' }),
+    );
+
+    queueHydration.resolve(localQueue);
+    await expect(cancellation).resolves.toBe(true);
+
+    expect(globalThis.api?.cancelKnowledgeUpload).toHaveBeenCalledWith('upload-1');
+    expect(submitCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'knowledge.upload.file.cancel' }),
+    );
+  });
+
+  it('keeps polling a locally ready upload while durable cancellation is pending', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    const pendingQueue = {
+      restartRecovery: true,
+      activeBatchId: 'batch-1',
+      totalBytes: 1_024,
+      acknowledgedBytes: 1_024,
+      items: [
+        {
+          id: 'local-upload-1',
+          uploadId: 'upload-1',
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 1_024,
+          acknowledgedBytes: 1_024,
+          chunkCount: 1,
+          acknowledgedChunkCount: 1,
+          state: 'ready' as const,
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: true,
+          cancelPending: true,
+        },
+      ],
+    };
+    globalThis.api!.getKnowledgeUploadQueue = vi.fn(async () => pendingQueue);
+
+    renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(globalThis.api?.getKnowledgeUploadQueue).toHaveBeenCalled());
+
+    await waitFor(() =>
+      expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 2_000)).toBe(true),
+    );
+    setIntervalSpy.mockRestore();
   });
 
   it('reauthenticates before permanent deletion', async () => {

@@ -1,15 +1,20 @@
 import { ipcMain } from 'electron';
 import PocketBase from 'pocketbase';
-import { IPC_CHANNELS, RELAY_APP_USER_EMAIL, type PbConnectionResult } from '@shared/ipc';
+import { IPC_CHANNELS, type PbConnectionResult } from '@shared/ipc';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
+import {
+  authenticateRelayAppUserShared,
+  isRelayAppUserAuthCooldown,
+} from '../pocketbase/RelayAppUserAuthCoordinator';
 import { loggers } from '../logger';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { OfflineCache } from '../cache/OfflineCache';
+import { isCredentialRejection } from '../app/pbErrors';
 
 const PB_BOOTSTRAP_AUTH_TIMEOUT_MS = 15_000;
-const PB_BOOTSTRAP_AUTH_ATTEMPTS = 4;
+const PB_BOOTSTRAP_AUTH_ATTEMPTS = 2;
 const PB_BOOTSTRAP_AUTH_RETRY_MS = 750;
 const SUPERUSER_EMAIL = 'admin@relay.app';
 
@@ -23,11 +28,18 @@ class PbAuthTimeoutError extends Error {
 type AuthFailure = {
   error: 'auth-failed' | 'pb-unavailable';
   timedOut: boolean;
+  credentialRejected: boolean;
+  coolingDown: boolean;
+  rateLimited: boolean;
 };
 
 type AuthAttemptResult =
   { ok: true; result: PbConnectionResult } | { ok: false; failure: AuthFailure };
 type LoadedRelayConfig = NonNullable<ReturnType<AppConfig['load']>>;
+type RelayAppUserAuthenticationOptions = Readonly<{
+  allowServerSuperuserFallback?: boolean;
+  forceRefresh?: boolean;
+}>;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -142,6 +154,9 @@ function toAuthFailure(error: unknown): AuthFailure {
   return {
     error: isPbUnavailableError(error) ? 'pb-unavailable' : 'auth-failed',
     timedOut: error instanceof PbAuthTimeoutError,
+    credentialRejected: isCredentialRejection(error),
+    coolingDown: isRelayAppUserAuthCooldown(error),
+    rateLimited: (error as { status?: number } | null)?.status === 429,
   };
 }
 
@@ -149,19 +164,25 @@ async function authenticatePbConnectionOnce(
   config: LoadedRelayConfig,
   pbUrl: string,
   secret: string,
+  forceRefresh: boolean,
+  allowServerSuperuserFallback: boolean,
 ): Promise<AuthAttemptResult> {
   const pb = new PocketBase(pbUrl);
 
   try {
     await withPbAuthTimeout(async (signal) => {
-      await pb.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, secret, {
+      await authenticateRelayAppUserShared(pb, pbUrl, secret, {
+        forceRefresh,
         signal,
-        requestKey: null,
       });
     });
     return { ok: true, result: getPbConnectionResult(pbUrl, pb) };
   } catch (error) {
-    if (isServerModeConfig(config) && !isPbUnavailableError(error)) {
+    if (
+      allowServerSuperuserFallback &&
+      isServerModeConfig(config) &&
+      isCredentialRejection(error)
+    ) {
       try {
         await withPbAuthTimeout(async (signal) => {
           await pb.collection('_superusers').authWithPassword(SUPERUSER_EMAIL, secret, {
@@ -189,11 +210,18 @@ export async function authenticateRelayAppUser(
   pbUrl: string,
   secret: string,
   logMessage: string,
+  options: RelayAppUserAuthenticationOptions = {},
 ): Promise<PbConnectionResult> {
   let lastFailure: AuthFailure | null = null;
 
   for (let attempt = 1; attempt <= PB_BOOTSTRAP_AUTH_ATTEMPTS; attempt++) {
-    const attemptResult = await authenticatePbConnectionOnce(config, pbUrl, secret);
+    const attemptResult = await authenticatePbConnectionOnce(
+      config,
+      pbUrl,
+      secret,
+      options.forceRefresh === true,
+      options.allowServerSuperuserFallback !== false,
+    );
     if (attemptResult.ok) {
       if (attempt > 1) {
         loggers.pocketbase.info('PocketBase authentication recovered after retry', {
@@ -210,10 +238,19 @@ export async function authenticateRelayAppUser(
       attempts: PB_BOOTSTRAP_AUTH_ATTEMPTS,
       error: lastFailure.error,
       timedOut: lastFailure.timedOut,
+      credentialRejected: lastFailure.credentialRejected,
+      coolingDown: lastFailure.coolingDown,
+      rateLimited: lastFailure.rateLimited,
       pbUrl,
     });
 
-    if (lastFailure.timedOut || attempt === PB_BOOTSTRAP_AUTH_ATTEMPTS) {
+    if (
+      lastFailure.credentialRejected ||
+      lastFailure.coolingDown ||
+      lastFailure.rateLimited ||
+      lastFailure.timedOut ||
+      attempt === PB_BOOTSTRAP_AUTH_ATTEMPTS
+    ) {
       break;
     }
 
@@ -278,6 +315,7 @@ export function setupPocketbaseConnectionHandlers(
       context.pbUrl,
       context.config.secret,
       'Failed to refresh PocketBase connection',
+      { forceRefresh: true },
     );
     return addOfflineFallback(result, context.config, context.pbUrl, getOfflineCache());
   });

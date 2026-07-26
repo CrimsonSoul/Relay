@@ -2,7 +2,9 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { KNOWLEDGE_UPLOAD_MAX_FILES } from '@shared/knowledge';
 import {
+  KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES,
   KnowledgeUploadQueueStore,
   createEmptyKnowledgeUploadQueue,
   type KnowledgeUploadQueueState,
@@ -112,6 +114,86 @@ describe('KnowledgeUploadQueueStore', () => {
     await writeFile(store.path, JSON.stringify(legacy), 'utf8');
 
     await expect(store.load()).resolves.toEqual(queue());
+  });
+
+  it('persists pending cancellation intent without changing the queue schema version', async () => {
+    const dataDir = await tempDirectory();
+    const safeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(value),
+      decryptString: (value: Buffer) => value.toString('utf8'),
+    };
+    const store = new KnowledgeUploadQueueStore({ dataDir, safeStorage });
+    const pendingCancellation = queue();
+    pendingCancellation.entries[0] = {
+      ...pendingCancellation.entries[0]!,
+      state: 'paused',
+      cancelRequested: true,
+    };
+
+    await store.save(pendingCancellation);
+
+    await expect(store.load()).resolves.toEqual(pendingCancellation);
+    const persisted = JSON.parse(await readFile(store.path, 'utf8')) as {
+      version: number;
+      entries: Array<Record<string, unknown>>;
+    };
+    expect(persisted.version).toBe(2);
+    expect(persisted.entries[0]).toMatchObject({
+      state: 'paused',
+      cancelRequested: true,
+    });
+  });
+
+  it('rejects persisted cancellation flags other than the optional true literal', async () => {
+    const dataDir = await tempDirectory();
+    const safeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(value),
+      decryptString: (value: Buffer) => value.toString('utf8'),
+    };
+    const store = new KnowledgeUploadQueueStore({ dataDir, safeStorage });
+    await store.save(queue());
+    const persisted = JSON.parse(await readFile(store.path, 'utf8')) as {
+      entries: Array<Record<string, unknown>>;
+    };
+    persisted.entries[0]!.cancelRequested = false;
+    await writeFile(store.path, JSON.stringify(persisted), 'utf8');
+
+    await expect(store.load()).resolves.toEqual(createEmptyKnowledgeUploadQueue(true));
+  });
+
+  it('restores multiple session batches beyond the per-batch file limit', async () => {
+    const dataDir = await tempDirectory();
+    const safeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(value),
+      decryptString: (value: Buffer) => value.toString('utf8'),
+    };
+    const store = new KnowledgeUploadQueueStore({ dataDir, safeStorage });
+    const base = queue().entries[0]!;
+    const multiSessionQueue: KnowledgeUploadQueueState = {
+      version: 2,
+      restartRecovery: true,
+      entries: Array.from({ length: KNOWLEDGE_UPLOAD_MAX_FILES + 1 }, (_, index) => ({
+        ...base,
+        localId: `local-${index}`,
+        batchRequestId: index < KNOWLEDGE_UPLOAD_MAX_FILES ? 'batch-a' : 'batch-b',
+        batchId: index < KNOWLEDGE_UPLOAD_MAX_FILES ? 'server-batch-a' : 'server-batch-b',
+        uploadId: `upload-${index}`,
+        accountId: index < KNOWLEDGE_UPLOAD_MAX_FILES ? 'account-a' : 'account-b',
+        source: {
+          ...base.source,
+          canonicalPath: `/private/work/${index}.pdf`,
+          fileName: `${index}.pdf`,
+        },
+      })),
+    };
+
+    await store.save(multiSessionQueue);
+
+    await expect(store.load()).resolves.toEqual(multiSessionQueue);
+    expect(multiSessionQueue.entries.length).toBeLessThan(KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES);
   });
 
   it('returns an empty bounded queue when no persisted state exists', async () => {

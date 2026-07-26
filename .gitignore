@@ -49,8 +49,10 @@ data/*.json
 # Local git worktrees
 .worktrees/
 
-# PocketBase
-resources/pocketbase/
+# PocketBase binaries are local build inputs; server hooks are source.
+resources/pocketbase/*
+!resources/pocketbase/hooks/
+!resources/pocketbase/hooks/**
 dev-data/
 .superpowers/
 docs/superpowers/

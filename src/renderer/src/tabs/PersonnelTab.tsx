@@ -142,8 +142,11 @@ export const PersonnelTab: React.FC<{
     useOnCallBoardLayout(onCallFontScale);
 
   const teamColumns = useMemo(() => {
-    const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);
-    teams.forEach((teamId, i) => cols[i % cols.length].push(teamId));
+    const cols = Array.from({ length: Math.max(1, columnCount) }, (_, columnIndex) => ({
+      id: `on-call-column-${columnIndex + 1}`,
+      teamIds: [] as string[],
+    }));
+    teams.forEach((teamId, i) => cols[i % cols.length].teamIds.push(teamId));
     return cols;
   }, [teams, columnCount]);
 
@@ -452,9 +455,9 @@ export const PersonnelTab: React.FC<{
             className="oncall-masonry"
             aria-label="Sortable On-Call Teams"
           >
-            {teamColumns.map((column, colIdx) => (
-              <div className="oncall-masonry-column" key={colIdx}>
-                {column.map((teamId) => {
+            {teamColumns.map((column) => (
+              <div className="oncall-masonry-column" key={column.id}>
+                {column.teamIds.map((teamId) => {
                   const teamName = teamIdToName.get(teamId) || teamId;
                   return (
                     <li key={teamId} className="oncall-masonry-item">

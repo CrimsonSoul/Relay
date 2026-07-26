@@ -84,6 +84,8 @@ PocketBase is managed by:
 Current behavior:
 
 - Start the embedded PocketBase process when Relay is acting as the server
+- Load Relay's checked-in PocketBase hooks from the packaged `pocketbase/hooks` resource
+- Bootstrap required authentication rate limits on loopback before opening a configured LAN listener
 - Expose connection URL and passphrase details to Settings for client setup
 - Ensure the superuser and app user exist
 - Bootstrap required collections on startup
@@ -91,7 +93,16 @@ Current behavior:
 
 The backup/retention schedule first runs about 30 seconds after startup and then every 24 hours. Each cycle re-authenticates the superuser and attempts a regular backup if one is due before running retention cleanup. A failed authentication or backup is logged, but cleanup still proceeds; the schedule does not guarantee that every retained record was captured by that cycle's backup. An overlap guard skips a cycle if the previous one is still running. Regular backups (keep 10) and pre-restore safety backups (keep 3) are pruned on separate budgets so a burst of restores cannot evict scheduled backups.
 
-Relay currently bootstraps required collections in code. It does not rely on checked-in migration files.
+Relay currently bootstraps required collections in code. It does not rely on persistent checked-in
+migration files. If the configured superuser credential is authoritatively rejected, bootstrap stops
+PocketBase and runs a one-use repair migration from an owner-only directory in the operating system's
+per-user temporary area. On Windows, that directory is created atomically with a protected DACL for
+the current user and LocalSystem; repair fails before writing the secret if the DACL cannot be
+created and verified. The passphrase is never placed in process arguments, environment variables,
+logs, or migration source. The migration consumes the owner-only secret file before changing the
+record and writes a nonsecret, run-specific completion marker only after the save succeeds. Relay
+requires that marker, removes the entire repair directory, restarts PocketBase, and proves the new
+credential through normal authentication before continuing.
 
 ### Server/Client Presence
 
@@ -107,8 +118,19 @@ Server mode responsibilities:
 Client mode responsibilities:
 
 - Connect to an existing Relay server URL
+- Coordinate ordinary app-user authentication in the main process so the renderer connection,
+  enhanced Wiki search, PDF and cover clients, and reconnect sync do not independently spend the
+  server's authentication rate-limit budget
 - Write a `client_presence` heartbeat every 30 seconds with the client hostname
 - Hide the client-count sidebar block because it is server-only operator context
+
+The authentication coordinator uses a detached, in-memory PocketBase client and single-flights
+matching server-and-passphrase requests. It copies only the validated app-user token and record into
+each main-process consumer, actively removes its bounded completed snapshot after four seconds, and
+clears all cached or in-flight state when Relay is reconfigured or the embedded server restarts.
+The passphrase is represented in coordinator keys only by a process-randomized digest. Server
+bootstrap primes the same short-lived session from its successful app-user proof so the renderer
+does not immediately repeat that password request.
 
 Relay Web responsibilities:
 
@@ -144,6 +166,19 @@ Ordinary Relay activity is passwordless and accountless. There is no current-ope
 Protected identity is account-centric. Role accounts authenticate by normalized `username`; `displayName` is presentation-only, and the auth collection's internal email field is not an accepted identity or recovery channel. `relay_privileged_state` contains the singleton `ownerAccountId` and optional singleton `publisherAccountId`. Effective role is derived on demand: the Owner is the Administrator record referenced by `ownerAccountId`, other Administrator records are Administrators, and only the Publisher record referenced by `publisherAccountId` is the effective Publisher.
 
 Privileged authentication uses a dedicated main-process PocketBase client backed by its own in-memory `BaseAuthStore`. Its token does not replace the shared Relay app-user session and is never returned through preload, written to renderer state, placed in local storage, copied into the offline cache, or queued for offline replay. A privileged session locks after 15 minutes without a privileged action; ordinary Relay activity does not extend it.
+
+Fresh reauthentication on a paired client uses the authenticated
+`POST /api/relay/privileged/reauth` PocketBase hook. PocketBase validates the submitted password
+against the current active role-account record, re-resolves the account's effective role and active
+paired device, and creates the short-lived, account/device-bound proof itself. The hook is
+body-limited and has a dedicated authoritative PocketBase rate limit. Internal
+`privileged.reauth.confirm` commands are rejected from the signed remote-command surface; only the
+server PC may create the equivalent proof through the trusted local processor path.
+
+This proof protocol requires a coordinated rollout. New clients need the hook supplied by the new
+server, while the new server intentionally rejects the legacy client-authored confirmation command.
+Ordinary Relay connectivity remains compatible, but update the server and paired clients together
+before testing sensitive actions that require fresh reauthentication.
 
 Remote privileged actions use the existing PocketBase connection and port:
 
@@ -191,7 +226,7 @@ PocketBase on the Relay server is the sole authority for the Wiki destination's 
 
 `knowledge_categories` gives every Wiki category a stable record ID, case-insensitive normalized name, explicit sort position, and optimistic revision. A single `uncategorized` system record is the non-deletable reassignment fallback. The additive version-1 bootstrap migration creates stable records from existing category strings, assigns every existing document to one of them, and classifies legacy documents as SOPs. It retains the denormalized category string and existing `sourceKey` so older clients and cross-document links remain readable. The migration marker makes a successful second bootstrap write-free; it never changes PDF bytes or checksums.
 
-The client main process inspects each selected regular PDF without exposing its path or bytes to the renderer. It builds a persistent upload queue, hashes and reads the file in bounded 4 MiB chunks, and revalidates the canonical path, file identity, size, modification time, signature, and checksum before transfer. At most two chunks are in flight. Retryable network failures use bounded exponential backoff; after eight attempts the item pauses for network recovery. The encrypted queue survives restart when Electron `safeStorage` is available. If the source moved or changed, the publisher must reselect the same unchanged PDF.
+The client main process inspects each selected regular PDF without exposing its path or bytes to the renderer. It builds a persistent upload queue, hashes and reads the file in bounded 4 MiB chunks, and revalidates the canonical path, file identity, size, modification time, signature, and checksum before transfer. At most two chunks are in flight. Retryable network failures use bounded exponential backoff; after eight attempts the item pauses for network recovery. The encrypted queue survives restart when Electron `safeStorage` is available. Automatic session or shutdown interruption leaves work queued for recovery, while an explicit Publisher pause remains paused until resumed. A discard first persists a cancellation request, stops local transfer work, and then converges with the authoritative server state; an offline or interrupted cancellation remains visibly pending and resumes before any transfer after the same Publisher session returns. Every scheduled operation is eligible only for the active account and local source that owns the queue entry. Terminal server states and pending cancellation cannot be revived by late local work or an older status response. If the source moved or changed, the publisher must reselect the same unchanged PDF.
 
 Upload manifests and chunks live in account- and device-bound PocketBase collections. The server reports missing chunk indexes so a client reconnecting over VPN sends only unacknowledged data. Once complete, a single-concurrency worker assembles and checksum-validates the file, extracts native PDF bookmarks or a bounded inferred outline, and renders page one into a bounded portrait PNG. Publishing or replacing copies both protected files into `knowledge_documents` and immediately clears the temporary staged files. Unpublished upload records expire after seven days.
 

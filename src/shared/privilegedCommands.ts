@@ -1101,7 +1101,7 @@ export function validateSignedPrivilegedCommandEnvelope(
     typeof displayNameSnapshot !== 'string' ||
     displayNameSnapshot.length === 0 ||
     displayNameSnapshot.length > 120 ||
-    (command !== 'privileged.reauth.confirm' && !isPublicPrivilegedCommandName(command)) ||
+    !isPublicPrivilegedCommandName(command) ||
     !isPrivilegedSha256(payloadHash) ||
     (expectedRevision !== null &&
       (!Number.isInteger(expectedRevision) || (expectedRevision as number) < 0)) ||

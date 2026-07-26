@@ -646,6 +646,24 @@ describe('KnowledgeUploadCoordinator', () => {
     expect(repository.batches.get(batch.id)?.state).toBe('ready');
   });
 
+  it('rejects finalize after an upload is published', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const { upload } = await beginOneFile(coordinator, bytes);
+    await repository.updateUpload(upload.id, { state: 'published', revision: 2 });
+
+    await expect(
+      coordinator.finalize(publisher, {
+        uploadId: upload.id,
+        expectedRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict', currentRevision: 2 });
+    expect(repository.uploads.get(upload.id)).toMatchObject({
+      state: 'published',
+      revision: 2,
+    });
+  });
+
   it('cancels a file whose manifest creation was already in flight', async () => {
     let releaseCreate!: () => void;
     let markCreateStarted!: () => void;

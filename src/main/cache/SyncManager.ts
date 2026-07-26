@@ -1,6 +1,8 @@
 import type PocketBase from 'pocketbase';
+import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import type { PendingChange } from './PendingChanges';
 import { loggers } from '../logger';
+import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 
 const logger = loggers.sync;
 
@@ -10,14 +12,19 @@ export interface SyncResult {
   overwrittenData?: Record<string, unknown>;
 }
 
+export type SyncManagerOptions = Readonly<{
+  relayAppUserServerUrl?: string;
+}>;
+
 /**
- * SyncManager — infrastructure prepared for future offline-write support.
- * Processes PendingChange entries against the PocketBase server. Currently
- * only triggered via the SYNC_PENDING IPC channel; no production code path
- * enqueues changes into PendingChanges yet.
+ * SyncManager processes durable PendingChange entries against the PocketBase
+ * server when the SYNC_PENDING IPC channel requests a replay.
  */
 export class SyncManager {
-  constructor(private readonly pb: PocketBase) {}
+  constructor(
+    private readonly pb: PocketBase,
+    private readonly options: SyncManagerOptions = {},
+  ) {}
 
   /** Whether the internal PB client has a valid auth token. */
   isAuthenticated(): boolean {
@@ -26,6 +33,10 @@ export class SyncManager {
 
   /** Re-authenticate the internal PB client (e.g. after token expiry). */
   async reauthenticate(email: string, secret: string): Promise<void> {
+    if (email === RELAY_APP_USER_EMAIL && this.options.relayAppUserServerUrl) {
+      await authenticateRelayAppUserShared(this.pb, this.options.relayAppUserServerUrl, secret);
+      return;
+    }
     await this.pb.collection('_pb_users_auth_').authWithPassword(email, secret);
   }
 

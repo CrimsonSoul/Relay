@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import type {
-  KnowledgeCoverRequest,
-  KnowledgeCoverResult,
-  KnowledgeIndexStatus,
-  KnowledgePdfRequest,
-  KnowledgePdfResult,
+import {
+  KNOWLEDGE_MAX_PDF_BYTES,
+  type KnowledgeCoverRequest,
+  type KnowledgeCoverResult,
+  type KnowledgeIndexStatus,
+  type KnowledgePdfRequest,
+  type KnowledgePdfResult,
 } from '@shared/knowledge';
 import {
   normalizeKnowledgeSearchResponse,
@@ -23,6 +24,7 @@ import {
 import { WebKnowledgeStagingError } from '../WebKnowledgeUploadStaging';
 import type { WebKnowledgeSession } from '../WebKnowledgeSession';
 import type { WebRouter, WebRouteResponse } from '../WebRouter';
+import { WebResourceBudget } from '../WebResourceBudget';
 
 export type KnowledgeRouteServices = {
   pdf: { getPdf(request: KnowledgePdfRequest): Promise<KnowledgePdfResult> };
@@ -44,6 +46,15 @@ const uploadMutationLimit = {
   limit: 240,
   windowMs: 60_000,
 };
+export const MAX_CONCURRENT_PDF_READS_PER_SESSION = 2;
+// A read can transiently retain the fetch chunks, joined Uint8Array, and returned
+// ArrayBuffer, each at the 50 MiB document limit. Two process-wide permits keep
+// those explicitly accounted full-size buffers at or below 300 MiB, plus runtime
+// overhead, while preserving one normal viewer and one overlapping read.
+export const PDF_FULL_SIZE_BUFFER_COPIES_PER_READ = 3;
+export const MAX_CONCURRENT_PDF_READS_GLOBAL = 2;
+export const MAX_ACCOUNTED_PDF_BUFFER_BYTES =
+  MAX_CONCURRENT_PDF_READS_GLOBAL * PDF_FULL_SIZE_BUFFER_COPIES_PER_READ * KNOWLEDGE_MAX_PDF_BYTES;
 
 function query(requestUrl: string | undefined, origin: string): URLSearchParams | null {
   try {
@@ -58,6 +69,7 @@ function binaryResponse(
   contentType: string,
   requestRange?: string,
   metadata: Readonly<Record<string, string>> = {},
+  onComplete?: () => void,
 ): WebRouteResponse {
   let start = 0;
   let end = bytes.byteLength - 1;
@@ -74,6 +86,7 @@ function binaryResponse(
       parsedStart > parsedEnd ||
       parsedEnd >= bytes.byteLength
     ) {
+      onComplete?.();
       return {
         status: 416,
         headers: { 'Content-Range': `bytes */${bytes.byteLength}` },
@@ -95,8 +108,22 @@ function binaryResponse(
       ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${bytes.byteLength}` } : {}),
       ...metadata,
     },
+    onComplete,
     stream: (response) => response.end(selected),
   };
+}
+
+function validRangeSyntax(requestRange: string | undefined): boolean {
+  if (!requestRange) return true;
+  const match = /^bytes=(\d+)-(\d*)$/u.exec(requestRange);
+  if (!match) return false;
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  return (
+    Number.isSafeInteger(start) &&
+    start >= 0 &&
+    (end === null || (Number.isSafeInteger(end) && end >= start))
+  );
 }
 
 function stagingFailure(error: unknown): WebRouteResponse {
@@ -117,26 +144,52 @@ function uploadSession(
 }
 
 export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRouteOptions): void {
+  const pdfReads = new WebResourceBudget(
+    MAX_CONCURRENT_PDF_READS_PER_SESSION,
+    MAX_CONCURRENT_PDF_READS_GLOBAL,
+  );
   router.register({
     method: 'GET',
     path: `${RELAY_WEB_API_PREFIX}/knowledge/pdf`,
     authenticated: true,
     rateLimit: { bucket: 'knowledge-pdf', key: 'session', limit: 120, windowMs: 60_000 },
-    handler: async ({ request, origin }) => {
+    handler: async ({ request, origin, session }) => {
       const parameters = query(request.url, origin);
       const parsed = WebKnowledgeDocumentRequestSchema.safeParse({
         documentId: parameters?.get('documentId'),
         checksum: parameters?.get('checksum'),
       });
       if (!parsed.success) return { status: 400, body: { ok: false, error: 'invalid-document' } };
-      const result = await options.services.pdf.getPdf(parsed.data);
-      if (!result.ok) return { status: 404, body: result };
-      return binaryResponse(
-        new Uint8Array(result.data),
-        'application/pdf',
-        typeof request.headers.range === 'string' ? request.headers.range : undefined,
-        { 'X-Relay-Checksum': result.checksum, 'X-Relay-Source': result.source },
-      );
+      const requestRange =
+        typeof request.headers.range === 'string' ? request.headers.range : undefined;
+      if (!validRangeSyntax(requestRange)) {
+        return { status: 416, body: { ok: false, error: 'invalid-request' } };
+      }
+      const release = session ? pdfReads.tryAcquire(session.rateLimitId) : null;
+      if (!release) {
+        return {
+          status: 503,
+          headers: { 'Retry-After': '1' },
+          body: { ok: false, error: 'pdf-busy' },
+        };
+      }
+      try {
+        const result = await options.services.pdf.getPdf(parsed.data);
+        if (!result.ok) {
+          release();
+          return { status: 404, body: result };
+        }
+        return binaryResponse(
+          new Uint8Array(result.data),
+          'application/pdf',
+          requestRange,
+          { 'X-Relay-Checksum': result.checksum, 'X-Relay-Source': result.source },
+          release,
+        );
+      } catch (error) {
+        release();
+        throw error;
+      }
     },
   });
 

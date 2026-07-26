@@ -658,6 +658,16 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       collection: (typeof before.overlay)['snapshots'],
       id: string | undefined,
     ) => collection.find((snapshot) => snapshot.id === id);
+    const expectScrolledToEnd = (
+      snapshot: ReturnType<typeof findSnapshot>,
+      label: string,
+    ): void => {
+      expect(snapshot, label).toBeDefined();
+      if (!snapshot) return;
+
+      // scrollTop preserves subpixels while scrollHeight and clientHeight are rounded integers.
+      expect(Math.abs(snapshot.scrollTop - snapshot.maxScrollTop), label).toBeLessThanOrEqual(1);
+    };
 
     expect(before.overlay.snapshots).toHaveLength(8);
     expect(before.classic.snapshots).toHaveLength(8);
@@ -702,7 +712,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       const oncallAtEnd = findSnapshot(after[mode].snapshots, 'oncall-root');
       expect(oncallAtTop?.scrollTop, `${mode} oncall root top`).toBe(0);
       expect(oncallAtTop?.leadingControlVisible, `${mode} oncall root header`).toBe(true);
-      expect(oncallAtEnd?.scrollTop, `${mode} oncall root max`).toBe(oncallAtEnd?.maxScrollTop);
+      expectScrolledToEnd(oncallAtEnd, `${mode} oncall root max`);
       expect(oncallAtEnd?.terminalContentVisible, `${mode} oncall root tail`).toBe(true);
     }
     expect(
@@ -789,7 +799,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         expect(result?.scrollHeight, `${mode} ${id}`).toBeGreaterThan(
           result?.clientHeight ?? Number.MAX_SAFE_INTEGER,
         );
-        expect(result?.scrollTop, `${mode} ${id}`).toBe(result?.maxScrollTop);
+        expectScrolledToEnd(result, `${mode} ${id} max`);
         expect(result?.scrollTop, `${mode} ${id}`).toBeGreaterThan(0);
         expect(result?.terminalContentVisible, `${mode} ${id}`).toBe(true);
       }

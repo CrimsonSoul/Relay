@@ -15,6 +15,7 @@ import {
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import type { PendingMutationOverlay, OfflineWritableCollection } from '@shared/ipc';
+import { safePocketBaseAuthFailure } from '../app/pbErrors';
 
 const VALID_COLLECTIONS = new Set([
   'contacts',
@@ -132,7 +133,9 @@ async function ensureSyncAuthentication(
     loggers.sync.info('SyncManager re-authenticated');
     return true;
   } catch (authErr) {
-    loggers.sync.error('SyncManager re-auth failed', { error: authErr });
+    loggers.sync.error('SyncManager re-auth failed', {
+      authFailure: safePocketBaseAuthFailure(authErr),
+    });
     for (const change of changes) pending.markFailure(change.id, 'Re-authentication failed');
     broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
       pendingCount: changes.length,

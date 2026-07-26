@@ -72,6 +72,7 @@ describe('createWebSessionAuthenticator', () => {
       LOCAL_PB_URL,
       passphrase,
       'Relay Web login failed',
+      { allowServerSuperuserFallback: false },
     );
     expect(createPocketBase).toHaveBeenCalledWith(LOCAL_PB_URL);
     expect(authStore.save).toHaveBeenCalledWith('app-user-token', { id: 'relay-user' });

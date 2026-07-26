@@ -176,6 +176,7 @@ export class CollectionStore<T extends RecordModel> {
   private readonly comparator: ((a: T, b: T) => number) | null;
   private active = false;
   private connected = false;
+  private connectionGeneration = 0;
   private fetchGeneration = 0;
   private subscriptionGeneration = 0;
   private realtimeUnsubscribe: (() => void | Promise<void>) | null = null;
@@ -223,6 +224,7 @@ export class CollectionStore<T extends RecordModel> {
   dispose(): void {
     if (!this.active) return;
     this.active = false;
+    this.connectionGeneration += 1;
     this.fetchGeneration += 1;
     this.stopRealtimeSubscription();
     this.connectionUnsubscribe?.();
@@ -268,6 +270,9 @@ export class CollectionStore<T extends RecordModel> {
   }
 
   private restartConnectionCycle(pendingOverlays: PendingMutationOverlay[] = []): void {
+    const connectionGeneration = ++this.connectionGeneration;
+    this.fetchGeneration += 1;
+    this.webGate?.markDisconnected();
     this.stopRealtimeSubscription();
     if (!this.connected) {
       if (this.webGate) {
@@ -278,7 +283,12 @@ export class CollectionStore<T extends RecordModel> {
       return;
     }
     this.inFlightEvents = [];
-    void this.startRealtimeSubscription().then(() => this.fetchData(true, pendingOverlays));
+    void this.startRealtimeSubscription().then(() => {
+      if (!this.active || !this.connected || connectionGeneration !== this.connectionGeneration) {
+        return;
+      }
+      return this.fetchData(true, pendingOverlays, connectionGeneration);
+    });
   }
 
   private stopRealtimeSubscription(): void {
@@ -316,10 +326,14 @@ export class CollectionStore<T extends RecordModel> {
   private async fetchData(
     preserveBufferedEvents = false,
     pendingOverlays: PendingMutationOverlay[] = [],
+    connectionGeneration = this.connectionGeneration,
   ): Promise<void> {
     if (!this.active) return;
     const generation = ++this.fetchGeneration;
-    const isCurrent = () => this.active && generation === this.fetchGeneration;
+    const isCurrent = () =>
+      this.active &&
+      generation === this.fetchGeneration &&
+      connectionGeneration === this.connectionGeneration;
 
     try {
       if (!preserveBufferedEvents) this.inFlightEvents = [];

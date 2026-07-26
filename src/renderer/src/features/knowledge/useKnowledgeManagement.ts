@@ -83,18 +83,74 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
   const [uploadQueue, setUploadQueue] = useState<KnowledgeUploadQueueView>(EMPTY_UPLOAD_QUEUE);
   const [error, setError] = useState<string | null>(null);
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
-  const managementIdentity = canManage ? session.accountId : null;
+  const managementIdentity = canManage
+    ? `${session.accountId}\u0000${session.deviceId ?? 'server-local'}`
+    : null;
   const managementIdentityRef = useRef(managementIdentity);
   const refreshGenerationRef = useRef(0);
+  const uploadQueueRef = useRef<KnowledgeUploadQueueView>(EMPTY_UPLOAD_QUEUE);
+  const uploadQueueGenerationRef = useRef(0);
+  const uploadQueueHydratedIdentityRef = useRef<string | null>(null);
+  const uploadQueueRequestRef = useRef<{
+    identity: string;
+    promise: Promise<KnowledgeUploadQueueView | null>;
+  } | null>(null);
   const mountedRef = useRef(true);
   managementIdentityRef.current = managementIdentity;
+  uploadQueueRef.current = uploadQueue;
 
-  const refreshUploadQueue = useCallback(async (): Promise<KnowledgeUploadQueueView | null> => {
-    const queue = await globalThis.api?.getKnowledgeUploadQueue?.();
-    const normalized = normalizeKnowledgeUploadQueueView(queue);
-    if (normalized) setUploadQueue(normalized);
-    return normalized;
+  const refreshUploadQueue = useCallback((): Promise<KnowledgeUploadQueueView | null> => {
+    const expectedIdentity = managementIdentityRef.current;
+    const readQueue = globalThis.api?.getKnowledgeUploadQueue;
+    if (!expectedIdentity || !readQueue) return Promise.resolve(null);
+    const generation = uploadQueueGenerationRef.current + 1;
+    uploadQueueGenerationRef.current = generation;
+    let operation!: Promise<KnowledgeUploadQueueView | null>;
+    operation = (async () => {
+      try {
+        const normalized = normalizeKnowledgeUploadQueueView(await readQueue());
+        if (
+          !normalized ||
+          !mountedRef.current ||
+          generation !== uploadQueueGenerationRef.current ||
+          managementIdentityRef.current !== expectedIdentity
+        ) {
+          return null;
+        }
+        uploadQueueRef.current = normalized;
+        uploadQueueHydratedIdentityRef.current = expectedIdentity;
+        setUploadQueue(normalized);
+        return normalized;
+      } finally {
+        if (uploadQueueRequestRef.current?.promise === operation) {
+          uploadQueueRequestRef.current = null;
+        }
+      }
+    })();
+    uploadQueueRequestRef.current = { identity: expectedIdentity, promise: operation };
+    return operation;
   }, []);
+
+  const ensureUploadQueueHydrated =
+    useCallback(async (): Promise<KnowledgeUploadQueueView | null> => {
+      const expectedIdentity = managementIdentityRef.current;
+      if (!expectedIdentity) return null;
+      if (uploadQueueHydratedIdentityRef.current === expectedIdentity) {
+        return uploadQueueRef.current;
+      }
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const pending = uploadQueueRequestRef.current;
+        const queue = await (pending?.identity === expectedIdentity
+          ? pending.promise
+          : refreshUploadQueue());
+        if (managementIdentityRef.current !== expectedIdentity) return null;
+        if (queue) return queue;
+        if (uploadQueueHydratedIdentityRef.current === expectedIdentity) {
+          return uploadQueueRef.current;
+        }
+      }
+      return null;
+    }, [refreshUploadQueue]);
 
   const readSnapshot = useCallback(
     async (cursor: string | null): Promise<SnapshotRead> => {
@@ -152,25 +208,37 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     return () => {
       mountedRef.current = false;
       refreshGenerationRef.current += 1;
+      uploadQueueGenerationRef.current += 1;
+      uploadQueueRequestRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     refreshGenerationRef.current += 1;
+    uploadQueueGenerationRef.current += 1;
+    uploadQueueRequestRef.current = null;
+    uploadQueueHydratedIdentityRef.current = null;
+    uploadQueueRef.current = EMPTY_UPLOAD_QUEUE;
     setSnapshot(null);
     setAuditEvents([]);
     setAuditNextCursor(null);
     setUploadQueue(EMPTY_UPLOAD_QUEUE);
     setError((current) => (canManage || current !== REAUTHENTICATION_ERROR ? null : current));
     if (canManage) void refresh();
-  }, [canManage, refresh, session.accountId]);
+  }, [canManage, managementIdentity, refresh]);
 
   useEffect(() => {
-    if (!canManage) return;
+    if (!canManage || !managementIdentity) return;
     let active = true;
+    const expectedIdentity = managementIdentity;
     const acceptQueue = (value: unknown) => {
       const normalized = normalizeKnowledgeUploadQueueView(value);
-      if (active && normalized) setUploadQueue(normalized);
+      if (active && normalized && managementIdentityRef.current === expectedIdentity) {
+        uploadQueueGenerationRef.current += 1;
+        uploadQueueHydratedIdentityRef.current = expectedIdentity;
+        uploadQueueRef.current = normalized;
+        setUploadQueue(normalized);
+      }
     };
     void refreshUploadQueue();
     const unsubscribe = globalThis.api?.onKnowledgeUploadQueueChanged?.(acceptQueue);
@@ -178,7 +246,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
       active = false;
       unsubscribe?.();
     };
-  }, [canManage, refreshUploadQueue]);
+  }, [canManage, managementIdentity, refreshUploadQueue]);
 
   useEffect(() => {
     if (!canManage || uploadQueue.items.length === 0) return;
@@ -187,6 +255,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
       (snapshot?.uploads.items ?? []).map((upload) => [upload.id, upload.state]),
     );
     const needsServerRefresh = uploadQueue.items.some((item) => {
+      if (item.cancelPending) return true;
       if (terminal.has(item.state)) return false;
       return !item.uploadId || !terminal.has(serverStates.get(item.uploadId) ?? '');
     });
@@ -546,6 +615,21 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
 
   const cancelUpload = useCallback(
     async (uploadId: string): Promise<boolean> => {
+      const hydratedQueue = await ensureUploadQueueHydrated();
+      if (!hydratedQueue) return false;
+      const localQueueItem = hydratedQueue.items.find(
+        (item) => item.id === uploadId || item.uploadId === uploadId,
+      );
+      if (localQueueItem) {
+        return runUploadControl(
+          `cancel:${uploadId}`,
+          globalThis.api?.cancelKnowledgeUpload
+            ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
+            : undefined,
+          'Relay could not cancel this PDF.',
+          true,
+        );
+      }
       const upload = snapshot?.uploads.items.find(({ id }) => id === uploadId);
       if (!upload) {
         return runUploadControl(
@@ -572,14 +656,9 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         ['uploads'],
         false,
       );
-      if (!cancelled) return false;
-
-      if (globalThis.api?.cancelKnowledgeUpload) {
-        await globalThis.api.cancelKnowledgeUpload(uploadId).catch(() => false);
-      }
-      return true;
+      return cancelled;
     },
-    [execute, runUploadControl, snapshot?.uploads.items],
+    [ensureUploadQueueHydrated, execute, runUploadControl, snapshot?.uploads.items],
   );
 
   return {

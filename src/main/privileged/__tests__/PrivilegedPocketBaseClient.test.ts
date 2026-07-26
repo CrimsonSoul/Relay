@@ -61,6 +61,7 @@ describe('PrivilegedPocketBaseClient', () => {
   let getOne: ReturnType<typeof vi.fn>;
   let getFirstListItem: ReturnType<typeof vi.fn>;
   let subscribe: ReturnType<typeof vi.fn>;
+  let sendRequest: ReturnType<typeof vi.fn>;
   let subscriptionCallbacks: Map<string, (event: unknown) => void>;
   let subscriptionDisposers: ReturnType<typeof vi.fn>[];
   let createClient: ReturnType<typeof vi.fn>;
@@ -77,6 +78,10 @@ describe('PrivilegedPocketBaseClient', () => {
     createRecord = vi.fn(async (data) => ({ id: 'created-record', ...data }));
     getOne = vi.fn(async (id) => ({ id, value: 'safe' }));
     getFirstListItem = vi.fn(async () => ({ id: 'first-record', value: 'safe' }));
+    sendRequest = vi.fn(async () => ({
+      proofId: 'reauth-request-id',
+      expiresAt: '2026-07-15T12:05:00.000Z',
+    }));
     subscriptionCallbacks = new Map();
     subscriptionDisposers = [];
     subscribe = vi.fn(
@@ -93,6 +98,7 @@ describe('PrivilegedPocketBaseClient', () => {
         baseURL: serverUrl,
         authStore,
         cancelAllRequests: vi.fn(),
+        send: sendRequest,
         realtime: { onDisconnect: undefined },
         collection: vi.fn((collectionName: string) => ({
           authWithPassword,
@@ -107,9 +113,10 @@ describe('PrivilegedPocketBaseClient', () => {
     });
   });
 
-  function createPrivilegedClient() {
+  function createPrivilegedClient(createId: () => string = () => 'reauth-request-id') {
     return new PrivilegedPocketBaseClient({
       allowInsecureHttp: false,
+      createId,
       createClient,
       serverUrl: 'https://relay.example.com',
     });
@@ -122,9 +129,11 @@ describe('PrivilegedPocketBaseClient', () => {
 
     await client.authenticate(USERNAME, PASSWORD);
 
-    expect(authStores).toHaveLength(1);
+    expect(authStores).toHaveLength(2);
     expect(authStores[0]).toBeInstanceOf(BaseAuthStore);
     expect(authStores[0]).not.toBe(sharedAuthStore);
+    expect(authStores[0]?.token).toBe(RAW_TOKEN);
+    expect(authStores[1]?.token).toBe('');
     expect(sharedAuthStore.token).toBe('shared-app-token');
     expect(sharedAuthStore.record).toEqual({ id: 'shared-user' });
   });
@@ -134,8 +143,10 @@ describe('PrivilegedPocketBaseClient', () => {
 
     const account = await client.authenticate(USERNAME, PASSWORD);
 
-    expect(adapters[0]?.collection).toHaveBeenCalledWith(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION);
-    expect(authWithPassword).toHaveBeenCalledWith(USERNAME, PASSWORD, { requestKey: null });
+    expect(adapters[1]?.collection).toHaveBeenCalledWith(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION);
+    expect(authWithPassword).toHaveBeenCalledWith(USERNAME, PASSWORD, {
+      requestKey: 'privileged-authentication',
+    });
     expect(account).toEqual(accountRecord({ collectionName: undefined, email: undefined }));
     expect(JSON.stringify(account)).not.toContain(RAW_TOKEN);
     expect(JSON.stringify(account)).not.toContain('@relay.invalid');
@@ -147,7 +158,101 @@ describe('PrivilegedPocketBaseClient', () => {
 
     await client.authenticate('  RyAn  ', PASSWORD);
 
-    expect(authWithPassword).toHaveBeenCalledWith('ryan', PASSWORD, { requestKey: null });
+    expect(authWithPassword).toHaveBeenCalledWith('ryan', PASSWORD, {
+      requestKey: 'privileged-authentication',
+    });
+  });
+
+  it('isolates a cancelled late authentication from the fresh authenticated store', async () => {
+    const staleResponse = deferred<{ token: string; record: Record<string, unknown> }>();
+    authWithPassword
+      .mockImplementationOnce(() => {
+        const attemptStore = authStores.at(-1) as BaseAuthStore;
+        return staleResponse.promise.then((response) => {
+          attemptStore.save(response.token, response.record);
+          return response;
+        });
+      })
+      .mockImplementationOnce(async () => {
+        const attemptStore = authStores.at(-1) as BaseAuthStore;
+        const record = accountRecord();
+        attemptStore.save(RAW_TOKEN, record);
+        return { token: RAW_TOKEN, record };
+      });
+    const client = createPrivilegedClient();
+
+    const staleAuthentication = client.authenticate('charles', PASSWORD);
+    const rejection = staleAuthentication.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(authWithPassword).toHaveBeenCalledOnce());
+    client.clear();
+
+    await expect(client.authenticate(USERNAME, PASSWORD)).resolves.toMatchObject({
+      id: 'account-admin',
+      username: USERNAME,
+    });
+    staleResponse.resolve({
+      token: 'stale-charles-token',
+      record: accountRecord({
+        id: 'account-charles',
+        username: 'charles',
+        displayName: 'Charles Gibbs',
+      }),
+    });
+    await expect(rejection).resolves.toMatchObject({ code: 'invalid-credentials' });
+
+    expect(client.getAccount()).toMatchObject({ id: 'account-admin', username: USERNAME });
+    expect(
+      adapters.some((adapter) => vi.mocked(adapter.cancelAllRequests).mock.calls.length > 0),
+    ).toBe(true);
+  });
+
+  it('uses the authenticated server route for paired-client reauthentication', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    authWithPassword.mockClear();
+    getOne.mockResolvedValueOnce(accountRecord({ displayName: 'Ryan Current' }));
+
+    const result = await client.reauthenticateRemotely(USERNAME, PASSWORD, 'device-work-laptop');
+
+    expect(authWithPassword).not.toHaveBeenCalled();
+    expect(sendRequest).toHaveBeenCalledWith('/api/relay/privileged/reauth', {
+      method: 'POST',
+      body: {
+        password: PASSWORD,
+        requestId: 'reauth-request-id',
+        deviceId: 'device-work-laptop',
+      },
+      requestKey: null,
+    });
+    expect(getOne).toHaveBeenCalledWith('account-admin', { requestKey: null });
+    expect(result).toEqual({
+      account: accountRecord({
+        collectionName: undefined,
+        displayName: 'Ryan Current',
+        email: undefined,
+      }),
+      requestId: 'reauth-request-id',
+      expiresAt: '2026-07-15T12:05:00.000Z',
+    });
+    expect(authStores[0]?.token).toBe(RAW_TOKEN);
+  });
+
+  it('rejects malformed or mismatched server proof responses without another password auth', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    authWithPassword.mockClear();
+    sendRequest.mockResolvedValueOnce({
+      proofId: 'different-request-id',
+      expiresAt: 'not-a-date',
+    });
+
+    await expect(
+      client.reauthenticateRemotely(USERNAME, PASSWORD, 'device-work-laptop'),
+    ).rejects.toMatchObject({ code: 'invalid-credentials' });
+
+    expect(authWithPassword).not.toHaveBeenCalled();
+    expect(getOne).not.toHaveBeenCalled();
+    expect(authStores[0]?.token).toBe(RAW_TOKEN);
   });
 
   it('accepts PocketBase auth responses that omit non-authorizing timestamps', async () => {
@@ -181,9 +286,9 @@ describe('PrivilegedPocketBaseClient', () => {
     client.reconfigure('https://relay-two.example.com', false);
 
     expect(originalStore.token).toBe('');
-    expect(authStores).toHaveLength(2);
-    expect(authStores[1]).not.toBe(originalStore);
-    expect(adapters[1]?.baseURL).toBe('https://relay-two.example.com');
+    expect(authStores).toHaveLength(4);
+    expect(authStores.at(-1)).not.toBe(originalStore);
+    expect(adapters.at(-1)?.baseURL).toBe('https://relay-two.example.com');
   });
 
   it('monitors only the authenticated account and authority state with deterministic cleanup', async () => {

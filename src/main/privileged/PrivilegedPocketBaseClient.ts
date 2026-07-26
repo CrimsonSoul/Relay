@@ -1,5 +1,8 @@
 import PocketBase, { BaseAuthStore, ClientResponseError } from 'pocketbase';
+import { randomUUID } from 'node:crypto';
 import {
+  MAX_PRIVILEGED_PASSWORD_LENGTH,
+  MIN_PRIVILEGED_PASSWORD_LENGTH,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayPrivilegedAccountRecord,
@@ -31,7 +34,7 @@ type PrivilegedAuthCollection = {
   authWithPassword(
     username: string,
     password: string,
-    options: { requestKey: null },
+    options: { requestKey: string | null },
   ): Promise<PrivilegedAuthResponse>;
   create<T = Record<string, unknown>>(
     data: Record<string, unknown> | FormData,
@@ -53,6 +56,14 @@ export type PrivilegedPocketBaseClientAdapter = {
   authStore: BaseAuthStore;
   cancelAllRequests(): unknown;
   collection(name: string): PrivilegedAuthCollection;
+  send<T>(
+    path: string,
+    options: {
+      method: 'POST';
+      body: Record<string, unknown>;
+      requestKey: null;
+    },
+  ): Promise<T>;
   realtime: {
     onDisconnect?: (activeSubscriptions: string[]) => void;
   };
@@ -61,12 +72,29 @@ export type PrivilegedPocketBaseClientAdapter = {
 type PrivilegedPocketBaseClientOptions = {
   serverUrl: string;
   allowInsecureHttp?: boolean;
+  createId?: () => string;
   createClient?: (serverUrl: string, authStore: BaseAuthStore) => PrivilegedPocketBaseClientAdapter;
+};
+
+type PrivilegedAuthenticationAttempt = {
+  client: PrivilegedPocketBaseClientAdapter;
+  targetClient: PrivilegedPocketBaseClientAdapter;
+};
+
+export type PrivilegedRemoteReauthentication = {
+  account: RelayPrivilegedAccountRecord;
+  requestId: string;
+  expiresAt: string;
 };
 
 export interface PrivilegedAuthClient {
   authenticate(username: string, password: string): Promise<RelayPrivilegedAccountRecord>;
   reauthenticate(username: string, password: string): Promise<RelayPrivilegedAccountRecord>;
+  reauthenticateRemotely?(
+    username: string,
+    password: string,
+    deviceId: string,
+  ): Promise<PrivilegedRemoteReauthentication>;
   clear(): void;
   monitorAuthority?(
     accountId: string,
@@ -94,6 +122,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isBoundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+
+function isBoundedIdentifier(value: unknown, max: number): value is string {
+  return isBoundedString(value, max) && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort((left, right) => left.localeCompare(right));
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
 function normalizeAccountRecord(value: unknown): RelayPrivilegedAccountRecord | null {
@@ -220,13 +257,16 @@ function defaultCreateClient(
 export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
   private serverUrl: string;
   private allowInsecureHttp: boolean;
+  private readonly createId: () => string;
   private readonly createClient: NonNullable<PrivilegedPocketBaseClientOptions['createClient']>;
   private client: PrivilegedPocketBaseClientAdapter;
   private authorityCleanup: (() => Promise<void>) | null = null;
+  private authenticationAttempt: PrivilegedAuthenticationAttempt | null = null;
 
   constructor(options: PrivilegedPocketBaseClientOptions) {
     this.allowInsecureHttp = options.allowInsecureHttp === true;
     this.serverUrl = this.validateServerUrl(options.serverUrl, this.allowInsecureHttp);
+    this.createId = options.createId ?? randomUUID;
     this.createClient = options.createClient ?? defaultCreateClient;
     this.client = this.buildClient(this.serverUrl);
   }
@@ -239,8 +279,74 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     return this.authenticateFresh(username, password);
   }
 
+  async reauthenticateRemotely(
+    username: string,
+    password: string,
+    deviceId: string,
+  ): Promise<PrivilegedRemoteReauthentication> {
+    const normalizedUsername = normalizeRoleUsername(username);
+    const current = this.getAccount();
+    if (
+      !current ||
+      current.username !== normalizedUsername ||
+      password.length < MIN_PRIVILEGED_PASSWORD_LENGTH ||
+      password.length > MAX_PRIVILEGED_PASSWORD_LENGTH ||
+      !isBoundedIdentifier(deviceId, 200)
+    ) {
+      throw new PrivilegedAuthenticationError('invalid-credentials');
+    }
+
+    try {
+      const requestId = this.createId();
+      if (!isBoundedIdentifier(requestId, 128)) {
+        throw new PrivilegedAuthenticationError('invalid-credentials');
+      }
+      const response = await this.client.send<unknown>('/api/relay/privileged/reauth', {
+        method: 'POST',
+        body: { password, requestId, deviceId },
+        requestKey: null,
+      });
+      if (
+        !isRecord(response) ||
+        !hasExactKeys(response, ['expiresAt', 'proofId']) ||
+        response.proofId !== requestId ||
+        !isBoundedString(response.expiresAt, 100)
+      ) {
+        throw new PrivilegedAuthenticationError('invalid-credentials');
+      }
+      const expiresAtMs = Date.parse(response.expiresAt);
+      if (!Number.isFinite(expiresAtMs)) {
+        throw new PrivilegedAuthenticationError('invalid-credentials');
+      }
+      const refreshed = normalizeAccountRecord(
+        await this.client
+          .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+          .getOne(current.id, { requestKey: null }),
+      );
+      if (!refreshed || refreshed.id !== current.id || refreshed.username !== normalizedUsername) {
+        throw new PrivilegedAuthenticationError('invalid-credentials');
+      }
+      return {
+        account: refreshed,
+        requestId,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof PrivilegedAuthenticationError) throw error;
+      throw new PrivilegedAuthenticationError(
+        isOfflineError(error) ? 'offline' : 'invalid-credentials',
+      );
+    }
+  }
+
   clear(): void {
     void this.stopAuthorityMonitor();
+    const attempt = this.authenticationAttempt;
+    this.authenticationAttempt = null;
+    if (attempt) {
+      attempt.client.cancelAllRequests();
+      attempt.client.authStore.clear();
+    }
     this.client.authStore.clear();
   }
 
@@ -414,19 +520,38 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     password: string,
   ): Promise<RelayPrivilegedAccountRecord> {
     this.clear();
+    const targetClient = this.client;
+    const authenticationClient = this.buildClient(this.serverUrl);
+    const attempt: PrivilegedAuthenticationAttempt = {
+      client: authenticationClient,
+      targetClient,
+    };
+    this.authenticationAttempt = attempt;
     try {
       const normalizedUsername = normalizeRoleUsername(username);
-      const response = await this.client
+      const response = await authenticationClient
         .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-        .authWithPassword(normalizedUsername, password, { requestKey: null });
+        .authWithPassword(normalizedUsername, password, {
+          requestKey: 'privileged-authentication',
+        });
+      this.assertAuthenticationAttemptCurrent(attempt);
       const account = normalizeAccountRecord(response.record);
       if (account?.username !== normalizedUsername) {
-        this.clear();
         throw new PrivilegedAuthenticationError('invalid-credentials');
       }
+      this.authenticationAttempt = null;
+      targetClient.authStore.save(response.token, response.record);
+      authenticationClient.authStore.clear();
       return account;
     } catch (error) {
-      this.clear();
+      const isCurrent = this.authenticationAttempt === attempt && this.client === targetClient;
+      if (this.authenticationAttempt === attempt) this.authenticationAttempt = null;
+      authenticationClient.cancelAllRequests();
+      authenticationClient.authStore.clear();
+      if (!isCurrent) {
+        throw new PrivilegedAuthenticationError('invalid-credentials');
+      }
+      targetClient.authStore.clear();
       if (error instanceof PrivilegedAuthenticationError) throw error;
       throw new PrivilegedAuthenticationError(
         isOfflineError(error) ? 'offline' : 'invalid-credentials',
@@ -436,6 +561,12 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
 
   private buildClient(serverUrl: string): PrivilegedPocketBaseClientAdapter {
     return this.createClient(serverUrl, new BaseAuthStore());
+  }
+
+  private assertAuthenticationAttemptCurrent(attempt: PrivilegedAuthenticationAttempt): void {
+    if (this.authenticationAttempt !== attempt || this.client !== attempt.targetClient) {
+      throw new PrivilegedAuthenticationError('invalid-credentials');
+    }
   }
 
   private async stopAuthorityMonitor(): Promise<void> {

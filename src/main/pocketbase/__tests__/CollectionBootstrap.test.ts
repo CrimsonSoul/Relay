@@ -79,7 +79,11 @@ const mockPb = {
   createBatch: mockCreateBatch,
 } as never;
 
-import { ensureCollections, ensureKnowledgeSearchCollections } from '../CollectionBootstrap';
+import {
+  ensureCollections,
+  ensureKnowledgeSearchCollections,
+  ensurePocketBaseAuthRateLimit,
+} from '../CollectionBootstrap';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -159,6 +163,161 @@ function mockSuccessfulCollectionCreation(): void {
     name: value.name,
   }));
 }
+
+describe('ensurePocketBaseAuthRateLimit', () => {
+  it('enables the auth limiter and adds the exact privileged reauthentication route limit', async () => {
+    const authRule = {
+      label: '*:auth',
+      audience: '',
+      duration: 3,
+      maxRequests: 2,
+    };
+    const fileRule = {
+      label: '*:file',
+      audience: '',
+      duration: 1,
+      maxRequests: 8,
+    };
+    const privilegedReauthenticationRule = {
+      label: 'POST /api/relay/privileged/reauth',
+      audience: '@auth',
+      duration: 3,
+      maxRequests: 2,
+    };
+    mockSettingsGetAll.mockResolvedValue({
+      meta: { appName: 'Relay' },
+      batch: { enabled: true, maxRequests: 100, timeout: 9, maxBodySize: 0 },
+      rateLimits: {
+        enabled: false,
+        rules: [authRule, fileRule],
+        excludedIPs: ['127.0.0.1'],
+      },
+    });
+
+    await ensurePocketBaseAuthRateLimit(mockPb);
+
+    expect(mockSettingsUpdate).toHaveBeenCalledOnce();
+    expect(mockSettingsUpdate).toHaveBeenCalledWith(
+      {
+        rateLimits: {
+          enabled: true,
+          rules: [authRule, fileRule, privilegedReauthenticationRule],
+          excludedIPs: ['127.0.0.1'],
+        },
+      },
+      { requestKey: null },
+    );
+    expect(mockSettingsUpdate.mock.calls[0]?.[0]).not.toHaveProperty('batch');
+    expect(mockSettingsUpdate.mock.calls[0]?.[0]).not.toHaveProperty('meta');
+  });
+
+  it('adds the privileged route rule even when the auth limiter is already enabled', async () => {
+    const authRule = { label: '*:auth', audience: '', duration: 60, maxRequests: 1 };
+    mockSettingsGetAll.mockResolvedValue({
+      rateLimits: {
+        enabled: true,
+        rules: [authRule],
+      },
+    });
+
+    await ensurePocketBaseAuthRateLimit(mockPb);
+
+    expect(mockSettingsUpdate).toHaveBeenCalledWith(
+      {
+        rateLimits: {
+          enabled: true,
+          rules: [
+            authRule,
+            {
+              label: 'POST /api/relay/privileged/reauth',
+              audience: '@auth',
+              duration: 3,
+              maxRequests: 2,
+            },
+          ],
+        },
+      },
+      { requestKey: null },
+    );
+  });
+
+  it('preserves an existing stricter exact privileged route rule', async () => {
+    const authRule = { label: '*:auth', audience: '', duration: 60, maxRequests: 1 };
+    const routeRule = {
+      label: 'POST /api/relay/privileged/reauth',
+      audience: '@auth',
+      duration: 10,
+      maxRequests: 1,
+    };
+    mockSettingsGetAll.mockResolvedValue({
+      rateLimits: {
+        enabled: true,
+        rules: [authRule, routeRule],
+      },
+    });
+
+    await ensurePocketBaseAuthRateLimit(mockPb);
+
+    expect(mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when authoritative settings cannot be read', async () => {
+    mockSettingsGetAll.mockRejectedValue(new Error('settings unavailable'));
+
+    await expect(ensurePocketBaseAuthRateLimit(mockPb)).rejects.toThrow(
+      'Failed to read required PocketBase authentication rate-limit settings',
+    );
+    expect(mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the authoritative limiter cannot be enabled', async () => {
+    mockSettingsGetAll.mockResolvedValue({
+      rateLimits: {
+        enabled: false,
+        rules: [{ label: '*:auth', audience: '', duration: 3, maxRequests: 2 }],
+      },
+    });
+    mockSettingsUpdate.mockRejectedValue(new Error('settings unavailable'));
+
+    await expect(ensurePocketBaseAuthRateLimit(mockPb)).rejects.toThrow(
+      'Failed to enable required PocketBase authentication rate limits',
+    );
+  });
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { enabled: false },
+    { enabled: false, rules: [] },
+    { enabled: false, rules: [{ label: '*:file', duration: 1, maxRequests: 8 }] },
+    { enabled: false, rules: [{ label: '*:auth ' }] },
+    { enabled: false, rules: [{ label: '*:auth', duration: 3, maxRequests: 2 }] },
+    {
+      enabled: false,
+      rules: [{ label: '*:auth', audience: '@auth', duration: 3, maxRequests: 2 }],
+    },
+    {
+      enabled: false,
+      rules: [{ label: '*:auth', audience: '', duration: 0, maxRequests: 2 }],
+    },
+    {
+      enabled: false,
+      rules: [{ label: '*:auth', audience: '', duration: 3, maxRequests: 0 }],
+    },
+    {
+      enabled: true,
+      rules: [{ label: '*:auth', audience: '', duration: '3', maxRequests: 2 }],
+    },
+  ])('fails closed when no exact authoritative auth rule exists: %j', async (rateLimits) => {
+    mockSettingsGetAll.mockResolvedValue({ rateLimits });
+
+    await expect(ensurePocketBaseAuthRateLimit(mockPb)).rejects.toThrow(
+      'PocketBase has no authoritative authentication rate-limit rule',
+    );
+    expect(mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+});
 
 describe('ensureCollections', () => {
   it('reuses complete collection metadata from the bootstrap snapshot', async () => {

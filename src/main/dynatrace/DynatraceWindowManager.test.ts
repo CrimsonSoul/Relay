@@ -13,6 +13,8 @@ const {
   mockHostWindowOpenHandlers,
   mockHostWindow,
   mockHostWindowHandlers,
+  mockMainInfo,
+  mockSecurityWarn,
   mockWindowOpenHandlers,
 } = vi.hoisted(() => {
   const mockApp = { isPackaged: false };
@@ -21,6 +23,8 @@ const {
   const mockHostWindowHandlers = new Map<string, (...args: never[]) => void>();
   const mockHostWindowOpenHandlers: Array<(details: { url: string }) => { action: 'deny' }> = [];
   const mockWindowOpenHandlers: Array<(details: { url: string }) => { action: 'deny' }> = [];
+  const mockMainInfo = vi.fn();
+  const mockSecurityWarn = vi.fn();
   const mockDynatraceSession = {
     clearStorageData: vi.fn(async () => undefined),
     setPermissionCheckHandler: vi.fn(),
@@ -78,6 +82,8 @@ const {
     mockHostWindowOpenHandlers,
     mockHostWindow,
     mockHostWindowHandlers,
+    mockMainInfo,
+    mockSecurityWarn,
     mockWindowOpenHandlers,
   };
 });
@@ -95,6 +101,18 @@ vi.mock('electron', () => {
     shell: { openExternal: vi.fn(async () => undefined) },
   };
 });
+
+vi.mock('../logger', () => ({
+  loggers: {
+    main: {
+      info: mockMainInfo,
+      warn: vi.fn(),
+    },
+    security: {
+      warn: mockSecurityWarn,
+    },
+  },
+}));
 
 describe('DynatraceWindowManager', () => {
   let store: Pick<DynatraceDashboardStore, 'list' | 'add' | 'update' | 'remove' | 'setBounds'>;
@@ -224,6 +242,40 @@ describe('DynatraceWindowManager', () => {
     ).toBe(false);
   });
 
+  it('logs only permission origins while preserving fail-closed denial', async () => {
+    await manager.openDashboard('dt_1');
+    mockSecurityWarn.mockClear();
+
+    const requestHandler = mockDynatraceSession.setPermissionRequestHandler.mock.calls[0]?.[0];
+    const checkHandler = mockDynatraceSession.setPermissionCheckHandler.mock.calls[0]?.[0];
+    const requestCallback = vi.fn();
+
+    requestHandler?.(mockDynatraceView.webContents, 'geolocation', requestCallback, {
+      requestingUrl:
+        'https://operator:password@abc.live.dynatrace.com/ui/dashboard?code=request-secret#fragment-secret',
+    });
+    expect(requestCallback).toHaveBeenCalledWith(false);
+    expect(mockSecurityWarn).toHaveBeenCalledWith('Blocked Dynatrace permission request', {
+      permission: 'geolocation',
+      requestingOrigin: 'https://abc.live.dynatrace.com',
+    });
+
+    expect(
+      checkHandler?.(
+        mockDynatraceView.webContents,
+        'media',
+        'https://login.microsoftonline.com/common/oauth2?state=check-secret#fragment-secret',
+      ),
+    ).toBe(false);
+    expect(mockSecurityWarn).toHaveBeenCalledWith('Blocked Dynatrace permission check', {
+      permission: 'media',
+      requestingOrigin: 'https://login.microsoftonline.com',
+    });
+    expect(JSON.stringify(mockSecurityWarn.mock.calls)).not.toContain('request-secret');
+    expect(JSON.stringify(mockSecurityWarn.mock.calls)).not.toContain('check-secret');
+    expect(JSON.stringify(mockSecurityWarn.mock.calls)).not.toContain('password');
+  });
+
   it('focuses an existing window for the same dashboard', async () => {
     await manager.openDashboard('dt_1');
     await manager.openDashboard('dt_1');
@@ -274,14 +326,14 @@ describe('DynatraceWindowManager', () => {
       expect.objectContaining({
         id: 'dt_1',
         state: 'blocked',
-        lastUrl: 'https://evil.example/dashboard',
+        lastUrl: 'https://evil.example',
       }),
     ]);
     expect(listener).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'dt_1',
         state: 'blocked',
-        lastUrl: 'https://evil.example/dashboard',
+        lastUrl: 'https://evil.example',
       }),
     ]);
   });
@@ -306,7 +358,7 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'live',
-        lastUrl: 'https://abc.live.dynatrace.com/ui/dashboard',
+        lastUrl: 'https://abc.live.dynatrace.com',
       }),
     );
 
@@ -318,7 +370,7 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'authenticating',
-        lastUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+        lastUrl: 'https://login.microsoftonline.com',
       }),
     );
     expect(listener).toHaveBeenLastCalledWith([
@@ -327,6 +379,39 @@ describe('DynatraceWindowManager', () => {
         state: 'authenticating',
       }),
     ]);
+  });
+
+  it('publishes only navigation origins to dashboard listeners', async () => {
+    const listener = vi.fn();
+    manager.onStateChange(listener);
+    await manager.openDashboard('dt_1');
+    listener.mockClear();
+
+    mockDynatraceWebContentsHandlers.get('did-navigate')?.(
+      {},
+      'https://abc.live.dynatrace.com/ui/dashboard?token=dynatrace-secret#private-fragment',
+    );
+    expect(manager.listDashboards()[0]).toEqual(
+      expect.objectContaining({
+        state: 'live',
+        lastUrl: 'https://abc.live.dynatrace.com',
+      }),
+    );
+
+    mockDynatraceWebContentsHandlers.get('did-navigate-in-page')?.(
+      {},
+      'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?state=auth-secret&code_challenge=challenge-secret#auth-fragment',
+    );
+    const published = listener.mock.calls.at(-1)?.[0];
+    expect(published).toEqual([
+      expect.objectContaining({
+        state: 'authenticating',
+        lastUrl: 'https://login.microsoftonline.com',
+      }),
+    ]);
+    expect(JSON.stringify(published)).not.toContain('auth-secret');
+    expect(JSON.stringify(published)).not.toContain('challenge-secret');
+    expect(JSON.stringify(published)).not.toContain('auth-fragment');
   });
 
   it('marks blocked state when a disallowed URL finishes navigating', async () => {
@@ -340,14 +425,14 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'blocked',
-        lastUrl: 'https://evil.example/finished',
+        lastUrl: 'https://evil.example',
       }),
     );
     expect(listener).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'dt_1',
         state: 'blocked',
-        lastUrl: 'https://evil.example/finished',
+        lastUrl: 'https://evil.example',
       }),
     ]);
   });
@@ -366,7 +451,7 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'authenticating',
-        lastUrl: 'https://abc.live.dynatrace.com/dashboard',
+        lastUrl: 'https://abc.live.dynatrace.com',
       }),
     );
   });
@@ -387,14 +472,14 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'blocked',
-        lastUrl: 'https://evil.example/redirected',
+        lastUrl: 'https://evil.example',
       }),
     );
     expect(listener).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'dt_1',
         state: 'blocked',
-        lastUrl: 'https://evil.example/redirected',
+        lastUrl: 'https://evil.example',
       }),
     ]);
   });
@@ -408,46 +493,75 @@ describe('DynatraceWindowManager', () => {
     mockDynatraceWebContentsHandlers.get('did-fail-load')?.(
       {},
       -105,
-      'NAME_NOT_RESOLVED',
-      'https://abc.live.dynatrace.com/dashboard',
+      'ERR_NAME_NOT_RESOLVED while loading https://abc.live.dynatrace.com/dashboard?token=DID_FAIL_SECRET#private',
+      'https://abc.live.dynatrace.com/dashboard?token=DID_FAIL_SECRET#private',
       true,
     );
 
-    expect(manager.listDashboards()[0]).toEqual(
+    const state = manager.listDashboards()[0];
+    expect(state).toEqual(
       expect.objectContaining({
         state: 'load-failed',
-        lastUrl: 'https://abc.live.dynatrace.com/dashboard',
-        error: 'NAME_NOT_RESOLVED',
+        lastUrl: 'https://abc.live.dynatrace.com',
+        error: 'ERR_NAME_NOT_RESOLVED',
       }),
     );
+    expect(JSON.stringify(state)).not.toContain('DID_FAIL_SECRET');
     expect(listener).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'dt_1',
         state: 'load-failed',
-        error: 'NAME_NOT_RESOLVED',
+        error: 'ERR_NAME_NOT_RESOLVED',
       }),
     ]);
+    expect(JSON.stringify(listener.mock.calls)).not.toContain('DID_FAIL_SECRET');
   });
 
   it('returns false and sets load-failed when initial dashboard load fails', async () => {
     vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
-      new Error('navigation failed'),
+      new Error(
+        'ERR_CONNECTION_RESET while loading https://abc.live.dynatrace.com/dashboard?token=INITIAL_SECRET#private',
+      ),
     );
 
     await expect(manager.openDashboard('dt_1')).resolves.toBe(false);
 
-    expect(manager.listDashboards()[0]).toEqual(
+    const state = manager.listDashboards()[0];
+    expect(state).toEqual(
       expect.objectContaining({
         state: 'load-failed',
-        lastUrl: 'https://abc.live.dynatrace.com/dashboard',
-        error: 'navigation failed',
+        lastUrl: 'https://abc.live.dynatrace.com',
+        error: 'ERR_CONNECTION_RESET',
       }),
     );
+    expect(JSON.stringify(state)).not.toContain('INITIAL_SECRET');
+  });
+
+  it('does not promote a URL query value that resembles a Chromium error code', async () => {
+    vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
+      new Error(
+        'navigation failed while loading https://abc.live.dynatrace.com/dashboard?token=ERR_QUERY_SECRET#private',
+      ),
+    );
+
+    await expect(manager.openDashboard('dt_1')).resolves.toBe(false);
+
+    const state = manager.listDashboards()[0];
+    expect(state).toEqual(
+      expect.objectContaining({
+        state: 'load-failed',
+        lastUrl: 'https://abc.live.dynatrace.com',
+        error: 'Navigation failed',
+      }),
+    );
+    expect(JSON.stringify(state)).not.toContain('ERR_QUERY_SECRET');
   });
 
   it('keeps the dashboard window open when the initial load is aborted by a redirect', async () => {
     vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
-      new Error('ERR_ABORTED (-3) loading https://abc.live.dynatrace.com/dashboard'),
+      new Error(
+        'ERR_ABORTED (-3) loading https://abc.live.dynatrace.com/dashboard?token=ABORT_SECRET#private',
+      ),
     );
 
     await expect(manager.openDashboard('dt_1')).resolves.toBe(true);
@@ -456,9 +570,14 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'authenticating',
-        lastUrl: 'https://abc.live.dynatrace.com/dashboard',
+        lastUrl: 'https://abc.live.dynatrace.com',
       }),
     );
+    expect(mockMainInfo).toHaveBeenCalledWith(
+      'Dynatrace initial navigation was superseded; keeping popout open',
+      expect.objectContaining({ id: 'dt_1', error: 'ERR_ABORTED' }),
+    );
+    expect(JSON.stringify(mockMainInfo.mock.calls)).not.toContain('ABORT_SECRET');
   });
 
   it('retries with a fresh window after an initial dashboard load fails', async () => {
@@ -478,7 +597,9 @@ describe('DynatraceWindowManager', () => {
   it('sets load-failed when an allowed popup URL load fails', async () => {
     await manager.openDashboard('dt_1');
     vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
-      new Error('popup failed'),
+      new Error(
+        'ERR_FAILED while loading https://login.microsoftonline.com/oauth2/v2.0/authorize?code=POPUP_SECRET#private',
+      ),
     );
 
     const result = mockWindowOpenHandlers.at(-1)?.({
@@ -487,20 +608,22 @@ describe('DynatraceWindowManager', () => {
     await Promise.resolve();
 
     expect(result).toEqual({ action: 'deny' });
-    expect(manager.listDashboards()[0]).toEqual(
+    const state = manager.listDashboards()[0];
+    expect(state).toEqual(
       expect.objectContaining({
         state: 'load-failed',
-        lastUrl: 'https://login.microsoftonline.com/oauth2/v2.0/authorize',
-        error: 'popup failed',
+        lastUrl: 'https://login.microsoftonline.com',
+        error: 'ERR_FAILED',
       }),
     );
+    expect(JSON.stringify(state)).not.toContain('POPUP_SECRET');
   });
 
   it('keeps state steady when an allowed popup navigation is superseded', async () => {
     await manager.openDashboard('dt_1');
     vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
       new Error(
-        "ERR_ABORTED (-3) loading 'https://login.microsoftonline.com/oauth2/v2.0/authorize'",
+        "ERR_ABORTED (-3) loading 'https://login.microsoftonline.com/oauth2/v2.0/authorize?code=POPUP_ABORT_SECRET#private'",
       ),
     );
 
@@ -513,9 +636,14 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'authenticating',
-        lastUrl: 'https://abc.live.dynatrace.com/dashboard',
+        lastUrl: 'https://abc.live.dynatrace.com',
       }),
     );
+    expect(mockMainInfo).toHaveBeenCalledWith(
+      'Dynatrace popup navigation was superseded; keeping popout open',
+      expect.objectContaining({ id: 'dt_1', error: 'ERR_ABORTED' }),
+    );
+    expect(JSON.stringify(mockMainInfo.mock.calls)).not.toContain('POPUP_ABORT_SECRET');
   });
 
   it('blocks disallowed popup URLs from Dynatrace content', async () => {
@@ -530,7 +658,7 @@ describe('DynatraceWindowManager', () => {
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({
         state: 'blocked',
-        lastUrl: 'https://evil.example/phish',
+        lastUrl: 'https://evil.example',
       }),
     );
   });

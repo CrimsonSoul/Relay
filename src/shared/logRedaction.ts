@@ -48,16 +48,6 @@ function skipWhitespace(value: string, start: number): number {
   return index;
 }
 
-function findSecretEnd(value: string, start: number): number {
-  const nextFlag = value.indexOf(' --', start);
-  const lineEnd = value.indexOf('\n', start);
-
-  if (nextFlag === -1 && lineEnd === -1) return value.length;
-  if (nextFlag === -1) return lineEnd;
-  if (lineEnd === -1) return nextFlag;
-  return Math.min(nextFlag, lineEnd);
-}
-
 function redactPocketBaseSuperuserSecrets(value: string): string {
   const marker = 'superuser upsert ';
   let cursor = 0;
@@ -79,9 +69,11 @@ function redactPocketBaseSuperuserSecrets(value: string): string {
       continue;
     }
 
-    const secretEnd = findSecretEnd(value, secretStart);
     output += value.slice(cursor, secretStart) + REDACTED;
-    cursor = secretEnd;
+    // Rendered child-process errors do not preserve argv boundaries. Once a
+    // known secret-bearing command is found, retaining any later text could
+    // preserve a flag-like or multiline suffix from the same passphrase.
+    cursor = value.length;
   }
 
   return output;

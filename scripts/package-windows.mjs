@@ -186,8 +186,10 @@ export async function packageWindows(args = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  packageWindows().catch((error) => {
+  try {
+    await packageWindows();
+  } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
-  });
+  }
 }

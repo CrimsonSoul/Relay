@@ -135,6 +135,9 @@ jobs:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
+      - name: Verify Windows private repair directory ACL
+        run: npx vitest run src/main/pocketbase/WindowsPrivateDirectory.windows.test.ts
+
       - name: Cache rebuilt better-sqlite3
         id: better-sqlite-cache
         continue-on-error: true

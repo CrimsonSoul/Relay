@@ -185,13 +185,64 @@ describe('knowledge contracts', () => {
       restartRecovery: true,
       activeBatchId: 'batch-1',
       acknowledgedBytes: 4_000,
-      items: [expect.objectContaining({ fileName: 'Runbook.pdf', state: 'paused-network' })],
+      items: [
+        expect.objectContaining({
+          fileName: 'Runbook.pdf',
+          state: 'paused-network',
+          cancelPending: false,
+        }),
+      ],
     });
     expect(queue).not.toHaveProperty('encryptedSourcePath');
     expect(queue?.items[0]).not.toHaveProperty('encryptedSourcePath');
     expect(queue?.items[0]).not.toHaveProperty('accountId');
     expect(queue?.items[0]).not.toHaveProperty('deviceId');
     expect(queue?.items[0]).not.toHaveProperty('bytes');
+  });
+
+  it('normalizes a bounded pending-cancellation flag for upload queue IPC', () => {
+    const queue = normalizeKnowledgeUploadQueueView({
+      restartRecovery: false,
+      activeBatchId: 'batch-1',
+      totalBytes: 8_000,
+      acknowledgedBytes: 4_000,
+      items: [
+        {
+          id: 'local-1',
+          uploadId: 'upload-1',
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 8_000,
+          acknowledgedBytes: 4_000,
+          chunkCount: 2,
+          acknowledgedChunkCount: 1,
+          state: 'uploading',
+          safeError: null,
+          retryCount: 0,
+          restartRecovery: false,
+          cancelPending: true,
+        },
+      ],
+    });
+
+    expect(queue?.items[0]).toMatchObject({
+      state: 'uploading',
+      cancelPending: true,
+    });
+    expect(
+      normalizeKnowledgeUploadQueueView({
+        restartRecovery: false,
+        activeBatchId: 'batch-1',
+        totalBytes: 8_000,
+        acknowledgedBytes: 4_000,
+        items: [
+          {
+            ...queue?.items[0],
+            cancelPending: 'yes',
+          },
+        ],
+      }),
+    ).toBeNull();
   });
 
   it('normalizes a valid PocketBase record and discards unknown data', () => {

@@ -63,12 +63,48 @@ const CHECKOUT_PROBLEM_TITLE = 'Checkout service availability below SLO';
 const KNOWLEDGE_CHUNK_BYTES = 4 * 1024 * 1024;
 const CONTINUOUS_READER_TITLE = 'Continuous reader validation';
 const CONTINUOUS_READER_PAGE_COUNT = 12;
+const AUTH_RATE_LIMIT_WINDOW_MS = 3_000;
+const AUTH_RATE_LIMIT_SETTLE_MS = 250;
 
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const makeTestPassphrase = () => ['test', crypto.randomUUID()].join('-');
 const TEST_PASSPHRASE = makeTestPassphrase();
 const PRIVILEGED_TEST_PASSWORD = `e2e-privileged-${crypto.randomUUID()}`;
 const PUBLISHER_TEST_PASSWORD = `e2e-publisher-${crypto.randomUUID()}`;
+const authenticatedFixtureClients = new Map<string, Promise<PocketBase>>();
+type AuthenticationBucket = 'app-user' | 'privileged' | 'superuser';
+const authenticationAttempts = new Map<AuthenticationBucket, number[]>();
+
+const resetAuthenticationFixtures = () => {
+  authenticatedFixtureClients.clear();
+  authenticationAttempts.clear();
+};
+
+const recordAuthenticationRequests = (bucket: AuthenticationBucket, count = 1) => {
+  const attempts = authenticationAttempts.get(bucket) ?? [];
+  const now = Date.now();
+  const recent = attempts.filter((attempt) => now - attempt < AUTH_RATE_LIMIT_WINDOW_MS);
+  recent.push(...Array.from({ length: count }, () => now));
+  authenticationAttempts.set(bucket, recent);
+};
+
+const reserveAuthenticationRequest = async (bucket: AuthenticationBucket) => {
+  while (true) {
+    const attempts = authenticationAttempts.get(bucket) ?? [];
+    const now = Date.now();
+    const recent = attempts.filter((attempt) => now - attempt < AUTH_RATE_LIMIT_WINDOW_MS);
+    if (recent.length < 2) {
+      recent.push(now);
+      authenticationAttempts.set(bucket, recent);
+      return;
+    }
+
+    const remaining = AUTH_RATE_LIMIT_WINDOW_MS + AUTH_RATE_LIMIT_SETTLE_MS - (now - recent[0]!);
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+  }
+};
 
 const rightClick = async (target: Locator) => {
   await target.scrollIntoViewIfNeeded();
@@ -140,11 +176,12 @@ const expectDirectoryToolbarControlsToBeCentered = async (workspace: Locator) =>
 
 const makePort = () => 20_000 + crypto.randomInt(20_000);
 
-const runDynatraceSeed = (
+const runDynatraceSeed = async (
   userDataDir: string,
   port: number,
   mode: '--dynatrace-only' | '--clear-dynatrace',
 ) => {
+  await reserveAuthenticationRequest('superuser');
   const env = {
     ...process.env,
     RELAY_SEED_PB_URL: `http://127.0.0.1:${port}`,
@@ -185,20 +222,44 @@ const writeClientConfig = (userDataDir: string, port: number) => {
   );
 };
 
-const makePbClient = async (port: number) => {
-  const pb = new PocketBase(`http://127.0.0.1:${port}`);
-  await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', TEST_PASSPHRASE, {
-    requestKey: null,
-  });
-  return pb;
+const makeAuthenticatedFixtureClient = async (
+  port: number,
+  collection: '_pb_users_auth_' | '_superusers',
+  identity: string,
+) => {
+  const cacheKey = `${port}:${collection}`;
+  const cached = authenticatedFixtureClients.get(cacheKey);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    await reserveAuthenticationRequest(collection === '_superusers' ? 'superuser' : 'app-user');
+    const pb = new PocketBase(`http://127.0.0.1:${port}`);
+    await pb.collection(collection).authWithPassword(identity, TEST_PASSPHRASE, {
+      requestKey: null,
+    });
+    return pb;
+  })();
+  authenticatedFixtureClients.set(cacheKey, pending);
+
+  try {
+    return await pending;
+  } catch (error) {
+    if (authenticatedFixtureClients.get(cacheKey) === pending) {
+      authenticatedFixtureClients.delete(cacheKey);
+    }
+    throw error;
+  }
 };
 
-const makeSuperuserPbClient = async (port: number) => {
-  const pb = new PocketBase(`http://127.0.0.1:${port}`);
-  await pb.collection('_superusers').authWithPassword('admin@relay.app', TEST_PASSPHRASE, {
-    requestKey: null,
-  });
-  return pb;
+const makePbClient = (port: number) =>
+  makeAuthenticatedFixtureClient(port, '_pb_users_auth_', 'relay@relay.app');
+
+const makeSuperuserPbClient = (port: number) =>
+  makeAuthenticatedFixtureClient(port, '_superusers', 'admin@relay.app');
+
+const submitPrivilegedSignIn = async (panel: Locator) => {
+  await reserveAuthenticationRequest('privileged');
+  await panel.getByRole('button', { name: 'Sign in', exact: true }).click();
 };
 
 const knowledgeCategoryKey = (name: string) => name.trim().toLocaleLowerCase('en-US');
@@ -315,12 +376,8 @@ const activateRoleAccountFixture = async (
     },
     { requestKey: null },
   );
-  const authCheck = new PocketBase(`http://127.0.0.1:${port}`);
-  const authResult = await authCheck
-    .collection('relay_privileged_accounts')
-    .authWithPassword(username, password, { requestKey: null });
-  const authenticated = authResult.record as unknown as RelayRoleAccount;
-  const state = await authCheck
+  const authenticated = updated;
+  const state = await pb
     .collection('relay_privileged_state')
     .getFirstListItem<RelayPrivilegedState>('key = "primary"', { requestKey: null });
   if (
@@ -378,14 +435,10 @@ const activatePrivilegedPublisherFixture = async (port: number) => {
     { requestKey: null },
   );
 
-  const authCheck = new PocketBase(`http://127.0.0.1:${port}`);
-  const authResult = await authCheck
-    .collection('relay_privileged_accounts')
-    .authWithPassword('tristan', PUBLISHER_TEST_PASSWORD, { requestKey: null });
-  const authenticatedPublisher = authResult.record as unknown as RelayRoleAccount & {
+  const authenticatedPublisher = updated as unknown as RelayRoleAccount & {
     collectionName?: string;
   };
-  expect(authResult.record).toMatchObject({
+  expect(updated).toMatchObject({
     id: updated.id,
     username: 'tristan',
     displayName: TRISTAN_BOWLES,
@@ -398,7 +451,7 @@ const activatePrivilegedPublisherFixture = async (port: number) => {
     credentialVersion: expect.any(Number),
     revision: expect.any(Number),
   });
-  const authenticatedState = await authCheck
+  const authenticatedState = await pb
     .collection('relay_privileged_state')
     .getFirstListItem<RelayPrivilegedState>('key = "primary"', { requestKey: null });
   expect(authenticatedState.publisherAccountId).toBe(updated.id);
@@ -716,6 +769,10 @@ test.describe('Vital Critical Path', () => {
   const launchServer = async (
     options: { knowledgeChunkDelayMs?: string; startupDelayMs?: string } = {},
   ) => {
+    // PocketBase owns the limiter in memory, so every embedded-server process
+    // starts with a fresh budget. Account conservatively for the bootstrap
+    // requests that occur before the E2E harness can interact with it.
+    authenticationAttempts.clear();
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');
     const launchEnv = {
       ...process.env,
@@ -740,9 +797,12 @@ test.describe('Vital Critical Path', () => {
     startupShellWasVisible = await window.locator('.startup-shell').isVisible();
     await expect(window.getByTestId('sidebar-compose')).toBeVisible();
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
+    recordAuthenticationRequests('superuser');
+    recordAuthenticationRequests('app-user', 2);
   };
 
   const launchClient = async () => {
+    await reserveAuthenticationRequest('app-user');
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');
     const launchEnv = {
       ...process.env,
@@ -798,7 +858,7 @@ test.describe('Vital Critical Path', () => {
     const access = await openPrivilegedAccess(window);
     await access.getByLabel('Username').fill('ryan');
     await access.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
-    await access.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await submitPrivilegedSignIn(access);
     await expect(access.getByText('Owner', { exact: true })).toBeVisible();
     await enterKnowledgeDestination(window, 'Wiki');
     await window.getByRole('button', { name: 'Manage Wiki', exact: true }).click();
@@ -879,6 +939,7 @@ test.describe('Vital Critical Path', () => {
   };
 
   test.beforeEach(async ({ browserName: _browserName }, testInfo) => {
+    resetAuthenticationFixtures();
     tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-critical-'));
     clientElectronApp = null;
     clientWindow = null;
@@ -1758,7 +1819,7 @@ test.describe('Vital Critical Path', () => {
     const serverAccess = await openPrivilegedAccess(window);
     await serverAccess.getByLabel('Username').fill('ryan');
     await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
-    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await submitPrivilegedSignIn(serverAccess);
     await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
     await expect(serverAccess.getByText(RYAN_BLEDSOE, { exact: true })).toBeVisible();
     await expect(serverAccess.getByText('@ryan', { exact: true })).toBeVisible();
@@ -1784,7 +1845,7 @@ test.describe('Vital Critical Path', () => {
     await serverAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
     await serverAccess.getByLabel('Username').fill('charles');
     await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
-    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await submitPrivilegedSignIn(serverAccess);
     await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
     await expect(serverAccess.getByText('Charles Gibbs', { exact: true })).toBeVisible();
     await expect(serverAccess.getByText('@charles', { exact: true })).toBeVisible();
@@ -1863,13 +1924,13 @@ test.describe('Vital Critical Path', () => {
     await publisherUsername.fill('tristan');
     await expect(publisherUsername).toHaveValue('tristan');
     await expect(publisherPassword).toHaveValue(PUBLISHER_TEST_PASSWORD);
-    await publisherAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await submitPrivilegedSignIn(publisherAccess);
     await expect(publisherAccess.getByText('Pair this workstation')).toBeVisible();
 
     const serverAccess = await openPrivilegedAccess(window);
     await serverAccess.getByLabel('Username').fill('ryan');
     await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
-    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await submitPrivilegedSignIn(serverAccess);
     await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
     const workstationOwner = serverAccess.getByLabel('Workstation owner');
     await expect(
@@ -1964,7 +2025,7 @@ test.describe('Vital Critical Path', () => {
     await restartedUsername.fill('tristan');
     await expect(restartedUsername).toHaveValue('tristan');
     await expect(restartedPassword).toHaveValue(PUBLISHER_TEST_PASSWORD);
-    await restartedAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await submitPrivilegedSignIn(restartedAccess);
     await expect(restartedAccess.getByText('Publisher', { exact: true })).toBeVisible();
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
@@ -2176,8 +2237,8 @@ test.describe('Vital Critical Path', () => {
   });
 
   test('Dynatrace Problems demo seed is repeatable and isolated', async () => {
-    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
-    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
 
     const pb = await makePbClient(pbPort);
     const seededProblems = await pb.collection('dynatrace_problems').getFullList({
@@ -2195,7 +2256,7 @@ test.describe('Vital Critical Path', () => {
       window.getByRole('heading', { name: 'Checkout service availability below SLO' }),
     ).toBeVisible();
 
-    runDynatraceSeed(tempDataDir, pbPort, '--clear-dynatrace');
+    await runDynatraceSeed(tempDataDir, pbPort, '--clear-dynatrace');
     const remainingDemoProblems = await pb.collection('dynatrace_problems').getFullList({
       filter: 'problemId ~ "RELAY-DEMO-"',
       requestKey: null,
@@ -2212,7 +2273,7 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
     await goToTab(window, 'sidebar-compose', 'Compose');
 
-    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
     const historicalPb = await makePbClient(pbPort);
     const [historicalNotes, historicalStates] = await Promise.all([
       historicalPb.collection('dynatrace_problem_notes').getFullList<DynatraceProblemNote>({
@@ -2308,13 +2369,30 @@ test.describe('Vital Critical Path', () => {
     test.setTimeout(90_000);
     const noteText = `Offline NOC follow-up ${uniqueSuffix()}`;
 
-    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
 
     let connectedClient = await launchConnectedClient();
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
     await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
+    await expect
+      .poll(() =>
+        connectedClient.evaluate(async (problemId) => {
+          const cachedProblems = await globalThis.api?.cacheRead?.('dynatrace_problems');
+          return (
+            Array.isArray(cachedProblems) &&
+            cachedProblems.some(
+              (record) =>
+                record !== null &&
+                typeof record === 'object' &&
+                'problemId' in record &&
+                record.problemId === problemId,
+            )
+          );
+        }, CHECKOUT_PROBLEM_ID),
+      )
+      .toBe(true);
 
     await electronApp?.close();
     electronApp = null;
@@ -2404,7 +2482,7 @@ test.describe('Vital Critical Path', () => {
 
   test('Relay shell and Dynatrace workspace adapt to compact desktop widths', async () => {
     if (!electronApp) throw new Error('Electron app not launched');
-    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
     await expect(window.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
 

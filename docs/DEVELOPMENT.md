@@ -154,6 +154,14 @@ PocketBase binaries are downloaded into architecture-specific resource folders:
 
 Use `npm run download:pocketbase -- --platform=<platform> --arch=<arch>` to fetch a specific target. Packaged builds resolve the binary by `process.platform` and `process.arch`, while local development can still fall back to the legacy `resources/pocketbase/pocketbase` path if an older checkout already has it.
 
+Checked-in PocketBase JavaScript hooks live separately under
+`resources/pocketbase/hooks/`. The binary directories remain ignored, but hooks are source and must
+be committed. Windows and macOS packages copy that directory to `pocketbase/hooks` beside the
+embedded binary. Server startup deliberately fails if the required privileged reauthentication hook
+is missing or not registered. The new hook and paired-client reauthentication call must be tested as
+a coordinated server/client rollout; mixed versions retain ordinary connectivity but cannot complete
+fresh-password protected actions.
+
 ### Role Accounts And Existing-Install Migration
 
 Ordinary Relay workflows do not require an identity selection or protected sign-in. Protected authentication is username-only and main-process-owned. Effective roles are derived from account IDs plus the singleton authority state:
@@ -365,14 +373,35 @@ Security scanners are not tied to public tokens in the repo. For local checks, p
 ```bash
 npm run test:coverage:sonar
 npm run security:sonar -- -Dsonar.organization=<organization>
+npm run security:sonar:issues -- --branch=test
+npm run security:sonar:reviewed -- --branch=test --apply
 npm run security:snyk
 ```
 
-`security:sonar` uses the pinned SonarScanner for NPM and reads `SONAR_TOKEN` plus the optional `SONAR_HOST_URL` from the environment. `security:snyk` runs the pinned Snyk Open Source and Snyk Code gates and reads `SNYK_TOKEN`; pass `--org=<organization>` to either underlying Snyk command when the account default is not the intended organization. The Open Source gate includes development dependencies because Relay's build and packaging toolchain is part of its supply-chain surface. `security:snyk:monitor` publishes an Open Source dependency snapshot after the gates pass.
+`security:sonar` uses the pinned SonarScanner for NPM and reads `SONAR_TOKEN` plus the optional HTTPS-only `SONAR_HOST_URL` from the environment. `security:snyk` runs the pinned Snyk Open Source and Snyk Code gates and reads `SNYK_TOKEN`; pass `--org=<organization>` to either underlying Snyk command when the account default is not the intended organization. The Open Source gate includes development dependencies because Relay's build and packaging toolchain is part of its supply-chain surface. `security:snyk:monitor` publishes an Open Source dependency snapshot after the gates pass.
+
+`security:sonar:issues` queries every page of the branch or pull-request issue
+set after analysis finishes. It fails when any Open, Confirmed, or legacy
+Reopened issue remains and reports Accepted/legacy Won't Fix and False Positive
+issues separately. Pass exactly one `--branch=<name>` or
+`--pull-request=<number>` selector. The command reads the project key from
+`sonar-project.properties`, defaults to SonarQube Cloud when
+`SONAR_HOST_URL` is unset, and reads authentication only from `SONAR_TOKEN`.
+
+`security:sonar:reviewed` is a write operation restricted to `test` and requires
+the explicit `--apply` latch. It contains an exact manifest of the 44 findings
+that were individually reviewed during the zero-warning cleanup: 39
+behavior-preserving Accepted decisions and five evidence-backed False
+Positives. Before changing anything, it verifies every observed key, rule, and
+component, and it refuses to proceed if any other Open or Confirmed finding
+exists. Each transition adds a short audit rationale. The `test`-branch push
+workflow runs this exact reconciliation after fresh analysis; later pushes are
+idempotent once those decisions exist. Avoid running it locally unless an
+administrator token is intentionally available.
 
 `test:coverage:sonar` generates both LCOV reports without applying the repository's historical aggregate thresholds. The remote SonarQube quality gate enforces coverage on new code, while `npm run test:coverage` remains the explicit local aggregate-threshold check.
 
-The `Security and Code Quality` GitHub Actions workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs for pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is likewise named `test`. The full-baseline Snyk CLI gate runs on `test` pushes, then publishes a dependency snapshot with the `test` target reference. Snyk's native GitHub integration owns new-issue pull-request checks. SonarQube receives the unit and renderer LCOV reports and waits for the remote quality gate. Scanner credentials are scoped only to their scanner steps and remain in GitHub Actions secrets, while organization and host identifiers are stored as repository variables.
+The `Security and Code Quality` GitHub Actions workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs for pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is likewise named `test`. After a fresh `test` analysis, the push job applies only the pinned reviewed-issue manifest and then enforces zero open issues. The reconciler is idempotent and fails before its first write if any unknown Open or Confirmed issue appears or reviewed metadata drifts. Pull-request scans never change issue status. The full-baseline Snyk CLI gate runs on `test` pushes, then publishes a dependency snapshot with the `test` target reference. Snyk's native GitHub integration owns new-issue pull-request checks. SonarQube receives the unit and renderer LCOV reports, waits for the remote quality gate, and then applies the explicit zero-open-issue check to the exact analyzed branch or pull request. Scanner credentials are scoped only to their scanner steps and remain in GitHub Actions secrets, while organization and host identifiers are stored as repository variables.
 
 ### Screenshot Refresh
 

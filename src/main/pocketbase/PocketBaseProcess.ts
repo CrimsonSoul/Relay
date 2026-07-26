@@ -10,6 +10,7 @@ function delay(ms: number): Promise<void> {
 export interface PocketBaseConfig {
   binaryPath: string;
   dataDir: string;
+  hooksDir?: string;
   host: string;
   port: number;
   platform?: NodeJS.Platform;
@@ -39,11 +40,15 @@ export class PocketBaseProcess {
   }
 
   getSpawnArgs(): string[] {
-    return [
+    const args = [
       'serve',
       `--http=${this.config.host}:${this.config.port}`,
       `--dir=${this.config.dataDir}`,
     ];
+    if (this.config.hooksDir) {
+      args.push(`--hooksDir=${this.config.hooksDir}`, '--hooksWatch=false');
+    }
+    return args;
   }
 
   isRunning(): boolean {

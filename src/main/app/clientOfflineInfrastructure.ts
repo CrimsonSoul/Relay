@@ -6,7 +6,8 @@ import { PendingChanges } from '../cache/PendingChanges';
 import { SyncManager } from '../cache/SyncManager';
 import { setOfflineCache, setPendingChanges, setSyncManager } from './appState';
 import { loggers } from '../logger';
-import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
+import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
+import { safePocketBaseAuthFailure } from './pbErrors';
 
 const CLIENT_OFFLINE_AUTH_TIMEOUT_MS = 15_000;
 
@@ -62,7 +63,11 @@ export async function initializeClientOfflineInfrastructure(
 
   setOfflineCache(offlineCache);
   setPendingChanges(pendingChanges);
-  setSyncManager(new SyncManager(syncPb));
+  setSyncManager(
+    new SyncManager(syncPb, {
+      relayAppUserServerUrl: config.serverUrl,
+    }),
+  );
 
   // Best-effort auth — if the server is unreachable now, the SYNC_PENDING
   // handler re-authenticates on demand before the next sync.
@@ -70,21 +75,23 @@ export async function initializeClientOfflineInfrastructure(
     const controller = new AbortController();
     const authTimeout = setTimeout(() => controller.abort(), CLIENT_OFFLINE_AUTH_TIMEOUT_MS);
     try {
-      await syncPb
-        .collection('_pb_users_auth_')
-        .authWithPassword(RELAY_APP_USER_EMAIL, config.secret, {
-          signal: controller.signal,
-          requestKey: null,
-        });
+      await authenticateRelayAppUserShared(syncPb, config.serverUrl, config.secret, {
+        signal: controller.signal,
+      });
     } catch (error) {
-      loggers.pocketbase.warn('Offline infrastructure ready; server auth deferred', { error });
+      loggers.pocketbase.warn('Offline infrastructure ready; server auth deferred', {
+        authFailure: safePocketBaseAuthFailure(error),
+      });
     } finally {
       clearTimeout(authTimeout);
     }
   };
 
   if (options.deferAuthentication) {
-    void authenticate();
+    // Startup already authenticates the renderer connection and optional Wiki
+    // search client. Avoid spending a third request from PocketBase's
+    // authoritative two-request auth window; SyncManager reauthenticates this
+    // client on demand before replaying pending work.
     return;
   }
   await authenticate();

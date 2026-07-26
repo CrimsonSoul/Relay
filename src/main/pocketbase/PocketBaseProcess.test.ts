@@ -122,6 +122,24 @@ describe('PocketBaseProcess', () => {
     ]);
   });
 
+  it('loads the packaged Relay hooks without runtime file watching', () => {
+    const hookedProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase',
+      dataDir: '/fake/data/pb_data',
+      hooksDir: '/fake/resources/pocketbase/hooks',
+      host: '127.0.0.1',
+      port: 8090,
+    });
+
+    expect(hookedProcess.getSpawnArgs()).toEqual([
+      'serve',
+      '--http=127.0.0.1:8090',
+      '--dir=/fake/data/pb_data',
+      '--hooksDir=/fake/resources/pocketbase/hooks',
+      '--hooksWatch=false',
+    ]);
+  });
+
   // ── start() ─────────────────────────────────────────────────────────────────
 
   it('start() spawns process with correct binary and args', async () => {

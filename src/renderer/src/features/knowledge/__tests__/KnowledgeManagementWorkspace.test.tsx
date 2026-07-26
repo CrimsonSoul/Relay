@@ -822,6 +822,155 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(cancelUpload).toHaveBeenCalledWith('upload-1');
   });
 
+  it('keeps pending cancellation visible while suppressing stale server actions', () => {
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        uploads: {
+          nextCursor: null,
+          items: [
+            {
+              id: 'upload-1',
+              requestId: 'request-1',
+              fileName: 'Runbook.pdf',
+              byteSize: 1_000,
+              checksum: 'b'.repeat(64),
+              state: 'ready',
+              progress: 100,
+              proposedTitle: 'Runbook',
+              proposedCategory: 'Operations',
+              pageCount: 4,
+              outlineSource: 'native',
+              outlineCount: 3,
+              duplicateDocumentId: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 3,
+            },
+          ],
+        },
+      },
+      uploadQueue: {
+        restartRecovery: true,
+        activeBatchId: 'batch-1',
+        totalBytes: 1_000,
+        acknowledgedBytes: 1_000,
+        items: [
+          {
+            id: 'local-1',
+            uploadId: 'upload-1',
+            batchId: 'batch-1',
+            fileName: 'Runbook.pdf',
+            byteSize: 1_000,
+            acknowledgedBytes: 1_000,
+            chunkCount: 1,
+            acknowledgedChunkCount: 1,
+            state: 'ready',
+            safeError: null,
+            retryCount: 0,
+            restartRecovery: true,
+            cancelPending: true,
+          },
+        ],
+      },
+    });
+
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    const queueRow = screen.getByText('Runbook.pdf', { selector: 'strong' }).closest('article');
+    expect(queueRow).not.toBeNull();
+    expect(within(queueRow as HTMLElement).getByText('Cancelling')).toHaveClass(
+      'knowledge-management-status',
+      'is-cancelling',
+    );
+    expect(
+      within(queueRow as HTMLElement).getByText('Waiting for server confirmation'),
+    ).toBeVisible();
+    expect(within(queueRow as HTMLElement).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume all' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel batch' })).not.toBeInTheDocument();
+
+    const reviewRow = screen
+      .getByRole('heading', { name: 'Runbook.pdf' })
+      .closest('.knowledge-management-row--upload');
+    expect(reviewRow).not.toBeNull();
+    expect(within(reviewRow as HTMLElement).getByText('Cancelling')).toBeVisible();
+    expect(
+      within(reviewRow as HTMLElement).getByRole('button', { name: 'Publish' }),
+    ).toBeDisabled();
+    expect(
+      within(reviewRow as HTMLElement).getByRole('button', { name: 'Discard Runbook.pdf' }),
+    ).toBeDisabled();
+  });
+
+  it('keeps an explicit local pause ahead of stale uploading server state', () => {
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        uploads: {
+          nextCursor: null,
+          items: [
+            {
+              id: 'upload-1',
+              requestId: 'request-1',
+              fileName: 'Paused.pdf',
+              byteSize: 1_000,
+              checksum: 'b'.repeat(64),
+              state: 'uploading',
+              progress: 50,
+              proposedTitle: '',
+              proposedCategory: '',
+              pageCount: null,
+              outlineSource: null,
+              outlineCount: 0,
+              duplicateDocumentId: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 2,
+            },
+          ],
+        },
+      },
+      uploadQueue: {
+        restartRecovery: false,
+        activeBatchId: 'batch-1',
+        totalBytes: 1_000,
+        acknowledgedBytes: 500,
+        items: [
+          {
+            id: 'local-1',
+            uploadId: 'upload-1',
+            batchId: 'batch-1',
+            fileName: 'Paused.pdf',
+            byteSize: 1_000,
+            acknowledgedBytes: 500,
+            chunkCount: 2,
+            acknowledgedChunkCount: 1,
+            state: 'paused',
+            safeError: null,
+            retryCount: 0,
+            restartRecovery: false,
+            cancelPending: false,
+          },
+        ],
+      },
+    });
+
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    const queueRow = screen.getByText('Paused.pdf', { selector: 'strong' }).closest('article');
+    expect(queueRow).not.toBeNull();
+    expect(within(queueRow as HTMLElement).getByText('Paused')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Resume all' })).toBeVisible();
+  });
+
   it('turns a duplicate ready upload into an explicit replace or discard decision', async () => {
     const replace = vi.fn(async () => true);
     const cancelUpload = vi.fn(async () => true);
@@ -1250,6 +1399,75 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByText('Original PDF must be reselected')).toBeInTheDocument();
     expect(reselectUploadSource).toHaveBeenCalledWith('upload-1');
   });
+
+  it.each([
+    ['paused-network', 'offline', 'Waiting for network', 'Retry Stale.pdf'],
+    ['failed', 'upload-failed', 'Needs attention', 'Retry Stale.pdf'],
+    ['source-required', 'source-required', 'Source file needed', 'Reselect Stale.pdf'],
+  ] as const)(
+    'keeps local %s actions visible over a stale server uploading state',
+    (state, safeError, stateLabel, actionName) => {
+      const current = useKnowledgeManagementMock();
+      useKnowledgeManagementMock.mockReturnValue({
+        ...current,
+        snapshot: {
+          ...current.snapshot!,
+          uploads: {
+            items: [
+              {
+                id: 'upload-stale',
+                requestId: 'request-stale',
+                fileName: 'Stale.pdf',
+                byteSize: 1_024,
+                checksum: 'b'.repeat(64),
+                state: 'uploading',
+                progress: 50,
+                proposedTitle: '',
+                proposedCategory: '',
+                pageCount: null,
+                outlineSource: null,
+                outlineCount: 0,
+                duplicateDocumentId: null,
+                safeError: null,
+                expiresAt: '2026-07-23T01:00:00.000Z',
+                revision: 1,
+              },
+            ],
+            nextCursor: null,
+          },
+        },
+        uploadQueue: {
+          restartRecovery: true,
+          activeBatchId: 'batch-1',
+          totalBytes: 1_024,
+          acknowledgedBytes: 512,
+          items: [
+            {
+              id: 'local-stale',
+              uploadId: 'upload-stale',
+              batchId: 'batch-1',
+              fileName: 'Stale.pdf',
+              byteSize: 1_024,
+              acknowledgedBytes: 512,
+              chunkCount: 2,
+              acknowledgedChunkCount: 1,
+              state,
+              safeError,
+              retryCount: 8,
+              restartRecovery: true,
+              cancelPending: false,
+            },
+          ],
+        },
+      });
+
+      render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+      expect(screen.getByText(stateLabel)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: actionName })).toBeVisible();
+    },
+  );
 
   it('traps permanent-delete focus and restores it to the initiating button on cancel', async () => {
     const current = useKnowledgeManagementMock();

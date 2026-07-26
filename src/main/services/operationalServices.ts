@@ -1,6 +1,5 @@
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { nativeImage } from 'electron';
 import type { CloudStatusData, IpcResult, LogEntry } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 import {
@@ -26,7 +25,14 @@ import type { BrandAssetKind, OperationalServices } from '../web/routes/operatio
 
 const MANUAL_CACHE_TTL_MS = 60_000;
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
-const MAX_LOGO_WIDTH = 400;
+const MAX_LOGO_SOURCE_WIDTH = 4_096;
+const MAX_LOGO_SOURCE_HEIGHT = 4_096;
+const MAX_LOGO_PIXELS = 4_000_000;
+const MAX_LOGO_DECODED_BYTES = MAX_LOGO_PIXELS * 4;
+const MAX_LOGO_OUTPUT_WIDTH = 400;
+const MAX_LOGO_OUTPUT_HEIGHT = 400;
+const MAX_LOGO_OUTPUT_BYTES = 1 * 1024 * 1024;
+const ALLOWED_LOGO_FORMATS = new Set(['png', 'jpeg', 'webp']);
 
 const unavailableSettings: DynatraceProblemsPublicSettings = {
   configured: false,
@@ -250,19 +256,55 @@ export class BrandAssetService {
   async save(kind: BrandAssetKind, dataUrl: string): Promise<IpcResult<string>> {
     try {
       const encoded = dataUrl.split(',', 2)[1] ?? '';
-      if (Buffer.byteLength(encoded, 'base64') > MAX_LOGO_BYTES) {
+      const input = Buffer.from(encoded, 'base64');
+      if (input.byteLength > MAX_LOGO_BYTES) {
         return failure('Image must be under 2MB');
       }
-      let image = nativeImage.createFromDataURL(dataUrl);
-      if (image.isEmpty()) return failure('Invalid image file');
-      if (image.getSize().width > MAX_LOGO_WIDTH) image = image.resize({ width: MAX_LOGO_WIDTH });
-      return await this.savePng(kind, image.toPNG());
+      return await this.savePng(kind, input);
     } catch (error) {
       return failure(error);
     }
   }
 
-  async savePng(kind: BrandAssetKind, png: Buffer): Promise<IpcResult<string>> {
+  async savePng(kind: BrandAssetKind, input: Buffer): Promise<IpcResult<string>> {
+    let png: Buffer;
+    try {
+      if (input.byteLength > MAX_LOGO_BYTES) return failure('Image must be under 2MB');
+      const { default: sharp } = await import('sharp');
+      const pipeline = sharp(input, {
+        limitInputPixels: MAX_LOGO_PIXELS,
+        sequentialRead: true,
+        failOn: 'warning',
+      });
+      const { width, height, format } = await pipeline.metadata();
+      if (
+        !width ||
+        !height ||
+        !format ||
+        !ALLOWED_LOGO_FORMATS.has(format) ||
+        width > MAX_LOGO_SOURCE_WIDTH ||
+        height > MAX_LOGO_SOURCE_HEIGHT ||
+        width * height > MAX_LOGO_PIXELS ||
+        width * height * 4 > MAX_LOGO_DECODED_BYTES
+      ) {
+        return failure('Invalid or oversized image');
+      }
+      png = await pipeline
+        .resize({
+          width: MAX_LOGO_OUTPUT_WIDTH,
+          height: MAX_LOGO_OUTPUT_HEIGHT,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .png()
+        .toBuffer();
+      if (png.byteLength > MAX_LOGO_OUTPUT_BYTES) {
+        return failure('Processed image is too large');
+      }
+    } catch {
+      return failure('Invalid or oversized image');
+    }
+
     try {
       const path = await this.path(kind);
       await mkdir(dirname(path), { recursive: true });
@@ -291,9 +333,18 @@ export class BrandAssetService {
   }
 }
 
+function escapeBrowserLogMessage(message: string): string {
+  return message
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('\u0085', '\\u0085')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029');
+}
+
 function writeBrowserLog(entry: LogEntry): void {
   const module = entry.module.replaceAll(/[^a-zA-Z0-9.-]/g, '').slice(0, 50);
-  const message = `[web:${module}] ${entry.message}`;
+  const message = `[web:${module}] ${escapeBrowserLogMessage(entry.message)}`;
   switch (entry.level) {
     case 'DEBUG':
       loggers.bridge.debug(message);

@@ -701,9 +701,12 @@ export async function runStartupBenchmark(argv = process.argv.slice(2)) {
   return report;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runStartupBenchmark().catch((error) => {
+const invokedUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (import.meta.url === invokedUrl) {
+  try {
+    await runStartupBenchmark();
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
     process.exitCode = 1;
-  });
+  }
 }

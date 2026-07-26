@@ -3,6 +3,22 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeCoverService } from './KnowledgeCoverService';
+import {
+  clearRelayAppUserAuthCoordinator,
+  primeRelayAppUserAuth,
+} from '../pocketbase/RelayAppUserAuthCoordinator';
+
+const coordinatorMocks = vi.hoisted(() => ({
+  authenticate: vi.fn(),
+  clear: vi.fn(),
+  prime: vi.fn(),
+}));
+
+vi.mock('../pocketbase/RelayAppUserAuthCoordinator', () => ({
+  authenticateRelayAppUserShared: coordinatorMocks.authenticate,
+  clearRelayAppUserAuthCoordinator: coordinatorMocks.clear,
+  primeRelayAppUserAuth: coordinatorMocks.prime,
+}));
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CHECKSUMS = ['a', 'b', 'c'].map((value) => value.repeat(64));
@@ -15,6 +31,7 @@ async function dataRoot() {
 }
 
 afterEach(async () => {
+  clearRelayAppUserAuthCoordinator();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -63,6 +80,112 @@ describe('KnowledgeCoverService', () => {
 
     expect(loadCoverRenderer).toHaveBeenCalledOnce();
     expect(renderKnowledgeCover).toHaveBeenCalledTimes(2);
+  });
+
+  it('hydrates its client from the shared startup authentication window', async () => {
+    const relayUrl = ['http', '://relay.local'].join('');
+    const checksum = CHECKSUMS[0]!;
+    const record = {
+      id: 'document1',
+      collectionId: 'knowledgeCollection',
+      collectionName: 'knowledge_documents',
+      sourceKey: 'operations/document.pdf',
+      category: 'Operations',
+      title: 'Document',
+      fileName: 'document.pdf',
+      pdf: 'document.pdf',
+      cover: 'document.png',
+      checksum,
+      byteSize: 1,
+      pageCount: 1,
+      outline: [],
+      outlineSource: 'none',
+      sourceModifiedAt: '2026-07-18T12:00:00.000Z',
+      indexedAt: '2026-07-18T12:00:00.000Z',
+      created: '2026-07-18T12:00:00.000Z',
+      updated: '2026-07-18T12:00:00.000Z',
+    };
+    const authStore = {
+      token: '',
+      record: null as Record<string, unknown> | null,
+      get isValid() {
+        return Boolean(this.token);
+      },
+      save(token: string, authRecord?: Record<string, unknown> | null) {
+        this.token = token;
+        this.record = authRecord ?? null;
+      },
+      clear() {
+        this.token = '';
+        this.record = null;
+      },
+    };
+    const authWithPassword = vi.fn(async () => {
+      authStore.save('valid-token-cover', {
+        id: 'relay-user',
+        email: 'relay@relay.app',
+        collectionId: '_pb_users_auth_',
+        collectionName: 'users',
+      });
+      return {};
+    });
+    const pb = {
+      authStore,
+      health: { check: vi.fn(async () => ({ code: 200 })) },
+      collection: vi.fn((name: string) =>
+        name === '_pb_users_auth_' ? { authWithPassword } : { getOne: vi.fn(async () => record) },
+      ),
+      files: {
+        getToken: vi.fn(async () => 'file-token'),
+        getURL: vi.fn(() => `${relayUrl}/api/files/cover`),
+      },
+    };
+    coordinatorMocks.authenticate.mockImplementationOnce(async (client: typeof pb) => {
+      client.authStore.save('valid-token-bootstrap', {
+        id: 'relay-user',
+        email: 'relay@relay.app',
+        collectionId: '_pb_users_auth_',
+        collectionName: 'users',
+      });
+    });
+    primeRelayAppUserAuth(
+      {
+        authStore: {
+          token: 'valid-token-bootstrap',
+          record: {
+            id: 'relay-user',
+            email: 'relay@relay.app',
+            collectionId: '_pb_users_auth_',
+            collectionName: 'users',
+          },
+          isValid: true,
+          save: vi.fn(),
+          clear: vi.fn(),
+        },
+      } as never,
+      relayUrl,
+      'server-secret',
+    );
+    const service = new KnowledgeCoverService({
+      configDataDir: await dataRoot(),
+      getConfig: () => ({
+        mode: 'client',
+        serverUrl: relayUrl,
+        allowInsecureHttp: true,
+        secret: 'server-secret',
+      }),
+      getPbClient: () => null,
+      getPdfService: () => null,
+      createClient: () => pb as never,
+      fetch: vi.fn(async () => new Response(PNG, { status: 200 })),
+    });
+
+    await expect(service.getCover({ documentId: 'document1', checksum })).resolves.toMatchObject({
+      ok: true,
+      source: 'download',
+    });
+    expect(authWithPassword).not.toHaveBeenCalled();
+    expect(authStore.isValid).toBe(true);
   });
 
   it('cancels a cover download as soon as a response exceeds the hard byte limit', async () => {

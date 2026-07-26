@@ -30,6 +30,7 @@ import {
 } from './knowledgeChunking';
 import {
   createEmptyKnowledgeUploadQueue,
+  KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES,
   type KnowledgeUploadQueueEntry,
   type KnowledgeUploadQueueStore,
 } from './KnowledgeUploadQueueStore';
@@ -67,6 +68,8 @@ type ActiveUploadSession = PrivilegedSessionView & {
   deviceId: string;
   localSourceId: string;
 };
+
+type CancellationTarget = Pick<KnowledgeUploadManifestView, 'id' | 'revision'>;
 
 async function defaultSelectFiles(window?: BrowserWindow, single = false): Promise<string[]> {
   const options: Electron.OpenDialogOptions = {
@@ -115,6 +118,31 @@ function acknowledgedBytes(entry: KnowledgeUploadQueueEntry): number {
 
 function isTerminal(state: KnowledgeUploadQueueItemState): boolean {
   return state === 'cancelled' || state === 'published' || state === 'ready';
+}
+
+function isCancellationSettled(state: KnowledgeUploadQueueItemState): boolean {
+  return state === 'cancelled' || state === 'published';
+}
+
+function isTransferable(state: KnowledgeUploadQueueItemState): boolean {
+  return state === 'queued' || state === 'uploading';
+}
+
+function isAuthoritativeTransferTerminal(state: KnowledgeUploadManifestView['state']): boolean {
+  return state !== 'queued' && state !== 'uploading';
+}
+
+function isAuthoritativeProcessingState(state: KnowledgeUploadQueueItemState): boolean {
+  return state === 'assembling' || state === 'validating' || state === 'extracting';
+}
+
+function isLocalActionableSuspension(state: KnowledgeUploadQueueItemState): boolean {
+  return (
+    state === 'paused' ||
+    state === 'paused-network' ||
+    state === 'source-required' ||
+    state === 'failed'
+  );
 }
 
 function validReplacementSelection(
@@ -190,6 +218,38 @@ function preparationFailure(error: unknown): {
   return { state: 'failed', safeError: 'upload-failed' };
 }
 
+function errorCode(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code)
+    : '';
+}
+
+function cancellationSafeError(error: unknown): KnowledgeManagementErrorCode {
+  if (error instanceof PreparationSessionChangedError) return 'unauthorized';
+  const code = errorCode(error);
+  if (code === 'conflict') return 'conflict';
+  if (code === 'not-found') return 'not-found';
+  if (code === 'unauthorized' || code === 'locked' || code === 'pairing-required') {
+    return 'unauthorized';
+  }
+  if (isRetryablePreparationError(error)) return 'offline';
+  return 'server-error';
+}
+
+class PreparationSessionChangedError extends Error {
+  constructor() {
+    super('upload-session-changed');
+    this.name = 'PreparationSessionChangedError';
+  }
+}
+
+class PreparationStoppedError extends Error {
+  constructor() {
+    super('upload-preparation-stopped');
+    this.name = 'PreparationStoppedError';
+  }
+}
+
 export class KnowledgeUploadService {
   private readonly getRuntime: () => KnowledgeUploadRuntime | null;
   private readonly store: QueueStorePort;
@@ -204,9 +264,14 @@ export class KnowledgeUploadService {
   private queue = createEmptyKnowledgeUploadQueue(false);
   private preparationTail: Promise<void> = Promise.resolve();
   private readonly preparationsByLocalId = new Map<string, Promise<void>>();
+  private cancellationTail: Promise<void> = Promise.resolve();
+  private readonly cancellationsByLocalId = new Map<string, Promise<void>>();
+  private readonly retryRequests = new Set<string>();
+  private readonly batchResolutions = new Map<string, Promise<string>>();
   private persistTail: Promise<void> = Promise.resolve();
   private activeSessionKey: string | null | undefined;
-  private localSourceId: string | null = null;
+  private readonly localSourceBindings = new Map<string, string>();
+  private controlGeneration = 0;
   private started = false;
   private disposed = false;
 
@@ -229,16 +294,17 @@ export class KnowledgeUploadService {
     this.queue = await this.store.load();
     this.emit();
     const session = this.activeUploadSession();
-    this.activeSessionKey = session ? `${session.accountId}\u0000${session.localSourceId}` : null;
+    this.activeSessionKey = this.sessionKey(session);
     this.scheduler.setSessionActive(Boolean(session));
     if (!session) return;
     for (const entry of this.queue.entries) {
       if (
         entry.accountId === session.accountId &&
         this.entryLocalSourceId(entry) === session.localSourceId &&
-        !isTerminal(entry.state)
+        (entry.cancelRequested || !isTerminal(entry.state))
       ) {
-        this.enqueuePreparation(entry.localId, true);
+        if (entry.cancelRequested) this.enqueueCancellation(entry.localId);
+        else this.enqueuePreparation(entry.localId, true);
       }
     }
   }
@@ -249,13 +315,16 @@ export class KnowledgeUploadService {
   ): Promise<KnowledgeUploadSelectionResult> {
     if (this.disposed) return { ok: false, error: 'offline' };
     const runtime = this.getRuntime();
-    const session = activeUploadSession(runtime);
+    const session = this.uploadSessionForRuntime(runtime);
     if (!runtime || !session) {
       return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
     }
     const paths = await this.selectFiles(window, Boolean(replacementDocumentId));
     if (paths.length === 0) return { ok: false, error: 'cancelled' };
-    return this.queuePaths(paths, session.localSourceId, replacementDocumentId);
+    if (!this.matchesCurrentSession(session)) {
+      return { ok: false, error: 'unauthorized' };
+    }
+    return this.queuePathsForSession(paths, session, replacementDocumentId);
   }
 
   async queuePaths(
@@ -270,25 +339,43 @@ export class KnowledgeUploadService {
     if (!validReplacementSelection(paths, replacementDocumentId)) {
       return { ok: false, error: 'invalid-file' };
     }
-    if (this.localSourceId && this.localSourceId !== localSourceId) {
-      return { ok: false, error: 'unauthorized' };
-    }
-    this.localSourceId = localSourceId;
     const runtime = this.getRuntime();
-    const session = this.activeUploadSession();
-    if (!runtime || !session) {
+    const baseSession = activeUploadSession(runtime);
+    if (!runtime || !baseSession) {
       return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
     }
-    await this.refresh();
-    const activeEntries = this.queue.entries.filter((entry) => !isTerminal(entry.state));
+    const binding = this.localSourceBindings.get(this.localSourceBindingKey(baseSession));
+    if (binding && binding !== localSourceId) {
+      return { ok: false, error: 'unauthorized' };
+    }
+    const session = { ...baseSession, localSourceId };
+    return this.queuePathsForSession(paths, session, replacementDocumentId);
+  }
+
+  private async queuePathsForSession(
+    paths: readonly string[],
+    session: ActiveUploadSession,
+    replacementDocumentId?: string,
+  ): Promise<KnowledgeUploadSelectionResult> {
+    await this.refresh(session);
+    if (!this.matchesCurrentSession(session)) {
+      return { ok: false, error: 'unauthorized' };
+    }
+    const activeEntries = this.queue.entries.filter(
+      (entry) =>
+        this.sessionMatchesEntry(session, entry) &&
+        (entry.cancelRequested || !isTerminal(entry.state)),
+    );
     if (activeEntries.length > 0) return { ok: false, error: 'upload-failed' };
     if (paths.length > KNOWLEDGE_UPLOAD_MAX_FILES) return { ok: false, error: 'invalid-file' };
-
     const candidates: KnowledgePdfCandidate[] = [];
     const names = new Set<string>();
     try {
       for (const path of paths) {
         const candidate = await this.inspectCandidate(path);
+        if (!this.matchesCurrentSession(session)) {
+          return { ok: false, error: 'unauthorized' };
+        }
         const nameKey = candidate.fileName.toLocaleLowerCase('en');
         if (names.has(nameKey)) return { ok: false, error: 'invalid-file' };
         names.add(nameKey);
@@ -297,6 +384,29 @@ export class KnowledgeUploadService {
     } catch {
       return { ok: false, error: 'invalid-file' };
     }
+    if (!this.matchesCurrentSession(session)) {
+      return { ok: false, error: 'unauthorized' };
+    }
+    const currentActiveEntries = this.queue.entries.filter(
+      (entry) =>
+        this.sessionMatchesEntry(session, entry) &&
+        (entry.cancelRequested || !isTerminal(entry.state)),
+    );
+    if (currentActiveEntries.length > 0) {
+      return { ok: false, error: 'upload-failed' };
+    }
+    const retainedEntries = this.queue.entries.filter(
+      (entry) => !this.sessionMatchesEntry(session, entry),
+    );
+    if (retainedEntries.length + paths.length > KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES) {
+      return { ok: false, error: 'invalid-file' };
+    }
+    const bindingKey = this.localSourceBindingKey(session);
+    const binding = this.localSourceBindings.get(bindingKey);
+    if (binding && binding !== session.localSourceId) {
+      return { ok: false, error: 'unauthorized' };
+    }
+    this.localSourceBindings.set(bindingKey, session.localSourceId);
 
     const batchRequestId = this.createId();
     const entries = candidates.map<KnowledgeUploadQueueEntry>((candidate) => ({
@@ -320,7 +430,11 @@ export class KnowledgeUploadService {
       safeError: null,
       retryCount: 0,
     }));
-    this.queue = { version: 2, restartRecovery: false, entries };
+    this.queue = {
+      version: 2,
+      restartRecovery: false,
+      entries: [...retainedEntries, ...entries],
+    };
     await this.persist();
     this.emit();
     for (const entry of entries) this.enqueuePreparation(entry.localId, false);
@@ -328,94 +442,129 @@ export class KnowledgeUploadService {
   }
 
   snapshot(): KnowledgeUploadQueueView {
-    const items = this.queue.entries.map((entry) => this.itemView(entry));
+    const entries = this.visibleEntries();
+    const items = entries.map((entry) => this.itemView(entry));
     return {
       restartRecovery: this.queue.restartRecovery,
-      activeBatchId: this.queue.entries.find((entry) => !isTerminal(entry.state))?.batchId ?? null,
+      activeBatchId: entries.find((entry) => !isTerminal(entry.state))?.batchId ?? null,
       totalBytes: items.reduce((total, item) => total + item.byteSize, 0),
       acknowledgedBytes: items.reduce((total, item) => total + item.acknowledgedBytes, 0),
       items,
     };
   }
 
-  async refresh(): Promise<KnowledgeUploadQueueView> {
-    const session = this.activeUploadSession();
+  async refresh(sessionOverride?: ActiveUploadSession): Promise<KnowledgeUploadQueueView> {
+    const session = sessionOverride ?? this.activeUploadSession();
     if (!session) return this.snapshot();
-    const batchIds = new Set(
+    let changed = false;
+    for (const batchId of this.reconciliationBatchIds(session)) {
+      changed = (await this.reconcileBatch(batchId, session)) || changed;
+      if (!this.matchesCurrentSession(session)) return this.snapshot();
+    }
+    if (!this.matchesCurrentSession(session)) return this.snapshot();
+    if (changed) await this.persistAndEmit();
+    if (!this.matchesCurrentSession(session)) return this.snapshot();
+    this.resumePendingCancellations(session);
+    return this.snapshot();
+  }
+
+  private reconciliationBatchIds(session: ActiveUploadSession): Set<string> {
+    return new Set(
       this.queue.entries
         .filter(
           (entry) =>
             entry.batchId &&
             needsServerReconciliation(entry.state) &&
             entry.accountId === session.accountId &&
+            entry.deviceId === session.deviceId &&
             this.entryLocalSourceId(entry) === session.localSourceId,
         )
         .map((entry) => entry.batchId as string),
     );
-    let changed = false;
-    for (const batchId of batchIds) {
-      try {
-        const status = await this.status(batchId);
-        for (const entry of this.queue.entries) {
-          if (entry.batchId !== batchId) continue;
-          const upload = this.matchManifest(status, entry);
-          if (!upload) continue;
-          const prior = reconciliationFingerprint(entry);
-          this.reconcile(entry, status, upload);
-          changed ||= reconciliationFingerprint(entry) !== prior;
-        }
-      } catch {
-        // Queue reads remain available while the server or VPN is temporarily unreachable.
+  }
+
+  private async reconcileBatch(batchId: string, session: ActiveUploadSession): Promise<boolean> {
+    try {
+      const status = await this.statusForSession(session, batchId);
+      let changed = false;
+      for (const entry of this.queue.entries) {
+        if (entry.batchId !== batchId || !this.sessionMatchesEntry(session, entry)) continue;
+        const upload = this.matchManifest(status, entry);
+        if (!upload) continue;
+        const prior = reconciliationFingerprint(entry);
+        this.reconcile(entry, status, upload);
+        changed ||= reconciliationFingerprint(entry) !== prior;
+      }
+      return changed;
+    } catch {
+      // Queue reads remain available while the server or VPN is temporarily unreachable.
+      return false;
+    }
+  }
+
+  private resumePendingCancellations(session: ActiveUploadSession): void {
+    for (const entry of this.queue.entries) {
+      if (
+        entry.cancelRequested &&
+        !isCancellationSettled(entry.state) &&
+        this.sessionMatchesEntry(session, entry)
+      ) {
+        this.enqueueCancellation(entry.localId);
       }
     }
-    if (changed) await this.persistAndEmit();
-    return this.snapshot();
   }
 
   pauseBatch(batchId: string): void {
-    const entries = this.queue.entries.filter(
-      (entry) => entry.batchId === batchId || entry.batchRequestId === batchId,
-    );
+    const entries = this.controllableBatchEntries(batchId);
     for (const entry of entries) {
-      if (!isTerminal(entry.state)) this.updateEntry(entry, { state: 'paused', safeError: null });
+      if (!isTerminal(entry.state) && !entry.cancelRequested) {
+        this.updateEntry(entry, { state: 'paused', safeError: null });
+      }
     }
     const serverBatchId = entries[0]?.batchId;
+    if (entries.length > 0) this.controlGeneration += 1;
     if (serverBatchId) this.scheduler.pauseBatch(serverBatchId);
     void this.persistAndEmit();
   }
 
   resumeBatch(batchId: string): void {
-    const entries = this.queue.entries.filter(
-      (entry) => entry.batchId === batchId || entry.batchRequestId === batchId,
-    );
+    const entries = this.controllableBatchEntries(batchId);
     const serverBatchId = entries[0]?.batchId;
-    if (serverBatchId) this.scheduler.resumeBatch(serverBatchId);
+    if (entries.length > 0) this.controlGeneration += 1;
     for (const entry of entries) {
-      if (!isTerminal(entry.state)) {
+      if (!isTerminal(entry.state) && !entry.cancelRequested) {
         this.updateEntry(entry, { state: 'queued', safeError: null, retryCount: 0 });
         this.enqueuePreparation(entry.localId, true);
       }
     }
+    if (serverBatchId) this.scheduler.resumeBatch(serverBatchId);
     void this.persistAndEmit();
   }
 
   retryUpload(id: string): void {
-    const entry = this.findEntry(id);
-    if (!entry || isTerminal(entry.state)) return;
+    const entry = this.findControllableEntry(id);
+    if (!entry || isTerminal(entry.state) || entry.cancelRequested) return;
+    this.controlGeneration += 1;
+    this.retryRequests.add(entry.localId);
     this.updateEntry(entry, { state: 'queued', safeError: null, retryCount: 0 });
-    if (entry.uploadId) this.scheduler.retryUpload(entry.uploadId);
     this.enqueuePreparation(entry.localId, true);
     void this.persistAndEmit();
   }
 
   async reselectSource(id: string, window?: BrowserWindow): Promise<boolean> {
-    const entry = this.findEntry(id);
-    if (!entry?.source.checksum) return false;
+    const entry = this.findControllableEntry(id);
+    if (!entry?.source.checksum || entry.cancelRequested || isTerminal(entry.state)) return false;
+    const session = this.activeUploadSession();
+    if (!this.sessionMatchesEntry(session, entry)) return false;
+    const generation = this.controlGeneration;
     const paths = await this.selectFiles(window, true);
     if (paths.length !== 1) return false;
+    if (!this.reselectionCurrent(entry, session, generation)) return false;
     try {
       const candidate = await this.inspectCandidate(paths[0]!);
+      if (!this.reselectionCurrent(entry, session, generation)) return false;
       const plan = await this.planSource(candidate);
+      if (!this.reselectionCurrent(entry, session, generation)) return false;
       if (
         plan.fileName !== entry.source.fileName ||
         plan.byteSize !== entry.source.byteSize ||
@@ -434,98 +583,351 @@ export class KnowledgeUploadService {
   }
 
   async cancelUpload(id: string): Promise<void> {
-    const pendingEntry = this.findEntry(id);
-    if (!pendingEntry) return;
-    await this.awaitPendingPreparation(pendingEntry.localId);
-    const entry = this.findEntry(pendingEntry.localId);
-    if (!entry) return;
-    let cancelWholeBatch = false;
-    if (entry.uploadId) {
-      await this.command({
-        command: 'knowledge.upload.file.cancel',
-        payload: { uploadId: entry.uploadId, expectedRevision: entry.uploadRevision },
-        expectedRevision: null,
-      });
-      this.scheduler.cancelUpload(entry.uploadId);
-    } else if (entry.batchId) {
-      const status = await this.status(entry.batchId);
-      entry.batchRevision = status.batch.revision;
+    const entry = this.findControllableEntry(id);
+    if (!entry || isCancellationSettled(entry.state)) return;
+    if (!entry.cancelRequested) {
+      this.controlGeneration += 1;
+      entry.cancelRequested = true;
+      this.updateEntry(entry, { state: 'paused', safeError: null, retryCount: 0 });
+      await this.persistAndEmit();
+    }
+    const existing = this.cancellationsByLocalId.get(entry.localId);
+    if (existing) return existing;
+    return this.scheduleCancellation(entry.localId);
+  }
+
+  private enqueueCancellation(localId: string): void {
+    if (this.cancellationsByLocalId.has(localId) || this.disposed) return;
+    void this.scheduleCancellation(localId).catch(() => undefined);
+  }
+
+  private scheduleCancellation(localId: string): Promise<void> {
+    const operation = this.cancellationTail.then(() => this.continueCancellation(localId));
+    this.cancellationTail = operation.catch(() => undefined);
+    this.cancellationsByLocalId.set(localId, operation);
+    const cleanup = () => {
+      if (this.cancellationsByLocalId.get(localId) === operation) {
+        this.cancellationsByLocalId.delete(localId);
+      }
+    };
+    void operation.then(cleanup, cleanup);
+    return operation;
+  }
+
+  private async continueCancellation(localId: string): Promise<void> {
+    try {
+      const initial = this.findEntry(localId);
+      if (!initial?.cancelRequested || isCancellationSettled(initial.state)) return;
+      const firstQuiesce = initial.uploadId
+        ? this.scheduler.quiesceUpload(initial.uploadId)
+        : Promise.resolve();
+      await this.awaitPendingPreparation(localId);
+      await firstQuiesce;
+      const entry = this.findEntry(localId);
+      if (!entry?.cancelRequested || isCancellationSettled(entry.state)) return;
+      this.assertCancellationCurrent(entry);
+      if (entry.uploadId && entry.uploadId !== initial.uploadId) {
+        await this.scheduler.quiesceUpload(entry.uploadId);
+      }
+      if (!entry.batchId) {
+        await this.resolveBatch(entry);
+        this.assertCancellationCurrent(entry);
+      }
+      const status = await this.statusForOwnedEntry(entry, entry.batchId!);
+      if (status.batch.state === 'cancelled') {
+        await this.finishCancellation(entry, 'cancelled');
+        return;
+      }
       const upload = this.matchManifest(status, entry);
       if (upload) {
-        entry.uploadId = upload.id;
-        entry.uploadRevision = upload.revision;
-        await this.command({
+        this.reconcile(entry, status, upload);
+        await this.persistAndEmit();
+        if (await this.finishFromAuthoritativeCancellationState(entry, upload)) return;
+        await this.scheduler.quiesceUpload(upload.id);
+        await this.cancelServerUpload(entry, upload);
+        return;
+      }
+      if (entry.uploadId) {
+        await this.scheduler.quiesceUpload(entry.uploadId);
+        await this.cancelServerUpload(entry, {
+          id: entry.uploadId,
+          revision: entry.uploadRevision,
+        });
+        return;
+      }
+      const plan = sourcePlan(entry) ?? (await this.planCancellationSource(entry));
+      const created = await this.beginUploadForCancellation(entry, status, plan);
+      await this.scheduler.quiesceUpload(created.id);
+      await this.cancelServerUpload(entry, created);
+    } catch (error) {
+      await this.recordCancellationFailure(localId, error);
+      throw error;
+    }
+  }
+
+  private async recordCancellationFailure(localId: string, error: unknown): Promise<void> {
+    if (error instanceof PreparationSessionChangedError) return;
+    const entry = this.findEntry(localId);
+    if (!entry?.cancelRequested || isCancellationSettled(entry.state)) return;
+    this.updateEntry(entry, {
+      state: 'paused',
+      safeError: cancellationSafeError(error),
+      retryCount: 0,
+    });
+    await this.persistAndEmit();
+  }
+
+  private async beginUploadForCancellation(
+    entry: KnowledgeUploadQueueEntry,
+    status: KnowledgeUploadBatchStatusView,
+    plan: KnowledgePdfSourcePlan,
+  ): Promise<KnowledgeUploadManifestView> {
+    this.assertCancellationCurrent(entry);
+    entry.batchRevision = Math.max(entry.batchRevision, status.batch.revision);
+    const result = await this.commandForOwnedEntry(entry, {
+      command: 'knowledge.upload.file.begin',
+      payload: {
+        batchId: status.batch.id,
+        fileName: plan.fileName,
+        byteSize: plan.byteSize,
+        checksum: plan.checksum,
+        chunkCount: plan.chunkCount,
+        ...(entry.replacementDocumentId
+          ? { replacementDocumentId: entry.replacementDocumentId }
+          : {}),
+      },
+      expectedRevision: null,
+    });
+    const upload = normalizeKnowledgeUploadManifestView(result.value);
+    if (!upload) throw new Error('invalid-upload-response');
+    entry.uploadId = upload.id;
+    entry.uploadRevision = upload.revision;
+    await this.persistAndEmit();
+    return upload;
+  }
+
+  private async planCancellationSource(
+    entry: KnowledgeUploadQueueEntry,
+  ): Promise<KnowledgePdfSourcePlan> {
+    this.assertCancellationCurrent(entry);
+    const plan = await this.planSource(entry.source);
+    this.assertCancellationCurrent(entry);
+    entry.source = plan;
+    await this.persistAndEmit();
+    return plan;
+  }
+
+  private async cancelServerUpload(
+    entry: KnowledgeUploadQueueEntry,
+    initialUpload: CancellationTarget,
+  ): Promise<void> {
+    let upload: CancellationTarget = initialUpload;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        this.assertCancellationCurrent(entry);
+        await this.commandForOwnedEntry(entry, {
           command: 'knowledge.upload.file.cancel',
           payload: { uploadId: upload.id, expectedRevision: upload.revision },
           expectedRevision: null,
         });
-        this.scheduler.cancelUpload(upload.id);
-      } else {
-        await this.command({
-          command: 'knowledge.upload.batch.cancel',
-          payload: { batchId: entry.batchId, expectedRevision: status.batch.revision },
-          expectedRevision: null,
-        });
-        this.scheduler.cancelBatch(entry.batchId);
-        cancelWholeBatch = true;
+        await this.finishCancellation(entry, 'cancelled');
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!entry.batchId) break;
+        this.assertCancellationCurrent(entry);
+        const status = await this.statusForOwnedEntry(entry, entry.batchId);
+        const authoritative = status.uploads.find((candidate) => candidate.id === upload.id);
+        if (!authoritative) throw error;
+        this.reconcile(entry, status, authoritative);
+        await this.persistAndEmit();
+        if (await this.finishFromAuthoritativeCancellationState(entry, authoritative)) return;
+        upload = authoritative;
       }
     }
-    if (cancelWholeBatch) {
-      for (const candidate of this.queue.entries) {
-        if (candidate.batchRequestId === entry.batchRequestId) {
-          this.updateEntry(candidate, { state: 'cancelled', safeError: null });
-        }
-      }
-      await this.persistAndEmit();
-      return;
+    throw lastError;
+  }
+
+  private async finishFromAuthoritativeCancellationState(
+    entry: KnowledgeUploadQueueEntry,
+    upload: KnowledgeUploadManifestView,
+  ): Promise<boolean> {
+    if (upload.state === 'cancelled') {
+      await this.finishCancellation(entry, 'cancelled');
+      return true;
     }
-    this.updateEntry(entry, { state: 'cancelled', safeError: null });
+    if (upload.state === 'published') {
+      await this.finishCancellation(entry, 'published');
+      return true;
+    }
+    return false;
+  }
+
+  private async finishCancellation(
+    entry: KnowledgeUploadQueueEntry,
+    state: 'cancelled' | 'published',
+  ): Promise<void> {
+    delete entry.cancelRequested;
+    this.updateEntry(entry, { state, safeError: null, retryCount: 0 });
+    if (entry.uploadId) this.scheduler.retireUpload(entry.uploadId);
     await this.persistAndEmit();
   }
 
   async cancelBatch(id: string): Promise<void> {
-    const entry = this.queue.entries.find(
-      (candidate) => candidate.batchId === id || candidate.batchRequestId === id,
-    );
+    const entry = this.controllableBatchEntries(id)[0];
     if (!entry) return;
-    const localIds = this.queue.entries
-      .filter((candidate) => candidate.batchRequestId === entry.batchRequestId)
-      .map((candidate) => candidate.localId);
+    const candidates = this.queue.entries.filter(
+      (candidate) =>
+        candidate.batchRequestId === entry.batchRequestId &&
+        this.sessionMatchesEntry(this.activeUploadSession(), candidate),
+    );
+    this.markBatchCancellationPending(candidates);
+    const pendingCandidates = candidates.filter(
+      (candidate) => candidate.cancelRequested && !isCancellationSettled(candidate.state),
+    );
+    if (pendingCandidates.length === 0) return;
+    await this.persistAndEmit();
+    const localIds = pendingCandidates.map((candidate) => candidate.localId);
     await Promise.all(localIds.map((localId) => this.awaitPendingPreparation(localId)));
-    const current = this.findEntry(entry.localId);
-    if (!current) return;
-    if (current.batchId) {
-      const status = await this.status(current.batchId);
-      current.batchRevision = status.batch.revision;
-      await this.command({
-        command: 'knowledge.upload.batch.cancel',
-        payload: { batchId: current.batchId, expectedRevision: status.batch.revision },
-        expectedRevision: null,
-      });
-      this.scheduler.cancelBatch(current.batchId);
+    try {
+      if (candidates.some((candidate) => candidate.state === 'published')) {
+        await this.cancelPendingBatchFiles(pendingCandidates);
+        return;
+      }
+      const current = pendingCandidates
+        .map((candidate) => this.findEntry(candidate.localId))
+        .find((candidate) => candidate?.cancelRequested && !isCancellationSettled(candidate.state));
+      if (!current) return;
+      this.assertCancellationCurrent(current);
+      const batchId = current.batchId ?? (await this.resolveBatch(current));
+      this.assertCancellationCurrent(current);
+      const fallbackStatus = await this.cancelServerBatch(current, batchId);
+      if (fallbackStatus) {
+        this.reconcileBatchCancellationCandidates(candidates, fallbackStatus);
+        await this.persistAndEmit();
+        await this.cancelPendingBatchFiles(pendingCandidates);
+        return;
+      }
+      this.finishBatchCancellation(candidates);
+      await this.persistAndEmit();
+    } catch (error) {
+      if (error instanceof PreparationSessionChangedError) throw error;
+      this.failBatchCancellation(candidates, error);
+      await this.persistAndEmit();
+      throw error;
     }
-    for (const candidate of this.queue.entries) {
-      if (candidate.batchRequestId === current.batchRequestId) {
-        this.updateEntry(candidate, { state: 'cancelled', safeError: null });
+  }
+
+  private markBatchCancellationPending(candidates: KnowledgeUploadQueueEntry[]): void {
+    for (const candidate of candidates) {
+      if (isCancellationSettled(candidate.state)) continue;
+      candidate.cancelRequested = true;
+      this.updateEntry(candidate, { state: 'paused', safeError: null, retryCount: 0 });
+    }
+  }
+
+  private async cancelPendingBatchFiles(candidates: KnowledgeUploadQueueEntry[]): Promise<void> {
+    for (const candidate of candidates) {
+      const current = this.findEntry(candidate.localId);
+      if (!current?.cancelRequested || isCancellationSettled(current.state)) continue;
+      const operation =
+        this.cancellationsByLocalId.get(current.localId) ??
+        this.scheduleCancellation(current.localId);
+      await operation;
+    }
+  }
+
+  private reconcileBatchCancellationCandidates(
+    candidates: KnowledgeUploadQueueEntry[],
+    status: KnowledgeUploadBatchStatusView,
+  ): void {
+    for (const candidate of candidates) {
+      const upload = this.matchManifest(status, candidate);
+      if (upload) this.reconcile(candidate, status, upload);
+    }
+  }
+
+  private async cancelServerBatch(
+    entry: KnowledgeUploadQueueEntry,
+    batchId: string,
+  ): Promise<KnowledgeUploadBatchStatusView | null> {
+    await this.scheduler.quiesceBatch(batchId);
+    this.assertCancellationCurrent(entry);
+    let status = await this.statusForOwnedEntry(entry, batchId);
+    if (status.batch.state === 'cancelled') {
+      this.scheduler.retireBatch(batchId);
+      return null;
+    }
+    if (this.batchNeedsFileCancellation(status)) return status;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        this.assertCancellationCurrent(entry);
+        await this.commandForOwnedEntry(entry, {
+          command: 'knowledge.upload.batch.cancel',
+          payload: { batchId, expectedRevision: status.batch.revision },
+          expectedRevision: null,
+        });
+        this.scheduler.retireBatch(batchId);
+        return null;
+      } catch (error) {
+        this.assertCancellationCurrent(entry);
+        status = await this.statusForOwnedEntry(entry, batchId);
+        if (status.batch.state === 'cancelled') {
+          this.scheduler.retireBatch(batchId);
+          return null;
+        }
+        if (this.batchNeedsFileCancellation(status)) return status;
+        if (attempt === 1) throw error;
       }
     }
-    await this.persistAndEmit();
+    return null;
+  }
+
+  private batchNeedsFileCancellation(status: KnowledgeUploadBatchStatusView): boolean {
+    return (
+      status.batch.state === 'completed' ||
+      status.uploads.some((upload) => upload.state === 'published')
+    );
+  }
+
+  private finishBatchCancellation(candidates: KnowledgeUploadQueueEntry[]): void {
+    for (const candidate of candidates) {
+      if (!candidate.cancelRequested || isCancellationSettled(candidate.state)) continue;
+      delete candidate.cancelRequested;
+      this.updateEntry(candidate, { state: 'cancelled', safeError: null, retryCount: 0 });
+    }
+  }
+
+  private failBatchCancellation(candidates: KnowledgeUploadQueueEntry[], error: unknown): void {
+    for (const candidate of candidates) {
+      if (!candidate.cancelRequested || isCancellationSettled(candidate.state)) continue;
+      this.updateEntry(candidate, {
+        state: 'paused',
+        safeError: cancellationSafeError(error),
+        retryCount: 0,
+      });
+    }
   }
 
   handleSessionChanged(view: PrivilegedSessionView): void {
     const session = view.state === 'active' ? this.activeUploadSession() : null;
-    const sessionKey = session ? `${session.accountId}\u0000${session.localSourceId}` : null;
+    const sessionKey = this.sessionKey(session);
     if (sessionKey === this.activeSessionKey) return;
+    this.controlGeneration += 1;
+    this.scheduler.setSessionActive(false);
     this.activeSessionKey = sessionKey;
     this.scheduler.setSessionActive(Boolean(session));
+    this.emit();
     if (!session) return;
     for (const entry of this.queue.entries) {
       if (
         entry.accountId === session.accountId &&
         this.entryLocalSourceId(entry) === session.localSourceId &&
-        !isTerminal(entry.state)
+        (entry.cancelRequested || !isTerminal(entry.state))
       ) {
-        this.enqueuePreparation(entry.localId, true);
+        if (entry.cancelRequested) this.enqueueCancellation(entry.localId);
+        else this.enqueuePreparation(entry.localId, true);
       }
     }
   }
@@ -533,10 +935,12 @@ export class KnowledgeUploadService {
   async whenIdle(): Promise<void> {
     while (true) {
       const preparation = this.preparationTail;
+      const cancellation = this.cancellationTail;
       await preparation;
+      await cancellation;
       await this.scheduler.whenIdle();
       await this.persistTail;
-      if (preparation === this.preparationTail) return;
+      if (preparation === this.preparationTail && cancellation === this.cancellationTail) return;
     }
   }
 
@@ -544,6 +948,7 @@ export class KnowledgeUploadService {
     if (this.disposed) return;
     this.disposed = true;
     await this.preparationTail;
+    await this.cancellationTail;
     await this.scheduler.dispose();
     await this.persistTail;
   }
@@ -573,27 +978,85 @@ export class KnowledgeUploadService {
 
   private async prepare(localId: string, restore: boolean): Promise<void> {
     const entry = this.findEntry(localId);
-    if (!entry || isTerminal(entry.state) || entry.state === 'paused') return;
-    const runtime = this.getRuntime();
-    const session = this.activeUploadSession();
-    if (!this.sessionMatchesEntry(session, entry)) {
-      const safeError = runtime ? 'unauthorized' : 'offline';
-      this.updateEntry(entry, { state: 'paused', safeError });
-      await this.persistAndEmit();
+    if (!entry || entry.cancelRequested || isTerminal(entry.state) || entry.state === 'paused') {
       return;
     }
     try {
+      const retryRequested = this.retryRequests.delete(localId);
+      this.assertPreparationCurrent(entry);
+      if (restore && (await this.reconcileBeforeSourceRestore(entry, retryRequested))) return;
       const plan = await this.ensureSourcePlan(entry, restore);
       if (!plan) return;
+      this.assertPreparationCurrent(entry);
       const batchId = await this.ensureBatch(entry);
+      this.assertPreparationCurrent(entry);
       const { status, upload } = await this.ensureUpload(entry, batchId, plan);
+      this.assertPreparationCurrent(entry);
       this.reconcile(entry, status, upload);
       await this.persistAndEmit();
-      if (!isTerminal(entry.state)) this.scheduler.enqueue(this.schedulerTask(entry));
+      this.assertPreparationCurrent(entry);
+      if (isTransferable(entry.state)) this.scheduler.enqueue(this.schedulerTask(entry));
     } catch (error) {
-      this.updateEntry(entry, preparationFailure(error));
-      await this.persistAndEmit();
+      await this.handlePreparationError(entry, error);
     }
+  }
+
+  private async handlePreparationError(
+    entry: KnowledgeUploadQueueEntry,
+    error: unknown,
+  ): Promise<void> {
+    if (error instanceof PreparationSessionChangedError) {
+      return;
+    }
+    if (entry.cancelRequested) {
+      this.updateEntry(entry, { state: 'paused', safeError: entry.safeError, retryCount: 0 });
+    } else if (isTerminal(entry.state)) {
+      if (entry.uploadId) this.scheduler.retireUpload(entry.uploadId);
+      return;
+    } else if (entry.state === 'paused' || error instanceof PreparationStoppedError) {
+      return;
+    } else {
+      this.updateEntry(entry, preparationFailure(error));
+    }
+    await this.persistAndEmit();
+  }
+
+  private async reconcileBeforeSourceRestore(
+    entry: KnowledgeUploadQueueEntry,
+    retryRequested: boolean,
+  ): Promise<boolean> {
+    if (!entry.batchId) return false;
+    const status = await this.statusForOwnedEntry(entry, entry.batchId);
+    this.assertPreparationCurrent(entry);
+    const upload = this.matchManifest(status, entry);
+    if (!upload) return false;
+    this.reconcile(entry, status, upload);
+    await this.persistAndEmit();
+    this.assertPreparationCurrent(entry);
+    if (retryRequested && upload.state === 'failed' && upload.missingChunkIndexes.length === 0) {
+      await this.finalizeFailedUpload(entry, status, upload);
+      return true;
+    }
+    return isLocalActionableSuspension(entry.state) || !isTransferable(entry.state);
+  }
+
+  private async finalizeFailedUpload(
+    entry: KnowledgeUploadQueueEntry,
+    status: KnowledgeUploadBatchStatusView,
+    upload: KnowledgeUploadManifestView,
+  ): Promise<void> {
+    const result = await this.commandForOwnedEntry(entry, {
+      command: 'knowledge.upload.file.finalize',
+      payload: { uploadId: upload.id, expectedRevision: upload.revision },
+      expectedRevision: null,
+    });
+    const finalized = normalizeKnowledgeUploadManifestView(result.value);
+    if (!finalized || finalized.revision < upload.revision) {
+      throw new Error('invalid-finalize-response');
+    }
+    this.reconcile(entry, status, finalized);
+    await this.persistAndEmit();
+    this.assertPreparationCurrent(entry);
   }
 
   private sessionMatchesEntry(
@@ -602,12 +1065,79 @@ export class KnowledgeUploadService {
   ): session is ActiveUploadSession {
     return Boolean(
       session?.accountId === entry.accountId &&
+      session.deviceId === entry.deviceId &&
       session.localSourceId === this.entryLocalSourceId(entry),
     );
   }
 
+  private sessionKey(session: ActiveUploadSession | null): string | null {
+    return session
+      ? `${session.accountId}\u0000${session.deviceId}\u0000${session.localSourceId}`
+      : null;
+  }
+
+  private matchesCurrentSession(expected: ActiveUploadSession): boolean {
+    const current = activeUploadSession(this.getRuntime(), expected.localSourceId);
+    const binding = this.localSourceBindings.get(this.localSourceBindingKey(expected));
+    return Boolean(
+      current?.accountId === expected.accountId &&
+      current.deviceId === expected.deviceId &&
+      current.localSourceId === expected.localSourceId &&
+      (!binding || binding === expected.localSourceId),
+    );
+  }
+
+  private reselectionCurrent(
+    entry: KnowledgeUploadQueueEntry,
+    session: ActiveUploadSession,
+    generation: number,
+  ): boolean {
+    return (
+      this.controlGeneration === generation &&
+      this.findEntry(entry.localId) === entry &&
+      !entry.cancelRequested &&
+      !isTerminal(entry.state) &&
+      this.sessionMatchesEntry(this.activeUploadSession(), entry) &&
+      this.matchesCurrentSession(session)
+    );
+  }
+
   private activeUploadSession(): ActiveUploadSession | null {
-    return activeUploadSession(this.getRuntime(), this.localSourceId ?? undefined);
+    return this.uploadSessionForRuntime(this.getRuntime());
+  }
+
+  private uploadSessionForRuntime(
+    runtime: KnowledgeUploadRuntime | null,
+  ): ActiveUploadSession | null {
+    const session = activeUploadSession(runtime);
+    if (!session) return null;
+    const binding = this.localSourceBindings.get(this.localSourceBindingKey(session));
+    return binding ? { ...session, localSourceId: binding } : session;
+  }
+
+  private localSourceBindingKey(
+    session: Pick<ActiveUploadSession, 'accountId' | 'deviceId'>,
+  ): string {
+    return `${session.accountId}\u0000${session.deviceId}`;
+  }
+
+  private assertPreparationCurrent(entry: KnowledgeUploadQueueEntry): void {
+    if (entry.cancelRequested || isTerminal(entry.state) || entry.state === 'paused') {
+      throw new PreparationStoppedError();
+    }
+    if (!this.sessionMatchesEntry(this.activeUploadSession(), entry)) {
+      throw new PreparationSessionChangedError();
+    }
+  }
+
+  private assertCancellationCurrent(entry: KnowledgeUploadQueueEntry): void {
+    if (
+      !entry.cancelRequested ||
+      isCancellationSettled(entry.state) ||
+      !this.sessionMatchesEntry(this.activeUploadSession(), entry)
+    ) {
+      throw new PreparationSessionChangedError();
+    }
   }
 
   private entryLocalSourceId(entry: KnowledgeUploadQueueEntry): string {
@@ -620,37 +1150,87 @@ export class KnowledgeUploadService {
   ): Promise<KnowledgePdfSourcePlan | null> {
     const existing = sourcePlan(entry);
     if (existing) {
-      if (!restore || (await this.revalidateSource(existing))) return existing;
+      if (!restore) return existing;
+      const valid = await this.revalidateSource(existing);
+      this.assertPreparationCurrent(entry);
+      if (valid) return existing;
       this.updateEntry(entry, { state: 'source-required', safeError: 'source-required' });
       await this.persistAndEmit();
+      this.assertPreparationCurrent(entry);
       return null;
     }
     const created = await this.planSource(entry.source);
+    this.assertPreparationCurrent(entry);
     entry.source = created;
     await this.persistAndEmit();
+    this.assertPreparationCurrent(entry);
     return created;
   }
 
   private async ensureBatch(entry: KnowledgeUploadQueueEntry): Promise<string> {
+    this.assertPreparationCurrent(entry);
+    const batchId = await this.resolveBatch(entry);
+    this.assertPreparationCurrent(entry);
+    return batchId;
+  }
+
+  private async resolveBatch(entry: KnowledgeUploadQueueEntry): Promise<string> {
     if (entry.batchId) return entry.batchId;
+    const resolutionKey = this.batchResolutionKey(entry);
+    const existing = this.batchResolutions.get(resolutionKey);
+    if (existing) return existing;
+    const resolution = this.beginOrRecoverBatch(entry);
+    this.batchResolutions.set(resolutionKey, resolution);
+    const cleanup = () => {
+      if (this.batchResolutions.get(resolutionKey) === resolution) {
+        this.batchResolutions.delete(resolutionKey);
+      }
+    };
+    void resolution.then(cleanup, cleanup);
+    return resolution;
+  }
+
+  private batchResolutionKey(entry: KnowledgeUploadQueueEntry): string {
+    return [
+      entry.accountId,
+      entry.deviceId,
+      this.entryLocalSourceId(entry),
+      entry.batchRequestId,
+    ].join('\u0000');
+  }
+
+  private async beginOrRecoverBatch(entry: KnowledgeUploadQueueEntry): Promise<string> {
     const entries = this.queue.entries.filter(
-      (candidate) => candidate.batchRequestId === entry.batchRequestId,
+      (candidate) =>
+        candidate.batchRequestId === entry.batchRequestId &&
+        candidate.accountId === entry.accountId &&
+        candidate.deviceId === entry.deviceId &&
+        this.entryLocalSourceId(candidate) === this.entryLocalSourceId(entry),
     );
-    const result = await this.command({
+    if (entries.length === 0) throw new Error('invalid-batch-request');
+    const totalBytes = entries.reduce((total, candidate) => total + candidate.source.byteSize, 0);
+    const result = await this.commandForOwnedEntry(entry, {
       command: 'knowledge.upload.batch.begin',
       payload: {
         requestId: entry.batchRequestId,
         fileCount: entries.length,
-        totalBytes: entries.reduce((total, candidate) => total + candidate.source.byteSize, 0),
+        totalBytes,
       },
       expectedRevision: null,
     });
     const batch = normalizeKnowledgeUploadBatchView(result.value);
-    if (!batch) throw new Error('invalid-batch-response');
+    if (
+      !batch ||
+      batch.requestId !== entry.batchRequestId ||
+      batch.fileCount !== entries.length ||
+      batch.totalBytes !== totalBytes
+    ) {
+      throw new Error('invalid-batch-response');
+    }
     for (const candidate of entries) {
       candidate.batchId = batch.id;
       candidate.batchRevision = batch.revision;
-      if (candidate.state === 'planning') candidate.state = 'queued';
+      if (candidate.state === 'planning' && !candidate.cancelRequested) candidate.state = 'queued';
     }
     await this.persistAndEmit();
     return batch.id;
@@ -661,15 +1241,19 @@ export class KnowledgeUploadService {
     batchId: string,
     plan: KnowledgePdfSourcePlan,
   ): Promise<{ status: KnowledgeUploadBatchStatusView; upload: KnowledgeUploadManifestView }> {
-    const status = await this.status(batchId);
+    this.assertPreparationCurrent(entry);
+    const status = await this.statusForOwnedEntry(entry, batchId);
+    this.assertPreparationCurrent(entry);
     if (entry.batchId !== status.batch.id || entry.batchRevision !== status.batch.revision) {
       entry.batchId = status.batch.id;
       entry.batchRevision = status.batch.revision;
       await this.persistAndEmit();
+      this.assertPreparationCurrent(entry);
     }
     const existing = this.matchManifest(status, entry);
     if (existing) return { status, upload: existing };
-    const result = await this.command({
+    this.assertPreparationCurrent(entry);
+    const result = await this.commandForOwnedEntry(entry, {
       command: 'knowledge.upload.file.begin',
       payload: {
         batchId,
@@ -685,6 +1269,10 @@ export class KnowledgeUploadService {
     });
     const upload = normalizeKnowledgeUploadManifestView(result.value);
     if (!upload) throw new Error('invalid-upload-response');
+    entry.uploadId = upload.id;
+    entry.uploadRevision = upload.revision;
+    await this.persistAndEmit();
+    this.assertPreparationCurrent(entry);
     return { status, upload };
   }
 
@@ -699,7 +1287,12 @@ export class KnowledgeUploadService {
       uploadId,
       batchId,
       byteSize: entry.source.byteSize,
+      isEligible: () =>
+        !entry.cancelRequested &&
+        isTransferable(entry.state) &&
+        this.sessionMatchesEntry(this.activeUploadSession(), entry),
       getMissingChunkIndexes: async () => {
+        this.assertSchedulerCurrent(entry);
         // Preparation has just reconciled the authoritative server status.
         // Reuse that result once instead of immediately issuing a duplicate
         // signed status command; later scheduler runs still re-query PocketBase.
@@ -708,7 +1301,8 @@ export class KnowledgeUploadService {
           initialMissingChunkIndexes = null;
           return missing;
         }
-        const status = await this.status(batchId);
+        const status = await this.statusForEntry(entry, batchId);
+        this.assertSchedulerCurrent(entry);
         const upload = this.matchManifest(status, entry);
         if (!upload) throw Object.assign(new Error('upload-not-found'), { status: 404 });
         this.reconcile(entry, status, upload);
@@ -716,11 +1310,15 @@ export class KnowledgeUploadService {
         return upload.missingChunkIndexes;
       },
       readChunk: async (index) => {
+        this.assertSchedulerCurrent(entry);
         const plan = sourcePlan(entry);
         if (!plan) throw new KnowledgeSourceError('source-required');
-        return this.readChunk(plan, index);
+        const bytes = await this.readChunk(plan, index);
+        this.assertSchedulerCurrent(entry);
+        return bytes;
       },
       uploadChunk: async (index, bytes, signal) => {
+        const runtime = this.schedulerRuntime(entry);
         if (signal.aborted) throw Object.assign(new Error('aborted'), { status: 0 });
         const form = new FormData();
         form.set('uploadId', uploadId);
@@ -736,23 +1334,39 @@ export class KnowledgeUploadService {
           new Blob([buffer], { type: 'application/octet-stream' }),
           `${basename(entry.source.fileName, '.pdf')}.part-${String(index + 1).padStart(3, '0')}`,
         );
-        const runtime = this.getRuntime();
-        if (!runtime) throw Object.assign(new Error('offline'), { status: 0 });
         await runtime.createPrivilegedRecord(KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION, form);
+        this.assertSchedulerCurrent(entry);
       },
       finalize: async () => {
-        const result = await this.command({
+        const result = await this.commandForEntry(entry, {
           command: 'knowledge.upload.file.finalize',
           payload: { uploadId, expectedRevision: entry.uploadRevision },
           expectedRevision: null,
         });
+        this.assertSchedulerCurrent(entry);
         const upload = normalizeKnowledgeUploadManifestView(result.value);
         if (!upload) throw new Error('invalid-finalize-response');
-        entry.uploadRevision = upload.revision;
-        this.updateEntry(entry, { state: upload.state, safeError: upload.safeError });
+        if (upload.revision >= entry.uploadRevision) {
+          entry.uploadRevision = upload.revision;
+          if (!entry.cancelRequested) {
+            this.updateEntry(entry, { state: upload.state, safeError: upload.safeError });
+          }
+        }
+        if (isAuthoritativeTransferTerminal(upload.state)) {
+          this.scheduler.retireUpload(uploadId);
+        }
         await this.persistAndEmit();
       },
       onAcknowledged: (index) => {
+        if (
+          entry.cancelRequested ||
+          entry.state === 'paused' ||
+          isTerminal(entry.state) ||
+          isAuthoritativeProcessingState(entry.state) ||
+          !this.sessionMatchesEntry(this.activeUploadSession(), entry)
+        ) {
+          return;
+        }
         if (!entry.acknowledgedChunkIndexes.includes(index)) {
           entry.acknowledgedChunkIndexes.push(index);
           entry.acknowledgedChunkIndexes.sort((left, right) => left - right);
@@ -761,14 +1375,62 @@ export class KnowledgeUploadService {
         void this.persistAndEmit();
       },
       onState: (state, safeError, retryCount) => {
+        if (
+          entry.cancelRequested ||
+          isTerminal(entry.state) ||
+          isAuthoritativeProcessingState(entry.state)
+        ) {
+          return;
+        }
+        if (
+          isLocalActionableSuspension(entry.state) &&
+          (state === 'queued' || state === 'uploading')
+        ) {
+          return;
+        }
+        if (entry.state === 'paused' && state !== 'paused') return;
+        if (!this.sessionMatchesEntry(this.activeUploadSession(), entry)) {
+          return;
+        }
         this.updateEntry(entry, { state, safeError, retryCount });
         void this.persistAndEmit();
       },
     };
   }
 
-  private async status(batchId: string): Promise<KnowledgeUploadBatchStatusView> {
-    const result = await this.command({
+  private async statusForSession(
+    session: ActiveUploadSession,
+    batchId: string,
+  ): Promise<KnowledgeUploadBatchStatusView> {
+    const result = await this.commandForSession(session, {
+      command: 'knowledge.upload.status',
+      payload: { batchId },
+      expectedRevision: null,
+    });
+    const status = normalizeKnowledgeUploadBatchStatusView(result.value);
+    if (!status) throw new Error('invalid-status-response');
+    return status;
+  }
+
+  private async statusForEntry(
+    entry: KnowledgeUploadQueueEntry,
+    batchId: string,
+  ): Promise<KnowledgeUploadBatchStatusView> {
+    const result = await this.commandForEntry(entry, {
+      command: 'knowledge.upload.status',
+      payload: { batchId },
+      expectedRevision: null,
+    });
+    const status = normalizeKnowledgeUploadBatchStatusView(result.value);
+    if (!status) throw new Error('invalid-status-response');
+    return status;
+  }
+
+  private async statusForOwnedEntry(
+    entry: KnowledgeUploadQueueEntry,
+    batchId: string,
+  ): Promise<KnowledgeUploadBatchStatusView> {
+    const result = await this.commandForOwnedEntry(entry, {
       command: 'knowledge.upload.status',
       payload: { batchId },
       expectedRevision: null,
@@ -801,29 +1463,128 @@ export class KnowledgeUploadService {
     status: KnowledgeUploadBatchStatusView,
     upload: KnowledgeUploadManifestView,
   ): void {
+    const preserveLocalSuspension =
+      isLocalActionableSuspension(entry.state) &&
+      (upload.state === 'queued' || upload.state === 'uploading');
+    if (entry.uploadId === upload.id && upload.revision < entry.uploadRevision) {
+      return;
+    }
+    const sameUploadRevision =
+      entry.uploadId === upload.id && entry.uploadRevision === upload.revision;
+    const priorAcknowledged = sameUploadRevision ? entry.acknowledgedChunkIndexes : [];
     entry.batchId = status.batch.id;
-    entry.batchRevision = status.batch.revision;
+    entry.batchRevision = Math.max(entry.batchRevision, status.batch.revision);
     entry.uploadId = upload.id;
     entry.uploadRevision = upload.revision;
-    entry.acknowledgedChunkIndexes = Array.from(
+    const authoritativeAcknowledged = Array.from(
       { length: upload.chunkCount },
       (_, index) => index,
     ).filter((index) => !upload.missingChunkIndexes.includes(index));
+    entry.acknowledgedChunkIndexes = Array.from(
+      new Set([...priorAcknowledged, ...authoritativeAcknowledged]),
+    ).toSorted((left, right) => left - right);
+    if (entry.cancelRequested) {
+      if (upload.state === 'cancelled' || upload.state === 'published') {
+        delete entry.cancelRequested;
+        this.updateEntry(entry, {
+          state: upload.state,
+          safeError: upload.safeError,
+          retryCount: 0,
+        });
+        this.scheduler.retireUpload(upload.id);
+      }
+      return;
+    }
+    if (isAuthoritativeTransferTerminal(upload.state)) {
+      this.scheduler.retireUpload(upload.id);
+    }
+    if (preserveLocalSuspension) return;
     this.updateEntry(entry, { state: upload.state, safeError: upload.safeError });
   }
 
-  private async command(
+  private async commandForSession(
+    session: ActiveUploadSession,
     request: PublicPrivilegedCommandRequest,
   ): Promise<Extract<PrivilegedCommandResult, { ok: true }>> {
+    if (!this.matchesCurrentSession(session)) {
+      throw new PreparationSessionChangedError();
+    }
     const runtime = this.getRuntime();
-    if (!runtime) resultError('offline');
+    if (!runtime) throw new PreparationSessionChangedError();
+    const result = await runtime.submitPublicCommand(request);
+    if (!this.matchesCurrentSession(session)) {
+      throw new PreparationSessionChangedError();
+    }
+    if (!result.ok) resultError(result.error);
+    return result;
+  }
+
+  private async commandForEntry(
+    entry: KnowledgeUploadQueueEntry,
+    request: PublicPrivilegedCommandRequest,
+  ): Promise<Extract<PrivilegedCommandResult, { ok: true }>> {
+    const runtime = this.schedulerRuntime(entry);
     const result = await runtime.submitPublicCommand(request);
     if (!result.ok) resultError(result.error);
     return result;
   }
 
+  private async commandForOwnedEntry(
+    entry: KnowledgeUploadQueueEntry,
+    request: PublicPrivilegedCommandRequest,
+  ): Promise<Extract<PrivilegedCommandResult, { ok: true }>> {
+    const runtime = this.runtimeForOwnedEntry(entry);
+    const result = await runtime.submitPublicCommand(request);
+    this.runtimeForOwnedEntry(entry);
+    if (!result.ok) resultError(result.error);
+    return result;
+  }
+
+  private schedulerRuntime(entry: KnowledgeUploadQueueEntry): KnowledgeUploadRuntime {
+    if (entry.cancelRequested || !isTransferable(entry.state)) {
+      throw new PreparationStoppedError();
+    }
+    return this.runtimeForOwnedEntry(entry);
+  }
+
+  private runtimeForOwnedEntry(entry: KnowledgeUploadQueueEntry): KnowledgeUploadRuntime {
+    const runtime = this.getRuntime();
+    const session = this.uploadSessionForRuntime(runtime);
+    if (!runtime || !this.sessionMatchesEntry(session, entry)) {
+      throw new PreparationSessionChangedError();
+    }
+    return runtime;
+  }
+
+  private assertSchedulerCurrent(entry: KnowledgeUploadQueueEntry): void {
+    this.schedulerRuntime(entry);
+  }
+
   private findEntry(id: string): KnowledgeUploadQueueEntry | undefined {
     return this.queue.entries.find((entry) => entry.localId === id || entry.uploadId === id);
+  }
+
+  private findControllableEntry(id: string): KnowledgeUploadQueueEntry | undefined {
+    const session = this.activeUploadSession();
+    return this.queue.entries.find(
+      (entry) =>
+        (entry.localId === id || entry.uploadId === id) && this.sessionMatchesEntry(session, entry),
+    );
+  }
+
+  private controllableBatchEntries(id: string): KnowledgeUploadQueueEntry[] {
+    const session = this.activeUploadSession();
+    return this.queue.entries.filter(
+      (entry) =>
+        (entry.batchId === id || entry.batchRequestId === id) &&
+        this.sessionMatchesEntry(session, entry),
+    );
+  }
+
+  private visibleEntries(): KnowledgeUploadQueueEntry[] {
+    const session = this.activeUploadSession();
+    if (!session) return [];
+    return this.queue.entries.filter((entry) => this.sessionMatchesEntry(session, entry));
   }
 
   private updateEntry(
@@ -847,6 +1608,7 @@ export class KnowledgeUploadService {
       safeError: entry.safeError,
       retryCount: entry.retryCount,
       restartRecovery: this.queue.restartRecovery,
+      cancelPending: entry.cancelRequested === true,
     };
   }
 

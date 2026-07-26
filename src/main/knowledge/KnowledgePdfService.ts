@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
-import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -14,6 +13,7 @@ import {
 } from '@shared/knowledge';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
+import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 
 const DEFAULT_CACHE_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_ORPHAN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -163,11 +163,7 @@ export class KnowledgePdfService {
 
     try {
       if (!pb.authStore.isValid) {
-        await pb
-          .collection('_pb_users_auth_')
-          .authWithPassword(RELAY_APP_USER_EMAIL, config.secret, {
-            requestKey: null,
-          });
+        await authenticateRelayAppUserShared(pb, config.serverUrl, config.secret);
       }
       const raw = await this.getRecord(pb, request.documentId);
       const record = asKnowledgeRecord(raw);

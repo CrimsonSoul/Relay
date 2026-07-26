@@ -160,6 +160,13 @@ const PRIVILEGED_DEVICE_FINGERPRINT_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_devices_fingerprint ON relay_privileged_devices (fingerprint)';
 const PRIVILEGED_COMMAND_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_commands_request_id ON relay_privileged_commands (requestId)';
+const PRIVILEGED_REAUTHENTICATION_RATE_LIMIT_LABEL = 'POST /api/relay/privileged/reauth';
+const PRIVILEGED_REAUTHENTICATION_RATE_LIMIT = {
+  label: PRIVILEGED_REAUTHENTICATION_RATE_LIMIT_LABEL,
+  audience: '@auth',
+  duration: 3,
+  maxRequests: 2,
+} as const;
 const PRIVILEGED_PAIRING_CHALLENGE_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_pairing_challenges_id ON relay_privileged_pairing_challenges (challengeId)';
 const PRIVILEGED_PAIRING_REQUEST_INDEX =
@@ -1538,6 +1545,98 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 function finiteNumber(value: unknown, fallback: number, minimum: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= minimum ? value : fallback;
+}
+
+export async function ensurePocketBaseAuthRateLimit(pb: PocketBase): Promise<void> {
+  let settings: Record<string, unknown>;
+  try {
+    settings = await pb.settings.getAll({ requestKey: null });
+  } catch (error) {
+    logger.error('Failed to read required PocketBase authentication rate-limit settings', {
+      error,
+    });
+    throw new Error('Failed to read required PocketBase authentication rate-limit settings', {
+      cause: error,
+    });
+  }
+
+  const rateLimits =
+    settings.rateLimits &&
+    typeof settings.rateLimits === 'object' &&
+    !Array.isArray(settings.rateLimits)
+      ? (settings.rateLimits as Record<string, unknown>)
+      : null;
+  const rules = Array.isArray(rateLimits?.rules) ? rateLimits.rules : [];
+  const hasAuthRule = rules.some((rule) => {
+    if (rule === null || typeof rule !== 'object' || Array.isArray(rule)) return false;
+    const record = rule as Record<string, unknown>;
+    return (
+      record.label === '*:auth' &&
+      record.audience === '' &&
+      typeof record.duration === 'number' &&
+      Number.isFinite(record.duration) &&
+      record.duration > 0 &&
+      Number.isSafeInteger(record.maxRequests) &&
+      (record.maxRequests as number) > 0
+    );
+  });
+
+  if (!rateLimits || !hasAuthRule) {
+    throw new Error('PocketBase has no authoritative authentication rate-limit rule');
+  }
+  const privilegedRouteRules = rules.filter(
+    (rule) =>
+      rule !== null &&
+      typeof rule === 'object' &&
+      !Array.isArray(rule) &&
+      (rule as Record<string, unknown>).label === PRIVILEGED_REAUTHENTICATION_RATE_LIMIT_LABEL,
+  );
+  const acceptablePrivilegedRouteRule = privilegedRouteRules.find((rule) => {
+    const record = rule as Record<string, unknown>;
+    return (
+      record.audience === '@auth' &&
+      typeof record.duration === 'number' &&
+      Number.isFinite(record.duration) &&
+      record.duration >= PRIVILEGED_REAUTHENTICATION_RATE_LIMIT.duration &&
+      Number.isSafeInteger(record.maxRequests) &&
+      (record.maxRequests as number) > 0 &&
+      (record.maxRequests as number) <= PRIVILEGED_REAUTHENTICATION_RATE_LIMIT.maxRequests
+    );
+  });
+  const managedRules = [
+    ...rules.filter(
+      (rule) =>
+        rule === null ||
+        typeof rule !== 'object' ||
+        Array.isArray(rule) ||
+        (rule as Record<string, unknown>).label !== PRIVILEGED_REAUTHENTICATION_RATE_LIMIT_LABEL,
+    ),
+    acceptablePrivilegedRouteRule ?? PRIVILEGED_REAUTHENTICATION_RATE_LIMIT,
+  ];
+  const routeRuleIsCanonical =
+    privilegedRouteRules.length === 1 && acceptablePrivilegedRouteRule !== undefined;
+  if (rateLimits.enabled === true && routeRuleIsCanonical) return;
+
+  try {
+    await pb.settings.update(
+      {
+        rateLimits: {
+          ...rateLimits,
+          enabled: true,
+          rules: managedRules,
+        },
+      },
+      { requestKey: null },
+    );
+    logger.info('Enabled required PocketBase authentication rate limits');
+  } catch (error) {
+    logger.error('Failed to enable required PocketBase authentication rate limits', {
+      error,
+    });
+    throw new Error('Failed to enable required PocketBase authentication rate limits', {
+      cause: error,
+    });
+  }
 }
 
 export async function ensureKnowledgeBatchApi(pb: PocketBase): Promise<void> {

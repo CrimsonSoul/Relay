@@ -8,6 +8,8 @@ import {
 } from '@shared/knowledge';
 import type { KnowledgePdfSourcePlan } from './knowledgeChunking';
 
+export const KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES = KNOWLEDGE_UPLOAD_MAX_FILES * 10;
+
 export type KnowledgeUploadQueueSource = Omit<KnowledgePdfSourcePlan, 'checksum'> & {
   checksum: string | null;
 };
@@ -26,6 +28,7 @@ export type KnowledgeUploadQueueEntry = {
   source: KnowledgeUploadQueueSource;
   acknowledgedChunkIndexes: number[];
   state: KnowledgeUploadQueueItemState;
+  cancelRequested?: true;
   safeError: KnowledgeManagementErrorCode | null;
   retryCount: number;
 };
@@ -162,6 +165,7 @@ function normalizePersistedEntry(
     acknowledged.some((index) => !numberInRange(index, 0, (source.chunkCount as number) - 1)) ||
     new Set(acknowledged).size !== acknowledged.length ||
     !QUEUE_STATES.has(value.state as KnowledgeUploadQueueItemState) ||
+    (value.cancelRequested !== undefined && value.cancelRequested !== true) ||
     !SAFE_ERRORS.has(value.safeError as KnowledgeManagementErrorCode | null) ||
     !numberInRange(value.retryCount, 0, Number.MAX_SAFE_INTEGER)
   ) {
@@ -192,6 +196,7 @@ function normalizePersistedEntry(
     },
     acknowledgedChunkIndexes: (acknowledged as number[]).toSorted((left, right) => left - right),
     state: value.state as KnowledgeUploadQueueItemState,
+    ...(value.cancelRequested === true ? { cancelRequested: true as const } : {}),
     safeError: value.safeError as KnowledgeManagementErrorCode | null,
     retryCount: value.retryCount as number,
   };
@@ -224,7 +229,7 @@ export class KnowledgeUploadQueueStore {
       return createEmptyKnowledgeUploadQueue(true);
     }
     const entries = parsed.entries.map((entry) => normalizePersistedEntry(entry, this.safeStorage));
-    if (entries.length > KNOWLEDGE_UPLOAD_MAX_FILES || entries.includes(null)) {
+    if (entries.length > KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES || entries.includes(null)) {
       return createEmptyKnowledgeUploadQueue(true);
     }
     return { version: 2, restartRecovery: true, entries: entries as KnowledgeUploadQueueEntry[] };

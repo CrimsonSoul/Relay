@@ -42,10 +42,12 @@ async function bootstrapRenderer(): Promise<void> {
   renderApp(<WebSessionGate />);
 }
 
-void bootstrapRenderer().catch(() => {
+try {
+  await bootstrapRenderer();
+} catch {
   renderApp(
     <main className="app-state" role="alert">
       <p className="app-state__text">Relay could not start.</p>
     </main>,
   );
-});
+}

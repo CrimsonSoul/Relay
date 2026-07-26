@@ -402,11 +402,11 @@ function apply(id: AccentId): void {
   document.documentElement.dataset.accent = id;
 }
 
-let scheduleTimer: ReturnType<typeof window.setTimeout> | null = null;
+let scheduleTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
 function clearAccentScheduleTimer(): void {
   if (!scheduleTimer) return;
-  window.clearTimeout(scheduleTimer);
+  globalThis.clearTimeout(scheduleTimer);
   scheduleTimer = null;
 }
 
@@ -429,7 +429,7 @@ function scheduleNextAccentCheck(date = new Date()): void {
         now.getMilliseconds(),
     ),
   );
-  scheduleTimer = window.setTimeout(() => {
+  scheduleTimer = globalThis.setTimeout(() => {
     applyScheduledAccent();
     scheduleNextAccentCheck();
   }, delayMs);
@@ -533,7 +533,7 @@ export function initAccent(): void {
   scheduleNextAccentCheck();
   if (initialized) return;
   initialized = true;
-  window.addEventListener('storage', (e) => {
+  globalThis.addEventListener('storage', (e) => {
     if (e.key === ACCENT_STORAGE_KEY) {
       if (!applyScheduledAccent()) apply(accentFromStoredValue(e.newValue));
     }

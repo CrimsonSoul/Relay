@@ -34,7 +34,7 @@ Relay requires every active Wiki document to have a unique authored filename. Pu
 
 Relay accepts PDFs no larger than 50 MiB or 1,000 pages. Upload batches are transferred in 4 MiB chunks with at most two chunks in flight at once. Relay retries temporary VPN or server failures up to eight times with bounded backoff, then leaves the batch in **Waiting for network** so the Publisher can resume it. Already acknowledged chunks are not sent again.
 
-On Relay Desktop, the queue survives an app restart when the operating system's encrypted storage is available. Relay encrypts the selected source path, revalidates the file before reading every chunk, and never exposes the path or PDF bytes to the renderer. If the file moved or changed, choose **Reselect PDF** and select the same unchanged file. When encrypted storage is unavailable, Relay keeps the queue only in memory rather than writing a plaintext path.
+On Relay Desktop, the queue survives an app restart when the operating system's encrypted storage is available. Relay encrypts the selected source path, revalidates the file before reading every chunk, and never exposes the path or PDF bytes to the renderer. Work interrupted by sign-out or shutdown resumes when the same Publisher session returns; a batch paused with **Pause all** stays paused until **Resume all** is selected. A discarded upload remains visible as **Cancelling** until the server confirms it. If Relay is offline or closes first, that cancellation resumes before the upload can transfer again. If the file moved or changed, choose **Reselect PDF** and select the same unchanged file. When encrypted storage is unavailable, Relay keeps the queue only in memory rather than writing a plaintext path.
 
 In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry or a Relay server restart. The browser cannot reselect a lost source file; start a new batch if its source becomes unavailable.
 
@@ -44,6 +44,7 @@ An unpublished server upload expires after seven days. Validation failures remai
 
 - **Replace PDF** starts a staged replacement from an existing document. When that upload is ready, **Replace existing** updates the document's contents while preserving its managed identity, authored filename, display title, category, and type.
 - **Pause all** and **Resume all** control an active batch without discarding acknowledged chunks.
+- **Discard upload** stops local transfer, preserves the request across a temporary disconnect or restart, and removes incomplete server data after confirmation.
 - **Cancel batch** requires confirmation and removes incomplete server chunks and temporary staged data.
 - **Trash** removes the document from the reader without permanently deleting it.
 - **Restore** returns a trashed document to the library.

@@ -18,6 +18,7 @@ export type WebSessionCreateInput = {
 export type WebSessionRecord = {
   id: string;
   csrfToken: string;
+  rateLimitId: string;
   pbUrl: string;
   auth: PbAuthSession;
   publicConfig: Extract<PublicRelayConfig, { mode: 'server' }>;
@@ -32,6 +33,11 @@ type WebSessionEntry = WebSessionRecord & {
   disposeAuth?: NonNullable<WebSessionCreateInput['dispose']>;
   cleanups: Set<() => void | Promise<void>>;
   eventSinks: Set<(event: string, data: unknown) => void>;
+  generation: number;
+  revoked: boolean;
+  refreshPromise?: Promise<WebSessionRecord | null>;
+  disposePromise?: Promise<void>;
+  destroyNotified: boolean;
 };
 
 type WebSessionStoreOptions = {
@@ -45,6 +51,7 @@ function copySession(entry: WebSessionEntry): WebSessionRecord {
   return {
     id: entry.id,
     csrfToken: entry.csrfToken,
+    rateLimitId: entry.rateLimitId,
     pbUrl: entry.pbUrl,
     auth: { token: entry.auth.token, record: entry.auth.record },
     publicConfig: entry.publicConfig,
@@ -57,7 +64,9 @@ function copySession(entry: WebSessionEntry): WebSessionRecord {
 
 export class WebSessionStore {
   private readonly sessions = new Map<string, WebSessionEntry>();
+  private readonly sessionsByRateLimitId = new Map<string, WebSessionEntry>();
   private readonly pendingDisposals = new Set<Promise<void>>();
+  private readonly destroyListeners = new Set<(rateLimitId: string) => void>();
   private readonly now: () => number;
   private readonly randomBytes: (size: number) => Uint8Array;
   private readonly idleTimeoutMs: number;
@@ -79,6 +88,7 @@ export class WebSessionStore {
     const entry: WebSessionEntry = {
       id: this.createOpaqueValue(),
       csrfToken: this.createOpaqueValue(),
+      rateLimitId: this.createOpaqueValue(),
       pbUrl: input.pbUrl,
       auth: { token: input.auth.token, record: input.auth.record },
       publicConfig: input.publicConfig,
@@ -90,8 +100,12 @@ export class WebSessionStore {
       disposeAuth: input.dispose,
       cleanups: new Set(),
       eventSinks: new Set(),
+      generation: 0,
+      revoked: false,
+      destroyNotified: false,
     };
     this.sessions.set(entry.id, entry);
+    this.sessionsByRateLimitId.set(entry.rateLimitId, entry);
     return copySession(entry);
   }
 
@@ -107,8 +121,13 @@ export class WebSessionStore {
     return true;
   }
 
-  unregisterCleanup(id: string, cleanup: () => void | Promise<void>): void {
-    this.sessions.get(id)?.cleanups.delete(cleanup);
+  unregisterCleanupByRateLimitId(rateLimitId: string, cleanup: () => void | Promise<void>): void {
+    this.sessionsByRateLimitId.get(rateLimitId)?.cleanups.delete(cleanup);
+  }
+
+  onDestroyed(listener: (rateLimitId: string) => void): () => void {
+    this.destroyListeners.add(listener);
+    return () => this.destroyListeners.delete(listener);
   }
 
   subscribeEvents(id: string, sink: (event: string, data: unknown) => void): () => void {
@@ -132,11 +151,34 @@ export class WebSessionStore {
 
   async refresh(id: string): Promise<WebSessionRecord | null> {
     const entry = this.getEntry(id, false);
-    if (!entry) return null;
+    if (!entry || entry.revoked) return null;
+    if (entry.refreshPromise) return entry.refreshPromise;
+    const generation = entry.generation;
+    const pending = this.refreshEntry(id, entry, generation);
+    entry.refreshPromise = pending;
+    void pending.finally(() => {
+      if (entry.refreshPromise === pending) entry.refreshPromise = undefined;
+    });
+    return pending;
+  }
+
+  private async refreshEntry(
+    id: string,
+    entry: WebSessionEntry,
+    generation: number,
+  ): Promise<WebSessionRecord | null> {
     try {
       const auth = await entry.refreshAuth();
       const now = this.now();
+      if (entry.revoked || entry.generation !== generation || this.sessions.get(id) !== entry) {
+        return null;
+      }
+      if (this.isExpired(entry, now)) {
+        await this.destroy(id);
+        return null;
+      }
       this.sessions.delete(id);
+      entry.generation += 1;
       entry.id = this.createOpaqueValue();
       entry.csrfToken = this.createOpaqueValue();
       entry.auth = { token: auth.token, record: auth.record };
@@ -144,7 +186,9 @@ export class WebSessionStore {
       this.sessions.set(entry.id, entry);
       return copySession(entry);
     } catch {
-      await this.destroy(id);
+      if (!entry.revoked && entry.generation === generation && this.sessions.get(id) === entry) {
+        await this.destroy(id);
+      }
       return null;
     }
   }
@@ -152,18 +196,34 @@ export class WebSessionStore {
   async destroy(id: string): Promise<void> {
     const entry = this.sessions.get(id);
     if (!entry) return;
-    this.sessions.delete(id);
-    const disposal = this.disposeEntry(entry);
-    this.pendingDisposals.add(disposal);
-    try {
-      await disposal;
-    } finally {
-      this.pendingDisposals.delete(disposal);
+    await this.destroyEntry(entry);
+  }
+
+  async destroyByRateLimitId(rateLimitId: string): Promise<void> {
+    const entry = this.sessionsByRateLimitId.get(rateLimitId);
+    if (!entry) return;
+    await this.destroyEntry(entry);
+  }
+
+  private async destroyEntry(entry: WebSessionEntry): Promise<void> {
+    if (entry.revoked) {
+      await this.disposeEntryOnce(entry);
+      return;
     }
+    entry.revoked = true;
+    entry.generation += 1;
+    for (const [key, candidate] of this.sessions) {
+      if (candidate === entry) this.sessions.delete(key);
+    }
+    this.sessionsByRateLimitId.delete(entry.rateLimitId);
+    this.notifyDestroyed(entry);
+    await this.disposeEntryOnce(entry);
   }
 
   async dispose(): Promise<void> {
-    await Promise.all([...this.sessions.keys()].map((id) => this.destroy(id)));
+    await Promise.all(
+      [...this.sessionsByRateLimitId.values()].map((entry) => this.destroyEntry(entry)),
+    );
     await this.finishedDisposals();
   }
 
@@ -173,11 +233,9 @@ export class WebSessionStore {
 
   private getEntry(id: string, touch: boolean): WebSessionEntry | null {
     const entry = this.sessions.get(id);
-    if (!entry) return null;
+    if (!entry || entry.revoked) return null;
     const now = this.now();
-    const idleExpired = now - entry.lastActiveAt >= this.idleTimeoutMs;
-    const absoluteExpired = now - entry.createdAt >= this.absoluteTimeoutMs;
-    if (idleExpired || absoluteExpired) {
+    if (this.isExpired(entry, now)) {
       void this.destroy(id);
       return null;
     }
@@ -187,6 +245,34 @@ export class WebSessionStore {
 
   private createOpaqueValue(): string {
     return Buffer.from(this.randomBytes(32)).toString('base64url');
+  }
+
+  private isExpired(entry: WebSessionEntry, now: number): boolean {
+    return (
+      now - entry.lastActiveAt >= this.idleTimeoutMs ||
+      now - entry.createdAt >= this.absoluteTimeoutMs
+    );
+  }
+
+  private notifyDestroyed(entry: WebSessionEntry): void {
+    if (entry.destroyNotified) return;
+    entry.destroyNotified = true;
+    for (const listener of this.destroyListeners) {
+      try {
+        listener(entry.rateLimitId);
+      } catch {
+        // Session invalidation must not depend on an observer.
+      }
+    }
+  }
+
+  private disposeEntryOnce(entry: WebSessionEntry): Promise<void> {
+    if (entry.disposePromise) return entry.disposePromise;
+    const disposal = this.disposeEntry(entry);
+    entry.disposePromise = disposal;
+    this.pendingDisposals.add(disposal);
+    void disposal.finally(() => this.pendingDisposals.delete(disposal));
+    return disposal;
   }
 
   private async disposeEntry(entry: WebSessionEntry): Promise<void> {

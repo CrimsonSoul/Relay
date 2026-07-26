@@ -80,6 +80,27 @@ const mocks = vi.hoisted(() => ({
     applyConfig: vi.fn(),
   },
   getRelayWebServerManager: vi.fn(),
+  clearRelayAppUserAuthCoordinator: vi.fn(),
+  authenticateRelayAppUserShared: vi.fn(
+    async (
+      client: {
+        collection(name: string): {
+          authWithPassword(
+            email: string,
+            secret: string,
+            options: { requestKey: null; signal?: AbortSignal },
+          ): Promise<unknown>;
+        };
+      },
+      _serverUrl: string,
+      secret: string,
+      options: { signal?: AbortSignal } = {},
+    ) =>
+      client.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret, {
+        requestKey: null,
+        signal: options.signal,
+      }),
+  ),
 }));
 
 vi.mock('../appState', () => ({
@@ -134,6 +155,11 @@ vi.mock('../../knowledge/knowledgeRuntime', () => ({
 
 vi.mock('../../knowledge/knowledgeSearchRuntime', () => ({
   restartKnowledgeSearchRuntime: mocks.restartKnowledgeSearchRuntime,
+}));
+
+vi.mock('../../pocketbase/RelayAppUserAuthCoordinator', () => ({
+  clearRelayAppUserAuthCoordinator: mocks.clearRelayAppUserAuthCoordinator,
+  authenticateRelayAppUserShared: mocks.authenticateRelayAppUserShared,
 }));
 
 vi.mock('../../privileged/privilegedRuntime', () => ({
@@ -206,6 +232,10 @@ describe('reconfigureRuntime', () => {
 
     await reconfigureRuntime('/Users/test/RelayData/data');
 
+    expect(mocks.clearRelayAppUserAuthCoordinator).toHaveBeenCalledOnce();
+    expect(mocks.clearRelayAppUserAuthCoordinator.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.relayWebServerManager.stop.mock.invocationCallOrder[0] as number,
+    );
     expect(mocks.retentionManager.stop).toHaveBeenCalledOnce();
     expect(mocks.setRetentionManager).toHaveBeenCalledWith(null);
     expect(mocks.setBackupManager).toHaveBeenCalledWith(null);
@@ -324,7 +354,9 @@ describe('reconfigureRuntime', () => {
     );
     expect(mocks.OfflineCache).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
     expect(mocks.PendingChanges).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
-    expect(mocks.SyncManager).toHaveBeenCalledWith(mocks.syncPbClient);
+    expect(mocks.SyncManager).toHaveBeenCalledWith(mocks.syncPbClient, {
+      relayAppUserServerUrl: 'https://relay.example.com',
+    });
     expect(mocks.setOfflineCache).toHaveBeenLastCalledWith(mocks.offlineCacheInstance);
     expect(mocks.setPendingChanges).toHaveBeenLastCalledWith(mocks.pendingChangesInstance);
     expect(mocks.setSyncManager).toHaveBeenLastCalledWith(mocks.syncManagerInstance);

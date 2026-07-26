@@ -13,6 +13,7 @@ export type KnowledgeUploadSchedulerTask = {
   readChunk(index: number): Promise<Uint8Array>;
   uploadChunk(index: number, bytes: Uint8Array, signal: AbortSignal): Promise<void>;
   finalize(): Promise<void>;
+  isEligible(): boolean;
   onAcknowledged(index: number, byteSize: number): void;
   onState(
     state: KnowledgeUploadQueueItemState,
@@ -102,8 +103,11 @@ export class KnowledgeUploadScheduler {
   private readonly random: () => number;
   private readonly tasks = new Map<string, KnowledgeUploadSchedulerTask>();
   private readonly inFlight = new Map<string, Promise<void>>();
+  private readonly rescheduleAfterFlight = new Set<string>();
   private readonly controllers = new Map<string, Set<AbortController>>();
   private readonly pausedBatches = new Set<string>();
+  private readonly cancellationHolds = new Set<string>();
+  private readonly cancelled = new Set<string>();
   private readonly completed = new Set<string>();
   private sessionActive = true;
   private disposed = false;
@@ -146,16 +150,50 @@ export class KnowledgeUploadScheduler {
   }
 
   cancelUpload(uploadId: string): void {
-    this.abort(uploadId);
-    this.completed.add(uploadId);
     const task = this.tasks.get(uploadId);
+    this.cancelled.add(uploadId);
+    this.retireUpload(uploadId);
     task?.onState('cancelled', null, 0);
-    this.tasks.delete(uploadId);
   }
 
   cancelBatch(batchId: string): void {
     for (const task of Array.from(this.tasks.values())) {
       if (task.batchId === batchId) this.cancelUpload(task.uploadId);
+    }
+    this.pausedBatches.delete(batchId);
+  }
+
+  async quiesceUpload(uploadId: string): Promise<void> {
+    if (this.completed.has(uploadId)) return;
+    this.cancellationHolds.add(uploadId);
+    this.rescheduleAfterFlight.delete(uploadId);
+    this.abort(uploadId);
+    while (true) {
+      const operation = this.inFlight.get(uploadId);
+      if (!operation) return;
+      await operation;
+      if (this.inFlight.get(uploadId) === operation) return;
+    }
+  }
+
+  async quiesceBatch(batchId: string): Promise<void> {
+    const uploadIds = Array.from(this.tasks.values())
+      .filter((task) => task.batchId === batchId)
+      .map((task) => task.uploadId);
+    await Promise.all(uploadIds.map((uploadId) => this.quiesceUpload(uploadId)));
+  }
+
+  retireUpload(uploadId: string): void {
+    this.abort(uploadId);
+    this.rescheduleAfterFlight.delete(uploadId);
+    this.cancellationHolds.delete(uploadId);
+    this.completed.add(uploadId);
+    this.tasks.delete(uploadId);
+  }
+
+  retireBatch(batchId: string): void {
+    for (const task of Array.from(this.tasks.values())) {
+      if (task.batchId === batchId) this.retireUpload(task.uploadId);
     }
     this.pausedBatches.delete(batchId);
   }
@@ -166,7 +204,7 @@ export class KnowledgeUploadScheduler {
       for (const task of this.tasks.values()) {
         if (this.completed.has(task.uploadId)) continue;
         this.abort(task.uploadId);
-        task.onState('paused', null, 0);
+        task.onState(this.suspensionState(task), null, 0);
       }
       return;
     }
@@ -183,31 +221,47 @@ export class KnowledgeUploadScheduler {
     if (this.disposed) return;
     this.disposed = true;
     this.sessionActive = false;
-    for (const uploadId of this.tasks.keys()) this.abort(uploadId);
+    this.rescheduleAfterFlight.clear();
+    for (const task of this.tasks.values()) {
+      task.onState(this.suspensionState(task), null, 0);
+      this.abort(task.uploadId);
+    }
     await this.whenIdle();
     this.tasks.clear();
   }
 
   private schedule(task: KnowledgeUploadSchedulerTask): void {
-    if (
-      this.disposed ||
-      !this.sessionActive ||
-      this.pausedBatches.has(task.batchId) ||
-      this.inFlight.has(task.uploadId) ||
-      this.completed.has(task.uploadId)
-    ) {
-      if (!this.sessionActive || this.pausedBatches.has(task.batchId)) {
-        task.onState('paused', null, 0);
-      }
+    if (this.disposed || this.completed.has(task.uploadId)) {
       return;
     }
-    const operation = this.runTask(task).finally(() => this.inFlight.delete(task.uploadId));
+    if (this.cancellationHolds.has(task.uploadId)) return;
+    if (!this.sessionActive || this.pausedBatches.has(task.batchId)) {
+      task.onState(this.suspensionState(task), null, 0);
+      return;
+    }
+    if (!this.taskEligible(task)) {
+      task.onState('queued', null, 0);
+      return;
+    }
+    if (this.inFlight.has(task.uploadId)) {
+      this.rescheduleAfterFlight.add(task.uploadId);
+      return;
+    }
+    const operation = this.runTask(task).finally(() => {
+      if (this.inFlight.get(task.uploadId) === operation) {
+        this.inFlight.delete(task.uploadId);
+      }
+      if (!this.rescheduleAfterFlight.delete(task.uploadId)) return;
+      const latest = this.tasks.get(task.uploadId);
+      if (latest) this.schedule(latest);
+    });
     this.inFlight.set(task.uploadId, operation);
   }
 
   private async runTask(task: KnowledgeUploadSchedulerTask): Promise<void> {
-    task.onState('uploading', null, 0);
     try {
+      this.assertRunnable(task);
+      task.onState('uploading', null, 0);
       const missing = await task.getMissingChunkIndexes();
       const results = await Promise.allSettled(
         missing.map((index) => this.semaphore.run(() => this.uploadOne(task, index))),
@@ -218,10 +272,26 @@ export class KnowledgeUploadScheduler {
       if (failed) throw failed.reason;
       this.assertRunnable(task);
       await task.finalize();
+      this.assertRunnable(task);
       this.completed.add(task.uploadId);
       task.onState('assembling', null, 0);
     } catch (error) {
-      if (error instanceof SchedulerTaskError) {
+      if (this.cancelled.has(task.uploadId)) {
+        task.onState('cancelled', null, 0);
+        return;
+      }
+      if (this.disposed) {
+        task.onState(this.suspensionState(task), null, 0);
+        return;
+      }
+      if (this.completed.has(task.uploadId)) {
+        return;
+      }
+      if (this.cancellationHolds.has(task.uploadId)) return;
+      const interrupted = this.interruptionState(task);
+      if (interrupted) {
+        task.onState(interrupted, null, 0);
+      } else if (error instanceof SchedulerTaskError) {
         task.onState(error.state, error.safeError, error.retryCount);
       } else if (sourceRequired(error)) {
         task.onState('source-required', 'source-required', 0);
@@ -232,6 +302,7 @@ export class KnowledgeUploadScheduler {
   }
 
   private async uploadOne(task: KnowledgeUploadSchedulerTask, index: number): Promise<void> {
+    this.assertRunnable(task);
     const bytes = await task.readChunk(index);
     for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
       this.assertRunnable(task);
@@ -242,6 +313,7 @@ export class KnowledgeUploadScheduler {
         task.onAcknowledged(index, bytes.byteLength);
         return;
       } catch (error) {
+        if (error instanceof SchedulerTaskError) throw error;
         if (
           await this.handleAttemptFailure(task, index, bytes.byteLength, attempt, controller, error)
         ) {
@@ -257,8 +329,12 @@ export class KnowledgeUploadScheduler {
     if (this.completed.has(task.uploadId)) {
       throw new SchedulerTaskError('cancelled', null, 0);
     }
-    if (!this.sessionActive || this.pausedBatches.has(task.batchId)) {
-      throw new SchedulerTaskError('paused', null, 0);
+    if (this.cancellationHolds.has(task.uploadId)) {
+      throw new SchedulerTaskError('queued', null, 0);
+    }
+    const interrupted = this.interruptionState(task);
+    if (interrupted) {
+      throw new SchedulerTaskError(interrupted, null, 0);
     }
   }
 
@@ -271,11 +347,10 @@ export class KnowledgeUploadScheduler {
     error: unknown,
   ): Promise<boolean> {
     if (controller.signal.aborted) {
-      throw new SchedulerTaskError(
-        this.completed.has(task.uploadId) ? 'cancelled' : 'paused',
-        null,
-        0,
-      );
+      if (this.completed.has(task.uploadId)) {
+        throw new SchedulerTaskError('cancelled', null, 0);
+      }
+      throw new SchedulerTaskError(this.interruptionState(task) ?? 'queued', null, 0);
     }
     if (await this.serverAcknowledged(task, index)) {
       task.onAcknowledged(index, byteLength);
@@ -306,6 +381,26 @@ export class KnowledgeUploadScheduler {
   private retryDelay(attempt: number): number {
     const base = Math.min(30_000, 1_000 * 2 ** (attempt - 1));
     return Math.round(base * (0.75 + this.random() * 0.5));
+  }
+
+  private suspensionState(task: KnowledgeUploadSchedulerTask): KnowledgeUploadQueueItemState {
+    return this.pausedBatches.has(task.batchId) ? 'paused' : 'queued';
+  }
+
+  private interruptionState(
+    task: KnowledgeUploadSchedulerTask,
+  ): KnowledgeUploadQueueItemState | null {
+    if (this.pausedBatches.has(task.batchId)) return 'paused';
+    if (!this.sessionActive || !this.taskEligible(task)) return 'queued';
+    return null;
+  }
+
+  private taskEligible(task: KnowledgeUploadSchedulerTask): boolean {
+    try {
+      return task.isEligible();
+    } catch {
+      return false;
+    }
   }
 
   private addController(uploadId: string): AbortController {

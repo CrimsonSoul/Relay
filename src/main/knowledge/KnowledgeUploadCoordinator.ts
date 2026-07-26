@@ -403,7 +403,7 @@ export class KnowledgeUploadCoordinator {
         return this.viewUpload(upload);
       }
       if (upload.state === 'ready') return this.viewUpload(upload);
-      if (upload.state === 'cancelled') this.conflict(upload.revision);
+      if (['cancelled', 'published'].includes(upload.state)) this.conflict(upload.revision);
       if (upload.revision !== input.expectedRevision) this.conflict(upload.revision);
       const view = await this.viewUpload(upload);
       if (view.missingChunkIndexes.length > 0) this.conflict(upload.revision);

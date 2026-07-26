@@ -53,6 +53,8 @@ win:
       filter:
         - '**/*'
         - '!pocketbase/**'
+    - from: 'resources/pocketbase/hooks/'
+      to: 'pocketbase/hooks/'
     - from: 'resources/pocketbase/win32-x64/'
       to: 'pocketbase/win32-x64/'
 nsis:
@@ -84,6 +86,8 @@ mac:
       filter:
         - '**/*'
         - '!pocketbase/**'
+    - from: 'resources/pocketbase/hooks/'
+      to: 'pocketbase/hooks/'
     - from: 'resources/pocketbase/darwin-arm64/'
       to: 'pocketbase/darwin-arm64/'
     - from: 'resources/pocketbase/darwin-x64/'

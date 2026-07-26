@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { setupCacheHandlers } from './cacheHandlers';
+import { loggers } from '../logger';
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
@@ -572,7 +573,7 @@ describe('cacheHandlers', () => {
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
       mockAppConfig.load.mockReturnValue({ [SECRET_FIELD]: reauthPassphrase });
-      mockSync.reauthenticate.mockRejectedValue(new Error('auth failed'));
+      mockSync.reauthenticate.mockRejectedValue(new Error(`server reflected ${reauthPassphrase}`));
 
       const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
@@ -584,6 +585,9 @@ describe('cacheHandlers', () => {
         remainingChanges: [],
       });
       expect(mockSync.syncAll).not.toHaveBeenCalled();
+      expect(JSON.stringify(vi.mocked(loggers.sync.error).mock.calls)).not.toContain(
+        reauthPassphrase,
+      );
     });
 
     it('skips re-auth when config has no secret', async () => {

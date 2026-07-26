@@ -96,6 +96,12 @@ function effectiveQueueState(
   uploads: KnowledgeManagementUploadView[],
 ): KnowledgeUploadQueueItemState {
   const serverState = uploads.find(({ id }) => id === item.uploadId)?.state;
+  if (
+    ['paused', 'paused-network', 'source-required', 'failed'].includes(item.state) &&
+    (!serverState || serverState === 'queued' || serverState === 'uploading')
+  ) {
+    return item.state;
+  }
   return serverState ?? item.state;
 }
 
@@ -180,10 +186,12 @@ export function KnowledgeManagementWorkspace({
   const uploadBatchId = management.uploadQueue.activeBatchId ?? queueItems[0]?.batchId ?? null;
   const uploadQueueHasActiveItems = queueItems.some(
     (item) =>
+      item.cancelPending ||
       !['ready', 'published', 'cancelled', 'failed'].includes(effectiveQueueState(item, uploads)),
   );
-  const uploadQueueHasPausedItems = queueItems.some(({ state }) =>
-    ['paused', 'paused-network'].includes(state),
+  const uploadQueueHasPendingCancellation = queueItems.some(({ cancelPending }) => cancelPending);
+  const uploadQueueHasPausedItems = queueItems.some(
+    ({ state, cancelPending }) => !cancelPending && ['paused', 'paused-network'].includes(state),
   );
   const filteredDocuments = documents.filter((document) => matchesDocument(document, query));
   const searchableDocumentCount = documents.filter(
@@ -825,58 +833,60 @@ export function KnowledgeManagementWorkspace({
                           Restored after restart
                         </span>
                       )}
-                      {uploadBatchId && uploadQueueHasActiveItems && (
-                        <>
-                          {uploadQueueHasPausedItems ? (
-                            <TactileButton
-                              size="sm"
-                              onClick={() => void management.resumeUploadBatch(uploadBatchId)}
-                            >
-                              Resume all
-                            </TactileButton>
-                          ) : (
-                            <TactileButton
-                              size="sm"
-                              onClick={() => void management.pauseUploadBatch(uploadBatchId)}
-                            >
-                              Pause all
-                            </TactileButton>
-                          )}
-                          {cancelBatchConfirmation ? (
-                            <>
+                      {uploadBatchId &&
+                        uploadQueueHasActiveItems &&
+                        !uploadQueueHasPendingCancellation && (
+                          <>
+                            {uploadQueueHasPausedItems ? (
                               <TactileButton
                                 size="sm"
-                                onClick={() => {
-                                  restoreBatchCancelFocusRef.current = true;
-                                  setCancelBatchConfirmation(false);
-                                }}
+                                onClick={() => void management.resumeUploadBatch(uploadBatchId)}
                               >
-                                Keep upload
+                                Resume all
                               </TactileButton>
+                            ) : (
+                              <TactileButton
+                                size="sm"
+                                onClick={() => void management.pauseUploadBatch(uploadBatchId)}
+                              >
+                                Pause all
+                              </TactileButton>
+                            )}
+                            {cancelBatchConfirmation ? (
+                              <>
+                                <TactileButton
+                                  size="sm"
+                                  onClick={() => {
+                                    restoreBatchCancelFocusRef.current = true;
+                                    setCancelBatchConfirmation(false);
+                                  }}
+                                >
+                                  Keep upload
+                                </TactileButton>
+                                <TactileButton
+                                  size="sm"
+                                  variant="danger"
+                                  onClick={() => {
+                                    void management.cancelUploadBatch(uploadBatchId);
+                                    setCancelBatchConfirmation(false);
+                                  }}
+                                >
+                                  Confirm cancel
+                                </TactileButton>
+                              </>
+                            ) : (
                               <TactileButton
                                 size="sm"
                                 variant="danger"
-                                onClick={() => {
-                                  void management.cancelUploadBatch(uploadBatchId);
-                                  setCancelBatchConfirmation(false);
-                                }}
+                                className="knowledge-management__danger-outline"
+                                data-cancel-batch-trigger
+                                onClick={() => setCancelBatchConfirmation(true)}
                               >
-                                Confirm cancel
+                                Cancel batch
                               </TactileButton>
-                            </>
-                          ) : (
-                            <TactileButton
-                              size="sm"
-                              variant="danger"
-                              className="knowledge-management__danger-outline"
-                              data-cancel-batch-trigger
-                              onClick={() => setCancelBatchConfirmation(true)}
-                            >
-                              Cancel batch
-                            </TactileButton>
-                          )}
-                        </>
-                      )}
+                            )}
+                          </>
+                        )}
                     </div>
                     <progress
                       aria-label="Batch upload progress"
@@ -888,25 +898,37 @@ export function KnowledgeManagementWorkspace({
                     {queueItems.map((item) => {
                       const id = item.uploadId ?? item.id;
                       const queuedUpload = uploads.find((upload) => upload.id === id);
-                      const state = queuedUpload?.state ?? item.state;
+                      const state = effectiveQueueState(item, uploads);
                       const progress = queueProgress(item);
                       const requiresAction = Boolean(
-                        queuedUpload?.duplicateDocumentId && state === 'ready',
+                        !item.cancelPending &&
+                        queuedUpload?.duplicateDocumentId &&
+                        state === 'ready',
                       );
+                      let stateModifier: string = state;
+                      let stateLabel = QUEUE_STATE_LABELS[state];
+                      if (item.cancelPending) {
+                        stateModifier = 'cancelling';
+                        stateLabel = 'Cancelling';
+                      } else if (requiresAction) {
+                        stateModifier = 'action-required';
+                        stateLabel = 'Action required';
+                      }
                       return (
                         <article className="knowledge-upload-file" key={item.id}>
                           <div className="knowledge-upload-file__state">
-                            <span
-                              className={`knowledge-management-status is-${
-                                requiresAction ? 'action-required' : state
-                              }`}
-                            >
-                              {requiresAction ? 'Action required' : QUEUE_STATE_LABELS[state]}
+                            <span className={`knowledge-management-status is-${stateModifier}`}>
+                              {stateLabel}
                             </span>
                             <strong>{item.fileName}</strong>
                             <span className="knowledge-upload-file__size">
                               {formatBytes(item.byteSize)}
                             </span>
+                            {item.cancelPending && (
+                              <span className="knowledge-upload-file__issue">
+                                Waiting for server confirmation
+                              </span>
+                            )}
                             {item.safeError && (
                               <span className="knowledge-upload-file__issue">
                                 {QUEUE_ERROR_LABELS[item.safeError]}
@@ -922,17 +944,18 @@ export function KnowledgeManagementWorkspace({
                             <span>{progress}%</span>
                           </div>
                           <div className="knowledge-upload-file__actions">
-                            {['failed', 'paused-network'].includes(state) && (
-                              <TactileButton
-                                size="sm"
-                                aria-label={`Retry ${item.fileName}`}
-                                loading={management.busy === `retry:${id}`}
-                                onClick={() => void management.retryUpload(id)}
-                              >
-                                Retry
-                              </TactileButton>
-                            )}
-                            {state === 'source-required' && (
+                            {!item.cancelPending &&
+                              ['failed', 'paused-network'].includes(state) && (
+                                <TactileButton
+                                  size="sm"
+                                  aria-label={`Retry ${item.fileName}`}
+                                  loading={management.busy === `retry:${id}`}
+                                  onClick={() => void management.retryUpload(id)}
+                                >
+                                  Retry
+                                </TactileButton>
+                              )}
+                            {!item.cancelPending && state === 'source-required' && (
                               <TactileButton
                                 size="sm"
                                 aria-label={`Reselect ${item.fileName}`}
@@ -942,18 +965,19 @@ export function KnowledgeManagementWorkspace({
                                 Reselect PDF
                               </TactileButton>
                             )}
-                            {!['ready', 'published', 'cancelled'].includes(state) && (
-                              <TactileButton
-                                size="sm"
-                                variant="danger"
-                                className="knowledge-management__danger-outline"
-                                aria-label={`Cancel ${item.fileName}`}
-                                loading={management.busy === `cancel:${id}`}
-                                onClick={() => void management.cancelUpload(id)}
-                              >
-                                Cancel
-                              </TactileButton>
-                            )}
+                            {!item.cancelPending &&
+                              !['ready', 'published', 'cancelled'].includes(state) && (
+                                <TactileButton
+                                  size="sm"
+                                  variant="danger"
+                                  className="knowledge-management__danger-outline"
+                                  aria-label={`Cancel ${item.fileName}`}
+                                  loading={management.busy === `cancel:${id}`}
+                                  onClick={() => void management.cancelUpload(id)}
+                                >
+                                  Cancel
+                                </TactileButton>
+                              )}
                           </div>
                         </article>
                       );
@@ -993,9 +1017,19 @@ export function KnowledgeManagementWorkspace({
                 );
                 const hasReplacementIntent = Boolean(upload.duplicateDocumentId);
                 const replacementUnavailable = hasReplacementIntent && !duplicate;
-                const requiresAction = Boolean(hasReplacementIntent && upload.state === 'ready');
+                const cancellationPending = queueItems.some(
+                  (item) => item.uploadId === upload.id && item.cancelPending,
+                );
+                const requiresAction = Boolean(
+                  !cancellationPending && hasReplacementIntent && upload.state === 'ready',
+                );
                 let statusLabel: string = upload.state;
-                if (requiresAction) {
+                let statusModifier: string = upload.state;
+                if (cancellationPending) {
+                  statusLabel = 'Cancelling';
+                  statusModifier = 'cancelling';
+                } else if (requiresAction) {
+                  statusModifier = 'action-required';
                   statusLabel = replacementUnavailable
                     ? 'Replacement unavailable'
                     : 'Replacement ready';
@@ -1006,11 +1040,7 @@ export function KnowledgeManagementWorkspace({
                     key={upload.id}
                   >
                     <div className="knowledge-management-row__identity">
-                      <span
-                        className={`knowledge-management-status is-${
-                          requiresAction ? 'action-required' : upload.state
-                        }`}
-                      >
+                      <span className={`knowledge-management-status is-${statusModifier}`}>
                         {statusLabel}
                       </span>
                       <h2>{upload.fileName}</h2>
@@ -1041,7 +1071,7 @@ export function KnowledgeManagementWorkspace({
                         <input
                           className="tactile-input"
                           value={draft.title}
-                          disabled={hasReplacementIntent}
+                          disabled={cancellationPending || hasReplacementIntent}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
                               ...current,
@@ -1055,7 +1085,7 @@ export function KnowledgeManagementWorkspace({
                         <select
                           className="tactile-input"
                           value={selectedCategory?.id ?? NEW_CATEGORY_VALUE}
-                          disabled={hasReplacementIntent}
+                          disabled={cancellationPending || hasReplacementIntent}
                           onChange={(event) => {
                             const category = selectedUploadCategory(categories, event.target.value);
                             setUploadDrafts((current) => ({
@@ -1081,6 +1111,7 @@ export function KnowledgeManagementWorkspace({
                           <input
                             className="tactile-input"
                             value={draft.category}
+                            disabled={cancellationPending}
                             onChange={(event) =>
                               setUploadDrafts((current) => ({
                                 ...current,
@@ -1100,7 +1131,7 @@ export function KnowledgeManagementWorkspace({
                           name={`knowledge-upload-document-type-${upload.id}`}
                           autoComplete="off"
                           value={draft.documentType}
-                          disabled={hasReplacementIntent}
+                          disabled={cancellationPending || hasReplacementIntent}
                           onChange={(event) =>
                             setUploadDrafts((current) => ({
                               ...current,
@@ -1121,7 +1152,7 @@ export function KnowledgeManagementWorkspace({
                         <TactileButton
                           size="sm"
                           variant="primary"
-                          disabled={upload.state !== 'ready'}
+                          disabled={cancellationPending || upload.state !== 'ready'}
                           loading={management.busy === `replace:${duplicate.id}`}
                           onClick={() =>
                             void management.replace(upload.id, duplicate.id, duplicate.revision)
@@ -1134,14 +1165,18 @@ export function KnowledgeManagementWorkspace({
                         <TactileButton
                           size="sm"
                           variant="primary"
-                          disabled={upload.state !== 'ready' || !draft.category.trim()}
+                          disabled={
+                            cancellationPending ||
+                            upload.state !== 'ready' ||
+                            !draft.category.trim()
+                          }
                           loading={management.busy === `publish:${upload.id}`}
                           onClick={() => void publishUpload(upload)}
                         >
                           Publish
                         </TactileButton>
                       )}
-                      {discardUploadId === upload.id ? (
+                      {discardUploadId === upload.id && !cancellationPending ? (
                         <>
                           <TactileButton
                             size="sm"
@@ -1189,6 +1224,7 @@ export function KnowledgeManagementWorkspace({
                           data-discard-upload-id={upload.id}
                           data-discard-role="trigger"
                           aria-label={`Discard ${upload.fileName}`}
+                          disabled={cancellationPending}
                           onClick={() => {
                             discardFocusIntentRef.current = {
                               uploadId: upload.id,

@@ -10,6 +10,14 @@ import { WebSessionStore } from './WebSessionStore';
 
 const LOOPBACK = ['127', '0', '0', '1'].join('.');
 
+function bucketCount(limiter: WebRateLimiter): number {
+  return (
+    limiter as unknown as {
+      buckets: Map<string, unknown>;
+    }
+  ).buckets.size;
+}
+
 async function freePort(): Promise<number> {
   const probe = createNetServer();
   await new Promise<void>((resolve) => probe.listen(0, LOOPBACK, resolve));
@@ -34,7 +42,7 @@ describe('WebRouter', () => {
     );
   });
 
-  async function fixture() {
+  async function fixture(echoLimit = 10) {
     const port = await freePort();
     const origin = `http://${LOOPBACK}:${port}`;
     const sessions = new WebSessionStore();
@@ -50,6 +58,7 @@ describe('WebRouter', () => {
       runtime: WEB_RUNTIME,
       refresh: async () => ({ token: 'refreshed-token', record: null }),
     });
+    const limiter = new WebRateLimiter();
     const router = new WebRouter({
       security: new WebRequestSecurity({
         port,
@@ -57,7 +66,7 @@ describe('WebRouter', () => {
         getInterfaceAddresses: () => [],
       }),
       sessions,
-      limiter: new WebRateLimiter(),
+      limiter,
     });
     router.register({
       method: 'GET',
@@ -71,7 +80,7 @@ describe('WebRouter', () => {
       csrf: true,
       bodySchema: z.object({ value: z.string().max(32) }).strict(),
       maxBodyBytes: 64,
-      rateLimit: { bucket: 'echo', limit: 2, windowMs: 60_000, key: 'session' },
+      rateLimit: { bucket: 'echo', limit: echoLimit, windowMs: 60_000, key: 'session' },
       handler: async ({ body }) => ({ status: 200, body }),
     });
     const server = createServer((request, response) => void router.handle(request, response));
@@ -80,6 +89,8 @@ describe('WebRouter', () => {
     return {
       origin,
       session,
+      sessions,
+      limiter,
       cookie: `${WEB_SESSION_COOKIE_NAME}=${session.id}`,
     };
   }
@@ -165,8 +176,47 @@ describe('WebRouter', () => {
     expect((await request(JSON.stringify({ value: 'x'.repeat(100) }))).status).toBe(413);
   });
 
+  it('charges rejected JSON before parsing and blocks later body work at the route limit', async () => {
+    const { origin, cookie, session } = await fixture(1);
+    const request = (body: string) =>
+      fetch(`${origin}/relay-api/v1/echo`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie,
+          origin,
+          'x-relay-csrf': session.csrfToken,
+        },
+        body,
+      });
+
+    expect((await request('{')).status).toBe(400);
+    expect((await request('{')).status).toBe(429);
+    expect((await request(JSON.stringify({ value: 'valid' }))).status).toBe(429);
+  });
+
+  it('removes a destroyed logical session from every route bucket', async () => {
+    const { origin, cookie, session, sessions, limiter } = await fixture(1);
+    const accepted = await fetch(`${origin}/relay-api/v1/echo`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie,
+        origin,
+        'x-relay-csrf': session.csrfToken,
+      },
+      body: JSON.stringify({ value: 'bounded' }),
+    });
+    expect(accepted.status).toBe(200);
+    expect(bucketCount(limiter)).toBe(1);
+
+    await sessions.destroy(session.id);
+
+    expect(bucketCount(limiter)).toBe(0);
+  });
+
   it('enforces per-session route buckets and returns bounded retry timing', async () => {
-    const { origin, cookie, session } = await fixture();
+    const { origin, cookie, session } = await fixture(2);
     const send = () =>
       fetch(`${origin}/relay-api/v1/echo`, {
         method: 'POST',

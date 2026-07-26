@@ -16,10 +16,16 @@ mockNativeImage.resize.mockReturnValue(mockNativeImage);
 
 const mockSharp = vi.hoisted(() => {
   const withMetadata = vi.fn().mockReturnThis();
+  const metadata = vi.fn().mockResolvedValue({
+    width: 100,
+    height: 100,
+    format: 'png',
+  });
+  const resize = vi.fn().mockReturnThis();
   const png = vi.fn().mockReturnThis();
   const toBuffer = vi.fn().mockResolvedValue(Buffer.from('optimized-png'));
-  const sharp = vi.fn(() => ({ withMetadata, png, toBuffer }));
-  return { sharp, withMetadata, png, toBuffer };
+  const sharp = vi.fn(() => ({ withMetadata, metadata, resize, png, toBuffer }));
+  return { sharp, withMetadata, metadata, resize, png, toBuffer };
 });
 
 vi.mock('electron', () => {
@@ -992,19 +998,18 @@ describe('windowHandlers', () => {
       expect(readFile).not.toHaveBeenCalled();
     });
 
-    it('returns error when image is invalid (empty)', async () => {
+    it('returns error when image metadata cannot be decoded', async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
         filePaths: ['/mock-dir/bad.png'],
       });
       vi.mocked(readFile).mockResolvedValue(Buffer.from('tiny') as never);
-      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
-        isEmpty: vi.fn(() => true),
-      } as never);
+      mockSharp.metadata.mockRejectedValueOnce(new Error('invalid image'));
 
       const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
 
-      expect(result).toEqual({ success: false, error: 'Invalid image file' });
+      expect(result).toEqual({ success: false, error: 'Invalid or oversized image' });
+      expect(nativeImage.createFromBuffer).not.toHaveBeenCalled();
     });
   });
 
@@ -1205,16 +1210,9 @@ describe('windowHandlers', () => {
         canceled: false,
         filePaths: ['/mock-dir/logo.png'],
       });
-      // Small enough buffer
       vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
-      // Image wider than MAX_LOGO_WIDTH (400)
-      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
-        isEmpty: vi.fn(() => false),
-        getSize: vi.fn(() => ({ width: 800, height: 600 })),
-        resize: vi.fn().mockReturnValue({
-          toPNG: vi.fn(() => Buffer.from('resized-png')),
-        }),
-      } as never);
+      mockSharp.metadata.mockResolvedValueOnce({ width: 800, height: 600, format: 'png' });
+      mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('resized-png'));
       vi.mocked(mkdir).mockResolvedValue(undefined as never);
       vi.mocked(writeFile).mockResolvedValue(undefined);
 
@@ -1224,20 +1222,24 @@ describe('windowHandlers', () => {
         success: true,
         data: 'data:image/png;base64,' + Buffer.from('resized-png').toString('base64'),
       });
+      expect(mockSharp.resize).toHaveBeenCalledWith({
+        width: 400,
+        height: 400,
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+      expect(nativeImage.createFromBuffer).not.toHaveBeenCalled();
     });
 
-    it('saves a valid logo without resize when within width limit', async () => {
+    it('saves a valid logo without enlarging it', async () => {
       const { writeFile, mkdir } = await import('node:fs/promises');
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
         filePaths: ['/mock-dir/small-logo.png'],
       });
       vi.mocked(readFile).mockResolvedValue(Buffer.from('small-image') as never);
-      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
-        isEmpty: vi.fn(() => false),
-        getSize: vi.fn(() => ({ width: 200, height: 100 })),
-        toPNG: vi.fn(() => Buffer.from('small-png')),
-      } as never);
+      mockSharp.metadata.mockResolvedValueOnce({ width: 200, height: 100, format: 'png' });
+      mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('small-png'));
       vi.mocked(mkdir).mockResolvedValue(undefined as never);
       vi.mocked(writeFile).mockResolvedValue(undefined);
 
@@ -1247,6 +1249,13 @@ describe('windowHandlers', () => {
         success: true,
         data: 'data:image/png;base64,' + Buffer.from('small-png').toString('base64'),
       });
+      expect(mockSharp.resize).toHaveBeenCalledWith({
+        width: 400,
+        height: 400,
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+      expect(nativeImage.createFromBuffer).not.toHaveBeenCalled();
     });
 
     it('returns error when save throws non-Error', async () => {

@@ -33,12 +33,21 @@ function accountRecord(
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
 describe('PrivilegedSessionManager', () => {
   let currentAccount: RelayPrivilegedAccountRecord;
   let authClient: {
     authenticate: ReturnType<typeof vi.fn>;
     clear: ReturnType<typeof vi.fn>;
     reauthenticate: ReturnType<typeof vi.fn>;
+    reauthenticateRemotely?: ReturnType<typeof vi.fn>;
   };
   let authorization: PrivilegedAuthorization;
   let resolveAuthorization: ReturnType<typeof vi.fn>;
@@ -128,6 +137,66 @@ describe('PrivilegedSessionManager', () => {
     manager.dispose();
     expect(manager.getView().state).toBe('signed-out');
     expect(authClient.clear).toHaveBeenCalledTimes(2);
+  });
+
+  it('signs out an active session when replacement authentication fails', async () => {
+    const manager = createManager();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+    authClient.authenticate.mockRejectedValueOnce(new Error('replacement authentication failed'));
+
+    await expect(manager.login({ username: 'charles', password: PASSWORD })).rejects.toThrow(
+      'replacement authentication failed',
+    );
+
+    expect(manager.getView()).toMatchObject({ state: 'signed-out', accountId: null });
+    expect(authClient.clear).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a cancelled late login overwrite a fresh session', async () => {
+    const manager = createManager();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+    const staleAuthentication = deferred<RelayPrivilegedAccountRecord>();
+    authClient.authenticate
+      .mockImplementationOnce(async () => staleAuthentication.promise)
+      .mockResolvedValueOnce(currentAccount);
+
+    const staleLogin = manager.login({ username: 'charles', password: PASSWORD });
+    const rejection = staleLogin.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(authClient.authenticate).toHaveBeenCalledTimes(2));
+    manager.logout();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+
+    staleAuthentication.resolve(
+      accountRecord({
+        id: 'account-charles',
+        username: 'charles',
+        displayName: 'Charles Gibbs',
+      }),
+    );
+    await expect(rejection).resolves.toMatchObject({ code: 'unauthorized' });
+
+    expect(manager.getView()).toMatchObject({
+      state: 'active',
+      accountId: 'account-admin',
+      username: USERNAME,
+    });
+    expect(authClient.clear).toHaveBeenCalledOnce();
+  });
+
+  it('does not resurrect a pending login after disposal', async () => {
+    const pendingAuthentication = deferred<RelayPrivilegedAccountRecord>();
+    authClient.authenticate.mockImplementationOnce(async () => pendingAuthentication.promise);
+    const manager = createManager();
+
+    const login = manager.login({ username: USERNAME, password: PASSWORD });
+    const rejection = login.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(authClient.authenticate).toHaveBeenCalledOnce());
+    manager.dispose();
+    pendingAuthentication.resolve(currentAccount);
+    await expect(rejection).resolves.toMatchObject({ code: 'unauthorized' });
+
+    expect(manager.getView()).toMatchObject({ state: 'signed-out', accountId: null });
+    expect(onViewChanged.mock.calls.some(([view]) => view.state === 'active')).toBe(false);
   });
 
   it('signs out on account disablement, replacement, username change, or credential replacement', async () => {
@@ -264,6 +333,31 @@ describe('PrivilegedSessionManager', () => {
     expect(proof).toEqual({
       proofId: 'reauth-command-id',
       expiresAt: new Date(START_TIME + 6 * 60_000).toISOString(),
+    });
+  });
+
+  it('uses a server-owned proof for paired-client reauthentication', async () => {
+    const serverExpiresAt = new Date(START_TIME + 4 * 60_000).toISOString();
+    authClient.reauthenticateRemotely = vi.fn(async () => ({
+      account: currentAccount,
+      requestId: 'server-reauth-proof',
+      expiresAt: serverExpiresAt,
+    }));
+    const manager = createManager();
+    await manager.login({ username: USERNAME, password: PASSWORD });
+
+    const proof = await manager.reauthenticate(PASSWORD);
+
+    expect(authClient.reauthenticateRemotely).toHaveBeenCalledWith(
+      USERNAME,
+      PASSWORD,
+      'device-work-laptop',
+    );
+    expect(authClient.reauthenticate).not.toHaveBeenCalled();
+    expect(confirmReauthentication).not.toHaveBeenCalled();
+    expect(proof).toEqual({
+      proofId: 'server-reauth-proof',
+      expiresAt: serverExpiresAt,
     });
   });
 

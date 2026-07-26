@@ -1,0 +1,147 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, win32 } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { createWindowsPrivateDirectory } from './WindowsPrivateDirectory';
+
+type WindowsAclRule = Readonly<{
+  identity: string;
+  accessControlType: string;
+  fileSystemRights: string;
+  inheritanceFlags: string;
+  propagationFlags: string;
+  isInherited: boolean;
+}>;
+
+type WindowsAclSnapshot = Readonly<{
+  currentUserSid: string;
+  directory: {
+    areAccessRulesProtected: boolean;
+    rules: WindowsAclRule[];
+  };
+  file: {
+    areAccessRulesProtected: boolean;
+    rules: WindowsAclRule[];
+  };
+}>;
+
+function inspectWindowsAcls(directoryPath: string, filePath: string): WindowsAclSnapshot {
+  const systemRoot = process.env.SystemRoot ?? process.env.windir;
+  if (!systemRoot) throw new Error('Windows system root is unavailable');
+
+  const encodedDirectoryPath = Buffer.from(directoryPath, 'utf8').toString('base64');
+  const encodedFilePath = Buffer.from(filePath, 'utf8').toString('base64');
+  const script = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$directoryPath = [Text.Encoding]::UTF8.GetString(
+  [Convert]::FromBase64String('${encodedDirectoryPath}')
+)
+$filePath = [Text.Encoding]::UTF8.GetString(
+  [Convert]::FromBase64String('${encodedFilePath}')
+)
+
+function Get-AccessRules(
+  [Security.AccessControl.FileSystemSecurity]$security
+) {
+  return @(
+    $security.GetAccessRules(
+      $true,
+      $true,
+      [Security.Principal.SecurityIdentifier]
+    ) | ForEach-Object {
+      [PSCustomObject]@{
+        identity = $_.IdentityReference.Value
+        accessControlType = $_.AccessControlType.ToString()
+        fileSystemRights = $_.FileSystemRights.ToString()
+        inheritanceFlags = $_.InheritanceFlags.ToString()
+        propagationFlags = $_.PropagationFlags.ToString()
+        isInherited = $_.IsInherited
+      }
+    }
+  )
+}
+
+$directory = [IO.DirectoryInfo]::new($directoryPath)
+$directorySecurity = $directory.GetAccessControl(
+  [Security.AccessControl.AccessControlSections]::Access
+)
+$file = [IO.FileInfo]::new($filePath)
+$fileSecurity = $file.GetAccessControl(
+  [Security.AccessControl.AccessControlSections]::Access
+)
+
+[PSCustomObject]@{
+  currentUserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  directory = [PSCustomObject]@{
+    areAccessRulesProtected = $directorySecurity.AreAccessRulesProtected
+    rules = @(Get-AccessRules $directorySecurity)
+  }
+  file = [PSCustomObject]@{
+    areAccessRulesProtected = $fileSecurity.AreAccessRulesProtected
+    rules = @(Get-AccessRules $fileSecurity)
+  }
+} | ConvertTo-Json -Compress -Depth 5
+`.trim();
+
+  const output = execFileSync(
+    win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      Buffer.from(script, 'utf16le').toString('base64'),
+    ],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  );
+  return JSON.parse(output.trim()) as WindowsAclSnapshot;
+}
+
+describe.runIf(process.platform === 'win32')('Windows private directory integration', () => {
+  it('limits the protected directory and inherited file DACLs to the user and LocalSystem', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'relay-private-directory-'));
+    const target = join(parent, 'repair');
+    const inheritedFile = join(target, 'secret');
+    try {
+      createWindowsPrivateDirectory(target);
+      writeFileSync(inheritedFile, 'test secret', { flag: 'wx' });
+
+      const acl = inspectWindowsAcls(target, inheritedFile);
+      const compareSids = (left: string, right: string): number => left.localeCompare(right);
+      const expectedSids = [acl.currentUserSid, 'S-1-5-18'].sort(compareSids);
+
+      expect(acl.directory.areAccessRulesProtected).toBe(true);
+      expect(acl.directory.rules.map((rule) => rule.identity).sort(compareSids)).toEqual(
+        expectedSids,
+      );
+      for (const rule of acl.directory.rules) {
+        expect(rule).toMatchObject({
+          accessControlType: 'Allow',
+          fileSystemRights: 'FullControl',
+          isInherited: false,
+          propagationFlags: 'None',
+        });
+        expect(rule.inheritanceFlags).toContain('ContainerInherit');
+        expect(rule.inheritanceFlags).toContain('ObjectInherit');
+      }
+
+      expect(acl.file.areAccessRulesProtected).toBe(false);
+      expect(acl.file.rules.map((rule) => rule.identity).sort(compareSids)).toEqual(expectedSids);
+      for (const rule of acl.file.rules) {
+        expect(rule).toMatchObject({
+          accessControlType: 'Allow',
+          fileSystemRights: 'FullControl',
+          isInherited: true,
+          propagationFlags: 'None',
+        });
+      }
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+});

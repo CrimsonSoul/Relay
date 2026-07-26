@@ -571,7 +571,7 @@ describe('PrivilegedCommandProcessor', () => {
     );
   });
 
-  it('creates an internal reauthentication attestation and consumes it once within five minutes', async () => {
+  it('keeps internal reauthentication local and consumes a server-owned remote proof once', async () => {
     const reauthPayload = { authenticatedAt: new Date(NOW - 1_000).toISOString() };
     const reauthEnvelope = envelope({
       command: 'privileged.reauth.confirm',
@@ -582,17 +582,52 @@ describe('PrivilegedCommandProcessor', () => {
     const processor = createProcessor();
 
     await expect(processor.process(reauthEnvelope)).resolves.toEqual({
-      ok: true,
+      ok: false,
       requestId: 'reauth-proof',
+      error: 'invalid-request',
+    });
+    await expect(
+      processor.processLocal(
+        {
+          requestId: 'local-reauth-proof',
+          accountId: ACCOUNT_ID,
+          command: 'privileged.reauth.confirm',
+          payload: reauthPayload,
+          expectedRevision: null,
+        },
+        {
+          isServerMode: true,
+          trustedLocalSender: true,
+          session: {
+            state: 'active',
+            accountId: ACCOUNT_ID,
+            username: 'ryan',
+            displayName: 'Ryan Bledsoe',
+            role: 'admin',
+            capabilities: [...ADMIN_PRIVILEGED_CAPABILITIES],
+            deviceId: null,
+            expiresAt: null,
+          },
+        },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      requestId: 'local-reauth-proof',
       value: {
         accountId: ACCOUNT_ID,
         authenticatedAt: reauthPayload.authenticatedAt,
-        deviceId: DEVICE_ID,
+        deviceId: null,
       },
     });
 
+    const remoteProofClaim = {
+      ...(lastClaim as PrivilegedCommandClaim),
+      requestId: 'reauth-proof',
+      command: 'privileged.reauth.confirm' as const,
+      deviceId: DEVICE_ID,
+    };
     vi.mocked(repository.getCommand).mockResolvedValueOnce(
-      storedCommand(lastClaim as PrivilegedCommandClaim, {
+      storedCommand(remoteProofClaim, {
         command: 'privileged.reauth.confirm',
         state: 'succeeded',
         result: {
@@ -612,7 +647,7 @@ describe('PrivilegedCommandProcessor', () => {
 
     vi.mocked(repository.consumeReauthenticationProof).mockResolvedValueOnce(false);
     vi.mocked(repository.getCommand).mockResolvedValueOnce(
-      storedCommand(lastClaim as PrivilegedCommandClaim, {
+      storedCommand(remoteProofClaim, {
         command: 'privileged.reauth.confirm',
         state: 'succeeded',
         result: {

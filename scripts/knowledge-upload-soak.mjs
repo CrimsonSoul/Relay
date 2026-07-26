@@ -340,8 +340,10 @@ async function main() {
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : '';
 if (invokedPath === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  try {
+    await main();
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : 'Knowledge soak failed'}\n`);
     process.exitCode = 1;
-  });
+  }
 }

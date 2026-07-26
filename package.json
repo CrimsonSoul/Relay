@@ -35,6 +35,8 @@
     "test:renderer": "node scripts/run-renderer-tests.mjs",
     "test:knowledge-upload-soak": "node scripts/knowledge-upload-soak.mjs",
     "security:sonar": "sonar-scanner-npm",
+    "security:sonar:issues": "node scripts/sonar-open-findings.mjs",
+    "security:sonar:reviewed": "node scripts/sonar-reviewed-issues.mjs",
     "security:snyk:open-source": "snyk test --dev --severity-threshold=high",
     "security:snyk:code": "snyk code test --severity-threshold=high",
     "security:snyk:monitor": "snyk monitor --dev",

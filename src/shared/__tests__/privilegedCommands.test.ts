@@ -152,6 +152,21 @@ describe('privileged command validation', () => {
     expect(isPublicPrivilegedCommandName('privileged.reauth.confirm')).toBe(false);
   });
 
+  it('rejects internal reauthentication commands from the signed remote envelope surface', () => {
+    const authenticatedAt = new Date(NOW).toISOString();
+    expect(
+      validateSignedPrivilegedCommandEnvelope(
+        {
+          ...makeEnvelope(),
+          command: 'privileged.reauth.confirm',
+          payload: { authenticatedAt },
+          payloadHash: 'b'.repeat(64),
+        },
+        NOW,
+      ),
+    ).toEqual({ ok: false, error: 'invalid-request' });
+  });
+
   it('normalizes search-index retry with an exact bounded document identifier payload', () => {
     expect(
       normalizePrivilegedCommandPayload('knowledge.document.search-index.retry', {

@@ -91,6 +91,7 @@ function Test-RelayRuntimeActive {
     }
     catch {
       # A process can exit between the CIM snapshot and path inspection.
+      continue
     }
   }
   return $false

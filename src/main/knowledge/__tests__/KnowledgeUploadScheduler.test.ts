@@ -17,6 +17,7 @@ function task(overrides: Partial<KnowledgeUploadSchedulerTask> = {}): KnowledgeU
     readChunk: vi.fn(async (index) => new Uint8Array(4).fill(index)),
     uploadChunk: vi.fn(async () => undefined),
     finalize: vi.fn(async () => undefined),
+    isEligible: vi.fn(() => true),
     onAcknowledged: vi.fn(),
     onState: vi.fn(),
     ...overrides,
@@ -155,11 +156,303 @@ describe('KnowledgeUploadScheduler', () => {
     scheduler.enqueue(value);
     await Promise.resolve();
     expect(value.getMissingChunkIndexes).not.toHaveBeenCalled();
-    expect(stateCalls(value)).toContainEqual(['paused', null, 0]);
+    expect(stateCalls(value)).toContainEqual(['queued', null, 0]);
 
     scheduler.setSessionActive(true);
     await scheduler.whenIdle();
     expect(value.finalize).toHaveBeenCalledOnce();
+  });
+
+  it('keeps ineligible work queued without touching its source or the network', async () => {
+    let eligible = false;
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      isEligible: vi.fn(() => eligible),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await Promise.resolve();
+
+    expect(stateCalls(value).at(-1)).toEqual(['queued', null, 0]);
+    expect(value.getMissingChunkIndexes).not.toHaveBeenCalled();
+    expect(value.readChunk).not.toHaveBeenCalled();
+    expect(value.uploadChunk).not.toHaveBeenCalled();
+    expect(value.finalize).not.toHaveBeenCalled();
+
+    eligible = true;
+    scheduler.setSessionActive(false);
+    scheduler.setSessionActive(true);
+    await scheduler.whenIdle();
+
+    expect(value.getMissingChunkIndexes).toHaveBeenCalledOnce();
+    expect(value.readChunk).toHaveBeenCalledOnce();
+    expect(value.uploadChunk).toHaveBeenCalledOnce();
+    expect(value.finalize).toHaveBeenCalledOnce();
+  });
+
+  it('fails eligibility checks closed without touching the source or network', async () => {
+    const value = task({
+      isEligible: vi.fn(() => {
+        throw new Error('session lookup failed');
+      }),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await Promise.resolve();
+
+    expect(stateCalls(value).at(-1)).toEqual(['queued', null, 0]);
+    expect(value.getMissingChunkIndexes).not.toHaveBeenCalled();
+    expect(value.readChunk).not.toHaveBeenCalled();
+    expect(value.uploadChunk).not.toHaveBeenCalled();
+    expect(value.finalize).not.toHaveBeenCalled();
+  });
+
+  it('stops acknowledgment and finalization when eligibility changes during upload', async () => {
+    let eligible = true;
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      isEligible: vi.fn(() => eligible),
+      uploadChunk: vi.fn(async () => {
+        eligible = false;
+      }),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await scheduler.whenIdle();
+
+    expect(value.uploadChunk).toHaveBeenCalledOnce();
+    expect(value.onAcknowledged).not.toHaveBeenCalled();
+    expect(value.finalize).not.toHaveBeenCalled();
+    expect(stateCalls(value).at(-1)).toEqual(['queued', null, 0]);
+  });
+
+  it('settles an automatically suspended in-flight upload as queued', async () => {
+    const uploadChunk = vi.fn(
+      async (_index: number, _bytes: Uint8Array, signal: AbortSignal) =>
+        new Promise<void>((resolve, reject) => {
+          if (signal.aborted) {
+            reject(Object.assign(new Error('aborted'), { status: 0 }));
+            return;
+          }
+          signal.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('aborted'), { status: 0 })),
+            { once: true },
+          );
+        }),
+    );
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      uploadChunk,
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledOnce());
+    scheduler.setSessionActive(false);
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value).at(-1)).toEqual(['queued', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['paused', null, 0]);
+  });
+
+  it('keeps an explicitly paused batch paused while the session becomes inactive', async () => {
+    const uploadChunk = vi.fn(
+      async (_index: number, _bytes: Uint8Array, signal: AbortSignal) =>
+        new Promise<void>((resolve, reject) => {
+          if (signal.aborted) {
+            reject(Object.assign(new Error('aborted'), { status: 0 }));
+            return;
+          }
+          signal.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('aborted'), { status: 0 })),
+            { once: true },
+          );
+        }),
+    );
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      uploadChunk,
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledOnce());
+    scheduler.pauseBatch(value.batchId);
+    scheduler.setSessionActive(false);
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value).at(-1)).toEqual(['paused', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['queued', null, 0]);
+  });
+
+  it('keeps a deferred missing-index rejection paused after an explicit pause', async () => {
+    let rejectMissing!: (error: Error) => void;
+    const missing = new Promise<number[]>((_resolve, reject) => {
+      rejectMissing = reject;
+    });
+    const value = task({ getMissingChunkIndexes: vi.fn(async () => missing) });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.getMissingChunkIndexes).toHaveBeenCalledOnce());
+    scheduler.pauseBatch(value.batchId);
+    rejectMissing(new Error('late status rejection'));
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value).at(-1)).toEqual(['paused', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('keeps a deferred finalize rejection queued after the session becomes inactive', async () => {
+    let rejectFinalize!: (error: Error) => void;
+    const finalizing = new Promise<void>((_resolve, reject) => {
+      rejectFinalize = reject;
+    });
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => []),
+      finalize: vi.fn(async () => finalizing),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.finalize).toHaveBeenCalledOnce());
+    scheduler.setSessionActive(false);
+    rejectFinalize(new Error('late finalize rejection'));
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value).at(-1)).toEqual(['queued', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('suppresses a deferred rejection after the scheduler retires an authoritative terminal upload', async () => {
+    let rejectMissing!: (error: Error) => void;
+    const missing = new Promise<number[]>((_resolve, reject) => {
+      rejectMissing = reject;
+    });
+    const value = task({ getMissingChunkIndexes: vi.fn(async () => missing) });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.getMissingChunkIndexes).toHaveBeenCalledOnce());
+    scheduler.retireUpload(value.uploadId);
+    rejectMissing(new Error('late status rejection'));
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value)).not.toContainEqual(['queued', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('quiesces one upload before cancellation without marking it cancelled', async () => {
+    let releaseUpload!: () => void;
+    const uploadGate = new Promise<void>((resolve) => {
+      releaseUpload = resolve;
+    });
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      uploadChunk: vi.fn(async () => uploadGate),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.uploadChunk).toHaveBeenCalledOnce());
+    const quiescing = scheduler.quiesceUpload(value.uploadId);
+    let quiesced = false;
+    void quiescing.then(() => {
+      quiesced = true;
+    });
+    await Promise.resolve();
+
+    expect(quiesced).toBe(false);
+    expect(stateCalls(value).at(-1)).toEqual(['uploading', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['cancelled', null, 0]);
+
+    releaseUpload();
+    await quiescing;
+
+    expect(value.onAcknowledged).not.toHaveBeenCalled();
+    expect(value.finalize).not.toHaveBeenCalled();
+    expect(stateCalls(value).at(-1)).toEqual(['uploading', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('does not emit failure when dispose wins a deferred rejection', async () => {
+    let rejectMissing!: (error: Error) => void;
+    const missing = new Promise<number[]>((_resolve, reject) => {
+      rejectMissing = reject;
+    });
+    const value = task({ getMissingChunkIndexes: vi.fn(async () => missing) });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.getMissingChunkIndexes).toHaveBeenCalledOnce());
+    const disposing = scheduler.dispose();
+    rejectMissing(new Error('late shutdown rejection'));
+    await disposing;
+
+    expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('reschedules an interrupted upload when the session reactivates before abort settles', async () => {
+    let attempts = 0;
+    const uploadChunk = vi.fn(async (_index: number, _bytes: Uint8Array, signal: AbortSignal) => {
+      attempts += 1;
+      if (attempts > 1) return;
+      return new Promise<void>((resolve, reject) => {
+        if (signal.aborted) {
+          reject(Object.assign(new Error('aborted'), { status: 0 }));
+          return;
+        }
+        signal.addEventListener(
+          'abort',
+          () => reject(Object.assign(new Error('aborted'), { status: 0 })),
+          { once: true },
+        );
+      });
+    });
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      uploadChunk,
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledOnce());
+    scheduler.setSessionActive(false);
+    scheduler.setSessionActive(true);
+    await scheduler.whenIdle();
+
+    expect(uploadChunk).toHaveBeenCalledTimes(2);
+    expect(value.finalize).toHaveBeenCalledOnce();
+  });
+
+  it('does not run a replacement task after the in-flight task completes successfully', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+      uploadChunk: vi.fn(async () => gate),
+    });
+    const replacement = task({
+      getMissingChunkIndexes: vi.fn(async () => [0]),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(original);
+    await vi.waitFor(() => expect(original.uploadChunk).toHaveBeenCalledOnce());
+    scheduler.enqueue(replacement);
+    release();
+    await scheduler.whenIdle();
+
+    expect(original.finalize).toHaveBeenCalledOnce();
+    expect(replacement.uploadChunk).not.toHaveBeenCalled();
+    expect(replacement.finalize).not.toHaveBeenCalled();
   });
 
   it('does not start semaphore-queued chunks while the client is shutting down', async () => {
@@ -169,17 +462,20 @@ describe('KnowledgeUploadScheduler', () => {
     });
     const uploadChunk = vi.fn(async () => gate);
     const value = task({ uploadChunk });
+    const replacement = task({ uploadId: value.uploadId });
     const scheduler = new KnowledgeUploadScheduler();
 
     scheduler.enqueue(value);
     await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledTimes(2));
+    scheduler.enqueue(replacement);
     const disposing = scheduler.dispose();
     release();
     await disposing;
 
     expect(uploadChunk).toHaveBeenCalledTimes(2);
+    expect(replacement.uploadChunk).not.toHaveBeenCalled();
     expect(value.finalize).not.toHaveBeenCalled();
-    expect(stateCalls(value)).toContainEqual(['paused', null, 0]);
+    expect(stateCalls(value)).toContainEqual(['queued', null, 0]);
   });
 
   it('does not let an in-flight chunk completion revive a cancelled upload', async () => {
@@ -192,17 +488,62 @@ describe('KnowledgeUploadScheduler', () => {
       getMissingChunkIndexes: vi.fn(async () => [0]),
       uploadChunk,
     });
+    const replacement = task({ uploadId: value.uploadId });
     const scheduler = new KnowledgeUploadScheduler();
 
     scheduler.enqueue(value);
     await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledOnce());
+    scheduler.enqueue(replacement);
     scheduler.cancelUpload(value.uploadId);
     release();
     await scheduler.whenIdle();
 
     expect(value.onAcknowledged).not.toHaveBeenCalled();
     expect(value.finalize).not.toHaveBeenCalled();
+    expect(replacement.uploadChunk).not.toHaveBeenCalled();
     expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
+  });
+
+  it('does not let a late finalize rejection overwrite cancellation', async () => {
+    let rejectFinalize!: (error: Error) => void;
+    const finalizing = new Promise<void>((_resolve, reject) => {
+      rejectFinalize = reject;
+    });
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => []),
+      finalize: vi.fn(async () => finalizing),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.finalize).toHaveBeenCalledOnce());
+    scheduler.cancelUpload(value.uploadId);
+    rejectFinalize(new Error('cancel won the server race'));
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['failed', 'upload-failed', 1]);
+  });
+
+  it('does not let a late successful finalize revive a cancelled upload', async () => {
+    let resolveFinalize!: () => void;
+    const finalizing = new Promise<void>((resolve) => {
+      resolveFinalize = resolve;
+    });
+    const value = task({
+      getMissingChunkIndexes: vi.fn(async () => []),
+      finalize: vi.fn(async () => finalizing),
+    });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(value.finalize).toHaveBeenCalledOnce());
+    scheduler.cancelUpload(value.uploadId);
+    resolveFinalize();
+    await scheduler.whenIdle();
+
+    expect(stateCalls(value).at(-1)).toEqual(['cancelled', null, 0]);
+    expect(stateCalls(value)).not.toContainEqual(['assembling', null, 0]);
   });
 
   it('does not cancel same-batch uploads enqueued re-entrantly during cancellation', async () => {

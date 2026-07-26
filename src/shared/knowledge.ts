@@ -181,6 +181,7 @@ export type KnowledgeUploadQueueItemView = {
   chunkCount: number;
   acknowledgedChunkCount: number;
   state: KnowledgeUploadQueueItemState;
+  cancelPending: boolean;
   safeError: KnowledgeManagementErrorCode | null;
   retryCount: number;
   restartRecovery: boolean;
@@ -850,6 +851,7 @@ function normalizeKnowledgeUploadQueueItem(value: unknown): KnowledgeUploadQueue
     (value.acknowledgedChunkCount as number) < 0 ||
     (value.acknowledgedChunkCount as number) > (value.chunkCount as number) ||
     !KNOWLEDGE_UPLOAD_QUEUE_STATES.has(state) ||
+    (value.cancelPending !== undefined && typeof value.cancelPending !== 'boolean') ||
     !KNOWLEDGE_MANAGEMENT_ERRORS.has(safeError) ||
     !Number.isInteger(value.retryCount) ||
     (value.retryCount as number) < 0 ||
@@ -868,6 +870,7 @@ function normalizeKnowledgeUploadQueueItem(value: unknown): KnowledgeUploadQueue
     chunkCount: value.chunkCount as number,
     acknowledgedChunkCount: value.acknowledgedChunkCount as number,
     state,
+    cancelPending: value.cancelPending === true,
     safeError,
     retryCount: value.retryCount as number,
     restartRecovery: value.restartRecovery,

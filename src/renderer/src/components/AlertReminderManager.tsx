@@ -55,7 +55,7 @@ async function playFallbackReminderAlarm(): Promise<void> {
   void globalThis.api?.playAlertSound?.().catch(() => undefined);
 
   try {
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AudioContextCtor) return;
     const audio = new AudioContextCtor();
     if (audio.state === 'suspended') {
@@ -80,7 +80,7 @@ async function playFallbackReminderAlarm(): Promise<void> {
       oscillator.stop(stopAt);
     });
 
-    window.setTimeout(() => void Promise.resolve(audio.close()).catch(() => undefined), 1_200);
+    globalThis.setTimeout(() => void Promise.resolve(audio.close()).catch(() => undefined), 1_200);
   } catch {
     // Visual reminder stays active when browser audio policy blocks playback.
   }
@@ -149,7 +149,7 @@ export function AlertReminderManager() {
     activeAlarmIdRef.current = null;
 
     if (fallbackIntervalRef.current !== null) {
-      window.clearInterval(fallbackIntervalRef.current);
+      globalThis.clearInterval(fallbackIntervalRef.current);
       fallbackIntervalRef.current = null;
     }
 
@@ -168,7 +168,7 @@ export function AlertReminderManager() {
     if (fallbackIntervalRef.current !== null) return;
 
     void playFallbackReminderAlarm();
-    fallbackIntervalRef.current = window.setInterval(
+    fallbackIntervalRef.current = globalThis.setInterval(
       () => void playFallbackReminderAlarm(),
       FALLBACK_ALARM_REPEAT_MS,
     );
@@ -178,8 +178,8 @@ export function AlertReminderManager() {
     refreshDue();
     const delay = nextReminderDelay(reminders);
     if (delay === null || delay === 0) return;
-    const timeoutId = window.setTimeout(refreshDue, delay);
-    return () => window.clearTimeout(timeoutId);
+    const timeoutId = globalThis.setTimeout(refreshDue, delay);
+    return () => globalThis.clearTimeout(timeoutId);
   }, [refreshDue, reminders]);
 
   useEffect(() => {
@@ -187,12 +187,13 @@ export function AlertReminderManager() {
     let timeoutId: number | null = null;
     const reconcile = async () => {
       await refetch().catch(() => undefined);
-      if (active) timeoutId = window.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
+      if (active)
+        timeoutId = globalThis.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
     };
-    timeoutId = window.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
+    timeoutId = globalThis.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
     return () => {
       active = false;
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
     };
   }, [refetch]);
 
@@ -204,12 +205,12 @@ export function AlertReminderManager() {
       }
     };
     document.addEventListener('visibilitychange', refreshOnResume);
-    window.addEventListener('focus', refreshOnResume);
-    window.addEventListener('online', refreshOnResume);
+    globalThis.addEventListener('focus', refreshOnResume);
+    globalThis.addEventListener('online', refreshOnResume);
     return () => {
       document.removeEventListener('visibilitychange', refreshOnResume);
-      window.removeEventListener('focus', refreshOnResume);
-      window.removeEventListener('online', refreshOnResume);
+      globalThis.removeEventListener('focus', refreshOnResume);
+      globalThis.removeEventListener('online', refreshOnResume);
     };
   }, [refetch, refreshDue]);
 

@@ -6,6 +6,22 @@ import { createHash } from 'node:crypto';
 import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import { KNOWLEDGE_MAX_PDF_BYTES } from '@shared/knowledge';
 import { KnowledgePdfService } from './KnowledgePdfService';
+import {
+  clearRelayAppUserAuthCoordinator,
+  primeRelayAppUserAuth,
+} from '../pocketbase/RelayAppUserAuthCoordinator';
+
+const coordinatorMocks = vi.hoisted(() => ({
+  authenticate: vi.fn(),
+  clear: vi.fn(),
+  prime: vi.fn(),
+}));
+
+vi.mock('../pocketbase/RelayAppUserAuthCoordinator', () => ({
+  authenticateRelayAppUserShared: coordinatorMocks.authenticate,
+  clearRelayAppUserAuthCoordinator: coordinatorMocks.clear,
+  primeRelayAppUserAuth: coordinatorMocks.prime,
+}));
 
 const roots: string[] = [];
 const pdf = Buffer.from('%PDF-1.4\nknowledge document\n%%EOF');
@@ -23,12 +39,38 @@ afterEach(async () => {
 });
 
 describe('KnowledgePdfService', () => {
-  const authWithPassword = vi.fn(async () => ({}));
+  const authWithPassword = vi.fn(async () => {
+    authStore.save('valid-token-pdf', {
+      id: 'relay-user',
+      email: 'relay@relay.app',
+      collectionId: '_pb_users_auth_',
+      collectionName: 'users',
+    });
+    return {};
+  });
   const getOne = vi.fn();
   const getToken = vi.fn(async () => 'protected-file-token');
   const getURL = vi.fn(() => `${relayUrl}/api/files/knowledge/document123/runbook.pdf`);
   const healthCheck = vi.fn(async () => ({ code: 200 }));
-  const authStore = { isValid: false };
+  const authStore = {
+    token: '',
+    record: null as {
+      id: string;
+      collectionId: string;
+      collectionName: string;
+    } | null,
+    get isValid() {
+      return Boolean(this.token);
+    },
+    save(token: string, record?: typeof this.record) {
+      this.token = token;
+      this.record = record ?? null;
+    },
+    clear() {
+      this.token = '';
+      this.record = null;
+    },
+  };
   const pb = {
     authStore,
     collection: vi.fn((name: string) =>
@@ -66,7 +108,16 @@ describe('KnowledgePdfService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    authStore.isValid = false;
+    clearRelayAppUserAuthCoordinator();
+    authStore.clear();
+    coordinatorMocks.authenticate.mockImplementation(
+      async (client: typeof pb, _serverUrl: string, secret: string) => {
+        await client.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, secret, {
+          requestKey: null,
+          signal: new AbortController().signal,
+        });
+      },
+    );
     configDataDir = await temporaryRoot();
     getOne.mockResolvedValue(rawRecord());
   });
@@ -136,9 +187,14 @@ describe('KnowledgePdfService', () => {
     const result = await service.getPdf({ documentId: 'document123', checksum: pdfChecksum });
 
     expect(result).toMatchObject({ ok: true, source: 'download' });
-    expect(authWithPassword).toHaveBeenCalledWith(RELAY_APP_USER_EMAIL, 'server-secret', {
-      requestKey: null,
-    });
+    expect(authWithPassword).toHaveBeenCalledWith(
+      RELAY_APP_USER_EMAIL,
+      'server-secret',
+      expect.objectContaining({
+        requestKey: null,
+        signal: expect.any(AbortSignal),
+      }),
+    );
     expect(getToken).toHaveBeenCalledWith({ requestKey: null });
     expect(fetchPdf).toHaveBeenCalledWith(
       expect.stringContaining(`${relayUrl}/`),
@@ -148,6 +204,48 @@ describe('KnowledgePdfService', () => {
     await expect(
       readFile(join(configDataDir, 'knowledge-cache', `${pdfChecksum}.pdf`)),
     ).resolves.toEqual(pdf);
+  });
+
+  it('hydrates its client from the shared startup authentication window', async () => {
+    coordinatorMocks.authenticate.mockImplementationOnce(async (client: typeof pb) => {
+      client.authStore.save('valid-token-bootstrap', {
+        id: 'relay-user',
+        email: 'relay@relay.app',
+        collectionId: '_pb_users_auth_',
+        collectionName: 'users',
+      });
+    });
+    const bootstrapAuthStore = {
+      token: 'valid-token-bootstrap',
+      record: {
+        id: 'relay-user',
+        email: 'relay@relay.app',
+        collectionId: '_pb_users_auth_',
+        collectionName: 'users',
+      },
+      isValid: true,
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    primeRelayAppUserAuth({ authStore: bootstrapAuthStore } as never, relayUrl, 'server-secret');
+    const service = new KnowledgePdfService({
+      configDataDir,
+      getConfig: () => ({
+        mode: 'client',
+        serverUrl: relayUrl,
+        allowInsecureHttp: true,
+        secret: 'server-secret',
+      }),
+      getPbClient: () => null,
+      createClient,
+      fetch: fetchPdf,
+    });
+
+    const result = await service.getPdf({ documentId: 'document123', checksum: pdfChecksum });
+
+    expect(result).toMatchObject({ ok: true, source: 'download' });
+    expect(authWithPassword).not.toHaveBeenCalled();
+    expect(authStore.isValid).toBe(true);
   });
 
   it('deletes a bad download and retries once before promotion', async () => {

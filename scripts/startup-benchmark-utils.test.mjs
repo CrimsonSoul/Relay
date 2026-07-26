@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import * as startupBenchmarkUtils from './startup-benchmark-utils.mjs';
 import {
@@ -10,6 +11,20 @@ import {
 } from './startup-benchmark-utils.mjs';
 
 describe('startup benchmark utilities', () => {
+  it('allows the benchmark module to be imported without an entry script argument', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['-e', "import('./scripts/benchmark-startup.mjs')"],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+  });
+
   it('waits for consecutive idle observations before declaring a process quiescent', async () => {
     expect(startupBenchmarkUtils.waitForProcessQuiescence).toBeTypeOf('function');
 

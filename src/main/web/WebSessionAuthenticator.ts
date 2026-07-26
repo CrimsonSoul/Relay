@@ -97,6 +97,7 @@ export function createWebSessionAuthenticator({
       localPbUrl,
       passphrase,
       'Relay Web login failed',
+      { allowServerSuperuserFallback: false },
     );
     if (!result.ok) return null;
     return createSessionInput(

@@ -1,7 +1,6 @@
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
-import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_MAX_COVER_BYTES,
@@ -12,6 +11,7 @@ import {
 } from '@shared/knowledge';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
+import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 import type { KnowledgePdfService } from './KnowledgePdfService';
 
 const CACHE_BUDGET_BYTES = 100 * 1024 * 1024;
@@ -187,11 +187,7 @@ export class KnowledgeCoverService {
       try {
         await pb.health.check({ requestKey: null });
         if (!pb.authStore.isValid) {
-          await pb
-            .collection('_pb_users_auth_')
-            .authWithPassword(RELAY_APP_USER_EMAIL, config.secret, {
-              requestKey: null,
-            });
+          await authenticateRelayAppUserShared(pb, config.serverUrl, config.secret);
         }
       } catch {
         return null;

@@ -29,12 +29,13 @@ const MAX_ALERT_DRAFT_EML_LENGTH = 20 * 1024 * 1024; // 20MB
 const MAX_ALERT_BODY_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB before resize/compression
 const MAX_ALERT_BODY_IMAGE_WIDTH = 516;
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
-const MAX_LOGO_WIDTH = 400;
 const MAC_OPEN_COMMAND = '/usr/bin/open';
 
 type PickedImage =
   | { success: true; image: Electron.NativeImage; filePath: string }
   | { success: false; error: string };
+type PickedImageFile =
+  { success: true; buffer: Buffer; filePath: string } | { success: false; error: string };
 
 function execOutputText(value: string | Buffer | undefined): string {
   if (!value) return '';
@@ -65,16 +66,14 @@ function openAlertDraftFile(filePath: string): Promise<string> {
 }
 
 /**
- * Shared pick → size-gate → decode → width-cap pipeline for user-selected
- * images. nativeImage only decodes PNG/JPEG, so the dialog filter must not
- * advertise formats this cannot load.
+ * Shared pick and compressed-byte gate for user-selected images. The caller
+ * chooses the bounded decoder appropriate to its image class.
  */
-async function pickAndResizeImage(options: {
+async function pickImageFile(options: {
   title: string;
   maxBytes: number;
-  maxWidth: number;
   sizeError: string;
-}): Promise<PickedImage> {
+}): Promise<PickedImageFile> {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: options.title,
     filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
@@ -88,15 +87,27 @@ async function pickAndResizeImage(options: {
     return { success: false, error: options.sizeError };
   }
 
-  const buf = await readFile(selectedFile);
-  let image = nativeImage.createFromBuffer(buf);
+  return { success: true, buffer: await readFile(selectedFile), filePath: selectedFile };
+}
+
+/** Decode and width-cap alert images through Electron's PNG/JPEG-only image API. */
+async function pickAndResizeImage(options: {
+  title: string;
+  maxBytes: number;
+  maxWidth: number;
+  sizeError: string;
+}): Promise<PickedImage> {
+  const picked = await pickImageFile(options);
+  if (!picked.success) return picked;
+
+  let image = nativeImage.createFromBuffer(picked.buffer);
   if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
 
   const { width } = image.getSize();
   if (width > options.maxWidth) {
     image = image.resize({ width: options.maxWidth });
   }
-  return { success: true, image, filePath: selectedFile };
+  return { success: true, image, filePath: picked.filePath };
 }
 
 function sanitizePngSuggestedName(suggestedName: unknown): string {
@@ -471,16 +482,14 @@ export function setupWindowHandlers(
       }
       if (!brandAssets) return { success: false, error: 'Data root not available' };
       try {
-        const picked = await pickAndResizeImage({
+        const picked = await pickImageFile({
           title: dialogTitle,
           maxBytes: MAX_LOGO_SIZE,
-          maxWidth: MAX_LOGO_WIDTH,
           sizeError: 'Image must be under 2MB',
         });
         if (!picked.success) return picked;
 
-        const pngBuffer = picked.image.toPNG();
-        return await brandAssets.savePng(kind, pngBuffer);
+        return await brandAssets.savePng(kind, picked.buffer);
       } catch (err) {
         loggers.ipc.warn(`${dialogTitle} save failed`, {
           error: getErrorMessage(err),

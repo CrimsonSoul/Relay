@@ -49,7 +49,7 @@ The renderer does not import Node.js or Electron APIs directly. System-level ope
 
 Relay Web is an optional server-mode backup path for desktop Chrome, Edge, and Safari on a managed LAN or private VPN. It serves the shared renderer and a bounded same-origin API from `src/main/web/`. It is not designed or approved for internet exposure.
 
-The gateway binds only when server-mode direct LAN access and Relay Web are both enabled. Host-header and request-origin validation restrict accepted requests to the local machine name and private interface addresses. Ordinary sessions use random server-side identifiers in HTTP-only, path-scoped, `SameSite=Strict` cookies with one-hour idle and eight-hour absolute limits. Logout and expiry destroy the server-side record.
+The gateway binds only when server-mode direct LAN access and Relay Web are both enabled. Host-header and request-origin validation restrict accepted requests to the local machine name and private interface addresses. Ordinary sessions use random server-side identifiers in HTTP-only, path-scoped, `SameSite=Strict` cookies with one-hour idle and eight-hour absolute limits. Cookie and CSRF values rotate after refresh while a separate server-only logical-session ID preserves rate accounting and revocation ownership. Logout, replacement, and expiry destroy that logical record even when a previously authorized request overlaps cookie rotation.
 
 The browser receives the ordinary app-user connection needed by the shared renderer only after the web session is authenticated. Protected commands keep the existing authoritative capability, revision, replay, and audit controls. Browser protected sign-in and destructive approvals are server-mediated; they do not expose Electron secrets, local paths, the protected auth store, or private signing keys.
 
@@ -104,7 +104,8 @@ Security controls in place:
 - Permission requests and permission checks from the dashboard session are denied
 - External navigation is limited to HTTPS `dynatrace.com` hosts and Microsoft authentication hosts required for SSO
 - `window.open()` from dashboard content is denied; allowed Dynatrace or Microsoft auth popups are loaded in the same dashboard view
-- Blocked navigation logs use origin-only URL descriptions to avoid leaking dashboard query strings or auth details
+- Permission-denial logs and public dashboard runtime state retain only URL origins; paths, query strings, fragments, and URL credentials are discarded before logging, IPC, or Relay Web publication
+- Blocked navigation logs use the same origin-only URL descriptions to avoid leaking dashboard query strings or auth details
 - Settings can clear the Dynatrace dashboard session when operators need to force reauthentication
 
 ### Content Security Policy
@@ -154,6 +155,13 @@ Checks include:
 - Mutation action allowlist (`create`, `update`, `delete`)
 - Record shape validation for writes
 
+### Brand Image Validation
+
+Company and client logos are limited to 2 MiB of compressed input and accepted only as PNG, JPEG,
+or WebP. The shared main-process image pipeline applies explicit source width, height, pixel, and
+decoded-byte budgets before full decode, resizes inside a 400 by 400 pixel box without enlargement,
+and bounds the generated PNG before persistence or response construction.
+
 ### Rate Limiting
 
 `src/main/rateLimiter.ts` provides global and caller-keyed token buckets. Security coverage is determined by handler call sites, not merely by a configured bucket.
@@ -172,10 +180,21 @@ Currently enforced limits include:
 
 Relay's `Security and Code Quality` workflow provides two complementary gates:
 
-- SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, and blocks on the configured remote quality gate.
+- SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, blocks on the configured remote quality gate, and then blocks if the exact analyzed branch or pull request retains any Open, Confirmed, or legacy Reopened issue.
 - Snyk's native GitHub integration blocks newly introduced pull-request findings. The push-triggered Snyk CLI gate blocks any current high- or critical-severity Open Source or Snyk Code finding, including findings in development dependencies, and then publishes a dependency snapshot identified as `test`.
 
-The workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs on pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is also named `test`. The Snyk CLI baseline runs on `test` pushes while the native integration owns pull requests. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
+The workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs on pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is also named `test`. After analysis, `security:sonar:issues` paginates the exact branch or pull-request issue set, fails on unresolved Open/Confirmed/Reopened issues, and reports Accepted/Won't Fix and False Positive decisions separately so reviewed exceptions remain visible. The Snyk CLI baseline runs on `test` pushes while the native integration owns pull requests. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
+
+Pull-request scans never change issue state. A `test`-branch push invokes an
+exact 44-item reconciliation manifest only after fresh analysis and before the
+zero-open gate. The reconciler requires an internal `--apply` latch, validates
+each issue key, rule, and component before the first write, refuses to run when
+an unknown Open or Confirmed issue is present, and records a bounded rationale
+with every transition. The manifest contains 39 behavior-preserving Accepted
+decisions for intentional ARIA and test-structure patterns, plus five False
+Positives backed by persisted-hash compatibility or browser-computed contrast
+evidence. Missing or fixed items are not changed, already-reviewed decisions
+are idempotent, and metadata drift fails closed.
 
 GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled for the repository. Snyk is the scanner and pull-request security gate; GitHub remains the source of secret-blocking and dependency-fix automation so duplicate Snyk dependency upgrade pull requests are unnecessary.
 
@@ -221,6 +240,34 @@ Relay manages its own collections at startup. Bootstrap creates missing Relay co
 
 Unknown collections are left in place and logged as unmanaged. Startup must not delete application or operator-created collections outside Relay's managed collection list.
 
+The packaged server also loads Relay's checked-in PocketBase hooks from a dedicated resource
+directory. Startup fails closed if the privileged reauthentication hook is absent or does not answer
+an unauthenticated probe with the expected authorization failure.
+
+PocketBase first binds to loopback while Relay authenticates the configured superuser and persists
+the authoritative authentication and privileged-reauthentication rate limits. Only after those
+controls succeed does Relay stop that bootstrap process and start the configured LAN listener.
+
+Ordinary Relay app-user password authentication is coordinated in the main process. Concurrent
+connection, Wiki search, PDF, cover, and reconnect-sync consumers share one detached authentication
+request, then receive a validated in-memory token snapshot in their own PocketBase clients. The
+coordinator is bounded, keyed by a process-randomized credential digest, actively expires completed
+snapshots after four seconds, and is cleared on configuration or server lifecycle changes. It never
+copies a superuser or protected-role token, and definitive credential rejection stops retrying
+immediately rather than spending the remaining authoritative rate-limit budget.
+
+If PocketBase definitively rejects the configured superuser credential, Relay stops the server and
+uses a one-use migration in a deterministic, owner-only directory beneath the operating system's
+per-user temporary directory. On Windows, Relay uses Windows PowerShell 5.1 to atomically create and
+then verify a protected DACL that grants full control only to the current user and LocalSystem, with
+inheritance for the migration and handoff files. If that operation is blocked or unsupported, repair
+stops before any secret is written. The passphrase is written with exclusive creation to an
+owner-only handoff file; it is not copied into command-line arguments, environment variables, logs,
+or migration source. The migration removes the handoff before changing the record and writes a
+nonsecret, run-specific completion marker after the save. Relay requires that exact marker, removes
+all repair artifacts, restarts PocketBase, and authenticates with the configured credential before
+bootstrap can continue.
+
 ### Privileged Access Boundary
 
 Ordinary Relay use has no account selector and requires no role-account sign-in. Reading shared data, composing bridges, and making ordinary operational updates remain available through the shared app session. New ordinary records are unattributed; a protected role account is required only for administration and Wiki publishing.
@@ -232,6 +279,20 @@ Relay has three effective roles. The singleton `relay_privileged_state.ownerAcco
 The privileged PocketBase client is created in the main process with an independent in-memory auth store. The privileged token never replaces the ordinary Relay app-user token and is not exposed to preload consumers, renderer state, local storage, logs, exports, cache snapshots, or the offline mutation queue. Password values are bounded, passed only for the awaited authentication request, cleared from the form, and not retained by Relay.
 
 Privileged sessions lock after 15 minutes without privileged activity. Disconnecting, reconfiguring, explicitly locking, signing out, or closing Relay clears privileged auth state. Normal browsing and note-taking do not keep a role session alive. Sensitive mutations can require a fresh password reauthentication proof; proofs are account/device-bound, expire after five minutes, and can be consumed once.
+
+On a paired client, reauthentication is performed by the authenticated
+`POST /api/relay/privileged/reauth` PocketBase hook rather than by a client-authored signed command.
+The server validates the password against the current active account, derives the current effective
+role, verifies that the named paired device is active for that account, and creates the proof record
+transactionally. The route has a 4 KiB body limit and a dedicated authoritative PocketBase rate
+limit. Remote signed envelopes cannot contain the internal `privileged.reauth.confirm` command. On
+the Relay server PC, the equivalent proof remains available only through the trusted local command
+processor.
+
+The server hook and the paired-client call are one protocol version. Deploy the server and paired
+clients together before relying on fresh-password protected actions: a new client cannot obtain a
+proof from an old server, and a new server deliberately rejects the old self-attested confirmation
+command. Ordinary Relay connectivity is unchanged during that coordinated rollout.
 
 Client workstations use a P-256 signing key generated in the main process. The private PKCS#8 material is stored only as Electron `safeStorage` ciphertext with owner-only file permissions where supported. If OS encryption is unavailable or the registry is corrupt, Relay requires pairing again instead of falling back to plaintext. The server stores only the public JWK, fingerprint, device label, hostname snapshot, state, and revision.
 
@@ -292,7 +353,7 @@ The Wiki is read-only during ordinary use. `knowledge_documents` has authenticat
 
 Publisher uploads use account- and device-bound `knowledge_upload_batches`, `knowledge_uploads`, and `knowledge_upload_chunks` records. A batch contains at most 100 files; files are split into fixed 4 MiB chunks and limited to two concurrent transfers. Every chunk is bound to its batch, upload, account, device, index, size, and SHA-256. The server reassembles chunks in order, verifies each checksum and the declared whole-file checksum, validates the PDF signature and size, then performs bounded extraction. Temporary upload records expire after seven days. Cancelling removes chunks and staged bytes; successful publication copies the protected PDF into `knowledge_documents` and clears the staged upload file immediately.
 
-The resumable queue lives in the main process. The renderer receives only bounded filenames, sizes, state, and progress—never source paths or PDF bytes. Persisted source paths are Electron `safeStorage` ciphertext in an owner-only file. If encryption is unavailable Relay keeps the queue in memory only. On restart or resume, Relay asks the server which chunk indexes are missing and sends only those indexes after revalidating the unchanged source file.
+The resumable queue lives in the main process. The renderer receives only bounded filenames, sizes, state, and progress—never source paths or PDF bytes. Persisted source paths are Electron `safeStorage` ciphertext in an owner-only file. If encryption is unavailable Relay keeps the queue in memory only. On restart or resume, Relay asks the server which chunk indexes are missing and sends only those indexes after revalidating the unchanged source file. Automatic sign-out and shutdown suspension remains queued for recovery, while an explicit Publisher pause remains paused until resumed. Before status lookup, source access, transfer, acknowledgment, and finalization, the scheduler rechecks that the active account and local source still own the queued item so work from one Publisher session cannot continue through another.
 
 The preload bridge exposes the bounded PDF/status reads `getKnowledgePdf({ documentId, checksum })` and `getKnowledgeIndexStatus()`, plus a dedicated `openKnowledgeWebLink(url)` action. The PDF request schema accepts a bounded PocketBase-style ID and lowercase SHA-256 checksum; it does not accept paths, URLs, tokens, or credentials. Each handler validates the sender as a trusted Relay main frame before invoking the main-process service.
 
@@ -334,6 +395,10 @@ This design provides:
 - Queued writes for reconnect scenarios
 - Conflict logging via the `conflict_log` collection
 
+Relay Web collection readiness is tied to a monotonically increasing connection generation.
+Disconnects and PocketBase client replacements close the write gate and invalidate outstanding
+list fetches, so a stale pre-transition response cannot install data or reopen browser writes.
+
 ### Error Handling
 
 `src/main/app/errorHandlers.ts` installs process-level guards.
@@ -357,6 +422,10 @@ The redaction layer strips common sensitive fields and scans strings for PII suc
 ### URL Logging
 
 Blocked-navigation and blocked-window-open log lines record the origin of the attempted URL only (via `describeUrlForLog` in `src/shared/urlSecurity.ts`), not the full URL. This avoids inadvertently logging tokens, session IDs, or other data carried in paths or query strings.
+
+Authenticated browser log messages retain their browser provenance prefix and escape CR, LF, and
+Unicode line separators before entering line-oriented sinks. One accepted browser event therefore
+produces one physical log record while preserving delimiter content as visible escaped text.
 
 ## Developer Rules
 

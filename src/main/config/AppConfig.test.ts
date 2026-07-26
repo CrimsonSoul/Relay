@@ -185,6 +185,49 @@ describe('AppConfig', () => {
     expect((loaded as { port: number }).port).toBe(9000);
   });
 
+  it('rejects a plaintext secret in packaged builds when encryption is unavailable', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: { isEncryptionAvailable: () => false },
+    } as never);
+    const configPath = join(tempDir, 'config.json');
+    const serialized = JSON.stringify(
+      {
+        mode: 'client',
+        serverUrl: 'https://relay.invalid:8090',
+        secret: 'plain-secret',
+      },
+      null,
+      2,
+    );
+    writeFileSync(configPath, serialized, 'utf-8');
+
+    const config = new AppConfig(tempDir);
+
+    expect(config.load()).toBeNull();
+    expect(config.isConfigured()).toBe(false);
+    expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
+    expect(existsSync(`${configPath}.tmp`)).toBe(false);
+  });
+
+  it('does not downgrade to plaintext when packaged config contains both secret forms', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: { isEncryptionAvailable: () => false },
+    } as never);
+    const configPath = join(tempDir, 'config.json');
+    const serialized = JSON.stringify({
+      mode: 'client',
+      serverUrl: 'https://relay.invalid:8090',
+      encryptedSecret: Buffer.from('encrypted-secret').toString('base64'),
+      secret: 'plain-secret',
+    });
+    writeFileSync(configPath, serialized, 'utf-8');
+
+    expect(new AppConfig(tempDir).load()).toBeNull();
+    expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
+  });
+
   it('migrates plaintext secret to encrypted storage when encryption is available', () => {
     __setElectronModuleForTests({
       app: { isPackaged: true },

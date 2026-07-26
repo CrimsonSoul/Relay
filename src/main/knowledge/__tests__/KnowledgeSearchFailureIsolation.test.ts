@@ -43,8 +43,10 @@ const mocks = vi.hoisted(() => {
   return {
     app: { isPackaged: true },
     authWithPassword,
+    fetch: vi.fn().mockResolvedValue({ status: 401 }),
     fallbackCollection,
     pbProcess,
+    ensurePocketBaseAuthRateLimit: vi.fn().mockResolvedValue(undefined),
     ensureKnowledgeBatchApi: vi.fn().mockResolvedValue(undefined),
     ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
     ensureKnowledgeSearchCollections: vi.fn().mockResolvedValue(undefined),
@@ -80,7 +82,14 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }));
 
-vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
+vi.mock('node:fs', () => ({
+  chmodSync: vi.fn(),
+  existsSync: vi.fn((path) => String(path).endsWith('relay_privileged_reauth.pb.js')),
+  mkdirSync: vi.fn(),
+  readFileSync: vi.fn(),
+  rmSync: vi.fn(),
+  writeFileSync: vi.fn(),
+}));
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
 vi.mock('pocketbase', () => ({
   default: vi.fn(function MockPocketBase() {
@@ -120,9 +129,32 @@ vi.mock('../../pocketbase/RetentionManager', () => ({
   }),
 }));
 vi.mock('../../pocketbase/CollectionBootstrap', () => ({
+  ensurePocketBaseAuthRateLimit: mocks.ensurePocketBaseAuthRateLimit,
   ensureKnowledgeBatchApi: mocks.ensureKnowledgeBatchApi,
   ensureCollections: mocks.ensureCollections,
   ensureKnowledgeSearchCollections: mocks.ensureKnowledgeSearchCollections,
+}));
+vi.mock('../../pocketbase/RelayAppUserAuthCoordinator', () => ({
+  authenticateRelayAppUserShared: async (
+    client: {
+      collection(name: string): {
+        authWithPassword(
+          email: string,
+          secret: string,
+          options: { requestKey: null; signal?: AbortSignal },
+        ): Promise<unknown>;
+      };
+    },
+    _serverUrl: string,
+    secret: string,
+    options: { signal?: AbortSignal } = {},
+  ) =>
+    client.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret, {
+      requestKey: null,
+      signal: options.signal,
+    }),
+  clearRelayAppUserAuthCoordinator: vi.fn(),
+  primeRelayAppUserAuth: vi.fn(),
 }));
 vi.mock('../../utils/broadcastToAllWindows', () => ({ broadcastToAllWindows: vi.fn() }));
 vi.mock('../../discovery/RelayDiscovery', () => ({
@@ -143,6 +175,12 @@ vi.mock('../../logger', () => ({
     security: { info: vi.fn(), warn: mocks.warn, error: vi.fn() },
   },
 }));
+
+vi.stubGlobal('fetch', mocks.fetch);
+Object.defineProperty(process, 'resourcesPath', {
+  configurable: true,
+  value: '/Applications/Relay/resources',
+});
 
 type FaultName =
   | 'optional-bootstrap'
@@ -763,10 +801,12 @@ const faultCases: ReadonlyArray<{ name: FaultName; expectedOk: boolean }> = [
 
 afterEach(() => {
   vi.useRealTimers();
+  mocks.ensurePocketBaseAuthRateLimit.mockReset().mockResolvedValue(undefined);
   mocks.ensureKnowledgeBatchApi.mockReset().mockResolvedValue(undefined);
   mocks.ensureKnowledgeSearchCollections.mockReset().mockResolvedValue(undefined);
   mocks.ensureCollections.mockReset().mockResolvedValue({ privilegedRuntimeReady: true });
   mocks.authWithPassword.mockReset().mockResolvedValue({});
+  mocks.fetch.mockReset().mockResolvedValue({ status: 401 });
   mocks.fallbackCollection.mockClear();
   mocks.getAppConfig.mockReset();
   mocks.resetSearchService();

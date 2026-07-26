@@ -133,6 +133,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   private view = publicCopy(SIGNED_OUT_VIEW);
   private account: RelayPrivilegedAccountRecord | null = null;
   private disposed = false;
+  private operationGeneration = 0;
 
   constructor(options: PrivilegedSessionManagerOptions) {
     this.authClient = options.authClient;
@@ -150,17 +151,22 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     this.assertNotDisposed();
     const username = validateUsername(input.username);
     validatePassword(input.password);
+    const operation = this.beginOperation();
     let account: RelayPrivilegedAccountRecord;
     try {
       account = await this.authClient.authenticate(username, input.password);
     } catch (error) {
-      this.clearIdentity();
+      if (!this.isOperationCurrent(operation)) {
+        throw new PrivilegedSessionError('unauthorized');
+      }
       if (isOfflineAuthenticationError(error)) {
-        this.setView({ ...SIGNED_OUT_VIEW, state: 'offline' });
+        this.invalidateSession({ ...SIGNED_OUT_VIEW, state: 'offline' });
         throw new PrivilegedSessionError('offline');
       }
+      this.invalidateSession();
       throw error;
     }
+    this.assertOperationCurrent(operation);
 
     if (!account.active || account.username !== username) {
       this.failAuthorization();
@@ -170,12 +176,17 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     try {
       authorization = await this.resolveAuthorization(account);
     } catch {
+      if (!this.isOperationCurrent(operation)) {
+        throw new PrivilegedSessionError('unauthorized');
+      }
       this.failAuthorization();
     }
+    this.assertOperationCurrent(operation);
     if (!authorization.assigned || !authorization.role) {
       this.failAuthorization();
     }
 
+    this.assertOperationCurrent(operation);
     this.account = account;
     if (!authorization.paired) {
       this.setView({
@@ -214,14 +225,26 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     validatePassword(password);
     const account = this.account;
     if (this.view.state !== 'active' || !account) throw new PrivilegedSessionError('unauthorized');
+    const operation = this.beginOperation();
 
     let refreshed: RelayPrivilegedAccountRecord;
+    let remoteProof: { requestId: string; expiresAt: string } | null = null;
     try {
-      refreshed = await this.authClient.reauthenticate(account.username, password);
+      if (this.view.deviceId && this.authClient.reauthenticateRemotely) {
+        const result = await this.authClient.reauthenticateRemotely(
+          account.username,
+          password,
+          this.view.deviceId,
+        );
+        refreshed = result.account;
+        remoteProof = { requestId: result.requestId, expiresAt: result.expiresAt };
+      } else {
+        refreshed = await this.authClient.reauthenticate(account.username, password);
+      }
     } catch {
-      this.invalidateSession();
-      throw new PrivilegedSessionError('unauthorized');
+      this.failReauthentication(operation);
     }
+    this.assertOperationCurrent(operation);
     if (!isSameAccount(account, refreshed)) {
       this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
@@ -231,13 +254,14 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     try {
       authorization = await this.resolveAuthorization(refreshed);
     } catch {
-      this.invalidateSession();
-      throw new PrivilegedSessionError('unauthorized');
+      this.failReauthentication(operation);
     }
+    this.assertOperationCurrent(operation);
     if (!authorization.assigned || !authorization.role || authorization.role !== this.view.role) {
       this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
     }
+    this.assertOperationCurrent(operation);
     this.account = refreshed;
     this.setView({
       ...this.view,
@@ -245,6 +269,21 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       displayName: refreshed.displayName,
       role: authorization.role,
     });
+
+    if (remoteProof) {
+      if (
+        remoteProof.requestId.length === 0 ||
+        remoteProof.requestId.length > 128 ||
+        !Number.isFinite(Date.parse(remoteProof.expiresAt))
+      ) {
+        this.invalidateSession();
+        throw new PrivilegedSessionError('unauthorized');
+      }
+      return {
+        proofId: remoteProof.requestId,
+        expiresAt: new Date(Date.parse(remoteProof.expiresAt)).toISOString(),
+      };
+    }
 
     const authenticatedAtMs = this.now();
     const authenticatedAt = new Date(authenticatedAtMs).toISOString();
@@ -259,9 +298,9 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
         authenticatedAt,
       });
     } catch {
-      this.invalidateSession();
-      throw new PrivilegedSessionError('unauthorized');
+      this.failReauthentication(operation);
     }
+    this.assertOperationCurrent(operation);
     if (result.requestId.length === 0 || result.requestId.length > 128) {
       this.invalidateSession();
       throw new PrivilegedSessionError('unauthorized');
@@ -279,6 +318,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     if (this.view.state !== 'pairing-required' || !account) {
       throw new PrivilegedSessionError('unauthorized');
     }
+    this.operationGeneration += 1;
     this.setView({
       ...this.view,
       state: 'active',
@@ -299,10 +339,11 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
 
   dispose(): void {
     if (this.disposed) return;
+    this.operationGeneration += 1;
+    this.disposed = true;
     this.authClient.clear();
     this.clearIdentity();
     this.view = publicCopy(SIGNED_OUT_VIEW);
-    this.disposed = true;
   }
 
   handleAccountChanged(changedAccount: RelayPrivilegedAccountRecord | null): void {
@@ -334,14 +375,16 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
 
   handleDisconnect(): void {
     if (this.disposed) return;
+    this.operationGeneration += 1;
     this.authClient.clear();
     this.setView({ ...this.view, state: 'offline', capabilities: [], expiresAt: null });
   }
 
-  private invalidateSession(): void {
+  private invalidateSession(view: PrivilegedSessionView = SIGNED_OUT_VIEW): void {
+    this.operationGeneration += 1;
     this.authClient.clear();
     this.clearIdentity();
-    this.setView(SIGNED_OUT_VIEW);
+    this.setView(view);
   }
 
   private clearIdentity(): void {
@@ -349,10 +392,28 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   }
 
   private failAuthorization(): never {
-    this.authClient.clear();
-    this.clearIdentity();
-    this.setView(SIGNED_OUT_VIEW);
+    this.invalidateSession();
     throw new PrivilegedSessionError('unauthorized');
+  }
+
+  private failReauthentication(operation: number): never {
+    if (this.isOperationCurrent(operation)) this.invalidateSession();
+    throw new PrivilegedSessionError('unauthorized');
+  }
+
+  private beginOperation(): number {
+    this.operationGeneration += 1;
+    return this.operationGeneration;
+  }
+
+  private isOperationCurrent(operation: number): boolean {
+    return !this.disposed && this.operationGeneration === operation;
+  }
+
+  private assertOperationCurrent(operation: number): void {
+    if (!this.isOperationCurrent(operation)) {
+      throw new PrivilegedSessionError('unauthorized');
+    }
   }
 
   private setView(view: PrivilegedSessionView): void {

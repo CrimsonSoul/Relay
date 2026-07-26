@@ -17,6 +17,7 @@ export type WebRouteResponse = {
   body?: unknown;
   headers?: Readonly<Record<string, string>>;
   stream?: (response: ServerResponse) => void;
+  onComplete?: () => void;
 };
 
 export type WebRouteContext<TBody = unknown> = {
@@ -24,6 +25,7 @@ export type WebRouteContext<TBody = unknown> = {
   body: TBody;
   session: WebSessionRecord | null;
   sessionId: string | null;
+  logicalSessionId?: string | null;
   remoteAddress: string;
   origin: string;
 };
@@ -115,6 +117,7 @@ export class WebRouter {
 
   constructor(private readonly options: WebRouterOptions) {
     this.limiter = options.limiter ?? new WebRateLimiter();
+    options.sessions.onDestroyed((rateLimitId) => this.limiter.clearKey(rateLimitId));
   }
 
   register<TBody>(route: WebRoute<TBody>): void {
@@ -141,9 +144,12 @@ export class WebRouter {
     if (!resolved) return;
     const authorized = this.authorizeRequest(request, response, resolved);
     if (!authorized) return;
+    if (!this.allowRateLimit(response, resolved, authorized)) {
+      request.resume();
+      return;
+    }
     const parsedBody = await this.parseBody(request, response, resolved.route);
     if (!parsedBody.ok) return;
-    if (!this.allowRateLimit(response, resolved, authorized)) return;
 
     const session =
       authorized.sessionId && authorized.session
@@ -154,6 +160,7 @@ export class WebRouter {
       body: parsedBody.value,
       session,
       sessionId: authorized.sessionId,
+      logicalSessionId: authorized.session?.rateLimitId ?? null,
       remoteAddress: resolved.remoteAddress ?? '',
       origin: resolved.origin,
     });
@@ -273,7 +280,8 @@ export class WebRouter {
   ): boolean {
     const rateLimit = resolved.route.rateLimit;
     if (rateLimit) {
-      const key = rateLimit.key === 'session' ? authorized.sessionId : resolved.remoteAddress;
+      const key =
+        rateLimit.key === 'session' ? authorized.session?.rateLimitId : resolved.remoteAddress;
       if (!key) {
         this.send(response, { status: 401, body: { ok: false, error: 'unauthenticated' } });
         return false;
@@ -292,27 +300,49 @@ export class WebRouter {
   }
 
   private send(response: ServerResponse, result: WebRouteResponse, headOnly = false): void {
-    if (response.headersSent || response.writableEnded) return;
-    for (const [name, value] of Object.entries(this.options.security.responseHeaders())) {
-      response.setHeader(name, value);
-    }
-    for (const [name, value] of Object.entries(result.headers ?? {})) {
-      response.setHeader(name, value);
-    }
-    response.statusCode = result.status;
-    if (result.stream) {
-      result.stream(response);
+    let completed = false;
+    const complete = () => {
+      if (completed) return;
+      completed = true;
+      response.off('finish', complete);
+      response.off('close', complete);
+      response.off('error', complete);
+      result.onComplete?.();
+    };
+    if (response.headersSent || response.writableEnded || response.destroyed) {
+      complete();
       return;
     }
-    const json = result.body === undefined ? '' : JSON.stringify(result.body);
-    if (Buffer.byteLength(json, 'utf8') > MAX_RESPONSE_BYTES) {
-      response.statusCode = 500;
+    try {
+      for (const [name, value] of Object.entries(this.options.security.responseHeaders())) {
+        response.setHeader(name, value);
+      }
+      for (const [name, value] of Object.entries(result.headers ?? {})) {
+        response.setHeader(name, value);
+      }
+      response.statusCode = result.status;
+      if (result.onComplete) {
+        response.once('finish', complete);
+        response.once('close', complete);
+        response.once('error', complete);
+      }
+      if (result.stream) {
+        result.stream(response);
+        return;
+      }
+      const json = result.body === undefined ? '' : JSON.stringify(result.body);
+      if (Buffer.byteLength(json, 'utf8') > MAX_RESPONSE_BYTES) {
+        response.statusCode = 500;
+        response.setHeader('Content-Type', 'application/json; charset=utf-8');
+        response.end(JSON.stringify({ ok: false, error: 'unavailable' }));
+        return;
+      }
       response.setHeader('Content-Type', 'application/json; charset=utf-8');
-      response.end(JSON.stringify({ ok: false, error: 'unavailable' }));
-      return;
+      response.setHeader('Content-Length', String(Buffer.byteLength(json, 'utf8')));
+      response.end(headOnly ? undefined : json);
+    } catch (error) {
+      complete();
+      throw error;
     }
-    response.setHeader('Content-Type', 'application/json; charset=utf-8');
-    response.setHeader('Content-Length', String(Buffer.byteLength(json, 'utf8')));
-    response.end(headOnly ? undefined : json);
   }
 }

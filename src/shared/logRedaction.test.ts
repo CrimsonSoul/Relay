@@ -77,6 +77,25 @@ describe('redactSensitiveData', () => {
     expect(redactedErr.message).toContain('[REDACTED]');
   });
 
+  it('does not retain flag-like or multiline passphrase suffixes from PocketBase errors', () => {
+    const visibleSuffix = ['visible', 'suffix'].join('-');
+    const multilineSuffix = ['second', 'secret', 'line'].join('-');
+    const cliSecret = `x --${visibleSuffix}\n${multilineSuffix}`;
+    const error = new Error(
+      `Command failed: pocketbase superuser upsert admin@relay.app ${cliSecret} --dir=/tmp/pb`,
+    );
+
+    const redacted = redactSensitiveData({ error }) as Record<string, unknown>;
+    const redactedErr = redacted.error as Record<string, string>;
+
+    expect(redactedErr.message).not.toContain(cliSecret);
+    expect(redactedErr.message).not.toContain(visibleSuffix);
+    expect(redactedErr.message).not.toContain(multilineSuffix);
+    expect(redactedErr.stack).not.toContain(visibleSuffix);
+    expect(redactedErr.stack).not.toContain(multilineSuffix);
+    expect(redactedErr.message).toContain('[REDACTED]');
+  });
+
   it('passes null through unchanged', () => {
     expect(redactSensitiveData(null)).toBeNull();
   });

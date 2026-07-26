@@ -109,6 +109,84 @@ describe('WebSessionStore', () => {
     expect(input.dispose).toHaveBeenCalledOnce();
   });
 
+  it('does not resurrect a session when destruction wins a pending refresh', async () => {
+    let resolveRefresh!: (auth: PbAuthSession) => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<PbAuthSession>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const store = createStore(() => 4_500);
+    const input = createInput({ refresh });
+    const session = store.create(input);
+
+    const pending = store.refresh(session.id);
+    expect(refresh).toHaveBeenCalledOnce();
+    await store.destroy(session.id);
+    resolveRefresh({ token: 'late-token', record: { id: 'relay-user' } });
+
+    await expect(pending).resolves.toBeNull();
+    expect(store.size).toBe(0);
+    expect(input.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('destroys the logical session when logout commits after cookie rotation', async () => {
+    const store = createStore(() => 4_625);
+    const input = createInput();
+    const session = store.create(input);
+
+    const refreshed = await store.refresh(session.id);
+    expect(refreshed?.id).not.toBe(session.id);
+
+    await store.destroyByRateLimitId(session.rateLimitId);
+
+    expect(store.size).toBe(0);
+    expect(store.get(refreshed!.id, { touch: false })).toBeNull();
+    expect(input.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('unregisters an old-cookie cleanup through the stable logical session after rotation', async () => {
+    const store = createStore(() => 4_700);
+    const input = createInput();
+    const cleanup = vi.fn(async () => undefined);
+    const session = store.create(input);
+    expect(store.registerCleanup(session.id, cleanup)).toBe(true);
+
+    const refreshed = await store.refresh(session.id);
+    expect(refreshed).not.toBeNull();
+    store.unregisterCleanupByRateLimitId(session.rateLimitId, cleanup);
+    await store.destroy(refreshed!.id);
+
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(input.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('coalesces concurrent refreshes into one rotation and one accepted key', async () => {
+    let resolveRefresh!: (auth: PbAuthSession) => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<PbAuthSession>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const store = createStore(() => 4_750);
+    const session = store.create(createInput({ refresh }));
+
+    const first = store.refresh(session.id);
+    const second = store.refresh(session.id);
+    expect(refresh).toHaveBeenCalledOnce();
+
+    resolveRefresh({ token: 'coalesced-token', record: { id: 'relay-user' } });
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult).toEqual(secondResult);
+    expect(firstResult?.id).not.toBe(session.id);
+    expect(store.size).toBe(1);
+    expect(store.get(session.id, { touch: false })).toBeNull();
+    expect(store.get(firstResult!.id, { touch: false })?.id).toBe(firstResult!.id);
+  });
+
   it('disposes all sessions on server shutdown', async () => {
     const store = createStore(() => 5_000);
     const first = createInput();
