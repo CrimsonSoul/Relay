@@ -287,8 +287,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     const normalizedUsername = normalizeRoleUsername(username);
     const current = this.getAccount();
     if (
-      !current ||
-      current.username !== normalizedUsername ||
+      current?.username !== normalizedUsername ||
       password.length < MIN_PRIVILEGED_PASSWORD_LENGTH ||
       password.length > MAX_PRIVILEGED_PASSWORD_LENGTH ||
       !isBoundedIdentifier(deviceId, 200)
@@ -323,7 +322,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
           .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
           .getOne(current.id, { requestKey: null }),
       );
-      if (!refreshed || refreshed.id !== current.id || refreshed.username !== normalizedUsername) {
+      if (refreshed?.id !== current.id || refreshed.username !== normalizedUsername) {
         throw new PrivilegedAuthenticationError('invalid-credentials');
       }
       return {

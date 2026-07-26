@@ -335,11 +335,11 @@ export class BrandAssetService {
 
 function escapeBrowserLogMessage(message: string): string {
   return message
-    .replaceAll('\r', '\\r')
-    .replaceAll('\n', '\\n')
-    .replaceAll('\u0085', '\\u0085')
-    .replaceAll('\u2028', '\\u2028')
-    .replaceAll('\u2029', '\\u2029');
+    .replaceAll('\r', String.raw`\r`)
+    .replaceAll('\n', String.raw`\n`)
+    .replaceAll('\u0085', String.raw`\u0085`)
+    .replaceAll('\u2028', String.raw`\u2028`)
+    .replaceAll('\u2029', String.raw`\u2029`);
 }
 
 function writeBrowserLog(entry: LogEntry): void {

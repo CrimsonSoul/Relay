@@ -47,7 +47,7 @@ jobs:
       - name: Generate LCOV coverage
         run: npm run test:coverage:sonar
 
-      - name: Run SonarQube analysis and wait for the quality gate
+      - name: Upload SonarQube analysis
         shell: bash
         env:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
@@ -65,14 +65,27 @@ jobs:
 
           SONAR_ARGS=(
             "-Dsonar.organization=$SONAR_ORGANIZATION"
-            "-Dsonar.qualitygate.wait=true"
-            "-Dsonar.qualitygate.timeout=300"
+            "-Dsonar.qualitygate.wait=false"
           )
           if [[ -n "$SONAR_HOST_URL" ]]; then
             SONAR_ARGS+=("-Dsonar.host.url=$SONAR_HOST_URL")
           fi
 
           npm run security:sonar -- "${SONAR_ARGS[@]}"
+
+      - name: Wait for the exact Sonar analysis
+        shell: bash
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
+          else
+            SONAR_SCOPE=(--branch=test)
+          fi
+
+          npm run security:sonar:quality-gate -- wait-analysis "${SONAR_SCOPE[@]}"
 
       - name: Reconcile exact reviewed Sonar issues
         if: >-
@@ -90,12 +103,26 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            SONAR_SCOPE=("--pull-request=${{ github.event.pull_request.number }}")
+            SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
           else
-            SONAR_SCOPE=("--branch=test")
+            SONAR_SCOPE=(--branch=test)
           fi
 
           npm run security:sonar:issues -- "${SONAR_SCOPE[@]}"
+
+      - name: Verify the exact Sonar quality gate
+        shell: bash
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
+          else
+            SONAR_SCOPE=(--branch=test)
+          fi
+
+          npm run security:sonar:quality-gate -- check-quality-gate "${SONAR_SCOPE[@]}"
 
   snyk:
     name: Snyk security gate

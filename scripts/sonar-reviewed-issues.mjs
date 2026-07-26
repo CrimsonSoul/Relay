@@ -13,14 +13,22 @@ const REVIEWED_STATUS_BY_TRANSITION = Object.freeze({
   falsepositive: 'FALSE_POSITIVE',
 });
 const REVIEW_COMMENT_BY_RULE = Object.freeze({
+  'Web:S6819':
+    'Relay reviewed exception: role=status is the W3C live-region pattern for startup progress; output would imply a calculation result.',
   'css:S7924':
     'Relay reviewed exception: browser-computed contrast passes the supported palette matrix.',
+  'tssecurity:S5144':
+    'Relay reviewed exception: shell.openExternal delegates to the OS after protocol, host, credential, and port allowlisting; Relay performs no server-side request.',
   'typescript:S5976':
     'Relay reviewed exception: these tests retain distinct setup, behavior, and diagnostics.',
+  'typescript:S6478':
+    'Relay reviewed exception: this function is an ErrorBoundary render callback, not a nested React component.',
   'typescript:S6819':
     'Relay reviewed exception: the explicit ARIA pattern preserves required interaction semantics.',
   'typescript:S7758':
     'Relay reviewed exception: UTF-16 hashing is a persisted compatibility contract.',
+  'typescript:S7785':
+    'Relay reviewed exception: the explicit async runner prevents a confirmed Electron ESM app.whenReady deadlock on macOS 26.',
   'typescript:S8980':
     'Relay reviewed exception: direct hook state transitions require React act().',
 });
@@ -69,7 +77,33 @@ export const REVIEWED_ISSUES = Object.freeze([
     'falsepositive',
   ),
 
+  // shell.openExternal delegates an allowlisted URL to the OS; it is not an SSRF sink.
+  reviewedIssue(
+    'AZ-gb17s7Nsapz3kouHt',
+    'tssecurity:S5144',
+    'src/main/handlers/windowHandlers.ts',
+    'falsepositive',
+  ),
+
+  // Electron ESM startup must finish module evaluation before awaiting app readiness.
+  reviewedIssue('AZ-gb19K7Nsapz3kouHu', 'typescript:S7785', 'src/main/index.ts', 'accept'),
+
+  // ErrorBoundary invokes this as a render callback, not as a nested React component.
+  reviewedIssue(
+    'AZ-alMTTTAUVQ8sYgog2',
+    'typescript:S6478',
+    'src/renderer/src/features/knowledge/KnowledgeWorkspace.tsx',
+    'accept',
+  ),
+
   // Explicit ARIA patterns whose native substitutions would weaken behavior.
+  reviewedIssue('AZ-alM5ATAUVQ8sYgoiw', 'Web:S6819', 'src/renderer/index.html', 'accept'),
+  reviewedIssue(
+    'AZytnJJ1sZaVqOVfTofc',
+    'typescript:S6819',
+    'src/renderer/src/components/HeaderSearch.tsx',
+    'accept',
+  ),
   reviewedIssue(
     'AZ-alMJcTAUVQ8sYgogf',
     'typescript:S6819',
@@ -390,8 +424,8 @@ function sonarApiBase(hostUrl) {
 }
 
 export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) {
-  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 44) {
-    throw new Error('The reviewed Sonar issue manifest must contain exactly 44 issues.');
+  if (!Array.isArray(reviewedIssues) || reviewedIssues.length !== 49) {
+    throw new Error('The reviewed Sonar issue manifest must contain exactly 49 issues.');
   }
   const keys = new Set();
   const counts = { accept: 0, falsepositive: 0 };
@@ -416,9 +450,9 @@ export function validateReviewedIssueManifest(reviewedIssues = REVIEWED_ISSUES) 
     keys.add(issue.key);
     counts[issue.transition] += 1;
   }
-  if (counts.accept !== 39 || counts.falsepositive !== 5) {
+  if (counts.accept !== 43 || counts.falsepositive !== 6) {
     throw new Error(
-      'The reviewed Sonar issue manifest must contain 39 accepts and 5 false positives.',
+      'The reviewed Sonar issue manifest must contain 43 accepts and 6 false positives.',
     );
   }
   return reviewedIssues;

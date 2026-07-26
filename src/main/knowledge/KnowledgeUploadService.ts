@@ -1220,8 +1220,7 @@ export class KnowledgeUploadService {
     });
     const batch = normalizeKnowledgeUploadBatchView(result.value);
     if (
-      !batch ||
-      batch.requestId !== entry.batchRequestId ||
+      batch?.requestId !== entry.batchRequestId ||
       batch.fileCount !== entries.length ||
       batch.totalBytes !== totalBytes
     ) {

@@ -52,10 +52,10 @@ function page(issues, { pageIndex = 1, total = issues.length } = {}) {
 
 test('pins the exact reviewed inventory and intended dispositions', () => {
   assert.equal(validateReviewedIssueManifest(), REVIEWED_ISSUES);
-  assert.equal(REVIEWED_ISSUES.length, 44);
-  assert.equal(new Set(REVIEWED_ISSUES.map((issue) => issue.key)).size, 44);
-  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'accept').length, 39);
-  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive').length, 5);
+  assert.equal(REVIEWED_ISSUES.length, 49);
+  assert.equal(new Set(REVIEWED_ISSUES.map((issue) => issue.key)).size, 49);
+  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'accept').length, 43);
+  assert.equal(REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive').length, 6);
 
   const falsePositiveRules = REVIEWED_ISSUES.filter((issue) => issue.transition === 'falsepositive')
     .map((issue) => issue.rule)
@@ -64,6 +64,7 @@ test('pins the exact reviewed inventory and intended dispositions', () => {
     'css:S7924',
     'css:S7924',
     'css:S7924',
+    'tssecurity:S5144',
     'typescript:S7758',
     'typescript:S7758',
   ]);
@@ -71,10 +72,37 @@ test('pins the exact reviewed inventory and intended dispositions', () => {
     REVIEWED_ISSUES.filter((issue) => issue.rule === 'typescript:S8980').map((issue) => issue.key),
     ['AZ-alMl2TAUVQ8sYgoiA'],
   );
+  assert.deepEqual(
+    REVIEWED_ISSUES.filter((issue) => issue.rule === 'tssecurity:S5144').map(
+      ({ key, transition }) => ({ key, transition }),
+    ),
+    [{ key: 'AZ-gb17s7Nsapz3kouHt', transition: 'falsepositive' }],
+  );
+  assert.deepEqual(
+    REVIEWED_ISSUES.filter((issue) => issue.rule === 'typescript:S7785').map(
+      ({ key, transition }) => ({ key, transition }),
+    ),
+    [{ key: 'AZ-gb19K7Nsapz3kouHu', transition: 'accept' }],
+  );
+  assert.deepEqual(
+    REVIEWED_ISSUES.filter((issue) => ['Web:S6819', 'typescript:S6478'].includes(issue.rule)).map(
+      ({ key, transition }) => ({ key, transition }),
+    ),
+    [
+      { key: 'AZ-alMTTTAUVQ8sYgog2', transition: 'accept' },
+      { key: 'AZ-alM5ATAUVQ8sYgoiw', transition: 'accept' },
+    ],
+  );
+  assert.deepEqual(
+    REVIEWED_ISSUES.filter((issue) => issue.key === 'AZytnJJ1sZaVqOVfTofc').map(
+      ({ rule, transition }) => ({ rule, transition }),
+    ),
+    [{ rule: 'typescript:S6819', transition: 'accept' }],
+  );
 });
 
 test('rejects malformed reviewed manifests', () => {
-  assert.throws(() => validateReviewedIssueManifest(REVIEWED_ISSUES.slice(1)), /exactly 44/i);
+  assert.throws(() => validateReviewedIssueManifest(REVIEWED_ISSUES.slice(1)), /exactly 49/i);
   assert.throws(
     () => validateReviewedIssueManifest([...REVIEWED_ISSUES.slice(0, -1), REVIEWED_ISSUES[0]]),
     /repeats key/i,
@@ -268,7 +296,7 @@ test('preflights all metadata before applying exact sorted transitions', async (
       left.localeCompare(right, 'en'),
     ),
   );
-  assert.equal(result.fixedOrMissing.length, 40);
+  assert.equal(result.fixedOrMissing.length, 45);
   assert.deepEqual(result.ignoredReviewed, ['historical-reviewed-issue']);
 
   assert.equal(requests.length, 3);
@@ -283,9 +311,12 @@ test('preflights all metadata before applying exact sorted transitions', async (
     assert.equal(request.options.body.get('transition'), item.transition);
     assert.match(request.options.body.get('comment'), /^Relay reviewed exception:/);
     if (item.transition === 'falsepositive') {
-      assert.match(request.options.body.get('comment'), /(compatibility|contrast)/i);
+      assert.match(request.options.body.get('comment'), /(compatibility|contrast|openExternal)/i);
     } else {
-      assert.match(request.options.body.get('comment'), /(ARIA|test)/i);
+      assert.match(
+        request.options.body.get('comment'),
+        /(ARIA|test|Electron|ErrorBoundary|live-region)/i,
+      );
     }
   }
 });
@@ -310,7 +341,7 @@ test('skips fixed or missing and already-reviewed allowlisted issues', () => {
     [accepted.key, falsePositive.key].sort((left, right) => left.localeCompare(right, 'en')),
   );
   assert.deepEqual(result.ignoredReviewed, ['historical-reviewed-issue']);
-  assert.equal(result.fixedOrMissing.length, 42);
+  assert.equal(result.fixedOrMissing.length, 47);
 });
 
 test('fails closed before mutation on rule or component drift', async () => {

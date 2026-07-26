@@ -92,6 +92,14 @@ Controls in place:
 - Auxiliary windows are limited to an allowlisted route set
 - Auxiliary windows are capped at 5 concurrent instances
 
+The general `OPEN_EXTERNAL` action also requires a trusted sender and a shared
+external-action rate-limit token. HTTPS navigation is limited to Relay's exact
+status, social, Teams, or boundary-safe Dynatrace hosts; credentials, custom
+ports, whitespace, control characters, and all other web hosts are rejected.
+Teams desktop and web URLs are further confined to the meeting-draft path,
+exact `subject` and `attendees` fields, bounded decoded values, and validated
+attendee addresses. Relay has no general `mailto:` opener.
+
 ### External Dashboard Popouts
 
 Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.
@@ -180,21 +188,24 @@ Currently enforced limits include:
 
 Relay's `Security and Code Quality` workflow provides two complementary gates:
 
-- SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, blocks on the configured remote quality gate, and then blocks if the exact analyzed branch or pull request retains any Open, Confirmed, or legacy Reopened issue.
+- SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, waits for the exact uploaded analysis, reconciles only pinned `test`-branch review decisions, blocks if the analyzed branch or pull request retains any Open, Confirmed, or legacy Reopened issue, and then verifies the configured remote quality gate for that same analysis.
 - Snyk's native GitHub integration blocks newly introduced pull-request findings. The push-triggered Snyk CLI gate blocks any current high- or critical-severity Open Source or Snyk Code finding, including findings in development dependencies, and then publishes a dependency snapshot identified as `test`.
 
-The workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs on pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is also named `test`. After analysis, `security:sonar:issues` paginates the exact branch or pull-request issue set, fails on unresolved Open/Confirmed/Reopened issues, and reports Accepted/Won't Fix and False Positive decisions separately so reviewed exceptions remain visible. The Snyk CLI baseline runs on `test` pushes while the native integration owns pull requests. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
+The workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs on pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is also named `test`. The scanner uploads without making a premature quality-gate decision, and `security:sonar:quality-gate` validates the scanner report and waits for its exact compute task. After reconciliation, it proves that analysis is still the latest `test` analysis before and after reading the recalculated live branch gate; pull requests use their immutable analysis ID directly. After analysis, `security:sonar:issues` paginates the exact branch or pull-request issue set, fails on unresolved Open/Confirmed/Reopened issues, and reports Accepted/Won't Fix and False Positive decisions separately so reviewed exceptions remain visible. The Snyk CLI baseline runs on `test` pushes while the native integration owns pull requests. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
 
 Pull-request scans never change issue state. A `test`-branch push invokes an
-exact 44-item reconciliation manifest only after fresh analysis and before the
+exact 49-item reconciliation manifest only after fresh analysis and before the
 zero-open gate. The reconciler requires an internal `--apply` latch, validates
 each issue key, rule, and component before the first write, refuses to run when
 an unknown Open or Confirmed issue is present, and records a bounded rationale
-with every transition. The manifest contains 39 behavior-preserving Accepted
-decisions for intentional ARIA and test-structure patterns, plus five False
-Positives backed by persisted-hash compatibility or browser-computed contrast
+with every transition. The manifest contains 43 behavior-preserving Accepted
+decisions for intentional ARIA, test-structure, Electron startup, and render
+callback patterns, plus six False Positives backed by persisted-hash
+compatibility, browser-computed contrast, or constrained OS browser-dispatch
 evidence. Missing or fixed items are not changed, already-reviewed decisions
-are idempotent, and metadata drift fails closed.
+are idempotent, and metadata drift fails closed. The final quality-gate check
+remains fail-closed; reviewed issue transitions can no longer prevent the
+reconciler from running before that check.
 
 GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled for the repository. Snyk is the scanner and pull-request security gate; GitHub remains the source of secret-blocking and dependency-fix automation so duplicate Snyk dependency upgrade pull requests are unnecessary.
 
@@ -365,7 +376,7 @@ The preload bridge exposes `getKnowledgeCover({ documentId, checksum })` as a se
 
 PDF.js can flatten URI, Launch/GoToR, and recoverable JavaScript actions into the same URL fields. Relay therefore treats every retained PDF.js URL value as origin-agnostic inert text and reclassifies it through its own resolver; it never executes the originating PDF action. Native destinations stay inside the current PDF.js document. PDF-like paths resolve only against indexed Knowledge metadata, and an absolute or `file:` path contributes only its filename, never local filesystem authority. Unsupported protocols and action fields PDF.js retains explicitly do not produce a focusable overlay.
 
-Only an explicit operator click on a resolved HTTP(S) overlay can invoke `openKnowledgeWebLink`. The dedicated main-process handler requires a trusted sender, shares Relay's existing external-action rate limiter, parses a bounded URL, permits only HTTP(S) with a hostname, and rejects credentials, control characters, oversized values, and malformed URLs before calling `shell.openExternal`. This narrow action does not broaden or replace the unchanged provider allowlist on the general `OPEN_EXTERNAL` channel.
+Only an explicit operator click on a resolved HTTP(S) overlay can invoke `openKnowledgeWebLink`. The dedicated main-process handler requires a trusted sender, shares Relay's existing external-action rate limiter, parses a bounded URL, permits only HTTP(S) with a hostname, and rejects credentials, control characters, oversized values, and malformed URLs before calling `shell.openExternal`. This narrow action does not broaden or replace the provider allowlist on the general `OPEN_EXTERNAL` channel.
 
 Full-text search is an optional derived-data boundary. A server worker extracts bounded PDF passages into `knowledge_search_chunks`, which stores both original and normalized passage text. The collection is server-owned: authenticated clients may list/view it for search, but direct client create/update/delete rules are disabled. The main-process search service validates and bounds snapshots, reconciles realtime events, and may copy document metadata and chunks into the desktop offline search snapshot. Search requests are schema-validated and cancellable through trusted IPC; Relay Web adds authenticated same-origin routing and a per-session route limit.
 

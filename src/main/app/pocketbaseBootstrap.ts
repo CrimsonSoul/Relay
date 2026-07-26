@@ -336,7 +336,7 @@ function repairSuperuserCredentials(binaryPath: string, pbDataDir: string, secre
   try {
     createPrivateRepairDirectory(migrationDir);
 
-    const migrationId = randomUUID().replace(/-/g, '');
+    const migrationId = randomUUID().replaceAll('-', '');
     const completionToken = `${SUPERUSER_REPAIR_COMPLETION_PREFIX}${migrationId}`;
     const migrationPath = join(
       migrationDir,

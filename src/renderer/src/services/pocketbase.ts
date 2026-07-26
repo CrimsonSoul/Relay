@@ -309,5 +309,5 @@ export function requireOnline(): void {
 
 /** Escape a value for use in PocketBase filter strings to prevent injection. */
 export function escapeFilter(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', '\\\\').replaceAll('"', String.raw`\"`);
 }

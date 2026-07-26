@@ -617,10 +617,10 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     async (uploadId: string): Promise<boolean> => {
       const hydratedQueue = await ensureUploadQueueHydrated();
       if (!hydratedQueue) return false;
-      const localQueueItem = hydratedQueue.items.find(
+      const hasLocalQueueItem = hydratedQueue.items.some(
         (item) => item.id === uploadId || item.uploadId === uploadId,
       );
-      if (localQueueItem) {
+      if (hasLocalQueueItem) {
         return runUploadControl(
           `cancel:${uploadId}`,
           globalThis.api?.cancelKnowledgeUpload

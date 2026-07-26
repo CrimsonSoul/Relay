@@ -237,7 +237,7 @@ export class RelayAppUserAuthCoordinator {
 
   private noteAuthenticationFailure(key: string, error: unknown): void {
     const window = this.authenticationAttemptWindows.get(key);
-    if (!window || window.generation !== this.coordinatorGeneration) return;
+    if (window?.generation !== this.coordinatorGeneration) return;
     const failure = safePocketBaseAuthFailure(error);
     window.lastFailure = failure;
     if (failure.category === 'credential-rejected' || failure.category === 'rate-limited') {
@@ -251,7 +251,7 @@ export class RelayAppUserAuthCoordinator {
 
   private noteAuthenticationSuccess(key: string): void {
     const window = this.authenticationAttemptWindows.get(key);
-    if (!window || window.generation !== this.coordinatorGeneration) return;
+    if (window?.generation !== this.coordinatorGeneration) return;
     window.blockedUntil = 0;
     window.lastFailure = undefined;
     this.scheduleAuthenticationAttemptWindowExpiry(key, window);

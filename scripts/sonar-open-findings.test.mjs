@@ -155,6 +155,34 @@ test('the security workflow rejects insecure Sonar hosts before invoking the sca
   assert.ok(protocolGuard < scannerInvocation, 'Sonar host guard must run before the scanner');
 });
 
+test('the security workflow reconciles only after the exact analysis and gates it last', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/security.yml', import.meta.url),
+    'utf8',
+  );
+  const scanner = workflow.indexOf('npm run security:sonar --');
+  const waitForAnalysis = workflow.indexOf('npm run security:sonar:quality-gate -- wait-analysis');
+  const reconcileReviewed = workflow.indexOf('npm run security:sonar:reviewed --');
+  const openFindings = workflow.indexOf('npm run security:sonar:issues --');
+  const qualityGate = workflow.indexOf('npm run security:sonar:quality-gate -- check-quality-gate');
+
+  assert.ok(scanner >= 0, 'missing Sonar scanner invocation');
+  assert.match(workflow, /-Dsonar\.qualitygate\.wait=false/u);
+  assert.doesNotMatch(workflow, /-Dsonar\.qualitygate\.wait=true/u);
+  assert.ok(waitForAnalysis > scanner, 'the exact analysis must finish after scanner upload');
+  assert.ok(
+    reconcileReviewed > waitForAnalysis,
+    'reviewed issues must reconcile only after the exact analysis finishes',
+  );
+  assert.ok(
+    openFindings > reconcileReviewed,
+    'unresolved issues must be checked after test-branch reconciliation',
+  );
+  assert.ok(qualityGate > openFindings, 'the exact quality gate must be evaluated last');
+  assert.match(workflow, /--pull-request="\$\{\{ github\.event\.pull_request\.number \}\}"/u);
+  assert.match(workflow, /--branch=test/u);
+});
+
 test('maps canonical and legacy reviewed states without hiding reopened findings', () => {
   assert.equal(classifyIssue({ key: 'a', status: 'OPEN', resolution: null }), 'open');
   assert.equal(classifyIssue({ key: 'b', status: 'CONFIRMED', resolution: null }), 'open');

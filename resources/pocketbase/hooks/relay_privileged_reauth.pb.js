@@ -27,8 +27,7 @@ routerAdd(
 
     const account = e.auth;
     if (
-      !account ||
-      account.collection().name !== accountCollection ||
+      account?.collection().name !== accountCollection ||
       !account.getBool('active') ||
       typeof input.password !== 'string' ||
       input.password.length < 12 ||

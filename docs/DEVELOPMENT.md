@@ -373,8 +373,10 @@ Security scanners are not tied to public tokens in the repo. For local checks, p
 ```bash
 npm run test:coverage:sonar
 npm run security:sonar -- -Dsonar.organization=<organization>
-npm run security:sonar:issues -- --branch=test
+npm run security:sonar:quality-gate -- wait-analysis --branch=test
 npm run security:sonar:reviewed -- --branch=test --apply
+npm run security:sonar:issues -- --branch=test
+npm run security:sonar:quality-gate -- check-quality-gate --branch=test
 npm run security:snyk
 ```
 
@@ -388,10 +390,20 @@ issues separately. Pass exactly one `--branch=<name>` or
 `sonar-project.properties`, defaults to SonarQube Cloud when
 `SONAR_HOST_URL` is unset, and reads authentication only from `SONAR_TOKEN`.
 
+`security:sonar:quality-gate` reads the scanner's
+`.scannerwork/report-task.txt`, validates its HTTPS host, project, and exact
+compute-task identity, and requires one `--branch` or `--pull-request` scope.
+The `wait-analysis` phase blocks until that task succeeds. After the
+test-branch reconciler and zero-open check, `check-quality-gate` proves that
+analysis is still the latest branch analysis, polls the recalculated live branch
+gate for a bounded period, and rechecks freshness before accepting green. Pull
+requests never mutate issue state, so they use the immutable analysis ID and
+fail a non-passing gate immediately.
+
 `security:sonar:reviewed` is a write operation restricted to `test` and requires
-the explicit `--apply` latch. It contains an exact manifest of the 44 findings
-that were individually reviewed during the zero-warning cleanup: 39
-behavior-preserving Accepted decisions and five evidence-backed False
+the explicit `--apply` latch. It contains an exact manifest of the 49 findings
+that were individually reviewed during the zero-warning cleanup: 43
+behavior-preserving Accepted decisions and six evidence-backed False
 Positives. Before changing anything, it verifies every observed key, rule, and
 component, and it refuses to proceed if any other Open or Confirmed finding
 exists. Each transition adds a short audit rationale. The `test`-branch push
@@ -401,7 +413,7 @@ administrator token is intentionally available.
 
 `test:coverage:sonar` generates both LCOV reports without applying the repository's historical aggregate thresholds. The remote SonarQube quality gate enforces coverage on new code, while `npm run test:coverage` remains the explicit local aggregate-threshold check.
 
-The `Security and Code Quality` GitHub Actions workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs for pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is likewise named `test`. After a fresh `test` analysis, the push job applies only the pinned reviewed-issue manifest and then enforces zero open issues. The reconciler is idempotent and fails before its first write if any unknown Open or Confirmed issue appears or reviewed metadata drifts. Pull-request scans never change issue status. The full-baseline Snyk CLI gate runs on `test` pushes, then publishes a dependency snapshot with the `test` target reference. Snyk's native GitHub integration owns new-issue pull-request checks. SonarQube receives the unit and renderer LCOV reports, waits for the remote quality gate, and then applies the explicit zero-open-issue check to the exact analyzed branch or pull request. Scanner credentials are scoped only to their scanner steps and remain in GitHub Actions secrets, while organization and host identifiers are stored as repository variables.
+The `Security and Code Quality` GitHub Actions workflow is intentionally anchored to Relay's authoritative `test` branch. SonarQube runs for pushes to `test` and same-repository pull requests targeting `test`; the SonarQube Cloud project's main analysis branch is likewise named `test`. The scanner uploads unit and renderer LCOV reports without waiting on a gate that may still contain a pending reviewed decision. Relay then waits for the exact compute task, applies only the pinned reviewed-issue manifest on a `test` push, enforces zero open issues, and verifies the remote quality gate for that same analysis. The reconciler is idempotent and fails before its first write if any unknown Open or Confirmed issue appears or reviewed metadata drifts. Pull-request scans never change issue status. The full-baseline Snyk CLI gate runs on `test` pushes, then publishes a dependency snapshot with the `test` target reference. Snyk's native GitHub integration owns new-issue pull-request checks. Scanner credentials are scoped only to their scanner steps and remain in GitHub Actions secrets, while organization and host identifiers are stored as repository variables.
 
 ### Screenshot Refresh
 

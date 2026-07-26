@@ -255,7 +255,7 @@ describe('windowHandlers', () => {
 
       const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
         {},
-        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
 
       expect(result).toBe(false);
@@ -300,22 +300,22 @@ describe('windowHandlers', () => {
     it('opens Teams meeting draft URL', async () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
         {},
-        'https://teams.microsoft.com/l/meeting/new?subject=test',
+        'https://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
 
       expect(shell.openExternal).toHaveBeenCalledWith(
-        'https://teams.microsoft.com/l/meeting/new?subject=test',
+        'https://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
     });
 
     it('opens Teams client deep link (msteams: protocol) and returns true', async () => {
       const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
         {},
-        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
 
       expect(shell.openExternal).toHaveBeenCalledWith(
-        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
       expect(result).toBe(true);
     });
@@ -330,6 +330,38 @@ describe('windowHandlers', () => {
       expect(result).toBe(false);
     });
 
+    it.each([
+      [
+        'unexpected client path',
+        'msteams://teams.microsoft.com/l/chat/new?subject=test&attendees=',
+      ],
+      [
+        'unexpected client query key',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=&content=payload',
+      ],
+      [
+        'duplicate client query key',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&subject=other&attendees=',
+      ],
+      [
+        'invalid client attendee',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=not-an-email',
+      ],
+      [
+        'encoded client control character',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test%0Ainjected&attendees=',
+      ],
+      [
+        'client fragment',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=#fragment',
+      ],
+      ['unexpected web path', 'https://teams.microsoft.com/l/chat/new?subject=test&attendees='],
+    ])('blocks Teams meeting drafts with an %s', async (_case, url) => {
+      await expect(handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url)).resolves.toBe(false);
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
     it('blocks unknown https URL and returns false', async () => {
       const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://evil.example');
 
@@ -337,17 +369,12 @@ describe('windowHandlers', () => {
       expect(result).toBe(false);
     });
 
-    it('opens valid mailto URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'mailto:user@example.com');
-
-      expect(shell.openExternal).toHaveBeenCalledWith('mailto:user@example.com');
-    });
-
-    it('blocks mailto URLs with extra headers', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
-        {},
-        'mailto:user@example.com?subject=Injected&body=payload',
-      );
+    it.each([
+      'mailto:user@example.com',
+      'mailto:user@example.com%0D%0ABcc%3Aattacker%40example.com',
+      'mailto:user@example.com?subject=Injected&body=payload',
+    ])('blocks unused mailto URL %s', async (url) => {
+      await expect(handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url)).resolves.toBe(false);
 
       expect(shell.openExternal).not.toHaveBeenCalled();
     });
