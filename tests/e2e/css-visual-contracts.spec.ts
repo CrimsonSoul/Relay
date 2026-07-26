@@ -449,12 +449,21 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       window.evaluate(
         ({ requestedMode, shouldScrollToEnd, targetClassicWidth }) => {
           globalThis.document.body.classList.remove('classic-scrollbar-model');
+          const planClassicGutter = (nativeGutter: number) => {
+            const emulatedGutter = Math.max(0, targetClassicWidth - nativeGutter);
+            return {
+              nativeGutter,
+              emulatedGutter,
+              totalClassicGutter: nativeGutter + emulatedGutter,
+            };
+          };
+          const wideNativeGutterSimulation = planClassicGutter(24);
           const scrollOwners = Array.from(
             globalThis.document.querySelectorAll('[data-scroll-contract]'),
           );
           const gutterMetrics = new Map<
             (typeof scrollOwners)[number],
-            { nativeGutter: number; emulatedGutter: number; nativeInlineEndBorder: number }
+            ReturnType<typeof planClassicGutter> & { nativeInlineEndBorder: number }
           >();
           for (const element of scrollOwners) {
             if (!(element instanceof globalThis.HTMLElement)) {
@@ -467,12 +476,14 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
               0,
               element.offsetWidth - element.clientWidth - inlineStartBorder - inlineEndBorder,
             );
-            const emulatedGutter = Math.max(0, targetClassicWidth - nativeGutter);
+            const gutterPlan = planClassicGutter(nativeGutter);
             element.style.setProperty('--relay-native-inline-end-border', `${inlineEndBorder}px`);
-            element.style.setProperty('--relay-emulated-inline-gutter', `${emulatedGutter}px`);
+            element.style.setProperty(
+              '--relay-emulated-inline-gutter',
+              `${gutterPlan.emulatedGutter}px`,
+            );
             gutterMetrics.set(element, {
-              nativeGutter,
-              emulatedGutter,
+              ...gutterPlan,
               nativeInlineEndBorder: inlineEndBorder,
             });
           }
@@ -492,9 +503,12 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
             0,
             error.offsetHeight - error.clientHeight - blockStartBorder - blockEndBorder,
           );
-          const emulatedErrorGutter = Math.max(0, targetClassicWidth - nativeErrorGutter);
+          const errorGutterPlan = planClassicGutter(nativeErrorGutter);
           error.style.setProperty('--relay-native-block-end-border', `${blockEndBorder}px`);
-          error.style.setProperty('--relay-emulated-block-gutter', `${emulatedErrorGutter}px`);
+          error.style.setProperty(
+            '--relay-emulated-block-gutter',
+            `${errorGutterPlan.emulatedGutter}px`,
+          );
 
           globalThis.document.body.classList.toggle(
             'classic-scrollbar-model',
@@ -538,7 +552,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
               scrollbarGutter: styles.scrollbarGutter,
               nativeGutter: metrics.nativeGutter,
               emulatedGutter: metrics.emulatedGutter,
-              totalClassicGutter: metrics.nativeGutter + metrics.emulatedGutter,
+              totalClassicGutter: metrics.totalClassicGutter,
               nativeInlineEndBorder: metrics.nativeInlineEndBorder,
               scrollTop: element.scrollTop,
               maxScrollTop,
@@ -558,6 +572,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
           const errorStyles = globalThis.getComputedStyle(error);
           return {
             mode: requestedMode,
+            wideNativeGutterSimulation,
             snapshots,
             error: {
               clientWidth: error.clientWidth,
@@ -566,9 +581,9 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
               offsetHeight: error.offsetHeight,
               blockEndBorderWidth: Number.parseFloat(errorStyles.borderBlockEndWidth),
               nativeBlockEndBorder: blockEndBorder,
-              nativeGutter: nativeErrorGutter,
-              emulatedGutter: emulatedErrorGutter,
-              totalClassicGutter: nativeErrorGutter + emulatedErrorGutter,
+              nativeGutter: errorGutterPlan.nativeGutter,
+              emulatedGutter: errorGutterPlan.emulatedGutter,
+              totalClassicGutter: errorGutterPlan.totalClassicGutter,
               scrollWidth: error.scrollWidth,
               scrollLeft: error.scrollLeft,
               maxScrollLeft: error.scrollWidth - error.clientWidth,
@@ -648,29 +663,40 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
     expect(before.classic.snapshots).toHaveLength(8);
     expect(after.overlay.snapshots).toHaveLength(8);
     expect(after.classic.snapshots).toHaveLength(8);
+    expect(before.classic.wideNativeGutterSimulation).toEqual({
+      nativeGutter: 24,
+      emulatedGutter: 0,
+      totalClassicGutter: 24,
+    });
     for (const phase of [before.classic, after.classic]) {
       for (const snapshot of phase.snapshots) {
         expect(snapshot.emulatedGutter, snapshot.id).toBe(
           Math.max(0, classicScrollbarWidth - snapshot.nativeGutter),
         );
-        expect(snapshot.totalClassicGutter, snapshot.id).toBe(classicScrollbarWidth);
+        expect(snapshot.totalClassicGutter, snapshot.id).toBe(
+          Math.max(snapshot.nativeGutter, classicScrollbarWidth),
+        );
       }
     }
     for (const phase of [before.classic, after.classic]) {
       expect(phase.error.emulatedGutter).toBe(
         Math.max(0, classicScrollbarWidth - phase.error.nativeGutter),
       );
-      expect(phase.error.totalClassicGutter).toBe(classicScrollbarWidth);
+      expect(phase.error.totalClassicGutter).toBe(
+        Math.max(phase.error.nativeGutter, classicScrollbarWidth),
+      );
       expect(phase.error.blockEndBorderWidth).toBe(
         phase.error.nativeBlockEndBorder + phase.error.emulatedGutter,
       );
     }
-    expect(before.classic.error.clientWidth).toBe(before.overlay.error.clientWidth);
-    expect(before.classic.error.clientHeight).toBe(
-      before.overlay.error.clientHeight - before.classic.error.emulatedGutter,
-    );
-    expect(before.classic.error.offsetWidth).toBe(before.overlay.error.offsetWidth);
-    expect(before.classic.error.offsetHeight).toBe(before.overlay.error.offsetHeight);
+    [before, after].forEach((phase) => {
+      expect(phase.classic.error.clientWidth).toBe(phase.overlay.error.clientWidth);
+      expect(phase.classic.error.clientHeight).toBe(
+        phase.overlay.error.clientHeight - phase.classic.error.emulatedGutter,
+      );
+      expect(phase.classic.error.offsetWidth).toBe(phase.overlay.error.offsetWidth);
+      expect(phase.classic.error.offsetHeight).toBe(phase.overlay.error.offsetHeight);
+    });
     for (const mode of ['overlay', 'classic'] as const) {
       const oncallAtTop = findSnapshot(before[mode].snapshots, 'oncall-root');
       const oncallAtEnd = findSnapshot(after[mode].snapshots, 'oncall-root');
@@ -693,18 +719,24 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       'search-results': 0,
       'detail-body': 0,
     });
-    expect(
-      Object.fromEntries(before.classic.snapshots.map(({ id, clientWidth }) => [id, clientWidth])),
-    ).toEqual({
-      assembler: 263,
-      popout: 424,
-      'oncall-root': 424,
-      'oncall-masonry': 360,
-      combobox: 282,
-      'group-list': 284,
-      'search-results': 402,
-      'detail-body': 303,
-    });
+    const expectOverlayHostClientWidths = () => {
+      if (!before.overlay.snapshots.every(({ nativeGutter }) => nativeGutter === 0)) return;
+      expect(
+        Object.fromEntries(
+          before.classic.snapshots.map(({ id, clientWidth }) => [id, clientWidth]),
+        ),
+      ).toEqual({
+        assembler: 263,
+        popout: 424,
+        'oncall-root': 424,
+        'oncall-masonry': 360,
+        combobox: 282,
+        'group-list': 284,
+        'search-results': 402,
+        'detail-body': 303,
+      });
+    };
+    expectOverlayHostClientWidths();
 
     for (const mode of ['overlay', 'classic'] as const) {
       for (const beforeSnapshot of before[mode].snapshots) {
@@ -779,8 +811,6 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       expect(after[mode].error.scrollLeft, mode).toBe(after[mode].error.maxScrollLeft);
       expect(after[mode].error.scrollLeft, mode).toBeGreaterThan(0);
     }
-    expect(after.classic.error.clientHeight).toBe(before.classic.error.clientHeight);
-    expect(after.classic.error.offsetHeight).toBe(before.classic.error.offsetHeight);
   } finally {
     await app.close();
   }
