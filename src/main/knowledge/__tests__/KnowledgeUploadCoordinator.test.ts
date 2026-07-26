@@ -11,6 +11,15 @@ import {
   type KnowledgeUploadRepository,
 } from '../KnowledgeUploadCoordinator';
 
+vi.mock('@shared/knowledge', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@shared/knowledge')>();
+  return {
+    ...actual,
+    // Preserve the multi-chunk boundary contract without hashing multi-megabyte fixtures in coverage.
+    KNOWLEDGE_UPLOAD_CHUNK_BYTES: 64 * 1024,
+  };
+});
+
 const NOW = Date.parse('2026-07-15T20:00:00.000Z');
 const publisher: KnowledgeUploadActor = {
   accountId: 'account-publisher',

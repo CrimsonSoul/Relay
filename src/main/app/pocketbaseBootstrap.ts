@@ -53,7 +53,7 @@ class AppUserEnsureError extends Error {
 const MAINTENANCE_INITIAL_DELAY_MS = 30_000;
 const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SUPERUSER_REPAIR_DIRECTORY_PREFIX = '.relay-pb-repair-';
-const SUPERUSER_REPAIR_SECRET_FILE_NAME = '.relay-superuser-secret';
+const SUPERUSER_REPAIR_PAYLOAD_FILE_NAME = '.relay-superuser-repair-payload';
 const SUPERUSER_REPAIR_COMPLETION_FILE_NAME = '.relay-superuser-repair-complete';
 const SUPERUSER_REPAIR_COMPLETION_PREFIX = 'relay-superuser-repair:';
 const PRIVILEGED_REAUTHENTICATION_HOOK_FILE = 'relay_privileged_reauth.pb.js';
@@ -77,7 +77,7 @@ migrate((app) => {
     throw new Error("Relay superuser repair directory is unavailable");
   }
 
-  const secretPath = $filepath.join(repairDir, "${SUPERUSER_REPAIR_SECRET_FILE_NAME}");
+  const secretPath = $filepath.join(repairDir, "${SUPERUSER_REPAIR_PAYLOAD_FILE_NAME}");
   const completionPath = $filepath.join(
     repairDir,
     "${SUPERUSER_REPAIR_COMPLETION_FILE_NAME}"
@@ -331,7 +331,7 @@ async function verifyPrivilegedReauthenticationRoute(
  */
 function repairSuperuserCredentials(binaryPath: string, pbDataDir: string, secret: string): void {
   const migrationDir = getSuperuserRepairDirectory(pbDataDir);
-  const secretPath = join(migrationDir, SUPERUSER_REPAIR_SECRET_FILE_NAME);
+  const secretPath = join(migrationDir, SUPERUSER_REPAIR_PAYLOAD_FILE_NAME);
   const completionPath = join(migrationDir, SUPERUSER_REPAIR_COMPLETION_FILE_NAME);
   try {
     createPrivateRepairDirectory(migrationDir);

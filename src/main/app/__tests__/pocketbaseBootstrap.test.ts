@@ -483,7 +483,7 @@ describe('pocketbaseBootstrap', () => {
       string,
       object,
     ];
-    expect(secretPath).toMatch(/[/\\]\.relay-superuser-secret$/);
+    expect(secretPath).toMatch(/[/\\]\.relay-superuser-repair-payload$/);
     expect(secretContents).toBe(secret);
     expect(secretWriteOptions).toEqual({
       encoding: 'utf8',
