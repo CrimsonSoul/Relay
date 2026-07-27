@@ -50,7 +50,9 @@ const total = Object.values(current).reduce((sum, n) => sum + n, 0);
 
 if (process.argv.includes('--update')) {
   writeFileSync(baselinePath, `${JSON.stringify({ total, perFile: current }, null, 2)}\n`);
-  console.log(`Recorded typecheck baseline: ${total} errors across ${Object.keys(current).length} files.`);
+  console.log(
+    `Recorded typecheck baseline: ${total} errors across ${Object.keys(current).length} files.`,
+  );
   process.exit(0);
 }
 
@@ -67,7 +69,9 @@ for (const [file, count] of Object.entries(current)) {
 }
 
 if (regressions.length > 0) {
-  console.error(`Typecheck regressed in ${regressions.length} file(s):\n  ${regressions.join('\n  ')}`);
+  console.error(
+    `Typecheck regressed in ${regressions.length} file(s):\n  ${regressions.join('\n  ')}`,
+  );
   console.error(
     '\nFix the new errors. If a file legitimately grew, re-record with: node scripts/typecheck.mjs --update',
   );

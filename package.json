@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "main": "dist/main/index.js",
-  "description": "Relay — operations command center for incident communications and shared operational context",
+  "description": "Relay \u2014 operations command center for incident communications and shared operational context",
   "author": "Relay Team",
   "license": "MIT",
   "scripts": {
@@ -52,6 +52,10 @@
   },
   "lint-staged": {
     "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.mjs": [
       "eslint --fix",
       "prettier --write"
     ],
