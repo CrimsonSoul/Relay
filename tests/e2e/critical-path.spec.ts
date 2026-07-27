@@ -2717,6 +2717,13 @@ test.describe('Vital Critical Path', () => {
     const deleteSavedGroup = window.getByRole('menuitem', { name: 'Delete Group' });
     await expect(deleteSavedGroup).toBeVisible();
     await deleteSavedGroup.click();
+
+    // Deleting a saved group is irreversible, so it now asks first.
+    const confirmDeleteGroup = window.getByRole('dialog', { name: /Delete Group/i });
+    await expect(confirmDeleteGroup).toBeVisible();
+    await confirmDeleteGroup.getByRole('button', { name: 'Delete Group' }).click();
+    await expect(confirmDeleteGroup).not.toBeVisible();
+
     await expect(
       composePanel.getByRole('button', { name: new RegExp(escapeRegExp(groupName), 'i') }),
     ).toHaveCount(0);

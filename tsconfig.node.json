@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2023"],
     "types": ["electron-vite/node", "node"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
@@ -13,9 +13,11 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "baseUrl": ".",
+    // No baseUrl: it is deprecated in TS 6 and made every `tsc -p` invocation
+    // abort before checking anything. Path mappings resolve relative to this
+    // file without it.
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"],

@@ -1,9 +1,15 @@
 {
   "extends": "./tsconfig.node.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["electron-vite/node", "vite/client", "node"],
+    "types": [
+      "electron-vite/node",
+      "vite/client",
+      "node",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "noEmit": true
   },
   "include": ["src/renderer/src/**/*", "src/renderer/index.html", "src/shared/**/*"],
