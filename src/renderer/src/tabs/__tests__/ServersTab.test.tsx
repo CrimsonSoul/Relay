@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Server, Contact } from '@shared/ipc';
 
@@ -32,10 +32,12 @@ function makeDefaultListFiltersReturn(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const mockSetServerNote = vi.fn();
+
 vi.mock('../../contexts', () => ({
   useNotesContext: () => ({
     getServerNote: vi.fn().mockReturnValue(undefined),
-    setServerNote: vi.fn(),
+    setServerNote: mockSetServerNote,
   }),
 }));
 
@@ -85,17 +87,44 @@ vi.mock('../../components/ListFilters', () => ({
 }));
 
 vi.mock('../../components/ServerDetailPanel', () => ({
-  ServerDetailPanel: ({ server, onDelete }: { server: Server; onDelete: () => void }) => (
+  ServerDetailPanel: ({
+    server,
+    onDelete,
+    onEditNotes,
+  }: {
+    server: Server;
+    onDelete: () => void;
+    onEditNotes: () => void;
+  }) => (
     <div data-testid="server-detail">
       {server.name}
       <button type="button" data-testid="server-detail-delete" onClick={onDelete} />
+      <button type="button" data-testid="server-detail-notes" onClick={onEditNotes} />
     </div>
   ),
 }));
 
+// The real NotesModal closes itself on any truthy onSave result, so the stub records exactly what
+// the tab resolves rather than re-implementing that decision.
+const noteSaveOutcomes: unknown[] = [];
+
 vi.mock('../../components/NotesModal', () => ({
-  NotesModal: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="notes-modal" /> : null,
+  NotesModal: ({
+    isOpen,
+    onSave,
+  }: {
+    isOpen: boolean;
+    onSave: (note: string, tags: string[]) => Promise<boolean | undefined>;
+  }) =>
+    isOpen ? (
+      <div data-testid="notes-modal">
+        <button
+          type="button"
+          data-testid="notes-modal-save"
+          onClick={() => void onSave('Patched overnight', []).then((r) => noteSaveOutcomes.push(r))}
+        />
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/StatusBar', () => ({
@@ -149,7 +178,6 @@ function makeDefaultServersReturn() {
     setContextMenu: vi.fn(),
     handleContextMenu: vi.fn(),
     handleEdit: vi.fn(),
-    handleDelete: vi.fn(),
     isAddModalOpen: false,
     setIsAddModalOpen: vi.fn(),
     openAddModal: vi.fn(),
@@ -163,6 +191,8 @@ function makeDefaultServersReturn() {
 beforeEach(() => {
   mockUseServers.mockReturnValue(makeDefaultServersReturn());
   mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn());
+  noteSaveOutcomes.length = 0;
+  mockSetServerNote.mockReset();
 });
 
 import { ServersTab } from '../ServersTab';
@@ -321,6 +351,26 @@ describe('ServersTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Server record is locked');
+  });
+
+  // Regression: setServerNote resolves an IpcResult, and the tab handed that object straight back
+  // to NotesModal, which only checks truthiness. A failed save therefore closed the modal as if it
+  // had worked and the operator's note was gone.
+  it.each([
+    ['a rejected save', { success: false, error: 'offline' }, false],
+    ['an accepted save', { success: true }, true],
+  ])('reports %s to the notes modal as a boolean', async (_caseName, ipcResult, expected) => {
+    const servers = [makeServer({ name: 'db-server-01' })];
+    mockSetServerNote.mockResolvedValue(ipcResult);
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
+
+    render(<ServersTab servers={servers} contacts={[]} />);
+    fireEvent.click(screen.getByTestId('server-detail-notes'));
+    fireEvent.click(screen.getByTestId('notes-modal-save'));
+
+    await waitFor(() => expect(noteSaveOutcomes).toHaveLength(1));
+    expect(mockSetServerNote).toHaveBeenCalledWith('db-server-01', 'Patched overnight', []);
+    expect(noteSaveOutcomes[0]).toBe(expected);
   });
 
   it('renders context menu when contextMenu is present', () => {

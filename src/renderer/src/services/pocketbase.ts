@@ -1,4 +1,4 @@
-import PocketBase from 'pocketbase';
+import PocketBase, { type AuthRecord } from 'pocketbase';
 import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
 import { loggers } from '../utils/logger';
 
@@ -80,10 +80,25 @@ function setConnectionState(state: ConnectionState): void {
   stateListeners.forEach((fn) => fn(state));
 }
 
+/**
+ * `PbAuthSession.record` crosses IPC as a loose bag; PocketBase's own auth store
+ * wants a `RecordModel`. Keep every field the server sent and only fill in the
+ * identifiers PocketBase itself reads.
+ */
+function toAuthRecord(record: PbAuthSession['record']): AuthRecord {
+  if (!record) return null;
+  return {
+    ...record,
+    id: typeof record.id === 'string' ? record.id : '',
+    collectionId: typeof record.collectionId === 'string' ? record.collectionId : '',
+    collectionName: typeof record.collectionName === 'string' ? record.collectionName : '',
+  };
+}
+
 export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false): void {
   authRejected = false;
   const pb = getPb();
-  pb.authStore.save(auth.token, auth.record);
+  pb.authStore.save(auth.token, toAuthRecord(auth.record));
   setConnectionState('online');
   if (!skipHealthRestart) startHealthCheck();
 }

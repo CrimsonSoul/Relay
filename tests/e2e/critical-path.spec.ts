@@ -1295,6 +1295,16 @@ test.describe('Vital Critical Path', () => {
     fs.writeFileSync(secondReplacementPath, secondReplacementBytes, { mode: 0o600 });
     await installServerKnowledgeDialogFixture([secondReplacementPath]);
     await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+    // Release the filter as soon as this test stops needing it. The workspace only re-reads
+    // documents from the server when the debounced query changes, so leaving "Payment API
+    // Degradation" applied narrows every later snapshot to that one document — including the ones
+    // taken after a publish — and the document published below would then exist only behind a
+    // single un-retried read that has to land inside the assertion timeout. Waiting for a document
+    // the filter excluded proves the unfiltered page has arrived before the test moves on.
+    await search.fill('');
+    await expect(
+      window.locator('.knowledge-management-row', { hasText: CONTINUOUS_READER_TITLE }),
+    ).toBeVisible();
     await expect(
       paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }),
     ).toBeVisible();
@@ -1379,6 +1389,14 @@ test.describe('Vital Critical Path', () => {
     await expect(publish).toBeEnabled({ timeout: 30_000 });
     await publish.click();
     await expect(publishRow).not.toBeVisible();
+    // The queue clearing only proves the upload reached "published"; confirm the publish actually
+    // produced the live document the closing assertion looks for.
+    await expect(
+      pb.collection('knowledge_documents').getFullList({
+        filter: 'fileName = "Operational publish evidence.pdf"',
+        requestKey: null,
+      }),
+    ).resolves.toHaveLength(1);
 
     const largeUploadPath = path.join(fixtureDir, 'Operational upload controls.pdf');
     writePaddedKnowledgePdfFixture(

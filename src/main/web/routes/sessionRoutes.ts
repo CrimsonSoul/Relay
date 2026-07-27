@@ -6,7 +6,7 @@ import {
   type WebSessionBootstrap,
 } from '@shared/webApi';
 import type { WebSessionCreateInput, WebSessionRecord, WebSessionStore } from '../WebSessionStore';
-import { WEB_SESSION_COOKIE_NAME, type WebRouter } from '../WebRouter';
+import { WEB_SESSION_COOKIE_NAME, type WebRouter, type WebRouteResponse } from '../WebRouter';
 import { WebPrivilegedSession } from '../WebPrivilegedSession';
 import { WebResourceBudget } from '../WebResourceBudget';
 
@@ -152,7 +152,10 @@ export function registerWebSessionRoutes(
     method: 'GET',
     path: `${RELAY_WEB_API_PREFIX}/session/events`,
     authenticated: true,
-    handler: async ({ request, session, sessionId }) => {
+    // Annotated so each branch is checked against WebRouteResponse directly: without it
+    // TypeScript unions the three literals and stamps `'Content-Type'?: undefined` onto
+    // the 429 branch's headers, which no longer fits Record<string, string>.
+    handler: async ({ request, session, sessionId }): Promise<WebRouteResponse> => {
       if (!sessionId || !session) {
         return { status: 401, body: { ok: false, error: 'unauthenticated' } };
       }
@@ -175,7 +178,7 @@ export function registerWebSessionRoutes(
           const logicalSessionId = session.rateLimitId;
           let closed = false;
           let heartbeat: NodeJS.Timeout | null = null;
-          let stopEvents = () => undefined;
+          let stopEvents: () => void = () => undefined;
           const close = () => {
             if (closed) return;
             closed = true;

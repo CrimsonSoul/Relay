@@ -19,6 +19,7 @@ const clearDynatraceOnly = process.argv.includes('--clear-dynatrace');
 const DYNATRACE_DEMO_PREFIX = 'RELAY-DEMO-';
 let token = '';
 let seedSuperuserId = '';
+const failedRecords = [];
 
 function resolvePocketBaseBinary() {
   const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
@@ -82,9 +83,10 @@ async function authWith(identity, password) {
   });
   const data = await res.json();
   if (!res.ok) {
-    console.error(`Auth failed with status ${res.status}`);
+    // Throwing (rather than exiting here) lets the top-level finally clean up
+    // the temporary seed superuser that ensureSeedSuperuser may have created.
     console.error(JSON.stringify(data, null, 2));
-    process.exit(1);
+    throw new Error(`Auth failed with status ${res.status}`);
   }
   token = data.token;
   return data;
@@ -131,6 +133,7 @@ async function create(collection, data) {
   const body = await res.text();
   if (!res.ok) {
     console.error(`  FAIL ${collection}:`, body);
+    failedRecords.push(`${collection} (HTTP ${res.status})`);
     return {};
   }
   return JSON.parse(body);
@@ -154,14 +157,23 @@ async function clearCollection(collection) {
       headers: { Authorization: token },
     });
     const data = await res.json();
+    if (!res.ok) {
+      throw new Error(`Could not list ${collection}: ${JSON.stringify(data)}`);
+    }
     if (!data.items?.length) break;
+    let deletedThisPass = 0;
     for (const item of data.items) {
       const del = await fetch(`${PB}/api/collections/${collection}/records/${item.id}`, {
         method: 'DELETE',
         headers: { Authorization: token },
       });
-      if (del.ok) removed++;
+      if (del.ok) deletedThisPass++;
     }
+    // Without this guard an undeletable record loops forever on the same page.
+    if (deletedThisPass === 0) {
+      throw new Error(`Could not delete any of ${data.items.length} records from ${collection}`);
+    }
+    removed += deletedThisPass;
   }
   console.log(`  Cleared ${removed} records from ${collection}`);
 }
@@ -1060,6 +1072,12 @@ async function seed() {
 
   await seedDynatraceProblems();
 
+  // create() reports per-record failures without aborting; a partial seed must
+  // still exit non-zero instead of printing a success banner.
+  if (failedRecords.length > 0) {
+    throw new Error(`${failedRecords.length} records failed: ${failedRecords.join(', ')}`);
+  }
+
   console.log('\n✅ Seed complete!');
 }
 
@@ -1067,7 +1085,9 @@ try {
   await seed();
 } catch (err) {
   console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
-  process.exit(1);
+  // Exiting immediately here would skip the finally block below and strand the
+  // temporary seed superuser in PocketBase; setting exitCode lets cleanup run.
+  process.exitCode = 1;
 } finally {
   await cleanupSeedSuperuser();
 }

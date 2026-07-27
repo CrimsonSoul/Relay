@@ -8,6 +8,7 @@ import {
   normalizeKnowledgeUploadSelectionResult,
   type KnowledgeCoverResult,
   type KnowledgePdfResult,
+  type KnowledgeUploadQueueView,
   type KnowledgeUploadSelectionResult,
 } from '@shared/knowledge';
 import { normalizeKnowledgeSearchResponse } from '@shared/knowledgeSearch';
@@ -49,13 +50,16 @@ type WebBridgeOptions = {
   refreshSession?: () => Promise<WebSessionBootstrapResult>;
 };
 
-const EMPTY_UPLOAD_QUEUE = {
-  restartRecovery: false,
-  activeBatchId: null,
-  totalBytes: 0,
-  acknowledgedBytes: 0,
-  items: [],
-} as const;
+/** A fresh view each call: the queue's `items` array must not be shared. */
+function emptyUploadQueue(): KnowledgeUploadQueueView {
+  return {
+    restartRecovery: false,
+    activeBatchId: null,
+    totalBytes: 0,
+    acknowledgedBytes: 0,
+    items: [],
+  };
+}
 
 function browserPlatform(): BridgeAPI['platform'] {
   return globalThis.navigator?.platform?.toLowerCase().includes('mac') ? 'darwin' : 'win32';
@@ -667,7 +671,7 @@ export function createWebBridge(
     getKnowledgeUploadQueue: async () =>
       normalizeKnowledgeUploadQueueView(
         await request('/knowledge/upload/queue', { method: 'GET' }),
-      ) ?? EMPTY_UPLOAD_QUEUE,
+      ) ?? emptyUploadQueue(),
     pauseKnowledgeUploadBatch: (id) =>
       request<boolean>('/knowledge/upload/pause-batch', { method: 'POST', body: { id } }).catch(
         () => false,

@@ -33,10 +33,8 @@ const MAX_NAME = 500;
 const MAX_FIELD = 1000;
 const MAX_NOTE = 10000;
 const MAX_HTML_BODY = 750000;
-const MAX_SEARCH = 2000;
 const MAX_ID = 200;
 const MAX_ARRAY_ITEMS = 500;
-const MAX_GROUP_CONTACTS = 200;
 
 export const TabNameSchema = z.enum(TAB_NAMES);
 
@@ -216,71 +214,6 @@ export const PublicPrivilegedCommandRequestSchema = z
     } as PublicPrivilegedCommandRequest;
   });
 
-// ==================== Contact Schemas ====================
-export const ContactSchema = z.object({
-  name: z.string().min(1).max(MAX_NAME),
-  email: z.string().email().max(MAX_FIELD),
-  phone: z.string().max(MAX_FIELD),
-  title: z.string().max(MAX_FIELD),
-  _searchString: z.string().max(MAX_SEARCH).optional(),
-  raw: z
-    .object({
-      id: z.string().max(MAX_ID).optional(),
-      createdAt: z.number().optional(),
-      updatedAt: z.number().optional(),
-    })
-    .passthrough()
-    .optional(),
-});
-
-// ==================== Server Schemas ====================
-export const ServerSchema = z.object({
-  name: z.string().min(1).max(MAX_NAME),
-  businessArea: z.string().max(MAX_FIELD),
-  lob: z.string().max(MAX_FIELD),
-  comment: z.string().max(MAX_NOTE),
-  // owner and contact may contain emails or free-text names
-  owner: z.string().max(MAX_FIELD),
-  contact: z.string().max(MAX_FIELD),
-  os: z.string().max(MAX_FIELD),
-  _searchString: z.string().max(MAX_SEARCH).optional(),
-  raw: z
-    .object({
-      id: z.string().max(MAX_ID).optional(),
-      createdAt: z.number().optional(),
-      updatedAt: z.number().optional(),
-    })
-    .passthrough()
-    .optional(),
-});
-
-// ==================== OnCall Schemas ====================
-export const OnCallRowSchema = z.object({
-  id: z.string().max(MAX_ID),
-  team: z.string().min(1).max(MAX_NAME),
-  teamId: z.string().max(MAX_NAME),
-  role: z.string().max(MAX_FIELD),
-  name: z.string().max(MAX_NAME),
-  contact: z.string().max(MAX_FIELD),
-  timeWindow: z.string().max(MAX_FIELD).optional(),
-});
-
-export const OnCallRowsArraySchema = z.array(OnCallRowSchema).max(MAX_ARRAY_ITEMS);
-
-// ==================== Group Schemas ====================
-export const GroupSchema = z.object({
-  id: z.string().max(MAX_ID).optional(),
-  name: z.string().min(1).max(MAX_NAME),
-  contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_GROUP_CONTACTS),
-  createdAt: z.number().optional(),
-  updatedAt: z.number().optional(),
-});
-
-export const GroupUpdateSchema = z.object({
-  name: z.string().min(1).max(MAX_NAME).optional(),
-  contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_GROUP_CONTACTS).optional(),
-});
-
 // ==================== Bridge History Schemas ====================
 export const BridgeHistoryEntrySchema = z.object({
   id: z.string().max(MAX_ID).optional(),
@@ -417,28 +350,3 @@ export const LogEntrySchema = z.object({
   data: z.unknown().optional(),
   timestamp: z.string().optional(),
 });
-
-// ==================== Utility Functions ====================
-
-/**
- * Validates and returns the parsed data, or returns null with logged error
- */
-export function validateIpcDataSafe<T>(
-  schema: z.ZodType<T>,
-  data: unknown,
-  context: string,
-  logger?: (msg: string, data?: Record<string, unknown>) => void,
-): T | null {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    const errorData = { message: result.error.message, issues: result.error.issues };
-    if (logger) {
-      logger(`IPC validation failed for ${context}`, { error: errorData });
-    } else {
-      // Fallback for callers that don't provide a logger (all current callers do)
-      console.error(`IPC validation failed for ${context}:`, errorData);
-    }
-    return null;
-  }
-  return result.data;
-}

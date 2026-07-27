@@ -619,7 +619,9 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
     );
   }
 
-  if (showsKnowledgeCatalog(view, selectedDocument)) {
+  // The `!selectedDocument` arm is spelled out here as well as inside showsKnowledgeCatalog so the
+  // reader below is known to have a document; the two conditions are equivalent by construction.
+  if (!selectedDocument || showsKnowledgeCatalog(view, selectedDocument)) {
     return (
       <div className="knowledge-tab knowledge-tab--catalog" data-motion="panel">
         <KnowledgeLibrary

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { RecordModel } from 'pocketbase';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
   getPb,
@@ -119,6 +120,22 @@ function upsertPresenceRecord(
   const next = [...records];
   next[existingIndex] = record;
   return next;
+}
+
+/**
+ * Realtime hands back an untyped PocketBase record. Keep the fields this hook
+ * reads and default the rest rather than trusting the wire shape.
+ */
+function toPresenceRecord(record: RecordModel): ClientPresenceRecord {
+  return {
+    id: record.id,
+    sessionId: typeof record.sessionId === 'string' ? record.sessionId : '',
+    hostname: typeof record.hostname === 'string' ? record.hostname : '',
+    mode: 'client',
+    lastSeen: typeof record.lastSeen === 'string' ? record.lastSeen : '',
+    created: typeof record.created === 'string' ? record.created : undefined,
+    updated: typeof record.updated === 'string' ? record.updated : undefined,
+  };
 }
 
 function applyPresenceEvent(
@@ -262,7 +279,7 @@ export function useClientPresence(
           const next = applyPresenceEvent(
             recordsRef.current,
             event.action,
-            event.record as ClientPresenceRecord,
+            toPresenceRecord(event.record),
           );
           commitRecords(next);
         });

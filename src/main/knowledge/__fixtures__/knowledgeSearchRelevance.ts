@@ -116,12 +116,10 @@ export function knowledgeSearchFixtureDocument(
   overrides: Partial<KnowledgeDocumentRecord> & Pick<KnowledgeDocumentRecord, 'id' | 'title'>,
 ): KnowledgeDocumentRecord {
   return {
-    id: overrides.id,
     sourceKey: `fixture/${overrides.id}.pdf`,
     category: 'Network Operations',
     categoryId: 'network',
     documentType: 'sop',
-    title: overrides.title,
     displayTitle: overrides.title,
     fileName: `${overrides.id}.pdf`,
     pdf: `${overrides.id}.pdf`,

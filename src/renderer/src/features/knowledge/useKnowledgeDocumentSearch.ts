@@ -236,7 +236,9 @@ export function useKnowledgeDocumentSearch(
     }
     const previousMatch = previous.result.match;
     const replacement = results.find(
-      (candidate) =>
+      (
+        candidate,
+      ): candidate is Extract<KnowledgeDocumentSearchDisplayResult, { source: 'local-exact' }> =>
         candidate.source === 'local-exact' &&
         candidate.match.pageIndex === previousMatch.pageIndex &&
         Math.max(candidate.match.normalizedStart, previousMatch.normalizedStart) <

@@ -10,6 +10,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PB_VERSION = '0.39.9';
+const MAX_REDIRECTS = 5;
+const SOCKET_IDLE_TIMEOUT_MS = 120_000;
 const RESOURCES_DIR = join(__dirname, '..', 'resources', 'pocketbase');
 const POSIX_CHMOD_PATH = '/bin/chmod';
 const POSIX_UNZIP_PATH = '/usr/bin/unzip';
@@ -62,6 +64,13 @@ function resolveRedirect(location, requestUrl) {
 
 function pipeResponseToFile(res, dest, resolve, reject) {
   const file = createWriteStream(dest);
+  const fail = (err) => {
+    res.destroy();
+    file.destroy();
+    reject(err);
+  };
+  res.on('error', fail);
+  file.on('error', fail);
   res.pipe(file);
   file.on('finish', () => {
     file.close((err) => {
@@ -69,25 +78,32 @@ function pipeResponseToFile(res, dest, resolve, reject) {
       else resolve();
     });
   });
-  file.on('error', (err) => {
-    file.close();
-    reject(err);
-  });
 }
 
-function requestDownload(requestUrl, dest, resolve, reject) {
+function handleRedirect(res, requestUrl, dest, resolve, reject, redirectsRemaining) {
+  res.resume();
+  if (redirectsRemaining <= 0) {
+    reject(new Error(`PocketBase download exceeded ${MAX_REDIRECTS} redirects`));
+    return;
+  }
+  let redirectedUrl;
   try {
-    assertSecureDownloadUrl(requestUrl);
+    redirectedUrl = resolveRedirect(res.headers.location, requestUrl);
   } catch (error) {
+    // A rejected or malformed redirect must fail the promise, not the process.
     reject(error);
     return;
   }
+  requestDownload(redirectedUrl, dest, resolve, reject, redirectsRemaining - 1);
+}
 
-  getHttpClient(requestUrl)
-    .get(requestUrl, (res) => {
+function requestDownload(requestUrl, dest, resolve, reject, redirectsRemaining = MAX_REDIRECTS) {
+  let request;
+  try {
+    assertSecureDownloadUrl(requestUrl);
+    request = getHttpClient(requestUrl).get(requestUrl, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        res.resume();
-        requestDownload(resolveRedirect(res.headers.location, requestUrl), dest, resolve, reject);
+        handleRedirect(res, requestUrl, dest, resolve, reject, redirectsRemaining);
         return;
       }
       if (res.statusCode !== 200) {
@@ -96,8 +112,18 @@ function requestDownload(requestUrl, dest, resolve, reject) {
         return;
       }
       pipeResponseToFile(res, dest, resolve, reject);
-    })
-    .on('error', reject);
+    });
+  } catch (error) {
+    reject(error);
+    return;
+  }
+  request.on('error', reject);
+  // postinstall runs unattended; a stalled socket must fail instead of hanging the install.
+  request.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => {
+    request.destroy(
+      new Error(`PocketBase download stalled for ${SOCKET_IDLE_TIMEOUT_MS}ms: ${requestUrl}`),
+    );
+  });
 }
 
 function downloadFile(url, dest) {
@@ -126,8 +152,33 @@ function chmodExecutable(outputPath) {
   execFileSync(POSIX_CHMOD_PATH, ['+x', outputPath]);
 }
 
+export function findChecksumEntry(contents, expectedFilename) {
+  const matches = contents
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [digest, ...rest] = line.split(/\s+/);
+      // GNU coreutils marks binary-mode entries with a leading asterisk.
+      return { digest, name: rest.join(' ').replace(/^\*/, '') };
+    })
+    .filter((entry) => entry.name === expectedFilename);
+
+  if (matches.length !== 1) {
+    throw new Error(`Checksum for ${expectedFilename} not found in checksums file`);
+  }
+  const { digest } = matches[0];
+  if (!/^[0-9a-f]{64}$/i.test(digest)) {
+    throw new Error(`Checksum for ${expectedFilename} is not a SHA-256 digest`);
+  }
+  return digest.toLowerCase();
+}
+
 export const __downloadTestHooks = {
+  findChecksumEntry,
   getWindowsExpandArchiveArgs,
+  handleRedirect,
+  maxRedirects: MAX_REDIRECTS,
   resolveRedirect,
 };
 
@@ -147,12 +198,7 @@ export async function verifyChecksum(
 
   try {
     const checksumFile = readFileSync(checksumPath, 'utf-8');
-    const line = checksumFile.split('\n').find((l) => l.includes(expectedFilename));
-    if (!line) {
-      throw new Error(`Checksum for ${expectedFilename} not found in checksums file`);
-    }
-
-    const expectedHash = line.trim().split(/\s+/)[0];
+    const expectedHash = findChecksumEntry(checksumFile, expectedFilename);
     const fileBuffer = readFileSync(zipPath);
     const actualHash = createHash('sha256').update(fileBuffer).digest('hex');
 
@@ -221,6 +267,7 @@ export async function downloadPocketBase(options = {}) {
   try {
     await download(url, zipPath);
     await verify(zipPath, zipFilename);
+    extract(zipPath, outputDir);
   } catch (err) {
     try {
       remove(zipPath);
@@ -229,7 +276,6 @@ export async function downloadPocketBase(options = {}) {
     }
     throw err;
   }
-  extract(zipPath, outputDir);
   remove(zipPath);
 
   if (ext === '') {

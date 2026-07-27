@@ -18,6 +18,7 @@
     "preview": "electron-vite preview",
     "seed:dynatrace": "node scripts/seed.mjs --dynatrace-only",
     "seed:dynatrace:clear": "node scripts/seed.mjs --clear-dynatrace",
+    "test:pocketbase": "vitest run -c vitest.verify.config.ts",
     "typecheck": "node scripts/typecheck.mjs",
     "typecheck:update": "node scripts/typecheck.mjs --update",
     "lint": "eslint .",

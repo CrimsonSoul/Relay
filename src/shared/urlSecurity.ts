@@ -6,7 +6,9 @@ function isPrivateIpv4(hostname: string): boolean {
     return false;
   }
 
-  const [first, second] = parts;
+  // The length check above guarantees both octets exist; NaN defaults fail closed
+  // (every comparison below is false for NaN) if that ever stops holding.
+  const [first = Number.NaN, second = Number.NaN] = parts;
   return (
     first === 10 ||
     (first === 172 && second >= 16 && second <= 31) ||

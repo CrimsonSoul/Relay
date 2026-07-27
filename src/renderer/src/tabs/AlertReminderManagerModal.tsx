@@ -9,7 +9,8 @@ interface AlertReminderManagerModalProps {
   pendingReminders: AlertReminderRecord[];
   completedReminders: AlertReminderRecord[];
   loading: boolean;
-  error: Error | null;
+  // useCollection (and therefore useAlertReminders) reports failures as a message string.
+  error: string | null;
   onRetry: () => void;
   onScheduleNew: () => void;
   onEdit: (reminder: AlertReminderRecord) => void;

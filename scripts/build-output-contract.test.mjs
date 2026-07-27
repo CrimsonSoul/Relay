@@ -13,12 +13,16 @@ const electronViteCli = path.join(
   'bin',
   'electron-vite.js',
 );
-// Raised from 500_000 once the main entry reached ~506KB. The previous ceiling
-// had ~4KB of headroom left, and a round of correctness fixes across the
-// knowledge, privileged, web, handler and PocketBase-lifecycle subsystems used
-// it up. Splitting privileged/relay-web into their own chunks was tried first
-// and rejected: both have cyclic edges with the main entry, so it produced the
-// circular chunks this same test forbids a few assertions above.
+// 525_000, not the original 500_000. The main entry is ~506KB. Two ways to get it
+// back under 500KB were tried and both rejected:
+//   - a `manualChunks` split of privileged/relay-web produced the circular chunks this
+//     same test forbids a few assertions above, because both have cyclic edges with the
+//     main entry;
+//   - demand-loading src/main/privileged through `await import()` did shrink the entry to
+//     ~358KB, but it broke resuming a Knowledge upload batch after an interruption
+//     (uploads settled as "PDF validation failed"). Unit tests and this contract both
+//     passed; only tests/e2e/critical-path.spec.ts caught it. Correctness wins over
+//     148KB, so the privileged runtime is statically linked again.
 const applicationChunkLimitBytes = 525_000;
 const buildTimeoutMs = 60_000;
 const testTimeoutMs = buildTimeoutMs + 5_000;

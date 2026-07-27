@@ -129,6 +129,8 @@ function sortProviders(
 
 const ProviderActions: React.FC<{ provider: CloudStatusProvider }> = ({ provider }) => {
   const config = CLOUD_STATUS_PROVIDERS[provider];
+  // Read out of the config object so the guard narrows inside the click handler below.
+  const downdetectorSlug = config.downdetectorSlug;
   return (
     <div className="cloud-status-provider__actions">
       <button
@@ -147,12 +149,10 @@ const ProviderActions: React.FC<{ provider: CloudStatusProvider }> = ({ provider
           @{config.twitterHandle}
         </button>
       )}
-      {config.downdetectorSlug && (
+      {downdetectorSlug && (
         <button
           type="button"
-          onClick={() =>
-            void globalThis.api?.openExternal(downdetectorUrl(config.downdetectorSlug))
-          }
+          onClick={() => void globalThis.api?.openExternal(downdetectorUrl(downdetectorSlug))}
           aria-label={`Open ${providerLabel(provider)} on Downdetector`}
         >
           Downdetector

@@ -13,7 +13,7 @@
  * Usage: node scripts/generate-icons.mjs
  */
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -80,14 +80,21 @@ async function generateIcns() {
     { name: 'icon_512x512@2x.png', size: 1024 },
   ];
 
-  await Promise.all(
-    iconsetFiles.map(async ({ name, size }) => {
-      const buf = await renderPng(size);
-      writeFileSync(join(iconsetDir, name), buf);
-    }),
-  );
-
   try {
+    await Promise.all(
+      iconsetFiles.map(async ({ name, size }) => {
+        const buf = await renderPng(size);
+        writeFileSync(join(iconsetDir, name), buf);
+      }),
+    );
+
+    if (!existsSync(MACOS_ICONUTIL_PATH)) {
+      console.log('  Skipping icon.icns: iconutil is only available on macOS');
+      return;
+    }
+
+    // On macOS a failing iconutil is a real error; swallowing it shipped a
+    // stale icon.icns while the script still reported success.
     execFileSync(
       MACOS_ICONUTIL_PATH,
       ['-c', 'icns', iconsetDir, '-o', join(buildDir, 'icon.icns')],
@@ -96,12 +103,10 @@ async function generateIcns() {
       },
     );
     console.log('  icon.icns');
-  } catch (err) {
-    console.error('  Failed to generate ICNS (iconutil not available?):', err.message);
+  } finally {
+    // Clean up iconset folder even when rendering or iconutil failed.
+    rmSync(iconsetDir, { recursive: true, force: true });
   }
-
-  // Clean up iconset folder
-  rmSync(iconsetDir, { recursive: true, force: true });
 }
 
 async function main() {

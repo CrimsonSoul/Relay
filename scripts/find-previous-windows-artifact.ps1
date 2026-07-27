@@ -10,6 +10,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# PowerShell 7.4 turns a non-zero native exit code into a terminating error while
+# $ErrorActionPreference is 'Stop'. Every gh invocation below is checked through
+# $LASTEXITCODE so that a missing baseline falls back instead of failing the job.
+$PSNativeCommandUseErrorActionPreference = $false
 
 if ($CurrentSha -notmatch '^[0-9a-f]{40}$') {
   throw 'CurrentSha must be a full lowercase Git commit ID.'
@@ -95,3 +99,6 @@ foreach ($run in @($runs.workflow_runs)) {
 
 Write-Warning "No usable prior relay-windows artifact was found; using a lightweight fallback."
 Write-FallbackOutputs
+# The pwsh step wrapper exits with $LASTEXITCODE, which still holds the status of
+# the last gh call that this script deliberately tolerated.
+exit 0

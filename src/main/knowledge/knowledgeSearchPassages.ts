@@ -51,11 +51,11 @@ function lastAtOrBefore(
   minimum: number,
   predicate: (boundary: number) => boolean = () => true,
 ): number | null {
-  for (let index = boundaries.length - 1; index >= 0; index -= 1) {
-    const boundary = boundaries[index];
-    if (boundary <= maximum && boundary > minimum && predicate(boundary)) return boundary;
-  }
-  return null;
+  return (
+    boundaries.findLast(
+      (boundary) => boundary <= maximum && boundary > minimum && predicate(boundary),
+    ) ?? null
+  );
 }
 
 function isSourceBoundary(
@@ -143,7 +143,11 @@ function nextStart({
       isSourceBoundary(sourceRanges, boundary),
     ) ??
     sourceBoundaryAtOrBefore(sourceRanges, overlapStart, start) ??
-    sourceBoundaryAtOrAfter(sourceRanges, overlapStart, end)
+    sourceBoundaryAtOrAfter(sourceRanges, overlapStart, end) ??
+    // `end` is itself a source boundary whenever boundedEnd produced it, so the scan
+    // above always finds something; falling back to it keeps the caller's cursor a
+    // number that is strictly greater than `start` instead of null.
+    end
   );
 }
 

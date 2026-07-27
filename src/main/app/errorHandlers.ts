@@ -67,7 +67,7 @@ export function setupErrorHandlers(options: ErrorHandlerOptions = {}): void {
     rejectionTimestamps.push(now);
 
     // Prune timestamps outside the rolling window
-    while (rejectionTimestamps.length > 0 && rejectionTimestamps[0] < now - REJECTION_WINDOW_MS) {
+    while ((rejectionTimestamps[0] ?? Number.POSITIVE_INFINITY) < now - REJECTION_WINDOW_MS) {
       rejectionTimestamps.shift();
     }
 

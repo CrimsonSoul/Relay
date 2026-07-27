@@ -141,12 +141,33 @@ export const PersonnelTab: React.FC<{
   const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
     useOnCallBoardLayout(onCallFontScale);
 
+  /**
+   * useAutoAnimate hands back a ref *callback*, not a ref object — assigning
+   * `.current` onto it only decorated the function, so the library never saw the
+   * node and the board never animated. It must be *called*, but its body sets
+   * state, so it has to keep a stable identity: an inline arrow here is a new
+   * ref every render, which React re-invokes (null, then node) on each pass,
+   * setting state each time and looping until React gives up and the tab falls
+   * into its error boundary.
+   */
+  const setMasonryRef = useCallback(
+    (node: HTMLUListElement | null) => {
+      gridRef.current = node;
+      animationParent(node);
+    },
+    [animationParent, gridRef],
+  );
+
   const teamColumns = useMemo(() => {
     const cols = Array.from({ length: Math.max(1, columnCount) }, (_, columnIndex) => ({
       id: `on-call-column-${columnIndex + 1}`,
       teamIds: [] as string[],
     }));
-    teams.forEach((teamId, i) => cols[i % cols.length].teamIds.push(teamId));
+    teams.forEach((teamId, i) => {
+      const column = cols[i % cols.length];
+      // cols always holds at least one entry (Math.max(1, columnCount) above).
+      if (column) column.teamIds.push(teamId);
+    });
     return cols;
   }, [teams, columnCount]);
 
@@ -447,14 +468,7 @@ export const PersonnelTab: React.FC<{
         }}
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
-          <ul
-            ref={(node) => {
-              gridRef.current = node;
-              if (animationParent) animationParent.current = node;
-            }}
-            className="oncall-masonry"
-            aria-label="Sortable On-Call Teams"
-          >
+          <ul ref={setMasonryRef} className="oncall-masonry" aria-label="Sortable On-Call Teams">
             {teamColumns.map((column) => (
               <div className="oncall-masonry-column" key={column.id}>
                 {column.teamIds.map((teamId) => {

@@ -1,4 +1,4 @@
-import PocketBase, { BaseAuthStore, ClientResponseError } from 'pocketbase';
+import PocketBase, { BaseAuthStore, ClientResponseError, type RecordModel } from 'pocketbase';
 import { randomUUID } from 'node:crypto';
 import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
@@ -27,7 +27,8 @@ export class PrivilegedAuthenticationError extends Error {
 
 type PrivilegedAuthResponse = {
   token: string;
-  record: unknown;
+  // Matches PocketBase's own RecordAuthResponse; authStore.save persists it verbatim.
+  record: RecordModel;
 };
 
 type PrivilegedAuthCollection = {

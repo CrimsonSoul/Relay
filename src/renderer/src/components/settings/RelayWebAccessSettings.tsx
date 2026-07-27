@@ -31,7 +31,12 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
 
   useEffect(() => {
     let cancelled = false;
-    globalThis.api
+    const bridge = globalThis.api;
+    if (!bridge) {
+      setError('Relay Web settings could not be loaded.');
+      return;
+    }
+    bridge
       .getWebServerState()
       .then((nextState) => {
         if (cancelled) return;
@@ -67,9 +72,9 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
     if (nextPort === null) return;
     setIsWorking(true);
     try {
-      const result = await globalThis.api.saveWebServerConfig({ enabled, port: nextPort });
-      if (!result.success || !result.data) {
-        setError(result.error ?? 'Relay Web settings could not be saved.');
+      const result = await globalThis.api?.saveWebServerConfig({ enabled, port: nextPort });
+      if (!result?.success || !result.data) {
+        setError(result?.error ?? 'Relay Web settings could not be saved.');
         return;
       }
       setState(result.data);
@@ -86,9 +91,9 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
     setError(null);
     setIsWorking(true);
     try {
-      const result = await globalThis.api.retryWebServer();
-      if (!result.success || !result.data) {
-        setError(result.error ?? 'Relay Web could not be restarted.');
+      const result = await globalThis.api?.retryWebServer();
+      if (!result?.success || !result.data) {
+        setError(result?.error ?? 'Relay Web could not be restarted.');
         return;
       }
       setState(result.data);
@@ -100,6 +105,7 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
   };
 
   const statusDetail = state ? getStatusDetail(state) : null;
+  const browserUrl = state?.url;
 
   return (
     <div className="settings-section relay-web-settings">
@@ -144,14 +150,14 @@ export function RelayWebAccessSettings({ pocketBasePort }: Readonly<Props>) {
           {statusDetail && <span>{statusDetail}</span>}
         </div>
 
-        {state?.url && (
+        {browserUrl && (
           <div className="settings-data-path settings-copy-row">
-            <span>{state.url}</span>
+            <span>{browserUrl}</span>
             <button
               type="button"
               className="settings-inline-action"
               aria-label="Copy browser URL"
-              onClick={() => void globalThis.api.writeClipboard(state.url!)}
+              onClick={() => void globalThis.api?.writeClipboard(browserUrl)}
             >
               Copy
             </button>

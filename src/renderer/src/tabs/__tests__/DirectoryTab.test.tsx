@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Contact, BridgeGroup, Server } from '@shared/ipc';
 
@@ -36,10 +36,12 @@ function makeDefaultListFiltersReturn(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const mockSetContactNote = vi.fn();
+
 vi.mock('../../contexts', () => ({
   useNotesContext: () => ({
     getContactNote: vi.fn().mockReturnValue(undefined),
-    setContactNote: vi.fn(),
+    setContactNote: mockSetContactNote,
   }),
 }));
 
@@ -174,12 +176,15 @@ vi.mock('../../components/ContactDetailPanel', () => ({
   ContactDetailPanel: ({
     contact,
     relatedServers,
+    onEditNotes,
   }: {
     contact: Contact;
     relatedServers?: { owned: Server[]; supported: Server[] };
+    onEditNotes: () => void;
   }) => (
     <div data-testid="contact-detail">
       {contact.name}
+      <button type="button" data-testid="contact-detail-notes" onClick={onEditNotes} />
       {relatedServers?.owned.map((server) => (
         <span key={`owned-${server.name}`}>owned:{server.name}</span>
       ))}
@@ -190,9 +195,27 @@ vi.mock('../../components/ContactDetailPanel', () => ({
   ),
 }));
 
+// The real NotesModal closes itself on any truthy onSave result, so the stub records exactly what
+// the tab resolves rather than re-implementing that decision.
+const noteSaveOutcomes: unknown[] = [];
+
 vi.mock('../../components/NotesModal', () => ({
-  NotesModal: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="notes-modal" /> : null,
+  NotesModal: ({
+    isOpen,
+    onSave,
+  }: {
+    isOpen: boolean;
+    onSave: (note: string, tags: string[]) => Promise<boolean | undefined>;
+  }) =>
+    isOpen ? (
+      <div data-testid="notes-modal">
+        <button
+          type="button"
+          data-testid="notes-modal-save"
+          onClick={() => void onSave('Prefers Teams', []).then((r) => noteSaveOutcomes.push(r))}
+        />
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/StatusBar', () => ({
@@ -250,6 +273,8 @@ function makeDefaultDirectoryReturn() {
 beforeEach(() => {
   mockUseDirectory.mockReturnValue(makeDefaultDirectoryReturn());
   mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn());
+  noteSaveOutcomes.length = 0;
+  mockSetContactNote.mockReset();
 });
 
 import { DirectoryTab } from '../DirectoryTab';
@@ -335,6 +360,31 @@ describe('DirectoryTab', () => {
     render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('contact-detail')).toBeInTheDocument();
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+  });
+
+  // Regression: setContactNote resolves an IpcResult, and the tab handed that object straight back
+  // to NotesModal, which only checks truthiness. A failed save therefore closed the modal as if it
+  // had worked and the operator's note was gone.
+  it.each([
+    ['a rejected save', { success: false, error: 'offline' }, false],
+    ['an accepted save', { success: true }, true],
+  ])('reports %s to the notes modal as a boolean', async (_caseName, ipcResult, expected) => {
+    const contacts = [makeContact({ name: 'Jane Smith', email: 'jane@example.com' })];
+    mockSetContactNote.mockResolvedValue(ipcResult);
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: contacts,
+      focusedIndex: 0,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: contacts }));
+
+    render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('contact-detail-notes'));
+    fireEvent.click(screen.getByTestId('notes-modal-save'));
+
+    await waitFor(() => expect(noteSaveOutcomes).toHaveLength(1));
+    expect(mockSetContactNote).toHaveBeenCalledWith('jane@example.com', 'Prefers Teams', []);
+    expect(noteSaveOutcomes[0]).toBe(expected);
   });
 
   it('clears the detail panel when the selected contact leaves the filtered set', () => {

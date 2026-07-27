@@ -250,6 +250,33 @@ describe('loggerHandlers', () => {
       expect(loggedData.huge?.endsWith('...[truncated]')).toBe(true);
     });
 
+    // Electron's structured clone carries BigInt across IPC, and the main logger
+    // formats data with JSON.stringify — which throws on a BigInt and drops the whole
+    // log line. Bounding must hand the logger something JSON can serialize.
+    it('renders bigint renderer log values as text so the log line survives', () => {
+      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+        data: { total: 9007199254740993n, nested: { count: 1n } },
+      });
+
+      const loggedData = vi.mocked(loggers.bridge.info).mock.calls[0]?.[1];
+      expect(loggedData).toEqual({ total: '9007199254740993', nested: { count: '1' } });
+      expect(() => JSON.stringify(loggedData)).not.toThrow();
+    });
+
+    it('renders a top-level bigint payload as text', () => {
+      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+        data: 42n,
+      });
+
+      expect(loggers.bridge.info).toHaveBeenCalledWith('[comp] msg', '42');
+    });
+
     it('handles error thrown during processing gracefully', () => {
       vi.mocked(loggers.bridge.info).mockImplementationOnce(() => {
         throw new Error('crash');

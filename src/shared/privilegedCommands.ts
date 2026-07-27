@@ -1046,6 +1046,10 @@ function normalizePayload(
         : null;
     }
   }
+  // The switch above covers every command that KNOWLEDGE_CATALOG_NORMALIZERS does not.
+  // Fail closed rather than returning `undefined` if a new command is ever added to
+  // PrivilegedCommandPayloadMap without a normalizer.
+  return null;
 }
 
 export function normalizePrivilegedCommandPayload<K extends PrivilegedCommandName>(

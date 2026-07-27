@@ -139,9 +139,19 @@ export type PrivilegedCommandHandler<K extends RegisteredPrivilegedCommandName> 
   payload: PrivilegedCommandPayloadMap[K],
 ) => Promise<unknown>;
 
+/**
+ * Stored form of a registered handler. `registerCommand` is what enforces the
+ * command-to-payload correlation; once a handler is in the map that link is gone, so the
+ * stored signature accepts any payload in the map and dispatch needs no cast of its own.
+ */
+type StoredPrivilegedCommandHandler = (
+  context: PrivilegedCommandHandlerContext,
+  payload: PrivilegedCommandPayloadMap[PrivilegedCommandName],
+) => Promise<unknown>;
+
 type RegisteredPrivilegedCommand = {
   capability: PrivilegedCapability;
-  handler: PrivilegedCommandHandler<RegisteredPrivilegedCommandName>;
+  handler: StoredPrivilegedCommandHandler;
 };
 
 export class PrivilegedCommandConflictError extends Error {
@@ -350,7 +360,7 @@ export class PrivilegedCommandProcessor {
   ): void {
     this.registeredCommands.set(command, {
       capability,
-      handler: handler as PrivilegedCommandHandler<RegisteredPrivilegedCommandName>,
+      handler: handler as StoredPrivilegedCommandHandler,
     });
   }
 

@@ -6,12 +6,8 @@
 import { loggers } from './logger';
 
 // Rate limiter configuration constants
-const FILE_IMPORT_MAX_TOKENS = 5;
-const FILE_IMPORT_REFILL_RATE = 0.1; // 1 token per 10 seconds
 const DATA_MUTATION_MAX_TOKENS = 100;
 const DATA_MUTATION_REFILL_RATE = 10; // 10 tokens per second
-const DATA_RELOAD_MAX_TOKENS = 3;
-const DATA_RELOAD_REFILL_RATE = 0.5; // 1 token per 2 seconds
 const FS_OPERATIONS_MAX_TOKENS = 10;
 const FS_OPERATIONS_REFILL_RATE = 2; // 2 tokens per second
 const NETWORK_MAX_TOKENS = 10;
@@ -196,25 +192,11 @@ export const privilegedRateLimiters = createPrivilegedRateLimiters();
 
 // Pre-configured rate limiters for different operation types
 export const rateLimiters = {
-  // File imports: Prevents rapid-fire import operations
-  fileImport: new RateLimiter({
-    maxTokens: FILE_IMPORT_MAX_TOKENS,
-    refillRate: FILE_IMPORT_REFILL_RATE,
-    name: 'FileImport',
-  }),
-
   // Data mutations (add/remove contact/server): More generous for normal CRUD operations
   dataMutation: new RateLimiter({
     maxTokens: DATA_MUTATION_MAX_TOKENS,
     refillRate: DATA_MUTATION_REFILL_RATE,
     name: 'DataMutation',
-  }),
-
-  // Data reload: Prevents excessive reload requests
-  dataReload: new RateLimiter({
-    maxTokens: DATA_RELOAD_MAX_TOKENS,
-    refillRate: DATA_RELOAD_REFILL_RATE,
-    name: 'DataReload',
   }),
 
   // File system operations (open path, open external)

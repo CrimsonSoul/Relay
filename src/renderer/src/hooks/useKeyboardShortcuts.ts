@@ -6,7 +6,7 @@ interface UseKeyboardShortcutsParams {
   setActiveTab: (tab: TabName) => void;
   openSettings: () => void;
   setIsShortcutsOpen: (open: boolean) => void;
-  searchInputRef: RefObject<HTMLInputElement>;
+  searchInputRef: RefObject<HTMLInputElement | null>;
 }
 
 export function useKeyboardShortcuts({

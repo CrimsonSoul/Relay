@@ -16,6 +16,12 @@ import {
   hasLoadableReminderAlert,
 } from '../services/reminderAlertLoadEvent';
 
+declare global {
+  /** Safari (and the Relay web runtime running on it) only exposes the
+   *  vendor-prefixed constructor. */
+  var webkitAudioContext: typeof AudioContext | undefined;
+}
+
 const RECONCILIATION_INTERVAL_MS = 5 * 60_000;
 const SNOOZE_MS = 10 * 60_000;
 /** Local quiet period after a failed reminder write — long enough to free the
@@ -115,10 +121,10 @@ export function AlertReminderManager() {
   const reminders = reminderRecords as AlertReminderRecord[];
   const [current, setCurrent] = useState<AlertReminderRecord | null>(null);
   const currentRef = useRef<AlertReminderRecord | null>(null);
-  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const activeAlarmIdRef = useRef<string | null>(null);
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
-  const fallbackIntervalRef = useRef<number | null>(null);
+  const fallbackIntervalRef = useRef<ReturnType<typeof globalThis.setInterval> | null>(null);
   const chimedIdsRef = useRef(new Set<string>());
   const mutedUntilRef = useRef(new Map<string, number>());
 
@@ -205,7 +211,7 @@ export function AlertReminderManager() {
 
   useEffect(() => {
     let active = true;
-    let timeoutId: number | null = null;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
     const reconcile = async () => {
       await refetch().catch(() => undefined);
       if (active)

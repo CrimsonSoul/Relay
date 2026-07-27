@@ -1,5 +1,5 @@
 import fsPromises from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { app } from 'electron';
 import { loggers } from './logger';
 
@@ -32,16 +32,5 @@ export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {
     return typeof obj.dataRoot === 'string' ? { dataRoot: obj.dataRoot } : {};
   } catch {
     return {};
-  }
-}
-
-export async function saveConfigAsync(config: { dataRoot?: string }): Promise<void> {
-  try {
-    const configPath = join(app.getPath('userData'), 'config.json');
-    await fsPromises.mkdir(dirname(configPath), { recursive: true });
-    await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
-  } catch (error) {
-    loggers.fileManager.error('Failed to save config', { error });
-    throw error;
   }
 }

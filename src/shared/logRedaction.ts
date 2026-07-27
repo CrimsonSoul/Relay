@@ -133,6 +133,6 @@ function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
   return redactedObject;
 }
 
-export function redactSensitiveData(data: LogData): LogData {
+export function redactSensitiveData(data: unknown): LogData {
   return redactValue(data, new WeakMap()) as LogData;
 }

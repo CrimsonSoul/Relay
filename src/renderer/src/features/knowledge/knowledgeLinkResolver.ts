@@ -226,9 +226,10 @@ export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): Knowledg
     (document) => normalizeKnowledgeSearchText(document.fileName) === normalizedFileName,
   );
 
-  if (fileNameMatches.length === 0) return unavailable('not-found');
-  if (fileNameMatches.length === 1) {
-    return resolvedDocument(fileNameMatches[0], currentDocument, parsedPath.pageNumber);
+  const [firstFileNameMatch, secondFileNameMatch] = fileNameMatches;
+  if (!firstFileNameMatch) return unavailable('not-found');
+  if (!secondFileNameMatch) {
+    return resolvedDocument(firstFileNameMatch, currentDocument, parsedPath.pageNumber);
   }
 
   if (authoredPathContext.kind === 'absolute') return unavailable('ambiguous');
@@ -240,6 +241,7 @@ export function resolveKnowledgeLink(input: ResolveKnowledgeLinkInput): Knowledg
       normalizedSourceKey,
   );
 
-  if (sourceKeyMatches.length !== 1) return unavailable('ambiguous');
-  return resolvedDocument(sourceKeyMatches[0], currentDocument, parsedPath.pageNumber);
+  const [firstSourceKeyMatch, secondSourceKeyMatch] = sourceKeyMatches;
+  if (!firstSourceKeyMatch || secondSourceKeyMatch) return unavailable('ambiguous');
+  return resolvedDocument(firstSourceKeyMatch, currentDocument, parsedPath.pageNumber);
 }

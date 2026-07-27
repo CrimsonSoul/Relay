@@ -114,6 +114,28 @@ describe('runElectronTests', () => {
     expect(spawnSync).toHaveBeenCalledTimes(3);
   });
 
+  it('never reports success for a failing status whose low byte is zero', () => {
+    const spawnSync = vi
+      .fn()
+      .mockReturnValueOnce(success())
+      .mockReturnValueOnce(failure(256))
+      .mockReturnValueOnce(success());
+    const options = makeOptions(spawnSync);
+
+    expect(runElectronTests(options)).toBe(1);
+    expect(outputFrom(options.stderr)).toContain('Playwright failed with exit code 1');
+  });
+
+  it('never reports success when only the restoration fails with a truncating status', () => {
+    const spawnSync = vi
+      .fn()
+      .mockReturnValueOnce(success())
+      .mockReturnValueOnce(success())
+      .mockReturnValueOnce(failure(65280));
+
+    expect(runElectronTests(makeOptions(spawnSync))).toBe(1);
+  });
+
   it('runs Playwright with an explicitly selected configuration', () => {
     const spawnSync = vi.fn().mockReturnValue(success());
     const options = makeOptions(spawnSync, { playwrightConfigPath: 'playwright.web.config.ts' });

@@ -62,8 +62,8 @@ export const TeamCard = React.memo(
       return null;
     }, [teamRows]);
 
-    const isEmpty =
-      teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
+    const onlyRow = teamRows.length === 1 ? teamRows[0] : undefined;
+    const isEmpty = teamRows.length === 0 || (!!onlyRow && !onlyRow.name && !onlyRow.contact);
     const emptyStateContent = isReadOnly ? (
       <div className="team-card-empty team-card-empty--readonly">No personnel assigned</div>
     ) : (
@@ -245,6 +245,9 @@ export const TeamCard = React.memo(
     for (let i = 0; i < prev.rows.length; i++) {
       const r1 = prev.rows[i];
       const r2 = next.rows[i];
+      // Lengths matched above, so a hole here would be a sparse array; treat it
+      // as "changed" and re-render rather than silently comparing nothing.
+      if (!r1 || !r2) return false;
       if (
         r1.id !== r2.id ||
         r1.name !== r2.name ||

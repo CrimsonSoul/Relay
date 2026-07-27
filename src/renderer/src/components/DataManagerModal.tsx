@@ -20,7 +20,7 @@ type TabId = 'overview' | 'import' | 'export' | 'backups';
 
 const DATA_MANAGER_TABS: readonly TabId[] = ['overview', 'import', 'export', 'backups'];
 
-const getTabLabel = (tab: TabId) => tab[0].toUpperCase() + tab.slice(1);
+const getTabLabel = (tab: TabId) => tab.charAt(0).toUpperCase() + tab.slice(1);
 
 export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<TabId>('overview');

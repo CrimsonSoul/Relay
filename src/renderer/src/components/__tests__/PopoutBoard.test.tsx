@@ -23,9 +23,12 @@ vi.mock('../../hooks/usePersonnel', () => ({
   usePersonnel: () => personnelReturn,
 }));
 
+// `useAutoAnimate` returns a ref *callback*, so `useOnCallBoard` re-exports one.
+const animationParent = vi.fn();
+
 vi.mock('../../hooks/useOnCallBoard', () => ({
   useOnCallBoard: () => ({
-    animationParent: { current: null },
+    animationParent,
     handleCopyTeamInfo: vi.fn(),
     handleCopyAllOnCall: vi.fn(),
   }),
@@ -66,11 +69,19 @@ vi.mock('../ContextMenu', () => ({
 }));
 
 import { PopoutBoard } from '../PopoutBoard';
+import type { BoardSettingsState } from '../../hooks/useAppData';
 
 const defaultProps = {
   onCall: [],
   contacts: [],
-  boardSettings: { teamOrder: [], hiddenTeams: [], customNames: {} },
+  boardSettings: {
+    record: null,
+    recordId: null,
+    effectiveTeamOrder: [],
+    effectiveLocked: false,
+    status: 'loading',
+    errors: [],
+  } satisfies BoardSettingsState,
 };
 
 describe('PopoutBoard', () => {
@@ -127,6 +138,17 @@ describe('PopoutBoard', () => {
   it('renders masonry grid with aria-label', () => {
     render(<PopoutBoard {...defaultProps} />);
     expect(screen.getByLabelText('On-Call Teams')).toBeInTheDocument();
+  });
+
+  // Regression: the ref handler used to do `animationParent.current = node`.
+  // `useAutoAnimate` hands back a ref callback, so that only decorated the
+  // function object — auto-animate never received the list and never animated.
+  it('hands the masonry list to the auto-animate ref callback', () => {
+    render(<PopoutBoard {...defaultProps} />);
+
+    expect(animationParent).toHaveBeenCalled();
+    expect(animationParent).toHaveBeenCalledWith(screen.getByLabelText('On-Call Teams'));
+    expect(animationParent).not.toHaveProperty('current');
   });
 
   it('renders KIOSK button', () => {

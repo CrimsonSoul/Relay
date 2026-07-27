@@ -31,9 +31,13 @@ vi.mock('../../hooks/usePersonnel', () => ({
   }),
 }));
 
+// useAutoAnimate — and therefore useOnCallBoard — hands back a ref *callback*, not a ref object.
+// The stub mirrors that so the board cannot regress to assigning `.current` onto it.
+const mockAnimationParent = vi.fn<(node: Element | null) => void>();
+
 vi.mock('../../hooks/useOnCallBoard', () => ({
   useOnCallBoard: () => ({
-    animationParent: { current: null },
+    animationParent: mockAnimationParent,
     enableAnimations: vi.fn(),
     handleCopyTeamInfo: vi.fn(),
     handleCopyAllOnCall: vi.fn(),
@@ -394,6 +398,17 @@ describe('PersonnelTab — team rendering', () => {
 
     const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
     expect(list).toBeDefined();
+  });
+
+  // Regression: the board used to assign `animationParent.current = node`. useAutoAnimate hands
+  // back a ref callback, so that only decorated the function object and auto-animate never saw
+  // the grid — the board silently lost every reorder/add/remove transition.
+  it('registers the masonry grid with auto-animate by calling the ref callback', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
+    expect(mockAnimationParent).toHaveBeenCalledWith(list);
   });
 
   it('renders no team cards when there are no teams', () => {

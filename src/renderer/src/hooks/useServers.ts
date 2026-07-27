@@ -53,20 +53,6 @@ export function useServers(servers: Server[], contacts: Contact[], searchQuery =
     }
   }, [contextMenu]);
 
-  const handleDelete = useCallback(async () => {
-    if (contextMenu) {
-      try {
-        const serverId = contextMenu.server.raw?.id;
-        if (serverId) {
-          await pbDeleteServer(serverId);
-        }
-      } catch {
-        // Errors surface via useCollection realtime updates
-      }
-      setContextMenu(null);
-    }
-  }, [contextMenu]);
-
   const handleEdit = useCallback(() => {
     if (contextMenu) {
       setEditingServer(contextMenu.server);
@@ -111,7 +97,6 @@ export function useServers(servers: Server[], contacts: Contact[], searchQuery =
     contactLookup,
     filteredServers,
     handleContextMenu,
-    handleDelete,
     handleEdit,
     editServer,
     deleteServer,

@@ -91,8 +91,10 @@ export function useAssembler({
       let valA = '',
         valB = '';
       if (sortConfig.key === 'name') {
-        valA = (contactA?.name || a.email.split('@')[0]).toLowerCase();
-        valB = (contactB?.name || b.email.split('@')[0]).toLowerCase();
+        // String.split always yields at least one segment, so the trailing `|| ''`
+        // only satisfies noUncheckedIndexedAccess.
+        valA = (contactA?.name || a.email.split('@')[0] || '').toLowerCase();
+        valB = (contactB?.name || b.email.split('@')[0] || '').toLowerCase();
       } else if (sortConfig.key === 'title') {
         valA = (contactA?.title || '').toLowerCase();
         valB = (contactB?.title || '').toLowerCase();

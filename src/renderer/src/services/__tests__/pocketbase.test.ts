@@ -71,6 +71,17 @@ function resetPbState(url = 'http://localhost:8090'): void {
   initPocketBase(url);
 }
 
+/**
+ * `PbAuthSession.record` crosses IPC as a loose bag, so the service normalises
+ * it into PocketBase's own `RecordModel` shape before handing it to the auth
+ * store. Every field the session carried is preserved; only the two identifiers
+ * PocketBase itself reads are defaulted.
+ */
+function expectedAuthRecord(auth: PbAuthSession): Record<string, unknown> | null {
+  if (!auth.record) return null;
+  return { collectionId: '', collectionName: '', ...auth.record };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -190,7 +201,7 @@ describe('pocketbase service', () => {
 
       loadAuthSession(auth);
 
-      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, expectedAuthRecord(auth));
       expect(getConnectionState()).toBe('online');
     });
   });
@@ -215,7 +226,7 @@ describe('pocketbase service', () => {
 
       expect(result).toBe('ok');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
-      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, expectedAuthRecord(auth));
       expect(getConnectionState()).toBe('online');
     });
 
@@ -240,7 +251,7 @@ describe('pocketbase service', () => {
 
       expect(result).toBe('ok');
       expect(getPb().baseURL).toBe('http://localhost:8091');
-      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, expectedAuthRecord(auth));
     });
 
     it('returns auth-failed when main refresh reports an auth failure', async () => {
@@ -394,7 +405,10 @@ describe('pocketbase service', () => {
 
       expect(getConnectionState()).toBe('online');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
-      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(
+        refreshedAuth.token,
+        expectedAuthRecord(refreshedAuth),
+      );
       // Restore
       mockAuthStore.isValid = true;
     });
@@ -424,7 +438,10 @@ describe('pocketbase service', () => {
 
       expect(getConnectionState()).toBe('online');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
-      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(
+        refreshedAuth.token,
+        expectedAuthRecord(refreshedAuth),
+      );
 
       mockAuthStore.isValid = true;
     });
@@ -875,7 +892,10 @@ describe('pocketbase service', () => {
 
       expect(listener).toHaveBeenCalledWith('auth-failed');
       expect(refreshPbConnection).toHaveBeenCalledOnce();
-      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(
+        refreshedAuth.token,
+        expectedAuthRecord(refreshedAuth),
+      );
       expect(getConnectionState()).toBe('online');
     });
 

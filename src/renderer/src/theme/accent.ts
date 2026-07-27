@@ -45,14 +45,16 @@ export const ACCENT_SCHEMES: AccentScheme[] = [
   { id: 'violet', label: 'Violet', swatch: '#8b5cf6' },
 ];
 
+const DAY_ACCENT_SCHEDULE_SLOT: AccentScheduleSlot = {
+  id: 'day',
+  label: 'Day',
+  rangeLabel: '6 AM-2 PM CT',
+  startMinutes: 6 * 60,
+  endMinutes: 14 * 60,
+};
+
 export const ACCENT_SCHEDULE_SLOTS: AccentScheduleSlot[] = [
-  {
-    id: 'day',
-    label: 'Day',
-    rangeLabel: '6 AM-2 PM CT',
-    startMinutes: 6 * 60,
-    endMinutes: 14 * 60,
-  },
+  DAY_ACCENT_SCHEDULE_SLOT,
   {
     id: 'swing',
     label: 'Swing',
@@ -87,7 +89,8 @@ type Rgb = {
 const CUSTOM_ACCENT_PROPERTIES = ['--accent', '--accent-hover', '--accent-bright', '--on-accent'];
 const CENTRAL_TIME_ZONE = 'America/Chicago';
 const CUSTOM_CHOICE_PREFIX = 'custom:';
-const SCHEDULE_BOUNDARY_MINUTES = [6 * 60, 14 * 60, 22 * 60];
+const FIRST_SCHEDULE_BOUNDARY_MINUTES = 6 * 60;
+const SCHEDULE_BOUNDARY_MINUTES = [FIRST_SCHEDULE_BOUNDARY_MINUTES, 14 * 60, 22 * 60];
 
 const isPresetAccentId = (value: unknown): value is PresetAccentId =>
   ACCENT_SCHEMES.some((s) => s.id === value);
@@ -155,16 +158,17 @@ function isMinuteInScheduleSlot(minutes: number, slot: AccentScheduleSlot): bool
 
 export function getCurrentAccentScheduleSlot(date = new Date()): AccentScheduleSlot {
   const minutes = centralTimeMinutes(date);
+  // The three slots tile the whole 24h clock, so the find always matches.
   return (
     ACCENT_SCHEDULE_SLOTS.find((slot) => isMinuteInScheduleSlot(minutes, slot)) ??
-    ACCENT_SCHEDULE_SLOTS[0]
+    DAY_ACCENT_SCHEDULE_SLOT
   );
 }
 
 function minutesUntilNextScheduleBoundary(date = new Date()): number {
   const minutes = centralTimeMinutes(date);
   const next = SCHEDULE_BOUNDARY_MINUTES.find((boundary) => boundary > minutes);
-  return (next ?? SCHEDULE_BOUNDARY_MINUTES[0] + 24 * 60) - minutes;
+  return (next ?? FIRST_SCHEDULE_BOUNDARY_MINUTES + 24 * 60) - minutes;
 }
 
 function hexToRgb(hex: string): Rgb {

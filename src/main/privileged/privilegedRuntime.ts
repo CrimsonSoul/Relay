@@ -181,7 +181,9 @@ export class PrivilegedRuntime {
   private readonly listeners = new Set<SessionListener>();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
-  private authorityStop: (() => Promise<void>) | null = null;
+  // `monitorAuthority` may hand back either a sync or an async teardown; both call sites
+  // await it, so keep the wider signature instead of forcing the value to look async.
+  private authorityStop: (() => void | Promise<void>) | null = null;
   private authorityGeneration = 0;
   private sessionGeneration = 0;
   private authenticationTransition: AuthenticationTransition | null = null;

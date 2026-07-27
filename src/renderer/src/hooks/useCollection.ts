@@ -1,7 +1,11 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { RecordModel } from 'pocketbase';
 import { getCollectionStore, normalizeCollectionQuery } from '../stores/collectionStoreRegistry';
-import type { CollectionQueryOptions } from '../stores/collectionStore';
+import type {
+  CollectionQueryOptions,
+  CollectionRecord,
+  CollectionSnapshot,
+} from '../stores/collectionStore';
 
 export { collectionRevisionSignature } from '../stores/collectionStore';
 export { normalizeCollectionQuery } from '../stores/collectionStoreRegistry';
@@ -18,17 +22,17 @@ export interface UseCollectionOptions extends CollectionQueryOptions {
   enabled?: boolean;
 }
 
-const DISABLED_SNAPSHOT = {
+const DISABLED_SNAPSHOT: CollectionSnapshot<never> = {
   data: [],
   loading: false,
   error: null,
   hasLoadedSnapshot: false,
-} as const;
+};
 const subscribeDisabled = () => () => undefined;
 const getDisabledSnapshot = () => DISABLED_SNAPSHOT;
 const refetchDisabled = async () => undefined;
 
-export function useCollection<T extends RecordModel>(
+export function useCollection<T extends CollectionRecord = RecordModel>(
   collectionName: string,
   options: UseCollectionOptions = {},
 ): UseCollectionResult<T> {
@@ -40,7 +44,7 @@ export function useCollection<T extends RecordModel>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [enabled, queryKey],
   );
-  const snapshot = useSyncExternalStore(
+  const snapshot = useSyncExternalStore<CollectionSnapshot<T>>(
     store?.subscribe ?? subscribeDisabled,
     store?.getSnapshot ?? getDisabledSnapshot,
     store?.getSnapshot ?? getDisabledSnapshot,

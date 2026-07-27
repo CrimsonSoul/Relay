@@ -27,7 +27,7 @@ interface SidebarProps {
   relayConfig?: PublicRelayConfig | null;
   onClientConnected?: (hostname: string) => void;
   dynatraceDashboards?: DynatraceDashboardState[];
-  onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
+  onOpenDynatraceDashboard?: (id: string) => void | Promise<unknown>;
 }
 
 // Moved outside component to avoid recreation every render

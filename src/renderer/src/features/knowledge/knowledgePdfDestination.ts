@@ -24,16 +24,16 @@ function destinationType(value: unknown): string | null {
 }
 
 function isPdfReference(value: unknown): value is { num: number; gen: number } {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (!('num' in value) || !('gen' in value)) return false;
+  const { num, gen } = value;
   return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    'num' in value &&
-    Number.isInteger(value.num) &&
-    value.num >= 0 &&
-    'gen' in value &&
-    Number.isInteger(value.gen) &&
-    value.gen >= 0
+    typeof num === 'number' &&
+    Number.isInteger(num) &&
+    num >= 0 &&
+    typeof gen === 'number' &&
+    Number.isInteger(gen) &&
+    gen >= 0
   );
 }
 

@@ -93,20 +93,10 @@ describe('useServers', () => {
     expect(result.current.contextMenu).toBeNull();
   });
 
-  it('handles delete/edit flows and modal helpers', async () => {
+  it('handles edit flows and modal helpers', async () => {
     mockDeleteServer.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useServers(servers, contacts));
-
-    act(() => {
-      result.current.setContextMenu({ x: 1, y: 1, server: servers[0] });
-    });
-
-    await act(async () => {
-      await result.current.handleDelete();
-    });
-    expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
-    expect(result.current.contextMenu).toBeNull();
 
     act(() => {
       result.current.setContextMenu({ x: 2, y: 2, server: servers[1] });

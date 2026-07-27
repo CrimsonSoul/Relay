@@ -12,8 +12,10 @@ const makeColorScheme = (rgb: string, text: string, fill: string): ColorScheme =
   fill,
 });
 
+const DEFAULT_SCHEME = makeColorScheme('239, 68, 68', '#FCA5A5', '#EF4444');
+
 const PALETTE: ColorScheme[] = [
-  makeColorScheme('239, 68, 68', '#FCA5A5', '#EF4444'),
+  DEFAULT_SCHEME,
   makeColorScheme('249, 115, 22', '#FDBA74', '#F97316'),
   makeColorScheme('245, 158, 11', '#FCD34D', '#F59E0B'),
   makeColorScheme('16, 185, 129', '#6EE7B7', '#10B981'),
@@ -34,5 +36,7 @@ export const getColorForString = (str: string): ColorScheme => {
   for (let i = 0; i < str.length; i++) {
     hash = (str.codePointAt(i) ?? 0) + ((hash << 5) - hash);
   }
-  return PALETTE[Math.abs(hash) % PALETTE.length];
+  // PALETTE is a non-empty module constant and the index is a modulo of its own
+  // length, so the fallback is unreachable.
+  return PALETTE[Math.abs(hash) % PALETTE.length] ?? DEFAULT_SCHEME;
 };

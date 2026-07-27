@@ -3,8 +3,7 @@ import { join } from 'node:path';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
-import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
-import { validateDataPath } from '../utils/pathValidation';
+import { ensureDataDirectoryAsync, loadConfigAsync } from '../dataUtils';
 import { loggers } from '../logger';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
@@ -295,23 +294,6 @@ export async function getDataRoot(): Promise<string> {
   })();
 
   return dataRootPromise;
-}
-
-/**
- * Handles a user-initiated data path change. Fully async — saves config
- * and invalidates the cache.
- */
-export async function handleDataPathChange(newPath: string): Promise<void> {
-  if (!state.mainWindow) return;
-  const validation = await validateDataPath(newPath);
-  if (!validation.success) throw new Error(validation.error || 'Invalid data path');
-
-  await ensureDataDirectoryAsync(newPath);
-  await saveConfigAsync({ dataRoot: newPath });
-
-  // Update cached root and invalidate the deferred promise
-  state.currentDataRoot = newPath;
-  dataRootPromise = null;
 }
 
 export function setupIpc(

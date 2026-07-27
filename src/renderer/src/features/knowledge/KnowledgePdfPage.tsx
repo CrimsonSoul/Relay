@@ -10,6 +10,7 @@ import {
   extractKnowledgeLinkItems,
   KnowledgeLinkLayer,
   type KnowledgeLinkItem,
+  type KnowledgePdfDestination,
 } from './KnowledgeLinkLayer';
 import type { KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
@@ -29,7 +30,7 @@ export type KnowledgePdfPageProps = {
   retryKey: number;
   resolveUrl: (url: string) => KnowledgeResolvedLink;
   onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
-  onActivateDestination: (destination: unknown) => void;
+  onActivateDestination: (destination: KnowledgePdfDestination) => void;
   onStatus: (status: KnowledgePdfPageStatus) => void;
   searchMatches?: readonly KnowledgeDocumentSearchMatch[];
   activeSearchResultId?: string | null;
@@ -48,7 +49,7 @@ function isCancelledRender(error: unknown): boolean {
   );
 }
 
-function scrollViewer(element: HTMLDivElement | null, options: ScrollToOptions): void {
+function scrollViewer(element: HTMLDivElement | null | undefined, options: ScrollToOptions): void {
   if (typeof element?.scrollTo === 'function') element.scrollTo(options);
 }
 
@@ -187,12 +188,16 @@ export function KnowledgePdfPage({
           },
         );
 
-        let annotationsPromise: ReturnType<PDFPageProxy['getAnnotations']>;
-        try {
-          annotationsPromise = page.getAnnotations({ intent: 'display' }).catch(() => []);
-        } catch {
-          annotationsPromise = Promise.resolve([]);
-        }
+        // Annotations are optional decoration: a page whose annotation dictionary is malformed
+        // must still render. The async wrapper absorbs a synchronous throw as well as a rejection,
+        // and still calls getAnnotations synchronously so the request is in flight immediately.
+        const annotationsPromise: ReturnType<PDFPageProxy['getAnnotations']> = (async () => {
+          try {
+            return await page.getAnnotations({ intent: 'display' });
+          } catch {
+            return [];
+          }
+        })();
         work.push(annotationsPromise);
         const textContentPromise = page.getTextContent();
         work.push(textContentPromise);

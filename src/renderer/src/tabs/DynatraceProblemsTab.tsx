@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
@@ -579,63 +579,69 @@ type ProblemQueueRowProps = {
 
 const PROBLEM_QUEUE_ROW_HEIGHT = 124;
 
-const ProblemQueueRow = memo(
-  ({ index, style, ariaAttributes, ...data }: RowComponentProps<ProblemQueueRowProps>) => {
-    const { problems, states, responseSummaries, selectedProblemId, historyMode, onSelect } = data;
-    const problem = problems[index];
-    if (!problem) return null;
-    const addressed = isAddressed(states.get(problem.problemId));
-    const responseSummary = responseSummaries.get(problem.problemId);
-    const selected = problem.problemId === selectedProblemId;
-    const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
-    const statusLabel = problem.status === 'CLOSED' ? 'Resolved' : severityLabel(problem.severity);
-    const primaryEntity = getPrimaryEntity(problem);
-    const alertingProfile = problem.alertingProfiles?.[0];
+// Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
+// comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent
+// also widens the return type to ReactNode, which its `rowComponent` prop rejects.
+function ProblemQueueRow({
+  index,
+  style,
+  ariaAttributes,
+  ...data
+}: RowComponentProps<ProblemQueueRowProps>) {
+  const { problems, states, responseSummaries, selectedProblemId, historyMode, onSelect } = data;
+  const problem = problems[index];
+  if (!problem) return null;
+  const addressed = isAddressed(states.get(problem.problemId));
+  const responseSummary = responseSummaries.get(problem.problemId);
+  const selected = problem.problemId === selectedProblemId;
+  const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
+  const statusLabel = problem.status === 'CLOSED' ? 'Resolved' : severityLabel(problem.severity);
+  const primaryEntity = getPrimaryEntity(problem);
+  const alertingProfile = problem.alertingProfiles?.[0];
 
-    return (
-      <div style={style} {...ariaAttributes}>
-        <button
-          type="button"
-          className={`dt-problem-row${selected ? ' dt-problem-row--selected' : ''}`}
-          onClick={() => onSelect(problem.problemId)}
-          aria-pressed={selected}
-        >
-          <span className={`dt-problem-row__signal dt-problem-row__signal--${tone}`} />
-          <span className="dt-problem-row__content">
-            <span className="dt-problem-row__topline">
-              <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
-              {addressed && (
-                <span className="dt-problem-badge dt-problem-badge--addressed">
-                  Addressed locally
-                </span>
-              )}
-              <span className="dt-problem-row__time">{formatDuration(problem)}</span>
-            </span>
-            <span className="dt-problem-row__title">{problem.title}</span>
-            {historyMode ? (
-              <ProblemResponseMetadata summary={responseSummary} />
-            ) : (
-              primaryEntity && (
-                <span className="dt-problem-row__entity-context">
-                  <span>{primaryEntity.kind}</span>
-                  <strong title={primaryEntity.name}>{primaryEntity.name}</strong>
-                  {primaryEntity.additionalCount > 0 && (
-                    <small>+{primaryEntity.additionalCount}</small>
-                  )}
-                </span>
-              )
+  return (
+    <div style={style} {...ariaAttributes}>
+      <button
+        type="button"
+        className={`dt-problem-row${selected ? ' dt-problem-row--selected' : ''}`}
+        onClick={() => onSelect(problem.problemId)}
+        aria-pressed={selected}
+      >
+        <span className={`dt-problem-row__signal dt-problem-row__signal--${tone}`} />
+        <span className="dt-problem-row__content">
+          <span className="dt-problem-row__topline">
+            <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
+            {addressed && (
+              <span className="dt-problem-badge dt-problem-badge--addressed">
+                Addressed locally
+              </span>
             )}
-            <span className="dt-problem-row__meta">
-              <span>{problem.displayId || problem.problemId}</span>
-              <span>{alertingProfile || problem.impactLevel.toLowerCase()}</span>
-              <span>{formatDateTime(problem.startTime)}</span>
-            </span>
+            <span className="dt-problem-row__time">{formatDuration(problem)}</span>
           </span>
-        </button>
-      </div>
-    );
-  },
-);
+          <span className="dt-problem-row__title">{problem.title}</span>
+          {historyMode ? (
+            <ProblemResponseMetadata summary={responseSummary} />
+          ) : (
+            primaryEntity && (
+              <span className="dt-problem-row__entity-context">
+                <span>{primaryEntity.kind}</span>
+                <strong title={primaryEntity.name}>{primaryEntity.name}</strong>
+                {primaryEntity.additionalCount > 0 && (
+                  <small>+{primaryEntity.additionalCount}</small>
+                )}
+              </span>
+            )
+          )}
+          <span className="dt-problem-row__meta">
+            <span>{problem.displayId || problem.problemId}</span>
+            <span>{alertingProfile || problem.impactLevel.toLowerCase()}</span>
+            <span>{formatDateTime(problem.startTime)}</span>
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
 
 function ProblemQueue({
   problems,

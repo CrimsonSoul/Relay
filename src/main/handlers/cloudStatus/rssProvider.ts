@@ -3,6 +3,7 @@ import {
   type CloudStatusProvider,
   type CloudStatusSeverity,
 } from '@shared/ipc';
+import { fetchNoStore } from './fetchNoStore';
 import type { RssItem } from './types';
 
 export const RSS_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
@@ -45,7 +46,9 @@ export function parseRssItems(xml: string): RssItem[] {
   const itemRegex = /<(?:item|entry)[\s>]([\s\S]*?)<\/(?:item|entry)>/g;
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
-    const block = match[1];
+    // Capture group 1 is not optional in the pattern above, so it always participates;
+    // an empty default just yields an item with empty fields instead of throwing.
+    const block = match[1] ?? '';
     const link = decodeXmlEntities(extractTag(block, 'link') || extractHref(block, 'link'));
     items.push({
       title: extractTag(block, 'title'),
@@ -90,8 +93,7 @@ export async function fetchRssProvider(
   url: string,
   provider: CloudStatusProvider,
 ): Promise<CloudStatusItem[]> {
-  const res = await fetch(url, {
-    cache: 'no-store',
+  const res = await fetchNoStore(url, {
     headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
     signal: AbortSignal.timeout(10000),
   });

@@ -113,9 +113,18 @@ const SEARCH_MATCH_KINDS = new Set<KnowledgeSearchMatchKind>([
   'fuzzy',
 ]);
 const SEARCH_AVAILABILITY = new Set<KnowledgeSearchAvailability>(['ready', 'cached']);
-const SEARCH_RESPONSE_ERRORS: KnowledgeSearchResponse extends { ok: false; error: infer T }
-  ? Set<T>
-  : never = new Set(['invalid-query', 'unavailable', 'timeout', 'cancelled']);
+export type KnowledgeSearchResponseError = Extract<KnowledgeSearchResponse, { ok: false }>['error'];
+
+const SEARCH_RESPONSE_ERRORS: ReadonlySet<string> = new Set<KnowledgeSearchResponseError>([
+  'invalid-query',
+  'unavailable',
+  'timeout',
+  'cancelled',
+]);
+
+function isKnowledgeSearchResponseError(value: unknown): value is KnowledgeSearchResponseError {
+  return typeof value === 'string' && SEARCH_RESPONSE_ERRORS.has(value);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -383,11 +392,12 @@ export function normalizeKnowledgeSearchResponse(value: unknown): KnowledgeSearc
     return null;
   }
   if (!value.ok) {
-    return SEARCH_RESPONSE_ERRORS.has(value.error as never)
+    const error = value.error;
+    return isKnowledgeSearchResponseError(error)
       ? {
           ok: false,
           requestId: value.requestId,
-          error: value.error as KnowledgeSearchResponse['error'],
+          error,
         }
       : null;
   }

@@ -1,4 +1,3 @@
-import type { RecordModel } from 'pocketbase';
 import type { PendingMutationOverlay } from '@shared/ipc';
 import {
   getPb,
@@ -9,6 +8,17 @@ import {
 } from '../services/pocketbase';
 import { registerWebCollectionGate, type WebCollectionGate } from './webOnlineGate';
 
+/**
+ * The only shape this layer relies on. PocketBase's own `RecordModel` also
+ * demands `collectionId`/`collectionName`, which the server does send but none
+ * of Relay's record interfaces (ContactRecord, ServerRecord, …) declare — so
+ * constraining on it rejected every real caller.
+ */
+export interface CollectionRecord {
+  id: string;
+  updated?: string;
+}
+
 export interface CollectionQueryOptions {
   sort?: string;
   filter?: string;
@@ -16,7 +26,7 @@ export interface CollectionQueryOptions {
   offlineCacheChannel?: string;
 }
 
-export interface CollectionSnapshot<T extends RecordModel> {
+export interface CollectionSnapshot<T extends CollectionRecord> {
   data: T[];
   loading: boolean;
   error: string | null;
@@ -24,9 +34,9 @@ export interface CollectionSnapshot<T extends RecordModel> {
 }
 
 interface ExtendedApi {
-  cacheRead?: (collection: string) => Promise<RecordModel[] | null>;
-  cacheWrite?: (collection: string, action: string, record: RecordModel) => void;
-  cacheSnapshot?: (collection: string, signature: string, records: RecordModel[]) => void;
+  cacheRead?: (collection: string) => Promise<CollectionRecord[] | null>;
+  cacheWrite?: (collection: string, action: string, record: CollectionRecord) => void;
+  cacheSnapshot?: (collection: string, signature: string, records: CollectionRecord[]) => void;
   syncPending?: () => Promise<{
     remaining?: number;
     remainingChanges?: PendingMutationOverlay[];
@@ -57,9 +67,7 @@ function syncPendingOnce(): Promise<
   return pendingReconnectSync;
 }
 
-export function collectionRevisionSignature(
-  records: Array<Pick<RecordModel, 'id' | 'updated'>>,
-): string {
+export function collectionRevisionSignature(records: readonly CollectionRecord[]): string {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
   const mask = 0xffffffffffffffffn;
@@ -89,7 +97,7 @@ function compareField(aValue: unknown, bValue: unknown, descending: boolean): nu
  */
 const FILTER_EQUALITY = /^\s*([\w.]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s&|]+))\s*$/;
 
-function buildFilterPredicate(filter: string): ((record: RecordModel) => boolean) | null {
+function buildFilterPredicate(filter: string): ((record: CollectionRecord) => boolean) | null {
   const clauses: { field: string; value: string }[] = [];
   for (const clause of filter.split('&&')) {
     const match = FILTER_EQUALITY.exec(clause);
@@ -98,9 +106,7 @@ function buildFilterPredicate(filter: string): ((record: RecordModel) => boolean
     clauses.push({ field: field ?? '', value: doubleQuoted ?? singleQuoted ?? bare ?? '' });
   }
   return (record) =>
-    clauses.every(
-      ({ field, value }) => String((record as Record<string, unknown>)[field] ?? '') === value,
-    );
+    clauses.every(({ field, value }) => String(Reflect.get(record, field) ?? '') === value);
 }
 
 /**
@@ -111,12 +117,12 @@ function buildFilterPredicate(filter: string): ((record: RecordModel) => boolean
  * snapshot fetch reconciles on the next connection cycle, whereas an
  * unverified append corrupts the list until then.
  */
-function buildCreateGate(filter: string | undefined): (record: RecordModel) => boolean {
+function buildCreateGate(filter: string | undefined): (record: CollectionRecord) => boolean {
   if (!filter) return () => true;
   return buildFilterPredicate(filter) ?? (() => false);
 }
 
-function buildComparator<T extends RecordModel>(
+function buildComparator<T extends CollectionRecord>(
   sort: string | undefined,
 ): ((a: T, b: T) => number) | null {
   if (!sort) return null;
@@ -138,12 +144,12 @@ function buildComparator<T extends RecordModel>(
   };
 }
 
-function applyRealtimeEvent<T extends RecordModel>(
+function applyRealtimeEvent<T extends CollectionRecord>(
   previous: T[],
   action: string,
-  record: RecordModel,
+  record: CollectionRecord,
   comparator: ((a: T, b: T) => number) | null,
-  acceptsCreate: (record: RecordModel) => boolean,
+  acceptsCreate: (record: CollectionRecord) => boolean,
 ): T[] {
   let next: T[];
   switch (action) {
@@ -171,11 +177,11 @@ function applyRealtimeEvent<T extends RecordModel>(
   return next;
 }
 
-function replayBufferedEvents<T extends RecordModel>(
+function replayBufferedEvents<T extends CollectionRecord>(
   records: T[],
-  events: { action: string; record: RecordModel }[] | null,
+  events: { action: string; record: CollectionRecord }[] | null,
   comparator: ((a: T, b: T) => number) | null,
-  acceptsCreate: (record: RecordModel) => boolean,
+  acceptsCreate: (record: CollectionRecord) => boolean,
 ): T[] {
   let next = records;
   for (const event of events ?? []) {
@@ -184,7 +190,7 @@ function replayBufferedEvents<T extends RecordModel>(
   return next;
 }
 
-async function readOfflineCache<T extends RecordModel>(
+async function readOfflineCache<T extends CollectionRecord>(
   collectionName: string,
 ): Promise<T[] | null> {
   try {
@@ -203,14 +209,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function sortCachedRecords<T extends RecordModel>(
+function sortCachedRecords<T extends CollectionRecord>(
   cached: T[] | null,
   comparator: ((a: T, b: T) => number) | null,
 ): T[] | null {
   return cached && comparator ? cached.toSorted(comparator) : cached;
 }
 
-export class CollectionStore<T extends RecordModel> {
+export class CollectionStore<T extends CollectionRecord> {
   private snapshot: CollectionSnapshot<T> = {
     data: [],
     loading: true,
@@ -219,7 +225,7 @@ export class CollectionStore<T extends RecordModel> {
   };
   private readonly listeners = new Set<Listener>();
   private readonly comparator: ((a: T, b: T) => number) | null;
-  private readonly acceptsCreate: (record: RecordModel) => boolean;
+  private readonly acceptsCreate: (record: CollectionRecord) => boolean;
   private active = false;
   private connected = false;
   private connectionGeneration = 0;
@@ -228,7 +234,7 @@ export class CollectionStore<T extends RecordModel> {
   private realtimeUnsubscribe: (() => void | Promise<void>) | null = null;
   private connectionUnsubscribe: (() => void) | null = null;
   private clientUnsubscribe: (() => void) | null = null;
-  private inFlightEvents: { action: string; record: RecordModel }[] | null = null;
+  private inFlightEvents: { action: string; record: CollectionRecord }[] | null = null;
   private lastSnapshotSignature: string | null = null;
   private webGate: WebCollectionGate | null = null;
 
@@ -262,7 +268,7 @@ export class CollectionStore<T extends RecordModel> {
     await this.fetchData();
   };
 
-  applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: RecordModel): void {
+  applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: CollectionRecord): void {
     const next = applyRealtimeEvent(
       this.snapshot.data,
       action,
@@ -365,7 +371,7 @@ export class CollectionStore<T extends RecordModel> {
       .catch((error: unknown) => handleApiError(error));
   }
 
-  private handleRealtimeEvent(action: string, record: RecordModel): void {
+  private handleRealtimeEvent(action: string, record: CollectionRecord): void {
     const next = applyRealtimeEvent(
       this.snapshot.data,
       action,

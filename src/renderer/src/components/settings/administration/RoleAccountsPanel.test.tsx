@@ -212,6 +212,30 @@ describe('RoleAccountsPanel', () => {
     );
   });
 
+  // Regression: 'rate-limited' was missing from the local error map, so a
+  // throttled command with no server message resolved to `undefined` and the
+  // dialog rendered an empty failure notice.
+  it('explains a throttled command instead of showing a blank error', async () => {
+    execute.mockResolvedValueOnce({ ok: false, error: 'rate-limited' });
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
+    fireEvent.change(screen.getByLabelText('Publisher account'), {
+      target: { value: 'account-old-publisher' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'a-long-private-password' },
+    });
+    fireEvent.submit(
+      screen.getByRole('dialog').querySelector('form') ?? screen.getByRole('dialog'),
+    );
+
+    await waitFor(() => {
+      const alert = within(screen.getByRole('dialog')).getByRole('alert');
+      expect(alert).toHaveTextContent(/limiting repeated attempts/i);
+      expect(alert.textContent?.trim()).not.toBe('');
+    });
+  });
+
   it('keeps command failures inside the active reauthentication dialog', async () => {
     execute.mockResolvedValueOnce({ ok: false, error: 'conflict' });
     render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);

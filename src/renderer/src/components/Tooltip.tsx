@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 interface TooltipProps {
   content: React.ReactNode;
-  children: React.ReactElement;
+  children: React.ReactElement<TooltipTriggerHandlers>;
   position?: 'top' | 'bottom' | 'left' | 'right';
   width?: string;
   block?: boolean;
@@ -103,7 +103,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
     [],
   );
 
-  const childHandlers = children.props as TooltipTriggerHandlers;
+  const childHandlers = children.props;
   const trigger = React.cloneElement(children, {
     onMouseEnter: (event: React.MouseEvent<Element>) => {
       childHandlers.onMouseEnter?.(event);

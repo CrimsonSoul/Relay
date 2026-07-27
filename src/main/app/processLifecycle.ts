@@ -231,7 +231,7 @@ export function attachWindowLifecycleListeners(
 }
 
 function pruneGpuGoneHistory(now: number): void {
-  while (gpuGoneTimestamps.length > 0 && gpuGoneTimestamps[0] < now - RELOAD_WINDOW_MS) {
+  while ((gpuGoneTimestamps[0] ?? Number.POSITIVE_INFINITY) < now - RELOAD_WINDOW_MS) {
     gpuGoneTimestamps.shift();
   }
 }

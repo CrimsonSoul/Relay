@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { LogEntrySchema } from '@shared/ipcValidation';
+import type { LogData } from '@shared/types';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
@@ -11,14 +12,21 @@ const MAX_LOG_DATA_ARRAY_ITEMS = 50;
 const MAX_LOG_DATA_OBJECT_KEYS = 50;
 const TRUNCATED_SUFFIX = '...[truncated]';
 
-function boundRendererLogData(data: unknown, depth = 0): unknown {
+// Heterogeneous by contract: this bounds an arbitrary renderer payload, so the return
+// type mirrors LogData's union rather than collapsing everything to one shape.
+// eslint-disable-next-line sonarjs/function-return-type
+function boundRendererLogData(data: unknown, depth = 0): LogData {
   if (data === null || data === undefined) return data;
   if (typeof data === 'string') {
     return data.length > MAX_LOG_DATA_STRING
       ? `${data.slice(0, MAX_LOG_DATA_STRING)}${TRUNCATED_SUFFIX}`
       : data;
   }
-  if (typeof data !== 'object') return data;
+  if (typeof data === 'number' || typeof data === 'boolean') return data;
+  // Anything else primitive is a bigint (structured clone carries those across IPC) or a
+  // symbol/function. JSON.stringify throws on a bigint, which would drop the whole log
+  // line, so render it as text before it reaches the formatter.
+  if (typeof data !== 'object') return String(data);
   if (depth >= MAX_LOG_DATA_DEPTH) return '[MaxDepth]';
 
   if (Array.isArray(data)) {

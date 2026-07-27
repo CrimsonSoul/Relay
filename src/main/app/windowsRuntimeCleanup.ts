@@ -57,12 +57,13 @@ type ScheduleOptions = {
 };
 
 function isBuildId(value: string | undefined): value is string {
-  return (
-    typeof value === 'string' &&
-    BUILD_ID_PATTERN.test(value) &&
-    !value.endsWith('.') &&
-    !RESERVED_WINDOWS_NAMES.has(value.split('.', 1)[0])
-  );
+  if (typeof value !== 'string' || !BUILD_ID_PATTERN.test(value) || value.endsWith('.')) {
+    return false;
+  }
+  // String.split always yields at least one element; fall back to the whole value anyway
+  // so a reserved device name can never slip through as a build id.
+  const [firstSegment = value] = value.split('.', 1);
+  return !RESERVED_WINDOWS_NAMES.has(firstSegment);
 }
 
 function isAsciiDigits(value: string): boolean {

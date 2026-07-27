@@ -16,9 +16,9 @@ export const VirtualRow = memo(
   ({ index, style, ...data }: RowComponentProps<DirectoryVirtualRowData>) => {
     const { filtered, groupMap, serverRelationMap, onContextMenu, focusedIndex, onRowClick } = data;
 
-    if (index >= filtered.length) return <div style={style} />;
-
     const contact = filtered[index];
+    if (!contact) return <div style={style} />;
+
     const emailKey = contact.email.toLowerCase();
     const membership = groupMap.get(emailKey) || [];
     const relationshipCounts = serverRelationMap.get(emailKey);

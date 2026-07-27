@@ -6,7 +6,13 @@ export type FilterDef<T> = {
   key: string;
   label: string;
   icon?: ReactNode;
-  predicate: (item: T) => boolean;
+  // Declared method-style on purpose. As a property-style function type this is
+  // contravariant under strictFunctionTypes, so a FilterDef<Contact>[] would not
+  // satisfy the FilterDef<unknown>[] that ListFilters accepts — and the only
+  // in-place workaround was rewriting every predicate against `unknown`, losing
+  // the compile-time link to the item type. Method syntax is bivariant, which is
+  // the intended relationship here: ListFilters never calls predicate.
+  predicate(item: T): boolean;
 };
 
 type UseListFiltersOptions<T> = {

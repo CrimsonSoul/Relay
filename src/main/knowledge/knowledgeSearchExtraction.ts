@@ -13,7 +13,9 @@ export async function extractKnowledgeSearchPages(
 ): Promise<KnowledgeSearchExtractedPage[]> {
   const loadingTask = getDocument({
     data,
-    isEvalSupported: false,
+    // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
+    // `new Function` font/pattern path it used to gate, so passing it now only reads like
+    // an active control that no longer exists.
     useWorkerFetch: false,
     useSystemFonts: false,
     disableAutoFetch: true,

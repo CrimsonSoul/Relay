@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
@@ -63,10 +63,13 @@ const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string)
   },
 ];
 
-const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) => {
+// Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
+// comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent also
+// widens the return type to ReactNode, which its `rowComponent` prop rejects.
+function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) {
   const { servers, contactLookup, onContextMenu, selectedIndex, onRowClick } = data;
-  if (index >= servers.length) return null;
   const server = servers[index];
+  if (!server) return null;
   return (
     <ServerCard
       style={style}
@@ -78,7 +81,7 @@ const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirt
       onRowClick={() => onRowClick(index)}
     />
   );
-});
+}
 
 export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -452,7 +455,13 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         entityId={notesServer?.name || ''}
         entityName={notesServer?.name || ''}
         existingNote={notesServer ? getServerNote(notesServer.name) : undefined}
-        onSave={(note, tags) => setServerNote(notesServer!.name, note, tags)}
+        // setServerNote resolves an IpcResult, which is truthy even when it reports a failure.
+        // Returning it unchanged made NotesModal close on a failed save and drop the note.
+        onSave={async (note, tags) => {
+          if (!notesServer) return false;
+          const saved = await setServerNote(notesServer.name, note, tags);
+          return saved?.success;
+        }}
       />
 
       <StatusBar

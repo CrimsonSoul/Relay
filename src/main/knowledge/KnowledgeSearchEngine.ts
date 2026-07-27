@@ -1062,6 +1062,21 @@ async function buildQueryVocabulary(
   return vocabulary;
 }
 
+/**
+ * Narrows the running candidate set to chunks that also matched the current token.
+ *
+ * Extracted from the loop below on purpose: intersecting `candidates` with itself inline
+ * makes its type depend on its own assignment across the loop's back edge, which
+ * TypeScript resolves to `Set<never>`. A declared return type breaks that cycle.
+ */
+function intersectCandidateChunkIds(
+  previous: Set<string> | null,
+  tokenCandidates: Set<string>,
+): Set<string> {
+  if (previous === null) return tokenCandidates;
+  return new Set([...previous].filter((chunkId) => tokenCandidates.has(chunkId)));
+}
+
 async function candidateChunkIds(
   queryTokens: readonly string[],
   vocabulary: QueryVocabulary,
@@ -1079,8 +1094,7 @@ async function candidateChunkIds(
         if (postingCandidates % CHECK_INTERVAL === 0) await cooperativeCheckpoint(context);
       }
     }
-    if (candidates === null) candidates = tokenCandidates;
-    else candidates = new Set([...candidates].filter((chunkId) => tokenCandidates.has(chunkId)));
+    candidates = intersectCandidateChunkIds(candidates, tokenCandidates);
     if (candidates.size === 0) break;
   }
   return candidates ?? new Set();

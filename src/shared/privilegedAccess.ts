@@ -408,11 +408,12 @@ function normalizeAdministrationSettingSummary(
   if (
     !isRelayAdministrableSetting(setting) ||
     typeof configured !== 'boolean' ||
-    summary !== (configured ? 'Configured' : 'Not configured') ||
     !nonNegativeInteger(revision)
   ) {
     return null;
   }
+  const expectedSummary = configured ? 'Configured' : 'Not configured';
+  if (summary !== expectedSummary) return null;
   if (setting === 'dynatrace.platform-token' && valueSummary !== undefined) return null;
   if (
     valueSummary !== undefined &&
@@ -426,7 +427,7 @@ function normalizeAdministrationSettingSummary(
   return {
     setting,
     configured,
-    summary,
+    summary: expectedSummary,
     ...(valueSummary === undefined ? {} : { valueSummary: valueSummary as string | string[] }),
     revision,
   };

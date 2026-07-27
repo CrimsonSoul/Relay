@@ -3,6 +3,7 @@ import {
   type CloudStatusProvider,
   type CloudStatusSeverity,
 } from '@shared/ipc';
+import { fetchNoStore } from './fetchNoStore';
 import type { StatuspageIncident } from './types';
 
 export const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
@@ -43,8 +44,7 @@ export async function fetchStatuspageProvider(
   url: string,
   provider: CloudStatusProvider,
 ): Promise<CloudStatusItem[]> {
-  const res = await fetch(url, {
-    cache: 'no-store',
+  const res = await fetchNoStore(url, {
     headers: { Accept: 'application/json' },
     redirect: 'follow',
     signal: AbortSignal.timeout(10000),

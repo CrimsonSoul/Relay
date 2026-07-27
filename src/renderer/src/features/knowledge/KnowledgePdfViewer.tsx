@@ -309,7 +309,9 @@ export function KnowledgePdfViewer({
         }
         loadingTask = getDocument({
           data: new Uint8Array(result.data),
-          isEvalSupported: false,
+          // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
+          // `new Function` font/pattern path it used to gate, so passing it now only reads like
+          // an active control that no longer exists.
           disableAutoFetch: true,
           disableStream: true,
           enableXfa: false,
@@ -408,18 +410,25 @@ export function KnowledgePdfViewer({
     issuedNavigationTargetRef.current = null;
     setNavigationTarget(nextTarget);
     const activePdfIdentity = pdfIdentityRef.current;
+    // `documentId`/`documentChecksum` are undefined while no document is selected, so the
+    // identity comparisons must not be reached through optional chaining: `undefined ===
+    // undefined` would report a match against a session that does not exist.
     const canApplySingleTarget =
       isNewTargetRequest &&
       nextTarget &&
       viewModeRef.current === 'single' &&
       activeDocumentRef.current.active &&
-      activePdfIdentity?.documentId === documentId &&
+      activePdfIdentity !== null &&
+      activePdfIdentity.documentId === documentId &&
       activePdfIdentity.checksum === documentChecksum;
     if (canApplySingleTarget) {
       if (pageIndexRef.current !== nextTarget.pageIndex) {
         pageIndexRef.current = nextTarget.pageIndex;
         setPageIndex(nextTarget.pageIndex);
-      } else if (nextTarget.top === null) {
+      } else {
+        // The page is already mounted, so it will not report ready again. Hand the target to the
+        // single-page settle effect — for an offset destination KnowledgePdfPage performs the
+        // scroll itself — so the target is still released and the pending focus request runs.
         setSingleTopRequest({
           documentId: activePdfIdentity.documentId,
           checksum: activePdfIdentity.checksum,
@@ -496,19 +505,18 @@ export function KnowledgePdfViewer({
     }
 
     const pendingRequest = pendingFocusRequestRef.current;
+    if (!pendingRequest) return;
     if (
-      pendingRequest &&
-      (pendingRequest.documentId !== documentId ||
-        pendingRequest.targetRequestKey !== targetRequestKey ||
-        normalizedTargetPageIndex === undefined)
+      pendingRequest.documentId !== documentId ||
+      pendingRequest.targetRequestKey !== targetRequestKey ||
+      normalizedTargetPageIndex === undefined
     ) {
       pendingFocusRequestRef.current = undefined;
       return;
     }
     if (
-      pendingRequest &&
-      (pendingRequest.target.pageIndex !== normalizedTargetPageIndex ||
-        pendingRequest.target.top !== (targetTop ?? null))
+      pendingRequest.target.pageIndex !== normalizedTargetPageIndex ||
+      pendingRequest.target.top !== (targetTop ?? null)
     ) {
       pendingRequest.target = {
         pageIndex: normalizedTargetPageIndex,
@@ -648,7 +656,9 @@ export function KnowledgePdfViewer({
     ) {
       return;
     }
-    viewportRef.current?.scrollTo({ top: 0 });
+    // An offset destination is scrolled by KnowledgePdfPage against the rendered viewport; only a
+    // whole-page target resets the viewport here.
+    if (singleTopRequest.target.top === null) viewportRef.current?.scrollTo({ top: 0 });
     observedPageIndexRef.current = singleTopRequest.target.pageIndex;
     issuedNavigationTargetRef.current = singleTopRequest.target;
     consumeNavigationTarget(singleTopRequest.target.pageIndex);

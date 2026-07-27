@@ -7,7 +7,7 @@ import {
   useRef,
   Suspense,
   lazy,
-  ComponentType,
+  type ComponentType,
   type PropsWithChildren,
 } from 'react';
 import { Sidebar } from './components/Sidebar';
@@ -65,10 +65,16 @@ import { getRelayRuntime } from './runtime/relayRuntime';
 import { WebRuntimeBanner } from './components/WebRuntimeBanner';
 import { UnsupportedViewport } from './components/UnsupportedViewport';
 
-// Lazy-load helper for named exports
-function lazyTab<T extends Record<string, ComponentType>>(
+// Lazy-load helper for named exports. Only the key being imported is
+// constrained — tab modules also export types, constants and helpers that are
+// not components. `T[K]` still resolves to the concrete component at each call
+// site, so the lazy element's props keep checking exactly. Component props are
+// contravariant, so `ComponentType<any>` — React's own constraint on `lazy` —
+// is the only bound that accepts every tab component.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyTab<K extends string, T extends Record<K, ComponentType<any>>>(
   factory: () => Promise<T>,
-  name: keyof T & string,
+  name: K,
 ) {
   return lazy(() => factory().then((m) => ({ default: m[name] })));
 }

@@ -1019,19 +1019,22 @@ describe('KnowledgePdfViewer', () => {
     expect(loadingDestroy).not.toHaveBeenCalled();
   });
 
-  it('loads the selected PDF through Relay with script execution disabled and renders selectable text', async () => {
+  it('loads the selected PDF through Relay with remote fetching disabled and renders selectable text', async () => {
     renderComponent();
 
     expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
     expect(getKnowledgePdf).toHaveBeenCalledWith({ documentId: 'doc-1', checksum: 'a'.repeat(64) });
     expect(getDocumentMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        isEvalSupported: false,
         disableAutoFetch: true,
         disableStream: true,
         enableXfa: false,
+        useWorkerFetch: false,
       }),
     );
+    // pdf.js 6 dropped `isEvalSupported` along with the `new Function` path it gated, so passing
+    // it would only read as a control that no longer exists.
+    expect(getDocumentMock.mock.calls[0]?.[0]).not.toHaveProperty('isEvalSupported');
     await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
   });
 
@@ -1637,6 +1640,48 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(viewport).toHaveFocus());
     expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
     externalFocus.remove();
+  });
+
+  // Regression: a single-page target that lands on the page already on screen *with* a vertical
+  // offset took neither branch of the settle logic, so the navigation target was never released.
+  // The pending focus request stayed queued forever and the viewport never took focus.
+  it('restores focus for an offset target that lands on the page already displayed', async () => {
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    expect(externalFocus).toHaveFocus();
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 0, top: 420 }, focusRequestKey: 1 })}
+      />,
+    );
+
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+    externalFocus.remove();
+  });
+
+  // Regression: `activePdfIdentity?.documentId === documentId` compared undefined to undefined
+  // while no document was selected, reporting a match against a session that does not exist. The
+  // next term then dereferenced the null session and threw out of the effect.
+  it('does not read a null pdf session when a target arrives with no selected document', async () => {
+    const { rerender } = render(
+      <KnowledgePdfViewer {...viewerProps({ document: null, target: null })} />,
+    );
+
+    expect(() =>
+      rerender(
+        <KnowledgePdfViewer
+          {...viewerProps({ document: null, target: { pageIndex: 1, top: null } })}
+        />,
+      ),
+    ).not.toThrow();
+
+    expect(screen.getByRole('heading', { name: 'Select a document' })).toBeInTheDocument();
   });
 
   it('does not restore delayed target focus after manual navigation supersedes it', async () => {

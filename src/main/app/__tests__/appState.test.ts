@@ -31,11 +31,6 @@ vi.mock('../../handlers/loggerHandlers', () => ({
 vi.mock('../../dataUtils', () => ({
   ensureDataDirectoryAsync: vi.fn().mockResolvedValue(undefined),
   loadConfigAsync: vi.fn().mockResolvedValue({ dataRoot: '' }),
-  saveConfigAsync: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../utils/pathValidation', () => ({
-  validateDataPath: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 import {
@@ -73,15 +68,13 @@ import {
   getDefaultDataPath,
   getDataRoot,
   resetDataRootCache,
-  handleDataPathChange,
   setupIpc,
   setupPermissions,
 } from '../appState';
 import { setupIpcHandlers } from '../../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../../handlers/authHandlers';
 import { setupLoggerHandlers } from '../../handlers/loggerHandlers';
-import { loadConfigAsync, ensureDataDirectoryAsync, saveConfigAsync } from '../../dataUtils';
-import { validateDataPath } from '../../utils/pathValidation';
+import { loadConfigAsync, ensureDataDirectoryAsync } from '../../dataUtils';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -260,45 +253,6 @@ describe('getDataRoot', () => {
     const root = await getDataRoot();
 
     expect(root).toContain('data');
-  });
-});
-
-describe('handleDataPathChange', () => {
-  it('validates, ensures directory, and saves config', async () => {
-    setMainWindow({ webContents: {} } as never);
-
-    await handleDataPathChange('/new/path');
-
-    expect(validateDataPath).toHaveBeenCalledWith('/new/path');
-    expect(ensureDataDirectoryAsync).toHaveBeenCalledWith('/new/path');
-    expect(saveConfigAsync).toHaveBeenCalledWith({ dataRoot: '/new/path' });
-    expect(getCurrentDataRoot()).toBe('/new/path');
-  });
-
-  it('does nothing when mainWindow is null', async () => {
-    setMainWindow(null);
-
-    await handleDataPathChange('/new/path');
-
-    expect(validateDataPath).not.toHaveBeenCalled();
-  });
-
-  it('throws when validation fails', async () => {
-    setMainWindow({ webContents: {} } as never);
-    vi.mocked(validateDataPath).mockResolvedValue({ success: false, error: 'Bad path' });
-
-    await expect(handleDataPathChange('/bad/path')).rejects.toThrow('Bad path');
-  });
-
-  it('does not update cached data root when saving the new path fails', async () => {
-    setMainWindow({ webContents: {} } as never);
-    setCurrentDataRoot('/old/path');
-    vi.mocked(validateDataPath).mockResolvedValueOnce({ success: true });
-    vi.mocked(saveConfigAsync).mockRejectedValueOnce(new Error('disk full'));
-
-    await expect(handleDataPathChange('/new/path')).rejects.toThrow('disk full');
-
-    expect(getCurrentDataRoot()).toBe('/old/path');
   });
 });
 

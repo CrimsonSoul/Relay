@@ -1,5 +1,9 @@
 import { loggers } from '../logger';
 import {
+  createProductionPrivilegedHost,
+  createProductionPrivilegedRuntime,
+} from '../privileged/privilegedRuntime';
+import {
   getAppConfig,
   getMainWindow,
   getOfflineCache,
@@ -29,10 +33,6 @@ import {
 } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
-import {
-  createProductionPrivilegedHost,
-  createProductionPrivilegedRuntime,
-} from '../privileged/privilegedRuntime';
 import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 import { clearRelayAppUserAuthCoordinator } from '../pocketbase/RelayAppUserAuthCoordinator';
 import type { StartupStateController } from './startupState';
@@ -59,6 +59,7 @@ async function rebuildPrivilegedRuntime(
   configDataDir: string,
 ): Promise<void> {
   try {
+    // Same on-demand load as the startup path in src/main/index.ts.
     const productionOptions = {
       config,
       dataDir: configDataDir,

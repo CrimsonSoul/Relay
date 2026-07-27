@@ -136,17 +136,19 @@ export function KnowledgeLinkLayer({
     const style = projectedStyle(viewport, item.rect);
     if (!style) continue;
 
-    if (item.action.kind === 'destination') {
+    // Bound to a const so the discriminated-union narrowing survives into the click handler.
+    const action = item.action;
+    if (action.kind === 'destination') {
       links.push({
         id: item.id,
         label: 'Open linked location in this guide',
         style,
-        activate: () => onActivateDestination(item.action.destination),
+        activate: () => onActivateDestination(action.destination),
       });
       continue;
     }
 
-    const resolvedLink = resolveUrl(item.action.url);
+    const resolvedLink = resolveUrl(action.url);
     const label = resolvedLinkLabel(resolvedLink);
     if (!label) continue;
 

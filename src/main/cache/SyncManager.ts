@@ -198,18 +198,18 @@ export class SyncManager {
     const synced: number[] = [];
     const failed: { changeId: number; error: string }[] = [];
 
-    for (let i = 0; i < changes.length; i++) {
+    for (const [i, change] of changes.entries()) {
       try {
-        const result = await this.applyChange(changes[i]);
+        const result = await this.applyChange(change);
         if (result.conflict) {
           conflicts++;
-          if (!result.applied) conflicted.push(changes[i].id);
+          if (!result.applied) conflicted.push(change.id);
         }
-        if (result.applied) synced.push(changes[i].id);
+        if (result.applied) synced.push(change.id);
       } catch (err) {
-        const errorMsg = `Failed to sync ${changes[i].collection}/${changes[i].action}: ${err}`;
-        failed.push({ changeId: changes[i].id, error: errorMsg });
-        logger.error('Sync error', { change: changes[i], error: err });
+        const errorMsg = `Failed to sync ${change.collection}/${change.action}: ${err}`;
+        failed.push({ changeId: change.id, error: errorMsg });
+        logger.error('Sync error', { change, error: err });
       }
       onProgress?.(i + 1, changes.length);
     }

@@ -241,7 +241,8 @@ export function useOnCallManager(
             role: r.role,
             name: r.name,
             contact: r.contact,
-            timeWindow: r.timeWindow,
+            // OnCallRow.timeWindow is optional but the record column is not.
+            timeWindow: r.timeWindow ?? '',
             sortOrder: i,
           })),
         );

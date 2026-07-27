@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from './dataUtils';
+import { ensureDataDirectoryAsync, loadConfigAsync } from './dataUtils';
 import fsPromises from 'node:fs/promises';
-import { join } from 'node:path';
 import { app } from 'electron';
 
 vi.mock('node:fs/promises', () => ({
@@ -75,24 +74,6 @@ describe('dataUtils', () => {
       vi.mocked(fsPromises.readFile).mockResolvedValueOnce('{}');
       await loadConfigAsync();
       expect(app.getPath).toHaveBeenCalledWith('userData');
-    });
-  });
-
-  describe('saveConfigAsync', () => {
-    it('writes config to userData/config.json', async () => {
-      await saveConfigAsync({ dataRoot: '/my/path' });
-      expect(fsPromises.writeFile).toHaveBeenCalledWith(
-        // eslint-disable-next-line sonarjs/publicly-writable-directories
-        join('/tmp/user-data', 'config.json'),
-        '{\n  "dataRoot": "/my/path"\n}',
-        'utf-8',
-      );
-    });
-
-    it('rejects when the config file cannot be written', async () => {
-      vi.mocked(fsPromises.writeFile).mockRejectedValueOnce(new Error('disk full'));
-
-      await expect(saveConfigAsync({})).rejects.toThrow('disk full');
     });
   });
 });

@@ -19,9 +19,17 @@ const runChild = (spawnSync, command, args, options) => {
   }
 };
 
+// A process exit code is truncated to its low byte, so a non-zero status whose
+// low byte is zero (Windows reports values such as 256) would otherwise reach
+// CI as a success.
+const toReportableExitCode = (status) =>
+  Math.trunc(status) % 256 === 0 ? FAILED_TO_START_EXIT_CODE : status;
+
 const exitCodeFor = ({ status, signal, error }) => {
   if (!error && !signal && status === 0) return 0;
-  return typeof status === 'number' && status !== 0 ? status : FAILED_TO_START_EXIT_CODE;
+  return typeof status === 'number' && status !== 0
+    ? toReportableExitCode(status)
+    : FAILED_TO_START_EXIT_CODE;
 };
 
 const reportFailure = (label, outcome, stderr) => {

@@ -26,7 +26,9 @@ type Props = {
   /** Override the dialog CSS class (default: 'modal-dialog-generic') */
   dialogClassName?: string;
   /** Extra props spread onto the <dialog> element (e.g. data-entity-id). */
-  dialogProps?: React.HTMLAttributes<HTMLDialogElement>;
+  dialogProps?: React.HTMLAttributes<HTMLDialogElement> & {
+    [key: `data-${string}`]: string | undefined;
+  };
   /** When false, removes close affordances and ignores Escape while work is pending. */
   dismissible?: boolean;
 };

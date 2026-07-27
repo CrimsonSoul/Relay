@@ -248,7 +248,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   const [failedPassageGeneration, setFailedPassageGeneration] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLUListElement>(null);
-  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Debounce for dropdown results (faster than tab filtering)
   const [dropdownQuery, setDropdownQuery] = useState('');

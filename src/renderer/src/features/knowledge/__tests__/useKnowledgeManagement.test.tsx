@@ -618,6 +618,28 @@ describe('useKnowledgeManagement', () => {
     );
   });
 
+  // Regression: the safe-error table covered only 10 of the 12 PrivilegedCommandError codes, so
+  // commandError() handed `undefined` to the banner for the two it missed and the operator was
+  // told nothing at all about why the request failed.
+  it.each([
+    ['rate-limited', 'Too many Wiki requests. Wait a few minutes and try again.'],
+    ['insufficient-storage', 'Relay does not have enough storage to complete that action.'],
+  ] as const)('explains a %s publish rejection', async (error, message) => {
+    submitCommand.mockImplementation(async (input) =>
+      input.command === 'knowledge.document.publish'
+        ? { ok: false, requestId: `publish-${error}`, error }
+        : okSnapshot(snapshot),
+    );
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    await act(async () => {
+      await result.current.publish('upload-1', 'Runbook', 'Operations');
+    });
+
+    expect(result.current.error).toBe(message);
+  });
+
   it('keeps a post-commit publish error visible when its audit event is missing', async () => {
     const authoritative = {
       ...snapshotWithTitle('Runbook'),

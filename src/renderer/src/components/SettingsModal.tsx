@@ -1066,7 +1066,7 @@ export const SettingsModal: React.FC<Props> = ({
                 </button>
               </div>
             )}
-            {canConfigureConnection && displayedConnectionSecret && (
+            {canConfigureConnection && connectionSecret && displayedConnectionSecret && (
               <div className="settings-data-path settings-copy-row">
                 <span>Passphrase: {displayedConnectionSecret}</span>
                 <span className="settings-inline-actions">

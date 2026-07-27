@@ -61,4 +61,19 @@ describe('dispatchReminderAlertLoad', () => {
       captureSender(makeReminder({ createdBy: 'Legacy Operator', alertSender: 'Legacy NOC' })),
     ).toBe('Legacy NOC');
   });
+
+  // Regression: `createdBy` is optional, so an unattributed reminder with no
+  // cosmetic sender published `sender: undefined`. The Alerts composer calls
+  // `detail.sender.trim()` as soon as the alert loads, which threw.
+  it.each([
+    { alertSender: '', createdBy: undefined },
+    { alertSender: undefined, createdBy: undefined },
+  ])(
+    'emits an empty sender rather than undefined when nothing is attributed: $alertSender',
+    ({ alertSender, createdBy }) => {
+      const sender = captureSender(makeReminder({ operatorId: undefined, alertSender, createdBy }));
+      expect(sender).toBe('');
+      expect(() => sender.trim()).not.toThrow();
+    },
+  );
 });

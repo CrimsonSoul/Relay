@@ -81,7 +81,10 @@ function storageError(): Error {
   return new Error('search-storage-unavailable');
 }
 
-function searchIndexError(error: unknown): KnowledgeDocumentRecord['searchIndexError'] {
+// Never null: every branch names a concrete failure, which is what markFailed requires.
+function searchIndexError(
+  error: unknown,
+): NonNullable<KnowledgeDocumentRecord['searchIndexError']> {
   if (error instanceof Error && error.message === 'no-searchable-text') {
     return 'no-searchable-text';
   }

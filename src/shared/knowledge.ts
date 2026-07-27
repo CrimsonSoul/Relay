@@ -1040,7 +1040,10 @@ export function normalizeKnowledgeManagementUploadView(
     value.proposedCategory.length > KNOWLEDGE_MAX_CATEGORY_LENGTH ||
     (proposedCategoryId !== null && !boundedIdentifier(proposedCategoryId, 200)) ||
     (proposedDocumentType !== 'sop' && proposedDocumentType !== 'cheatsheet') ||
-    (value.pageCount !== null && (!Number.isInteger(value.pageCount) || value.pageCount <= 0)) ||
+    (value.pageCount !== null &&
+      (typeof value.pageCount !== 'number' ||
+        !Number.isInteger(value.pageCount) ||
+        value.pageCount <= 0)) ||
     (outlineSource !== null && !['native', 'inferred', 'none'].includes(outlineSource)) ||
     !optionalBoundedString(value.duplicateDocumentId, 200) ||
     !KNOWLEDGE_MANAGEMENT_ERRORS.has(safeError) ||

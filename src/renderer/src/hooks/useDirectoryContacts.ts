@@ -36,7 +36,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
   }, [contacts, optimisticAdds, optimisticUpdates, optimisticDeletes]);
 
   const handleCreateContact = async (contact: Partial<Contact>) => {
-    const newContact = {
+    const newContact: Contact = {
       name: contact.name || '',
       email: contact.email || '',
       phone: contact.phone || '',
@@ -47,8 +47,10 @@ export function useDirectoryContacts(contacts: Contact[]) {
         (contact.title || '') +
         (contact.phone || '')
       ).toLowerCase(),
-      avatar: undefined,
-    } as Contact;
+      // The optimistic row has no PocketBase record yet, so `raw` carries no id
+      // until the create resolves and the real record replaces it.
+      raw: {},
+    };
 
     setOptimisticAdds((prev) => [newContact, ...prev]);
 

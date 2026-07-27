@@ -84,12 +84,33 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
     },
   });
 
+  /**
+   * useAutoAnimate hands back a ref *callback*, not a ref object — assigning
+   * `.current` onto it only decorated the function, so the library never saw the
+   * node and the board never animated. It must be *called*, but its body sets
+   * state, so it has to keep a stable identity: an inline arrow here is a new
+   * ref every render, which React re-invokes (null, then node) on each pass,
+   * setting state each time and looping until React gives up.
+   */
+  const setMasonryRef = useCallback(
+    (node: HTMLUListElement | null) => {
+      gridRef.current = node;
+      animationParent(node);
+    },
+    [animationParent, gridRef],
+  );
+
   const teamColumns = useMemo(() => {
     const cols = Array.from({ length: Math.max(1, columnCount) }, (_, columnIndex) => ({
       id: `on-call-column-${columnIndex + 1}`,
       teamIds: [] as string[],
     }));
-    teams.forEach((teamId, i) => cols[i % cols.length].teamIds.push(teamId));
+    teams.forEach((teamId, i) => {
+      // `cols` has at least one entry (Math.max(1, …)), so the modulo always
+      // lands on a real column.
+      const column = cols[i % cols.length];
+      if (column) column.teamIds.push(teamId);
+    });
     return cols;
   }, [teams, columnCount]);
 
@@ -211,10 +232,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
       )}
 
       <ul
-        ref={(node) => {
-          gridRef.current = node;
-          if (animationParent) animationParent.current = node;
-        }}
+        ref={setMasonryRef}
         className={`oncall-masonry${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         aria-label="On-Call Teams"
       >

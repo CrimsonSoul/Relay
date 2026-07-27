@@ -8,7 +8,7 @@ import {
 } from '@shared/roleAccounts';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
-import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
+import type { PrivilegedCommandError, PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
@@ -22,7 +22,9 @@ type ReauthenticationAction =
   | { kind: 'ownership'; account: RelayRoleAccountAdminView }
   | { kind: 'publisher'; accountId: string | null };
 
-const COMMAND_ERRORS = {
+// Typed against the full error union on purpose: a missing arm used to fall out
+// of the lookup as `undefined` and the dialog rendered a blank failure notice.
+const COMMAND_ERRORS: Record<PrivilegedCommandError, string> = {
   unauthorized: 'Your account is not authorized for this change. Sign in with the required role.',
   locked: 'Protected access locked before the change completed. Sign in again and retry.',
   offline: 'Relay is offline. Restore the connection and retry this change.',
@@ -34,8 +36,11 @@ const COMMAND_ERRORS = {
   replayed: 'Relay could not safely repeat this change. Close the dialog, refresh, and retry.',
   conflict:
     'The server state changed. Close the dialog, review the refreshed accounts, and try again.',
+  // Throttling is not a lost race, so this deliberately does not tell the admin
+  // to refresh and retry — that only spends more of the budget.
+  'rate-limited': 'Relay is limiting repeated attempts. Wait a moment before trying again.',
   'server-error': 'Relay could not apply this protected change. Try again.',
-} as const;
+};
 
 function commandFailureMessage(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
   // A vetted server message names the actual blocker ("That username is already in

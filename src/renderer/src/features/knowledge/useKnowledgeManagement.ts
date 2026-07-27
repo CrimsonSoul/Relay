@@ -13,22 +13,28 @@ import {
   type KnowledgeUploadQueueView,
   type KnowledgeUploadSelectionResult,
 } from '@shared/knowledge';
-import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
+import type { PrivilegedCommandError, PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 
-const SAFE_ERRORS = {
+// Typed as a total record so a new PrivilegedCommandError cannot be added without copy: an
+// unmapped code used to make commandError() hand `undefined` to the error banner.
+const SAFE_ERRORS: Record<PrivilegedCommandError, string> = {
   unauthorized: 'Wiki publisher access is required.',
   locked: 'Publisher access is signed out. Sign in again.',
   offline: 'Wiki management is unavailable while Relay is offline.',
   'pairing-required': 'Pair this workstation before managing the Wiki.',
   'invalid-request': 'Relay rejected the Wiki request.',
+  'insufficient-storage': 'Relay does not have enough storage to complete that action.',
   'duplicate-file-name':
     'A published document with this PDF filename already exists. Replace it or rename the PDF.',
   expired: 'The request expired. Try again.',
   replayed: 'Relay could not safely repeat that request.',
   conflict: 'This item changed on the server. Review the refreshed information and try again.',
+  // Deliberately not "refresh and try again": a throttled request has not lost a race, and
+  // retrying immediately only spends more of the budget.
+  'rate-limited': 'Too many Wiki requests. Wait a few minutes and try again.',
   'server-error': 'Relay could not complete the Wiki request.',
-} as const;
+};
 
 const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
   restartRecovery: false,
@@ -691,12 +697,15 @@ export function useKnowledgeManagement(
       const hasLocalQueueItem = hydratedQueue.items.some(
         (item) => item.id === uploadId || item.uploadId === uploadId,
       );
+      const bridge = globalThis.api;
+      const cancelDirectly =
+        bridge && bridge.cancelKnowledgeUpload
+          ? () => bridge.cancelKnowledgeUpload(uploadId)
+          : undefined;
       if (hasLocalQueueItem) {
         return runUploadControl(
           `cancel:${uploadId}`,
-          globalThis.api?.cancelKnowledgeUpload
-            ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
-            : undefined,
+          cancelDirectly,
           'Relay could not cancel this PDF.',
           true,
         );
@@ -705,9 +714,7 @@ export function useKnowledgeManagement(
       if (!upload) {
         return runUploadControl(
           `cancel:${uploadId}`,
-          globalThis.api?.cancelKnowledgeUpload
-            ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
-            : undefined,
+          cancelDirectly,
           'Relay could not cancel this PDF.',
           true,
         );
@@ -746,47 +753,59 @@ export function useKnowledgeManagement(
     loadMoreAudit,
     loadMore,
     stagePdfs,
-    pauseUploadBatch: (batchId: string) =>
-      runUploadControl(
+    // Each control resolves the bridge into a const before building its operation: the closure
+    // must call the same object the presence check saw, not re-read `globalThis.api`.
+    pauseUploadBatch: (batchId: string) => {
+      const bridge = globalThis.api;
+      return runUploadControl(
         `pause:${batchId}`,
-        globalThis.api?.pauseKnowledgeUploadBatch
-          ? () => globalThis.api.pauseKnowledgeUploadBatch(batchId)
+        bridge && bridge.pauseKnowledgeUploadBatch
+          ? () => bridge.pauseKnowledgeUploadBatch(batchId)
           : undefined,
         'Relay could not pause this upload batch.',
-      ),
-    resumeUploadBatch: (batchId: string) =>
-      runUploadControl(
+      );
+    },
+    resumeUploadBatch: (batchId: string) => {
+      const bridge = globalThis.api;
+      return runUploadControl(
         `resume:${batchId}`,
-        globalThis.api?.resumeKnowledgeUploadBatch
-          ? () => globalThis.api.resumeKnowledgeUploadBatch(batchId)
+        bridge && bridge.resumeKnowledgeUploadBatch
+          ? () => bridge.resumeKnowledgeUploadBatch(batchId)
           : undefined,
         'Relay could not resume this upload batch.',
-      ),
-    retryUpload: (uploadId: string) =>
-      runUploadControl(
+      );
+    },
+    retryUpload: (uploadId: string) => {
+      const bridge = globalThis.api;
+      return runUploadControl(
         `retry:${uploadId}`,
-        globalThis.api?.retryKnowledgeUpload
-          ? () => globalThis.api.retryKnowledgeUpload(uploadId)
+        bridge && bridge.retryKnowledgeUpload
+          ? () => bridge.retryKnowledgeUpload(uploadId)
           : undefined,
         'Relay could not retry this PDF.',
-      ),
-    reselectUploadSource: (uploadId: string) =>
-      runUploadControl(
+      );
+    },
+    reselectUploadSource: (uploadId: string) => {
+      const bridge = globalThis.api;
+      return runUploadControl(
         `reselect:${uploadId}`,
-        globalThis.api?.reselectKnowledgeUploadSource
-          ? () => globalThis.api.reselectKnowledgeUploadSource(uploadId)
+        bridge && bridge.reselectKnowledgeUploadSource
+          ? () => bridge.reselectKnowledgeUploadSource(uploadId)
           : undefined,
         'Choose the same unchanged PDF to resume this upload.',
-      ),
+      );
+    },
     cancelUpload,
-    cancelUploadBatch: (batchId: string) =>
-      runUploadControl(
+    cancelUploadBatch: (batchId: string) => {
+      const bridge = globalThis.api;
+      return runUploadControl(
         `cancel-batch:${batchId}`,
-        globalThis.api?.cancelKnowledgeUploadBatch
-          ? () => globalThis.api.cancelKnowledgeUploadBatch(batchId)
+        bridge && bridge.cancelKnowledgeUploadBatch
+          ? () => bridge.cancelKnowledgeUploadBatch(batchId)
           : undefined,
         'Relay could not cancel this upload batch.',
-      ),
+      );
+    },
     clearError: () => setError(null),
     retrySearchIndex: (documentId: string) =>
       execute(

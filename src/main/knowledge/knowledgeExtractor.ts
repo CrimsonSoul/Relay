@@ -1,4 +1,8 @@
-import { getDocument, type PDFDocumentProxy, type TextItem } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import {
+  getDocument,
+  type PDFDocumentProxy,
+  type PDFPageProxy,
+} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {
   KNOWLEDGE_MAX_PAGES,
   type KnowledgeOutlineNode,
@@ -12,6 +16,11 @@ import {
   type NativeKnowledgeOutlineEntry,
 } from './knowledgeOutline';
 import { renderKnowledgeCoverPlaceholder, renderKnowledgeDocumentCover } from './knowledgeCover';
+
+// pdf.js 6 no longer re-exports `TextItem` from its public entry point, so derive it
+// from `getTextContent` — the only place this module consumes it.
+type TextContentEntry = Awaited<ReturnType<PDFPageProxy['getTextContent']>>['items'][number];
+type TextItem = Extract<TextContentEntry, { str: string }>;
 
 export type KnowledgeExtractionResult = {
   metadataTitle: string | null;
@@ -31,17 +40,19 @@ function destinationType(value: unknown): string | null {
   return null;
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
 function isPdfReference(value: unknown): value is { num: number; gen: number } {
   return (
     value !== null &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
     'num' in value &&
-    Number.isInteger(value.num) &&
-    value.num >= 0 &&
+    isNonNegativeInteger(value.num) &&
     'gen' in value &&
-    Number.isInteger(value.gen) &&
-    value.gen >= 0
+    isNonNegativeInteger(value.gen)
   );
 }
 
@@ -144,7 +155,9 @@ function normalizedExtractionError(error: unknown): Error {
 export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeExtractionResult> {
   const loadingTask = getDocument({
     data,
-    isEvalSupported: false,
+    // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
+    // `new Function` font/pattern path it used to gate, so passing it now only reads like
+    // an active control that no longer exists.
     useWorkerFetch: false,
     useSystemFonts: false,
     disableAutoFetch: true,

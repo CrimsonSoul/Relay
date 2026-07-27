@@ -78,11 +78,6 @@ vi.mock('../../handlers/loggerHandlers', () => ({
 vi.mock('../../dataUtils', () => ({
   ensureDataDirectoryAsync: vi.fn().mockResolvedValue(undefined),
   loadConfigAsync: vi.fn().mockResolvedValue({ dataRoot: '' }),
-  saveConfigAsync: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../utils/pathValidation', () => ({
-  validateDataPath: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 import { initializeClientOfflineInfrastructure } from '../clientOfflineInfrastructure';

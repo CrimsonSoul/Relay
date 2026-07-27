@@ -22,9 +22,10 @@ export function setupMaintenanceTasks(runDailyCleanup?: () => void | Promise<voi
         external: `${Math.round(memory.external / 1024 / 1024)}MB`,
       });
 
-      if ((globalThis as GlobalWithGC).gc) {
+      const collectGarbage = (globalThis as GlobalWithGC).gc;
+      if (collectGarbage) {
         try {
-          (globalThis as GlobalWithGC).gc();
+          collectGarbage();
           loggers.main.info('Triggered manual garbage collection');
         } catch (e) {
           loggers.main.warn('Failed to trigger manual GC', { error: e });

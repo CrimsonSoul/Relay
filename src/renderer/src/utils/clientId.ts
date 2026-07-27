@@ -5,8 +5,10 @@ export function createClientId(): string {
   }
 
   const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  // Stamp the RFC 4122 version and variant bits. `bytes` is a freshly allocated
+  // fixed 16-byte buffer, so the `?? 0` fallbacks are unreachable.
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
 
   return [

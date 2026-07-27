@@ -24,7 +24,10 @@ async function renderPage(page: PDFPageProxy): Promise<Uint8Array> {
   const context = canvas.getContext('2d');
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvasContext: context as never, viewport }).promise;
+  // pdf.js 6 requires `canvas`; passing null tells it to render straight into the
+  // supplied 2D context. `context` is @napi-rs/canvas's context, which is structurally
+  // compatible at runtime but shares no nominal type with the DOM one.
+  await page.render({ canvas: null, canvasContext: context as never, viewport }).promise;
   const png = new Uint8Array(await canvas.encode('png'));
   if (png.byteLength === 0 || png.byteLength > KNOWLEDGE_MAX_COVER_BYTES) {
     throw new Error('render-failed');
@@ -58,7 +61,9 @@ export async function renderKnowledgeDocumentCover(
 export async function renderKnowledgeCover(data: Uint8Array): Promise<Uint8Array> {
   const loadingTask = getDocument({
     data: data.slice(),
-    isEvalSupported: false,
+    // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
+    // `new Function` font/pattern path it used to gate, so passing it now only reads like
+    // an active control that no longer exists.
     useWorkerFetch: false,
     useSystemFonts: false,
     disableAutoFetch: true,

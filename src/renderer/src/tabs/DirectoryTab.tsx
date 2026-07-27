@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { List, useListRef } from 'react-window';
-import type { ListImperativeAPI } from 'react-window';
+import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { Contact, BridgeGroup, Server } from '@shared/ipc';
 
@@ -11,7 +11,7 @@ import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { ListToolbar } from '../components/ListToolbar';
 import { ListFilters } from '../components/ListFilters';
 import { GroupSelector } from '../components/directory/GroupSelector';
-import { VirtualRow } from '../components/directory/VirtualRow';
+import { VirtualRow, type DirectoryVirtualRowData } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
 import { DirectoryContextMenu } from '../components/directory/DirectoryContextMenu';
 import { ContactDetailPanel } from '../components/ContactDetailPanel';
@@ -32,6 +32,13 @@ type Props = {
 
 // Define constant for row height to avoid magic numbers and allow easy updates
 const ROW_HEIGHT = 67;
+
+// components/directory/VirtualRow is wrapped in React.memo, whose call signature is typed as
+// returning ReactNode; react-window's `rowComponent` prop requires ReactElement | null. Rendering
+// it as an element keeps the memo boundary while satisfying that prop type.
+const DirectoryVirtualRow = (props: RowComponentProps<DirectoryVirtualRowData>) => (
+  <VirtualRow {...props} />
+);
 
 const normalizeRelationshipEmail = (value: string | undefined) => {
   const trimmed = value?.trim().toLowerCase();
@@ -64,7 +71,7 @@ export const DirectoryTab: React.FC<Props> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const dir = useDirectory(contacts, groups, onAddToAssembler, searchQuery);
-  const listRef = useListRef();
+  const listRef = useListRef(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
   const { getContactNote, setContactNote } = useNotesContext();
   const [notesContact, setNotesContact] = useState<Contact | null>(null);
@@ -358,7 +365,7 @@ export const DirectoryTab: React.FC<Props> = ({
                   listRef={listRef}
                   rowCount={filtered.length}
                   rowHeight={ROW_HEIGHT}
-                  rowComponent={VirtualRow}
+                  rowComponent={DirectoryVirtualRow}
                   rowProps={itemData}
                   style={{ height: height ?? 0, width: width ?? 0, outline: 'none' }}
                   onScroll={(e) =>
@@ -487,7 +494,13 @@ export const DirectoryTab: React.FC<Props> = ({
         entityId={notesContact?.email || ''}
         entityName={notesContact?.name || notesContact?.email || ''}
         existingNote={notesContact ? getContactNote(notesContact.email) : undefined}
-        onSave={(note, tags) => setContactNote(notesContact!.email, note, tags)}
+        // setContactNote resolves an IpcResult, which is truthy even when it reports a failure.
+        // Returning it unchanged made NotesModal close on a failed save and drop the note.
+        onSave={async (note, tags) => {
+          if (!notesContact) return false;
+          const saved = await setContactNote(notesContact.email, note, tags);
+          return saved?.success;
+        }}
       />
     </div>
   );

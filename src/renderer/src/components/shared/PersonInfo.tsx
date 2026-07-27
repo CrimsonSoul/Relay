@@ -45,7 +45,19 @@ interface PersonInfoProps {
 }
 
 export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLookup }) => {
-  if (!value || value === '-' || value === '0')
+  const parts =
+    !value || value === '-' || value === '0'
+      ? []
+      : value
+          .split(';')
+          .map((p) => p.trim())
+          .filter(Boolean);
+  const primaryStr = parts[0];
+
+  // A value made only of separators or whitespace (';', ' ; ', '   ') survives
+  // the placeholder checks above but yields no parts. Reading [0] of that empty
+  // array and calling .toLowerCase() on it threw and took down the render.
+  if (primaryStr === undefined)
     return (
       <div className="person-info person-info--empty">
         <span className="person-info-label">{label}</span>
@@ -53,11 +65,6 @@ export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLoo
       </div>
     );
 
-  const parts = value
-    .split(';')
-    .map((p) => p.trim())
-    .filter(Boolean);
-  const primaryStr = parts[0];
   const found = contactLookup.get(primaryStr.toLowerCase());
   const displayName = found ? found.name : primaryStr;
   const allNames = parts

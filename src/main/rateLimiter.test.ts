@@ -126,20 +126,12 @@ describe('RateLimiter', () => {
 
 describe('rateLimiters', () => {
   it('should have pre-configured limiters with expected settings', () => {
-    expect(rateLimiters.fileImport).toBeDefined();
     expect(rateLimiters.dataMutation).toBeDefined();
-    expect(rateLimiters.dataReload).toBeDefined();
     expect(rateLimiters.fsOperations).toBeDefined();
     expect(rateLimiters.rendererLogging).toBeDefined();
 
-    // File import should be very restrictive
-    expect(rateLimiters.fileImport.getTokens()).toBe(5);
-
     // Data mutation should be more permissive
     expect(rateLimiters.dataMutation.getTokens()).toBe(100);
-
-    // Data reload should be moderate
-    expect(rateLimiters.dataReload.getTokens()).toBe(3);
 
     // FS operations should have burst capacity
     expect(rateLimiters.fsOperations.getTokens()).toBe(10);

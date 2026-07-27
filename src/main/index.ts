@@ -49,6 +49,11 @@ import { createWindow, createAuxWindow, showAndFocusWindow } from './app/windowF
 import { setupErrorHandlers } from './app/errorHandlers';
 import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
+import { createDeferred } from './app/deferred';
+import {
+  createProductionPrivilegedHost,
+  createProductionPrivilegedRuntime,
+} from './privileged/privilegedRuntime';
 import { createDeferredServerServices } from './app/deferredServerServices';
 import { recordAppExitMarker, requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
@@ -74,10 +79,6 @@ import {
 } from './knowledge/knowledgeRuntime';
 import { KnowledgeUploadQueueStore } from './knowledge/KnowledgeUploadQueueStore';
 import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
-import {
-  createProductionPrivilegedHost,
-  createProductionPrivilegedRuntime,
-} from './privileged/privilegedRuntime';
 import {
   restartKnowledgeSearchRuntime,
   stopKnowledgeSearchRuntime,
@@ -230,8 +231,11 @@ if (gotLock) {
     let cleanupStartupIpc: (() => void) | null = null;
     let stopMemoryHeartbeat: (() => void) | null = null;
     let stopKnowledgeUploadSession: (() => void) | null = null;
-    let resolveWorkspace: ((config: ReturnType<AppConfig['load']>) => void) | null = null;
-    let rejectWorkspace: ((error: unknown) => void) | null = null;
+    const workspaceDeferred = createDeferred<ReturnType<AppConfig['load']>>();
+    // runStartupSequence observes this promise once it starts. Attach a no-op handler up
+    // front as well so a failure raised before that point cannot become an unhandled
+    // rejection — the settlers used to be null until the startup sequence was wired up.
+    void workspaceDeferred.promise.catch(() => undefined);
     let workspaceSettled = false;
     let startupSequence: Promise<ReturnType<AppConfig['load']>> | null = null;
     let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
@@ -330,10 +334,6 @@ if (gotLock) {
         },
       });
 
-      const workspaceReady = new Promise<ReturnType<AppConfig['load']>>((resolve, reject) => {
-        resolveWorkspace = resolve;
-        rejectWorkspace = reject;
-      });
       startupSequence = runStartupSequence({
         controller: startupState,
         createWindow: () =>
@@ -341,7 +341,7 @@ if (gotLock) {
             onWindowCreated: () => startupTimeline.mark('window-created'),
             onShellReady: () => startupTimeline.mark('shell-ready'),
           }),
-        prepareWorkspace: () => workspaceReady,
+        prepareWorkspace: () => workspaceDeferred.promise,
       });
       // The outer bootstrap catch owns user-facing failure handling. Attach a
       // rejection observer immediately so an early renderer-load failure is
@@ -596,7 +596,7 @@ if (gotLock) {
         loggers.main.error('Relay could not complete startup', { context, reason });
         startupState.transition(startupState.getSnapshot().generation, 'failed', reason);
         workspaceSettled = true;
-        rejectWorkspace?.(new Error(reason));
+        workspaceDeferred.reject(new Error(reason));
         void startupSequence?.catch(() => undefined);
       };
 
@@ -631,7 +631,7 @@ if (gotLock) {
       await waitForStartupTestDelay();
       startupTimeline.mark('workspace-ready');
       workspaceSettled = true;
-      resolveWorkspace?.(relayConfig);
+      workspaceDeferred.resolve(relayConfig);
       await startupSequence;
       if (relayConfig?.mode === 'server') {
         deferredServerServices?.schedule(relayConfig);
@@ -661,7 +661,7 @@ if (gotLock) {
     } catch (error: unknown) {
       if (!workspaceSettled) {
         workspaceSettled = true;
-        rejectWorkspace?.(error);
+        workspaceDeferred.reject(error);
       }
       await startupSequence?.catch(() => undefined);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

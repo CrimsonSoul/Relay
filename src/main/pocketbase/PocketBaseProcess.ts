@@ -3,6 +3,9 @@ import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
 
+/** Used only if the restart schedule is ever emptied — the schedule below is never empty. */
+const FALLBACK_RESTART_BACKOFF_MS = 1_000;
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -328,8 +331,8 @@ export class PocketBaseProcess {
 
     this.restartCount++;
     if (this.restartCount <= this.maxRestarts) {
-      const backoffMs =
-        this.restartDelaysMs[Math.min(this.restartCount - 1, this.restartDelaysMs.length - 1)];
+      const backoffIndex = Math.min(this.restartCount - 1, this.restartDelaysMs.length - 1);
+      const backoffMs = this.restartDelaysMs[backoffIndex] ?? FALLBACK_RESTART_BACKOFF_MS;
       logger.warn(
         `Restarting PocketBase in ${backoffMs}ms (attempt ${this.restartCount}/${this.maxRestarts})`,
       );

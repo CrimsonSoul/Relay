@@ -50,6 +50,7 @@ export const ContactCard = memo(
   }: ContactRowProps) => {
     const displayPhone = phone ? formatPhoneNumber(phone) : '';
     const tooltipContent = [name || email, email, title, displayPhone].filter(Boolean).join('\n');
+    const primaryTag = tags?.[0];
 
     return (
       <button
@@ -65,7 +66,7 @@ export const ContactCard = memo(
             <div className="contact-entry-tooltip-anchor">
               <div className="contact-entry-line1">
                 <span className="contact-entry-name">{name || email}</span>
-                {tags && tags.length > 0 && <GroupPill group={tags[0]} />}
+                {primaryTag && <GroupPill group={primaryTag} />}
                 {sourceLabel && <span className="contact-entry-chip">{sourceLabel}</span>}
                 {relationshipCounts && relationshipCounts.owned > 0 && (
                   <span className="contact-entry-chip">Owner {relationshipCounts.owned}</span>

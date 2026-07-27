@@ -57,8 +57,9 @@ export function useDirectoryKeyboard({
         case 'Enter':
         case ' ':
           e.preventDefault();
-          if (focusedIndex >= 0 && focusedIndex < filtered.length) {
-            handleAddWrapper(filtered[focusedIndex]);
+          {
+            const focused = focusedIndex >= 0 ? filtered[focusedIndex] : undefined;
+            if (focused) handleAddWrapper(focused);
           }
           break;
         case 'F10':
@@ -66,7 +67,7 @@ export function useDirectoryKeyboard({
             e.preventDefault();
             const contact = filtered[focusedIndex];
             const listContainer = listContainerRef.current;
-            if (listContainer) {
+            if (contact && listContainer) {
               const rect = listContainer.getBoundingClientRect();
               const scrollTop = listRef.current?.element?.scrollTop || 0;
               const rowTop = focusedIndex * rowHeight - scrollTop;

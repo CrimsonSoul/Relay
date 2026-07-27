@@ -46,6 +46,20 @@ type SyncRecord = {
 };
 type UpsertStats = { created: number; updated: number; unchanged: number };
 
+/**
+ * Local stand-in for `Map.groupBy`, which is ES2024 and therefore outside the `lib`
+ * this project compiles against even though the Electron runtime supports it.
+ */
+function groupByProblemId<T extends RelatedRecord>(records: readonly T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const record of records) {
+    const bucket = grouped.get(record.problemId);
+    if (bucket) bucket.push(record);
+    else grouped.set(record.problemId, [record]);
+  }
+  return grouped;
+}
+
 const PROBLEM_COMPARISON_FIELDS = [
   'id',
   'problemId',
@@ -320,13 +334,12 @@ export class DynatraceProblemsManager {
 
     const existing = await this.loadExistingProblems(pb, problems, reconciliation);
     const recordByProblem = new Map(existing.map((record) => [record.problemId, record]));
-    let cursor = 0;
+    // One shared iterator hands each problem to exactly one worker, which keeps the
+    // concurrency limit while giving every worker a properly typed (never undefined) item.
+    const queue = problems[Symbol.iterator]();
 
     const worker = async () => {
-      while (cursor < problems.length) {
-        const index = cursor;
-        cursor += 1;
-        const problem = problems[index];
+      for (const problem of queue) {
         const existingRecord = recordByProblem.get(problem.problemId);
         if (existingRecord && problemFingerprint(existingRecord) === problemFingerprint(problem)) {
           stats.unchanged += 1;
@@ -429,19 +442,16 @@ export class DynatraceProblemsManager {
         requestKey: null,
       }),
     ]);
-    const notesByProblem = Map.groupBy(
+    const notesByProblem = groupByProblemId(
       allNotes.filter((note) => problemIds.has(note.problemId)),
-      (note) => note.problemId,
     );
-    const statesByProblem = Map.groupBy(
+    const statesByProblem = groupByProblemId(
       allStates.filter((state) => problemIds.has(state.problemId)),
-      (state) => state.problemId,
     );
-    let cursor = 0;
+    // See upsertProblems: one shared iterator, N workers, no index bookkeeping.
+    const queue = problems[Symbol.iterator]();
     const worker = async () => {
-      while (cursor < problems.length) {
-        const problem = problems[cursor];
-        cursor += 1;
+      for (const problem of queue) {
         await Promise.all([
           ...(notesByProblem.get(problem.problemId) ?? []).map((note) =>
             pb.collection(DYNATRACE_PROBLEM_NOTES_COLLECTION).delete(note.id, {
