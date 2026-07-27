@@ -191,6 +191,9 @@ describe('AssemblerSidebar', () => {
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Delete Group'));
+    expect(onDeleteGroup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Group' }));
     expect(onDeleteGroup).toHaveBeenCalledWith('g1');
   });
 
@@ -216,7 +219,73 @@ describe('AssemblerSidebar', () => {
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Update with Current'));
+    expect(onUpdateGroup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Members' }));
     expect(onUpdateGroup).toHaveBeenCalledWith('g1', { contacts: ['a@b.com'] });
+  });
+
+  it('does not replace saved membership until the overwrite is confirmed', () => {
+    const onUpdateGroup = vi.fn().mockResolvedValue(true);
+    const groups = [makeGroup('g1', 'TeamA', ['keep1@b.com', 'keep2@b.com', 'keep3@b.com'])];
+    render(
+      <AssemblerSidebar
+        {...defaultProps}
+        groups={groups}
+        currentEmails={['a@b.com']}
+        actions={{ ...defaultActions, onUpdateGroup }}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText('TeamA'));
+    fireEvent.click(screen.getByText('Update with Current'));
+
+    // The dialog has to say what is being traded away: 3 saved members for 1 recipient
+    expect(
+      screen.getByText(
+        'Replace all 3 members of "TeamA" with the 1 recipients in the current composition? This cannot be undone.',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onUpdateGroup).not.toHaveBeenCalled();
+  });
+
+  it('does not delete a group until the deletion is confirmed', () => {
+    const onDeleteGroup = vi.fn().mockResolvedValue(true);
+    const groups = [makeGroup('g1', 'TeamA', ['a@b.com', 'c@d.com'])];
+    render(
+      <AssemblerSidebar
+        {...defaultProps}
+        groups={groups}
+        actions={{ ...defaultActions, onDeleteGroup }}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText('TeamA'));
+    fireEvent.click(screen.getByText('Delete Group'));
+
+    expect(
+      screen.getByText('Delete "TeamA" and its 2 members? This cannot be undone.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onDeleteGroup).not.toHaveBeenCalled();
+  });
+
+  it('labels the toggle item by the action it will perform', () => {
+    const groups = [makeGroup('g1', 'TeamA')];
+    const { rerender } = render(<AssemblerSidebar {...defaultProps} groups={groups} />);
+
+    fireEvent.contextMenu(screen.getByText('TeamA'));
+    expect(screen.getByText('Load Group')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    // An already-loaded group must not offer to "Load" it — that click unloads it
+    rerender(<AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />);
+    fireEvent.contextMenu(screen.getByText('TeamA'));
+    expect(screen.getByText('Unload Group')).toBeInTheDocument();
+    expect(screen.queryByText('Load Group')).not.toBeInTheDocument();
   });
 
   it('shows description about current recipients in save modal', () => {
@@ -382,10 +451,15 @@ describe('AssemblerSidebar', () => {
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Update with Current'));
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Members' }));
 
     await vi.waitFor(() => {
       expect(onUpdateGroup).toHaveBeenCalledWith('g1', { contacts: ['a@b.com'] });
     });
+    // The confirmation stays open and reports the failure rather than closing silently
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not replace the members of TeamA.',
+    );
   });
 
   it('handles onDeleteGroup returning false (failure)', async () => {
@@ -400,6 +474,7 @@ describe('AssemblerSidebar', () => {
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Delete Group'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Group' }));
 
     await vi.waitFor(() => {
       expect(onDeleteGroup).toHaveBeenCalledWith('g1');
@@ -418,6 +493,7 @@ describe('AssemblerSidebar', () => {
     );
     fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Delete Group'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Group' }));
 
     await vi.waitFor(() => {
       expect(onDeleteGroup).toHaveBeenCalledWith('g1');

@@ -99,6 +99,11 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       } else {
         showToast('Failed to create invite', 'error');
       }
+    } catch {
+      // A rejected saveAndOpenIcs (denied file write, no calendar handler) otherwise
+      // becomes an unhandled rejection: the spinner clears and the operator sees
+      // nothing. Report it the same way the falsy-result branch above does.
+      showToast('Failed to create invite', 'error');
     } finally {
       setIsSubmitting(false);
     }

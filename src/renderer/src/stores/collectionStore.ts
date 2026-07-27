@@ -81,6 +81,41 @@ function compareField(aValue: unknown, bValue: unknown, descending: boolean): nu
   return descending ? -comparison : comparison;
 }
 
+/**
+ * Parse the `field="value"` equality subset of PocketBase filter syntax
+ * (optionally `&&`-joined) into a membership predicate. Returns null for
+ * anything richer — quoted `&&`, `||`, comparison operators — because the
+ * caller must not guess at membership it cannot prove.
+ */
+const FILTER_EQUALITY = /^\s*([\w.]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s&|]+))\s*$/;
+
+function buildFilterPredicate(filter: string): ((record: RecordModel) => boolean) | null {
+  const clauses: { field: string; value: string }[] = [];
+  for (const clause of filter.split('&&')) {
+    const match = FILTER_EQUALITY.exec(clause);
+    if (!match) return null;
+    const [, field, doubleQuoted, singleQuoted, bare] = match;
+    clauses.push({ field: field ?? '', value: doubleQuoted ?? singleQuoted ?? bare ?? '' });
+  }
+  return (record) =>
+    clauses.every(
+      ({ field, value }) => String((record as Record<string, unknown>)[field] ?? '') === value,
+    );
+}
+
+/**
+ * Realtime arrives unfiltered (`subscribe('*')`), so a filtered store has to
+ * re-apply its own filter before accepting a created record — otherwise the
+ * snapshot ends up holding rows the equivalent `getFullList` would never
+ * return. An unparseable filter rejects every create: the authoritative
+ * snapshot fetch reconciles on the next connection cycle, whereas an
+ * unverified append corrupts the list until then.
+ */
+function buildCreateGate(filter: string | undefined): (record: RecordModel) => boolean {
+  if (!filter) return () => true;
+  return buildFilterPredicate(filter) ?? (() => false);
+}
+
 function buildComparator<T extends RecordModel>(
   sort: string | undefined,
 ): ((a: T, b: T) => number) | null {
@@ -108,16 +143,25 @@ function applyRealtimeEvent<T extends RecordModel>(
   action: string,
   record: RecordModel,
   comparator: ((a: T, b: T) => number) | null,
+  acceptsCreate: (record: RecordModel) => boolean,
 ): T[] {
   let next: T[];
   switch (action) {
     case 'create':
       if (previous.some((item) => item.id === record.id)) return previous;
+      if (!acceptsCreate(record)) return previous;
       next = [...previous, record as T];
       break;
-    case 'update':
-      next = previous.map((item) => (item.id === record.id ? (record as T) : item));
+    case 'update': {
+      // Returning the same array when the record is not held keeps the
+      // snapshot identity stable — every allocation here re-renders every
+      // subscriber of the collection, matched record or not.
+      const index = previous.findIndex((item) => item.id === record.id);
+      if (index === -1) return previous;
+      next = [...previous];
+      next[index] = record as T;
       break;
+    }
     case 'delete':
       return previous.filter((item) => item.id !== record.id);
     default:
@@ -131,10 +175,11 @@ function replayBufferedEvents<T extends RecordModel>(
   records: T[],
   events: { action: string; record: RecordModel }[] | null,
   comparator: ((a: T, b: T) => number) | null,
+  acceptsCreate: (record: RecordModel) => boolean,
 ): T[] {
   let next = records;
   for (const event of events ?? []) {
-    next = applyRealtimeEvent(next, event.action, event.record, comparator);
+    next = applyRealtimeEvent(next, event.action, event.record, comparator, acceptsCreate);
   }
   return next;
 }
@@ -174,6 +219,7 @@ export class CollectionStore<T extends RecordModel> {
   };
   private readonly listeners = new Set<Listener>();
   private readonly comparator: ((a: T, b: T) => number) | null;
+  private readonly acceptsCreate: (record: RecordModel) => boolean;
   private active = false;
   private connected = false;
   private connectionGeneration = 0;
@@ -192,6 +238,7 @@ export class CollectionStore<T extends RecordModel> {
     private readonly onSubscriberCountChange: SubscriberCountListener = () => undefined,
   ) {
     this.comparator = buildComparator<T>(options.sort);
+    this.acceptsCreate = buildCreateGate(options.filter);
   }
 
   readonly getSnapshot = (): CollectionSnapshot<T> => this.snapshot;
@@ -216,7 +263,13 @@ export class CollectionStore<T extends RecordModel> {
   };
 
   applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: RecordModel): void {
-    const next = applyRealtimeEvent(this.snapshot.data, action, record, this.comparator);
+    const next = applyRealtimeEvent(
+      this.snapshot.data,
+      action,
+      record,
+      this.comparator,
+      this.acceptsCreate,
+    );
     if (next !== this.snapshot.data) this.updateSnapshot({ data: next });
   }
 
@@ -313,7 +366,13 @@ export class CollectionStore<T extends RecordModel> {
   }
 
   private handleRealtimeEvent(action: string, record: RecordModel): void {
-    const next = applyRealtimeEvent(this.snapshot.data, action, record, this.comparator);
+    const next = applyRealtimeEvent(
+      this.snapshot.data,
+      action,
+      record,
+      this.comparator,
+      this.acceptsCreate,
+    );
     if (next !== this.snapshot.data) {
       this.updateSnapshot({ data: next });
     }
@@ -364,10 +423,21 @@ export class CollectionStore<T extends RecordModel> {
         requestKey: null,
       });
     if (!isCurrent()) return;
-    let next = replayBufferedEvents(records, this.inFlightEvents, this.comparator);
+    let next = replayBufferedEvents(
+      records,
+      this.inFlightEvents,
+      this.comparator,
+      this.acceptsCreate,
+    );
     for (const overlay of pendingOverlays) {
       if (overlay.collection === this.collectionName) {
-        next = applyRealtimeEvent(next, overlay.action, overlay.record, this.comparator);
+        next = applyRealtimeEvent(
+          next,
+          overlay.action,
+          overlay.record,
+          this.comparator,
+          this.acceptsCreate,
+        );
       }
     }
     this.updateSnapshot({ data: next, error: null, hasLoadedSnapshot: true });

@@ -192,6 +192,50 @@ describe('ToastProvider', () => {
     expect(toasts).toHaveLength(2);
   });
 
+  it('caps the routine stack during an error burst, keeping the newest', () => {
+    const BurstTrigger: React.FC = () => {
+      const { showToast } = useToast();
+      return (
+        <button
+          data-testid="burst"
+          onClick={() => {
+            for (let index = 1; index <= 9; index += 1) showToast(`Sync failure ${index}`, 'error');
+          }}
+        >
+          Burst
+        </button>
+      );
+    };
+
+    const { container } = render(
+      <ToastProvider>
+        <BurstTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('burst'));
+
+    expect(
+      Array.from(container.querySelectorAll('.toast-message')).map((node) => node.textContent),
+    ).toEqual(['Sync failure 6', 'Sync failure 7', 'Sync failure 8', 'Sync failure 9']);
+  });
+
+  it('does not let a routine burst evict operational toasts', () => {
+    const { container } = render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+    const routine = screen.getByRole('button', { name: 'Routine' });
+    for (let index = 0; index < 9; index += 1) fireEvent.click(routine);
+
+    const messages = Array.from(container.querySelectorAll('.toast-message')).map(
+      (node) => node.textContent,
+    );
+    expect(messages[0]).toBe('Dynatrace one');
+    expect(messages).toHaveLength(5);
+  });
+
   it('queues cloud outages until the active Dynatrace problem closes', async () => {
     render(
       <ToastProvider>

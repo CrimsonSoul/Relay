@@ -152,7 +152,7 @@ describe('GroupSelector', () => {
     });
   });
 
-  it('prevents concurrent updates', async () => {
+  it('prevents concurrent updates to the same group', async () => {
     let resolveUpdate: () => void;
     mockUpdateGroup.mockReturnValue(
       new Promise<{ id: string }>((resolve) => {
@@ -163,14 +163,54 @@ describe('GroupSelector', () => {
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByText('Leadership'));
-    fireEvent.click(screen.getByText('Support'));
+    fireEvent.click(screen.getByText('Leadership'));
 
     expect(mockUpdateGroup).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Leadership').closest('button')).toBeDisabled();
 
     resolveUpdate!();
     await waitFor(() => {
       expect(mockUpdateGroup).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('applies rapid picks across different groups while one save is in flight', async () => {
+    let resolveUpdate: () => void;
+    mockUpdateGroup.mockReturnValueOnce(
+      new Promise<{ id: string }>((resolve) => {
+        resolveUpdate = () => resolve({ id: 'g2' });
+      }),
+    );
+    mockUpdateGroup.mockResolvedValue({ id: 'g3' });
+
+    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+
+    // A slow write to Leadership must not silently drop the pick on Support
+    fireEvent.click(screen.getByText('Leadership'));
+    fireEvent.click(screen.getByText('Support'));
+
+    await waitFor(() => {
+      expect(mockUpdateGroup).toHaveBeenCalledWith('g3', { contacts: ['alice@test.com'] });
+    });
+    expect(mockUpdateGroup).toHaveBeenCalledTimes(2);
+
+    resolveUpdate!();
+  });
+
+  it('reports a failed save inline when no onError handler is supplied', async () => {
+    mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
+
+    // Neither production call site passes onError, so the component must speak for itself
+    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Leadership'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to add to Leadership');
+    // The optimistic tick is rolled back alongside the message
+    expect(screen.getByText('Leadership').closest('button')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
   });
 
   it('shows empty state when no groups', () => {

@@ -44,8 +44,12 @@ export function KnowledgeCategoryManager({
     [documents],
   );
 
+  // Seed only categories without a draft. A refresh (including the two-second upload poll) must
+  // never overwrite a rename the operator is still typing.
   useEffect(() => {
-    setNames(Object.fromEntries(categories.map(({ id, name }) => [id, name])));
+    setNames((current) =>
+      Object.fromEntries(categories.map(({ id, name }) => [id, current[id] ?? name])),
+    );
   }, [categories]);
 
   const move = async (index: number, offset: -1 | 1) => {
@@ -85,6 +89,12 @@ export function KnowledgeCategoryManager({
     }
     const result = await setCategoryName(category.id, trimmedName, category.revision);
     if (result !== false) {
+      // The draft is settled, so hand the field back to the server value.
+      setNames((current) => {
+        const next = { ...current };
+        delete next[category.id];
+        return next;
+      });
       setNameErrors((current) => {
         const next = { ...current };
         delete next[category.id];

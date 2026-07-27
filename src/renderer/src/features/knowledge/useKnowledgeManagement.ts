@@ -40,8 +40,40 @@ const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
 
 const REAUTHENTICATION_ERROR = 'Password confirmation was not accepted. Try again.';
 
+const QUERY_DEBOUNCE_MS = 250;
+
 function commandError(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
   return SAFE_ERRORS[result.error];
+}
+
+/**
+ * A background poll only re-reads the first page. Splice the refreshed page over the pages the
+ * operator already loaded so an upload progress tick cannot undo "Load more".
+ */
+function mergeKnowledgePage<T extends { id: string }>(
+  current: KnowledgePage<T>,
+  next: KnowledgePage<T>,
+): KnowledgePage<T> {
+  const boundaryId = next.items.at(-1)?.id;
+  if (!next.nextCursor || boundaryId === undefined) return next;
+  const boundaryIndex = current.items.findIndex(({ id }) => id === boundaryId);
+  if (boundaryIndex < 0) return next;
+  const refreshedIds = new Set(next.items.map(({ id }) => id));
+  const retained = current.items.slice(boundaryIndex + 1).filter(({ id }) => !refreshedIds.has(id));
+  if (retained.length === 0) return next;
+  return { items: [...next.items, ...retained], nextCursor: current.nextCursor };
+}
+
+function mergeKnowledgeSnapshot(
+  current: KnowledgeManagementSnapshot,
+  next: KnowledgeManagementSnapshot,
+): KnowledgeManagementSnapshot {
+  return {
+    ...next,
+    documents: mergeKnowledgePage(current.documents, next.documents),
+    trash: mergeKnowledgePage(current.trash, next.trash),
+    uploads: mergeKnowledgePage(current.uploads, next.uploads),
+  };
 }
 
 function normalizeAuditPage(value: unknown): KnowledgePage<KnowledgeAuditEventView> | null {
@@ -73,7 +105,10 @@ function confirmsDocumentAssignments(
   });
 }
 
-export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<void>) {
+export function useKnowledgeManagement(
+  onLibraryChanged?: () => void | Promise<void>,
+  documentQuery = '',
+) {
   const { session, submitCommand, reauthenticate } = usePrivilegedAccess();
   const [snapshot, setSnapshot] = useState<KnowledgeManagementSnapshot | null>(null);
   const [auditEvents, setAuditEvents] = useState<KnowledgeAuditEventView[]>([]);
@@ -96,6 +131,10 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     promise: Promise<KnowledgeUploadQueueView | null>;
   } | null>(null);
   const mountedRef = useRef(true);
+  const trimmedQuery = documentQuery.trim();
+  // Reads stay pinned to the query the operator can already see so a cursor issued for one
+  // filter is never spent against another.
+  const appliedQueryRef = useRef(trimmedQuery);
   managementIdentityRef.current = managementIdentity;
   uploadQueueRef.current = uploadQueue;
 
@@ -153,10 +192,10 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     }, [refreshUploadQueue]);
 
   const readSnapshot = useCallback(
-    async (cursor: string | null): Promise<SnapshotRead> => {
+    async (cursor: string | null, query = appliedQueryRef.current): Promise<SnapshotRead> => {
       const result = await submitCommand({
         command: 'knowledge.snapshot.read',
-        payload: { query: '', cursor, pageSize: 100 },
+        payload: { query, cursor, pageSize: 100 },
         expectedRevision: null,
       });
       if (!result.ok) {
@@ -180,28 +219,41 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     [readSnapshot],
   );
 
-  const refresh = useCallback(async (): Promise<boolean> => {
-    if (!canManage) {
-      setSnapshot(null);
-      return false;
-    }
-    const generation = refreshGenerationRef.current + 1;
-    refreshGenerationRef.current = generation;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await readSnapshot(null);
-      if (!mountedRef.current || generation !== refreshGenerationRef.current) return false;
-      if (!result.snapshot) {
-        setError(result.error);
+  const loadSnapshot = useCallback(
+    async (background: boolean): Promise<boolean> => {
+      if (!canManage) {
+        setSnapshot(null);
         return false;
       }
-      setSnapshot(result.snapshot);
-      return true;
-    } finally {
-      if (mountedRef.current && generation === refreshGenerationRef.current) setLoading(false);
-    }
-  }, [canManage, readSnapshot]);
+      const generation = refreshGenerationRef.current + 1;
+      refreshGenerationRef.current = generation;
+      // A background poll must leave the workspace exactly as the operator left it: no spinner,
+      // no dismissed banner, and no collapse back to the first page.
+      if (!background) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const result = await readSnapshot(null);
+        if (!mountedRef.current || generation !== refreshGenerationRef.current) return false;
+        const authoritative = result.snapshot;
+        if (!authoritative) {
+          if (!background) setError(result.error);
+          return false;
+        }
+        setSnapshot((current) =>
+          background && current ? mergeKnowledgeSnapshot(current, authoritative) : authoritative,
+        );
+        return true;
+      } finally {
+        if (!background && mountedRef.current) setLoading(false);
+      }
+    },
+    [canManage, readSnapshot],
+  );
+
+  const refresh = useCallback(() => loadSnapshot(false), [loadSnapshot]);
+  const pollSnapshot = useCallback(() => loadSnapshot(true), [loadSnapshot]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -261,11 +313,20 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     });
     if (!needsServerRefresh) return;
     const timer = window.setInterval(() => {
-      void refresh();
+      void pollSnapshot();
       void refreshUploadQueue();
     }, 2_000);
     return () => window.clearInterval(timer);
-  }, [canManage, refresh, refreshUploadQueue, snapshot?.uploads.items, uploadQueue.items]);
+  }, [canManage, pollSnapshot, refreshUploadQueue, snapshot?.uploads.items, uploadQueue.items]);
+
+  useEffect(() => {
+    if (!canManage || trimmedQuery === appliedQueryRef.current) return;
+    const timer = window.setTimeout(() => {
+      appliedQueryRef.current = trimmedQuery;
+      void refresh();
+    }, QUERY_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [canManage, refresh, trimmedQuery]);
 
   const confirmAuditRequest = useCallback(
     async (requestId: string, expectedIdentity: string | null): Promise<boolean> => {
@@ -304,7 +365,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
         while (cursor) {
           if (seenCursors.has(cursor)) return null;
           seenCursors.add(cursor);
-          const next = await readSnapshot(cursor);
+          const next = await readSnapshot(cursor, '');
           if (
             !next.snapshot ||
             !mountedRef.current ||
@@ -342,7 +403,8 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
       if (!predicate || !canManage || managementIdentityRef.current !== expectedIdentity) {
         return false;
       }
-      const initial = await readSnapshot(null);
+      // Confirmation has to see every document, not just the ones the active filter admits.
+      const initial = await readSnapshot(null, '');
       if (
         !initial.snapshot ||
         !mountedRef.current ||
@@ -364,6 +426,16 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     },
     [canManage, confirmAuditRequest, readConfirmationSnapshot, readSnapshot],
   );
+
+  const settleConfirmedMutation = useCallback(async () => {
+    setError(null);
+    await Promise.all([
+      // The confirmation snapshot is unfiltered, so realign it with the active filter.
+      appliedQueryRef.current ? refresh() : Promise.resolve(true),
+      refreshUploadQueue(),
+      Promise.resolve(onLibraryChanged?.()),
+    ]);
+  }, [onLibraryChanged, refresh, refreshUploadQueue]);
 
   const execute = useCallback(
     async (
@@ -391,8 +463,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
               requireAudit,
             ))
           ) {
-            setError(null);
-            await Promise.all([refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
+            await settleConfirmedMutation();
             return true;
           }
           setError(commandError(result));
@@ -410,8 +481,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
             requireAudit,
           )
         ) {
-          setError(null);
-          await Promise.all([refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
+          await settleConfirmedMutation();
           return true;
         }
         setError(SAFE_ERRORS['server-error']);
@@ -427,6 +497,7 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
       onLibraryChanged,
       refresh,
       refreshUploadQueue,
+      settleConfirmedMutation,
       submitCommand,
     ],
   );

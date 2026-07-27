@@ -226,6 +226,20 @@ export const TeamCard = React.memo(
     if (prev.team !== next.team) return false;
     if (prev.isReadOnly !== next.isReadOnly) return false;
     if (prev.contacts !== next.contacts) return false;
+    // The callbacks close over board state — onRemoveTeam captures the current
+    // teamOrder. A card that skipped a re-render (its index was untouched by a
+    // drag reorder) would keep the pre-drag closure and write that stale order
+    // back to the server, silently reverting a reorder the user just saw.
+    if (
+      prev.onUpdateRows !== next.onUpdateRows ||
+      prev.onRenameTeam !== next.onRenameTeam ||
+      prev.onRemoveTeam !== next.onRemoveTeam ||
+      prev.setConfirm !== next.setConfirm ||
+      prev.setMenu !== next.setMenu ||
+      prev.onCopyTeamInfo !== next.onCopyTeamInfo
+    ) {
+      return false;
+    }
     if (prev.rows.length !== next.rows.length) return false;
 
     for (let i = 0; i < prev.rows.length; i++) {

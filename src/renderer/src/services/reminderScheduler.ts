@@ -14,8 +14,13 @@ export function nextReminderDelay(
   let nextTime = Number.POSITIVE_INFINITY;
   for (const reminder of reminders) {
     if (reminder.status !== 'pending') continue;
-    nextTime = Math.min(nextTime, reminderEffectiveTime(reminder));
+    const effectiveTime = reminderEffectiveTime(reminder);
+    // An overdue reminder is already surfaced; folding it into the minimum
+    // yields a zero delay, and the caller arms no timer for it — which would
+    // strand every later reminder until the next reconciliation refetch.
+    if (effectiveTime <= now) continue;
+    nextTime = Math.min(nextTime, effectiveTime);
   }
   if (!Number.isFinite(nextTime)) return null;
-  return Math.max(0, Math.min(nextTime - now, MAX_REMINDER_TIMEOUT_MS));
+  return Math.min(nextTime - now, MAX_REMINDER_TIMEOUT_MS);
 }

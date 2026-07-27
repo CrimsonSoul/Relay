@@ -1304,7 +1304,7 @@ describe('AlertsTab', () => {
 
   // --- Reset button ---
 
-  it('reset button clears form state back to defaults', () => {
+  it('reset button clears form state back to defaults once confirmed', () => {
     render(<AlertsTab />);
     // Change state
     fireEvent.click(screen.getByTestId('set-severity-issue'));
@@ -1312,10 +1312,69 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-sender'));
     // Reset
     fireEvent.click(screen.getByText('RESET'));
+    fireEvent.click(screen.getByText('Discard Alert'));
     expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('IT');
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('All Employees');
+  });
+
+  it('keeps the composition when a reset is cancelled', () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+
+    fireEvent.click(screen.getByText('RESET'));
+    // RESET sits next to HISTORY and nothing has been exported yet, so it has to ask
+    expect(screen.getByTestId('modal-Reset Alert')).toBeInTheDocument();
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>body</p>');
+  });
+
+  it('resets immediately when there is nothing composed', () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByText('RESET'));
+
+    expect(screen.queryByTestId('modal-Reset Alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
+  });
+
+  it('confirms before an alarm overwrites a composition in progress', async () => {
+    const loadedReminderAlert = {
+      reminderId: 'rem-1',
+      title: 'Stored reminder',
+      severity: 'ISSUE' as const,
+      subject: 'Stored outage alert',
+      bodyHtml: '<p>Stored body</p>',
+      sender: 'Ops',
+    };
+
+    const { rerender } = render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+
+    rerender(<AlertsTab loadedReminderAlert={loadedReminderAlert} />);
+
+    // The in-progress alert must survive until the operator agrees to replace it
+    expect(screen.getByTestId('modal-Load Alert From Alarm')).toBeInTheDocument();
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(mockShowToast).not.toHaveBeenCalledWith('Alert loaded from alarm', 'success');
+
+    rerender(<AlertsTab loadedReminderAlert={{ ...loadedReminderAlert, reminderId: 'rem-2' }} />);
+    fireEvent.click(screen.getByText('Load Alert'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
+    });
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
   });
 
   // --- Non-enter keydown on pin template input ---

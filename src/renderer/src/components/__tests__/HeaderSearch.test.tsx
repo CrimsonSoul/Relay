@@ -324,6 +324,50 @@ describe('HeaderSearch', () => {
       expect(screen.getAllByRole('option')).toHaveLength(3);
     });
 
+    it('keeps the fixed dropdown anchored to the input on scroll and resize', () => {
+      const rectAt = (top: number): DOMRect =>
+        ({
+          top,
+          bottom: top + 32,
+          left: 24,
+          right: 424,
+          width: 400,
+          height: 32,
+          x: 24,
+          y: top,
+          toJSON: () => ({}),
+        }) as DOMRect;
+      const rectSpy = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue(rectAt(40));
+
+      try {
+        render(<HeaderSearch {...defaultProps} />);
+        act(() => {
+          vi.advanceTimersByTime(250);
+        });
+
+        const dropdown = document.querySelector('.search-dropdown') as HTMLElement;
+        expect(dropdown.style.position).toBe('fixed');
+        expect(dropdown.style.top).toBe('80px');
+
+        // Fixed coordinates go stale the instant the header moves.
+        rectSpy.mockReturnValue(rectAt(0));
+        act(() => {
+          fireEvent.scroll(document);
+        });
+        expect(dropdown.style.top).toBe('40px');
+
+        rectSpy.mockReturnValue(rectAt(96));
+        act(() => {
+          fireEvent(window, new Event('resize'));
+        });
+        expect(dropdown.style.top).toBe('136px');
+      } finally {
+        rectSpy.mockRestore();
+      }
+    });
+
     it('shows result titles in dropdown', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {

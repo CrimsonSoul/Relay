@@ -224,8 +224,17 @@ describe('renameTeam', () => {
     await renameTeam('TeamA', 'TeamB');
     expect(mockRequireOnline).toHaveBeenCalledTimes(2);
     expect(mockUpdate).toHaveBeenCalledTimes(2);
-    expect(mockUpdate).toHaveBeenCalledWith('oc1', { team: 'TeamB' });
-    expect(mockUpdate).toHaveBeenCalledWith('oc2', { team: 'TeamB' });
+    expect(mockUpdate).toHaveBeenCalledWith('oc1', { team: 'TeamB', teamId: 'teamb' });
+    expect(mockUpdate).toHaveBeenCalledWith('oc2', { team: 'TeamB', teamId: 'teamb' });
+  });
+
+  it('re-derives teamId so the old name is no longer claimed by the renamed rows', async () => {
+    mockGetFullList.mockResolvedValueOnce([{ ...sampleRecord, team: 'SQL', teamId: 'sql' }]);
+    mockUpdate.mockResolvedValue(undefined);
+
+    await renameTeam('SQL', 'Oracle');
+
+    expect(mockUpdate).toHaveBeenCalledWith('oc1', { team: 'Oracle', teamId: 'oracle' });
   });
 
   it('calls handleApiError and re-throws on failure', async () => {

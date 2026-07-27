@@ -86,11 +86,28 @@ function csvSafeValue(value: unknown): string {
   return spreadsheetFormulaSafeValue(valueToExportString(value));
 }
 
+const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
 function spreadsheetFormulaSafeValue(str: string): string {
-  if (/^[=+\-@\t\r]/.test(str)) {
+  if (FORMULA_PREFIX.test(str)) {
     return `'${str}`;
   }
   return str;
+}
+
+/**
+ * Inverse of spreadsheetFormulaSafeValue. Without it an export → import round
+ * trip permanently prefixes every value the export guarded — a phone number
+ * saved as `+15555551234` comes back as `'+15555551234` and is stored that way.
+ */
+function stripFormulaGuard(value: string): string {
+  if (value.startsWith("'") && value.length > 1) {
+    const rest = value.slice(1);
+    if (FORMULA_PREFIX.test(rest)) {
+      return rest;
+    }
+  }
+  return value;
 }
 
 /** Fetch all records from a collection as plain objects. */
@@ -368,16 +385,8 @@ export async function importFromCsv(
     preview: MAX_IMPORT_RECORDS + 1,
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),
-    transform: (value) => {
-      // Strip the formula-injection prefix we add on export
-      if (value.startsWith("'") && value.length > 1) {
-        const rest = value.slice(1);
-        if (/^[=+\-@\t\r]/.test(rest)) {
-          return rest;
-        }
-      }
-      return value;
-    },
+    // Strip the formula-injection prefix we add on export
+    transform: stripFormulaGuard,
   });
 
   const parseErrors = parseResult.errors.map((e) => `CSV parse error (row ${e.row}): ${e.message}`);
@@ -431,8 +440,8 @@ export async function importFromExcel(
       const record: Record<string, unknown> = {};
       headers.forEach((h, i) => {
         if (h) {
-          const cell = values[i];
-          record[h] = cell ?? '';
+          const cell = values[i] ?? '';
+          record[h] = typeof cell === 'string' ? stripFormulaGuard(cell) : cell;
         }
       });
       records.push(record);

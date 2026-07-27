@@ -223,8 +223,23 @@ export const DirectoryTab: React.FC<Props> = ({
 
   const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
 
-  const selectedContact =
-    focusedIndex >= 0 && focusedIndex < filtered.length ? filtered[focusedIndex] : null;
+  // The detail panel follows a contact's email, not a row position. focusedIndex only
+  // moves on a real click or keystroke, so re-filtering can clear the panel but can never
+  // silently rebind it — and its Delete button — to whatever record slid into that slot.
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  const lastFocusedIndex = useRef<number | null>(null);
+  useEffect(() => {
+    if (lastFocusedIndex.current === focusedIndex) return;
+    lastFocusedIndex.current = focusedIndex;
+    setSelectedEmail(filtered[focusedIndex]?.email.toLowerCase() ?? null);
+  }, [filtered, focusedIndex]);
+
+  const selectedContact = useMemo(() => {
+    // Nothing has been picked yet (the list was still empty when focus first landed),
+    // so keep the old behaviour of showing whatever row is focused.
+    if (selectedEmail === null) return filtered[focusedIndex] ?? null;
+    return filtered.find((contact) => contact.email.toLowerCase() === selectedEmail) ?? null;
+  }, [filtered, focusedIndex, selectedEmail]);
   const selectedGroups = selectedContact
     ? groupMap.get(selectedContact.email.toLowerCase()) || []
     : [];

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { BackupEntry } from '@shared/ipc';
 import { TactileButton } from '../TactileButton';
+import { ConfirmModal } from '../ConfirmModal';
 import { useMounted } from '../../hooks/useMounted';
 
 declare const api: {
@@ -67,9 +68,11 @@ export const DataManagerBackups: React.FC = () => {
     }
   };
 
+  // Deliberately leaves confirmRestore set: ConfirmModal closes itself once
+  // this promise settles, so the dialog stays up — with a loading confirm
+  // button — for the whole restore instead of vanishing on the first click.
   const handleRestore = async (backup: BackupEntry) => {
     setRestoring(true);
-    setConfirmRestore(null);
     try {
       const result = await api.restoreBackup(backup.name);
       if (result.success) {
@@ -146,27 +149,21 @@ export const DataManagerBackups: React.FC = () => {
         </div>
       )}
 
-      {confirmRestore && (
-        <div className="dm-backup-confirm">
-          <p>
-            This will replace all current data with the backup from{' '}
-            <strong>{formatDate(confirmRestore.date)}</strong>. A safety backup of the current state
-            will be created first. Continue?
-          </p>
-          <div className="dm-backup-confirm-actions">
-            <TactileButton variant="secondary" onClick={() => setConfirmRestore(null)}>
-              Cancel
-            </TactileButton>
-            <TactileButton
-              variant="danger"
-              onClick={() => handleRestore(confirmRestore)}
-              loading={restoring}
-            >
-              Confirm Restore
-            </TactileButton>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={confirmRestore !== null}
+        onClose={() => setConfirmRestore(null)}
+        onConfirm={() => (confirmRestore ? handleRestore(confirmRestore) : undefined)}
+        title="Restore Backup"
+        message={
+          confirmRestore
+            ? `This will replace all current data with the backup from ${formatDate(
+                confirmRestore.date,
+              )}. A safety backup of the current state will be created first. Continue?`
+            : ''
+        }
+        confirmLabel={restoring ? 'Restoring...' : 'Confirm Restore'}
+        isDanger
+      />
     </div>
   );
 };

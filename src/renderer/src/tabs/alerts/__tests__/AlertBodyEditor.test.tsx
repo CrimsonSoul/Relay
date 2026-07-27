@@ -159,6 +159,40 @@ describe('AlertBodyEditor', () => {
     expect(document.execCommand).toHaveBeenCalledWith(command);
   });
 
+  it.each([
+    ['Bullet list', 'insertUnorderedList'],
+    ['Numbered list', 'insertOrderedList'],
+  ])('applies %s formatting from the keyboard', (buttonName, command) => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    // Enter/Space on a focused button dispatches click with detail 0 and never mousedown,
+    // so a mousedown-only toolbar is unreachable without a mouse.
+    fireEvent.click(screen.getByRole('button', { name: buttonName }));
+    expect(document.execCommand).toHaveBeenCalledWith(command);
+  });
+
+  it('inserts an alert image from the keyboard', async () => {
+    const bridge = window.api as NonNullable<typeof window.api>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({ success: true, data: 'data:img' });
+
+    render(<AlertBodyEditor {...defaultProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Insert image' }));
+
+    await vi.waitFor(() => {
+      expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    });
+  });
+
+  it('applies a toolbar command once for a real mouse press', () => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    const button = screen.getByRole('button', { name: 'Bullet list' });
+
+    // A mouse press fires mousedown then click; only one of them may run the command
+    fireEvent.mouseDown(button);
+    fireEvent.click(button, { detail: 1 });
+
+    expect(document.execCommand).toHaveBeenCalledTimes(1);
+  });
+
   it('selects and inserts an alert image block through the toolbar', async () => {
     const selectedImage = 'data:image/jpeg;base64,SEL';
     const bridge = window.api as NonNullable<typeof window.api>;

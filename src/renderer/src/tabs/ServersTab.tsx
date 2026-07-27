@@ -1,9 +1,10 @@
-import React, { memo, useMemo, useState, useEffect } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
 import { Server, Contact } from '@shared/ipc';
 import { ContextMenu } from '../components/ContextMenu';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { AddServerModal } from '../components/AddServerModal';
 import { TactileButton } from '../components/TactileButton';
 import { ServerCard } from '../components/ServerCard';
@@ -84,7 +85,11 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const h = useServers(servers, contacts, searchQuery);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // The detail panel is bound to a server by name, never by row position: filters reorder
+  // and shorten the list, and a positional index would silently repoint the panel — and
+  // its Delete button — at a machine the operator is not looking at.
+  const [selectedServerName, setSelectedServerName] = useState<string | null>(null);
+  const [serverPendingDeletion, setServerPendingDeletion] = useState<Server | null>(null);
 
   const serverExtraFilters = useMemo<FilterDef<Server>[]>(() => {
     const availableOperatingSystems = new Set(
@@ -187,19 +192,14 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
 
   const displayedServers = filters.filteredItems;
 
-  // Clamp selection when list changes
-  useEffect(() => {
-    if (displayedServers.length === 0) {
-      setSelectedIndex(0);
-    } else if (selectedIndex >= displayedServers.length) {
-      setSelectedIndex(displayedServers.length - 1);
-    }
-  }, [displayedServers.length, selectedIndex]);
-
-  const selectedServer =
-    selectedIndex >= 0 && selectedIndex < displayedServers.length
-      ? displayedServers[selectedIndex]
-      : null;
+  const selectedServer = useMemo(() => {
+    // Before anything is picked we land on the first record, matching the previous
+    // index-0 default. Once a server is chosen we resolve it by name, so re-filtering
+    // can only clear the panel — never swap it for a different machine.
+    if (selectedServerName === null) return displayedServers[0] ?? null;
+    return displayedServers.find((server) => server.name === selectedServerName) ?? null;
+  }, [displayedServers, selectedServerName]);
+  const selectedIndex = selectedServer ? displayedServers.indexOf(selectedServer) : -1;
   const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
 
   const rowProps = useMemo(
@@ -208,10 +208,17 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
       selectedIndex,
-      onRowClick: (i: number) => setSelectedIndex(i),
+      onRowClick: (i: number) => setSelectedServerName(displayedServers[i]?.name ?? null),
     }),
     [displayedServers, h.contactLookup, h.handleContextMenu, selectedIndex],
   );
+
+  const { deleteServer } = h;
+  const handleConfirmDeleteServer = useCallback(() => {
+    if (!serverPendingDeletion) return;
+    // Returned so ConfirmModal keeps itself open and reports a rejected delete inline
+    return deleteServer(serverPendingDeletion);
+  }, [deleteServer, serverPendingDeletion]);
 
   return (
     <div className="tab-layout">
@@ -324,10 +331,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             tags={selectedNote?.tags}
             onEditNotes={() => setNotesServer(selectedServer)}
             onEdit={() => h.editServer(selectedServer)}
-            onDelete={() => {
-              void h.deleteServer(selectedServer);
-              setSelectedIndex(0);
-            }}
+            onDelete={() => setServerPendingDeletion(selectedServer)}
           />
         ) : (
           <div className="detail-panel detail-panel--empty">
@@ -402,7 +406,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             {
               label: 'Delete Server',
               onClick: () => {
-                void h.handleDelete();
+                setServerPendingDeletion(h.contextMenu!.server);
+                h.setContextMenu(null);
               },
               danger: true,
               icon: (
@@ -426,6 +431,18 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         isOpen={h.isAddModalOpen}
         onClose={() => h.setIsAddModalOpen(false)}
         serverToEdit={h.editingServer}
+      />
+
+      {/* Both delete paths land here — contacts and on-call cards already confirm, and a
+          server record is no cheaper to lose */}
+      <ConfirmModal
+        isOpen={!!serverPendingDeletion}
+        onClose={() => setServerPendingDeletion(null)}
+        onConfirm={handleConfirmDeleteServer}
+        title="Delete Server"
+        message={`Delete ${serverPendingDeletion?.name ?? ''}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDanger
       />
 
       <NotesModal

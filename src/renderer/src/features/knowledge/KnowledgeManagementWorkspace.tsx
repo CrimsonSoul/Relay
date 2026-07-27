@@ -110,14 +110,17 @@ function selectedUploadCategory(categories: KnowledgeCategoryRecord[], selectedI
   return categories.find(({ id }) => id === selectedId)?.name ?? '';
 }
 
+// Mirrors the server term matching so this local pass can only ever narrow to the same rows the
+// server would have returned, never hide one of them while the debounced read is in flight.
 function matchesDocument(document: KnowledgeManagementDocumentView, query: string): boolean {
-  const normalized = query.trim().toLocaleLowerCase('en');
-  return (
-    !normalized ||
-    `${document.displayTitle} ${document.fileName} ${document.category}`
-      .toLocaleLowerCase('en')
-      .includes(normalized)
-  );
+  const text =
+    `${document.displayTitle} ${document.fileName} ${document.category}`.toLocaleLowerCase('en');
+  return query
+    .trim()
+    .toLocaleLowerCase('en')
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => text.includes(term));
 }
 
 function EmptyPanel({ children }: Readonly<{ children: string }>) {
@@ -133,10 +136,10 @@ export function KnowledgeManagementWorkspace({
   onExit,
   onLibraryChanged,
 }: Readonly<WorkspaceProps>) {
-  const management = useKnowledgeManagement(onLibraryChanged);
+  const [query, setQuery] = useState('');
+  const management = useKnowledgeManagement(onLibraryChanged, query);
   const [section, setSection] = useState<Section>('documents');
   const sectionRef = useRef<Section>('documents');
-  const [query, setQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>({
     title: '',
@@ -273,6 +276,9 @@ export function KnowledgeManagementWorkspace({
 
   const selectSection = (next: Section) => {
     openSection(next, true);
+    // Only Documents exposes the filter, and the snapshot it narrows is shared with every other
+    // section, so leaving Documents releases it.
+    if (next !== 'documents') setQuery('');
     setNotice(null);
     setCancelBatchConfirmation(false);
     setDiscardUploadId(null);
@@ -545,6 +551,10 @@ export function KnowledgeManagementWorkspace({
                     {searchableDocumentCount} of {documents.length} searchable
                   </span>
                 )}
+                <span className="knowledge-management__searchable-count" role="status">
+                  {filteredDocuments.length} shown · {documents.length} loaded
+                  {snapshot.documents.nextCursor ? ' · more available' : ''}
+                </span>
               </div>
               <div className="knowledge-management__toolbar">
                 <div className="knowledge-management__search scoped-search-control">
@@ -597,7 +607,11 @@ export function KnowledgeManagementWorkspace({
               </div>
               <div className="knowledge-management-list">
                 {filteredDocuments.length === 0 && (
-                  <EmptyPanel>No documents match this view.</EmptyPanel>
+                  <EmptyPanel>
+                    {snapshot.documents.nextCursor
+                      ? 'No loaded documents match this view. Load more documents to keep searching.'
+                      : 'No documents match this view.'}
+                  </EmptyPanel>
                 )}
                 {filteredDocuments.map((document) => (
                   <article className="knowledge-management-row" key={document.id}>
@@ -786,7 +800,7 @@ export function KnowledgeManagementWorkspace({
                     )}
                   </article>
                 ))}
-                {!query && snapshot.documents.nextCursor && (
+                {snapshot.documents.nextCursor && (
                   <div className="knowledge-management-more">
                     <TactileButton
                       size="sm"

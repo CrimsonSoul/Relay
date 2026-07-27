@@ -40,7 +40,15 @@ vi.mock('../../contexts', () => ({
 }));
 
 vi.mock('../../components/ContextMenu', () => ({
-  ContextMenu: () => <div data-testid="context-menu" />,
+  ContextMenu: ({ items }: { items: Array<{ label: string; onClick: () => void }> }) => (
+    <div data-testid="context-menu">
+      {items.map((item) => (
+        <button key={item.label} onClick={item.onClick}>
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock('../../components/AddServerModal', () => ({
@@ -55,7 +63,9 @@ vi.mock('../../components/TactileButton', () => ({
 }));
 
 vi.mock('../../components/ServerCard', () => ({
-  ServerCard: () => <div data-testid="server-card" />,
+  ServerCard: ({ selected, onRowClick }: { selected: boolean; onRowClick: () => void }) => (
+    <button type="button" data-testid="server-card" data-selected={selected} onClick={onRowClick} />
+  ),
 }));
 
 vi.mock('../../components/CollapsibleHeader', () => ({
@@ -75,8 +85,11 @@ vi.mock('../../components/ListFilters', () => ({
 }));
 
 vi.mock('../../components/ServerDetailPanel', () => ({
-  ServerDetailPanel: ({ server }: { server: Server }) => (
-    <div data-testid="server-detail">{server.name}</div>
+  ServerDetailPanel: ({ server, onDelete }: { server: Server; onDelete: () => void }) => (
+    <div data-testid="server-detail">
+      {server.name}
+      <button type="button" data-testid="server-detail-delete" onClick={onDelete} />
+    </div>
   ),
 }));
 
@@ -101,10 +114,24 @@ vi.mock('react-virtualized-auto-sizer', () => ({
   }) => renderProp({ height: 600, width: 800 }),
 }));
 
-// Mock react-window
+// Mock react-window — rows are rendered so row selection can be exercised
 vi.mock('react-window', () => ({
-  List: ({ rowCount, rowHeight }: { rowCount: number; rowHeight: number }) => (
-    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight} />
+  List: ({
+    rowCount,
+    rowHeight,
+    rowComponent: RowComponent,
+    rowProps,
+  }: {
+    rowCount: number;
+    rowHeight: number;
+    rowComponent: React.ComponentType<Record<string, unknown>>;
+    rowProps: Record<string, unknown>;
+  }) => (
+    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight}>
+      {Array.from({ length: rowCount }, (_unused, index) => (
+        <RowComponent key={index} index={index} style={{}} {...rowProps} />
+      ))}
+    </div>
   ),
   useListRef: () => ({ current: null }),
 }));
@@ -209,6 +236,91 @@ describe('ServersTab', () => {
     render(<ServersTab servers={servers} contacts={[]} />);
     expect(screen.getByTestId('server-detail')).toBeInTheDocument();
     expect(screen.getByText('db-server-01')).toBeInTheDocument();
+  });
+
+  it('keeps the detail panel on the selected server when filtering reorders the list', () => {
+    const web = makeServer({ name: 'web-server-01' });
+    const db = makeServer({ name: 'db-server-01' });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
+
+    const { rerender } = render(<ServersTab servers={[web, db]} contacts={[]} />);
+    fireEvent.click(screen.getAllByTestId('server-card')[1]);
+    expect(screen.getByTestId('server-detail')).toHaveTextContent('db-server-01');
+
+    // A filter that drops db-server-01 must clear the panel, not silently rebind it to
+    // whatever record now sits at index 1 — the Delete button points at this record.
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web] }));
+    rerender(<ServersTab servers={[web, db]} contacts={[]} />);
+
+    expect(screen.queryByTestId('server-detail')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a server')).toBeInTheDocument();
+  });
+
+  it('follows the selected server when filtering only changes its position', () => {
+    const web = makeServer({ name: 'web-server-01' });
+    const db = makeServer({ name: 'db-server-01' });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
+
+    const { rerender } = render(<ServersTab servers={[web, db]} contacts={[]} />);
+    fireEvent.click(screen.getAllByTestId('server-card')[1]);
+
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [db, web] }));
+    rerender(<ServersTab servers={[web, db]} contacts={[]} />);
+
+    expect(screen.getByTestId('server-detail')).toHaveTextContent('db-server-01');
+    expect(screen.getAllByTestId('server-card')[0]).toHaveAttribute('data-selected', 'true');
+  });
+
+  it('confirms before deleting from the detail panel', () => {
+    const servers = [makeServer({ name: 'db-server-01' })];
+    const deleteServer = vi.fn().mockResolvedValue(undefined);
+    mockUseServers.mockReturnValue({ ...makeDefaultServersReturn(), deleteServer });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
+
+    render(<ServersTab servers={servers} contacts={[]} />);
+    fireEvent.click(screen.getByTestId('server-detail-delete'));
+
+    expect(deleteServer).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Delete db-server-01? This action cannot be undone.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(deleteServer).toHaveBeenCalledWith(servers[0]);
+  });
+
+  it('confirms before deleting from the right-click menu', () => {
+    const server = makeServer({ name: 'db-server-01' });
+    const deleteServer = vi.fn().mockResolvedValue(undefined);
+    const setContextMenu = vi.fn();
+    mockUseServers.mockReturnValue({
+      ...makeDefaultServersReturn(),
+      contextMenu: { x: 10, y: 20, server },
+      setContextMenu,
+      deleteServer,
+    });
+
+    render(<ServersTab servers={[server]} contacts={[]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Server' }));
+
+    expect(deleteServer).not.toHaveBeenCalled();
+    expect(setContextMenu).toHaveBeenCalledWith(null);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(deleteServer).toHaveBeenCalledWith(server);
+  });
+
+  it('surfaces a failed delete instead of closing the confirmation', async () => {
+    const servers = [makeServer({ name: 'db-server-01' })];
+    const deleteServer = vi.fn().mockRejectedValue(new Error('Server record is locked'));
+    mockUseServers.mockReturnValue({ ...makeDefaultServersReturn(), deleteServer });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: servers }));
+
+    render(<ServersTab servers={servers} contacts={[]} />);
+    fireEvent.click(screen.getByTestId('server-detail-delete'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server record is locked');
   });
 
   it('renders context menu when contextMenu is present', () => {

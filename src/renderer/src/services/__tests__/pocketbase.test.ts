@@ -879,6 +879,36 @@ describe('pocketbase service', () => {
       expect(getConnectionState()).toBe('online');
     });
 
+    it('collapses a burst of unauthorized errors into one refresh and one health restart', async () => {
+      const fetchSpy = vi.fn(() => new Promise(() => {}));
+      vi.stubGlobal('fetch', fetchSpy);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8090',
+          auth: { token: 'refreshed-token', record: { id: 'user-1' } },
+        },
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const fetchCallsBefore = fetchSpy.mock.calls.length;
+
+      // Every in-flight collection request fails on the same expired token.
+      handleApiError({ status: 401, message: 'unauthorized' });
+      handleApiError({ status: 403, message: 'forbidden' });
+      handleApiError({ status: 401, message: 'unauthorized' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(refreshPbConnection).toHaveBeenCalledOnce();
+      expect(fetchSpy.mock.calls).toHaveLength(fetchCallsBefore + 1);
+
+      // The dedup only covers the in-flight window — a later rejection retries.
+      handleApiError({ status: 401, message: 'unauthorized' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(refreshPbConnection).toHaveBeenCalledTimes(2);
+    });
+
     it('handles null/undefined errors gracefully', () => {
       expect(() => handleApiError(null)).not.toThrow();
       expect(() => handleApiError(undefined)).not.toThrow();

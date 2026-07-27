@@ -25,8 +25,22 @@ function reminder(overrides: Partial<AlertReminderRecord> = {}): AlertReminderRe
 }
 
 describe('nextReminderDelay', () => {
-  it('returns zero when a pending reminder is already due', () => {
-    expect(nextReminderDelay([reminder({ dueAt: new Date(NOW - 1).toISOString() })], NOW)).toBe(0);
+  it('returns null when the only pending reminder is already due', () => {
+    expect(
+      nextReminderDelay([reminder({ dueAt: new Date(NOW - 1).toISOString() })], NOW),
+    ).toBeNull();
+  });
+
+  it('schedules the next future reminder even while an overdue one is on screen', () => {
+    expect(
+      nextReminderDelay(
+        [
+          reminder({ id: 'overdue', dueAt: new Date(NOW - 600_000).toISOString() }),
+          reminder({ id: 'upcoming', dueAt: new Date(NOW + 1_800_000).toISOString() }),
+        ],
+        NOW,
+      ),
+    ).toBe(1_800_000);
   });
 
   it('returns the delay to the earliest future pending reminder', () => {

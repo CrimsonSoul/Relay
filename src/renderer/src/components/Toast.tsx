@@ -64,12 +64,32 @@ function deliveryPriority(delivery: ToastDelivery): number {
   }
 }
 
+/**
+ * Routine toasts stack visibly, so an error burst — a failing sync retrying, a
+ * dropped connection fanning out across hooks — used to bury the UI under an
+ * unbounded column. Cap the stack and drop the oldest routine entries: the
+ * newest message is the one describing the current state.
+ */
+const MAX_ROUTINE_TOASTS = 4;
+
+function capRoutineToasts(toasts: ToastMessage[]): ToastMessage[] {
+  let overflow = toasts.filter((toast) => !isOperationalToast(toast)).length - MAX_ROUTINE_TOASTS;
+  if (overflow <= 0) return toasts;
+  // Operational toasts are exempt — their own priority queue decides which of
+  // them is on screen, and none of them are ever bulk-generated.
+  return toasts.filter((toast) => {
+    if (overflow <= 0 || isOperationalToast(toast)) return true;
+    overflow -= 1;
+    return false;
+  });
+}
+
 function toastReducer(current: ToastMessage[], action: ToastAction): ToastMessage[] {
   switch (action.type) {
     case 'show': {
       const incomingDelivery = deliveryOf(action.toast);
       if (incomingDelivery === 'routine') {
-        return [...current, action.toast];
+        return capRoutineToasts([...current, action.toast]);
       }
       return [
         ...current.map((toast) =>

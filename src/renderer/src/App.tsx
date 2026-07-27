@@ -27,6 +27,7 @@ import { StartupErrorScreen } from './components/StartupErrorScreen';
 import { ConnectionManager } from './components/ConnectionManager';
 import {
   Contact,
+  readSaveConfigResult,
   type CloudStatusProvider,
   type PbAuthSession,
   type PublicRelayConfig,
@@ -669,10 +670,20 @@ function AppWithSetup({
       secret: string;
     }) => {
       try {
-        const saved = await globalThis.api!.saveConfig(config);
-        if (!saved) {
+        // The handler answers with either a bare boolean or a result object —
+        // reading it as a plain truthy value would treat `{ ok: false }` as a
+        // successful save and relaunch into a half-written configuration.
+        const saved = readSaveConfigResult(await globalThis.api!.saveConfig(config));
+        if (!saved.ok) {
           setPhase({ stage: 'error', message: 'Failed to save configuration.', retryable: false });
           return;
+        }
+        if (saved.discardedPendingCount > 0) {
+          // Retargeting the server voids the offline queue; those mutations were
+          // never accepted anywhere and cannot be replayed against the new one.
+          loggers.app.warn('Reconfiguration discarded unsynced offline changes', {
+            discardedPendingCount: saved.discardedPendingCount,
+          });
         }
         // Ask the main process to rebuild per-mode runtime state, then reload this
         // window. A plain renderer reload leaves stale state — e.g. a lingering

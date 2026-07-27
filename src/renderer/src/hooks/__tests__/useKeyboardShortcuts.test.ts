@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useKeyboardShortcuts } from '../useKeyboardShortcuts';
+import { useModalStack } from '../../components/modalStack';
 
 describe('useKeyboardShortcuts', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -27,6 +28,31 @@ describe('useKeyboardShortcuts', () => {
     fireEvent.keyDown(globalThis, { key, metaKey: true });
 
     expect(setActiveTab).toHaveBeenCalledWith(tab);
+  });
+
+  it('ignores tab navigation while a modal is open, and resumes once it closes', () => {
+    const setActiveTab = vi.fn();
+    const { rerender } = renderHook(
+      ({ modalOpen }: { modalOpen: boolean }) => {
+        useModalStack('shortcut-test-modal', modalOpen);
+        useKeyboardShortcuts({
+          setActiveTab,
+          openSettings: vi.fn(),
+          setIsShortcutsOpen: vi.fn(),
+          searchInputRef: React.createRef<HTMLInputElement>(),
+        });
+      },
+      { initialProps: { modalOpen: true } },
+    );
+
+    fireEvent.keyDown(globalThis, { key: '1', metaKey: true });
+
+    expect(setActiveTab).not.toHaveBeenCalled();
+
+    rerender({ modalOpen: false });
+    fireEvent.keyDown(globalThis, { key: '1', metaKey: true });
+
+    expect(setActiveTab).toHaveBeenCalledWith('Compose');
   });
 
   it.each(['7', '8', '9'])('leaves Cmd+%s unassigned', (key) => {

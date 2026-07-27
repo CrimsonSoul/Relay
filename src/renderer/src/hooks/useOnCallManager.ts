@@ -55,7 +55,15 @@ const appendUniqueTeamId = (teamOrder: string[], teamId: string) =>
 const pickCurrentTeamOrder = (primary: string[], fallback: string[]) =>
   primary.length > 0 ? primary : fallback;
 
+// Mirrors normalizeTeamId in oncallService — the canonical card identity rule.
 const normalizeTeamId = (name: string) => name.trim().toLowerCase();
+
+/** Carry a renamed card's saved board position onto its new teamId. */
+const migrateTeamOrder = (teamOrder: string[], oldTeamId: string, newTeamId: string) => {
+  const migrated = teamOrder.map((id) => (id === oldTeamId ? newTeamId : id));
+  // A rename onto a name that already has a card collapses the two entries.
+  return migrated.filter((id, index) => migrated.indexOf(id) === index);
+};
 
 export function useOnCallManager(
   onCall: OnCallRow[],
@@ -296,11 +304,30 @@ export function useOnCallManager(
   const handleRenameTeam = useCallback(
     async (oldName: string, newName: string) => {
       startMutation();
+      const newTeamId = normalizeTeamId(newName);
+      const oldTeamId = dataRef.current.find((r) => r.team === oldName)?.teamId;
       try {
         await pbRenameTeam(oldName, newName);
         setLocalOnCall((prev) =>
-          prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r)),
+          prev.map((r) => (r.team === oldName ? { ...r, team: newName, teamId: newTeamId } : r)),
         );
+
+        // teamOrder is keyed by teamId, so the entry has to follow the rename
+        // or the card drops to the fallback (row-derived) position.
+        if (oldTeamId && oldTeamId !== newTeamId && boardSettings.recordId) {
+          const nextTeamOrder = migrateTeamOrder(
+            pickCurrentTeamOrder(boardSettings.effectiveTeamOrder, teamsRef.current),
+            oldTeamId,
+            newTeamId,
+          );
+          await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: nextTeamOrder });
+          onBoardSettingsChange?.((prev) => ({
+            ...prev,
+            record: prev.record ? { ...prev.record, teamOrder: nextTeamOrder } : prev.record,
+            effectiveTeamOrder: nextTeamOrder,
+          }));
+        }
+
         showToast(`Renamed ${oldName} to ${newName}`, 'success');
       } catch {
         showToast('Failed to rename team', 'error');
@@ -308,7 +335,16 @@ export function useOnCallManager(
         finishMutation();
       }
     },
-    [showToast, startMutation, finishMutation, setLocalOnCall],
+    [
+      showToast,
+      startMutation,
+      finishMutation,
+      dataRef,
+      setLocalOnCall,
+      boardSettings.recordId,
+      boardSettings.effectiveTeamOrder,
+      onBoardSettingsChange,
+    ],
   );
 
   const handleAddTeam = useCallback(

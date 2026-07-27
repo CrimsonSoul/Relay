@@ -2,6 +2,7 @@ import React, { useState, useReducer, useRef, useCallback, useMemo, useEffect } 
 // html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
@@ -279,25 +280,63 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
 
+  // History is only written on Save Image / Open in Outlook / Pin Template, so anything
+  // still being composed exists nowhere else. Both destructive paths — RESET and loading
+  // an alert off an alarm — have to ask before discarding it.
+  const hasComposition = useMemo(
+    () =>
+      (Object.keys(initialFormState) as Array<keyof AlertFormState>).some(
+        (field) => form[field] !== initialFormState[field],
+      ),
+    [form],
+  );
+  const hasCompositionRef = useRef(hasComposition);
+  useEffect(() => {
+    hasCompositionRef.current = hasComposition;
+  }, [hasComposition]);
+
+  const resetConfirmModal = useModalState();
+  const [pendingReminderAlert, setPendingReminderAlert] = useState<ReminderAlertLoadDetail | null>(
+    null,
+  );
+
+  const clearComposition = useCallback(() => {
+    dispatch({ type: 'RESET' });
+    formRef.current?.setEditorContent('');
+    // logoDataUrl is intentionally NOT cleared — it's a persistent setting
+  }, []);
+
+  const applyReminderAlert = useCallback(
+    (detail: ReminderAlertLoadDetail) => {
+      const nextBodyHtml = sanitizeHtml(detail.bodyHtml);
+      dispatch({
+        type: 'SET_FIELD',
+        field: 'severity',
+        value: normalizeLoadedSeverity(detail.severity),
+      });
+      dispatch({ type: 'SET_FIELD', field: 'subject', value: detail.subject.trim() });
+      dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: nextBodyHtml });
+      dispatch({ type: 'SET_FIELD', field: 'sender', value: detail.sender.trim() });
+      dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
+      dispatch({ type: 'SET_FIELD', field: 'clickThroughUrl', value: '' });
+      dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
+      formRef.current?.setEditorContent(nextBodyHtml);
+      showToast('Alert loaded from alarm', 'success');
+    },
+    [showToast],
+  );
+
   useEffect(() => {
     if (!loadedReminderAlert) return;
 
-    const nextBodyHtml = sanitizeHtml(loadedReminderAlert.bodyHtml);
-    dispatch({
-      type: 'SET_FIELD',
-      field: 'severity',
-      value: normalizeLoadedSeverity(loadedReminderAlert.severity),
-    });
-    dispatch({ type: 'SET_FIELD', field: 'subject', value: loadedReminderAlert.subject.trim() });
-    dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: nextBodyHtml });
-    dispatch({ type: 'SET_FIELD', field: 'sender', value: loadedReminderAlert.sender.trim() });
-    dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
-    dispatch({ type: 'SET_FIELD', field: 'clickThroughUrl', value: '' });
-    dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
-    formRef.current?.setEditorContent(nextBodyHtml);
-    showToast('Alert loaded from alarm', 'success');
+    // Read the dirty flag through a ref so composing does not re-trigger this effect
+    if (hasCompositionRef.current) {
+      setPendingReminderAlert(loadedReminderAlert);
+    } else {
+      applyReminderAlert(loadedReminderAlert);
+    }
     onLoadedReminderAlertConsumed?.();
-  }, [loadedReminderAlert, onLoadedReminderAlertConsumed, showToast]);
+  }, [applyReminderAlert, loadedReminderAlert, onLoadedReminderAlertConsumed]);
 
   // Load persisted logo on mount
   useEffect(() => {
@@ -422,10 +461,24 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   }, []);
 
   const handleClear = useCallback(() => {
-    dispatch({ type: 'RESET' });
-    formRef.current?.setEditorContent('');
-    // logoDataUrl is intentionally NOT cleared — it's a persistent setting
-  }, []);
+    // RESET sits right next to HISTORY and there is no undo, so an unexported
+    // composition only goes away after the operator says so.
+    if (hasComposition) {
+      resetConfirmModal.open();
+      return;
+    }
+    clearComposition();
+  }, [clearComposition, hasComposition, resetConfirmModal]);
+
+  const handleConfirmReset = useCallback(() => {
+    resetConfirmModal.close();
+    clearComposition();
+  }, [clearComposition, resetConfirmModal]);
+
+  const handleConfirmLoadReminderAlert = useCallback(() => {
+    if (pendingReminderAlert) applyReminderAlert(pendingReminderAlert);
+    setPendingReminderAlert(null);
+  }, [applyReminderAlert, pendingReminderAlert]);
 
   const handleSetLogo = useCallback(async () => {
     const result = await globalThis.api?.saveCompanyLogo();
@@ -943,6 +996,26 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         onResetAlarmSound={handleResetReminderAlarmSound}
         canCustomizeAlarmSound={canCustomizeReminderSound}
       />
+      <ConfirmModal
+        isOpen={resetConfirmModal.isOpen}
+        onClose={resetConfirmModal.close}
+        onConfirm={handleConfirmReset}
+        title="Reset Alert"
+        message="Discard this alert? The severity, subject, body, recipients, and event times are cleared, and an alert that has not been saved or opened in Outlook cannot be recovered."
+        confirmLabel="Discard Alert"
+        isDanger
+      />
+
+      <ConfirmModal
+        isOpen={pendingReminderAlert !== null}
+        onClose={() => setPendingReminderAlert(null)}
+        onConfirm={handleConfirmLoadReminderAlert}
+        title="Load Alert From Alarm"
+        message={`Load "${pendingReminderAlert?.subject.trim() || 'the stored alert'}"? This overwrites the alert you are composing, which cannot be recovered.`}
+        confirmLabel="Load Alert"
+        isDanger
+      />
+
       <Modal
         isOpen={pinPromptModal.isOpen}
         onClose={pinPromptModal.close}

@@ -279,6 +279,31 @@ describe('TeamCard', () => {
     expect(onRemoveTeam).toHaveBeenCalledWith('Alpha');
   });
 
+  it('drops stale callback closures when only the handlers change', () => {
+    const setMenu = vi.fn();
+    const setConfirm = vi.fn();
+    const staleRemoveTeam = vi.fn();
+    const freshRemoveTeam = vi.fn();
+    // Everything a drag reorder leaves untouched on an unmoved card: same
+    // rows, same contacts, same index — only the rebuilt handlers differ.
+    const stableProps = { ...defaultProps(), setMenu, setConfirm };
+
+    const { container, rerender } = render(
+      <TeamCard {...stableProps} onRemoveTeam={staleRemoveTeam} />,
+    );
+    rerender(<TeamCard {...stableProps} onRemoveTeam={freshRemoveTeam} />);
+
+    fireEvent.contextMenu(container.querySelector('.team-card-body')!);
+    const removeItem = setMenu.mock.calls
+      .at(-1)![0]
+      .items.find((i: { label: string }) => i.label === 'Remove Team');
+    removeItem.onClick();
+    setConfirm.mock.calls.at(-1)![0].onConfirm();
+
+    expect(freshRemoveTeam).toHaveBeenCalledWith('Alpha');
+    expect(staleRemoveTeam).not.toHaveBeenCalled();
+  });
+
   it('handles null rows gracefully (rows || [] fallback)', () => {
     render(<TeamCard {...defaultProps()} rows={null as unknown as OnCallRow[]} />);
     // Empty state should show since rows is null -> []

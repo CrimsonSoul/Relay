@@ -81,6 +81,7 @@ function KnowledgeSidebarPanel({
   groups,
   selectedDocument,
   activeHeadingId,
+  filtering,
   onSelectDocument,
   onSelectHeading,
 }: Readonly<
@@ -93,7 +94,7 @@ function KnowledgeSidebarPanel({
     | 'activeHeadingId'
     | 'onSelectDocument'
     | 'onSelectHeading'
-  >
+  > & { filtering: boolean }
 >) {
   if (mode === 'contents') {
     return (
@@ -148,6 +149,7 @@ function KnowledgeSidebarPanel({
           groups={groups}
           selectedDocumentId={selectedDocument.id}
           activeHeadingId={activeHeadingId}
+          expandMatches={filtering}
           onSelectDocument={onSelectDocument}
           onSelectHeading={onSelectHeading}
         />
@@ -271,6 +273,7 @@ export function KnowledgeReaderSidebarBody({
           groups={groups}
           selectedDocument={selectedDocument}
           activeHeadingId={activeHeadingId}
+          filtering={hasLibraryQuery}
           onSelectDocument={onSelectDocument}
           onSelectHeading={onSelectHeading}
         />

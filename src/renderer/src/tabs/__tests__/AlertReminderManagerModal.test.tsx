@@ -138,6 +138,22 @@ describe('AlertReminderManagerModal', () => {
     expect(props.onScheduleNew).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ['loading', { loading: true, error: null }],
+    ['errored', { loading: false, error: new Error('load failed') }],
+    ['both loading and errored', { loading: true, error: new Error('load failed') }],
+  ])('does not claim there are no pending alarms while %s', (_caseName, overrides) => {
+    renderModal({ pendingReminders: [], ...overrides });
+
+    expect(screen.queryByText('No pending alarms.')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state once loading has settled without an error', () => {
+    renderModal({ pendingReminders: [], loading: false, error: null });
+
+    expect(screen.getByText('No pending alarms.')).toBeInTheDocument();
+  });
+
   it('shows reminder sound controls and calls selection actions', () => {
     const props = renderModal({
       alarmSoundLabel: 'Custom MP3',

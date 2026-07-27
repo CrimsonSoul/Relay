@@ -116,7 +116,51 @@ describe('DataManagerBackups', () => {
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByText(/This will replace all current data/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/This will replace all current data/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('confirms the restore inside a dismissible dialog', async () => {
+    render(<DataManagerBackups />);
+
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
+
+    // A destructive confirmation buried below a 13-entry list reads as a
+    // no-op click; it has to own focus and answer Escape.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/This will replace all current data/);
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/This will replace all current data/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps a restoring state on screen until the restore settles', async () => {
+    let settleRestore!: (result: IpcResult) => void;
+    mockRestoreBackup.mockReturnValue(
+      new Promise<IpcResult>((resolve) => {
+        settleRestore = resolve;
+      }),
+    );
+    render(<DataManagerBackups />);
+
+    const restoreButtons = await screen.findAllByText('Restore');
+    fireEvent.click(restoreButtons[0]);
+    fireEvent.click(screen.getByText('Confirm Restore'));
+
+    await screen.findByText('Restoring...');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    settleRestore({ success: false, error: 'Corrupt backup' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Corrupt backup')).toBeInTheDocument();
+    });
   });
 
   it('shows error when listBackups fails', async () => {

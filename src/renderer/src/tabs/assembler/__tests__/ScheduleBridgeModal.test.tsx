@@ -142,6 +142,20 @@ describe('ScheduleBridgeModal', () => {
     );
   });
 
+  it('shows an error toast when saving the invite rejects', async () => {
+    mockSaveAndOpenIcs.mockRejectedValue(new Error('EACCES: calendar file write denied'));
+    render(<ScheduleBridgeModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText(/your email/i), { target: { value: 'me@test.com' } });
+    fireEvent.click(screen.getByText('Create Invite'));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to create invite', 'error'),
+    );
+    // The modal stays usable rather than hanging on a cleared spinner
+    expect(screen.getByText('Create Invite')).toBeInTheDocument();
+  });
+
   it('describes the downloaded calendar file in the web runtime', async () => {
     (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
     mockSaveAndOpenIcs.mockResolvedValue(true);

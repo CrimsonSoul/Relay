@@ -92,11 +92,18 @@ export async function replaceTeamRecords(
   }
 }
 
+/** Canonical card identity for a team display name (board order, grouping, dedup). */
+export const normalizeTeamId = (name: string): string => name.trim().toLowerCase();
+
 export async function renameTeam(oldName: string, newName: string): Promise<void> {
   try {
     const records = await getTeamRecords(oldName);
+    // teamId has to move with the name. Left on the old value it strands the
+    // card: the old name still matches these rows, so it can never be added
+    // back, while the new name has no identity of its own.
+    const teamId = normalizeTeamId(newName);
     for (const record of records) {
-      await updateOnCall(record.id, { team: newName });
+      await updateOnCall(record.id, { team: newName, teamId });
     }
   } catch (err) {
     handleApiError(err);

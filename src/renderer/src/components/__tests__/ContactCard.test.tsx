@@ -59,9 +59,20 @@ describe('ContactCard Component', () => {
     expect(tooltip).toHaveTextContent('john.doe@example.com');
   });
 
-  test('renders with source label prop without error', () => {
-    // sourceLabel is accepted as a prop; rendering should not throw
-    expect(() => render(<ContactCard {...mockContact} sourceLabel="CSV" />)).not.toThrow();
+  test('renders the source label as a chip on the name line', () => {
+    // The Assembler relies on this badge to tell hand-typed recipients apart
+    // from group-derived ones.
+    const { container } = render(<ContactCard {...mockContact} sourceLabel="MANUAL" />);
+
+    const chip = screen.getByText('MANUAL');
+    expect(chip).toBeInTheDocument();
+    expect(container.querySelector('.contact-entry-line1')).toContainElement(chip);
+  });
+
+  test('omits the source label chip when no label is given', () => {
+    const { container } = render(<ContactCard {...mockContact} />);
+
+    expect(container.querySelector('.contact-entry-chip')).not.toBeInTheDocument();
   });
 
   test('calls onContextMenu when right-clicked', () => {

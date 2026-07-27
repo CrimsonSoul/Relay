@@ -58,6 +58,10 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
       const success = await globalThis.api?.writeClipboard(row.contact);
       if (success) {
         showToast(`Copied ${row.contact}`, 'success');
+      } else {
+        // Silence here reads as success — the user pastes whatever was on the
+        // clipboard before into a dialer. The Web runtime has no bridge at all.
+        showToast('Failed to copy', 'error');
       }
     };
 

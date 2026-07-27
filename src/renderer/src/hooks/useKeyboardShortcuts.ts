@@ -1,5 +1,6 @@
 import { useEffect, RefObject } from 'react';
 import { TabName } from '@shared/ipc';
+import { isAnyModalOpen } from '../components/modalStack';
 
 interface UseKeyboardShortcutsParams {
   setActiveTab: (tab: TabName) => void;
@@ -52,6 +53,9 @@ export function useKeyboardShortcuts({
       const destination = tabMap[e.key];
       if (mod && !e.shiftKey && destination) {
         e.preventDefault();
+        // Switching the tab underneath an open modal strands the dialog over a
+        // context the user never opened it from — swallow the shortcut instead.
+        if (isAnyModalOpen()) return;
         setActiveTab(destination);
       }
     };

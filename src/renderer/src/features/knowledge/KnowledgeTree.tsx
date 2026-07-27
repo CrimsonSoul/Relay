@@ -6,9 +6,12 @@ type Props = {
   groups: KnowledgeCategoryGroup[];
   selectedDocumentId: string | null;
   activeHeadingId: string | null;
+  expandMatches?: boolean;
   onSelectDocument: (document: KnowledgeDocumentRecord) => void;
   onSelectHeading: (heading: KnowledgeOutlineNode) => void;
 };
+
+const CATEGORY_KEY_SEPARATOR = '\u0000';
 
 function itemCountLabel(count: number): string {
   return `${count} ${count === 1 ? 'document' : 'documents'}`;
@@ -86,19 +89,30 @@ export function KnowledgeTree({
   groups,
   selectedDocumentId,
   activeHeadingId,
+  expandMatches = false,
   onSelectDocument,
   onSelectHeading,
 }: Readonly<Props>) {
   const selectedCategory = groups.find((group) =>
     group.documents.some((document) => document.id === selectedDocumentId),
   )?.category;
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(
-    selectedCategory ?? groups[0]?.category ?? null,
+  const initialCategory = selectedCategory ?? groups[0]?.category;
+  const [expandedCategories, setExpandedCategories] = useState<ReadonlySet<string>>(
+    () => new Set(initialCategory === undefined ? [] : [initialCategory]),
   );
+  // A filtered sidebar reports matches across every category, so none of them may stay hidden.
+  const matchedCategoryKey = expandMatches
+    ? groups.map(({ category }) => category).join(CATEGORY_KEY_SEPARATOR)
+    : '';
 
   useEffect(() => {
-    if (selectedCategory) setExpandedCategory(selectedCategory);
-  }, [selectedCategory]);
+    if (!matchedCategoryKey) return;
+    setExpandedCategories(new Set(matchedCategoryKey.split(CATEGORY_KEY_SEPARATOR)));
+  }, [matchedCategoryKey]);
+
+  useEffect(() => {
+    if (selectedCategory && !expandMatches) setExpandedCategories(new Set([selectedCategory]));
+  }, [expandMatches, selectedCategory]);
 
   return (
     <div
@@ -109,7 +123,7 @@ export function KnowledgeTree({
       onKeyDown={handleTreeKeyDown}
     >
       {groups.map((group) => {
-        const isExpanded = group.category === expandedCategory;
+        const isExpanded = expandedCategories.has(group.category);
         const isSelectedCategory = group.category === selectedCategory;
         return (
           <section className="knowledge-category" key={group.category} role="none">
@@ -123,7 +137,14 @@ export function KnowledgeTree({
               aria-label={`${group.category}, ${itemCountLabel(group.documents.length)}`}
               data-node-type="category"
               data-category={group.category}
-              onClick={() => setExpandedCategory(isExpanded ? null : group.category)}
+              onClick={() =>
+                setExpandedCategories((current) => {
+                  const next = new Set(current);
+                  if (isExpanded) next.delete(group.category);
+                  else next.add(group.category);
+                  return next;
+                })
+              }
             >
               <span className="knowledge-category__chevron" aria-hidden="true">
                 {isExpanded ? '−' : '+'}

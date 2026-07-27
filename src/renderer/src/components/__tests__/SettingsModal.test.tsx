@@ -11,11 +11,13 @@ vi.mock('../Modal', () => ({
     children,
     title,
     variant,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
     title?: React.ReactNode;
     variant?: string;
+    footer?: React.ReactNode;
   }) =>
     isOpen
       ? React.createElement(
@@ -23,6 +25,7 @@ vi.mock('../Modal', () => ({
           { role: 'dialog', 'data-variant': variant },
           title && React.createElement('h2', null, title),
           children,
+          footer,
         )
       : null,
 }));
@@ -319,7 +322,7 @@ describe('SettingsModal', () => {
     });
   });
 
-  it('calls clearConfig and onReconfigure when Reconfigure is clicked', async () => {
+  it('calls clearConfig and onReconfigure once the reconfigure warning is confirmed', async () => {
     const onClose = vi.fn();
     const onReconfigure = vi.fn();
     render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
@@ -327,11 +330,54 @@ describe('SettingsModal', () => {
       expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByText('Reconfigure...'));
+
+    fireEvent.click(await screen.findByText('Erase and reconfigure'));
+
     await waitFor(() => {
       expect(globalThis.api.clearConfig).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
       expect(onReconfigure).toHaveBeenCalled();
     });
+  });
+
+  it('does not erase the saved config until the reconfigure warning is confirmed', async () => {
+    const onClose = vi.fn();
+    const onReconfigure = vi.fn();
+    render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
+    await waitFor(() => {
+      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Reconfigure...'));
+
+    expect(await screen.findByText('Reconfigure Relay connection?')).toBeInTheDocument();
+    expect(
+      screen.getByText(/erases the saved Relay server URL and the shared connection passphrase/i),
+    ).toBeInTheDocument();
+    expect(globalThis.api.clearConfig).not.toHaveBeenCalled();
+    expect(onReconfigure).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Cancel'));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Reconfigure Relay connection?')).not.toBeInTheDocument(),
+    );
+    expect(globalThis.api.clearConfig).not.toHaveBeenCalled();
+    expect(onReconfigure).not.toHaveBeenCalled();
+  });
+
+  it('warns how many queued offline changes a reconfigure would discard', async () => {
+    (globalThis.api as Record<string, unknown>).getPendingSyncStatus = vi
+      .fn()
+      .mockResolvedValue({ pendingCount: 3 });
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Reconfigure...'));
+
+    expect(await screen.findByText(/3 offline changes queued on this workstation/i)).toBeVisible();
   });
 
   it('shows Dynatrace dashboard settings and opens a saved dashboard', async () => {

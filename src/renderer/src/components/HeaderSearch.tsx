@@ -470,11 +470,17 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     };
   }, []);
 
-  // Get dropdown position anchored below the search bar
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  useEffect(() => {
-    if (showDropdown && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
+  // Get dropdown position anchored below the search bar. `position: fixed` is
+  // part of the initial state because `.search-dropdown` carries no position of
+  // its own: without it the portal lays out in normal flow at the end of <body>
+  // for the first paint, stretching the document before the effect lands.
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({ position: 'fixed' });
+  useLayoutEffect(() => {
+    if (!showDropdown) return;
+    const reposition = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
       setDropdownStyle({
         position: 'fixed',
         top: rect.bottom + 8,
@@ -482,7 +488,17 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
         width: Math.min(480, Math.max(rect.width, 360), window.innerWidth - rect.left - 20),
         zIndex: 10002,
       });
-    }
+    };
+
+    reposition();
+    // Fixed coordinates go stale the moment anything moves, leaving an open
+    // dropdown detached from the input it belongs to.
+    globalThis.addEventListener('scroll', reposition, true);
+    globalThis.addEventListener('resize', reposition);
+    return () => {
+      globalThis.removeEventListener('scroll', reposition, true);
+      globalThis.removeEventListener('resize', reposition);
+    };
   }, [showDropdown, query]);
 
   const isMac =

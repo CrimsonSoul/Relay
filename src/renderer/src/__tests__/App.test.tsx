@@ -433,9 +433,10 @@ vi.mock('../hooks/useAppAssembler', () => ({
   }),
 }));
 
+const { mockLoggerWarn } = vi.hoisted(() => ({ mockLoggerWarn: vi.fn() }));
 vi.mock('../utils/logger', () => ({
   loggers: {
-    app: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+    app: { error: vi.fn(), info: vi.fn(), warn: mockLoggerWarn, debug: vi.fn() },
   },
 }));
 
@@ -1237,6 +1238,50 @@ describe('App default export', () => {
     expect(await screen.findByText('Failed to save configuration.')).toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
     expect(mockStartPocketBase).not.toHaveBeenCalled();
+  });
+
+  it('treats a failed saveConfig result object as a failure, not a truthy success', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    // The handler may answer with a result object rather than a bare boolean;
+    // read as a plain truthy value this relaunched into a half-written config.
+    mockSaveConfig.mockResolvedValue({ ok: false, discardedPendingCount: 0 });
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    expect(await screen.findByText('Failed to save configuration.')).toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled();
+    expect(mockRelaunchApp).not.toHaveBeenCalled();
+  });
+
+  it('accepts a successful saveConfig result object and reports discarded offline changes', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue({ ok: true, discardedPendingCount: 2 });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload: vi.fn() },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    await vi.waitFor(() => expect(mockRelaunchApp).toHaveBeenCalled());
+    expect(screen.queryByText('Failed to save configuration.')).not.toBeInTheDocument();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      'Reconfiguration discarded unsynced offline changes',
+      { discardedPendingCount: 2 },
+    );
   });
 
   it('shows unavailable error when connection result is not auth-failed or not-configured', async () => {

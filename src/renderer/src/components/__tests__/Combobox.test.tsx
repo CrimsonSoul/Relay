@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { Combobox } from '../Combobox';
 
 const defaultOptions = [
@@ -84,5 +84,103 @@ describe('Combobox', () => {
     );
     fireEvent.focus(screen.getByRole('textbox'));
     expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  describe('keyboard', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('closes only the dropdown on Escape and stops the event reaching the dialog', () => {
+      const onDialogEscape = vi.fn();
+      document.addEventListener('keydown', onDialogEscape);
+
+      try {
+        render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
+        const input = screen.getByRole('textbox');
+        fireEvent.focus(input);
+        expect(screen.getByText('Alpha')).toBeInTheDocument();
+
+        fireEvent.keyDown(input, { key: 'Escape' });
+
+        expect(screen.queryByText('Alpha')).toBeNull();
+        // Modal listens for Escape on the document; letting it through here
+        // closed the whole Edit Card dialog and lost every unsaved row.
+        expect(onDialogEscape).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener('keydown', onDialogEscape);
+      }
+    });
+
+    it('lets Escape through to the dialog when the dropdown is already closed', () => {
+      const onDialogEscape = vi.fn();
+      document.addEventListener('keydown', onDialogEscape);
+
+      try {
+        render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+        expect(onDialogEscape).toHaveBeenCalled();
+      } finally {
+        document.removeEventListener('keydown', onDialogEscape);
+      }
+    });
+
+    it('selects the arrow-highlighted option with Enter', () => {
+      const onChange = vi.fn();
+      render(<Combobox value="" onChange={onChange} options={defaultOptions} />);
+      const input = screen.getByRole('textbox');
+      fireEvent.focus(input);
+
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(screen.getByText('Beta').closest('button')).toHaveAttribute('data-active', 'true');
+
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(onChange).toHaveBeenCalledWith('beta');
+    });
+
+    it('wraps the highlight around the option list with ArrowUp', () => {
+      render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
+      const input = screen.getByRole('textbox');
+      fireEvent.focus(input);
+
+      fireEvent.keyDown(input, { key: 'ArrowUp' });
+
+      expect(screen.getByText('Delta').closest('button')).toHaveAttribute('data-active', 'true');
+    });
+
+    it('reopens a closed dropdown with ArrowDown', () => {
+      render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
+      const input = screen.getByRole('textbox');
+      fireEvent.focus(input);
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(screen.queryByText('Alpha')).toBeNull();
+
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+      expect(screen.getByText('Alpha')).toBeInTheDocument();
+    });
+  });
+
+  it('anchors the dropdown to the input', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      top: 120,
+      bottom: 148,
+      left: 64,
+      right: 264,
+      width: 200,
+      height: 28,
+      x: 64,
+      y: 120,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    render(<Combobox value="" onChange={vi.fn()} options={defaultOptions} />);
+    fireEvent.focus(screen.getByRole('textbox'));
+
+    const dropdown = document.querySelector('.combobox-dropdown') as HTMLElement;
+    expect(dropdown.style.position).toBe('fixed');
+    expect(dropdown.style.top).toBe('152px');
+    vi.restoreAllMocks();
   });
 });

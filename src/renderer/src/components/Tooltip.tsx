@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 interface TooltipProps {
@@ -30,7 +30,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const triggerRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  // Layout effect, not passive: a passive effect measures after the popup has
+  // already painted at the stale {0,0}, so the first hover on any icon button
+  // flashes in the top-left corner before snapping into place.
+  useLayoutEffect(() => {
     if (isVisible && triggerRef.current) {
       const target = triggerRef.current.firstElementChild || triggerRef.current;
       const rect = target.getBoundingClientRect();

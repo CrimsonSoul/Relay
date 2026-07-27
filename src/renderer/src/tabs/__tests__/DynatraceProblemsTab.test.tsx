@@ -139,6 +139,72 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
   });
 
+  it('keeps a drafted NOC note when the search box narrows the queue', async () => {
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Paged the payments on-call, bridge opening.' },
+    });
+
+    // Filtering is not a request to throw the note away
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search problems' }), {
+      target: { value: 'unrelated-search-text' },
+    });
+
+    expect(screen.getByLabelText('Add a note')).toHaveValue(
+      'Paged the payments on-call, bridge opening.',
+    );
+    expect(screen.getByRole('heading', { name: openProblem.title })).toBeInTheDocument();
+  });
+
+  it('keeps a drafted NOC note when a background sync resolves the problem', async () => {
+    const { rerender } = render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Vendor engaged, monitoring recovery.' },
+    });
+    selectResolver();
+
+    // Dynatrace closes the problem on its own — no operator action at all — and it stops
+    // matching the unaddressed queue.
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [{ ...openProblem, status: 'CLOSED', endTime: Date.now() }],
+    };
+    rerender(<DynatraceProblemsTab relayMode="client" />);
+
+    expect(screen.getByLabelText('Add a note')).toHaveValue('Vendor engaged, monitoring recovery.');
+    // A resolved problem relabels the same select, but the chosen resolver is still there
+    expect(screen.getByRole('combobox', { name: 'Response by' })).toHaveValue('Ryan');
+  });
+
+  it('keeps each problem draft separate when the operator switches problems', async () => {
+    const second: DynatraceProblemRecord = {
+      ...openProblem,
+      id: 'pb-2',
+      problemId: 'problem-2',
+      displayId: 'P-240792',
+      title: 'Checkout latency spike',
+    };
+    mocks.hookValue = { ...mocks.hookValue, problems: [openProblem, second] };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    const queue = await screen.findByRole('region', { name: 'Dynatrace problem queue' });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), { target: { value: 'Payments note' } });
+
+    fireEvent.click(within(queue).getByRole('button', { name: /Checkout latency spike/i }));
+    expect(screen.getByLabelText('Add a note')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Add a note'), { target: { value: 'Checkout note' } });
+
+    fireEvent.click(
+      within(queue).getByRole('button', { name: new RegExp(openProblem.title, 'i') }),
+    );
+    expect(screen.getByLabelText('Add a note')).toHaveValue('Payments note');
+  });
+
   it('requires one listed resolver and a drafted response before enabling local resolution', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });

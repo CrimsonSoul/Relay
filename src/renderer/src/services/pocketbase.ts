@@ -121,6 +121,22 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<Ref
   }
 }
 
+let pendingAuthRefresh: Promise<RefreshResult> | null = null;
+
+/**
+ * Collapse concurrent session refreshes. A single expired token fails every
+ * in-flight collection request at once, and each 401 would otherwise fire its
+ * own refresh IPC call plus its own startHealthCheck() restart — a burst
+ * against the server's rate-limited auth endpoint that also thrashes the
+ * health loop.
+ */
+function refreshAuthSessionOnce(): Promise<RefreshResult> {
+  pendingAuthRefresh ??= refreshAuthSession().finally(() => {
+    pendingAuthRefresh = null;
+  });
+  return pendingAuthRefresh;
+}
+
 function applyRefreshFailure(result: RefreshResult): void {
   if (result === 'auth-failed') authRejected = true;
   setConnectionState(authRejected ? 'auth-failed' : 'offline');
@@ -284,7 +300,7 @@ export function handleApiError(error: unknown): void {
   ) {
     authRejected = true;
     setConnectionState('auth-failed');
-    void refreshAuthSession().then((refreshed) => {
+    void refreshAuthSessionOnce().then((refreshed) => {
       if (refreshed !== 'ok') applyRefreshFailure(refreshed);
     });
   }

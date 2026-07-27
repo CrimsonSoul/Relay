@@ -218,6 +218,76 @@ describe('MaintainTeamModal', () => {
     expect(savedRows).toHaveLength(2);
   });
 
+  it('keeps unsaved rows when the initialRows array identity changes while open', () => {
+    const onSave = vi.fn();
+    const { rerender } = render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[]}
+        contacts={[]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.change(screen.getAllByPlaceholderText('Phone')[0], {
+      target: { value: '5550001111' },
+    });
+
+    // PersonnelTab resolves an empty team through `|| []`, so every render — and
+    // every 60s alert-dismissal tick — hands the modal a brand new array.
+    rerender(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[]}
+        contacts={[]}
+        onSave={onSave}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('5550001111')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Save Changes'));
+    const savedRows = onSave.mock.calls[0][1] as OnCallRow[];
+    expect(savedRows).toHaveLength(1);
+    expect(savedRows[0].contact).toBe('5550001111');
+  });
+
+  it('re-seeds the draft from initialRows on the next open', () => {
+    const { rerender } = render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[]}
+        contacts={[]}
+        onSave={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText('+ Add Row'));
+
+    const reopen = (isOpen: boolean) =>
+      rerender(
+        <MaintainTeamModal
+          isOpen={isOpen}
+          onClose={vi.fn()}
+          teamName="Alpha"
+          initialRows={[makeRow()]}
+          contacts={contacts}
+          onSave={vi.fn()}
+        />,
+      );
+    reopen(false);
+    reopen(true);
+
+    expect(screen.getByDisplayValue('5559876543')).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText('Phone')).toHaveLength(1);
+  });
+
   it('saves newly added rows with the existing teamId', () => {
     const onSave = vi.fn();
     render(

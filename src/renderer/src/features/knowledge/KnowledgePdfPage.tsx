@@ -82,6 +82,27 @@ export function KnowledgePdfPage({
   const pageShellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const renderedViewportRef = useRef<KnowledgeLinkRender['viewport'] | null>(null);
+  const appliedTargetTopRef = useRef<number | null>(null);
+  const targetTopRef = useRef(targetTop);
+  targetTopRef.current = targetTop;
+
+  // Consuming a destination flips targetTop back to null. Applying the offset imperatively keeps
+  // that transition out of the render effect, so the page is not torn down and scrolled to the top
+  // moments after it jumped to the linked section.
+  const applyTargetTop = useCallback((): boolean => {
+    const viewport = renderedViewportRef.current;
+    const top = targetTopRef.current;
+    if (!viewport || top === null || appliedTargetTopRef.current === top) return false;
+    appliedTargetTopRef.current = top;
+    const [, y] = viewport.convertToViewportPoint(0, top);
+    scrollViewer(pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'), {
+      top: Math.max(0, y - 28),
+      behavior: destinationScrollBehavior(),
+    });
+    return true;
+  }, []);
+
   const handleActiveSearchHighlightReady = useCallback(
     (resultId: string, top: number) => {
       onActiveSearchHighlightReady?.(resultId, pageIndex, top);
@@ -93,6 +114,8 @@ export function KnowledgePdfPage({
     setLinkRender(null);
     setTextLayerVersion(0);
     setError(null);
+    renderedViewportRef.current = null;
+    appliedTargetTopRef.current = null;
     if (!render) return;
 
     let disposed = false;
@@ -207,16 +230,8 @@ export function KnowledgePdfPage({
         setTextLayerVersion((version) => version + 1);
 
         if (scrollOnReady) {
-          if (targetTop !== null) {
-            const [, y] = viewport.convertToViewportPoint(0, targetTop);
-            scrollViewer(
-              pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
-              {
-                top: Math.max(0, y - 28),
-                behavior: destinationScrollBehavior(),
-              },
-            );
-          } else {
+          renderedViewportRef.current = viewport;
+          if (!applyTargetTop()) {
             scrollViewer(
               pageShellRef.current?.closest<HTMLDivElement>('.knowledge-viewer__viewport'),
               {
@@ -243,7 +258,25 @@ export function KnowledgePdfPage({
       cancelPageWork();
       cleanupPage();
     };
-  }, [onStatus, pageIndex, pdf, render, retryKey, scale, scrollOnReady, targetTop, localRetryKey]);
+  }, [
+    applyTargetTop,
+    onStatus,
+    pageIndex,
+    pdf,
+    render,
+    retryKey,
+    scale,
+    scrollOnReady,
+    localRetryKey,
+  ]);
+
+  // Declared after the render effect so a commit that changes both the page and the destination
+  // finds the viewport already invalidated instead of scrolling with the outgoing page.
+  useEffect(() => {
+    // A cleared target releases the applied offset so the same destination can be requested again.
+    if (targetTop === null) appliedTargetTopRef.current = null;
+    else applyTargetTop();
+  }, [applyTargetTop, targetTop]);
 
   return (
     <div ref={pageShellRef} className="knowledge-page" data-testid="knowledge-pdf-page-shell">

@@ -377,6 +377,24 @@ export type PublicRelayConfig =
     }
   | { mode: 'client'; serverUrl: string; allowInsecureHttp?: boolean };
 
+/**
+ * Detailed outcome of a setup save. Pointing Relay at a different server voids
+ * the offline queue, so the handler may report how many unsynced mutations that
+ * cost the operator. Older handlers answer with a bare boolean; see
+ * {@link readSaveConfigResult} for the normalizer both shapes flow through.
+ */
+export type SaveRelayConfigResult = {
+  ok: boolean;
+  discardedPendingCount?: number;
+};
+
+export function readSaveConfigResult(
+  result: boolean | SaveRelayConfigResult,
+): Required<SaveRelayConfigResult> {
+  if (typeof result === 'boolean') return { ok: result, discardedPendingCount: 0 };
+  return { ok: result.ok, discardedPendingCount: result.discardedPendingCount ?? 0 };
+}
+
 export type OfflineWritableCollection =
   | 'contacts'
   | 'servers'
@@ -552,7 +570,7 @@ export type BridgeAPI = {
   getConfig: () => Promise<PublicRelayConfig | null>;
   getConnectionSecret: () => Promise<string | null>;
   getClientHostname: () => Promise<string | null>;
-  saveConfig: (config: unknown) => Promise<boolean>;
+  saveConfig: (config: unknown) => Promise<boolean | SaveRelayConfigResult>;
   clearConfig: () => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
   testConnection: (payload: {

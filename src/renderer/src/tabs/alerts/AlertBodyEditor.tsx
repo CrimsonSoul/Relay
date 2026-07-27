@@ -4,6 +4,7 @@ import { useToast } from '../../components/Toast';
 import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
+import { toolbarActivationProps } from './toolbarActivation';
 
 export interface AlertBodyEditorHandle {
   setEditorContent: (html: string) => void;
@@ -262,10 +263,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 aria-label="Bold"
                 aria-keyshortcuts="Meta+B Control+B"
                 aria-pressed={activeFormats.bold}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyFormat('bold');
-                }}
+                {...toolbarActivationProps(() => applyFormat('bold'))}
               >
                 <strong>B</strong>
               </button>
@@ -278,10 +276,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 aria-label="Italic"
                 aria-keyshortcuts="Meta+I Control+I"
                 aria-pressed={activeFormats.italic}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyFormat('italic');
-                }}
+                {...toolbarActivationProps(() => applyFormat('italic'))}
               >
                 <em>I</em>
               </button>
@@ -294,10 +289,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 aria-label="Underline"
                 aria-keyshortcuts="Meta+U Control+U"
                 aria-pressed={activeFormats.underline}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyFormat('underline');
-                }}
+                {...toolbarActivationProps(() => applyFormat('underline'))}
               >
                 <span className="alerts-fmt-underline">U</span>
               </button>
@@ -309,10 +301,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 className="alerts-fmt-btn"
                 title="Bullet List"
                 aria-label="Bullet list"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyFormat('insertUnorderedList');
-                }}
+                {...toolbarActivationProps(() => applyFormat('insertUnorderedList'))}
               >
                 <svg
                   width="16"
@@ -338,10 +327,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 className="alerts-fmt-btn"
                 title="Numbered List"
                 aria-label="Numbered list"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyFormat('insertOrderedList');
-                }}
+                {...toolbarActivationProps(() => applyFormat('insertOrderedList'))}
               >
                 <svg
                   width="16"
@@ -397,10 +383,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 className="alerts-fmt-btn"
                 title="Insert Image"
                 aria-label="Insert image"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  void insertAlertImage();
-                }}
+                {...toolbarActivationProps(() => void insertAlertImage())}
               >
                 <svg
                   width="16"

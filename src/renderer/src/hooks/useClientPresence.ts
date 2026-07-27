@@ -250,9 +250,11 @@ export function useClientPresence(
 
     let cancelled = false;
     let unsubscribeRealtime: (() => void | Promise<void>) | null = null;
+    let subscriptionGeneration = 0;
 
     async function subscribe(): Promise<void> {
       if (!isOnline()) return;
+      const generation = ++subscriptionGeneration;
       const unsubscribe = await getPb()
         .collection(CLIENT_PRESENCE_COLLECTION)
         .subscribe('*', (event) => {
@@ -265,7 +267,10 @@ export function useClientPresence(
           commitRecords(next);
         });
 
-      if (cancelled) {
+      // Startup emits 'connecting' then 'online', so resubscribes overlap.
+      // Without the generation check the later handle overwrites the earlier
+      // one and the orphan leaks for the lifetime of the window.
+      if (cancelled || generation !== subscriptionGeneration) {
         void unsubscribe();
         return;
       }
@@ -274,6 +279,7 @@ export function useClientPresence(
     }
 
     function unsubscribe(): void {
+      subscriptionGeneration += 1;
       void unsubscribeRealtime?.();
       unsubscribeRealtime = null;
     }

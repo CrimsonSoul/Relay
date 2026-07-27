@@ -11,6 +11,8 @@ type ContactRowProps = {
   action?: React.ReactNode;
   style?: React.CSSProperties;
   className?: string;
+  /** Provenance badge (e.g. MANUAL) distinguishing hand-typed from group-derived rows. */
+  sourceLabel?: string;
   groups?: string[];
   selected?: boolean;
   onContextMenu?: (
@@ -36,6 +38,7 @@ export const ContactCard = memo(
     action,
     style,
     className,
+    sourceLabel,
     groups = [],
     selected,
     onContextMenu,
@@ -63,6 +66,7 @@ export const ContactCard = memo(
               <div className="contact-entry-line1">
                 <span className="contact-entry-name">{name || email}</span>
                 {tags && tags.length > 0 && <GroupPill group={tags[0]} />}
+                {sourceLabel && <span className="contact-entry-chip">{sourceLabel}</span>}
                 {relationshipCounts && relationshipCounts.owned > 0 && (
                   <span className="contact-entry-chip">Owner {relationshipCounts.owned}</span>
                 )}

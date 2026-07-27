@@ -781,6 +781,15 @@ type PendingDispositionResponse = {
   resolver: DynatraceProblemResolver;
 };
 
+/** The unsaved local response an operator is composing for one problem. */
+type ProblemDraft = {
+  ticket: string;
+  note: string;
+  resolver: DynatraceProblemResolver | '';
+};
+
+const EMPTY_PROBLEM_DRAFT: ProblemDraft = { ticket: '', note: '', resolver: '' };
+
 type ProblemDetailProps = {
   problem: DynatraceProblemRecord | undefined;
   state: DynatraceProblemStateRecord | undefined;
@@ -1113,9 +1122,11 @@ export const DynatraceProblemsTab: React.FC<{
   const [profileDraft, setProfileDraft] = useState<string[]>([]);
   const [profileDraftDirty, setProfileDraftDirty] = useState(false);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
-  const [ticketDraft, setTicketDraft] = useState('');
-  const [noteDraft, setNoteDraft] = useState('');
-  const [resolverDraft, setResolverDraft] = useState<DynatraceProblemResolver | ''>('');
+  // Drafts are keyed by problem so an in-progress NOC note survives anything that moves
+  // the selection — a keystroke in the search box, or a background sync flipping the
+  // problem to CLOSED and pushing it out of the open queues. Losing that text mid-incident
+  // is unrecoverable; it exists nowhere else until it is saved.
+  const [draftsByProblemId, setDraftsByProblemId] = useState<Record<string, ProblemDraft>>({});
   const [pendingDispositionResponses, setPendingDispositionResponses] = useState<
     Record<string, PendingDispositionResponse>
   >({});
@@ -1222,16 +1233,46 @@ export const DynatraceProblemsTab: React.FC<{
     stateByProblemId,
   ]);
 
-  useEffect(() => {
-    if (filteredProblems.some((problem) => problem.problemId === selectedProblemId)) return;
-    setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
-  }, [filteredProblems, selectedProblemId]);
+  const {
+    ticket: ticketDraft,
+    note: noteDraft,
+    resolver: resolverDraft,
+  } = selectedProblemId
+    ? (draftsByProblemId[selectedProblemId] ?? EMPTY_PROBLEM_DRAFT)
+    : EMPTY_PROBLEM_DRAFT;
+  const hasUnsavedDraft =
+    ticketDraft.trim().length > 0 || noteDraft.trim().length > 0 || resolverDraft.length > 0;
+
+  const updateSelectedDraft = useCallback(
+    (patch: Partial<ProblemDraft>) => {
+      if (!selectedProblemId) return;
+      setDraftsByProblemId((current) => ({
+        ...current,
+        [selectedProblemId]: { ...(current[selectedProblemId] ?? EMPTY_PROBLEM_DRAFT), ...patch },
+      }));
+    },
+    [selectedProblemId],
+  );
+  const setTicketDraft = useCallback(
+    (value: string) => updateSelectedDraft({ ticket: value }),
+    [updateSelectedDraft],
+  );
+  const setNoteDraft = useCallback(
+    (value: string) => updateSelectedDraft({ note: value }),
+    [updateSelectedDraft],
+  );
+  const setResolverDraft = useCallback(
+    (value: DynatraceProblemResolver | '') => updateSelectedDraft({ resolver: value }),
+    [updateSelectedDraft],
+  );
 
   useEffect(() => {
-    setTicketDraft('');
-    setNoteDraft('');
-    setResolverDraft('');
-  }, [selectedProblemId]);
+    if (filteredProblems.some((problem) => problem.problemId === selectedProblemId)) return;
+    // Re-selecting when the current problem falls out of the queue is a convenience and
+    // never worth interrupting work for: hold the selection while a response is drafted.
+    if (hasUnsavedDraft) return;
+    setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
+  }, [filteredProblems, hasUnsavedDraft, selectedProblemId]);
 
   const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
   const selectedState = selectedProblem

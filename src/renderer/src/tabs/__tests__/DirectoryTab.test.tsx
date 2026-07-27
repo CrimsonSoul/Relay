@@ -337,6 +337,65 @@ describe('DirectoryTab', () => {
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
   });
 
+  it('clears the detail panel when the selected contact leaves the filtered set', () => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john, jane],
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [john, jane] }),
+    );
+
+    const { rerender } = render(
+      <DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />,
+    );
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
+
+    // Typing in the search box drops Jane. Index 1 now points at a different person, and
+    // the panel's Delete button must not quietly follow it there.
+    const others = [john, makeContact({ name: 'Joan Clarke', email: 'joan@example.com' })];
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: others,
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: others }));
+    rerender(<DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />);
+
+    expect(screen.queryByTestId('contact-detail')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a contact')).toBeInTheDocument();
+  });
+
+  it('keeps the detail panel on the selected contact when filtering moves their row', () => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john, jane],
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [john, jane] }),
+    );
+
+    const { rerender } = render(
+      <DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />,
+    );
+
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [jane],
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [jane] }));
+    rerender(<DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />);
+
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
+  });
+
   it('passes owned and supported servers to the selected contact detail panel', () => {
     const contact = makeContact({ name: 'Alice', email: 'alice@example.com' });
     const owned = makeServer({ name: 'web-prod-01', owner: 'alice@example.com' });

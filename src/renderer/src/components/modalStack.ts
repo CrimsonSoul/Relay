@@ -28,6 +28,11 @@ function register(id: string): () => void {
   };
 }
 
+/** True while any modal layer is mounted. Read it from global key handlers. */
+export function isAnyModalOpen(): boolean {
+  return stack.length > 0;
+}
+
 export function useModalStack(id: string, mounted: boolean): boolean {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 

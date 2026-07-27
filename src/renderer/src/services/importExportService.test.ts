@@ -397,6 +397,30 @@ describe('importFromExcel', () => {
     expect(result.imported).toBe(1);
   });
 
+  it('strips the export formula guard so a round trip does not corrupt values', async () => {
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'contacts',
+        data: [
+          ['email', 'phone', 'note'],
+          ['alice@example.com', "'+15555551234", "'hello"],
+        ],
+      },
+    ]);
+    const notFound = Object.assign(new Error('Not found'), { status: 404 });
+    mockGetFirstListItem.mockRejectedValueOnce(notFound);
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+
+    await importFromExcel('contacts', new ArrayBuffer(8));
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      email: 'alice@example.com',
+      phone: '+15555551234',
+      // A quote that does not guard a formula character is user content.
+      note: "'hello",
+    });
+  });
+
   it('falls back to the first worksheet when named worksheet is not found', async () => {
     mockReadExcelFile.mockResolvedValueOnce([
       {

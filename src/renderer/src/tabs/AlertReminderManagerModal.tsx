@@ -187,9 +187,7 @@ export function AlertReminderManagerModal({
           </div>
         )}
 
-        {pendingReminders.length === 0 ? (
-          <div className="alert-reminder-manager-empty">No pending alarms.</div>
-        ) : (
+        {pendingReminders.length > 0 && (
           <ul className="alert-reminder-manager-list">
             {pendingReminders.map((reminder) => (
               <ReminderRow
@@ -201,6 +199,12 @@ export function AlertReminderManagerModal({
               />
             ))}
           </ul>
+        )}
+
+        {/* Loading and error already explain the missing rows. Claiming there are no
+            pending alarms alongside either state contradicts what the modal just said. */}
+        {!loading && !error && pendingReminders.length === 0 && (
+          <div className="alert-reminder-manager-empty">No pending alarms.</div>
         )}
 
         {showCompleted && completedReminders.length > 0 && (

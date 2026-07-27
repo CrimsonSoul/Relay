@@ -33,7 +33,7 @@ type PageMetric = {
 
 type LoadedPageMetrics = {
   pdf: PDFDocumentProxy;
-  values: readonly PageMetric[];
+  values: readonly (PageMetric | null)[];
 };
 
 type NavigationRequest = {
@@ -46,6 +46,7 @@ type NavigationRequest = {
 
 const DEFAULT_PAGE_METRIC: PageMetric = { width: 612, height: 792 };
 const METADATA_CONCURRENCY = 4;
+const METRICS_PUBLISH_BATCH = 8;
 
 function validMetric(width: number, height: number): PageMetric | null {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
@@ -86,8 +87,8 @@ export const KnowledgeContinuousPdf = forwardRef<
   const scaleRef = useRef(scale);
   const observedCurrentPageIndexRef = useRef(activePageIndex);
   const previousNavigationRequestRef = useRef<NavigationRequest | null>(null);
-  const defaultMetrics = useMemo(
-    () => Array.from({ length: pageCount }, () => DEFAULT_PAGE_METRIC),
+  const unmeasuredMetrics = useMemo<readonly (PageMetric | null)[]>(
+    () => Array.from({ length: pageCount }, () => null),
     [pageCount],
   );
   const pageIndices = useMemo(
@@ -96,12 +97,16 @@ export const KnowledgeContinuousPdf = forwardRef<
   );
   const [loadedMetrics, setLoadedMetrics] = useState<LoadedPageMetrics>(() => ({
     pdf,
-    values: defaultMetrics,
+    values: unmeasuredMetrics,
   }));
   const metrics =
     loadedMetrics.pdf === pdf && loadedMetrics.values.length === pageCount
       ? loadedMetrics.values
-      : defaultMetrics;
+      : unmeasuredMetrics;
+  // Shells decide where every page starts, so an unmeasured one copies the first measured page
+  // rather than guessing US Letter: an A4 document would otherwise place a jump to page 60 about
+  // fifty points per page too high.
+  const fallbackMetric = metrics[0] ?? DEFAULT_PAGE_METRIC;
   const reducedMotion =
     typeof globalThis.matchMedia === 'function' &&
     globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -122,11 +127,19 @@ export const KnowledgeContinuousPdf = forwardRef<
   useEffect(() => {
     let disposed = false;
     let nextPageIndex = 0;
-    const nextMetrics = [...defaultMetrics];
+    let measuredCount = 0;
+    let publishedCount = 0;
+    const nextMetrics: (PageMetric | null)[] = Array.from({ length: pageCount }, () => null);
     setLoadedMetrics((current) => {
       if (current.pdf === pdf && current.values.length === pageCount) return current;
-      return { pdf, values: defaultMetrics };
+      return { pdf, values: nextMetrics };
     });
+
+    const publishMetrics = () => {
+      if (disposed || publishedCount === measuredCount) return;
+      publishedCount = measuredCount;
+      setLoadedMetrics({ pdf, values: [...nextMetrics] });
+    };
 
     const loadMetrics = async () => {
       while (!disposed) {
@@ -140,10 +153,14 @@ export const KnowledgeContinuousPdf = forwardRef<
           const metric = validMetric(viewport.width, viewport.height);
           if (metric) nextMetrics[pageIndex] = metric;
         } catch {
-          // Keep the stable default shell; KnowledgePdfPage owns the local render error.
+          // Keep the inherited shell; KnowledgePdfPage owns the local render error.
         }
+        measuredCount += 1;
+        // Publish the first page immediately so every shell stops guessing, then batch the rest
+        // so a thousand-page document does not re-render every shell once per page.
+        if (measuredCount === 1 || measuredCount % METRICS_PUBLISH_BATCH === 0) publishMetrics();
       }
-      if (!disposed) setLoadedMetrics({ pdf, values: [...nextMetrics] });
+      publishMetrics();
     };
 
     const workerCount = Math.min(METADATA_CONCURRENCY, pageCount);
@@ -154,7 +171,7 @@ export const KnowledgeContinuousPdf = forwardRef<
     return () => {
       disposed = true;
     };
-  }, [defaultMetrics, pageCount, pdf]);
+  }, [pageCount, pdf]);
 
   useEffect(() => {
     onCurrentPageChange(currentPageIndex);
@@ -251,7 +268,7 @@ export const KnowledgeContinuousPdf = forwardRef<
       aria-label="Continuous PDF pages"
     >
       {pageIndices.map((pageIndex) => {
-        const metric = metrics[pageIndex] ?? DEFAULT_PAGE_METRIC;
+        const metric = metrics[pageIndex] ?? fallbackMetric;
         const shouldRender = renderPageIndices.has(pageIndex);
         return (
           <div

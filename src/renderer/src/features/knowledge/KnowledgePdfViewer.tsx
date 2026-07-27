@@ -79,6 +79,7 @@ type PendingSearchRequest = {
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.4;
 const SCALE_STEP = 0.15;
+const SETTLED_SCROLL_MS = 1_500;
 
 function viewerError(error: string): string {
   switch (error) {
@@ -161,6 +162,7 @@ export function KnowledgePdfViewer({
   const navigationTargetRef = useRef<KnowledgeViewerTarget | null>(initialNavigationTarget);
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
+  const settledScrollTimerRef = useRef<number | null>(null);
   const pdfIdentityRef = useRef<KnowledgePdfSession | null>(null);
   const loadedDocumentIdentityRef = useRef<string | null>(null);
   const activePdfIdentity = pdfIdentityRef.current;
@@ -585,6 +587,24 @@ export function KnowledgePdfViewer({
     }
   }, []);
 
+  const cancelSettledScrollRelease = useCallback(() => {
+    if (settledScrollTimerRef.current === null) return;
+    window.clearTimeout(settledScrollTimerRef.current);
+    settledScrollTimerRef.current = null;
+  }, []);
+
+  const releaseNavigationTarget = useCallback(
+    (pageIndex: number) => {
+      cancelSettledScrollRelease();
+      if (!navigationTargetRef.current) return;
+      focusPendingRequest(pageIndex);
+      navigationTargetRef.current = null;
+      issuedNavigationTargetRef.current = null;
+      setNavigationTarget(null);
+    },
+    [cancelSettledScrollRelease, focusPendingRequest],
+  );
+
   const consumeNavigationTarget = useCallback(
     (pageIndex: number) => {
       const pendingTarget = navigationTargetRef.current;
@@ -596,14 +616,17 @@ export function KnowledgePdfViewer({
       ) {
         return false;
       }
+      cancelSettledScrollRelease();
       focusPendingRequest(pageIndex);
       navigationTargetRef.current = null;
       issuedNavigationTargetRef.current = null;
       setNavigationTarget(null);
       return true;
     },
-    [focusPendingRequest],
+    [cancelSettledScrollRelease, focusPendingRequest],
   );
+
+  useEffect(() => cancelSettledScrollRelease, [cancelSettledScrollRelease]);
 
   useEffect(() => {
     if (!singleTopRequest) return;
@@ -633,7 +656,14 @@ export function KnowledgePdfViewer({
 
   const handlePageStatus = useCallback(
     (status: KnowledgePdfPageStatus) => {
-      if (status.state !== 'ready') return;
+      if (status.state !== 'ready') {
+        // A page that failed to render never reports ready, so a target waiting on it would pin
+        // the page indicator and section tracking to the previous page for the rest of the session.
+        if (navigationTargetRef.current?.pageIndex === status.pageIndex) {
+          releaseNavigationTarget(status.pageIndex);
+        }
+        return;
+      }
       readyPageIndicesRef.current.add(status.pageIndex);
       if (viewModeRef.current === 'single') {
         observedPageIndexRef.current = status.pageIndex;
@@ -645,7 +675,7 @@ export function KnowledgePdfViewer({
       focusPendingRequest(status.pageIndex);
       consumeNavigationTarget(status.pageIndex);
     },
-    [consumeNavigationTarget, focusPendingRequest],
+    [consumeNavigationTarget, focusPendingRequest, releaseNavigationTarget],
   );
 
   const handleTargetNavigationComplete = useCallback(
@@ -655,9 +685,21 @@ export function KnowledgePdfViewer({
       if (readyPageIndicesRef.current.has(completedTarget.pageIndex)) {
         focusPendingRequest(completedTarget.pageIndex);
       }
-      consumeNavigationTarget(completedTarget.pageIndex);
+      if (consumeNavigationTarget(completedTarget.pageIndex)) return;
+      // The scroll has been issued. A target page that never becomes the dominant one — a short
+      // final page, for instance — would otherwise hold page reporting forever.
+      cancelSettledScrollRelease();
+      settledScrollTimerRef.current = window.setTimeout(
+        () => releaseNavigationTarget(completedTarget.pageIndex),
+        SETTLED_SCROLL_MS,
+      );
     },
-    [consumeNavigationTarget, focusPendingRequest],
+    [
+      cancelSettledScrollRelease,
+      consumeNavigationTarget,
+      focusPendingRequest,
+      releaseNavigationTarget,
+    ],
   );
 
   const handleContinuousPageChange = useCallback(

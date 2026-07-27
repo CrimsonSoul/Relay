@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
@@ -38,13 +38,20 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   onSave,
 }) => {
   const [rows, setRows] = useState<OnCallRow[]>([]);
+  const wasOpenRef = useRef(false);
   const teamId = useMemo(
     () => initialRows.find((row) => row.teamId)?.teamId ?? teamName.trim().toLowerCase(),
     [initialRows, teamName],
   );
 
+  // Seed the draft only on the closed -> open transition. `initialRows` is a
+  // fresh array on nearly every parent render (an empty team resolves through
+  // `|| []`, and any realtime on-call change rebuilds the grouping), so keying
+  // the seed on its identity silently reverted rows the operator had just added
+  // — and Save then wrote the reverted set back.
   useEffect(() => {
-    if (isOpen) setRows(initialRows.map((r) => ({ ...r })));
+    if (isOpen && !wasOpenRef.current) setRows(initialRows.map((r) => ({ ...r })));
+    wasOpenRef.current = isOpen;
   }, [isOpen, initialRows]);
 
   const sensors = useSensors(

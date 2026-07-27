@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ConfirmModal } from './ConfirmModal';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import type { PublicRelayConfig } from '@shared/ipc';
@@ -610,6 +611,24 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
   );
 }
 
+const RECONFIGURE_WARNING =
+  'Reconfiguring erases the saved Relay server URL and the shared connection passphrase from this workstation. You will need the passphrase again to reconnect.';
+
+function reconfigureWarning(pendingOfflineCount: number): string {
+  if (pendingOfflineCount <= 0) return RECONFIGURE_WARNING;
+  const plural = pendingOfflineCount === 1 ? '' : 's';
+  return `${RECONFIGURE_WARNING} ${pendingOfflineCount} offline change${plural} queued on this workstation will be discarded if you point Relay at a different server.`;
+}
+
+/** Best-effort — the queued count only enriches the reconfigure warning. */
+async function readPendingOfflineCount(): Promise<number> {
+  try {
+    return (await globalThis.api?.getPendingSyncStatus?.())?.pendingCount ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 function ConnectionManagement({
   enabled,
   onReconfigure,
@@ -645,6 +664,8 @@ export const SettingsModal: React.FC<Props> = ({
   const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
   const [showConnectionSecret, setShowConnectionSecret] = useState(false);
+  const [reconfigurePrompt, setReconfigurePrompt] = useState(false);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [accent, setAccent] = useState<AccentId>(() => getStoredAccent());
   const [savedCustomAccents, setSavedCustomAccents] = useState<string[]>(() =>
     getStoredCustomAccents(),
@@ -800,6 +821,14 @@ export const SettingsModal: React.FC<Props> = ({
       cancelled = true;
     };
   }, [canConfigureConnection, isOpen]);
+
+  // Clearing the config erases the saved server URL and the shared passphrase,
+  // and the panel that displayed them goes with it — an operator who does not
+  // know the passphrase by heart is locked out. Confirm before doing it.
+  const handleReconfigureRequest = async () => {
+    setPendingOfflineCount(await readPendingOfflineCount());
+    setReconfigurePrompt(true);
+  };
 
   const handleReconfigure = async () => {
     // Delete config on disk so the app returns to the setup screen on restart.
@@ -1061,7 +1090,16 @@ export const SettingsModal: React.FC<Props> = ({
             )}
             <ConnectionManagement
               enabled={canConfigureConnection}
-              onReconfigure={handleReconfigure}
+              onReconfigure={handleReconfigureRequest}
+            />
+            <ConfirmModal
+              isOpen={reconfigurePrompt}
+              onClose={() => setReconfigurePrompt(false)}
+              onConfirm={handleReconfigure}
+              title="Reconfigure Relay connection?"
+              message={reconfigureWarning(pendingOfflineCount)}
+              confirmLabel="Erase and reconfigure"
+              isDanger
             />
           </>
         )}

@@ -27,7 +27,9 @@ const mockDelete = vi.fn();
 const mockSubscribe = vi.fn();
 const mockUnsubscribe = vi.fn();
 const mockHandleApiError = vi.fn();
+const mockOnConnectionStateChange = vi.fn();
 let realtimeCallback: ((event: { action: string; record: PresenceRecord }) => void) | null = null;
+let connectionListeners: ((state: string) => void)[] = [];
 
 vi.mock('../../services/pocketbase', () => ({
   getPb: () => ({
@@ -41,9 +43,8 @@ vi.mock('../../services/pocketbase', () => ({
     }),
   }),
   isOnline: vi.fn(() => true),
-  onConnectionStateChange: vi.fn((_callback: (state: string) => void) => {
-    return () => undefined;
-  }),
+  onConnectionStateChange: (callback: (state: string) => void) =>
+    mockOnConnectionStateChange(callback),
   onPocketBaseClientChange: vi.fn((_callback: () => void) => {
     return () => undefined;
   }),
@@ -93,6 +94,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
   realtimeCallback = null;
+  connectionListeners = [];
+  mockOnConnectionStateChange.mockImplementation((callback: (state: string) => void) => {
+    connectionListeners.push(callback);
+    return () => {
+      connectionListeners = connectionListeners.filter((entry) => entry !== callback);
+    };
+  });
   mockGetFullList.mockResolvedValue([]);
   mockGetFirstListItem.mockRejectedValue({ status: 404 });
   mockCreate.mockImplementation(async (payload: Record<string, unknown>) =>
@@ -230,6 +238,34 @@ describe('useClientPresence', () => {
 
     expect(mockHandleApiError).not.toHaveBeenCalled();
     expect(result.current.count).toBe(1);
+  });
+
+  it('releases the orphaned handle when resubscribes overlap', async () => {
+    const firstSubscription = deferred<() => void>();
+    const secondSubscription = deferred<() => void>();
+    const firstUnsubscribe = vi.fn();
+    const secondUnsubscribe = vi.fn();
+    mockSubscribe
+      .mockReturnValueOnce(firstSubscription.promise)
+      .mockReturnValueOnce(secondSubscription.promise);
+
+    renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(connectionListeners).toHaveLength(1));
+    // The mount subscribe is still awaiting when the connection flips online.
+    act(() => {
+      connectionListeners.forEach((listener) => listener('online'));
+    });
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      firstSubscription.resolve(firstUnsubscribe);
+      secondSubscription.resolve(secondUnsubscribe);
+      await secondSubscription.promise;
+    });
+
+    expect(firstUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(secondUnsubscribe).not.toHaveBeenCalled();
   });
 
   it('filters stale client records out of the visible count', async () => {
