@@ -388,7 +388,12 @@ describe('KnowledgeContinuousPdf', () => {
     );
 
     await waitFor(() => expect(convertToViewportPoint).toHaveBeenCalledWith(5, 0, 700, 1.5));
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1177.5, behavior: 'smooth' });
+    // Wait on the scroll itself rather than treating the coordinate conversion as
+    // a proxy for it: the two are no longer in the same tick, so asserting
+    // synchronously here raced and only lost on CI's timing.
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenLastCalledWith({ top: 1177.5, behavior: 'smooth' }),
+    );
     expect(scrollTo).toHaveBeenCalledOnce();
 
     rerender(
