@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeAPI } from '@shared/ipc';
-import type { KnowledgeSearchResponse } from '@shared/knowledgeSearch';
+import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from '@shared/knowledgeSearch';
 import { useKnowledgePassageSearch } from '../useKnowledgePassageSearch';
 
 function deferred<T>() {
@@ -28,6 +28,23 @@ const searchKnowledge = vi.fn<BridgeAPI['searchKnowledge']>();
 const cancelKnowledgeSearch = vi.fn<BridgeAPI['cancelKnowledgeSearch']>();
 let requestSequence = 0;
 
+/**
+ * `globalThis.api` is typed as the complete preload bridge; this hook only calls the two
+ * knowledge-search members. `vi.stubGlobal` installs the partial without a cast, while
+ * `Partial<BridgeAPI>` still checks each stub against the real contract.
+ */
+function stubBridgeApi(): void {
+  const bridge: Partial<BridgeAPI> = { searchKnowledge, cancelKnowledgeSearch };
+  vi.stubGlobal('api', bridge);
+}
+
+/** The request the hook passed on its nth `searchKnowledge` invocation. */
+function requestAt(index: number): KnowledgeSearchRequest {
+  const call = searchKnowledge.mock.calls[index];
+  expect(call).toBeDefined();
+  return call![0];
+}
+
 describe('useKnowledgePassageSearch', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -36,10 +53,7 @@ describe('useKnowledgePassageSearch', () => {
     vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(
       () => `00000000-0000-4000-8000-${String(++requestSequence).padStart(12, '0')}`,
     );
-    globalThis.api = {
-      searchKnowledge,
-      cancelKnowledgeSearch,
-    } as BridgeAPI;
+    stubBridgeApi();
   });
 
   afterEach(() => {
@@ -97,12 +111,12 @@ describe('useKnowledgePassageSearch', () => {
       { initialProps: { query: 'failvoer' } },
     );
     await act(() => vi.advanceTimersByTimeAsync(150));
-    const firstRequestId = searchKnowledge.mock.calls[0][0].requestId;
+    const firstRequestId = requestAt(0).requestId;
 
     rerender({ query: 'failover' });
     expect(cancelKnowledgeSearch).toHaveBeenCalledWith(firstRequestId);
     await act(() => vi.advanceTimersByTimeAsync(150));
-    const secondRequestId = searchKnowledge.mock.calls[1][0].requestId;
+    const secondRequestId = requestAt(1).requestId;
 
     await act(async () => {
       second.resolve(success(secondRequestId, 'failover'));
@@ -133,7 +147,7 @@ describe('useKnowledgePassageSearch', () => {
       { initialProps: { categoryId: ' first ' } },
     );
     await act(() => vi.advanceTimersByTimeAsync(150));
-    const firstRequestId = searchKnowledge.mock.calls[0][0].requestId;
+    const firstRequestId = requestAt(0).requestId;
 
     rerender({ categoryId: 'second' });
     expect(cancelKnowledgeSearch).toHaveBeenCalledWith(firstRequestId);
@@ -237,7 +251,7 @@ describe('useKnowledgePassageSearch', () => {
     expect(missing.result.current).toMatchObject({ state: 'unavailable', error: 'unavailable' });
     missing.unmount();
 
-    globalThis.api = { searchKnowledge, cancelKnowledgeSearch } as BridgeAPI;
+    stubBridgeApi();
     searchKnowledge.mockRejectedValueOnce(new Error('ipc detail must not escape'));
     const rejected = renderHook(() =>
       useKnowledgePassageSearch({ query: 'failover', scope: { kind: 'all' } }),
@@ -275,7 +289,7 @@ describe('useKnowledgePassageSearch', () => {
       useKnowledgePassageSearch({ query: 'failover', scope: { kind: 'all' } }),
     );
     await act(() => vi.advanceTimersByTimeAsync(150));
-    const requestId = searchKnowledge.mock.calls[0][0].requestId;
+    const requestId = requestAt(0).requestId;
 
     unmount();
     expect(cancelKnowledgeSearch).toHaveBeenCalledWith(requestId);

@@ -21,6 +21,68 @@ import {
 const LOOPBACK = ['127', '0', '0', '1'].join('.');
 const PASSPHRASE = ['fixture', 'passphrase', '123'].join('-');
 
+type WebSessionBody = {
+  ok: boolean;
+  session: { csrfToken: string; auth: { token: string } } & Record<string, unknown>;
+};
+
+function isWebSessionBody(value: unknown): value is WebSessionBody {
+  if (typeof value !== 'object' || value === null || !('session' in value)) return false;
+  const { session } = value;
+  if (typeof session !== 'object' || session === null) return false;
+  if (!('csrfToken' in session) || typeof session.csrfToken !== 'string') return false;
+  if (!('auth' in session) || typeof session.auth !== 'object' || session.auth === null) {
+    return false;
+  }
+  return 'token' in session.auth && typeof session.auth.token === 'string';
+}
+
+async function readSessionBody(response: Response): Promise<WebSessionBody> {
+  const body: unknown = await response.json();
+  if (!isWebSessionBody(body)) {
+    throw new Error(`Expected a Relay Web session body, received ${JSON.stringify(body)}`);
+  }
+  return body;
+}
+
+function sessionCookie(response: Response): string {
+  const [cookie] = (response.headers.get('set-cookie') ?? '').split(';');
+  if (!cookie?.startsWith(`${WEB_SESSION_COOKIE_NAME}=`)) {
+    throw new Error(`Expected a ${WEB_SESSION_COOKIE_NAME} cookie, received ${String(cookie)}`);
+  }
+  return cookie;
+}
+
+function cookieSessionId(cookie: string): string {
+  const id = cookie.split('=', 2)[1];
+  if (!id) throw new Error(`Expected a session id in ${cookie}`);
+  return id;
+}
+
+// registerWebSessionRoutes takes the concrete WebRouter, whose private state a literal stub cannot
+// satisfy, so the collector records the real registrations off a live instance instead.
+function routeCollector(sessions: WebSessionStore): { router: WebRouter; routes: WebRoute[] } {
+  const routes: WebRoute[] = [];
+  const router = new WebRouter({
+    security: new WebRequestSecurity({
+      port: 0,
+      hostname: LOOPBACK,
+      getInterfaceAddresses: () => [],
+    }),
+    sessions,
+  });
+  vi.spyOn(router, 'register').mockImplementation((route) => {
+    routes.push(route);
+  });
+  return { router, routes };
+}
+
+function findRoute(routes: readonly WebRoute[], suffix: string): WebRoute {
+  const route = routes.find((candidate) => candidate.path.endsWith(suffix));
+  if (!route) throw new Error(`No Relay Web route registered for ${suffix}`);
+  return route;
+}
+
 async function freePort(): Promise<number> {
   const probe = createNetServer();
   await new Promise<void>((resolve) => probe.listen(0, LOOPBACK, resolve));
@@ -95,7 +157,7 @@ describe('Relay Web session routes', () => {
   it('creates a nonpersistent path-scoped strict HttpOnly cookie and bounded bootstrap', async () => {
     const { origin, authenticate } = await fixture();
     const response = await login(origin);
-    const body = await response.json();
+    const body = await readSessionBody(response);
     const setCookie = response.headers.get('set-cookie') ?? '';
 
     expect(response.status).toBe(200);
@@ -138,7 +200,7 @@ describe('Relay Web session routes', () => {
   it('bootstraps from the opaque cookie without retaining the submitted passphrase', async () => {
     const { origin, sessions } = await fixture();
     const loginResponse = await login(origin);
-    const cookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    const cookie = sessionCookie(loginResponse);
 
     const response = await fetch(`${origin}/relay-api/v1/session/bootstrap`, {
       headers: { cookie },
@@ -155,14 +217,14 @@ describe('Relay Web session routes', () => {
   it('replaces the prior ordinary session after signing in again', async () => {
     const { origin, sessions, dispose } = await fixture();
     const first = await login(origin);
-    const firstCookie = first.headers.get('set-cookie')!.split(';', 1)[0];
+    const firstCookie = sessionCookie(first);
 
     const replacement = await fetch(`${origin}/relay-api/v1/session/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin, cookie: firstCookie },
       body: JSON.stringify({ passphrase: PASSPHRASE }),
     });
-    const replacementCookie = replacement.headers.get('set-cookie')!.split(';', 1)[0];
+    const replacementCookie = sessionCookie(replacement);
 
     expect(replacement.status).toBe(200);
     expect(replacementCookie).not.toBe(firstCookie);
@@ -177,9 +239,9 @@ describe('Relay Web session routes', () => {
   it('rotates the cookie, CSRF value, and PocketBase token on refresh', async () => {
     const { origin, refresh } = await fixture();
     const loginResponse = await login(origin);
-    const loginBody = await loginResponse.json();
-    const oldCookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
-    const oldId = oldCookie.split('=', 2)[1];
+    const loginBody = await readSessionBody(loginResponse);
+    const oldCookie = sessionCookie(loginResponse);
+    const oldId = cookieSessionId(oldCookie);
 
     const response = await fetch(`${origin}/relay-api/v1/session/refresh`, {
       method: 'POST',
@@ -189,8 +251,8 @@ describe('Relay Web session routes', () => {
         'x-relay-csrf': loginBody.session.csrfToken,
       },
     });
-    const body = await response.json();
-    const newCookie = response.headers.get('set-cookie')!.split(';', 1)[0];
+    const body = await readSessionBody(response);
+    const newCookie = sessionCookie(response);
 
     expect(response.status).toBe(200);
     expect(refresh).toHaveBeenCalledOnce();
@@ -202,8 +264,8 @@ describe('Relay Web session routes', () => {
   it('keeps one refresh budget across cookie and CSRF rotation', async () => {
     const { origin, refresh } = await fixture();
     const loginResponse = await login(origin);
-    let body = await loginResponse.json();
-    let cookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    let body = await readSessionBody(loginResponse);
+    let cookie = sessionCookie(loginResponse);
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const response = await fetch(`${origin}/relay-api/v1/session/refresh`, {
@@ -211,8 +273,8 @@ describe('Relay Web session routes', () => {
         headers: { cookie, origin, 'x-relay-csrf': body.session.csrfToken },
       });
       expect(response.status).toBe(200);
-      body = await response.json();
-      cookie = response.headers.get('set-cookie')!.split(';', 1)[0];
+      body = await readSessionBody(response);
+      cookie = sessionCookie(response);
     }
 
     const limited = await fetch(`${origin}/relay-api/v1/session/refresh`, {
@@ -226,8 +288,8 @@ describe('Relay Web session routes', () => {
   it('logs out, clears the cookie, and disposes all session children', async () => {
     const { origin, dispose, sessions } = await fixture();
     const loginResponse = await login(origin);
-    const loginBody = await loginResponse.json();
-    const cookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    const loginBody = await readSessionBody(loginResponse);
+    const cookie = sessionCookie(loginResponse);
 
     const response = await fetch(`${origin}/relay-api/v1/session/logout`, {
       method: 'POST',
@@ -252,14 +314,9 @@ describe('Relay Web session routes', () => {
       dispose: vi.fn(async () => undefined),
     };
     const session = sessions.create(input);
-    const routes: WebRoute[] = [];
-    registerWebSessionRoutes(
-      {
-        register: (route: WebRoute) => routes.push(route),
-      } as WebRouter,
-      { sessions, authenticate: async () => null },
-    );
-    const logoutRoute = routes.find((route) => route.path.endsWith('/session/logout'))!;
+    const { router, routes } = routeCollector(sessions);
+    registerWebSessionRoutes(router, { sessions, authenticate: async () => null });
+    const logoutRoute = findRoute(routes, '/session/logout');
 
     const refreshed = await sessions.refresh(session.id);
     expect(refreshed).not.toBeNull();
@@ -289,8 +346,8 @@ describe('Relay Web session routes', () => {
         }),
     );
     const loginResponse = await login(origin);
-    const loginBody = await loginResponse.json();
-    const oldCookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    const loginBody = await readSessionBody(loginResponse);
+    const oldCookie = sessionCookie(loginResponse);
     const requestHeaders = {
       cookie: oldCookie,
       origin,
@@ -326,7 +383,7 @@ describe('Relay Web session routes', () => {
     resolveRefresh({ token: 'rotated-token', record: { id: 'relay-user' } });
     const refreshResponse = await refreshRequest;
     expect(refreshResponse.status).toBe(200);
-    const rotatedCookie = refreshResponse.headers.get('set-cookie')!.split(';', 1)[0];
+    const rotatedCookie = sessionCookie(refreshResponse);
     releaseDestroy();
 
     const logoutResponse = await logoutRequest;
@@ -342,8 +399,8 @@ describe('Relay Web session routes', () => {
   it('streams a heartbeat endpoint and closes it with the owning session', async () => {
     const { origin, sessions } = await fixture();
     const loginResponse = await login(origin);
-    const cookie = loginResponse.headers.get('set-cookie')!.split(';', 1)[0];
-    const sessionId = cookie.split('=', 2)[1]!;
+    const cookie = sessionCookie(loginResponse);
+    const sessionId = cookieSessionId(cookie);
 
     const response = await fetch(`${origin}/relay-api/v1/session/events`, { headers: { cookie } });
     expect(response.headers.get('content-type')).toContain('text/event-stream');
@@ -370,12 +427,9 @@ describe('Relay Web session routes', () => {
       runtime: WEB_RUNTIME,
       refresh: async () => ({ token: 'fresh-token', record: null }),
     });
-    const routes: WebRoute[] = [];
-    registerWebSessionRoutes({ register: (route: WebRoute) => routes.push(route) } as WebRouter, {
-      sessions,
-      authenticate: async () => null,
-    });
-    const eventRoute = routes.find((route) => route.path.endsWith('/session/events'))!;
+    const { router, routes } = routeCollector(sessions);
+    registerWebSessionRoutes(router, { sessions, authenticate: async () => null });
+    const eventRoute = findRoute(routes, '/session/events');
     const response = Object.assign(new EventEmitter(), {
       writableEnded: false,
       writableLength: 0,
@@ -423,14 +477,9 @@ describe('Relay Web session routes', () => {
       runtime: WEB_RUNTIME,
       refresh: async () => ({ token: 'fresh-token', record: null }),
     });
-    const routes: WebRoute[] = [];
-    registerWebSessionRoutes(
-      {
-        register: (route: WebRoute) => routes.push(route),
-      } as WebRouter,
-      { sessions, authenticate: async () => null },
-    );
-    const eventRoute = routes.find((route) => route.path.endsWith('/session/events'))!;
+    const { router, routes } = routeCollector(sessions);
+    registerWebSessionRoutes(router, { sessions, authenticate: async () => null });
+    const eventRoute = findRoute(routes, '/session/events');
     const open = async () => {
       const request = new EventEmitter() as IncomingMessage;
       const response = Object.assign(new EventEmitter(), {

@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, generateKeyPairSync } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   PrivilegedPairingError,
   PrivilegedPairingService,
@@ -30,8 +30,8 @@ describe('PrivilegedPairingService', () => {
   let savedChallenges: PairingChallengeRecord[];
   let activations: PairingDeviceActivation[];
   let repository: PrivilegedPairingRepository;
-  let randomBytes: ReturnType<typeof vi.fn>;
-  let createId: ReturnType<typeof vi.fn>;
+  let randomBytes: Mock<(size: number) => Buffer>;
+  let createId: Mock<() => string>;
 
   beforeEach(() => {
     vi.useFakeTimers();

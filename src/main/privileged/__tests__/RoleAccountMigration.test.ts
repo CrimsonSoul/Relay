@@ -65,13 +65,14 @@ class MigrationFixture {
         }
         const records = this.records.get(name) ?? [];
         const index = records.findIndex((record) => record.id === id);
-        if (index < 0) throw new Error(`Unknown ${name} record ${id}`);
+        const existing = records[index];
+        if (!existing) throw new Error(`Unknown ${name} record ${id}`);
         if (this.ignoreNextUpdateFor === name) {
           this.ignoreNextUpdateFor = null;
           this.writes.push({ collection: name, operation: 'update', id });
-          return { ...structuredClone(records[index]), ...structuredClone(data) };
+          return { ...structuredClone(existing), ...structuredClone(data) };
         }
-        records[index] = { ...records[index], ...structuredClone(data) };
+        records[index] = { ...existing, ...structuredClone(data) };
         this.writes.push({ collection: name, operation: 'update', id });
         return structuredClone(records[index]);
       },

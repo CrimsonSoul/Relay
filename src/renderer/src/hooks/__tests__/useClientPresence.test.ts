@@ -1,6 +1,6 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PublicRelayConfig } from '@shared/ipc';
+import type { BridgeAPI, PublicRelayConfig } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import {
   CLIENT_PRESENCE_SESSION_STORAGE_KEY,
@@ -8,6 +8,15 @@ import {
   getNextPresenceExpiry,
   useClientPresence,
 } from '../useClientPresence';
+
+/**
+ * `globalThis.api` is typed as the complete preload bridge; presence only reads `runtime`
+ * and `getClientHostname`. `vi.stubGlobal` installs the partial without a cast, and
+ * `Partial<BridgeAPI>` still checks each stubbed member against the real contract.
+ */
+function stubBridgeApi(overrides: Partial<BridgeAPI>): void {
+  vi.stubGlobal('api', overrides);
+}
 
 type PresenceRecord = {
   id: string;
@@ -118,9 +127,9 @@ beforeEach(() => {
       return mockUnsubscribe;
     },
   );
-  globalThis.api = {
+  stubBridgeApi({
     getClientHostname: vi.fn().mockResolvedValue('ops-laptop'),
-  } as typeof globalThis.api;
+  });
 });
 
 describe('useClientPresence', () => {
@@ -162,10 +171,10 @@ describe('useClientPresence', () => {
   });
 
   it('publishes a bounded Web presence label and removes it when the session unmounts', async () => {
-    globalThis.api = {
+    stubBridgeApi({
       runtime: WEB_RUNTIME,
       getClientHostname: vi.fn().mockResolvedValue('Web · Edge · 10.0.0.8'),
-    } as typeof globalThis.api;
+    });
     mockGetFirstListItem.mockResolvedValue(
       makePresence('web-presence', 'web-session', 'Web · Edge · 10.0.0.8'),
     );
@@ -183,10 +192,10 @@ describe('useClientPresence', () => {
 
   it('refreshes the snapshot after the first Web heartbeat can race realtime setup', async () => {
     const webPresence = makePresence('web-presence', 'web-session', 'Web · Edge · 10.0.0.8');
-    globalThis.api = {
+    stubBridgeApi({
       runtime: WEB_RUNTIME,
       getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
-    } as typeof globalThis.api;
+    });
     mockCreate.mockResolvedValue(webPresence);
     mockGetFullList.mockResolvedValueOnce([]).mockResolvedValue([webPresence]);
 
@@ -198,10 +207,10 @@ describe('useClientPresence', () => {
 
   it('does not let a slower initial presence read overwrite the post-heartbeat snapshot', async () => {
     const webPresence = makePresence('web-presence', 'web-session', 'Web · Safari · 10.0.0.8');
-    globalThis.api = {
+    stubBridgeApi({
       runtime: WEB_RUNTIME,
       getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
-    } as typeof globalThis.api;
+    });
     mockCreate.mockResolvedValue(webPresence);
     const initialRead = deferred<PresenceRecord[]>();
     mockGetFullList.mockReturnValueOnce(initialRead.promise).mockResolvedValue([webPresence]);
@@ -220,10 +229,10 @@ describe('useClientPresence', () => {
 
   it('does not treat a stale failed presence read as a new connection failure', async () => {
     const webPresence = makePresence('web-presence', 'web-session', 'Web · Safari · 10.0.0.8');
-    globalThis.api = {
+    stubBridgeApi({
       runtime: WEB_RUNTIME,
       getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
-    } as typeof globalThis.api;
+    });
     mockCreate.mockResolvedValue(webPresence);
     const initialRead = deferred<PresenceRecord[]>();
     mockGetFullList.mockReturnValueOnce(initialRead.promise).mockResolvedValue([webPresence]);

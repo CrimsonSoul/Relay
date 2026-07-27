@@ -165,6 +165,12 @@ function document(
   };
 }
 
+// The Wiki always opens on the catalog, so reader coverage enters through the real affordance:
+// the catalog card a user clicks to open a guide.
+function openGuideFromCatalog(displayTitle: string): void {
+  fireEvent.click(screen.getAllByRole('button', { name: `Open ${displayTitle}` })[0]!);
+}
+
 describe('KnowledgeTab', () => {
   const unsubscribe = vi.fn();
 
@@ -225,6 +231,7 @@ describe('KnowledgeTab', () => {
         document('guide', 'Operator guide', 'General'),
         document('lane', 'Lane recovery', 'Store systems'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -405,6 +412,7 @@ describe('KnowledgeTab', () => {
     const onLibraryCountChange = vi.fn();
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: true,
       error: null,
       hasLoadedSnapshot: false,
@@ -417,6 +425,7 @@ describe('KnowledgeTab', () => {
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: false,
       error: 'offline',
       hasLoadedSnapshot: true,
@@ -436,6 +445,7 @@ describe('KnowledgeTab', () => {
     ];
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General'), laneGuide],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -443,6 +453,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="server" />);
+    openGuideFromCatalog('Operator guide');
 
     expect(screen.getByRole('heading', { name: 'Operator guide' })).toBeInTheDocument();
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
@@ -469,6 +480,7 @@ describe('KnowledgeTab', () => {
   it('starts the approved Wiki layout directly with its drawer and viewer', () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -476,6 +488,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     const drawer = screen.getByRole('complementary', { name: 'Wiki reader sidebar' });
     expect(within(drawer).getByRole('heading', { name: 'Operator guide' })).toBeInTheDocument();
@@ -494,6 +507,7 @@ describe('KnowledgeTab', () => {
         document('guide', 'Operator guide', 'General'),
         document('lane', 'Lane recovery', 'Store systems'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -501,6 +515,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     const sidebar = screen.getByRole('complementary', { name: 'Wiki reader sidebar' });
     const contentsTab = within(sidebar).getByRole('tab', { name: 'Contents' });
@@ -539,6 +554,7 @@ describe('KnowledgeTab', () => {
         document('guide', 'Operator guide', 'General'),
         document('lane', 'Lane recovery', 'Store systems'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -546,6 +562,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
     expect(workspace.tagName).toBe('SECTION');
@@ -578,6 +595,7 @@ describe('KnowledgeTab', () => {
   it('collapses the wide Wiki reader sidebar without changing compact drawer state', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -585,6 +603,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
     expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
@@ -611,6 +630,7 @@ describe('KnowledgeTab', () => {
   it('provides the viewer with pure URL resolution and accepts native destination targets', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -618,6 +638,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     await waitFor(() =>
       expect(screen.getByTestId('viewer-resolution')).toHaveTextContent(
@@ -637,12 +658,14 @@ describe('KnowledgeTab', () => {
         document('guide', 'Operator guide', 'General'),
         document('lane', 'Lane recovery', 'Store systems'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
     const search = screen.getByRole('searchbox', { name: 'Filter library' });
     fireEvent.change(search, { target: { value: 'Operator' } });
@@ -660,12 +683,14 @@ describe('KnowledgeTab', () => {
   it('follows a current-document page link without selecting or refocusing another guide', () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     fireEvent.click(screen.getByRole('button', { name: 'Activate #page=2' }));
 
@@ -684,12 +709,14 @@ describe('KnowledgeTab', () => {
         document('operations-guide', 'Guide', 'Operations'),
         document('access-guide', 'Guide', 'Access'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Current');
 
     fireEvent.click(screen.getByRole('button', { name: 'Activate ../Access/Guide.pdf#page=2' }));
 
@@ -711,12 +738,14 @@ describe('KnowledgeTab', () => {
         document('operations-guide', 'Guide', 'Operations'),
         document('access-guide', 'Guide', 'Access'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Current');
 
     fireEvent.click(screen.getByRole('button', { name: `Activate ${url}` }));
 
@@ -728,12 +757,14 @@ describe('KnowledgeTab', () => {
   it('reports an invalid native destination with approved copy and without IPC', () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('current', 'Current', '00 Source')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Current');
 
     fireEvent.click(screen.getByRole('button', { name: 'Report invalid native destination' }));
 
@@ -749,12 +780,14 @@ describe('KnowledgeTab', () => {
   it('opens a web link only through the dedicated API and only after activation', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
 
     fireEvent.click(
@@ -778,12 +811,14 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Activate https://example.com/relay-guide' }),
@@ -804,12 +839,14 @@ describe('KnowledgeTab', () => {
         document('guide', 'Operator guide', 'General'),
         document('lane', 'Lane recovery', 'Store systems'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
@@ -837,17 +874,20 @@ describe('KnowledgeTab', () => {
     const lane = document('lane', 'Lane recovery', 'Store systems');
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide, lane],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     const { rerender } = render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     const pendingLink = latestViewerProps!.resolveUrl('Lane recovery.pdf#page=2');
     const staleActivation = latestViewerProps!.onActivateResolvedLink;
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -864,6 +904,7 @@ describe('KnowledgeTab', () => {
   it('routes an empty managed library through the designated publisher', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -894,6 +935,7 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -925,6 +967,7 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operations guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -952,15 +995,14 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="server" />);
-    const backToCatalog = screen.queryByRole('button', { name: 'Back to Wiki' });
-    if (backToCatalog) fireEvent.click(backToCatalog);
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open Operator guide' })[0]!);
+    openGuideFromCatalog('Operator guide');
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search this guide' }), {
       target: { value: 'ticket escalation' },
     });
@@ -984,6 +1026,7 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1001,6 +1044,7 @@ describe('KnowledgeTab', () => {
         document('guide', 'Operator guide', 'General'),
         document('lane', 'Lane recovery', 'Store systems'),
       ],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1024,6 +1068,7 @@ describe('KnowledgeTab', () => {
   it('resolves a page-aware global open request after the PDF session is ready', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1086,6 +1131,7 @@ describe('KnowledgeTab', () => {
   it('falls back to page-only navigation and announces unselectable passage text', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1143,12 +1189,14 @@ describe('KnowledgeTab', () => {
       const checksum = checksumCharacter.repeat(64);
       useKnowledgeLibraryMock.mockReturnValue({
         documents: [document('guide', 'Operator guide', 'General', checksum)],
+        categories: [],
         loading: false,
         error: null,
         hasLoadedSnapshot: true,
         refetch: vi.fn(async () => undefined),
       });
       render(<KnowledgeTab active relayMode="client" />);
+      openGuideFromCatalog('Operator guide');
       type DeferredTextContent = {
         items: Array<{ str: string; hasEOL: boolean }>;
         styles: Record<string, never>;
@@ -1208,6 +1256,7 @@ describe('KnowledgeTab', () => {
   it('ignores an old PDF session until the requested checksum session is ready', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1270,6 +1319,7 @@ describe('KnowledgeTab', () => {
   it('cancels a passage captured for an older same-checksum session generation', () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1324,6 +1374,7 @@ describe('KnowledgeTab', () => {
     const replacement = document('guide', 'Operator guide', 'General', 'b'.repeat(64));
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [original],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1346,6 +1397,7 @@ describe('KnowledgeTab', () => {
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [replacement],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1374,6 +1426,7 @@ describe('KnowledgeTab', () => {
   it('cancels a pending passage after navigating away and reopening the same guide', () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1423,6 +1476,7 @@ describe('KnowledgeTab', () => {
   ] as const)('safely clamps a %s custom-event page request', (_label, pageIndex, expected) => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1444,12 +1498,14 @@ describe('KnowledgeTab', () => {
   it('keeps Contents search and Library filtering independent', () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search this guide' }), {
       target: { value: 'lane reset' },
@@ -1466,12 +1522,14 @@ describe('KnowledgeTab', () => {
   it('opens Contents search with Cmd or Ctrl F and clears it with Escape', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
 
     fireEvent.keyDown(window, { key: 'f', metaKey: true });
@@ -1490,12 +1548,14 @@ describe('KnowledgeTab', () => {
   it('restores the compact sidebar toggle after Escape from an empty Contents search', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     const toggle = screen.getByRole('button', { name: 'Wiki reader sidebar' });
     fireEvent.click(toggle);
     const search = screen.getByRole('searchbox', { name: 'Search this guide' });
@@ -1509,16 +1569,19 @@ describe('KnowledgeTab', () => {
     const guide = document('guide', 'Operator guide', 'General');
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     const view = render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: true,
       error: null,
       hasLoadedSnapshot: false,
@@ -1529,6 +1592,7 @@ describe('KnowledgeTab', () => {
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1547,15 +1611,18 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch,
     });
     const view = render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1574,18 +1641,21 @@ describe('KnowledgeTab', () => {
     const refetch = vi.fn(async () => undefined);
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide, lane],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch,
     });
     const { rerender } = render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
     fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
     fireEvent.click(screen.getByRole('treeitem', { name: 'Store systems, 1 document' }));
     fireEvent.click(screen.getByRole('treeitem', { name: 'Lane recovery' }));
 
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [guide],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1602,12 +1672,14 @@ describe('KnowledgeTab', () => {
   it('surfaces server index warnings in the library footer', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
       refetch: vi.fn(async () => undefined),
     });
     render(<KnowledgeTab active relayMode="server" />);
+    openGuideFromCatalog('Operator guide');
     const statusListener = vi.mocked(globalThis.api!.onKnowledgeIndexStatusChanged).mock
       .calls[0]![0];
 
@@ -1633,6 +1705,7 @@ describe('KnowledgeTab', () => {
     });
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1640,6 +1713,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     expect(await screen.findByText(/Indexed Jul 14/i)).toBeInTheDocument();
     expect(screen.queryByText('Waiting for first index')).not.toBeInTheDocument();
@@ -1651,6 +1725,7 @@ describe('KnowledgeTab', () => {
     );
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
+      categories: [],
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
@@ -1658,6 +1733,7 @@ describe('KnowledgeTab', () => {
     });
 
     render(<KnowledgeTab active relayMode="client" />);
+    openGuideFromCatalog('Operator guide');
 
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());

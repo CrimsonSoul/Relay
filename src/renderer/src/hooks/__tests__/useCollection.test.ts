@@ -639,7 +639,7 @@ describe('useCollection', () => {
     });
 
     expect(result.current.data[0]?.id).toBe('2');
-    expect(result.current.data[1].id).toBe('1');
+    expect(result.current.data[1]?.id).toBe('1');
   });
 
   it('writes cache snapshot on successful online fetch', async () => {
@@ -1031,7 +1031,7 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data[0].id).toBe('b');
+    expect(result.current.data[0]?.id).toBe('b');
   });
 
   it('handles subscribe error gracefully', async () => {

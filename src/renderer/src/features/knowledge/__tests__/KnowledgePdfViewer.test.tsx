@@ -87,14 +87,41 @@ class IntersectionObserverDouble {
   }
 }
 
+function required<T>(value: T | undefined, description: string): T {
+  if (value === undefined) {
+    throw new Error(`expected ${description}`);
+  }
+  return value;
+}
+
+function firstObserver(): IntersectionObserverDouble {
+  const [observer] = IntersectionObserverDouble.instances;
+  if (!observer) {
+    throw new Error('expected KnowledgePdfViewer to construct an IntersectionObserver');
+  }
+  return observer;
+}
+
+function pageAt(pages: readonly HTMLElement[], index: number): HTMLElement {
+  const pageShell = pages[index];
+  if (!pageShell) {
+    throw new Error(`expected a rendered page shell at index ${index}`);
+  }
+  return pageShell;
+}
+
 function record(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDocumentRecord {
   return {
     id: 'doc-1',
     sourceKey: 'General/Guide.pdf',
     category: 'General',
+    categoryId: 'category-general',
+    documentType: 'sop',
     title: 'Operator guide',
+    displayTitle: 'Operator guide',
     fileName: 'Guide.pdf',
     pdf: 'Guide.pdf',
+    cover: null,
     checksum: 'a'.repeat(64),
     byteSize: 1024,
     pageCount: 3,
@@ -102,6 +129,19 @@ function record(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDocu
     outlineSource: 'none',
     sourceModifiedAt: '2026-07-14T12:00:00.000Z',
     indexedAt: '2026-07-14T12:00:00.000Z',
+    searchIndexState: 'ready',
+    searchIndexChecksum: 'a'.repeat(64),
+    searchIndexVersion: 1,
+    searchIndexedAt: '2026-07-14T12:00:00.000Z',
+    searchIndexError: null,
+    lifecycleState: 'active',
+    revision: 1,
+    publishedByAccountId: 'owner',
+    publishedByName: 'Ryan',
+    publishedAt: '2026-07-14T12:00:00.000Z',
+    trashedByAccountId: null,
+    trashedByName: null,
+    trashedAt: null,
     created: '2026-07-14T12:00:00.000Z',
     updated: '2026-07-14T12:00:00.000Z',
     ...overrides,
@@ -140,7 +180,7 @@ describe('KnowledgePdfViewer', () => {
   const renderTask = { promise: Promise.resolve(), cancel: vi.fn() };
   const annotationMocks = new Map<number, ReturnType<typeof vi.fn>>();
   const operatorListMocks = new Map<number, ReturnType<typeof vi.fn>>();
-  const resolveUrl = vi.fn((): KnowledgeResolvedLink => ({
+  const resolveUrl = vi.fn<(url: string) => KnowledgeResolvedLink>(() => ({
     kind: 'unavailable',
     reason: 'unsupported',
   }));
@@ -351,9 +391,9 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
 
     act(() =>
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[2], intersectionRatio: 0 },
-        { target: pages[1], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: pageAt(pages, 2), intersectionRatio: 0 },
+        { target: pageAt(pages, 1), intersectionRatio: 1 },
       ]),
     );
     expect(onPageChange).not.toHaveBeenCalledWith(1);
@@ -548,7 +588,7 @@ describe('KnowledgePdfViewer', () => {
     const pageThree = container.querySelector<HTMLElement>('[data-page-index="2"]');
     expect(pageThree).not.toBeNull();
     await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
-    act(() => IntersectionObserverDouble.instances[0].showPage(pageThree!));
+    act(() => firstObserver().showPage(pageThree!));
 
     expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
     expect(onPageChange).toHaveBeenLastCalledWith(2);
@@ -625,7 +665,7 @@ describe('KnowledgePdfViewer', () => {
     const pageTwo = container.querySelector<HTMLElement>('[data-page-index="1"]');
     expect(pageTwo).not.toBeNull();
 
-    act(() => IntersectionObserverDouble.instances[0].showPage(pageTwo!));
+    act(() => firstObserver().showPage(pageTwo!));
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
 
     selectPdfViewMode('Single page');
@@ -790,12 +830,12 @@ describe('KnowledgePdfViewer', () => {
     const scrollTo = vi.fn();
     viewport.scrollTo = scrollTo;
     const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
-    Object.defineProperty(pages[0], 'offsetTop', { configurable: true, value: 200 });
-    Object.defineProperty(pages[1], 'offsetTop', { configurable: true, value: 1000 });
-    Object.defineProperty(pages[2], 'offsetTop', { configurable: true, value: 1600 });
+    Object.defineProperty(pageAt(pages, 0), 'offsetTop', { configurable: true, value: 200 });
+    Object.defineProperty(pageAt(pages, 1), 'offsetTop', { configurable: true, value: 1000 });
+    Object.defineProperty(pageAt(pages, 2), 'offsetTop', { configurable: true, value: 1600 });
 
     await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
-    act(() => IntersectionObserverDouble.instances[0].showPage(pages[1]));
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
     expect(scrollTo).not.toHaveBeenCalled();
 
@@ -814,7 +854,7 @@ describe('KnowledgePdfViewer', () => {
     const scrollTo = vi.fn();
     viewport.scrollTo = scrollTo;
     const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
-    Object.defineProperty(pages[0], 'offsetTop', { configurable: true, value: 200 });
+    Object.defineProperty(pageAt(pages, 0), 'offsetTop', { configurable: true, value: 200 });
 
     rerender(
       <KnowledgePdfViewer
@@ -826,9 +866,9 @@ describe('KnowledgePdfViewer', () => {
     expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[0], intersectionRatio: 0 },
-        { target: pages[1], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: pageAt(pages, 0), intersectionRatio: 0 },
+        { target: pageAt(pages, 1), intersectionRatio: 1 },
       ]);
     });
 
@@ -861,9 +901,9 @@ describe('KnowledgePdfViewer', () => {
     );
     await waitFor(() => expect(viewport.scrollTo).toHaveBeenCalled());
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[0], intersectionRatio: 0 },
-        { target: pages[1], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: pageAt(pages, 0), intersectionRatio: 0 },
+        { target: pageAt(pages, 1), intersectionRatio: 1 },
       ]);
     });
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
@@ -875,9 +915,9 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(3));
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[1], intersectionRatio: 0 },
-        { target: pages[2], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: pageAt(pages, 1), intersectionRatio: 0 },
+        { target: pageAt(pages, 2), intersectionRatio: 1 },
       ]);
     });
 
@@ -904,11 +944,11 @@ describe('KnowledgePdfViewer', () => {
     });
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 972, behavior: 'smooth' }));
     const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
-    act(() => IntersectionObserverDouble.instances[0].showPage(pages[1]));
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[1], intersectionRatio: 0 },
-        { target: pages[2], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: pageAt(pages, 1), intersectionRatio: 0 },
+        { target: pageAt(pages, 2), intersectionRatio: 1 },
       ]);
     });
     expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
@@ -928,7 +968,7 @@ describe('KnowledgePdfViewer', () => {
       />,
     );
     await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 972, behavior: 'smooth' }]]));
-    act(() => IntersectionObserverDouble.instances[0].showPage(pages[1]));
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
     expect(onPageChange.mock.calls).toEqual([[2], [1]]);
 
@@ -972,13 +1012,13 @@ describe('KnowledgePdfViewer', () => {
       const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
 
       act(() => {
-        IntersectionObserverDouble.instances[0].showPage(pages[expectedPageIndex]);
+        firstObserver().showPage(pageAt(pages, expectedPageIndex));
       });
       const nextPageIndex = expectedPageIndex === 2 ? 1 : 2;
       act(() => {
-        IntersectionObserverDouble.instances[0].emit([
-          { target: pages[expectedPageIndex], intersectionRatio: 0 },
-          { target: pages[nextPageIndex], intersectionRatio: 1 },
+        firstObserver().emit([
+          { target: pageAt(pages, expectedPageIndex), intersectionRatio: 0 },
+          { target: pageAt(pages, nextPageIndex), intersectionRatio: 1 },
         ]);
       });
 
@@ -1051,11 +1091,21 @@ describe('KnowledgePdfViewer', () => {
 
     await waitFor(() => expect(renderPage.getAnnotations).toHaveBeenCalledOnce());
     expect(renderPromiseThen).toHaveBeenCalled();
-    expect(renderPromiseThen.mock.invocationCallOrder[0]).toBeLessThan(
-      renderPage.getTextContent.mock.invocationCallOrder[0],
+    const renderOrder = required(
+      renderPromiseThen.mock.invocationCallOrder[0],
+      'the render promise to have been awaited',
     );
-    expect(renderPromiseThen.mock.invocationCallOrder[0]).toBeLessThan(
-      renderPage.getAnnotations.mock.invocationCallOrder[0],
+    expect(renderOrder).toBeLessThan(
+      required(
+        renderPage.getTextContent.mock.invocationCallOrder[0],
+        'text extraction to have been requested',
+      ),
+    );
+    expect(renderOrder).toBeLessThan(
+      required(
+        renderPage.getAnnotations.mock.invocationCallOrder[0],
+        'annotation extraction to have been requested',
+      ),
     );
   });
 
@@ -1172,8 +1222,8 @@ describe('KnowledgePdfViewer', () => {
     const [firstButton, secondButton] = await screen.findAllByRole('button', {
       name: 'Open linked location in this guide',
     });
-    fireEvent.click(firstButton);
-    fireEvent.click(secondButton);
+    fireEvent.click(required(firstButton, 'the first in-document link button'));
+    fireEvent.click(required(secondButton, 'the second in-document link button'));
     await waitFor(() => expect(getRaceDestination).toHaveBeenCalledTimes(2));
 
     await act(async () => {

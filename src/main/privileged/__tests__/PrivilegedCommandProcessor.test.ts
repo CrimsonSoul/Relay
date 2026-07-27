@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, generateKeyPairSync, sign as signBytes } from 'node:crypto';
 import type { JsonWebKey } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   ADMIN_PRIVILEGED_CAPABILITIES,
   type PrivilegedCapability,
@@ -75,8 +75,8 @@ describe('PrivilegedCommandProcessor', () => {
   let publicJwk: JsonWebKey;
   let device: RelayPrivilegedDeviceRecord;
   let repository: PrivilegedCommandRepository;
-  let handler: ReturnType<typeof vi.fn>;
-  let logger: { warn: ReturnType<typeof vi.fn> };
+  let handler: Mock<PrivilegedStatusHandler>;
+  let logger: { warn: Mock<PrivilegedProcessorLogger['warn']> };
   let lastClaim: PrivilegedCommandClaim | null;
   let completed: Array<{
     requestId: string;
@@ -114,9 +114,9 @@ describe('PrivilegedCommandProcessor', () => {
       getAccount: vi.fn(async () => accountRecord()),
       getState: vi.fn(async () => stateRecord()),
       getDevice: vi.fn(async () => device),
-      claimCommand: vi.fn(async (claim) => {
+      claimCommand: vi.fn(async (claim: PrivilegedCommandClaim) => {
         lastClaim = claim;
-        return { kind: 'created', command: storedCommand(claim) };
+        return { kind: 'created' as const, command: storedCommand(claim) };
       }),
       tryBeginCommand: vi.fn(async () => true),
       completeCommand: vi.fn(async (requestId, update) => {
@@ -167,6 +167,31 @@ describe('PrivilegedCommandProcessor', () => {
       statusHandler: handler,
       ...overrides,
     });
+  }
+
+  // The claim the repository would have recorded for an envelope, for suites that stage a stored
+  // command before the processor has claimed anything.
+  function claimFor(
+    source: SignedPrivilegedCommandEnvelope,
+    overrides: Partial<PrivilegedCommandClaim> = {},
+  ): PrivilegedCommandClaim {
+    return {
+      requestId: source.requestId,
+      accountId: source.accountId,
+      deviceId: source.deviceId,
+      operatorId: null,
+      displayNameSnapshot: source.displayNameSnapshot,
+      roleClaim: source.roleClaim,
+      command: source.command,
+      issuedAt: source.issuedAt,
+      expiresAt: source.expiresAt,
+      expectedRevision: source.expectedRevision,
+      payload: source.payload,
+      bodyHash: sha256(canonicalPrivilegedSigningBytes(source)),
+      signature: source.signature,
+      state: 'processing',
+      ...overrides,
+    };
   }
 
   function storedCommand(
@@ -468,7 +493,7 @@ describe('PrivilegedCommandProcessor', () => {
     const bodyHash = sha256(canonicalPrivilegedSigningBytes(currentEnvelope));
     vi.mocked(repository.claimCommand).mockResolvedValueOnce({
       kind: 'existing',
-      command: storedCommand({ ...(lastClaim as never), bodyHash } as PrivilegedCommandClaim, {
+      command: storedCommand(claimFor(currentEnvelope, { bodyHash }), {
         requestId: currentEnvelope.requestId,
         state: 'succeeded',
         result: { cached: true },
@@ -485,10 +510,9 @@ describe('PrivilegedCommandProcessor', () => {
 
     vi.mocked(repository.claimCommand).mockResolvedValueOnce({
       kind: 'existing',
-      command: storedCommand(
-        { ...(lastClaim as never), bodyHash: '0'.repeat(64) } as PrivilegedCommandClaim,
-        { requestId: currentEnvelope.requestId },
-      ),
+      command: storedCommand(claimFor(currentEnvelope, { bodyHash: '0'.repeat(64) }), {
+        requestId: currentEnvelope.requestId,
+      }),
     });
     await expect(processor.process(currentEnvelope)).resolves.toMatchObject({
       ok: false,
@@ -502,7 +526,7 @@ describe('PrivilegedCommandProcessor', () => {
     const processor = createProcessor();
     vi.mocked(repository.claimCommand).mockResolvedValueOnce({
       kind: 'existing',
-      command: storedCommand({ ...(lastClaim as never), bodyHash } as PrivilegedCommandClaim, {
+      command: storedCommand(claimFor(currentEnvelope, { bodyHash }), {
         requestId: currentEnvelope.requestId,
         state: 'processing',
         updated: new Date(NOW - 3 * 60_000).toISOString(),
@@ -518,7 +542,7 @@ describe('PrivilegedCommandProcessor', () => {
 
     vi.mocked(repository.claimCommand).mockResolvedValueOnce({
       kind: 'existing',
-      command: storedCommand({ ...(lastClaim as never), bodyHash } as PrivilegedCommandClaim, {
+      command: storedCommand(claimFor(currentEnvelope, { bodyHash }), {
         requestId: currentEnvelope.requestId,
         state: 'processing',
         updated: new Date(NOW - 30_000).toISOString(),

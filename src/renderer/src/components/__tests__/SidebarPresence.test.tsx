@@ -3,8 +3,11 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicRelayConfig } from '@shared/ipc';
 import { SidebarPresence } from '../SidebarPresence';
+import type { useClientPresence } from '../../hooks/useClientPresence';
 
-const mockUseClientPresence = vi.fn(() => ({
+// Typed against the real hook so the forwarded arguments the assertions inspect
+// stay checked against its actual signature.
+const mockUseClientPresence = vi.fn<typeof useClientPresence>(() => ({
   count: 2,
   hostnames: ['ops-laptop', 'war-room-mac'],
   clients: [],
@@ -12,7 +15,8 @@ const mockUseClientPresence = vi.fn(() => ({
 }));
 
 vi.mock('../../hooks/useClientPresence', () => ({
-  useClientPresence: (...args: unknown[]) => mockUseClientPresence(...args),
+  useClientPresence: (...args: Parameters<typeof useClientPresence>) =>
+    mockUseClientPresence(...args),
 }));
 
 const serverConfig: PublicRelayConfig = {

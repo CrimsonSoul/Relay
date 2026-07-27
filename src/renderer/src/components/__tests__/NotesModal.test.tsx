@@ -27,7 +27,6 @@ vi.mock('../notes/TagInput', () => ({
   TagInput: ({
     value,
     onChange,
-    _onAdd,
     onKeyDown,
     id,
   }: {

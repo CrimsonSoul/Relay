@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppData } from '../useAppData';
+import type { BridgeAPI } from '@shared/ipc';
 import type { BoardSettingsInitializationResult } from '../../services/oncallBoardSettingsService';
 import { loggers } from '../../utils/logger';
 
@@ -97,8 +98,10 @@ describe('useAppData', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Set globalThis.api so useAppData doesn't enter dev mock mode
-    (globalThis as Window & { api?: unknown }).api = {};
+    // Present-but-empty bridge: useAppData only checks that `globalThis.api` exists
+    // before deciding it is not running in dev mock mode.
+    const bridge: Partial<BridgeAPI> = {};
+    vi.stubGlobal('api', bridge);
     collectionData.contacts = { data: [], loading: false, error: null };
     collectionData.servers = { data: [], loading: false, error: null };
     collectionData.bridge_groups = { data: [], loading: false, error: null };
@@ -157,9 +160,9 @@ describe('useAppData', () => {
     const { result } = renderHook(() => useAppData(showToast));
 
     expect(result.current.data.contacts).toHaveLength(1);
-    expect(result.current.data.contacts[0].name).toBe('Alice');
+    expect(result.current.data.contacts[0]?.name).toBe('Alice');
     expect(result.current.data.servers).toHaveLength(1);
-    expect(result.current.data.servers[0].name).toBe('web-01');
+    expect(result.current.data.servers[0]?.name).toBe('web-01');
   });
 
   it('shows loading when collections are loading', () => {
@@ -264,7 +267,7 @@ describe('useAppData', () => {
       const { result } = renderHook(() => useAppData(showToast));
 
       expect(result.current.data.onCall).toHaveLength(1);
-      expect(result.current.data.onCall[0].id).toBe('oc1');
+      expect(result.current.data.onCall[0]?.id).toBe('oc1');
     });
 
     it('exposes board settings errors for non-ready states', async () => {

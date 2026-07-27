@@ -3,7 +3,7 @@ import type { JsonWebKey } from 'node:crypto';
 import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   PrivilegedDeviceStore,
   PrivilegedDeviceStoreError,
@@ -46,7 +46,7 @@ function createSecureStorage(): PrivilegedSecureStorage & {
 describe('PrivilegedDeviceStore', () => {
   let dataDir: string;
   let secureStorage: ReturnType<typeof createSecureStorage>;
-  let logger: { warn: ReturnType<typeof vi.fn> };
+  let logger: { warn: Mock<(message: string, metadata?: Record<string, unknown>) => void> };
 
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'relay-privileged-device-'));

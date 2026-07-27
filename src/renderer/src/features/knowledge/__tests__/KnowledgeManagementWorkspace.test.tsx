@@ -1,10 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { KnowledgeUploadSelectionResult } from '@shared/knowledge';
 import { useKnowledgeManagement } from '../useKnowledgeManagement';
 import { KnowledgeManagementWorkspace } from '../KnowledgeManagementWorkspace';
 
 vi.mock('../useKnowledgeManagement', () => ({ useKnowledgeManagement: vi.fn() }));
 const useKnowledgeManagementMock = vi.mocked(useKnowledgeManagement);
+
+type KnowledgeManagementState = ReturnType<typeof useKnowledgeManagement>;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -15,7 +18,10 @@ function deferred<T>() {
 }
 
 describe('KnowledgeManagementWorkspace', () => {
-  const stagePdfs = vi.fn(async () => ({ ok: true as const, uploads: [] }));
+  const stagePdfs = vi.fn(async (): Promise<KnowledgeUploadSelectionResult> => ({
+    ok: true,
+    uploads: [],
+  }));
   const readAudit = vi.fn(async () => true);
   const loadMoreAudit = vi.fn(async () => true);
 
@@ -51,6 +57,7 @@ describe('KnowledgeManagementWorkspace', () => {
           items: [
             {
               id: 'document-1',
+              checksum: 'd'.repeat(64),
               category: 'Operations',
               categoryId: 'category-operations',
               documentType: 'sop',
@@ -283,7 +290,7 @@ describe('KnowledgeManagementWorkspace', () => {
       searchIndexError: 'extraction-failed' as const,
     };
     const retryResult = deferred<boolean>();
-    let management = {
+    let management: KnowledgeManagementState = {
       ...current,
       snapshot: {
         ...current.snapshot!,
@@ -533,6 +540,7 @@ describe('KnowledgeManagementWorkspace', () => {
           chunkCount: 1,
           acknowledgedChunkCount: 0,
           state: 'queued',
+          cancelPending: false,
           safeError: null,
           retryCount: 0,
           restartRecovery: false,
@@ -562,8 +570,8 @@ describe('KnowledgeManagementWorkspace', () => {
 
   it('always queues new PDFs for review before publishing', async () => {
     const publish = vi.fn(async () => true);
-    const stageForReview = vi.fn(async () => ({
-      ok: true as const,
+    const stageForReview = vi.fn(async (): Promise<KnowledgeUploadSelectionResult> => ({
+      ok: true,
       uploads: [
         {
           id: 'local-review-upload',
@@ -574,7 +582,8 @@ describe('KnowledgeManagementWorkspace', () => {
           acknowledgedBytes: 0,
           chunkCount: 1,
           acknowledgedChunkCount: 0,
-          state: 'queued' as const,
+          state: 'queued',
+          cancelPending: false,
           safeError: null,
           retryCount: 0,
           restartRecovery: false,
@@ -598,8 +607,8 @@ describe('KnowledgeManagementWorkspace', () => {
   });
 
   it('keeps the selected document bound to the Replace PDF upload', async () => {
-    const stageForReplacement = vi.fn(async () => ({
-      ok: true as const,
+    const stageForReplacement = vi.fn(async (): Promise<KnowledgeUploadSelectionResult> => ({
+      ok: true,
       uploads: [
         {
           id: 'local-replacement-upload',
@@ -610,7 +619,8 @@ describe('KnowledgeManagementWorkspace', () => {
           acknowledgedBytes: 0,
           chunkCount: 1,
           acknowledgedChunkCount: 0,
-          state: 'queued' as const,
+          state: 'queued',
+          cancelPending: false,
           safeError: null,
           retryCount: 0,
           restartRecovery: false,
@@ -681,6 +691,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 100,
               proposedTitle: 'Escalation guide',
               proposedCategory: 'Site   Ops',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 4,
               outlineSource: 'native',
               outlineCount: 3,
@@ -728,6 +740,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 100,
               proposedTitle: 'Escalation guide',
               proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 4,
               outlineSource: 'native',
               outlineCount: 3,
@@ -777,6 +791,7 @@ describe('KnowledgeManagementWorkspace', () => {
             chunkCount: 2,
             acknowledgedChunkCount: 1,
             state: 'paused-network',
+            cancelPending: false,
             safeError: 'offline',
             retryCount: 8,
             restartRecovery: true,
@@ -841,6 +856,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 100,
               proposedTitle: 'Runbook',
               proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 4,
               outlineSource: 'native',
               outlineCount: 3,
@@ -926,6 +943,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 50,
               proposedTitle: '',
               proposedCategory: '',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: null,
               outlineSource: null,
               outlineCount: 0,
@@ -1006,6 +1025,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 100,
               proposedTitle: 'Checkout runbook',
               proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 4,
               outlineSource: 'native',
               outlineCount: 3,
@@ -1033,6 +1054,7 @@ describe('KnowledgeManagementWorkspace', () => {
             chunkCount: 1,
             acknowledgedChunkCount: 1,
             state: 'ready',
+            cancelPending: false,
             safeError: null,
             retryCount: 0,
             restartRecovery: false,
@@ -1131,6 +1153,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 80,
               proposedTitle: 'Replacement',
               proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 4,
               outlineSource: 'native',
               outlineCount: 3,
@@ -1158,6 +1182,7 @@ describe('KnowledgeManagementWorkspace', () => {
             chunkCount: 1,
             acknowledgedChunkCount: 1,
             state: 'extracting',
+            cancelPending: false,
             safeError: null,
             retryCount: 0,
             restartRecovery: false,
@@ -1211,6 +1236,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 100,
               proposedTitle: 'Different source title',
               proposedCategory: 'General',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 2,
               outlineSource: 'none',
               outlineCount: 0,
@@ -1260,6 +1287,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 100,
               proposedTitle: 'Replacement',
               proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 2,
               outlineSource: 'none',
               outlineCount: 0,
@@ -1306,6 +1335,8 @@ describe('KnowledgeManagementWorkspace', () => {
               progress: 50,
               proposedTitle: 'Discarded',
               proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
               pageCount: 4,
               outlineSource: 'native',
               outlineCount: 3,
@@ -1348,6 +1379,7 @@ describe('KnowledgeManagementWorkspace', () => {
             chunkCount: 1,
             acknowledgedChunkCount: 1,
             state: 'ready',
+            cancelPending: false,
             safeError: null,
             retryCount: 0,
             restartRecovery: false,
@@ -1383,6 +1415,7 @@ describe('KnowledgeManagementWorkspace', () => {
             chunkCount: 2,
             acknowledgedChunkCount: 1,
             state: 'source-required',
+            cancelPending: false,
             safeError: 'source-required',
             retryCount: 1,
             restartRecovery: true,
@@ -1424,6 +1457,8 @@ describe('KnowledgeManagementWorkspace', () => {
                 progress: 50,
                 proposedTitle: '',
                 proposedCategory: '',
+                proposedCategoryId: null,
+                proposedDocumentType: 'sop',
                 pageCount: null,
                 outlineSource: null,
                 outlineCount: 0,

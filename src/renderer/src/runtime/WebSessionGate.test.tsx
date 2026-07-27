@@ -48,7 +48,7 @@ describe('WebSessionGate', () => {
   it('activates an authenticated session before loading the shared app', async () => {
     const calls: string[] = [];
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => {
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => {
         calls.push('bootstrap');
         return { ok: true, session: SESSION };
       }),
@@ -76,7 +76,10 @@ describe('WebSessionGate', () => {
 
   it('renders the sign-in slot without loading the app when no session exists', async () => {
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => ({
+        ok: false,
+        error: 'unauthenticated',
+      })),
       login: vi.fn(),
       activate: vi.fn(),
       logout: vi.fn(async () => ({ ok: true })),
@@ -98,7 +101,10 @@ describe('WebSessionGate', () => {
 
   it('keeps the default app loader stable while showing sign-in', async () => {
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => ({
+        ok: false,
+        error: 'unauthenticated',
+      })),
       login: vi.fn(),
       activate: vi.fn(),
       logout: vi.fn(async () => ({ ok: true })),
@@ -113,8 +119,11 @@ describe('WebSessionGate', () => {
 
   it('authenticates from the default browser sign-in before loading the shared app', async () => {
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
-      login: vi.fn(async () => ({ ok: true, session: SESSION })),
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => ({
+        ok: false,
+        error: 'unauthenticated',
+      })),
+      login: vi.fn<WebSessionClientPort['login']>(async () => ({ ok: true, session: SESSION })),
       activate: vi.fn(async () => {
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
       }),
@@ -137,8 +146,14 @@ describe('WebSessionGate', () => {
 
   it('replaces the bridge in place when the mounted app reauthenticates', async () => {
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => ({ ok: true, session: SESSION })),
-      login: vi.fn(async () => ({ ok: true, session: { ...SESSION, csrfToken: 'next-csrf' } })),
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => ({
+        ok: true,
+        session: SESSION,
+      })),
+      login: vi.fn<WebSessionClientPort['login']>(async () => ({
+        ok: true,
+        session: { ...SESSION, csrfToken: 'next-csrf' },
+      })),
       activate: vi.fn(async () => {
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
       }),
@@ -160,7 +175,10 @@ describe('WebSessionGate', () => {
 
   it('clears the server session when the app discards its session and returns to sign in', async () => {
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => ({ ok: true, session: SESSION })),
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => ({
+        ok: true,
+        session: SESSION,
+      })),
       login: vi.fn(),
       activate: vi.fn(async () => {
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
@@ -180,8 +198,14 @@ describe('WebSessionGate', () => {
 
   it('separates a throttled sign-in from a wrong passphrase on the default sign-in screen', async () => {
     const client: WebSessionClientPort = {
-      bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
-      login: vi.fn(async () => ({ ok: false, error: 'rate-limited' as const })),
+      bootstrap: vi.fn<WebSessionClientPort['bootstrap']>(async () => ({
+        ok: false,
+        error: 'unauthenticated',
+      })),
+      login: vi.fn<WebSessionClientPort['login']>(async () => ({
+        ok: false,
+        error: 'rate-limited',
+      })),
       activate: vi.fn(),
       logout: vi.fn(async () => ({ ok: true })),
     };

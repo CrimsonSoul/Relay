@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeManagementSnapshot, KnowledgeUploadQueueView } from '@shared/knowledge';
+import type { PrivilegedReauthenticationProof } from '@shared/ipc';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
@@ -9,7 +10,7 @@ import { useKnowledgeManagement } from '../useKnowledgeManagement';
 vi.mock('../../../contexts/PrivilegedAccessContext', () => ({ usePrivilegedAccess: vi.fn() }));
 
 const usePrivilegedAccessMock = vi.mocked(usePrivilegedAccess);
-const snapshot = {
+const snapshot: KnowledgeManagementSnapshot = {
   mode: 'managed',
   categories: [],
   documents: { items: [], nextCursor: null },
@@ -17,16 +18,26 @@ const snapshot = {
   uploads: { items: [], nextCursor: null },
 };
 
-const publisherSession = {
-  state: 'active' as const,
+const publisherSession: PrivilegedSessionView = {
+  state: 'active',
   accountId: 'account-publisher',
   username: 'paris',
   displayName: 'Paris',
-  role: 'publisher' as const,
+  role: 'publisher',
   capabilities: ['privileged.status.read', 'knowledge.manage'],
   deviceId: 'device-1',
   expiresAt: null,
 };
+
+// The hook is wired to `submitCommand` through an untyped context double, so this mirrors the
+// request shape the hook actually sends and narrows the payload fields these tests read back.
+type SubmitCommandInput = {
+  command: string;
+  payload: { query?: string; cursor?: string | null; pageSize?: number };
+  expectedRevision: number | null;
+};
+
+type SubmitCommandMock = (input: SubmitCommandInput) => Promise<PrivilegedCommandResult>;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -144,12 +155,14 @@ describe('useKnowledgeManagement', () => {
     acknowledgedBytes: 0,
     items: [],
   };
-  const submitCommand = vi.fn(async (input: { command: string }) => ({
-    ok: true as const,
+  const submitCommand = vi.fn<SubmitCommandMock>(async (input) => ({
+    ok: true,
     requestId: 'request-1',
     value: input.command === 'knowledge.snapshot.read' ? snapshot : {},
   }));
-  const reauthenticate = vi.fn(async () => ({
+  const reauthenticate = vi.fn<
+    (password: string) => Promise<PrivilegedReauthenticationProof | null>
+  >(async () => ({
     proofId: 'proof-1',
     expiresAt: '2026-07-16T02:00:00.000Z',
   }));
@@ -157,8 +170,8 @@ describe('useKnowledgeManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
-    submitCommand.mockReset().mockImplementation(async (input: { command: string }) => ({
-      ok: true as const,
+    submitCommand.mockReset().mockImplementation(async (input) => ({
+      ok: true,
       requestId: 'request-1',
       value: input.command === 'knowledge.snapshot.read' ? snapshot : {},
     }));
@@ -264,7 +277,7 @@ describe('useKnowledgeManagement', () => {
     };
     globalThis.api!.getKnowledgeUploadQueue = vi.fn(async () => localQueue);
     let snapshotReads = 0;
-    submitCommand.mockImplementation(async (input: { command: string }) => {
+    submitCommand.mockImplementation(async (input) => {
       if (input.command !== 'knowledge.snapshot.read') {
         return { ok: true, requestId: 'request-1', value: {} };
       }
@@ -298,7 +311,7 @@ describe('useKnowledgeManagement', () => {
     const ready = snapshotWithReadyUpload();
     const cancelled = snapshotWithReadyUpload('cancelled');
     let serverCancelled = false;
-    submitCommand.mockImplementation(async (input: { command: string }) => {
+    submitCommand.mockImplementation(async (input) => {
       if (input.command === 'knowledge.upload.file.cancel') {
         serverCancelled = true;
         return { ok: true, requestId: 'cancel-upload-1', value: {} };
@@ -325,7 +338,7 @@ describe('useKnowledgeManagement', () => {
 
   it('keeps the upload snapshot visible when protected cancellation fails', async () => {
     const ready = snapshotWithReadyUpload();
-    submitCommand.mockImplementation(async (input: { command: string }) =>
+    submitCommand.mockImplementation(async (input) =>
       input.command === 'knowledge.snapshot.read'
         ? okSnapshot(ready)
         : { ok: false, requestId: 'cancel-upload-1', error: 'unauthorized' },
@@ -374,7 +387,7 @@ describe('useKnowledgeManagement', () => {
       documents: { items: [other, ready], nextCursor: null },
     };
     let snapshotReads = 0;
-    submitCommand.mockImplementation(async (input: { command: string }) => {
+    submitCommand.mockImplementation(async (input) => {
       if (input.command === 'knowledge.document.search-index.retry') {
         return { ok: false as const, requestId: 'retry-1', error: 'expired' as const };
       }
@@ -406,7 +419,7 @@ describe('useKnowledgeManagement', () => {
     const failed = snapshotWithSearchState('failed');
     const removed = { ...failed, documents: { items: [], nextCursor: null } };
     let snapshotReads = 0;
-    submitCommand.mockImplementation(async (input: { command: string }) => {
+    submitCommand.mockImplementation(async (input) => {
       if (input.command === 'knowledge.document.search-index.retry') {
         return { ok: false as const, requestId: 'retry-1', error: 'expired' as const };
       }
@@ -488,7 +501,7 @@ describe('useKnowledgeManagement', () => {
   it('rejects a late search retry result from a stale management identity', async () => {
     const failed = snapshotWithSearchState('failed');
     const mutation = deferred<PrivilegedCommandResult>();
-    submitCommand.mockImplementation((input: { command: string }) =>
+    submitCommand.mockImplementation((input) =>
       input.command === 'knowledge.document.search-index.retry'
         ? mutation.promise
         : Promise.resolve(okSnapshot(failed)),
@@ -530,6 +543,8 @@ describe('useKnowledgeManagement', () => {
             progress: 100,
             proposedTitle: 'Runbook',
             proposedCategory: 'Operations',
+            proposedCategoryId: 'category-operations',
+            proposedDocumentType: 'sop',
             pageCount: 4,
             outlineSource: 'native' as const,
             outlineCount: 3,
@@ -656,6 +671,8 @@ describe('useKnowledgeManagement', () => {
             progress: 100,
             proposedTitle: 'Runbook',
             proposedCategory: 'Operations',
+            proposedCategoryId: 'category-operations',
+            proposedDocumentType: 'sop',
             pageCount: 4,
             outlineSource: 'native' as const,
             outlineCount: 3,
@@ -982,7 +999,7 @@ describe('useKnowledgeManagement', () => {
       .fn()
       .mockReturnValueOnce(queueHydration.promise)
       .mockResolvedValue(localQueue);
-    submitCommand.mockImplementation(async (input: { command: string }) =>
+    submitCommand.mockImplementation(async (input) =>
       input.command === 'knowledge.snapshot.read'
         ? okSnapshot(snapshotWithReadyUpload())
         : { ok: true, requestId: 'unexpected-direct-cancel', value: {} },
@@ -1179,7 +1196,7 @@ describe('useKnowledgeManagement', () => {
       occurredAt: '2026-07-16T01:00:00.000Z',
     };
     const second = { ...first, id: 'audit-2', requestId: 'request-audit-2' };
-    submitCommand.mockImplementation(async (input: { command: string; payload?: unknown }) => {
+    submitCommand.mockImplementation(async (input) => {
       if (input.command === 'knowledge.snapshot.read') {
         return { ok: true as const, requestId: 'request-snapshot', value: snapshot };
       }

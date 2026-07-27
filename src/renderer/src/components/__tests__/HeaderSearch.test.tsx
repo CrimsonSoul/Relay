@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type MockedFunction } from 'vitest';
+import type { BridgeAPI } from '@shared/ipc';
 import type {
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
@@ -132,6 +133,15 @@ const settlePassageSearch = async () => {
 // Stub scrollIntoView (not available in jsdom)
 Element.prototype.scrollIntoView = vi.fn();
 
+/**
+ * `globalThis.api` is typed as the complete desktop bridge, but HeaderSearch only
+ * reaches for these members. Holding the mocks in file scope keeps every assertion
+ * pointed at the same function instances the component was handed, and
+ * `Partial<BridgeAPI>` still type-checks each stub against the real contract.
+ */
+let searchKnowledge: MockedFunction<BridgeAPI['searchKnowledge']>;
+let cancelKnowledgeSearch: MockedFunction<BridgeAPI['cancelKnowledgeSearch']>;
+
 describe('HeaderSearch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -141,12 +151,14 @@ describe('HeaderSearch', () => {
     mockSearchResults.length = 0;
     mockKnowledgeIconFailure = false;
     mockUseKnowledgeLibrary.mockClear();
-    globalThis.api = {
-      ...globalThis.api,
+    searchKnowledge = vi.fn<BridgeAPI['searchKnowledge']>();
+    cancelKnowledgeSearch = vi.fn<BridgeAPI['cancelKnowledgeSearch']>();
+    const bridge: Partial<BridgeAPI> = {
       platform: 'darwin',
-      searchKnowledge: vi.fn(),
-      cancelKnowledgeSearch: vi.fn(),
+      searchKnowledge,
+      cancelKnowledgeSearch,
     };
+    vi.stubGlobal('api', bridge);
   });
 
   it('renders the search input', () => {
@@ -263,8 +275,9 @@ describe('HeaderSearch', () => {
     });
     // setIsSearchFocused should be called with true (from focus), not false
     const calls = mockSearchContext.setIsSearchFocused.mock.calls;
-    const lastCall = calls[calls.length - 1];
-    expect(lastCall[0]).toBe(true);
+    const lastCall = calls.at(-1);
+    expect(lastCall).toBeDefined();
+    expect(lastCall![0]).toBe(true);
     vi.useRealTimers();
   });
 
@@ -471,7 +484,8 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       const hitboxes = document.querySelectorAll('.search-dropdown-hitbox');
-      fireEvent.mouseDown(hitboxes[0]);
+      expect(hitboxes[0]).toBeDefined();
+      fireEvent.mouseDown(hitboxes[0]!);
       expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
     });
 
@@ -481,7 +495,8 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       const hitboxes = document.querySelectorAll('.search-dropdown-hitbox');
-      fireEvent.mouseEnter(hitboxes[1]);
+      expect(hitboxes[1]).toBeDefined();
+      fireEvent.mouseEnter(hitboxes[1]!);
       const options = screen.getAllByRole('option');
       expect(options[1]).toHaveAttribute('aria-selected', 'true');
     });
@@ -804,38 +819,36 @@ describe('HeaderSearch', () => {
     });
 
     it('starts universal passage search after one 150ms debounce', async () => {
-      vi.mocked(globalThis.api.searchKnowledge).mockReturnValue(
-        deferred<KnowledgeSearchResponse>().promise,
-      );
+      searchKnowledge.mockReturnValue(deferred<KnowledgeSearchResponse>().promise);
 
       render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
       await act(async () => vi.advanceTimersByTimeAsync(149));
-      expect(globalThis.api.searchKnowledge).not.toHaveBeenCalled();
+      expect(searchKnowledge).not.toHaveBeenCalled();
 
       await act(async () => vi.advanceTimersByTimeAsync(1));
-      expect(globalThis.api.searchKnowledge).toHaveBeenCalledTimes(1);
-      expect(globalThis.api.searchKnowledge).toHaveBeenCalledWith(
+      expect(searchKnowledge).toHaveBeenCalledTimes(1);
+      expect(searchKnowledge).toHaveBeenCalledWith(
         expect.objectContaining({ query: 'oracle', scope: { kind: 'all' }, limit: 20 }),
       );
     });
 
     it('shows immediate results while passage search is still pending', async () => {
       const pending = deferred<KnowledgeSearchResponse>();
-      vi.mocked(globalThis.api.searchKnowledge).mockReturnValue(pending.promise);
+      searchKnowledge.mockReturnValue(pending.promise);
 
       render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
       await settlePassageSearch();
 
       expect(screen.getByText('Oracle Database Server')).toBeVisible();
       expect(screen.queryByText('Wiki passages')).not.toBeInTheDocument();
-      expect(globalThis.api.searchKnowledge).toHaveBeenCalledTimes(1);
-      expect(globalThis.api.searchKnowledge).toHaveBeenCalledWith(
+      expect(searchKnowledge).toHaveBeenCalledTimes(1);
+      expect(searchKnowledge).toHaveBeenCalledWith(
         expect.objectContaining({ query: 'oracle', scope: { kind: 'all' }, limit: 20 }),
       );
     });
 
     it('keeps immediate results when Wiki passage search rejects', async () => {
-      vi.mocked(globalThis.api.searchKnowledge).mockRejectedValue(new Error('offline'));
+      searchKnowledge.mockRejectedValue(new Error('offline'));
 
       render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
       await settlePassageSearch();
@@ -857,7 +870,7 @@ describe('HeaderSearch', () => {
           matchKind: 'exact',
         }),
       ];
-      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+      searchKnowledge.mockImplementation((request) =>
         Promise.resolve(successResponse(request, passages)),
       );
 
@@ -881,7 +894,7 @@ describe('HeaderSearch', () => {
 
     it('opens an async passage with its complete canonical target by keyboard and mouse', async () => {
       const passage = makePassageResult();
-      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+      searchKnowledge.mockImplementation((request) =>
         Promise.resolve(successResponse(request, [passage])),
       );
 
@@ -936,7 +949,7 @@ describe('HeaderSearch', () => {
       const duplicate = makePassageResult();
       const distinctPage = makePassageResult({ id: 'passage-2', pageIndex: 4 });
       const duplicatePassage = makePassageResult({ id: 'passage-3', pageIndex: 4 });
-      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+      searchKnowledge.mockImplementation((request) =>
         Promise.resolve(successResponse(request, [duplicate, distinctPage, duplicatePassage])),
       );
 
@@ -950,7 +963,7 @@ describe('HeaderSearch', () => {
 
     it('does not publish a stale passage completion after the query changes', async () => {
       const oldSearch = deferred<KnowledgeSearchResponse>();
-      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) => {
+      searchKnowledge.mockImplementation((request) => {
         if (request.query === 'oracle') return oldSearch.promise;
         return Promise.resolve(
           successResponse(request, [
@@ -970,7 +983,9 @@ describe('HeaderSearch', () => {
       await settlePassageSearch();
       expect(screen.getByText('Network recovery')).toBeInTheDocument();
 
-      const oldRequest = vi.mocked(globalThis.api.searchKnowledge).mock.calls[0][0];
+      const firstCall = searchKnowledge.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      const oldRequest = firstCall![0];
       await act(async () => oldSearch.resolve(successResponse(oldRequest, [makePassageResult()])));
 
       expect(screen.queryByText('Oracle SOP Manual')).not.toBeInTheDocument();
@@ -987,7 +1002,7 @@ describe('HeaderSearch', () => {
         data: { email: 'operator@example.com' },
       });
       mockKnowledgeIconFailure = true;
-      vi.mocked(globalThis.api.searchKnowledge).mockImplementation((request) =>
+      searchKnowledge.mockImplementation((request) =>
         Promise.resolve(successResponse(request, [makePassageResult()])),
       );
 

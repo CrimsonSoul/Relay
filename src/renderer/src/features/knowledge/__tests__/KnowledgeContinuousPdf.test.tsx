@@ -82,6 +82,26 @@ class IntersectionObserverDouble {
   }
 }
 
+function firstObserver(): IntersectionObserverDouble {
+  const [observer] = IntersectionObserverDouble.instances;
+  if (!observer) {
+    throw new Error('expected KnowledgeContinuousPdf to construct an IntersectionObserver');
+  }
+  return observer;
+}
+
+function pageShells(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+}
+
+function shellAt(shells: readonly HTMLElement[], index: number): HTMLElement {
+  const shell = shells[index];
+  if (!shell) {
+    throw new Error(`expected a rendered page shell at index ${index}`);
+  }
+  return shell;
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((resolvePromise) => {
@@ -198,7 +218,7 @@ describe('KnowledgeContinuousPdf', () => {
   it('creates one stable shell per page and mounts only the bounded overscan window', async () => {
     const { pdf } = createPdf(8);
     const { container } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
-    const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+    const shells = pageShells(container);
 
     expect(shells).toHaveLength(8);
     expect(screen.getByRole('region', { name: 'Continuous PDF pages' }).tagName).toBe('SECTION');
@@ -207,14 +227,16 @@ describe('KnowledgeContinuousPdf', () => {
       'aria-hidden',
       'true',
     );
-    expect(shells[0]).toHaveStyle({ width: '612px', minHeight: '792px' });
+    expect(shellAt(shells, 0)).toHaveStyle({ width: '612px', minHeight: '792px' });
 
-    await waitFor(() => expect(shells[0]).toHaveStyle({ width: '601px', minHeight: '801px' }));
+    await waitFor(() =>
+      expect(shellAt(shells, 0)).toHaveStyle({ width: '601px', minHeight: '801px' }),
+    );
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: shells[0], intersectionRatio: 0 },
-        { target: shells[3], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: shellAt(shells, 0), intersectionRatio: 0 },
+        { target: shellAt(shells, 3), intersectionRatio: 1 },
       ]);
     });
 
@@ -227,7 +249,7 @@ describe('KnowledgeContinuousPdf', () => {
   it('reports the visible page and clamps rendering at the first and last pages', () => {
     const { pdf } = createPdf(6);
     const { container } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
-    const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+    const shells = pageShells(container);
 
     expect(onCurrentPageChange).toHaveBeenLastCalledWith(0);
     expect(
@@ -235,9 +257,9 @@ describe('KnowledgeContinuousPdf', () => {
     ).toEqual(['0', '1', '2']);
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: shells[0], intersectionRatio: 0 },
-        { target: shells[5], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: shellAt(shells, 0), intersectionRatio: 0 },
+        { target: shellAt(shells, 5), intersectionRatio: 1 },
       ]);
     });
 
@@ -316,20 +338,22 @@ describe('KnowledgeContinuousPdf', () => {
     const { pdf } = createPdf(6);
     const { container, rerender } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
     const viewport = container.querySelector<HTMLElement>('.knowledge-continuous-pdf')!;
-    const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+    const shells = pageShells(container);
     const scrollTo = vi.fn();
     viewport.scrollTo = scrollTo;
-    Object.defineProperty(shells[3], 'offsetTop', { configurable: true, value: 900 });
-    Object.defineProperty(shells[4], 'offsetTop', { configurable: true, value: 1200 });
+    Object.defineProperty(shellAt(shells, 3), 'offsetTop', { configurable: true, value: 900 });
+    Object.defineProperty(shellAt(shells, 4), 'offsetTop', { configurable: true, value: 1200 });
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: shells[0], intersectionRatio: 0 },
-        { target: shells[3], intersectionRatio: 0.37 },
+      firstObserver().emit([
+        { target: shellAt(shells, 0), intersectionRatio: 0 },
+        { target: shellAt(shells, 3), intersectionRatio: 0.37 },
       ]);
     });
     rerender(<KnowledgeContinuousPdf {...props(pdf, { activePageIndex: 3 })} />);
-    await waitFor(() => expect(shells[3]).toHaveStyle({ width: '604px', minHeight: '804px' }));
+    await waitFor(() =>
+      expect(shellAt(shells, 3)).toHaveStyle({ width: '604px', minHeight: '804px' }),
+    );
     rerender(<KnowledgeContinuousPdf {...props(pdf, { activePageIndex: 3, scale: 1.5 })} />);
 
     expect(scrollTo).not.toHaveBeenCalled();
@@ -386,7 +410,7 @@ describe('KnowledgeContinuousPdf', () => {
     const { container, rerender } = render(<KnowledgeContinuousPdf {...props(pdf)} />);
     const shell = container.querySelector<HTMLElement>('[data-page-index="0"]')!;
     await waitFor(() => expect(shell).toHaveStyle({ width: '601px', minHeight: '801px' }));
-    const observer = IntersectionObserverDouble.instances[0];
+    const observer = firstObserver();
     expect(getPage).toHaveBeenCalledTimes(4);
 
     rerender(<KnowledgeContinuousPdf {...props(pdf, { scale: 1.5 })} />);
@@ -433,11 +457,11 @@ describe('KnowledgeContinuousPdf', () => {
     expect(container.querySelectorAll('.knowledge-page-shell')).toHaveLength(200);
     expect(screen.getAllByTestId('rendered-pdf-page').length).toBeLessThanOrEqual(5);
 
-    const shells = [...container.querySelectorAll<HTMLElement>('.knowledge-page-shell')];
+    const shells = pageShells(container);
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: shells[0], intersectionRatio: 0 },
-        { target: shells[100], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: shellAt(shells, 0), intersectionRatio: 0 },
+        { target: shellAt(shells, 100), intersectionRatio: 1 },
       ]);
     });
     expect(
@@ -445,9 +469,9 @@ describe('KnowledgeContinuousPdf', () => {
     ).toEqual(['98', '99', '100', '101', '102']);
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: shells[100], intersectionRatio: 0 },
-        { target: shells[199], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: shellAt(shells, 100), intersectionRatio: 0 },
+        { target: shellAt(shells, 199), intersectionRatio: 1 },
       ]);
     });
     expect(

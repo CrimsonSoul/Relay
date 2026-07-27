@@ -88,32 +88,43 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+/**
+ * `globalThis.api` is typed as the complete preload bridge; SettingsModal only reaches for
+ * these members. Tests assert against this object rather than re-reading `globalThis.api`,
+ * so the spies they inspect are provably the ones the component was handed.
+ */
+function createBridgeMock() {
+  return {
+    runtime: ELECTRON_RUNTIME,
+    getConfig: vi.fn().mockResolvedValue({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      lanIp: LAN_SERVER_ADDRESS,
+    }),
+    getConnectionSecret: vi.fn().mockResolvedValue(CONNECTION_SECRET),
+    clearConfig: vi.fn().mockResolvedValue(true),
+    getWebServerState: vi.fn().mockResolvedValue({
+      enabled: false,
+      status: 'disabled',
+      port: 8091,
+    }),
+    saveWebServerConfig: vi.fn(),
+    retryWebServer: vi.fn(),
+    writeClipboard: vi.fn(),
+  };
+}
+
 describe('SettingsModal', () => {
+  let mockApi: ReturnType<typeof createBridgeMock>;
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePrivilegedAccess.mockReturnValue({
       session: { state: 'active', role: 'admin' },
     });
-    const mockApi = {
-      runtime: ELECTRON_RUNTIME,
-      getConfig: vi.fn().mockResolvedValue({
-        mode: 'server',
-        port: 8090,
-        bindHost: '0.0.0.0',
-        lanIp: LAN_SERVER_ADDRESS,
-      }),
-      getConnectionSecret: vi.fn().mockResolvedValue(CONNECTION_SECRET),
-      clearConfig: vi.fn().mockResolvedValue(true),
-      getWebServerState: vi.fn().mockResolvedValue({
-        enabled: false,
-        status: 'disabled',
-        port: 8091,
-      }),
-      saveWebServerConfig: vi.fn(),
-      retryWebServer: vi.fn(),
-      writeClipboard: vi.fn(),
-    };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi;
+    mockApi = createBridgeMock();
+    vi.stubGlobal('api', mockApi);
   });
 
   it('renders nothing when closed', () => {
@@ -213,7 +224,7 @@ describe('SettingsModal', () => {
       success: true,
       data: { reachable: true, problemCount: 4 },
     });
-    Object.assign(globalThis.api, {
+    Object.assign(mockApi, {
       getDynatraceProblemsSettings: getSettings,
       testDynatraceProblemsSettings: testSettings,
     });
@@ -311,7 +322,7 @@ describe('SettingsModal', () => {
     expect(screen.queryByText('Reconfigure...')).not.toBeInTheDocument();
     expect(screen.queryByText('Relay Web')).not.toBeInTheDocument();
     expect(screen.getByText(/managed by Relay Desktop/i)).toBeInTheDocument();
-    expect(globalThis.api.getConnectionSecret).not.toHaveBeenCalled();
+    expect(mockApi.getConnectionSecret).not.toHaveBeenCalled();
   });
 
   it('shows "Not configured" when getConfig returns null', async () => {
@@ -334,7 +345,7 @@ describe('SettingsModal', () => {
     fireEvent.click(await screen.findByText('Erase and reconfigure'));
 
     await waitFor(() => {
-      expect(globalThis.api.clearConfig).toHaveBeenCalled();
+      expect(mockApi.clearConfig).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
       expect(onReconfigure).toHaveBeenCalled();
     });
@@ -354,7 +365,7 @@ describe('SettingsModal', () => {
     expect(
       screen.getByText(/erases the saved Relay server URL and the shared connection passphrase/i),
     ).toBeInTheDocument();
-    expect(globalThis.api.clearConfig).not.toHaveBeenCalled();
+    expect(mockApi.clearConfig).not.toHaveBeenCalled();
     expect(onReconfigure).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('Cancel'));
@@ -362,7 +373,7 @@ describe('SettingsModal', () => {
     await waitFor(() =>
       expect(screen.queryByText('Reconfigure Relay connection?')).not.toBeInTheDocument(),
     );
-    expect(globalThis.api.clearConfig).not.toHaveBeenCalled();
+    expect(mockApi.clearConfig).not.toHaveBeenCalled();
     expect(onReconfigure).not.toHaveBeenCalled();
   });
 
@@ -610,7 +621,11 @@ describe('SettingsModal', () => {
 
     vi.resetModules();
     vi.doMock('react', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('react')>();
+      // The ESM namespace Vitest hands back also carries the CJS default export,
+      // which `typeof import('react')` alone does not describe.
+      const actual = await importOriginal<
+        typeof import('react') & { default: typeof import('react') }
+      >();
 
       return {
         ...actual,

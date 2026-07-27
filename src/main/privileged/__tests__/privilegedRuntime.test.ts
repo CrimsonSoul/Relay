@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type {
   RelayPrivilegedAccountRecord,
   RelayPrivilegedStateRecord,
@@ -98,8 +98,8 @@ describe('PrivilegedRuntime', () => {
     sign: ReturnType<typeof vi.fn>;
   };
   let clientTransport: PrivilegedClientTransport;
-  let submitCommand: ReturnType<typeof vi.fn>;
-  let completePairing: ReturnType<typeof vi.fn>;
+  let submitCommand: Mock<PrivilegedClientTransport['submitCommand']>;
+  let completePairing: Mock<PrivilegedClientTransport['completePairing']>;
   let authorityChanged:
     | ((snapshot: {
         account: RelayPrivilegedAccountRecord;
@@ -222,6 +222,7 @@ describe('PrivilegedRuntime', () => {
     expect(view).toMatchObject({ state: 'active', deviceId: DEVICE_ID });
     expect(submitCommand).toHaveBeenCalledOnce();
     const envelope = submitCommand.mock.calls[0]?.[0];
+    if (!envelope) throw new Error('login did not submit a signed status command');
     expect(envelope).toMatchObject({
       accountId: ACCOUNT_ID,
       deviceId: DEVICE_ID,

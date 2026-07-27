@@ -69,7 +69,7 @@ describe('ShortcutsModal platform detection', () => {
 
   afterEach(() => {
     if (originalApi) {
-      (globalThis.window as Record<string, unknown>).api = originalApi;
+      globalThis.window.api = originalApi;
     }
   });
 

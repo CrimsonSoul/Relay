@@ -1,7 +1,7 @@
 import { createRef, useMemo, useRef } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { PDFDocumentProxy } from 'pdfjs-dist/build/pdf.mjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockedFunction } from 'vitest';
 import type { KnowledgeCategoryRecord, KnowledgeDocumentRecord } from '@shared/knowledge';
 import type {
   KnowledgeSearchRequest,
@@ -16,6 +16,7 @@ import { KnowledgeManagementWorkspace } from '../KnowledgeManagementWorkspace';
 import { KnowledgeReaderSidebarBody } from '../KnowledgeReaderSidebarBody';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
 import { KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY } from '../knowledgeWorkspaceNavigation';
+import type { KnowledgeOpenRequest } from '../knowledgeNavigation';
 import type {
   KnowledgeDocumentSearchMatch,
   KnowledgeDocumentSearchSnapshot,
@@ -453,14 +454,17 @@ function successfulApi(results: KnowledgeSearchResult[]): void {
   } as never;
 }
 
-const defaultActions: HeaderSearchActions = {
-  onAddContactToBridge: vi.fn(),
-  onToggleGroup: vi.fn(),
-  onNavigateToTab: vi.fn(),
-  onOpenKnowledgeDestination: vi.fn(),
-  onOpenAddContact: vi.fn(),
-  onOpenKnowledgeDocument: vi.fn(),
-};
+/** Fresh spies per case, so one case's calls never leak into the next one's assertions. */
+function makeHeaderActions(): HeaderSearchActions {
+  return {
+    onAddContactToBridge: vi.fn(),
+    onToggleGroup: vi.fn(),
+    onNavigateToTab: vi.fn(),
+    onOpenKnowledgeDestination: vi.fn(),
+    onOpenAddContact: vi.fn(),
+    onOpenKnowledgeDocument: vi.fn(),
+  };
+}
 
 let activeManagement: ReturnType<typeof managementModel>;
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView | undefined;
@@ -530,7 +534,7 @@ function ProductionSurfaceHarness({
   onOpenDocument,
 }: Readonly<{
   headerActions: HeaderSearchActions;
-  onOpenDocument: ReturnType<typeof vi.fn>;
+  onOpenDocument: MockedFunction<(request: KnowledgeOpenRequest) => void>;
 }>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   return (
@@ -563,7 +567,7 @@ function ProductionSurfaceHarness({
 
 async function assertCoreProductionSurfaces(
   headerActions: HeaderSearchActions,
-  onOpenDocument: ReturnType<typeof vi.fn>,
+  onOpenDocument: MockedFunction<(request: KnowledgeOpenRequest) => void>,
 ): Promise<void> {
   const headerInput = screen.getByRole('combobox', { name: 'Search Relay' });
   for (const label of ['Failover Operator', 'Failover Server', 'Open alerts']) {
@@ -633,10 +637,8 @@ describe('Wiki search renderer degraded-mode release gate', () => {
     'contains %s while core destinations remain usable',
     async (fault) => {
       installFault(fault);
-      const headerActions = Object.fromEntries(
-        Object.entries(defaultActions).map(([key]) => [key, vi.fn()]),
-      ) as HeaderSearchActions;
-      const onOpenDocument = vi.fn();
+      const headerActions = makeHeaderActions();
+      const onOpenDocument = vi.fn<(request: KnowledgeOpenRequest) => void>();
       render(
         <ProductionSurfaceHarness headerActions={headerActions} onOpenDocument={onOpenDocument} />,
       );
@@ -668,10 +670,8 @@ describe('Wiki search renderer degraded-mode release gate', () => {
       testState.throwFuzzyRows = boundary === 'reader';
       const faultCatalogBoundary = boundary.startsWith('catalog');
       testState.throwCoverDocumentId = null;
-      const headerActions = Object.fromEntries(
-        Object.entries(defaultActions).map(([key]) => [key, vi.fn()]),
-      ) as HeaderSearchActions;
-      const onOpenDocument = vi.fn();
+      const headerActions = makeHeaderActions();
+      const onOpenDocument = vi.fn<(request: KnowledgeOpenRequest) => void>();
       render(
         <ProductionSurfaceHarness headerActions={headerActions} onOpenDocument={onOpenDocument} />,
       );

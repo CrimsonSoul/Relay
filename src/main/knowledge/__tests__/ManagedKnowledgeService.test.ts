@@ -51,6 +51,20 @@ function document(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// PocketBase writes that carry files are submitted as multipart, so the assertions below need the
+// FormData argument rather than the plain-record branch of the same mock.
+function firstFormDataArg(calls: readonly (readonly unknown[])[]): FormData {
+  const value = calls[0]?.[0];
+  if (!(value instanceof FormData)) throw new Error('Expected a FormData payload');
+  return value;
+}
+
+function lastFormDataArg(calls: readonly (readonly unknown[])[], index: number): FormData {
+  const value = calls.at(-1)?.[index];
+  if (!(value instanceof FormData)) throw new Error('Expected a FormData payload');
+  return value;
+}
+
 function upload(overrides: Record<string, unknown> = {}) {
   return {
     id: 'upload-1',
@@ -123,26 +137,36 @@ describe('ManagedKnowledgeService', () => {
   const documents = {
     getFullList: vi.fn(async () => [] as Record<string, unknown>[]),
     getOne: vi.fn(async () => document()),
-    create: vi.fn(async () => ({
+    // PocketBase hands back an untyped record, so the tests can stage malformed ids on purpose.
+    create: vi.fn<
+      (
+        value: FormData | Record<string, unknown>,
+        options?: { requestKey: null },
+      ) => Promise<Record<string, unknown>>
+    >(async () => ({
       id: 'document-2',
       pdf: 'stored-new.pdf',
       created: NOW,
       updated: NOW,
     })),
-    update: vi.fn(async (id: string, value: Record<string, unknown> | FormData) =>
-      value instanceof FormData
-        ? { id, pdf: 'stored-replacement.pdf', created: NOW, updated: NOW }
-        : { ...document(), ...value, id, updated: NOW },
+    update: vi.fn(
+      async (
+        id: string,
+        value: Record<string, unknown> | FormData,
+      ): Promise<Record<string, unknown>> =>
+        value instanceof FormData
+          ? { id, pdf: 'stored-replacement.pdf', created: NOW, updated: NOW }
+          : { ...document(), ...value, id, updated: NOW },
     ),
     delete: vi.fn(async () => true),
   };
   const uploads = {
-    getFullList: vi.fn(async () => []),
+    getFullList: vi.fn(async () => [] as Record<string, unknown>[]),
     getOne: vi.fn(async () => upload()),
     update: vi.fn(async () => ({})),
   };
   const audits = {
-    getFullList: vi.fn(async () => []),
+    getFullList: vi.fn(async () => [] as Record<string, unknown>[]),
     create: vi.fn(async (value) => ({ id: 'audit-1', ...value })),
   };
   const batchDocuments = { delete: vi.fn() };
@@ -355,7 +379,7 @@ describe('ManagedKnowledgeService', () => {
       searchIndexError: null,
     });
     expect(documents.create).toHaveBeenCalledWith(expect.any(FormData), { requestKey: null });
-    const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
+    const publishForm = firstFormDataArg(documents.create.mock.calls);
     expect(publishForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
     expect(publishForm.get('categoryId')).toBe('category-operations');
     expect(publishForm.get('category')).toBe('Operations');
@@ -482,7 +506,7 @@ describe('ManagedKnowledgeService', () => {
       documentType: 'cheatsheet',
     });
 
-    const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
+    const publishForm = firstFormDataArg(documents.create.mock.calls);
     expect(publishForm.get('documentType')).toBe('cheatsheet');
   });
 
@@ -575,7 +599,7 @@ describe('ManagedKnowledgeService', () => {
     expect(documents.update).toHaveBeenCalledWith('document-1', expect.any(FormData), {
       requestKey: null,
     });
-    const replacementForm = documents.update.mock.calls.at(-1)?.[1] as FormData;
+    const replacementForm = lastFormDataArg(documents.update.mock.calls, 1);
     expect(replacementForm.get('sourceKey')).toBe('Custom/Stable-Runbook.pdf');
     expect(replacementForm.get('title')).toBe('Original embedded title');
     expect(replacementForm.get('displayTitle')).toBe('Pinned operations title');

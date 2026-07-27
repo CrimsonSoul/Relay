@@ -66,7 +66,7 @@ describe('useDirectoryContacts', () => {
     const effective = result.current.getEffectiveContacts();
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('dave@test.com');
-    expect(effective[0].email).toBe('dave@test.com');
+    expect(effective[0]?.email).toBe('dave@test.com');
   });
 
   it('rolls back optimistic create on service failure', async () => {
@@ -138,7 +138,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[0]); // Alice
+      result.current.setDeleteConfirmation(alice);
     });
 
     await act(async () => {
@@ -157,7 +157,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[0]); // Alice
+      result.current.setDeleteConfirmation(alice);
     });
 
     await act(async () => {
@@ -209,9 +209,9 @@ describe('useDirectoryContacts', () => {
     expect(result.current.editingContact).toBeNull();
 
     act(() => {
-      result.current.setEditingContact(contacts[1]);
+      result.current.setEditingContact(bob);
     });
-    expect(result.current.editingContact).toEqual(contacts[1]);
+    expect(result.current.editingContact).toEqual(bob);
 
     act(() => {
       result.current.setEditingContact(null);
@@ -239,7 +239,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[1]); // Bob
+      result.current.setDeleteConfirmation(bob);
     });
 
     await act(async () => {
@@ -305,7 +305,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[0]); // Alice
+      result.current.setDeleteConfirmation(alice);
     });
 
     await act(async () => {
@@ -333,7 +333,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setEditingContact(contacts[0]); // editing alice@test.com
+      result.current.setEditingContact(alice); // editing alice@test.com
     });
 
     await act(async () => {

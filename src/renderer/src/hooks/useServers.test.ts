@@ -80,7 +80,7 @@ describe('useServers', () => {
     const { result } = renderHook(() => useServers(servers, [], 'server-a'));
 
     expect(result.current.filteredServers).toHaveLength(1);
-    expect(result.current.filteredServers[0].name).toBe('server-a');
+    expect(result.current.filteredServers[0]?.name).toBe('server-a');
   });
 
   it('sorts servers ascending by default', () => {
@@ -90,8 +90,8 @@ describe('useServers', () => {
     ];
     const { result } = renderHook(() => useServers(servers, []));
 
-    expect(result.current.filteredServers[0].name).toBe('Alpha');
-    expect(result.current.filteredServers[1].name).toBe('Zeta');
+    expect(result.current.filteredServers[0]?.name).toBe('Alpha');
+    expect(result.current.filteredServers[1]?.name).toBe('Zeta');
   });
 
   it('sorts servers descending when sortOrder is desc', () => {
@@ -105,8 +105,8 @@ describe('useServers', () => {
       result.current.setSortOrder('desc');
     });
 
-    expect(result.current.filteredServers[0].name).toBe('Zeta');
-    expect(result.current.filteredServers[1].name).toBe('Alpha');
+    expect(result.current.filteredServers[0]?.name).toBe('Zeta');
+    expect(result.current.filteredServers[1]?.name).toBe('Alpha');
   });
 
   it('handles sort when values are equal', () => {
@@ -127,20 +127,21 @@ describe('useServers', () => {
     const { result } = renderHook(() => useServers(servers, []));
 
     // Empty string sorts before 'Alpha'
-    expect(result.current.filteredServers[0].name).toBe('');
+    expect(result.current.filteredServers[0]?.name).toBe('');
   });
 
   // --- contextMenu effect (click to dismiss) ---
 
   it('clears contextMenu on global click', () => {
-    const servers = [makeServer()];
+    const server = makeServer();
+    const servers = [server];
     const { result } = renderHook(() => useServers(servers, []));
 
     // Open context menu
     act(() => {
       result.current.handleContextMenu(
         { preventDefault: vi.fn(), clientX: 100, clientY: 200 },
-        servers[0],
+        server,
       );
     });
     expect(result.current.contextMenu).not.toBeNull();
@@ -165,13 +166,14 @@ describe('useServers', () => {
   // --- handleEdit branches ---
 
   it('handleEdit sets editing server and opens modal when contextMenu exists', () => {
-    const servers = [makeServer()];
+    const server = makeServer();
+    const servers = [server];
     const { result } = renderHook(() => useServers(servers, []));
 
     act(() => {
       result.current.handleContextMenu(
         { preventDefault: vi.fn(), clientX: 10, clientY: 20 },
-        servers[0],
+        server,
       );
     });
 
@@ -179,7 +181,7 @@ describe('useServers', () => {
       result.current.handleEdit();
     });
 
-    expect(result.current.editingServer).toBe(servers[0]);
+    expect(result.current.editingServer).toBe(server);
     expect(result.current.isAddModalOpen).toBe(true);
     expect(result.current.contextMenu).toBeNull();
   });

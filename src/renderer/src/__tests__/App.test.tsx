@@ -15,7 +15,7 @@ import {
   type KnowledgeOpenRequest,
 } from '../features/knowledge/knowledgeNavigation';
 import { WEB_RUNTIME } from '@shared/runtime';
-import type { CloudStatusProvider } from '@shared/ipc';
+import type { BridgeAPI, CloudStatusProvider } from '@shared/ipc';
 
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
@@ -465,6 +465,24 @@ vi.mock('../services/contactService', () => ({
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * `globalThis.api` is typed as the complete preload bridge, but these tests only install the
+ * handful of members `App` actually reaches for. `vi.stubGlobal` installs the partial without a
+ * cast, while `Partial<BridgeAPI>` keeps every stubbed member checked against the real contract.
+ */
+function stubBridgeApi(overrides: Partial<BridgeAPI>): void {
+  vi.stubGlobal('api', overrides);
+}
+
+/**
+ * `App` and `WindowControls` close through `globalThis.window.api`, so these tests swap in a
+ * stand-in window carrying only that bridge member. `globalThis.window` is declared as the full
+ * DOM `Window`, so it has to be reached through a structural view of the global object.
+ */
+function stubWindowBridge(api: Pick<BridgeAPI, 'windowClose'>): void {
+  (globalThis as { window: unknown }).window = { api };
+}
+
 function renderApp(searchParams = '', props: Partial<React.ComponentProps<typeof MainApp>> = {}) {
   // Stub globalThis.location.search
   Object.defineProperty(globalThis, 'location', {
@@ -721,7 +739,7 @@ describe('MainApp', () => {
 
   it('opens settings on Cmd+, keydown', () => {
     renderApp();
-    fireEvent.keyDown(globalThis, { key: ',', metaKey: true });
+    fireEvent.keyDown(window, { key: ',', metaKey: true });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Settings');
   });
 
@@ -734,25 +752,25 @@ describe('MainApp', () => {
     ['6', 'Problems'],
   ])('navigates on Cmd+%s to %s', (key, destination) => {
     renderApp();
-    fireEvent.keyDown(globalThis, { key, metaKey: true });
+    fireEvent.keyDown(window, { key, metaKey: true });
     expect(mockSetActiveTab).toHaveBeenCalledWith(destination);
   });
 
   it.each(['7', '8', '9'])('does not assign Cmd+%s', (key) => {
     renderApp();
-    fireEvent.keyDown(globalThis, { key, metaKey: true });
+    fireEvent.keyDown(window, { key, metaKey: true });
     expect(mockSetActiveTab).not.toHaveBeenCalled();
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {
     renderApp();
-    fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: '?', metaKey: true, shiftKey: true });
     expect(screen.getByTestId('shortcuts-modal')).toBeInTheDocument();
   });
 
   it('closes shortcuts modal', () => {
     renderApp();
-    fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: '?', metaKey: true, shiftKey: true });
     fireEvent.click(screen.getByText('close-shortcuts'));
     expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument();
   });
@@ -844,7 +862,7 @@ describe('MainApp', () => {
 
   it('focuses search on Cmd+K', () => {
     renderApp();
-    const handled = fireEvent.keyDown(globalThis, {
+    const handled = fireEvent.keyDown(window, {
       key: 'k',
       metaKey: true,
       cancelable: true,
@@ -918,9 +936,7 @@ describe('MainApp', () => {
   });
 
   it('adds platform class to body on mount', () => {
-    (globalThis as Window & { api?: { platform: string } }).api = {
-      platform: 'darwin',
-    } as typeof globalThis.api;
+    stubBridgeApi({ platform: 'darwin' });
     renderApp();
     expect(document.body.classList.contains('platform-darwin')).toBe(true);
   });
@@ -1043,7 +1059,7 @@ describe('App default export', () => {
     });
     mockSaveConfig.mockResolvedValue(true);
     mockStartPocketBase.mockResolvedValue(true);
-    globalThis.api = {
+    stubBridgeApi({
       isConfigured: mockIsConfigured,
       getConfig: mockGetConfig,
       getPbConnection: mockGetPbConnection,
@@ -1051,12 +1067,8 @@ describe('App default export', () => {
       startPocketBase: mockStartPocketBase,
       relaunchApp: mockRelaunchApp,
       platform: 'win32',
-    } as typeof globalThis.api;
-    (
-      globalThis as unknown as { window: { api: { windowClose: ReturnType<typeof vi.fn> } } }
-    ).window = {
-      api: { windowClose: vi.fn() },
-    } as unknown as typeof globalThis.window;
+    });
+    stubWindowBridge({ windowClose: vi.fn() });
   });
 
   it('renders without crashing', async () => {
@@ -1484,9 +1496,7 @@ describe('App default export', () => {
     // Make isConfigured hang so we stay in 'checking' phase
     mockIsConfigured.mockImplementation(() => new Promise(() => undefined));
     const mockWindowClose = vi.fn();
-    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
-      api: { windowClose: mockWindowClose },
-    } as unknown as typeof globalThis.window;
+    stubWindowBridge({ windowClose: mockWindowClose });
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -1522,9 +1532,7 @@ describe('App default export', () => {
   it('calls windowClose when close button is clicked in error state', async () => {
     mockGetPbConnection.mockResolvedValue({ ok: false, error: 'unavailable' });
     const mockWindowClose = vi.fn();
-    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
-      api: { windowClose: mockWindowClose },
-    } as unknown as typeof globalThis.window;
+    stubWindowBridge({ windowClose: mockWindowClose });
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,

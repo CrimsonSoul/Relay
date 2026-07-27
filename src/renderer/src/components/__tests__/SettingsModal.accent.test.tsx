@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { BridgeAPI } from '@shared/ipc';
 import { SettingsModal } from '../SettingsModal';
 
 // Mock Modal to a simple wrapper (same as SettingsModal.test.tsx)
@@ -71,11 +72,11 @@ describe('SettingsModal — accent color picker', () => {
     document.documentElement.style.removeProperty('--accent-bright');
     document.documentElement.style.removeProperty('--on-accent');
     // Set up globalThis.api (required by the component's useEffect)
-    const mockApi = {
+    const mockApi: Partial<BridgeAPI> = {
       getConfig: vi.fn().mockResolvedValue({ mode: 'server', port: 8090 }),
       clearConfig: vi.fn().mockResolvedValue(true),
     };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi;
+    vi.stubGlobal('api', mockApi);
   });
 
   afterEach(() => {

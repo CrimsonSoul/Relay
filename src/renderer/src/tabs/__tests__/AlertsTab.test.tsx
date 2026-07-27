@@ -802,7 +802,7 @@ describe('AlertsTab', () => {
     const encodedHtml = eml
       .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
       ?.split('\r\n--relay_alert_')[0]
-      .replaceAll('\r\n', '');
+      ?.replaceAll('\r\n', '');
     const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
     expect(html).toContain('width="640" height="600"');
   });
@@ -830,7 +830,7 @@ describe('AlertsTab', () => {
     const encodedHtml = eml
       .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
       ?.split('\r\n--relay_alert_')[0]
-      .replaceAll('\r\n', '');
+      ?.replaceAll('\r\n', '');
     const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
     expect(html).toContain('<a href="https://status.example.com/incident"');
     expect(html.match(/<a href=/g)).toHaveLength(1);

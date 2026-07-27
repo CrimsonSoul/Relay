@@ -1,6 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CloudStatusData, CloudStatusItem, CloudStatusSnapshotRecord } from '@shared/ipc';
+import type {
+  BridgeAPI,
+  CloudStatusData,
+  CloudStatusItem,
+  CloudStatusSnapshotRecord,
+} from '@shared/ipc';
 
 const { secureStorageMock, resetStorage } = vi.hoisted(() => {
   const values = new Map<string, unknown>();
@@ -99,9 +104,10 @@ describe('useAppCloudStatus', () => {
     collectionState.loading = false;
     collectionState.error = null;
     getCloudStatus.mockResolvedValue(status());
-    (globalThis as Window & { api: { getCloudStatus: typeof getCloudStatus } }).api = {
-      getCloudStatus,
-    } as unknown as typeof globalThis.api;
+    // The hook only reads `getCloudStatus`; `Partial<BridgeAPI>` keeps that stub
+    // checked against the real bridge contract without asserting a whole bridge.
+    const bridge: Partial<BridgeAPI> = { getCloudStatus };
+    vi.stubGlobal('api', bridge);
   });
 
   afterEach(() => vi.useRealTimers());

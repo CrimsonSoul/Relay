@@ -1,5 +1,5 @@
-import { BaseAuthStore, ClientResponseError } from 'pocketbase';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BaseAuthStore, ClientResponseError, type RecordModel } from 'pocketbase';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { RELAY_PRIVILEGED_ACCOUNTS_COLLECTION } from '@shared/privilegedAccess';
 import {
   PrivilegedAuthenticationError,
@@ -15,6 +15,7 @@ const RAW_TOKEN = 'raw-privileged-token-value';
 function accountRecord(overrides: Record<string, unknown> = {}) {
   return {
     id: 'account-admin',
+    collectionId: 'privileged-accounts-collection',
     collectionName: RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
     username: USERNAME,
     displayName: 'Ryan Bledsoe',
@@ -45,6 +46,13 @@ function authorityState(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// The PocketBase collection methods are generic over the record shape; the fakes below always
+// answer with plain records, which is what the client asks for.
+type RequestOptions = { requestKey: null };
+type PocketBaseRecord = Record<string, unknown>;
+type RealtimeCallback = (event: { action: string; record: PocketBaseRecord }) => void;
+type AuthResponse = { token: string; record: RecordModel };
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((finish) => {
@@ -56,15 +64,38 @@ function deferred<T>() {
 describe('PrivilegedPocketBaseClient', () => {
   let authStores: BaseAuthStore[];
   let adapters: PrivilegedPocketBaseClientAdapter[];
-  let authWithPassword: ReturnType<typeof vi.fn>;
-  let createRecord: ReturnType<typeof vi.fn>;
-  let getOne: ReturnType<typeof vi.fn>;
-  let getFirstListItem: ReturnType<typeof vi.fn>;
-  let subscribe: ReturnType<typeof vi.fn>;
-  let sendRequest: ReturnType<typeof vi.fn>;
-  let subscriptionCallbacks: Map<string, (event: unknown) => void>;
-  let subscriptionDisposers: ReturnType<typeof vi.fn>[];
-  let createClient: ReturnType<typeof vi.fn>;
+  let authWithPassword: Mock<
+    (
+      username: string,
+      password: string,
+      options: { requestKey: string | null },
+    ) => Promise<AuthResponse>
+  >;
+  let createRecord: Mock<
+    (data: PocketBaseRecord | FormData, options: RequestOptions) => Promise<PocketBaseRecord>
+  >;
+  let getOne: Mock<(id: string, options: RequestOptions) => Promise<PocketBaseRecord>>;
+  let getFirstListItem: Mock<
+    (filter: string, options: RequestOptions) => Promise<PocketBaseRecord>
+  >;
+  let subscribe: Mock<
+    (
+      collection: string,
+      topic: string,
+      callback: RealtimeCallback,
+    ) => Promise<() => Promise<undefined>>
+  >;
+  let sendRequest: Mock<
+    (
+      path: string,
+      options: { method: 'POST'; body: PocketBaseRecord; requestKey: null },
+    ) => Promise<PocketBaseRecord>
+  >;
+  let subscriptionCallbacks: Map<string, RealtimeCallback>;
+  let subscriptionDisposers: Mock<() => Promise<undefined>>[];
+  let createClient: Mock<
+    (serverUrl: string, authStore: BaseAuthStore) => PrivilegedPocketBaseClientAdapter
+  >;
 
   beforeEach(() => {
     authStores = [];
@@ -84,29 +115,31 @@ describe('PrivilegedPocketBaseClient', () => {
     }));
     subscriptionCallbacks = new Map();
     subscriptionDisposers = [];
-    subscribe = vi.fn(
-      async (collection: string, topic: string, callback: (event: unknown) => void) => {
-        subscriptionCallbacks.set(`${collection}/${topic}`, callback);
-        const dispose = vi.fn(async () => undefined);
-        subscriptionDisposers.push(dispose);
-        return dispose;
-      },
-    );
+    subscribe = vi.fn(async (collection, topic, callback) => {
+      subscriptionCallbacks.set(`${collection}/${topic}`, callback);
+      const dispose = vi.fn(async () => undefined);
+      subscriptionDisposers.push(dispose);
+      return dispose;
+    });
     createClient = vi.fn((serverUrl: string, authStore: BaseAuthStore) => {
       authStores.push(authStore);
       const adapter: PrivilegedPocketBaseClientAdapter = {
         baseURL: serverUrl,
         authStore,
         cancelAllRequests: vi.fn(),
-        send: sendRequest,
+        // PocketBase declares these reads and writes generic over the caller's record type. The
+        // fakes always answer with plain records, so the delegates restate that once here rather
+        // than every suite pretending to know the caller's T.
+        send: sendRequest as PrivilegedPocketBaseClientAdapter['send'],
         realtime: { onDisconnect: undefined },
         collection: vi.fn((collectionName: string) => ({
           authWithPassword,
           create: createRecord,
           getOne,
           getFirstListItem,
-          subscribe: (topic, callback) => subscribe(collectionName, topic, callback),
-        })),
+          subscribe: (topic: string, callback: RealtimeCallback) =>
+            subscribe(collectionName, topic, callback),
+        })) as PrivilegedPocketBaseClientAdapter['collection'],
       };
       adapters.push(adapter);
       return adapter;
@@ -124,7 +157,11 @@ describe('PrivilegedPocketBaseClient', () => {
 
   it('uses an independent in-memory BaseAuthStore and never mutates the shared Relay store', async () => {
     const sharedAuthStore = new BaseAuthStore();
-    sharedAuthStore.save('shared-app-token', { id: 'shared-user' });
+    sharedAuthStore.save('shared-app-token', {
+      id: 'shared-user',
+      collectionId: 'users-collection',
+      collectionName: 'users',
+    });
     const client = createPrivilegedClient();
 
     await client.authenticate(USERNAME, PASSWORD);
@@ -135,7 +172,11 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(authStores[0]?.token).toBe(RAW_TOKEN);
     expect(authStores[1]?.token).toBe('');
     expect(sharedAuthStore.token).toBe('shared-app-token');
-    expect(sharedAuthStore.record).toEqual({ id: 'shared-user' });
+    expect(sharedAuthStore.record).toEqual({
+      id: 'shared-user',
+      collectionId: 'users-collection',
+      collectionName: 'users',
+    });
   });
 
   it('authenticates only against the privileged collection and returns sanitized account data', async () => {
@@ -147,7 +188,9 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(authWithPassword).toHaveBeenCalledWith(USERNAME, PASSWORD, {
       requestKey: 'privileged-authentication',
     });
-    expect(account).toEqual(accountRecord({ collectionName: undefined, email: undefined }));
+    expect(account).toEqual(
+      accountRecord({ collectionId: undefined, collectionName: undefined, email: undefined }),
+    );
     expect(JSON.stringify(account)).not.toContain(RAW_TOKEN);
     expect(JSON.stringify(account)).not.toContain('@relay.invalid');
     expect(Object.keys(account)).not.toContain('token');
@@ -164,7 +207,7 @@ describe('PrivilegedPocketBaseClient', () => {
   });
 
   it('isolates a cancelled late authentication from the fresh authenticated store', async () => {
-    const staleResponse = deferred<{ token: string; record: Record<string, unknown> }>();
+    const staleResponse = deferred<AuthResponse>();
     authWithPassword
       .mockImplementationOnce(() => {
         const attemptStore = authStores.at(-1) as BaseAuthStore;
@@ -227,6 +270,7 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(getOne).toHaveBeenCalledWith('account-admin', { requestKey: null });
     expect(result).toEqual({
       account: accountRecord({
+        collectionId: undefined,
         collectionName: undefined,
         displayName: 'Ryan Current',
         email: undefined,
@@ -433,8 +477,8 @@ describe('PrivilegedPocketBaseClient', () => {
       onSnapshot: vi.fn(),
     });
     let releaseCleanup!: () => void;
-    const cleanupBlocked = new Promise<void>((resolve) => {
-      releaseCleanup = resolve;
+    const cleanupBlocked = new Promise<undefined>((resolve) => {
+      releaseCleanup = () => resolve(undefined);
     });
     for (const dispose of subscriptionDisposers) {
       dispose.mockImplementationOnce(() => cleanupBlocked);
@@ -457,15 +501,13 @@ describe('PrivilegedPocketBaseClient', () => {
     const client = createPrivilegedClient();
     await client.authenticate(USERNAME, PASSWORD);
     const firstSubscription = deferred<void>();
-    subscribe.mockImplementationOnce(
-      async (collection: string, topic: string, callback: (event: unknown) => void) => {
-        subscriptionCallbacks.set(`${collection}/${topic}`, callback);
-        const dispose = vi.fn(async () => undefined);
-        subscriptionDisposers.push(dispose);
-        await firstSubscription.promise;
-        return dispose;
-      },
-    );
+    subscribe.mockImplementationOnce(async (collection, topic, callback) => {
+      subscriptionCallbacks.set(`${collection}/${topic}`, callback);
+      const dispose = vi.fn(async () => undefined);
+      subscriptionDisposers.push(dispose);
+      await firstSubscription.promise;
+      return dispose;
+    });
     getOne.mockResolvedValueOnce(accountRecord());
     getFirstListItem.mockResolvedValueOnce(authorityState());
     const onSnapshot = vi.fn();

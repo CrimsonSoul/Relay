@@ -100,18 +100,6 @@ function emptyLibraryDescription(isServer: boolean, canManage: boolean): string 
   return 'A designated Wiki publisher can add PDF guides from their signed-in Relay workstation.';
 }
 
-function initialKnowledgeView(categories: unknown): 'catalog' | 'reader' {
-  return Array.isArray(categories) ? 'catalog' : 'reader';
-}
-
-function initialKnowledgeDocumentId(
-  categories: unknown,
-  documents: KnowledgeDocumentRecord[],
-): string | null {
-  if (Array.isArray(categories)) return null;
-  return buildKnowledgeLibrary(documents)[0]?.documents[0]?.id ?? null;
-}
-
 function showsKnowledgeCatalog(
   view: 'catalog' | 'reader',
   selectedDocument: KnowledgeDocumentRecord | null,
@@ -166,14 +154,11 @@ function KnowledgeEmptyState({
 
 export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readonly<Props>) {
   const libraryData = useKnowledgeLibrary({ enabled: active, retainSnapshotWhenDisabled: true });
-  const { documents, loading, error, hasLoadedSnapshot, refetch } = libraryData;
-  const categories = libraryData.categories ?? [];
+  const { documents, categories, loading, error, hasLoadedSnapshot, refetch } = libraryData;
   const { session } = usePrivilegedAccess();
   const { showToast } = useToast();
   const [query, setQuery] = useState('');
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(() =>
-    initialKnowledgeDocumentId(libraryData.categories, documents),
-  );
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
   const [focusRequestKey, setFocusRequestKey] = useState(0);
@@ -185,9 +170,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const [pdfSession, setPdfSession] = useState<KnowledgePdfSession | null>(null);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
   const [pendingPassageOpen, setPendingPassageOpen] = useState<PendingPassageOpen | null>(null);
-  const [view, setView] = useState<'catalog' | 'reader'>(() =>
-    initialKnowledgeView(libraryData.categories),
-  );
+  const [view, setView] = useState<'catalog' | 'reader'>('catalog');
   const compactLibraryToggleRef = useRef<HTMLButtonElement>(null);
   const desktopLibraryRestoreRef = useRef<HTMLButtonElement>(null);
   const contentsTabRef = useRef<HTMLButtonElement>(null);

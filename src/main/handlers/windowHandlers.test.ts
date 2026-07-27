@@ -90,8 +90,21 @@ vi.mock('node:fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
+// node:child_process exports execFile as an overload set, so vi.mocked() cannot resolve a single
+// callback shape. The suite only exercises the (file, args, callback) form the handler uses.
+const childProcess = vi.hoisted(() => ({
+  execFile:
+    vi.fn<
+      (
+        file: string,
+        args: readonly string[],
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => unknown
+    >(),
+}));
+
 vi.mock('node:child_process', () => ({
-  execFile: vi.fn(),
+  execFile: childProcess.execFile,
 }));
 
 vi.mock('../logger', () => ({
@@ -149,11 +162,22 @@ describe('windowHandlers', () => {
     if (!handler) throw new Error(`No handler registered for ${channel}`);
     return handler;
   };
+  // Electron types the listeners against IpcMain*Event, which the suite calls with bare stubs.
+  const captureIpcRegistrations = (): void => {
+    vi.mocked(ipcMain.on).mockImplementation((channel, listener) => {
+      onHandlers[channel] = listener as (...args: unknown[]) => unknown;
+      return ipcMain;
+    });
+    vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
+      handlers[channel] = handler as (...args: unknown[]) => unknown;
+      return ipcMain;
+    });
+  };
   const getMainWindow = vi.fn(() => null as BrowserWindow | null);
   const createAuxWindow = vi.fn();
   const getDataRoot = vi.fn(async () => '/data/root');
 
-  let mockWin: ReturnType<typeof BrowserWindow>;
+  let mockWin: BrowserWindow;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -167,33 +191,22 @@ describe('windowHandlers', () => {
       isDestroyed: vi.fn(() => false),
       webContents: { send: vi.fn() },
       on: vi.fn(),
-    } as unknown as ReturnType<typeof BrowserWindow>;
+    } as unknown as BrowserWindow;
 
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWin as BrowserWindow);
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWin as BrowserWindow]);
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWin);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWin]);
     vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
     vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
 
-    vi.mocked(ipcMain.on).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        onHandlers[channel] = handler;
-        return ipcMain;
-      },
-    );
-    vi.mocked(ipcMain.handle).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers[channel] = handler;
-        return ipcMain;
-      },
-    );
+    captureIpcRegistrations();
 
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
     vi.mocked(mkdtemp).mockResolvedValue(PRIVATE_TEMP_DIR as never);
     vi.mocked(rm).mockResolvedValue(undefined);
     vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
-    vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
-      if (typeof callback === 'function') callback(null, '', '');
-      return {} as ReturnType<typeof execFile>;
+    childProcess.execFile.mockImplementation((_file, _args, callback) => {
+      callback(null, '', '');
+      return {};
     });
 
     setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot);
@@ -459,9 +472,11 @@ describe('windowHandlers', () => {
       await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
 
       expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
-      expect(vi.mocked(rm).mock.invocationCallOrder[0]).toBeLessThan(
-        vi.mocked(shell.openPath).mock.invocationCallOrder[0],
-      );
+      const [removeOrder] = vi.mocked(rm).mock.invocationCallOrder;
+      const [openOrder] = vi.mocked(shell.openPath).mock.invocationCallOrder;
+      expect(removeOrder).toBeDefined();
+      expect(openOrder).toBeDefined();
+      expect(removeOrder).toBeLessThan(openOrder!);
     });
 
     it('removes the temp directory even when the open fails', async () => {
@@ -607,19 +622,21 @@ describe('windowHandlers', () => {
       async () => {
         const { writeFile } = await import('node:fs/promises');
         vi.mocked(writeFile).mockResolvedValue(undefined);
-        vi.mocked(execFile)
+        childProcess.execFile
           .mockImplementationOnce((_file, _args, callback) => {
-            if (typeof callback === 'function') callback(new Error('bundle missing'), '', '');
-            return {} as ReturnType<typeof execFile>;
+            callback(new Error('bundle missing'), '', '');
+            return {};
           })
           .mockImplementationOnce((_file, _args, callback) => {
-            if (typeof callback === 'function') callback(null, '', '');
-            return {} as ReturnType<typeof execFile>;
+            callback(null, '', '');
+            return {};
           });
 
         const result = await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, validEml);
 
-        const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string];
+        const [firstWrite] = vi.mocked(writeFile).mock.calls;
+        expect(firstWrite).toBeDefined();
+        const [filePath] = firstWrite!;
         expect(result).toBe(true);
         expect(execFile).toHaveBeenNthCalledWith(
           1,
@@ -650,9 +667,9 @@ describe('windowHandlers', () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockResolvedValue(undefined);
       if (process.platform === 'darwin') {
-        vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
-          if (typeof callback === 'function') callback(new Error('Outlook unavailable'), '', '');
-          return {} as ReturnType<typeof execFile>;
+        childProcess.execFile.mockImplementation((_file, _args, callback) => {
+          callback(new Error('Outlook unavailable'), '', '');
+          return {};
         });
       } else {
         vi.mocked(shell.openPath).mockResolvedValue('no .eml handler');
@@ -800,18 +817,7 @@ describe('windowHandlers', () => {
 
     it('handles missing createAuxWindow gracefully', () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
       setupWindowHandlers(getMainWindow); // no createAuxWindow
       expect(() => getOnHandler(IPC_CHANNELS.WINDOW_OPEN_AUX)(null, 'oncall')).not.toThrow();
     });
@@ -960,18 +966,7 @@ describe('windowHandlers', () => {
 
     it('returns null when getDataRoot is not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
 
       setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
 
@@ -1027,18 +1022,7 @@ describe('windowHandlers', () => {
 
     it('returns failure when getDataRoot is not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
 
       setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
 
@@ -1060,18 +1044,7 @@ describe('windowHandlers', () => {
   describe('Logo handlers - SAVE_COMPANY_LOGO', () => {
     it('returns failure when getDataRoot is not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
 
       setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
 
@@ -1386,29 +1359,32 @@ describe('windowHandlers', () => {
 
 describe('setupWindowListeners', () => {
   it('sends WINDOW_MAXIMIZE_CHANGE true on maximize event', () => {
+    // BrowserWindow.on is an overload set, so vi.mocked() would pin mock.calls to a single event.
+    const on = vi.fn<(event: string, listener: (...args: unknown[]) => void) => void>();
     const win = {
-      on: vi.fn(),
+      on,
       webContents: { send: vi.fn() },
     } as unknown as BrowserWindow;
 
     setupWindowListeners(win);
 
     // Find the maximize callback
-    const maximizeCall = vi.mocked(win.on).mock.calls.find(([evt]) => evt === 'maximize');
+    const maximizeCall = on.mock.calls.find(([evt]) => evt === 'maximize');
     expect(maximizeCall).toBeDefined();
     maximizeCall![1]();
     expect(win.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, true);
   });
 
   it('sends WINDOW_MAXIMIZE_CHANGE false on unmaximize event', () => {
+    const on = vi.fn<(event: string, listener: (...args: unknown[]) => void) => void>();
     const win = {
-      on: vi.fn(),
+      on,
       webContents: { send: vi.fn() },
     } as unknown as BrowserWindow;
 
     setupWindowListeners(win);
 
-    const unmaximizeCall = vi.mocked(win.on).mock.calls.find(([evt]) => evt === 'unmaximize');
+    const unmaximizeCall = on.mock.calls.find(([evt]) => evt === 'unmaximize');
     expect(unmaximizeCall).toBeDefined();
     unmaximizeCall![1]();
     expect(win.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, false);

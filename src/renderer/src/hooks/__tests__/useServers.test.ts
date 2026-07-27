@@ -11,7 +11,9 @@ vi.mock('../../services/serverService', () => ({
 }));
 
 describe('useServers', () => {
-  const servers: Server[] = [
+  // Tuple-typed so the individual fixtures stay directly addressable under
+  // `noUncheckedIndexedAccess` when a test hands one server to the hook.
+  const servers: [Server, Server] = [
     {
       name: 'Alpha',
       businessArea: 'Finance',

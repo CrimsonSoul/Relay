@@ -10,6 +10,7 @@ import {
   type KnowledgeUploadManifestView,
 } from '@shared/knowledge';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { KnowledgeSourceError } from '../knowledgeChunking';
 import type { KnowledgeUploadQueueState } from '../KnowledgeUploadQueueStore';
 import {
@@ -64,6 +65,8 @@ function manifest(
     state: 'uploading',
     proposedTitle: '',
     proposedCategory: '',
+    proposedCategoryId: null,
+    proposedDocumentType: 'sop',
     pageCount: null,
     outline: [],
     outlineSource: null,
@@ -93,39 +96,47 @@ function queueStore(initial?: KnowledgeUploadQueueState) {
 }
 
 function commandRuntime(statusUploads: KnowledgeUploadManifestView[] = []) {
-  const createPrivilegedRecord = vi.fn(async () => ({ id: 'chunk-1' }));
+  const createPrivilegedRecord = vi.fn<
+    (collection: string, data: Record<string, unknown> | FormData) => Promise<{ id: string }>
+  >(async () => ({ id: 'chunk-1' }));
   let beganUpload = statusUploads.length > 0;
-  const submitPublicCommand = vi.fn(async (request: { command: string }) => {
-    if (request.command === 'knowledge.upload.batch.begin') {
-      return { ok: true, requestId: 'request', value: batch() } as const;
-    }
-    if (request.command === 'knowledge.upload.status') {
-      let uploads: KnowledgeUploadManifestView[] = [];
-      if (beganUpload) uploads = statusUploads.length > 0 ? statusUploads : [manifest()];
-      const value: KnowledgeUploadBatchStatusView = {
-        batch: batch(),
-        uploads,
-      };
-      return { ok: true, requestId: 'request', value } as const;
-    }
-    if (request.command === 'knowledge.upload.file.begin') {
-      beganUpload = true;
-      return { ok: true, requestId: 'request', value: manifest() } as const;
-    }
-    if (request.command === 'knowledge.upload.file.finalize') {
-      return {
-        ok: true,
-        requestId: 'request',
-        value: manifest({ state: 'assembling', missingChunkIndexes: [], revision: 1 }),
-      } as const;
-    }
-    if (request.command.endsWith('.cancel')) {
-      return { ok: true, requestId: 'request', value: undefined } as const;
-    }
-    throw new Error(`Unexpected command ${request.command}`);
-  });
+  const submitPublicCommand = vi.fn(
+    async (request: { command: string }): Promise<PrivilegedCommandResult> => {
+      if (request.command === 'knowledge.upload.batch.begin') {
+        return { ok: true, requestId: 'request', value: batch() } as const;
+      }
+      if (request.command === 'knowledge.upload.status') {
+        let uploads: KnowledgeUploadManifestView[] = [];
+        if (beganUpload) uploads = statusUploads.length > 0 ? statusUploads : [manifest()];
+        const value: KnowledgeUploadBatchStatusView = {
+          batch: batch(),
+          uploads,
+        };
+        return { ok: true, requestId: 'request', value } as const;
+      }
+      if (request.command === 'knowledge.upload.file.begin') {
+        beganUpload = true;
+        return { ok: true, requestId: 'request', value: manifest() } as const;
+      }
+      if (request.command === 'knowledge.upload.file.finalize') {
+        return {
+          ok: true,
+          requestId: 'request',
+          value: manifest({ state: 'assembling', missingChunkIndexes: [], revision: 1 }),
+        } as const;
+      }
+      if (request.command.endsWith('.cancel')) {
+        return { ok: true, requestId: 'request', value: undefined } as const;
+      }
+      throw new Error(`Unexpected command ${request.command}`);
+    },
+  );
   return {
-    runtime: { getView: vi.fn(() => view), createPrivilegedRecord, submitPublicCommand },
+    runtime: {
+      getView: vi.fn((): PrivilegedSessionView => view),
+      createPrivilegedRecord,
+      submitPublicCommand,
+    },
     createPrivilegedRecord,
     submitPublicCommand,
   };
@@ -2908,7 +2919,7 @@ describe('KnowledgeUploadService', () => {
 
   it('makes an old device queue inert after the same account is re-paired', async () => {
     let currentView = view;
-    let scheduledTask: KnowledgeUploadSchedulerTask | null = null;
+    const scheduledTasks: KnowledgeUploadSchedulerTask[] = [];
     let releaseRead!: () => void;
     let markReadStarted!: () => void;
     const readGate = new Promise<void>((resolve) => {
@@ -2928,7 +2939,7 @@ describe('KnowledgeUploadService', () => {
     const scheduler = {
       setSessionActive: vi.fn(),
       enqueue: vi.fn((task: KnowledgeUploadSchedulerTask) => {
-        scheduledTask = task;
+        scheduledTasks.push(task);
       }),
       whenIdle: vi.fn(async () => undefined),
       dispose: vi.fn(async () => undefined),
@@ -2953,8 +2964,8 @@ describe('KnowledgeUploadService', () => {
     await service.start();
     await service.queuePaths(['/private/work/First.pdf'], view.deviceId);
     await service.whenIdle();
-    expect(scheduledTask?.isEligible()).toBe(true);
-    const oldTask = scheduledTask;
+    expect(scheduledTasks.at(-1)?.isEligible()).toBe(true);
+    const oldTask = scheduledTasks.at(-1);
     if (!oldTask) throw new Error('scheduler task was not captured');
     const inFlightRead = oldTask.readChunk(0);
     await readStarted;
@@ -2965,7 +2976,7 @@ describe('KnowledgeUploadService', () => {
     service.handleSessionChanged(currentView);
     releaseRead();
 
-    expect(scheduledTask?.isEligible()).toBe(false);
+    expect(scheduledTasks.at(-1)?.isEligible()).toBe(false);
     expect(service.snapshot().items).toEqual([]);
     await expect(inFlightRead).rejects.toThrow('upload-session-changed');
     await expect(oldTask.readChunk(0)).rejects.toThrow('upload-session-changed');

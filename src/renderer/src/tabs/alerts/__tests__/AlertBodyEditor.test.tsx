@@ -327,7 +327,7 @@ describe('AlertBodyEditor', () => {
     ref.current!.setEditorContent('<b>Bold</b> text');
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const boldText = editor.querySelector('b')!.firstChild!;
-    const plainText = editor.childNodes[1];
+    const plainText = editor.childNodes[1]!;
     const range = document.createRange();
     range.setStart(boldText, 2);
     range.setEnd(plainText, 3);
@@ -349,7 +349,7 @@ describe('AlertBodyEditor', () => {
     ref.current!.setEditorContent('<span data-hl="warning">Old</span> text');
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
-    const plainText = editor.childNodes[1];
+    const plainText = editor.childNodes[1]!;
     const range = document.createRange();
     range.setStart(highlightedText, 0);
     range.setEnd(plainText, 3);
@@ -436,9 +436,10 @@ describe('AlertBodyEditor', () => {
     );
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const highlights = editor.querySelectorAll('[data-hl]');
+    expect(highlights).toHaveLength(3);
     const range = document.createRange();
-    range.setStart(highlights[0].firstChild!, 0);
-    range.setEnd(highlights[2].firstChild!, 2);
+    range.setStart(highlights[0]!.firstChild!, 0);
+    range.setEnd(highlights[2]!.firstChild!, 2);
     const selection = globalThis.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);

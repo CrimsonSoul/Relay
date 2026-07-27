@@ -1,14 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   ADMIN_PRIVILEGED_CAPABILITIES,
   OWNER_PRIVILEGED_CAPABILITIES,
+  type PrivilegedSessionView,
   type RelayPrivilegedAccountRecord,
 } from '@shared/privilegedAccess';
+import type { PrivilegedAuthClient } from '../PrivilegedPocketBaseClient';
 import {
   PrivilegedSessionError,
   PrivilegedSessionManager,
   type PrivilegedAuthorization,
 } from '../PrivilegedSessionManager';
+
+type ManagerOptions = ConstructorParameters<typeof PrivilegedSessionManager>[0];
 
 const USERNAME = 'ryan';
 // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential fixture exercises session authentication behavior.
@@ -44,15 +48,17 @@ function deferred<T>() {
 describe('PrivilegedSessionManager', () => {
   let currentAccount: RelayPrivilegedAccountRecord;
   let authClient: {
-    authenticate: ReturnType<typeof vi.fn>;
-    clear: ReturnType<typeof vi.fn>;
-    reauthenticate: ReturnType<typeof vi.fn>;
-    reauthenticateRemotely?: ReturnType<typeof vi.fn>;
+    authenticate: Mock<PrivilegedAuthClient['authenticate']>;
+    clear: Mock<PrivilegedAuthClient['clear']>;
+    reauthenticate: Mock<PrivilegedAuthClient['reauthenticate']>;
+    reauthenticateRemotely?: Mock<NonNullable<PrivilegedAuthClient['reauthenticateRemotely']>>;
   };
   let authorization: PrivilegedAuthorization;
-  let resolveAuthorization: ReturnType<typeof vi.fn>;
-  let confirmReauthentication: ReturnType<typeof vi.fn>;
-  let onViewChanged: ReturnType<typeof vi.fn>;
+  let resolveAuthorization: Mock<ManagerOptions['resolveAuthorization']>;
+  // Derived from the constructor rather than exporting the option types purely
+  // for this test's benefit.
+  let confirmReauthentication: Mock<ManagerOptions['confirmReauthentication']>;
+  let onViewChanged: Mock<(view: PrivilegedSessionView) => void>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -99,7 +105,7 @@ describe('PrivilegedSessionManager', () => {
       username: USERNAME,
       displayName: 'Ryan Bledsoe',
       role: 'owner',
-      capabilities: expect.arrayContaining(ADMIN_PRIVILEGED_CAPABILITIES),
+      capabilities: expect.arrayContaining([...ADMIN_PRIVILEGED_CAPABILITIES]),
       deviceId: 'device-work-laptop',
       expiresAt: null,
     });

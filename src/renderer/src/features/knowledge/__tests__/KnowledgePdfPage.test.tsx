@@ -58,7 +58,9 @@ describe('KnowledgePdfPage', () => {
     getViewport,
     render: renderPage,
     getTextContent: vi.fn(async () => ({ items: [], styles: {} })),
-    getAnnotations: vi.fn(async () => []),
+    // pdf.js hands back loosely-typed annotation dictionaries, and
+    // `extractKnowledgeLinkItems` narrows them itself, so the fixtures stay `unknown`.
+    getAnnotations: vi.fn(async (): Promise<unknown[]> => []),
   };
   const getPage = vi.fn(async () => page);
   const pdf = { numPages: 3, getPage };
