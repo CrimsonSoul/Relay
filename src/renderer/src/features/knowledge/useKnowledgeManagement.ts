@@ -47,6 +47,11 @@ const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
 const REAUTHENTICATION_ERROR = 'Password confirmation was not accepted. Try again.';
 
 const QUERY_DEBOUNCE_MS = 250;
+// The signed-command bucket refills one token per second, so retrying any sooner would only spend
+// another throttled request. Two extra attempts ride out a lost read without letting a filter that
+// keeps failing poll the shared budget forever; the error banner is what reports the rest.
+const QUERY_RETRY_DELAY_MS = 1_000;
+const QUERY_RETRY_LIMIT = 2;
 
 function commandError(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
   return SAFE_ERRORS[result.error];
@@ -141,6 +146,10 @@ export function useKnowledgeManagement(
   // Reads stay pinned to the query the operator can already see so a cursor issued for one
   // filter is never spent against another.
   const appliedQueryRef = useRef(trimmedQuery);
+  // `appliedQueryRef` advances the moment a read is dispatched, so on its own it cannot tell a
+  // filter that reached the list from one whose read was throttled or superseded. Record the query
+  // a snapshot actually came back for separately; the debounce below retries against this.
+  const settledQueryRef = useRef(trimmedQuery);
   managementIdentityRef.current = managementIdentity;
   uploadQueueRef.current = uploadQueue;
 
@@ -239,14 +248,18 @@ export function useKnowledgeManagement(
         setLoading(true);
         setError(null);
       }
+      const query = appliedQueryRef.current;
       try {
-        const result = await readSnapshot(null);
+        const result = await readSnapshot(null, query);
         if (!mountedRef.current || generation !== refreshGenerationRef.current) return false;
         const authoritative = result.snapshot;
         if (!authoritative) {
           if (!background) setError(result.error);
           return false;
         }
+        // A background poll splices its page over rows the previous filter produced, so only a
+        // foreground read proves the whole list on screen belongs to `query`.
+        if (!background) settledQueryRef.current = query;
         setSnapshot((current) =>
           background && current ? mergeKnowledgeSnapshot(current, authoritative) : authoritative,
         );
@@ -325,13 +338,32 @@ export function useKnowledgeManagement(
     return () => window.clearInterval(timer);
   }, [canManage, pollSnapshot, refreshUploadQueue, snapshot?.uploads.items, uploadQueue.items]);
 
+  // Every read is pinned to `appliedQueryRef`, so the new filter has to be claimed the moment the
+  // debounce fires or retries would keep re-reading the query the operator already left behind.
+  // Claiming it does not mean the rows arrived: one throttled or superseded read would otherwise
+  // leave the previous filter's documents on screen with nothing left to re-read them. Retry a
+  // bounded number of times until a snapshot settles on the query that was typed.
   useEffect(() => {
-    if (!canManage || trimmedQuery === appliedQueryRef.current) return;
-    const timer = window.setTimeout(() => {
+    if (!canManage || trimmedQuery === settledQueryRef.current) return;
+    let cancelled = false;
+    let timer = 0;
+    const attempt = async (remaining: number) => {
+      if (cancelled || settledQueryRef.current === trimmedQuery) return;
       appliedQueryRef.current = trimmedQuery;
-      void refresh();
-    }, QUERY_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+      let settled = false;
+      try {
+        settled = await refresh();
+      } catch {
+        settled = false;
+      }
+      if (settled || cancelled || remaining === 0) return;
+      timer = window.setTimeout(() => void attempt(remaining - 1), QUERY_RETRY_DELAY_MS);
+    };
+    timer = window.setTimeout(() => void attempt(QUERY_RETRY_LIMIT), QUERY_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [canManage, refresh, trimmedQuery]);
 
   const confirmAuditRequest = useCallback(

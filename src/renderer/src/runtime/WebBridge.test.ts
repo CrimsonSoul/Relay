@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeAPI } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
+import type { WebBridgeRequest } from './WebBridge';
 import { createWebBridge, createWebEventSubscriber } from './WebBridge';
 import { createBrowserActions } from './browserActions';
 
@@ -45,16 +46,35 @@ const SIGNED_OUT = {
   expiresAt: null,
 };
 
+/**
+ * `WebBridgeRequest` is `<T>(path, options) => Promise<T>` — an unconstrained generic
+ * return that no implementation can produce without an assertion; the real one ends in
+ * `(await response.json()) as T`. A double has to cross that same unchecked
+ * deserialisation boundary, so it is confined to this single helper. The recording mock
+ * is handed back so tests still assert on the exact routes and bodies requested.
+ */
+function stubWebRequest(
+  respond: (path: string, options: Parameters<WebBridgeRequest>[1]) => unknown,
+) {
+  const calls = vi.fn(respond);
+  const request: WebBridgeRequest = async <T>(
+    path: string,
+    options: Parameters<WebBridgeRequest>[1],
+  ): Promise<T> => (await calls(path, options)) as T;
+  return { request, calls };
+}
+
 describe('WebBridge', () => {
   beforeEach(() => {
     document.body.replaceChildren();
   });
 
   it('provides an exhaustive safe bridge with the current in-memory connection', async () => {
+    const { request } = stubWebRequest((path) =>
+      path === '/privileged/session' ? SIGNED_OUT : EMPTY_STATUS,
+    );
     const bridge: BridgeAPI = createWebBridge(SESSION, {
-      request: vi.fn(async (path: string) =>
-        path === '/privileged/session' ? SIGNED_OUT : EMPTY_STATUS,
-      ),
+      request,
       subscribe: vi.fn(() => () => undefined),
     });
 
@@ -74,13 +94,13 @@ describe('WebBridge', () => {
   });
 
   it('uses exact routes and unsubscribes event listeners', async () => {
-    const request = vi.fn(async () => EMPTY_STATUS);
+    const { request, calls } = stubWebRequest(() => EMPTY_STATUS);
     const unsubscribe = vi.fn();
     const subscribe = vi.fn(() => unsubscribe);
     const bridge = createWebBridge(SESSION, { request, subscribe });
 
     await bridge.getCloudStatus();
-    expect(request).toHaveBeenCalledWith('/operations/cloud-status', { method: 'GET' });
+    expect(calls).toHaveBeenCalledWith('/operations/cloud-status', { method: 'GET' });
 
     const onChange = vi.fn();
     const cleanup = bridge.onDynatraceDashboardsChanged(onChange);
@@ -90,7 +110,7 @@ describe('WebBridge', () => {
   });
 
   it('maps protected actions onto exact privileged routes', async () => {
-    const request = vi.fn(async (path: string) => {
+    const { request, calls } = stubWebRequest((path) => {
       if (path === '/privileged/session' || path === '/privileged/logout') return SIGNED_OUT;
       if (path === '/privileged/commands') {
         return { ok: true, requestId: 'request-1', value: { revision: 4 } };
@@ -110,7 +130,7 @@ describe('WebBridge', () => {
     });
     await bridge.logoutPrivileged();
 
-    expect(request.mock.calls.map(([path]) => path)).toEqual([
+    expect(calls.mock.calls.map(([path]) => path)).toEqual([
       '/privileged/login',
       '/privileged/reauthenticate',
       '/privileged/commands',
@@ -121,7 +141,7 @@ describe('WebBridge', () => {
   it('streams selected browser PDFs and reads Knowledge binary responses', async () => {
     const file = new File(['%PDF-first!!'], 'Runbook.pdf', { type: 'application/pdf' });
     const actions = createBrowserActions({ pickPdfFiles: async () => [file] });
-    const request = vi.fn(async (path: string) => {
+    const { request, calls } = stubWebRequest((path) => {
       if (path === '/knowledge/upload/begin') {
         return { batchId: 'batch-1', files: [{ id: 'file-1', name: file.name, size: file.size }] };
       }
@@ -135,7 +155,7 @@ describe('WebBridge', () => {
       ok: true,
       uploads: [],
     });
-    expect(request.mock.calls.map(([path]) => path)).toEqual([
+    expect(calls.mock.calls.map(([path]) => path)).toEqual([
       '/knowledge/upload/begin',
       '/knowledge/upload/commit',
     ]);
@@ -160,7 +180,7 @@ describe('WebBridge', () => {
     });
     const actions = createBrowserActions({ pickPdfFiles: async () => [file] });
     const selectPdfs = vi.spyOn(actions, 'selectPdfs');
-    const request = vi.fn(async (path: string) => {
+    const { request, calls } = stubWebRequest((path) => {
       if (path === '/knowledge/upload/begin') {
         return {
           batchId: 'batch-replacement',
@@ -182,7 +202,7 @@ describe('WebBridge', () => {
     });
 
     expect(selectPdfs).toHaveBeenCalledWith(true);
-    expect(request).toHaveBeenCalledWith('/knowledge/upload/begin', {
+    expect(calls).toHaveBeenCalledWith('/knowledge/upload/begin', {
       method: 'POST',
       body: {
         files: [{ name: file.name, size: file.size }],
@@ -194,7 +214,7 @@ describe('WebBridge', () => {
   it('waits out a throttled chunk instead of discarding the whole upload', async () => {
     const file = new File(['%PDF-throttle'], 'Runbook.pdf', { type: 'application/pdf' });
     const actions = createBrowserActions({ pickPdfFiles: async () => [file] });
-    const request = vi.fn(async (path: string) => {
+    const { request, calls } = stubWebRequest((path) => {
       if (path === '/knowledge/upload/begin') {
         return { batchId: 'batch-1', files: [{ id: 'file-1', name: file.name, size: file.size }] };
       }
@@ -212,7 +232,7 @@ describe('WebBridge', () => {
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2), { timeout: 5_000 });
 
     await expect(upload).resolves.toEqual({ ok: true, uploads: [] });
-    expect(request.mock.calls.map(([path]) => path)).toEqual([
+    expect(calls.mock.calls.map(([path]) => path)).toEqual([
       '/knowledge/upload/begin',
       '/knowledge/upload/commit',
     ]);

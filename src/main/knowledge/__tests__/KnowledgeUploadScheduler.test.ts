@@ -58,7 +58,7 @@ describe('KnowledgeUploadScheduler', () => {
   });
 
   it('uses bounded jittered backoff and pauses after eight transient failures', async () => {
-    const sleep = vi.fn(async () => undefined);
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
     const error = Object.assign(new Error('VPN unavailable'), { status: 0 });
     const uploadChunk = vi.fn(async () => Promise.reject(error));
     const value = task({

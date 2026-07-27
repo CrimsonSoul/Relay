@@ -1,10 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePendingSyncStatus } from '../usePendingSyncStatus';
+import type { PendingSyncStatus } from '@shared/ipc';
 
 describe('usePendingSyncStatus', () => {
   const getPendingSyncStatus = vi.fn();
-  let listener: ((status: { pendingCount: number }) => void) | null = null;
+  let listener: ((status: PendingSyncStatus) => void) | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();

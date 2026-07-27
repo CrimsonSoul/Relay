@@ -2,11 +2,18 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import type { KnowledgeUploadSelectionResult } from '@shared/knowledge';
 import {
   prepareWebKnowledgeUploadRoot,
   WebKnowledgeStagingError,
   WebKnowledgeUploadStaging,
 } from './WebKnowledgeUploadStaging';
+
+type QueuePaths = (
+  paths: readonly string[],
+  localSourceId: string,
+  replacementDocumentId?: string,
+) => Promise<KnowledgeUploadSelectionResult>;
 
 async function missing(path: string): Promise<boolean> {
   try {
@@ -26,7 +33,7 @@ async function chunks(...values: string[]): Promise<AsyncIterable<Uint8Array>> {
 describe('WebKnowledgeUploadStaging', () => {
   it('streams ordered PDF bytes into private files before queueing validated paths', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-'));
-    const queuePaths = vi.fn(async () => ({ ok: true, uploads: [] }) as const);
+    const queuePaths = vi.fn<QueuePaths>(async () => ({ ok: true, uploads: [] }));
     const staging = new WebKnowledgeUploadStaging({
       rootDir,
       sessionId: 'session-a',
@@ -62,7 +69,7 @@ describe('WebKnowledgeUploadStaging', () => {
 
   it('carries a replacement target into the durable upload queue', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-replacement-'));
-    const queuePaths = vi.fn(async () => ({ ok: true, uploads: [] }) as const);
+    const queuePaths = vi.fn<QueuePaths>(async () => ({ ok: true, uploads: [] }));
     const staging = new WebKnowledgeUploadStaging({
       rootDir,
       sessionId: 'session-replacement',
@@ -94,7 +101,7 @@ describe('WebKnowledgeUploadStaging', () => {
 
   it('accepts consecutive committed uploads in one browser session', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-consecutive-'));
-    const queuePaths = vi.fn(async () => ({ ok: true, uploads: [] }) as const);
+    const queuePaths = vi.fn<QueuePaths>(async () => ({ ok: true, uploads: [] }));
     const staging = new WebKnowledgeUploadStaging({
       rootDir,
       sessionId: 'session-consecutive',
@@ -156,7 +163,9 @@ describe('WebKnowledgeUploadStaging', () => {
         contentLength: 5,
         body: await chunks('%PDF-'),
       }),
-    ).rejects.toMatchObject<WebKnowledgeStagingError>({ code: 'invalid-request' });
+    ).rejects.toMatchObject({
+      code: 'invalid-request',
+    } satisfies Partial<WebKnowledgeStagingError>);
     expect(await missing(join(rootDir, 'session-b'))).toBe(true);
   });
 

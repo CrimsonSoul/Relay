@@ -62,6 +62,7 @@ describe('registerKnowledgeManagementCommands', () => {
     pageCount: 2,
     outline: [],
     outlineSource: 'none' as const,
+    coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
   }));
   const stop = vi.fn(async () => undefined);
   const readUploadPdf = vi.fn(async () => Buffer.from('%PDF-test'));
@@ -97,7 +98,7 @@ describe('registerKnowledgeManagementCommands', () => {
     enqueue: vi.fn(),
     recordTriggerFailure: vi.fn(async () => undefined),
     retry: vi.fn(),
-    remove: vi.fn(async () => undefined),
+    remove: vi.fn(async (): Promise<void> => undefined),
     dispose: vi.fn(async () => undefined),
   };
 

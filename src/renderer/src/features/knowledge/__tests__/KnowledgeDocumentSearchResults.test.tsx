@@ -246,7 +246,7 @@ describe('KnowledgeDocumentSearchResults', () => {
       if (originalScrollIntoView) {
         Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
       } else {
-        delete (Element.prototype as { scrollIntoView?: typeof scrollIntoView }).scrollIntoView;
+        Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
       }
     }
   });
@@ -300,12 +300,12 @@ describe('KnowledgeDocumentSearchResults', () => {
       if (originalScrollTo) {
         Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
       } else {
-        delete (HTMLElement.prototype as { scrollTo?: typeof scrollTo }).scrollTo;
+        Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
       }
       if (originalScrollIntoView) {
         Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
       } else {
-        delete (Element.prototype as { scrollIntoView?: typeof scrollIntoView }).scrollIntoView;
+        Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
       }
     }
   });

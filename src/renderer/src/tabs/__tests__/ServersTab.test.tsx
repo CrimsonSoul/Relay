@@ -3,6 +3,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Server, Contact } from '@shared/ipc';
 
+/**
+ * Reads one element out of a `getAllBy*` result, failing loudly rather than
+ * handing `undefined` to a DOM helper when the query matched fewer elements.
+ */
+const elementAt = (elements: HTMLElement[], index: number, label: string): HTMLElement => {
+  const element = elements.at(index);
+  if (!element) {
+    throw new Error(`Expected a ${label} at index ${index}, but only found ${elements.length}`);
+  }
+  return element;
+};
+
 // --- Mocks ---
 
 const mockUseServers = vi.fn();
@@ -274,7 +286,7 @@ describe('ServersTab', () => {
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
 
     const { rerender } = render(<ServersTab servers={[web, db]} contacts={[]} />);
-    fireEvent.click(screen.getAllByTestId('server-card')[1]);
+    fireEvent.click(elementAt(screen.getAllByTestId('server-card'), 1, 'server card'));
     expect(screen.getByTestId('server-detail')).toHaveTextContent('db-server-01');
 
     // A filter that drops db-server-01 must clear the panel, not silently rebind it to
@@ -292,7 +304,7 @@ describe('ServersTab', () => {
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [web, db] }));
 
     const { rerender } = render(<ServersTab servers={[web, db]} contacts={[]} />);
-    fireEvent.click(screen.getAllByTestId('server-card')[1]);
+    fireEvent.click(elementAt(screen.getAllByTestId('server-card'), 1, 'server card'));
 
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [db, web] }));
     rerender(<ServersTab servers={[web, db]} contacts={[]} />);

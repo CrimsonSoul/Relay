@@ -54,6 +54,13 @@ function exactRules(source: string, selector: string, expectedAtRulePath: string
   return matches;
 }
 
+/** Resolves the single rule a contract is about, failing loudly if it is not unique. */
+function exactRule(source: string, selector: string, expectedAtRulePath: string[] = []): Rule {
+  const rules = exactRules(source, selector, expectedAtRulePath);
+  expect(rules, selector).toHaveLength(1);
+  return rules[0]!;
+}
+
 function declarations(rule: Rule): Declaration[] {
   return rule.nodes.filter((node): node is Declaration => node.type === 'decl');
 }
@@ -136,7 +143,7 @@ describe('CSS zero-warning contracts', () => {
       @supports (display: grid) { .supported { display: grid; } }
       .after { color: purple; }
     `;
-    const target = exactRules(source, '.target')[0];
+    const target = exactRule(source, '.target');
 
     expect(topLevelRuleNeighbors(target)).toEqual({
       previousSibling: '@media (max-width: 800px)',
@@ -214,10 +221,10 @@ describe('CSS zero-warning contracts', () => {
     for (const { source, selector, location, declarations: expectedDeclarations } of contracts) {
       const rules = exactRules(source, selector);
       expect(rules, selector).toHaveLength(1);
-      expect(declarationEntries(rules[0]), `${selector} declaration values and order`).toEqual(
+      expect(declarationEntries(rules[0]!), `${selector} declaration values and order`).toEqual(
         expectedDeclarations,
       );
-      expect(topLevelRuleNeighbors(rules[0]), `${selector} top-level rule location`).toEqual(
+      expect(topLevelRuleNeighbors(rules[0]!), `${selector} top-level rule location`).toEqual(
         location,
       );
     }
@@ -268,7 +275,7 @@ describe('CSS zero-warning contracts', () => {
     ] as const;
 
     for (const [source, selector] of stableGutterContracts) {
-      expect(declarationValue(exactRules(source, selector)[0], 'scrollbar-gutter'), selector).toBe(
+      expect(declarationValue(exactRule(source, selector), 'scrollbar-gutter'), selector).toBe(
         'stable',
       );
     }
@@ -290,7 +297,7 @@ describe('CSS zero-warning contracts', () => {
     ] as const;
 
     for (const [source, selector] of wrappingSelectors) {
-      expect(declarationValue(exactRules(source, selector)[0], 'overflow-wrap'), selector).toBe(
+      expect(declarationValue(exactRule(source, selector), 'overflow-wrap'), selector).toBe(
         'anywhere',
       );
     }

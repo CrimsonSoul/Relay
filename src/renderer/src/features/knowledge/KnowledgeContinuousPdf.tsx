@@ -1,4 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist/build/pdf.mjs';
 import { KnowledgePdfPage, type KnowledgePdfPageProps } from './KnowledgePdfPage';
 import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
@@ -34,6 +42,9 @@ type PageMetric = {
 type LoadedPageMetrics = {
   pdf: PDFDocumentProxy;
   values: readonly (PageMetric | null)[];
+  // How many leading pages have finished measuring, counting the ones whose metadata failed: the
+  // offset of page N is only trustworthy once every page above it has stopped guessing.
+  measuredThrough: number;
 };
 
 type NavigationRequest = {
@@ -42,6 +53,13 @@ type NavigationRequest = {
   targetPageIndex: number | undefined;
   targetTop: number | null | undefined;
   focusRequestKey: number;
+};
+
+type ScrollRequest = {
+  pdf: PDFDocumentProxy;
+  pageIndex: number;
+  offset: number;
+  target: KnowledgeViewerTarget | null;
 };
 
 const DEFAULT_PAGE_METRIC: PageMetric = { width: 612, height: 792 };
@@ -87,6 +105,8 @@ export const KnowledgeContinuousPdf = forwardRef<
   const scaleRef = useRef(scale);
   const observedCurrentPageIndexRef = useRef(activePageIndex);
   const previousNavigationRequestRef = useRef<NavigationRequest | null>(null);
+  const pendingScrollRef = useRef<ScrollRequest | null>(null);
+  const measuredThroughRef = useRef(0);
   const unmeasuredMetrics = useMemo<readonly (PageMetric | null)[]>(
     () => Array.from({ length: pageCount }, () => null),
     [pageCount],
@@ -98,11 +118,12 @@ export const KnowledgeContinuousPdf = forwardRef<
   const [loadedMetrics, setLoadedMetrics] = useState<LoadedPageMetrics>(() => ({
     pdf,
     values: unmeasuredMetrics,
+    measuredThrough: 0,
   }));
-  const metrics =
-    loadedMetrics.pdf === pdf && loadedMetrics.values.length === pageCount
-      ? loadedMetrics.values
-      : unmeasuredMetrics;
+  const currentMetrics =
+    loadedMetrics.pdf === pdf && loadedMetrics.values.length === pageCount ? loadedMetrics : null;
+  const metrics = currentMetrics?.values ?? unmeasuredMetrics;
+  const measuredThrough = currentMetrics?.measuredThrough ?? 0;
   // Shells decide where every page starts, so an unmeasured one copies the first measured page
   // rather than guessing US Letter: an A4 document would otherwise place a jump to page 60 about
   // fifty points per page too high.
@@ -121,24 +142,35 @@ export const KnowledgeContinuousPdf = forwardRef<
   );
   scaleRef.current = scale;
   observedCurrentPageIndexRef.current = currentPageIndex;
+  measuredThroughRef.current = measuredThrough;
 
   useImperativeHandle(ref, () => ({ scrollToPage }), [scrollToPage]);
+
+  const applyScrollRequest = useCallback(
+    (request: ScrollRequest) => {
+      scrollToPage(request.pageIndex, request.offset);
+      if (request.target) onTargetNavigationComplete?.(request.target);
+    },
+    [onTargetNavigationComplete, scrollToPage],
+  );
 
   useEffect(() => {
     let disposed = false;
     let nextPageIndex = 0;
     let measuredCount = 0;
     let publishedCount = 0;
+    let measuredPrefix = 0;
+    const measuredPages = Array.from({ length: pageCount }, () => false);
     const nextMetrics: (PageMetric | null)[] = Array.from({ length: pageCount }, () => null);
     setLoadedMetrics((current) => {
       if (current.pdf === pdf && current.values.length === pageCount) return current;
-      return { pdf, values: nextMetrics };
+      return { pdf, values: nextMetrics, measuredThrough: 0 };
     });
 
     const publishMetrics = () => {
       if (disposed || publishedCount === measuredCount) return;
       publishedCount = measuredCount;
-      setLoadedMetrics({ pdf, values: [...nextMetrics] });
+      setLoadedMetrics({ pdf, values: [...nextMetrics], measuredThrough: measuredPrefix });
     };
 
     const loadMetrics = async () => {
@@ -155,10 +187,20 @@ export const KnowledgeContinuousPdf = forwardRef<
         } catch {
           // Keep the inherited shell; KnowledgePdfPage owns the local render error.
         }
+        measuredPages[pageIndex] = true;
+        while (measuredPrefix < pageCount && measuredPages[measuredPrefix]) measuredPrefix += 1;
         measuredCount += 1;
         // Publish the first page immediately so every shell stops guessing, then batch the rest
-        // so a thousand-page document does not re-render every shell once per page.
-        if (measuredCount === 1 || measuredCount % METRICS_PUBLISH_BATCH === 0) publishMetrics();
+        // so a thousand-page document does not re-render every shell once per page. A jump that is
+        // waiting on these metrics is released as soon as they land rather than at the next batch.
+        const awaitedScroll = pendingScrollRef.current;
+        if (
+          measuredCount === 1 ||
+          measuredCount % METRICS_PUBLISH_BATCH === 0 ||
+          (awaitedScroll !== null && measuredPrefix >= awaitedScroll.pageIndex)
+        ) {
+          publishMetrics();
+        }
       }
       publishMetrics();
     };
@@ -222,6 +264,8 @@ export const KnowledgeContinuousPdf = forwardRef<
     if (pageCount === 0 || !isExternalRequest) return;
 
     let disposed = false;
+    // Whatever the previous request was still waiting on, this one replaces it.
+    pendingScrollRef.current = null;
     if (previousFocusRequestKeyRef.current !== focusRequestKey) {
       previousFocusRequestKeyRef.current = focusRequestKey;
       viewportRef.current?.focus();
@@ -236,13 +280,24 @@ export const KnowledgeContinuousPdf = forwardRef<
         targetOffset = Math.max(0, viewportY);
       }
       if (disposed) return;
-      scrollToPage(boundedRequestedPageIndex, targetOffset);
-      if (targetPageIndex !== undefined) {
-        onTargetNavigationComplete?.({
-          pageIndex: boundedRequestedPageIndex,
-          top: targetTop ?? null,
-        });
+      const request: ScrollRequest = {
+        pdf,
+        pageIndex: boundedRequestedPageIndex,
+        offset: targetOffset,
+        target:
+          targetPageIndex === undefined
+            ? null
+            : { pageIndex: boundedRequestedPageIndex, top: targetTop ?? null },
+      };
+      // A jump is only as accurate as the shells stacked above it. Scrolling while those pages are
+      // still guessing lands an A4 destination about fifty points per page high, and the metrics
+      // that arrive afterwards grow the shells without moving the viewport, so the reader is left
+      // short of the destination for good. Hold the scroll until the pages above it are measured.
+      if (measuredThroughRef.current >= request.pageIndex) {
+        applyScrollRequest(request);
+        return;
       }
+      pendingScrollRef.current = request;
     };
     navigate().catch(() => undefined);
 
@@ -250,15 +305,23 @@ export const KnowledgeContinuousPdf = forwardRef<
       disposed = true;
     };
   }, [
+    applyScrollRequest,
     boundedRequestedPageIndex,
     focusRequestKey,
     pageCount,
     pdf,
-    onTargetNavigationComplete,
-    scrollToPage,
     targetPageIndex,
     targetTop,
   ]);
+
+  useEffect(() => {
+    const pendingScroll = pendingScrollRef.current;
+    if (!pendingScroll || pendingScroll.pdf !== pdf || measuredThrough < pendingScroll.pageIndex) {
+      return;
+    }
+    pendingScrollRef.current = null;
+    applyScrollRequest(pendingScroll);
+  }, [applyScrollRequest, measuredThrough, pdf]);
 
   return (
     <section

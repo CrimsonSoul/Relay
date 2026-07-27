@@ -2,6 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncManager } from './SyncManager';
 import type { PendingChange } from './PendingChanges';
 
+/** Index into an array, failing loudly rather than silently yielding `undefined`. */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(`Expected an element at index ${index} (length ${items.length})`);
+  }
+  return item;
+}
+
 // Mock the logger
 vi.mock('../logger', () => ({
   loggers: {
@@ -56,7 +65,7 @@ describe('SyncManager', () => {
     };
 
     await syncManager.applyChange(change);
-    const createArg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    const createArg = at(mockCreate.mock.calls, 0)[0] as Record<string, unknown>;
     expect(createArg).toHaveProperty('id', 'local-1');
     expect(createArg).toHaveProperty('name', 'Bob');
   });
@@ -150,7 +159,7 @@ describe('SyncManager', () => {
     const result = await syncManager.applyChange(change);
     expect(result.conflict).toBe(false);
     expect(mockCreate).toHaveBeenCalled();
-    const createArg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    const createArg = at(mockCreate.mock.calls, 0)[0] as Record<string, unknown>;
     expect(createArg).toHaveProperty('id', '1');
   });
 
@@ -197,7 +206,7 @@ describe('SyncManager', () => {
 
     await syncManager.applyChange(change);
 
-    const updateArg = mockUpdate.mock.calls[0][1] as Record<string, unknown>;
+    const updateArg = at(mockUpdate.mock.calls, 0)[1] as Record<string, unknown>;
     expect(updateArg).not.toHaveProperty('id');
     expect(updateArg).not.toHaveProperty('created');
     expect(updateArg).not.toHaveProperty('updated');

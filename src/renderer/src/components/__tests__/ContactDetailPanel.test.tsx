@@ -5,14 +5,12 @@ import { ContactDetailPanel } from '../ContactDetailPanel';
 import type { Contact, Server } from '@shared/ipc';
 
 const mockContact: Contact = {
-  id: '1',
   name: 'Alice Smith',
   email: 'alice@example.com',
   phone: '5551234567',
   title: 'Engineer',
-  businessArea: 'IT',
-  lob: '',
-  comment: '',
+  _searchString: 'alice smith alice@example.com engineer',
+  raw: { id: '1', businessArea: 'IT', lob: '', comment: '' },
 };
 
 describe('ContactDetailPanel', () => {

@@ -5,8 +5,12 @@ import type { RecordModel } from 'pocketbase';
 import { WEB_RUNTIME } from '@shared/runtime';
 
 // --- Mocks ---
+/** Mirrors the PocketBase realtime payload the collection store subscribes to. */
+type RealtimeEvent = { action: string; record: RecordModel };
+type RealtimeCallback = (event: RealtimeEvent) => void;
+
 const mockGetFullList = vi.fn<() => Promise<RecordModel[]>>();
-const mockSubscribe = vi.fn<() => Promise<() => void>>();
+const mockSubscribe = vi.fn<(topic: string, callback: RealtimeCallback) => Promise<() => void>>();
 const mockUnsubscribe = vi.fn();
 
 let connectionChangeCallback: ((state: string) => void) | null = null;
@@ -123,7 +127,7 @@ describe('useCollection', () => {
     }
 
     const renderCollection = (mode: 'visible' | 'hidden') =>
-      createElement(Activity, { mode }, createElement(CollectionConsumer));
+      createElement(Activity, { mode, children: createElement(CollectionConsumer) });
 
     const { rerender } = render(renderCollection('visible'));
     await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(1));
@@ -181,8 +185,8 @@ describe('useCollection', () => {
   // eslint-disable-next-line sonarjs/parameterized-tests -- Create, update, and delete events require different fixtures and state assertions; separate tests identify the broken transition.
   it('applies create event from realtime subscription', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1')]);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -200,8 +204,8 @@ describe('useCollection', () => {
 
   it('applies update event from realtime subscription', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1', { name: 'old' })]);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -219,8 +223,8 @@ describe('useCollection', () => {
 
   it('applies delete event from realtime subscription', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1'), makeRecord('2')]);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -234,13 +238,13 @@ describe('useCollection', () => {
     });
 
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data[0].id).toBe('2');
+    expect(result.current.data[0]?.id).toBe('2');
   });
 
   it('deduplicates create events for existing records', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1')]);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -269,7 +273,7 @@ describe('useCollection', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data[0].id).toBe('cached-1');
+    expect(result.current.data[0]?.id).toBe('cached-1');
     expect(result.current.hasLoadedSnapshot).toBe(true);
   });
 
@@ -363,7 +367,7 @@ describe('useCollection', () => {
 
     expect(result.current.error).toBe('Server down');
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data[0].id).toBe('cached-err');
+    expect(result.current.data[0]?.id).toBe('cached-err');
   });
 
   it('handles non-Error objects in catch', async () => {
@@ -417,8 +421,8 @@ describe('useCollection', () => {
       cacheWrite: cacheWriteMock,
     };
     mockGetFullList.mockResolvedValue([]);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -480,8 +484,8 @@ describe('useCollection', () => {
   it('re-sorts after create event when comparator exists', async () => {
     const records = [makeRecord('1', { sortOrder: 1 })];
     mockGetFullList.mockResolvedValue(records);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -496,13 +500,13 @@ describe('useCollection', () => {
 
     expect(result.current.data).toHaveLength(2);
     // The record with sortOrder 0 should come first
-    expect(result.current.data[0].id).toBe('0');
+    expect(result.current.data[0]?.id).toBe('0');
   });
 
   it('handles unknown realtime action gracefully', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1')]);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -522,8 +526,8 @@ describe('useCollection', () => {
   it('handles descending sort fields with correct order after create', async () => {
     const records = [makeRecord('2', { sortOrder: 2 }), makeRecord('1', { sortOrder: 1 })];
     mockGetFullList.mockResolvedValue(records);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -538,15 +542,15 @@ describe('useCollection', () => {
 
     expect(result.current.data).toHaveLength(3);
     // Descending sort: 3, 2, 1
-    expect(result.current.data[0].id).toBe('3');
-    expect(result.current.data[2].id).toBe('1');
+    expect(result.current.data[0]?.id).toBe('3');
+    expect(result.current.data[2]?.id).toBe('1');
   });
 
   it('handles null values in sort fields', async () => {
     const records = [makeRecord('1', { name: null }), makeRecord('2', { name: 'alpha' })];
     mockGetFullList.mockResolvedValue(records);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -566,8 +570,8 @@ describe('useCollection', () => {
   it('handles null values in descending sort (null sorts last in desc)', async () => {
     const records = [makeRecord('1', { name: 'alpha' }), makeRecord('2', { name: null })];
     mockGetFullList.mockResolvedValue(records);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -590,8 +594,8 @@ describe('useCollection', () => {
       makeRecord('3', { category: 'b', sortOrder: 1 }),
     ];
     mockGetFullList.mockResolvedValue(records);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -609,17 +613,17 @@ describe('useCollection', () => {
 
     expect(result.current.data).toHaveLength(4);
     // category 'a' first, then by sortOrder ascending: 0, 1, 2
-    expect(result.current.data[0].id).toBe('4');
-    expect(result.current.data[1].id).toBe('2');
-    expect(result.current.data[2].id).toBe('1');
-    expect(result.current.data[3].id).toBe('3');
+    expect(result.current.data[0]?.id).toBe('4');
+    expect(result.current.data[1]?.id).toBe('2');
+    expect(result.current.data[2]?.id).toBe('1');
+    expect(result.current.data[3]?.id).toBe('3');
   });
 
   it('re-sorts after update event when comparator exists', async () => {
     const records = [makeRecord('1', { sortOrder: 1 }), makeRecord('2', { sortOrder: 2 })];
     mockGetFullList.mockResolvedValue(records);
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -627,14 +631,14 @@ describe('useCollection', () => {
     const { result } = renderHook(() => useCollection('test', { sort: 'sortOrder' }));
 
     await waitFor(() => expect(result.current.data).toHaveLength(2));
-    expect(result.current.data[0].id).toBe('1');
+    expect(result.current.data[0]?.id).toBe('1');
 
     // Update record 1 to have higher sortOrder so it should move after record 2
     act(() => {
       realtimeCallback({ action: 'update', record: makeRecord('1', { sortOrder: 10 }) });
     });
 
-    expect(result.current.data[0].id).toBe('2');
+    expect(result.current.data[0]?.id).toBe('2');
     expect(result.current.data[1].id).toBe('1');
   });
 
@@ -970,8 +974,8 @@ describe('useCollection', () => {
         resolveFetch = resolve;
       }),
     );
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });
@@ -1004,8 +1008,8 @@ describe('useCollection', () => {
         resolveFetch = resolve;
       }),
     );
-    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
-    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
       realtimeCallback = cb;
       return mockUnsubscribe;
     });

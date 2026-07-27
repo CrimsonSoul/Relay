@@ -1027,6 +1027,7 @@ describe('ensureCollections', () => {
     mockDelete.mockResolvedValue(undefined);
     mockUpdate.mockImplementation(async (id: string, patch: Record<string, unknown>) => {
       const collection = serverCollections[id];
+      if (!collection) throw new Error(`Unknown collection id in update(): ${id}`);
       const storedFields = collection.fields as Array<Record<string, unknown>>;
       const patchFields = patch.fields as Array<Record<string, unknown>> | undefined;
       if (patchFields) {
@@ -1114,8 +1115,10 @@ describe('ensureCollections', () => {
         ({ name }) => name === 'username',
       ),
     ).toMatchObject({ id: 'field_username', required: true });
+    const accountsCollection = serverCollections['accounts-col'];
+    if (!accountsCollection) throw new Error('accounts-col missing from server collections');
     expect(
-      (serverCollections['accounts-col'].fields as Array<Record<string, unknown>>).find(
+      (accountsCollection.fields as Array<Record<string, unknown>>).find(
         ({ name }) => name === 'username',
       ),
     ).toMatchObject({ id: 'field_username' });

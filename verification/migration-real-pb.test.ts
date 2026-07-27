@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
@@ -44,8 +44,17 @@ async function waitForHealth(target: string): Promise<void> {
   throw new Error('PocketBase did not become healthy');
 }
 
+type StartOptions = {
+  /**
+   * Copy an existing pb_data directory in before starting. Used to run the real
+   * legacy conversion against production data WITHOUT touching the original —
+   * everything happens inside the throwaway temp root.
+   */
+  seedDataFrom?: string;
+};
+
 /** A fresh server + data directory per test, so no test inherits schema. */
-async function startServer(): Promise<Server> {
+async function startServer({ seedDataFrom }: StartOptions = {}): Promise<Server> {
   // Each server gets its OWN parent directory. PocketBase's default
   // migrationsDir is <dataDir>/../pb_migrations, so data dirs placed directly
   // in $TMPDIR share one auto-generated migration set — and a later run then
@@ -53,7 +62,11 @@ async function startServer(): Promise<Server> {
   const root = mkdtempSync(join(tmpdir(), 'relay-verify-'));
   const dataDir = join(root, 'pb_data');
   const migrationsDir = join(root, 'pb_migrations');
-  mkdirSync(dataDir, { recursive: true });
+  if (seedDataFrom) {
+    cpSync(seedDataFrom, dataDir, { recursive: true });
+  } else {
+    mkdirSync(dataDir, { recursive: true });
+  }
   mkdirSync(migrationsDir, { recursive: true });
   const port = nextPort++;
   const url = `http://127.0.0.1:${port}`;
@@ -212,14 +225,19 @@ describe('collection bootstrap against a real PocketBase', () => {
    * The legacy conversion is a one-time migration keyed to one deployment's
    * actual roster: it requires those exact operator display names, a primary
    * state row naming the owner and administrators, matching auth accounts, and
-   * the pre-upgrade collection shape. Reconstructing that from guesses would
-   * prove nothing about the real database, so this asserts the property that
-   * does matter and IS checkable — the migration never partially applies. It
-   * refuses with a stated reason and leaves the legacy roster untouched, so a
-   * mismatched database is recoverable rather than half-converted.
+   * the pre-upgrade collection shape down to its indexes. Reconstructing that
+   * from guesses proves nothing about the real database — a synthetic seed just
+   * trips PocketBase schema validation in ways production data would not.
    *
-   * Verifying the committed path needs a copy of production pb_data; see the
-   * note in the review summary.
+   * So this asserts the property that does matter and IS checkable without the
+   * real data: the migration never partially applies. It refuses with a stated
+   * reason and leaves the legacy roster — the only record of who the operators
+   * were — untouched, so a mismatched database stays recoverable.
+   *
+   * To verify the committed path, point the suite at a COPY of production data:
+   *   RELAY_VERIFY_PB_DATA=/path/to/pb_data-copy npm run test:pocketbase
+   * That enables the test below, which runs the real migration and asserts every
+   * migrated account keeps a usable username.
    */
   it('refuses an unrecognised legacy database without destroying it', async () => {
     const { pb } = await startServer();
@@ -239,4 +257,52 @@ describe('collection bootstrap against a real PocketBase', () => {
       .getFullList<{ id: string; displayName: string }>({ requestKey: null });
     expect(after.map((o) => o.displayName).sort()).toEqual(before.map((o) => o.displayName).sort());
   });
+  /**
+   * Opt-in: runs the real legacy conversion against a COPY of a production
+   * pb_data directory. This is the only way to exercise commitExistingMigration,
+   * because the migration is keyed to that deployment's actual roster.
+   *
+   *   RELAY_VERIFY_PB_DATA=/path/to/pb_data-copy npm run test:pocketbase
+   *
+   * The directory is copied before use, so the original is never written to.
+   */
+  it.skipIf(!process.env.RELAY_VERIFY_PB_DATA)(
+    'migrates a real legacy database without losing usernames',
+    async () => {
+      const source = process.env.RELAY_VERIFY_PB_DATA!;
+      const { pb } = await startServer({ seedDataFrom: source });
+
+      const legacyOperators = await pb.collections
+        .getFullList({ requestKey: null })
+        .then((all) => all.some((c) => c.name === 'relay_operators'));
+      expect(legacyOperators, `${source} has no relay_operators — not a pre-upgrade copy`).toBe(
+        true,
+      );
+      const operatorCount = (
+        await pb.collection('relay_operators').getFullList({ requestKey: null })
+      ).length;
+
+      const result = await ensureCollections(pb);
+      expect(result.privilegedRuntimeReady, JSON.stringify(result)).toBe(true);
+
+      // The defect this guards: the post-migration patch re-sent already-created
+      // fields without the ids PocketBase assigned, dropping and recreating the
+      // username column the migration had just written — after the legacy roster
+      // was already deleted.
+      const accounts = await pb
+        .collection('relay_privileged_accounts')
+        .getFullList<{ username: string; displayName: string }>({ requestKey: null });
+      expect(accounts.length).toBeGreaterThanOrEqual(operatorCount);
+      for (const account of accounts) {
+        expect(account.username, `${account.displayName} lost its username`).toBeTruthy();
+      }
+
+      // A UNIQUE index cannot exist over duplicate-empty usernames, so its
+      // presence is independent proof the column kept its data.
+      const collections = await pb.collections.getFullList({ requestKey: null });
+      const indexes = (collections.find((c) => c.name === 'relay_privileged_accounts')?.indexes ??
+        []) as string[];
+      expect(indexes.some((i) => /username/i.test(i) && /unique/i.test(i))).toBe(true);
+    },
+  );
 });

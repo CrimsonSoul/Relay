@@ -18,7 +18,7 @@ vi.mock('../../../services/bridgeGroupService', () => ({
 }));
 
 const makeContact = (email: string): Contact => ({
-  name: email.split('@')[0],
+  name: email.split('@')[0] ?? email,
   email,
   phone: '',
   title: '',

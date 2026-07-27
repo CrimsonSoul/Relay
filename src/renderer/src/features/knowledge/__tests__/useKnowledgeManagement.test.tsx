@@ -156,6 +156,7 @@ describe('useKnowledgeManagement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     submitCommand.mockReset().mockImplementation(async (input: { command: string }) => ({
       ok: true as const,
       requestId: 'request-1',
@@ -1203,5 +1204,88 @@ describe('useKnowledgeManagement', () => {
     await act(() => result.current.loadMoreAudit());
     expect(result.current.auditEvents.map(({ id }) => id)).toEqual(['audit-1', 'audit-2']);
     expect(result.current.auditNextCursor).toBeNull();
+  });
+
+  it('re-reads a filtered documents list whose debounced read was throttled', async () => {
+    const filtered = snapshotWithTitle('Payment API Degradation Guide');
+    const queries: string[] = [];
+    const respond = async (input: {
+      command: string;
+      payload?: unknown;
+    }): Promise<PrivilegedCommandResult> => {
+      if (input.command !== 'knowledge.snapshot.read') {
+        return { ok: true, requestId: 'request-1', value: {} };
+      }
+      const { query } = input.payload as { query: string };
+      if (!query) return { ok: true, requestId: 'request-unfiltered', value: snapshot };
+      queries.push(query);
+      return queries.length === 1
+        ? { ok: false, requestId: 'request-throttled', error: 'rate-limited' }
+        : okSnapshot(filtered);
+    };
+    submitCommand.mockImplementation(respond as never);
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ query }: { query: string }) => useKnowledgeManagement(undefined, query),
+      { initialProps: { query: '' } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.snapshot).toEqual(snapshot);
+
+    rerender({ query: 'payment' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    // The debounced read has to carry the query the operator typed, so cursors are never issued
+    // for one filter and spent against another.
+    expect(queries).toEqual(['payment']);
+    expect(result.current.snapshot).toEqual(snapshot);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(queries).toEqual(['payment', 'payment']);
+    expect(result.current.snapshot).toEqual(filtered);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('stops re-reading a query the server keeps throttling and keeps the banner up', async () => {
+    const queries: string[] = [];
+    const respond = async (input: {
+      command: string;
+      payload?: unknown;
+    }): Promise<PrivilegedCommandResult> => {
+      if (input.command !== 'knowledge.snapshot.read') {
+        return { ok: true, requestId: 'request-1', value: {} };
+      }
+      const { query } = input.payload as { query: string };
+      if (!query) return { ok: true, requestId: 'request-unfiltered', value: snapshot };
+      queries.push(query);
+      return { ok: false, requestId: 'request-throttled', error: 'rate-limited' };
+    };
+    submitCommand.mockImplementation(respond as never);
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ query }: { query: string }) => useKnowledgeManagement(undefined, query),
+      { initialProps: { query: '' } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    rerender({ query: 'payment' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    // Three reads total: the debounced dispatch plus the bounded retries. A filter the server
+    // keeps refusing must not keep spending the shared signed-command budget.
+    expect(queries).toEqual(['payment', 'payment', 'payment']);
+    expect(result.current.error).toBe('Too many Wiki requests. Wait a few minutes and try again.');
+    expect(result.current.snapshot).toEqual(snapshot);
   });
 });

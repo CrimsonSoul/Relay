@@ -239,6 +239,7 @@ describe('DataManagerExport', () => {
     const setExportFormat = vi.fn();
     render(<DataManagerExport {...defaultExportProps} setExportFormat={setExportFormat} />);
     const [, formatSelect] = screen.getAllByRole('combobox');
+    if (!formatSelect) throw new Error('Expected a format select alongside the category select');
     fireEvent.change(formatSelect, { target: { value: 'csv' } });
     expect(setExportFormat).toHaveBeenCalledWith('csv');
   });

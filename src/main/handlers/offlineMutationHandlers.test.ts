@@ -17,6 +17,11 @@ vi.mock('./ipcHelpers', () => ({ checkMutationRateLimit: mockCheckMutationRateLi
 
 describe('offlineMutationHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
   const cache = {
     readCollection: vi.fn(() => [{ id: 'abc123abc123abc', name: 'Before' }]),
     updateRecord: vi.fn(),
@@ -46,7 +51,7 @@ describe('offlineMutationHandlers', () => {
   });
 
   it('queues and applies a validated optimistic update', () => {
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'contacts',
@@ -75,7 +80,7 @@ describe('offlineMutationHandlers', () => {
   });
 
   it('meters accepted mutations against the data mutation rate limit', () => {
-    handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'contacts',
@@ -91,7 +96,7 @@ describe('offlineMutationHandlers', () => {
   it('refuses to queue or persist a mutation once the rate limit is exhausted', () => {
     mockCheckMutationRateLimit.mockReturnValue(false);
 
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'contacts',
@@ -107,7 +112,7 @@ describe('offlineMutationHandlers', () => {
   });
 
   it('assigns a valid stable PocketBase ID to offline creates', () => {
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'alert_reminders',
@@ -122,7 +127,7 @@ describe('offlineMutationHandlers', () => {
 
   it('rejects source records, invalid IDs, and oversized payloads', () => {
     expect(
-      handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
         {},
         {
           collection: 'dynatrace_problems',
@@ -131,7 +136,7 @@ describe('offlineMutationHandlers', () => {
       ),
     ).toMatchObject({ ok: false });
     expect(
-      handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
         {},
         {
           collection: 'contacts',
@@ -141,7 +146,7 @@ describe('offlineMutationHandlers', () => {
       ),
     ).toMatchObject({ ok: false });
     expect(
-      handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
         {},
         {
           collection: 'contacts',
@@ -154,7 +159,7 @@ describe('offlineMutationHandlers', () => {
   });
 
   it('never queues knowledge base mutations', () => {
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'knowledge_documents',
@@ -170,7 +175,7 @@ describe('offlineMutationHandlers', () => {
   });
 
   it('never queues retired roster mutations', () => {
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: ['relay', 'operators'].join('_'),
@@ -185,7 +190,7 @@ describe('offlineMutationHandlers', () => {
   });
 
   it('rejects archived standalone note mutations', () => {
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'standalone_notes',
@@ -205,7 +210,7 @@ describe('offlineMutationHandlers', () => {
   it('rejects offline queue writes in server mode', () => {
     appConfig.load.mockReturnValueOnce({ mode: 'server' } as never);
 
-    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},
       {
         collection: 'contacts',

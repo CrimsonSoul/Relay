@@ -18,9 +18,13 @@ import {
   PrivilegedCommandProcessor,
   PrivilegedCommandSafeError,
   type PrivilegedCommandClaim,
+  type PrivilegedCommandProcessorOptions,
   type PrivilegedCommandRepository,
   type StoredPrivilegedCommand,
 } from '../PrivilegedCommandProcessor';
+
+type PrivilegedStatusHandler = NonNullable<PrivilegedCommandProcessorOptions['statusHandler']>;
+type PrivilegedProcessorLogger = NonNullable<PrivilegedCommandProcessorOptions['logger']>;
 
 const NOW = new Date('2026-07-15T12:00:00.000Z').getTime();
 const ACCOUNT_ID = 'account-admin';

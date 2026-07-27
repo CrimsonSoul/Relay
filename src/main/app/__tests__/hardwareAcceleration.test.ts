@@ -8,8 +8,15 @@ function createMockApp(isPackaged: boolean) {
   return {
     isPackaged,
     disableHardwareAcceleration: vi.fn(),
+    // configureHardwareAcceleration takes Pick<App, 'commandLine' | ...>, so the
+    // stub has to cover Electron's whole CommandLine surface even though only
+    // appendSwitch is exercised here.
     commandLine: {
       appendSwitch: vi.fn(),
+      appendArgument: vi.fn(),
+      getSwitchValue: vi.fn(() => ''),
+      hasSwitch: vi.fn(() => false),
+      removeSwitch: vi.fn(),
     },
   };
 }

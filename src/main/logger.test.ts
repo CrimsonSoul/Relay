@@ -110,7 +110,10 @@ describe('logger module', () => {
 
   it('calling errorWithCategory does not throw', async () => {
     const { loggers } = await import('./logger');
-    expect(() => loggers.main.errorWithCategory('SYSTEM', 'categorized error')).not.toThrow();
+    const { ErrorCategory } = await import('@shared/logging');
+    expect(() =>
+      loggers.main.errorWithCategory('categorized error', ErrorCategory.FILE_SYSTEM),
+    ).not.toThrow();
   });
 
   it('getStats returns session stats', async () => {
@@ -155,9 +158,9 @@ describe('logger module', () => {
     // The logger should have set up fallback using tmpdir
     // We can verify appendFile was called with a path inside tmpdir
     await new Promise((r) => setTimeout(r, 10));
-    const appendCalls = vi.mocked(fsPromises.appendFile).mock.calls;
-    if (appendCalls.length > 0) {
-      const firstPath = appendCalls[0][0] as string;
+    const [firstAppendCall] = vi.mocked(fsPromises.appendFile).mock.calls;
+    if (firstAppendCall) {
+      const firstPath = firstAppendCall[0] as string;
       expect(firstPath).toContain(tmpDir);
     }
   });

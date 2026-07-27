@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { AddServerModal } from '../AddServerModal';
+import type { Server } from '@shared/ipc';
 
 // Mock the PocketBase server service
 const mockAddServer = vi.fn();
@@ -33,8 +34,7 @@ describe('AddServerModal', () => {
   });
 
   it('renders with title Edit Server when serverToEdit provided', () => {
-    const server = {
-      id: '1',
+    const server: Server = {
       name: 'SRV-001',
       businessArea: '',
       lob: '',
@@ -42,6 +42,7 @@ describe('AddServerModal', () => {
       owner: '',
       contact: '',
       os: '',
+      _searchString: 'srv-001',
       raw: { id: 'pb-1' },
     };
     render(<AddServerModal isOpen={true} onClose={vi.fn()} serverToEdit={server} />);
@@ -49,8 +50,7 @@ describe('AddServerModal', () => {
   });
 
   it('populates form with serverToEdit values', () => {
-    const server = {
-      id: '1',
+    const server: Server = {
       name: 'SRV-001',
       businessArea: 'Finance',
       lob: 'Loans',
@@ -58,6 +58,7 @@ describe('AddServerModal', () => {
       owner: 'owner@example.com',
       contact: 'support@example.com',
       os: 'Linux',
+      _searchString: 'srv-001 finance loans owner@example.com support@example.com linux',
       raw: { id: 'pb-1' },
     };
     render(<AddServerModal isOpen={true} onClose={vi.fn()} serverToEdit={server} />);

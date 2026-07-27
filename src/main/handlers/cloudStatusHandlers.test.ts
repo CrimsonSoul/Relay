@@ -114,6 +114,13 @@ function salesforceJson(
   );
 }
 
+// --- Helper: read one provider's items, failing loudly when the key is absent ---
+function providerItems<T>(providers: Record<string, T[]>, provider: string): T[] {
+  const items = providers[provider];
+  if (!items) throw new Error(`No cloud status items for provider ${provider}`);
+  return items;
+}
+
 // Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
 // exercised for real (positive + negative) in authHandlers.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
@@ -194,7 +201,7 @@ describe('cloudStatusHandlers', () => {
     const result = (await handler()) as {
       providers: Record<string, { severity: string; title: string }[]>;
     };
-    const awsItems = result.providers.aws;
+    const awsItems = providerItems(result.providers, 'aws');
 
     expect(awsItems).toHaveLength(5);
     expect(awsItems.find((i) => i.title === 'Issue 1')?.severity).toBe('error');
@@ -236,7 +243,7 @@ describe('cloudStatusHandlers', () => {
     const result = (await handler()) as {
       providers: Record<string, { severity: string; title: string }[]>;
     };
-    const awsItems = result.providers.aws;
+    const awsItems = providerItems(result.providers, 'aws');
 
     expect(awsItems.find((i) => i.title.includes('outage'))?.severity).toBe('error');
     expect(awsItems.find((i) => i.title.includes('Normal'))?.severity).toBe('resolved');
@@ -269,7 +276,7 @@ describe('cloudStatusHandlers', () => {
 
     const result = (await handler()) as { providers: Record<string, { title: string }[]> };
     // M365 is the third RSS provider
-    const m365Items = result.providers.m365;
+    const m365Items = providerItems(result.providers, 'm365');
     expect(m365Items).toHaveLength(1);
     expect(m365Items[0]!.title).toBe('Real Issue');
   });
@@ -310,7 +317,7 @@ describe('cloudStatusHandlers', () => {
     const result = (await handler()) as {
       providers: Record<string, { severity: string; pubDate: string; title: string }[]>;
     };
-    const ghItems = result.providers.github;
+    const ghItems = providerItems(result.providers, 'github');
 
     expect(ghItems).toHaveLength(4);
     expect(ghItems.find((i) => i.title === 'Major outage')?.severity).toBe('error');
@@ -348,7 +355,7 @@ describe('cloudStatusHandlers', () => {
     });
 
     const result = (await handler()) as { providers: Record<string, { pubDate: string }[]> };
-    expect(result.providers.github[0]?.pubDate).toBe('2026-02-28T14:00:00Z');
+    expect(providerItems(result.providers, 'github')[0]?.pubDate).toBe('2026-02-28T14:00:00Z');
   });
 
   it('fetches Jira from Statuspage and emits rollup status when incidents are empty', async () => {
@@ -456,7 +463,7 @@ describe('cloudStatusHandlers', () => {
     const result = (await handler()) as {
       providers: Record<string, { severity: string; pubDate: string }[]>;
     };
-    const gcItems = result.providers.google;
+    const gcItems = providerItems(result.providers, 'google');
 
     expect(gcItems[0]?.severity).toBe('error');
     expect(gcItems[0]?.pubDate).toBe(gc1MostRecent);
@@ -493,7 +500,7 @@ describe('cloudStatusHandlers', () => {
     const result = (await handler()) as {
       providers: Record<string, { severity: string; pubDate: string; title: string }[]>;
     };
-    const sfItems = result.providers.salesforce;
+    const sfItems = providerItems(result.providers, 'salesforce');
 
     expect(sfItems[0]?.severity).toBe('error');
     expect(sfItems[0]?.pubDate).toBe('2026-02-28T16:00:00Z');
@@ -532,8 +539,8 @@ describe('cloudStatusHandlers', () => {
       providers: Record<string, { pubDate: string; description: string }[]>;
     };
     // Empty timeline → falls to IncidentEvents[0].createdAt
-    expect(result.providers.salesforce[0]?.pubDate).toBe('2026-02-28T14:00:00Z');
-    expect(result.providers.salesforce[0]?.description).toBe('Event msg');
+    expect(providerItems(result.providers, 'salesforce')[0]?.pubDate).toBe('2026-02-28T14:00:00Z');
+    expect(providerItems(result.providers, 'salesforce')[0]?.description).toBe('Event msg');
   });
 
   // --- Error handling ---

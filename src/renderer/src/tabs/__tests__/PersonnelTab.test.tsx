@@ -4,6 +4,18 @@ import React from 'react';
 import type { OnCallRow, Contact } from '@shared/ipc';
 import type { BoardSettingsState } from '../../hooks/useAppData';
 
+/**
+ * Reads one element out of a `getAllBy*` result, failing loudly rather than
+ * handing `undefined` to a DOM helper when the query matched fewer elements.
+ */
+const elementAt = (elements: HTMLElement[], index: number, label: string): HTMLElement => {
+  const element = elements.at(index);
+  if (!element) {
+    throw new Error(`Expected a ${label} at index ${index}, but only found ${elements.length}`);
+  }
+  return element;
+};
+
 // ---------- mocks ----------
 
 const mockToggleBoardLock = vi.fn();
@@ -116,8 +128,8 @@ describe('PersonnelTab — page header and command toolbar', () => {
     ).not.toBeNull();
 
     const toolbar = screen.getByRole('toolbar', { name: 'On-call actions' });
-    const utilityGroup = container.querySelector('.oncall-command-group--utility');
-    const workflowGroup = container.querySelector('.oncall-command-group--workflow');
+    const utilityGroup = container.querySelector<HTMLElement>('.oncall-command-group--utility');
+    const workflowGroup = container.querySelector<HTMLElement>('.oncall-command-group--workflow');
     expect(toolbar).toContainElement(utilityGroup);
     expect(toolbar).toContainElement(workflowGroup);
     expect(toolbar).toContainElement(
@@ -277,8 +289,7 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.change(input, { target: { value: 'SRE' } });
 
     // Click the modal's Add Card button (not the header one)
-    const addCardBtns = screen.getAllByText('Add Card');
-    const modalAddBtn = addCardBtns[addCardBtns.length - 1];
+    const modalAddBtn = elementAt(screen.getAllByText('Add Card'), -1, 'Add Card button');
     fireEvent.click(modalAddBtn);
 
     // Modal should close after successful submission
@@ -291,8 +302,7 @@ describe('PersonnelTab — Add Card modal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
     // Don't enter any text, just click the Add Card button in the modal
-    const addCardBtns = screen.getAllByText('Add Card');
-    const modalAddBtn = addCardBtns[addCardBtns.length - 1];
+    const modalAddBtn = elementAt(screen.getAllByText('Add Card'), -1, 'Add Card button');
     fireEvent.click(modalAddBtn);
 
     // Modal should still be open
@@ -343,10 +353,7 @@ describe('PersonnelTab — Pop Out button', () => {
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Pop Out Board' }));
-    expect(
-      (globalThis as Record<string, unknown> & { api: { openAuxWindow: ReturnType<typeof vi.fn> } })
-        .api.openAuxWindow,
-    ).toHaveBeenCalledWith('popout/board');
+    expect(globalThis.api?.openAuxWindow).toHaveBeenCalledWith('popout/board');
   });
 });
 

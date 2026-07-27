@@ -106,7 +106,8 @@ describe('validateEnv', () => {
 
   it('accepts ELECTRON_RENDERER_URL when present (not required)', () => {
     process.env.NODE_ENV = 'development';
-    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+    // electron-vite's ambient types declare ELECTRON_RENDERER_URL readonly, so set it reflectively.
+    Reflect.set(process.env, 'ELECTRON_RENDERER_URL', 'http://localhost:5173');
     delete process.env.ELECTRON_ENABLE_LOGGING;
 
     validateEnv();

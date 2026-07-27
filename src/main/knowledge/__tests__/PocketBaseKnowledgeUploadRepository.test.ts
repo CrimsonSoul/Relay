@@ -28,6 +28,8 @@ const upload: KnowledgeUploadManifestRecord = {
   outlineSource: null,
   proposedTitle: '',
   proposedCategory: '',
+  proposedCategoryId: null,
+  proposedDocumentType: 'sop',
   replacementDocumentId: null,
   duplicateDocumentId: null,
   safeError: null,

@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { IPC_CHANNELS } from '@shared/ipc';
+import type { WebApprovalRequest } from '../web/WebApprovalCodeStore';
 import {
   setupPrivilegedAccessHandlers,
+  type PrivilegedAccessHandlerOptions,
   type PrivilegedAccessRuntime,
 } from './privilegedAccessHandlers';
 
@@ -24,8 +26,8 @@ function signedOutView() {
 describe('setupPrivilegedAccessHandlers', () => {
   let handlers: Map<string, (event: unknown, input?: unknown) => unknown>;
   let runtime: PrivilegedAccessRuntime;
-  let assertTrustedIpcSender: ReturnType<typeof vi.fn>;
-  let broadcast: ReturnType<typeof vi.fn>;
+  let assertTrustedIpcSender: Mock<PrivilegedAccessHandlerOptions['assertTrustedIpcSender']>;
+  let broadcast: Mock<NonNullable<PrivilegedAccessHandlerOptions['broadcast']>>;
   let sessionListener: ((view: unknown) => void) | null;
   const accountManager = {
     setupInitialAdministrator: vi.fn(async () => ({
@@ -48,7 +50,7 @@ describe('setupPrivilegedAccessHandlers', () => {
     })),
   };
   const approvalCodes = {
-    listPending: vi.fn(() => []),
+    listPending: vi.fn((): WebApprovalRequest[] => []),
     generate: vi.fn(),
     cancel: vi.fn(() => false),
   };
@@ -87,7 +89,13 @@ describe('setupPrivilegedAccessHandlers', () => {
 
   function setup(isServer = true) {
     setupPrivilegedAccessHandlers({
-      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      ipcMain: {
+        handle: (channel, handler) => {
+          handlers.set(channel, (event, input) =>
+            Reflect.apply(handler, undefined, [event, input]),
+          );
+        },
+      },
       getRuntime: () => runtime,
       isServer: () => isServer,
       assertTrustedIpcSender,
@@ -109,7 +117,9 @@ describe('setupPrivilegedAccessHandlers', () => {
     return handler({ sender: 'trusted' }, input);
   }
 
-  function untrustedResult(channel: string): unknown {
+  // Each untrusted channel has its own documented refusal shape; that is the point.
+  // eslint-disable-next-line sonarjs/function-return-type
+  function untrustedResult(channel: string): object | boolean {
     if (channel === IPC_CHANNELS.PRIVILEGED_GET_SESSION) return { state: 'signed-out' };
     if (channel === IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST) return [];
     if (channel === IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL) return false;
@@ -140,7 +150,10 @@ describe('setupPrivilegedAccessHandlers', () => {
     setup();
 
     for (const channel of handlers.keys()) {
-      await expect(invoke(channel, {})).resolves.toMatchObject(untrustedResult(channel));
+      const expected = untrustedResult(channel);
+      const result = await invoke(channel, {});
+      if (typeof expected === 'boolean') expect(result).toBe(expected);
+      else expect(result).toMatchObject(expected);
     }
     expect(runtime.login).not.toHaveBeenCalled();
     expect(assertTrustedIpcSender).toHaveBeenCalledTimes(12);

@@ -31,6 +31,7 @@ describe('startup timeline', () => {
     timeline.mark('window-created');
 
     const first = timeline.takeSummary();
+    if (first === null) throw new Error('Expected a summary on the first takeSummary() call');
     expect(first).toMatch(/^Relay startup timing /);
     expect(first.length).toBeLessThanOrEqual(1_200);
     expect(timeline.takeSummary()).toBeNull();

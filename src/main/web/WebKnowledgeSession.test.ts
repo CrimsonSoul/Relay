@@ -2,7 +2,8 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { KnowledgeUploadQueueView } from '@shared/knowledge';
+import type { KnowledgeUploadQueueView, KnowledgeUploadSelectionResult } from '@shared/knowledge';
+import { WEB_RUNTIME } from '@shared/runtime';
 import { WebKnowledgeSession } from './WebKnowledgeSession';
 import { WebSessionStore } from './WebSessionStore';
 
@@ -22,10 +23,8 @@ function ordinarySession(sessions: WebSessionStore) {
       mode: 'server',
       port: 8090,
       web: { enabled: true, port: 8091 },
-      retention: { chatDays: 30, alertDays: 30, auditDays: 30 },
-      autoBackup: { enabled: false, intervalHours: 24, maxBackups: 7 },
     },
-    runtime: { target: 'web', mode: 'server', capabilities: [] },
+    runtime: WEB_RUNTIME,
     refresh: async () => ({ token: 'next-token', record: { id: 'app-user' } }),
   });
 }
@@ -39,7 +38,10 @@ describe('WebKnowledgeSession', () => {
     const upload = {
       start: vi.fn(async () => undefined),
       refresh: vi.fn(async () => emptyQueue),
-      queuePaths: vi.fn(async () => ({ ok: true, uploads: [] }) as const),
+      queuePaths: vi.fn(async (): Promise<KnowledgeUploadSelectionResult> => ({
+        ok: true,
+        uploads: [],
+      })),
       pauseBatch: vi.fn(),
       resumeBatch: vi.fn(),
       retryUpload: vi.fn(),

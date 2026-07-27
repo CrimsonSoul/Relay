@@ -724,7 +724,13 @@ describe('DirectoryTab', () => {
 
   it('renders selected contact with group info from groupMap', () => {
     const contact = makeContact({ name: 'Alice', email: 'alice@test.com' });
-    const group: BridgeGroup = { id: 'g1', name: 'Engineering', members: [] };
+    const group: BridgeGroup = {
+      id: 'g1',
+      name: 'Engineering',
+      contacts: ['alice@test.com'],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
     const groupMap = new Map<string, BridgeGroup[]>();
     groupMap.set('alice@test.com', [group]);
     const dirReturn = {

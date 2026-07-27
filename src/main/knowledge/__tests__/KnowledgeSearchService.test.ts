@@ -93,17 +93,21 @@ function pbWith(documents: unknown[], chunks: unknown[]) {
   const unsubscribeChunks = vi.fn();
   const documentCollection = {
     getFullList: vi.fn(async () => documents),
-    subscribe: vi.fn(async (_topic: string, handler: RealtimeHandler) => {
-      documentHandler = handler;
-      return unsubscribeDocuments;
-    }),
+    subscribe: vi.fn(
+      async (_topic: string, handler: RealtimeHandler): Promise<() => Promise<void>> => {
+        documentHandler = handler;
+        return unsubscribeDocuments;
+      },
+    ),
   };
   const chunkCollection = {
     getFullList: vi.fn(async () => chunks),
-    subscribe: vi.fn(async (_topic: string, handler: RealtimeHandler) => {
-      chunkHandler = handler;
-      return unsubscribeChunks;
-    }),
+    subscribe: vi.fn(
+      async (_topic: string, handler: RealtimeHandler): Promise<() => Promise<void>> => {
+        chunkHandler = handler;
+        return unsubscribeChunks;
+      },
+    ),
   };
   const realtime = { onDisconnect: null as null | ((subscriptions: string[]) => void) };
   const pb = {

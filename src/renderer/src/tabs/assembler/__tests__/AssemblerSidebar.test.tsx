@@ -16,8 +16,8 @@ const makeGroup = (id: string, name: string, contacts: string[] = []): BridgeGro
   id,
   name,
   contacts,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
 });
 
 const defaultActions = {
@@ -122,8 +122,9 @@ describe('AssemblerSidebar', () => {
     const groups = [makeGroup('1', 'Zebra'), makeGroup('2', 'Alpha')];
     const { container } = render(<AssemblerSidebar {...defaultProps} groups={groups} />);
     const items = container.querySelectorAll('.sig-grp-name');
-    expect(items[0].textContent).toBe('Alpha');
-    expect(items[1].textContent).toBe('Zebra');
+    expect(items).toHaveLength(2);
+    expect(items[0]!.textContent).toBe('Alpha');
+    expect(items[1]!.textContent).toBe('Zebra');
   });
 
   it('calls onToggleGroup when a group is clicked', () => {

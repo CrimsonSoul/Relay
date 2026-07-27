@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeAPI } from '@shared/ipc';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
@@ -34,13 +35,13 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 
 describe('PrivilegedAccessProvider', () => {
   let eventListener: ((view: PrivilegedSessionView) => void) | null;
-  let unsubscribe: ReturnType<typeof vi.fn>;
+  let unsubscribe: Mock<() => void>;
   let api: Partial<BridgeAPI>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     eventListener = null;
-    unsubscribe = vi.fn();
+    unsubscribe = vi.fn<() => void>();
     api = {
       getPrivilegedSession: vi.fn().mockResolvedValue(signedOut),
       loginPrivileged: vi.fn().mockResolvedValue({ ok: true, value: active }),

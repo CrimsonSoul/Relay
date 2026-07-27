@@ -1,7 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import type { Mock } from 'vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SetupScreen } from '../SetupScreen';
+
+type SetupConfig = Parameters<React.ComponentProps<typeof SetupScreen>['onComplete']>[0];
 
 // Mock the Input component to simplify testing
 vi.mock('../Input', () => ({
@@ -44,12 +47,16 @@ describe('SetupScreen', () => {
   );
   const DOT_LOCAL_HTTP_URL = ['http', '://', 'relay-server.local', ':8090'].join('');
   const PUBLIC_HTTP_URL = ['http', '://', 'relay.example.com', ':8090'].join('');
-  const getSubmittedConfig = () => onComplete.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-  let onComplete: ReturnType<typeof vi.fn>;
+  const getSubmittedConfig = (): SetupConfig => {
+    const config = onComplete.mock.calls.at(-1)?.[0];
+    expect(config).toBeDefined();
+    return config!;
+  };
+  let onComplete: Mock<(config: SetupConfig) => Promise<void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onComplete = vi.fn();
+    onComplete = vi.fn<(config: SetupConfig) => Promise<void>>();
     // Mock window.api for the CloseButton, the test-connection probe, and server discovery
     (globalThis as unknown as { window: unknown }).window = {
       api: { windowClose: vi.fn(), testConnection: vi.fn(), discoverServers: vi.fn() },

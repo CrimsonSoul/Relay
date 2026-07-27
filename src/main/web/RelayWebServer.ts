@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { extname, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
 import type { RelayWebServerState } from './RelayWebServerState';
 
@@ -35,6 +35,15 @@ function publicState(state: RelayWebServerState): RelayWebServerState {
   return { ...state };
 }
 
+// path.relative lowercases both sides on Windows and emits the platform separator, so this
+// stays case-insensitive there without extra normalization. A different Windows drive yields
+// an absolute result instead of a '..' prefix, so both escape shapes are rejected.
+function isInside(root: string, candidate: string): boolean {
+  const relativePath = relative(root, candidate);
+  if (relativePath === '') return true;
+  return !isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`);
+}
+
 function send(response: ServerResponse, status: number, body = ''): void {
   response.statusCode = status;
   response.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -45,6 +54,7 @@ export class RelayWebServer {
   private server: Server | null = null;
   private startPromise: Promise<RelayWebServerState> | null = null;
   private state: RelayWebServerState;
+  private staticRootRealPath: string | null = null;
 
   constructor(private readonly options: RelayWebServerOptions) {
     this.state = { status: 'disabled', host: options.host, port: options.port };
@@ -150,8 +160,7 @@ export class RelayWebServer {
     }
     const requested = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
     const candidate = resolve(this.options.staticRoot, requested);
-    const relativePath = relative(this.options.staticRoot, candidate);
-    if (relativePath.startsWith(`..${sep}`) || relativePath === '..') {
+    if (!isInside(this.options.staticRoot, candidate)) {
       send(response, 400, 'Invalid path');
       return;
     }
@@ -176,6 +185,32 @@ export class RelayWebServer {
     }
   }
 
+  // The packaged renderer root cannot move while the server runs, so its real path is resolved
+  // once instead of on every request. Resolving it is required even on POSIX because the root
+  // itself is commonly reached through a symlink (/var -> /private/var on macOS).
+  private async realStaticRoot(): Promise<string | null> {
+    if (this.staticRootRealPath) return this.staticRootRealPath;
+    try {
+      this.staticRootRealPath = await realpath(this.options.staticRoot);
+    } catch {
+      return null;
+    }
+    return this.staticRootRealPath;
+  }
+
+  // stat follows symlinks, so the lexical containment check alone would happily stream a file
+  // that a link inside the root points at outside it. An escaping path is reported as missing
+  // rather than rejected so it stays indistinguishable from any other absent file.
+  private async isServable(path: string): Promise<boolean> {
+    const root = await this.realStaticRoot();
+    if (!root) return false;
+    try {
+      return isInside(root, await realpath(path));
+    } catch {
+      return false;
+    }
+  }
+
   private async serveFile(
     path: string,
     method: string,
@@ -184,6 +219,7 @@ export class RelayWebServer {
     try {
       const details = await stat(path);
       if (!details.isFile()) return false;
+      if (!(await this.isServable(path))) return false;
       response.statusCode = 200;
       response.setHeader(
         'Content-Type',

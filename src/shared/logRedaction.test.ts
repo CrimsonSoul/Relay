@@ -115,8 +115,11 @@ describe('redactSensitiveData', () => {
   it('handles arrays at the top level', () => {
     const input = [{ token: 'abc' }, { name: 'Bob' }];
     const redacted = redactSensitiveData(input) as Array<Record<string, unknown>>;
-    expect(redacted[0].token).toBe('[REDACTED]');
-    expect(redacted[1].name).toBe('Bob');
+    expect(redacted).toHaveLength(2);
+    const [firstEntry, secondEntry] = redacted;
+    // Both entries exist: the length is asserted immediately above.
+    expect(firstEntry!.token).toBe('[REDACTED]');
+    expect(secondEntry!.name).toBe('Bob');
   });
 
   it('redacts api-key and api_key patterns', () => {

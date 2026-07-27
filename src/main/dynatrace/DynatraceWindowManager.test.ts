@@ -18,9 +18,9 @@ const {
   mockWindowOpenHandlers,
 } = vi.hoisted(() => {
   const mockApp = { isPackaged: false };
-  const mockDynatraceWebContentsHandlers = new Map<string, (...args: never[]) => void>();
-  const mockHostWebContentsHandlers = new Map<string, (...args: never[]) => void>();
-  const mockHostWindowHandlers = new Map<string, (...args: never[]) => void>();
+  const mockDynatraceWebContentsHandlers = new Map<string, (...args: unknown[]) => void>();
+  const mockHostWebContentsHandlers = new Map<string, (...args: unknown[]) => void>();
+  const mockHostWindowHandlers = new Map<string, (...args: unknown[]) => void>();
   const mockHostWindowOpenHandlers: Array<(details: { url: string }) => { action: 'deny' }> = [];
   const mockWindowOpenHandlers: Array<(details: { url: string }) => { action: 'deny' }> = [];
   const mockMainInfo = vi.fn();
@@ -36,7 +36,7 @@ const {
     webContents: {
       loadURL: vi.fn(async () => undefined),
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        mockDynatraceWebContentsHandlers.set(event, handler as (...args: never[]) => void);
+        mockDynatraceWebContentsHandlers.set(event, handler);
         return mockDynatraceView.webContents;
       }),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => { action: 'deny' }) => {
@@ -48,13 +48,13 @@ const {
 
   const mockHostWindow = {
     close: vi.fn(),
-    loadURL: vi.fn(async () => undefined),
+    loadURL: vi.fn(async (_url: string) => undefined),
     focus: vi.fn(),
     isDestroyed: vi.fn(() => false),
     getBounds: vi.fn(() => ({ x: 10, y: 20, width: 1200, height: 800 })),
     getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1440, height: 900 })),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-      mockHostWindowHandlers.set(event, handler as (...args: never[]) => void);
+      mockHostWindowHandlers.set(event, handler);
       return mockHostWindow;
     }),
     contentView: {
@@ -63,7 +63,7 @@ const {
     },
     webContents: {
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        mockHostWebContentsHandlers.set(event, handler as (...args: never[]) => void);
+        mockHostWebContentsHandlers.set(event, handler);
         return mockHostWindow.webContents;
       }),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => { action: 'deny' }) => {
@@ -202,7 +202,9 @@ describe('DynatraceWindowManager', () => {
 
     await manager.openDashboard('dt_1');
 
-    const shellUrl = vi.mocked(mockHostWindow.loadURL).mock.calls[0]?.[0] as string;
+    const shellUrlCall = vi.mocked(mockHostWindow.loadURL).mock.calls[0];
+    if (!shellUrlCall) throw new Error('Expected the host window to load the Relay shell.');
+    const [shellUrl] = shellUrlCall;
     expect(shellUrl).toMatch(/^file:/);
     expect(shellUrl).toContain('index.html');
     expect(shellUrl).toContain('popout=dynatrace');

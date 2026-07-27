@@ -142,7 +142,8 @@ describe('exportToCsv', () => {
     mockGetFullList.mockResolvedValueOnce([dangerous]);
     mockPapaUnparse.mockImplementationOnce(({ data }: { data: string[][] }) => data[0]![1]!);
     await exportToCsv('contacts');
-    const unparseCall = mockPapaUnparse.mock.calls[0][0] as { data: string[][] };
+    expect(mockPapaUnparse).toHaveBeenCalledOnce();
+    const unparseCall = mockPapaUnparse.mock.calls[0]![0] as { data: string[][] };
     expect(unparseCall.data[0]![1]).toBe('\'=HYPERLINK("evil")');
   });
 });
@@ -157,7 +158,7 @@ describe('exportToExcel', () => {
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(result).toBeInstanceOf(ArrayBuffer);
     expect(mockWriteExcelFile).toHaveBeenCalledOnce();
-    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    const sheets = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]?.data[0]).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ value: 'id', fontWeight: 'bold' }),
@@ -170,7 +171,8 @@ describe('exportToExcel', () => {
   it('writes an empty sheet for empty collections', async () => {
     mockGetFullList.mockResolvedValueOnce([]);
     await exportToExcel('contacts');
-    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(mockWriteExcelFile).toHaveBeenCalledOnce();
+    const sheets = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]).toMatchObject({ sheet: 'contacts', data: [] });
   });
 
@@ -184,7 +186,8 @@ describe('exportToExcel', () => {
 
     await exportToExcel('contacts');
 
-    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(mockWriteExcelFile).toHaveBeenCalledOnce();
+    const sheets = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]?.data[1]?.[1]).toBe('\'=HYPERLINK("https://evil.example")');
     expect(sheets[0]?.data[1]?.[2]).toBe("'@SUM(1,1)");
   });
@@ -345,7 +348,8 @@ describe('importFromCsv', () => {
   it('strips formula-injection prefix on import via transform function', async () => {
     mockPapaParse.mockReturnValueOnce({ data: [], errors: [] });
     await importFromCsv('contacts', 'email\n=test');
-    const parseOptions = mockPapaParse.mock.calls[0][1] as { transform: (v: string) => string };
+    expect(mockPapaParse).toHaveBeenCalledOnce();
+    const parseOptions = mockPapaParse.mock.calls[0]![1] as { transform: (v: string) => string };
     // Strips leading ' before injection characters
     expect(parseOptions.transform('\'=HYPERLINK("evil")')).toBe('=HYPERLINK("evil")');
     // Normal values unchanged

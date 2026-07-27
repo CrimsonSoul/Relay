@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { ChangeEvent, ChangeEventHandler, FocusEventHandler } from 'react';
 import { SortableEditRow } from '../SortableEditRow';
 import { formatPhoneNumber } from '@shared/phoneUtils';
+import type { Contact, OnCallRow } from '@shared/ipc';
 
 type MockTransform = { x: number; y: number } | null | undefined;
 
@@ -92,29 +93,46 @@ vi.mock('@shared/phoneUtils', () => ({
 
 // ── Test Data ──────────────────────────────────────────────────────────────────
 
-const mockRow = {
+const mockRow: OnCallRow = {
   id: 'row-1',
+  team: 'Alpha',
+  teamId: 'team-1',
   role: 'Primary',
   name: 'John Doe',
   contact: '5551234567',
   timeWindow: '9AM-5PM',
 };
 
-const mockContacts = [
-  { id: 'c1', name: 'John Doe', phone: '5551234567', email: 'john@test.com', title: 'Engineer' },
-  { id: 'c2', name: 'Jane Smith', phone: '5559876543', email: 'jane@test.com', title: 'Manager' },
+const makeContact = (
+  id: string,
+  name: string,
+  phone: string,
+  email: string,
+  title: string,
+): Contact => ({
+  name,
+  phone,
+  email,
+  title,
+  _searchString: `${name} ${email} ${title}`.toLowerCase(),
+  raw: { id },
+});
+
+const mockContacts: Contact[] = [
+  makeContact('c1', 'John Doe', '5551234567', 'john@test.com', 'Engineer'),
+  makeContact('c2', 'Jane Smith', '5559876543', 'jane@test.com', 'Manager'),
 ];
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('SortableEditRow', () => {
-  let onUpdate: ReturnType<typeof vi.fn>;
-  let onRemove: ReturnType<typeof vi.fn>;
+  let onUpdate: Mock<(row: OnCallRow) => void>;
+  let onRemove: Mock<() => void>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onUpdate = vi.fn();
-    onRemove = vi.fn();
+    onUpdate = vi.fn<(row: OnCallRow) => void>();
+    onRemove = vi.fn<() => void>();
     mockUseSortable.mockReturnValue({
       attributes: { role: 'button' },
       listeners: {},
@@ -178,9 +196,7 @@ describe('SortableEditRow', () => {
   });
 
   it('does not auto-fill phone when matching contact has no phone', () => {
-    const contactsNoPhone = [
-      { id: 'c3', name: 'No Phone', phone: '', email: 'no@test.com', title: 'Intern' },
-    ];
+    const contactsNoPhone = [makeContact('c3', 'No Phone', '', 'no@test.com', 'Intern')];
 
     render(
       <SortableEditRow
@@ -203,9 +219,7 @@ describe('SortableEditRow', () => {
 
   it('clears the previous number when the newly picked contact has no phone', () => {
     // The board must never show one person's name beside another's number.
-    const contactsNoPhone = [
-      { id: 'c3', name: 'No Phone', phone: '', email: 'no@test.com', title: 'Intern' },
-    ];
+    const contactsNoPhone = [makeContact('c3', 'No Phone', '', 'no@test.com', 'Intern')];
 
     render(
       <SortableEditRow

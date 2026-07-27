@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TeamCard } from '../TeamCard';
+import type { ContextMenuItem } from '../../ContextMenu';
 import type { OnCallRow, Contact } from '@shared/ipc';
 
 // Mock dependencies
@@ -55,6 +56,24 @@ const defaultProps = () => ({
   setConfirm: vi.fn(),
   setMenu: vi.fn(),
 });
+
+type ContextMenuPayload = { x: number; y: number; items: ContextMenuItem[] } | null;
+type ConfirmPayload = { team: string; onConfirm: () => void } | null;
+
+const makeSetMenu = () => vi.fn<(menu: ContextMenuPayload) => void>();
+const makeSetConfirm = () => vi.fn<(confirm: ConfirmPayload) => void>();
+
+/** Pulls a labelled entry out of a captured setMenu payload, failing loudly if it is absent. */
+const menuItem = (menu: ContextMenuPayload | undefined, label: string): ContextMenuItem => {
+  const item = menu?.items.find((entry) => entry.label === label);
+  if (!item) throw new Error(`Expected a context menu item labelled "${label}"`);
+  return item;
+};
+
+const confirmPayload = (confirm: ConfirmPayload | undefined): NonNullable<ConfirmPayload> => {
+  if (!confirm) throw new Error('Expected setConfirm to receive a confirmation payload');
+  return confirm;
+};
 
 describe('TeamCard', () => {
   beforeEach(() => {
@@ -205,7 +224,7 @@ describe('TeamCard', () => {
   });
 
   it('context menu Copy On-Call Info calls onCopyTeamInfo', () => {
-    const setMenu = vi.fn();
+    const setMenu = makeSetMenu();
     const onCopyTeamInfo = vi.fn();
     const rows = [makeRow()];
     const { container } = render(
@@ -219,21 +238,17 @@ describe('TeamCard', () => {
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
     // Extract the onClick from the Copy On-Call Info item
-    const copyItem = setMenu.mock.calls[0][0].items.find(
-      (i: { label: string }) => i.label === 'Copy On-Call Info',
-    );
+    const copyItem = menuItem(setMenu.mock.calls[0]?.[0], 'Copy On-Call Info');
     copyItem.onClick();
     expect(onCopyTeamInfo).toHaveBeenCalledWith('Alpha', rows);
   });
 
   it('context menu Edit Team opens modal', () => {
-    const setMenu = vi.fn();
+    const setMenu = makeSetMenu();
     const { container } = render(<TeamCard {...defaultProps()} setMenu={setMenu} />);
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
-    const editItem = setMenu.mock.calls[0][0].items.find(
-      (i: { label: string }) => i.label === 'Edit Team',
-    );
+    const editItem = menuItem(setMenu.mock.calls[0]?.[0], 'Edit Team');
     act(() => {
       editItem.onClick();
     });
@@ -241,23 +256,21 @@ describe('TeamCard', () => {
   });
 
   it('context menu Rename Team calls onRenameTeam', () => {
-    const setMenu = vi.fn();
+    const setMenu = makeSetMenu();
     const onRenameTeam = vi.fn();
     const { container } = render(
       <TeamCard {...defaultProps()} setMenu={setMenu} onRenameTeam={onRenameTeam} />,
     );
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
-    const renameItem = setMenu.mock.calls[0][0].items.find(
-      (i: { label: string }) => i.label === 'Rename Team',
-    );
+    const renameItem = menuItem(setMenu.mock.calls[0]?.[0], 'Rename Team');
     renameItem.onClick();
     expect(onRenameTeam).toHaveBeenCalledWith('Alpha', 'Alpha');
   });
 
   it('context menu Remove Team calls setConfirm', () => {
-    const setMenu = vi.fn();
-    const setConfirm = vi.fn();
+    const setMenu = makeSetMenu();
+    const setConfirm = makeSetConfirm();
     const onRemoveTeam = vi.fn();
     const { container } = render(
       <TeamCard
@@ -269,19 +282,17 @@ describe('TeamCard', () => {
     );
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
-    const removeItem = setMenu.mock.calls[0][0].items.find(
-      (i: { label: string }) => i.label === 'Remove Team',
-    );
+    const removeItem = menuItem(setMenu.mock.calls[0]?.[0], 'Remove Team');
     removeItem.onClick();
     expect(setConfirm).toHaveBeenCalledWith(expect.objectContaining({ team: 'Alpha' }));
     // Execute the confirm callback
-    setConfirm.mock.calls[0][0].onConfirm();
+    confirmPayload(setConfirm.mock.calls[0]?.[0]).onConfirm();
     expect(onRemoveTeam).toHaveBeenCalledWith('Alpha');
   });
 
   it('drops stale callback closures when only the handlers change', () => {
-    const setMenu = vi.fn();
-    const setConfirm = vi.fn();
+    const setMenu = makeSetMenu();
+    const setConfirm = makeSetConfirm();
     const staleRemoveTeam = vi.fn();
     const freshRemoveTeam = vi.fn();
     // Everything a drag reorder leaves untouched on an unmoved card: same
@@ -294,11 +305,9 @@ describe('TeamCard', () => {
     rerender(<TeamCard {...stableProps} onRemoveTeam={freshRemoveTeam} />);
 
     fireEvent.contextMenu(container.querySelector('.team-card-body')!);
-    const removeItem = setMenu.mock.calls
-      .at(-1)![0]
-      .items.find((i: { label: string }) => i.label === 'Remove Team');
+    const removeItem = menuItem(setMenu.mock.calls.at(-1)?.[0], 'Remove Team');
     removeItem.onClick();
-    setConfirm.mock.calls.at(-1)![0].onConfirm();
+    confirmPayload(setConfirm.mock.calls.at(-1)?.[0]).onConfirm();
 
     expect(freshRemoveTeam).toHaveBeenCalledWith('Alpha');
     expect(staleRemoveTeam).not.toHaveBeenCalled();

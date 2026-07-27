@@ -38,6 +38,16 @@ const SAMPLE_BACKUPS: BackupEntry[] = [
   { name: '2026-03-24T08-00-00-000Z.zip', date: '2026-03-24T08:00:00.000Z', size: 1_200_000 },
 ];
 
+/**
+ * findAllByText already fails the test when nothing matches; the explicit throw
+ * only narrows the indexed access for the type checker.
+ */
+const clickFirstRestore = async (): Promise<void> => {
+  const [firstRestore] = await screen.findAllByText('Restore');
+  if (!firstRestore) throw new Error('Expected at least one Restore button to be rendered');
+  fireEvent.click(firstRestore);
+};
+
 describe('DataManagerBackups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -86,8 +96,7 @@ describe('DataManagerBackups', () => {
   it('shows confirmation dialog before restore', async () => {
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
@@ -99,8 +108,7 @@ describe('DataManagerBackups', () => {
 
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -111,8 +119,7 @@ describe('DataManagerBackups', () => {
   it('cancels restore confirmation', async () => {
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Cancel'));
@@ -124,8 +131,7 @@ describe('DataManagerBackups', () => {
   it('confirms the restore inside a dismissible dialog', async () => {
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
 
     // A destructive confirmation buried below a 13-entry list reads as a
     // no-op click; it has to own focus and answer Escape.
@@ -149,8 +155,7 @@ describe('DataManagerBackups', () => {
     );
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await screen.findByText('Restoring...');
@@ -212,8 +217,7 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockResolvedValue({ success: false, error: 'Corrupt backup' });
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -225,8 +229,7 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockResolvedValue({ success: false });
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -238,8 +241,7 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockRejectedValue(new Error('unexpected'));
     render(<DataManagerBackups />);
 
-    const restoreButtons = await screen.findAllByText('Restore');
-    fireEvent.click(restoreButtons[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {

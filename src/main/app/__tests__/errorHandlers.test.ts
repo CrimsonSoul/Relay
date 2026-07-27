@@ -40,7 +40,7 @@ vi.mock('../relaunch', () => ({
 type ProcessHandler = (...args: unknown[]) => void;
 
 describe('errorHandlers', () => {
-  const processHandlers = new Map<string, ProcessHandler>();
+  const processHandlers = new Map<string | symbol, ProcessHandler>();
   let processOnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {

@@ -4,26 +4,29 @@ import { useCommandSearch } from '../useCommandSearch';
 import type { Contact, Server, BridgeGroup } from '@shared/ipc';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 
+const FIXTURE_TIMESTAMP = '2026-07-14T12:00:00.000Z';
+const FIXTURE_EPOCH_MS = Date.parse(FIXTURE_TIMESTAMP);
+
 const makeContact = (overrides: Partial<Contact> = {}): Contact => ({
   email: 'alice@example.com',
   name: 'Alice Smith',
   title: 'Engineer',
   phone: '',
-  groups: [],
-  onCallSchedules: [],
   _searchString: 'alice smith engineer alice@example.com',
+  raw: {},
   ...overrides,
 });
 
 const makeServer = (overrides: Partial<Server> = {}): Server => ({
   name: 'Alpha Bridge',
-  dialIn: '',
-  accessCode: '',
-  owner: 'Bob',
   businessArea: 'Ops',
-  notes: '',
-  groups: [],
+  lob: 'Network',
+  comment: '',
+  owner: 'Bob',
+  contact: 'bob@example.com',
+  os: 'linux',
   _searchString: 'alpha bridge bob ops',
+  raw: {},
   ...overrides,
 });
 
@@ -31,6 +34,8 @@ const makeGroup = (overrides: Partial<BridgeGroup> = {}): BridgeGroup => ({
   id: 'g1',
   name: 'Group Alpha',
   contacts: [],
+  createdAt: FIXTURE_EPOCH_MS,
+  updatedAt: FIXTURE_EPOCH_MS,
   ...overrides,
 });
 
@@ -40,9 +45,12 @@ const makeKnowledgeDocument = (
   id: 'kb-1',
   sourceKey: 'Operations/Lane recovery.pdf',
   category: 'Operations',
+  categoryId: 'category-operations',
+  documentType: 'sop',
   title: 'Lane recovery',
   fileName: 'Lane recovery.pdf',
   pdf: 'Lane recovery.pdf',
+  cover: null,
   checksum: 'a'.repeat(64),
   byteSize: 1024,
   pageCount: 3,
@@ -50,10 +58,24 @@ const makeKnowledgeDocument = (
     { id: 'heading', label: 'Restart the store service', level: 1, pageIndex: 1, top: 700 },
   ],
   outlineSource: 'native',
-  sourceModifiedAt: '2026-07-14T12:00:00.000Z',
-  indexedAt: '2026-07-14T12:00:00.000Z',
-  created: '2026-07-14T12:00:00.000Z',
-  updated: '2026-07-14T12:00:00.000Z',
+  sourceModifiedAt: FIXTURE_TIMESTAMP,
+  indexedAt: FIXTURE_TIMESTAMP,
+  searchIndexState: 'ready',
+  searchIndexChecksum: 'b'.repeat(64),
+  searchIndexVersion: 1,
+  searchIndexedAt: FIXTURE_TIMESTAMP,
+  searchIndexError: null,
+  lifecycleState: 'active',
+  displayTitle: 'Lane recovery',
+  revision: 1,
+  publishedByAccountId: 'account-ops',
+  publishedByName: 'Ops Publisher',
+  publishedAt: FIXTURE_TIMESTAMP,
+  trashedByAccountId: null,
+  trashedByName: null,
+  trashedAt: null,
+  created: FIXTURE_TIMESTAMP,
+  updated: FIXTURE_TIMESTAMP,
   ...overrides,
 });
 
@@ -159,8 +181,8 @@ describe('useCommandSearch', () => {
       const contact = makeContact({ _searchString: 'alice smith alice@example.com' });
       const { result } = renderHook(() => useCommandSearch('alice', [contact], [], []));
       expect(result.current).toHaveLength(1);
-      expect(result.current[0].type).toBe('contact');
-      expect(result.current[0].id).toBe('contact-alice@example.com');
+      expect(result.current[0]?.type).toBe('contact');
+      expect(result.current[0]?.id).toBe('contact-alice@example.com');
     });
 
     it('uses email as title when name is empty', () => {
@@ -170,14 +192,14 @@ describe('useCommandSearch', () => {
         _searchString: 'noname@x.com',
       });
       const { result } = renderHook(() => useCommandSearch('noname', [contact], [], []));
-      expect(result.current[0].title).toBe('noname@x.com');
+      expect(result.current[0]?.title).toBe('noname@x.com');
     });
 
     it('uses name as title and email as subtitle when name present', () => {
       const contact = makeContact({ name: 'Alice', email: 'alice@x.com', _searchString: 'alice' });
       const { result } = renderHook(() => useCommandSearch('alice', [contact], [], []));
-      expect(result.current[0].title).toBe('Alice');
-      expect(result.current[0].subtitle).toBe('alice@x.com');
+      expect(result.current[0]?.title).toBe('Alice');
+      expect(result.current[0]?.subtitle).toBe('alice@x.com');
     });
 
     it('uses title as subtitle when name is absent', () => {
@@ -188,7 +210,7 @@ describe('useCommandSearch', () => {
         _searchString: 'director',
       });
       const { result } = renderHook(() => useCommandSearch('director', [contact], [], []));
-      expect(result.current[0].subtitle).toBe('Director');
+      expect(result.current[0]?.subtitle).toBe('Director');
     });
   });
 
@@ -197,20 +219,20 @@ describe('useCommandSearch', () => {
       const server = makeServer({ _searchString: 'alpha bridge bob ops' });
       const { result } = renderHook(() => useCommandSearch('alpha', [], [server], []));
       expect(result.current).toHaveLength(1);
-      expect(result.current[0].type).toBe('server');
-      expect(result.current[0].title).toBe('Alpha Bridge');
+      expect(result.current[0]?.type).toBe('server');
+      expect(result.current[0]?.title).toBe('Alpha Bridge');
     });
 
     it('uses businessArea as subtitle', () => {
       const server = makeServer({ businessArea: 'Ops', owner: 'Bob', _searchString: 'bridge' });
       const { result } = renderHook(() => useCommandSearch('bridge', [], [server], []));
-      expect(result.current[0].subtitle).toBe('Ops');
+      expect(result.current[0]?.subtitle).toBe('Ops');
     });
 
     it('falls back to owner when businessArea is absent', () => {
       const server = makeServer({ businessArea: '', owner: 'Bob', _searchString: 'bridge' });
       const { result } = renderHook(() => useCommandSearch('bridge', [], [server], []));
-      expect(result.current[0].subtitle).toBe('Bob');
+      expect(result.current[0]?.subtitle).toBe('Bob');
     });
   });
 
@@ -219,23 +241,23 @@ describe('useCommandSearch', () => {
       const group = makeGroup({ name: 'Incident Team' });
       const { result } = renderHook(() => useCommandSearch('incident', [], [], [group]));
       expect(result.current).toHaveLength(1);
-      expect(result.current[0].type).toBe('group');
-      expect(result.current[0].id).toBe('group-g1');
+      expect(result.current[0]?.type).toBe('group');
+      expect(result.current[0]?.id).toBe('group-g1');
     });
 
     it('shows correct member count in subtitle', () => {
       const group = makeGroup({
         name: 'Team',
-        contacts: [makeContact(), makeContact({ email: 'b@b.com' })],
+        contacts: [makeContact().email, makeContact({ email: 'b@b.com' }).email],
       });
       const { result } = renderHook(() => useCommandSearch('team', [], [], [group]));
-      expect(result.current[0].subtitle).toBe('2 members');
+      expect(result.current[0]?.subtitle).toBe('2 members');
     });
 
     it('uses singular "member" for 1 contact', () => {
-      const group = makeGroup({ name: 'Solo', contacts: [makeContact()] });
+      const group = makeGroup({ name: 'Solo', contacts: [makeContact().email] });
       const { result } = renderHook(() => useCommandSearch('solo', [], [], [group]));
-      expect(result.current[0].subtitle).toBe('1 member');
+      expect(result.current[0]?.subtitle).toBe('1 member');
     });
   });
 

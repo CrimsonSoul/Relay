@@ -42,7 +42,17 @@ if (Test-Path -LiteralPath $relayAppDataRoot) {
 
 function Stop-ProcessTree {
   param([Parameter(Mandatory = $true)][Diagnostics.Process]$Process)
+
+  # taskkill exits 128 when the target is already gone, and PowerShell 7.3+ turns any non-zero
+  # native exit into a terminating error under $ErrorActionPreference = 'Stop'. That would
+  # replace the caller's timeout message with an opaque native-exit error, so the preference is
+  # disabled for this scope and the exit code is inspected here instead. Windows PowerShell 5.1
+  # has no such preference and simply ignores the assignment.
+  $PSNativeCommandUseErrorActionPreference = $false
   & "$env:SystemRoot\System32\taskkill.exe" /PID $Process.Id /T /F 2>$null | Out-Null
+  if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 128) {
+    Write-Warning "taskkill failed for PID $($Process.Id) with exit code $LASTEXITCODE."
+  }
 }
 
 function Wait-ProcessWithTimeout {

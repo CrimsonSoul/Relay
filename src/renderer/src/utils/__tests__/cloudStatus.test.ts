@@ -24,22 +24,20 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
 }
 
 function data(items: CloudStatusItem[]): CloudStatusData {
-  const providers = Object.fromEntries(
-    (
-      [
-        'aws',
-        'azure',
-        'm365',
-        'jira',
-        'github',
-        'cloudflare',
-        'google',
-        'anthropic',
-        'openai',
-        'salesforce',
-      ] satisfies CloudStatusProvider[]
-    ).map((provider) => [provider, []]),
-  ) as Record<CloudStatusProvider, CloudStatusItem[]>;
+  // Spelled out rather than derived so adding a provider to the union fails to
+  // compile here instead of silently producing a bucket-less fixture.
+  const providers: Record<CloudStatusProvider, CloudStatusItem[]> = {
+    aws: [],
+    azure: [],
+    m365: [],
+    jira: [],
+    github: [],
+    cloudflare: [],
+    google: [],
+    anthropic: [],
+    openai: [],
+    salesforce: [],
+  };
   for (const current of items) providers[current.provider].push(current);
   return { providers, errors: [], lastUpdated: NOW };
 }

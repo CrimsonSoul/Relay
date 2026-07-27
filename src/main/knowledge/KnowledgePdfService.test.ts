@@ -39,15 +39,21 @@ afterEach(async () => {
 });
 
 describe('KnowledgePdfService', () => {
-  const authWithPassword = vi.fn(async () => {
-    authStore.save('valid-token-pdf', {
-      id: 'relay-user',
-      email: 'relay@relay.app',
-      collectionId: '_pb_users_auth_',
-      collectionName: 'users',
-    });
-    return {};
-  });
+  const authWithPassword = vi.fn(
+    async (
+      _email: string,
+      _password: string,
+      _options: { requestKey: null; signal: AbortSignal },
+    ) => {
+      authStore.save('valid-token-pdf', {
+        id: 'relay-user',
+        email: 'relay@relay.app',
+        collectionId: '_pb_users_auth_',
+        collectionName: 'users',
+      });
+      return {};
+    },
+  );
   const getOne = vi.fn();
   const getToken = vi.fn(async () => 'protected-file-token');
   const getURL = vi.fn(() => `${relayUrl}/api/files/knowledge/document123/runbook.pdf`);
@@ -56,6 +62,7 @@ describe('KnowledgePdfService', () => {
     token: '',
     record: null as {
       id: string;
+      email: string;
       collectionId: string;
       collectionName: string;
     } | null,
@@ -73,14 +80,12 @@ describe('KnowledgePdfService', () => {
   };
   const pb = {
     authStore,
-    collection: vi.fn((name: string) =>
-      name === '_pb_users_auth_' ? { authWithPassword } : { getOne },
-    ),
+    collection: vi.fn((_name: string) => ({ authWithPassword, getOne })),
     files: { getToken, getURL },
     health: { check: healthCheck },
   };
   const createClient = vi.fn(() => pb as never);
-  const fetchPdf = vi.fn(async () => new Response(pdf, { status: 200 }));
+  const fetchPdf = vi.fn<typeof globalThis.fetch>(async () => new Response(pdf, { status: 200 }));
   let configDataDir: string;
 
   function rawRecord(overrides: Record<string, unknown> = {}) {

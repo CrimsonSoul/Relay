@@ -5,7 +5,7 @@ import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
 import { setupKnowledgeHandlers } from './knowledgeHandlers';
 
-const trusted = vi.fn(() => true);
+const trusted = vi.fn((..._args: unknown[]) => true);
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   shell: { openExternal: vi.fn() },
@@ -27,7 +27,17 @@ vi.mock('../utils/trustedSender', () => ({
 
 describe('knowledgeHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
   const listeners: Record<string, (...args: unknown[]) => unknown> = {};
+  const getListener = (channel: string): ((...args: unknown[]) => unknown) => {
+    const listener = listeners[channel];
+    if (!listener) throw new Error(`No listener registered for ${channel}`);
+    return listener;
+  };
   const getPdf = vi.fn();
   const service = { getPdf };
   const getCover = vi.fn();
@@ -108,7 +118,7 @@ describe('knowledgeHandlers', () => {
       results: [],
     });
 
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toMatchObject({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_SEARCH)({}, request)).resolves.toMatchObject({
       ok: true,
       normalizedQuery: 'failvoer',
     });
@@ -125,13 +135,13 @@ describe('knowledgeHandlers', () => {
       limit: 20,
     };
     trusted.mockReturnValueOnce(false);
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_SEARCH)({}, request)).resolves.toEqual({
       ok: false,
       requestId: request.requestId,
       error: 'invalid-query',
     });
     await expect(
-      handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, { ...request, filter: 'title ~ "secret"' }),
+      getHandler(IPC_CHANNELS.KNOWLEDGE_SEARCH)({}, { ...request, filter: 'title ~ "secret"' }),
     ).resolves.toEqual({ ok: false, requestId: request.requestId, error: 'invalid-query' });
 
     setupKnowledgeHandlers(
@@ -141,7 +151,7 @@ describe('knowledgeHandlers', () => {
       () => null,
       () => null,
     );
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_SEARCH)({}, request)).resolves.toEqual({
       ok: false,
       requestId: request.requestId,
       error: 'unavailable',
@@ -155,7 +165,7 @@ describe('knowledgeHandlers', () => {
       () => null,
       () => searchService as never,
     );
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SEARCH]({}, request)).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_SEARCH)({}, request)).resolves.toEqual({
       ok: false,
       requestId: request.requestId,
       error: 'unavailable',
@@ -163,12 +173,12 @@ describe('knowledgeHandlers', () => {
   });
 
   it('cancels only trusted requests with a strict request identifier', () => {
-    listeners[IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL]({}, 'search-request-1');
+    getListener(IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL)({}, 'search-request-1');
     expect(cancel).toHaveBeenCalledWith('search-request-1');
 
-    listeners[IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL]({}, '../escape');
+    getListener(IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL)({}, '../escape');
     trusted.mockReturnValueOnce(false);
-    listeners[IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL]({}, 'search-request-2');
+    getListener(IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL)({}, 'search-request-2');
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 
@@ -187,7 +197,7 @@ describe('knowledgeHandlers', () => {
       source: 'cache',
     });
 
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_PDF]({}, request)).resolves.toMatchObject({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_GET_PDF)({}, request)).resolves.toMatchObject({
       ok: true,
       source: 'cache',
     });
@@ -197,7 +207,7 @@ describe('knowledgeHandlers', () => {
   it('validates and forwards a trusted cover request', async () => {
     const request = { documentId: 'document123', checksum: 'a'.repeat(64) };
     getCover.mockResolvedValue({ ok: true, data: new ArrayBuffer(8), ...request, source: 'cache' });
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_COVER]({}, request)).resolves.toMatchObject({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_GET_COVER)({}, request)).resolves.toMatchObject({
       ok: true,
       source: 'cache',
     });
@@ -207,7 +217,7 @@ describe('knowledgeHandlers', () => {
   it('rejects untrusted and malformed PDF requests before the service', async () => {
     trusted.mockReturnValueOnce(false);
     await expect(
-      handlers[IPC_CHANNELS.KNOWLEDGE_GET_PDF](
+      getHandler(IPC_CHANNELS.KNOWLEDGE_GET_PDF)(
         {},
         {
           documentId: 'document123',
@@ -216,7 +226,7 @@ describe('knowledgeHandlers', () => {
       ),
     ).resolves.toEqual({ ok: false, error: 'invalid-document' });
     await expect(
-      handlers[IPC_CHANNELS.KNOWLEDGE_GET_PDF](
+      getHandler(IPC_CHANNELS.KNOWLEDGE_GET_PDF)(
         {},
         {
           documentId: '../outside',
@@ -234,14 +244,14 @@ describe('knowledgeHandlers', () => {
     );
     const request = { documentId: 'document123', checksum: 'a'.repeat(64) };
 
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_PDF]({}, request)).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_GET_PDF)({}, request)).resolves.toEqual({
       ok: false,
       error: 'not-found',
     });
   });
 
   it('returns PocketBase-derived status or a stable idle fallback', async () => {
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS]({})).resolves.toMatchObject({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS)({})).resolves.toMatchObject({
       documentCount: 3,
       categoryCount: 2,
     });
@@ -250,7 +260,7 @@ describe('knowledgeHandlers', () => {
       () => null,
       () => null,
     );
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS]({})).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS)({})).resolves.toEqual({
       state: 'idle',
       documentCount: 0,
       categoryCount: 0,
@@ -261,33 +271,33 @@ describe('knowledgeHandlers', () => {
   it('forwards only a bounded replacement document identity to upload selection', async () => {
     selectAndQueue.mockResolvedValue({ ok: false, error: 'cancelled' });
     await expect(
-      handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, 'document-1'),
+      getHandler(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)({}, 'document-1'),
     ).resolves.toEqual({ ok: false, error: 'cancelled' });
     expect(selectAndQueue).toHaveBeenCalledWith(undefined, 'document-1');
 
     selectAndQueue.mockClear();
     await expect(
-      handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, '/renderer/cannot/pass/a/path.pdf'),
+      getHandler(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)({}, '/renderer/cannot/pass/a/path.pdf'),
     ).resolves.toEqual({ ok: false, error: 'invalid-file' });
     expect(selectAndQueue).not.toHaveBeenCalled();
 
     trusted.mockReturnValueOnce(false);
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({})).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)({})).resolves.toEqual({
       ok: false,
       error: 'unauthorized',
     });
   });
 
   it('exposes safe queue controls and never accepts renderer file paths', async () => {
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET]({})).resolves.toEqual(
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET)({})).resolves.toEqual(
       snapshot(),
     );
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_PAUSE]({}, 'batch-1');
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_RESUME]({}, 'batch-1');
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY]({}, 'upload-1');
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT]({}, 'upload-1', '/renderer/path.pdf');
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_FILE_CANCEL]({}, 'upload-1');
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_CANCEL]({}, 'batch-1');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_PAUSE)({}, 'batch-1');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_RESUME)({}, 'batch-1');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY)({}, 'upload-1');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT)({}, 'upload-1', '/renderer/path.pdf');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_FILE_CANCEL)({}, 'upload-1');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_CANCEL)({}, 'batch-1');
 
     expect(pauseBatch).toHaveBeenCalledWith('batch-1');
     expect(resumeBatch).toHaveBeenCalledWith('batch-1');
@@ -296,23 +306,25 @@ describe('knowledgeHandlers', () => {
     expect(cancelUpload).toHaveBeenCalledWith('upload-1');
     expect(cancelBatch).toHaveBeenCalledWith('batch-1');
 
-    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY]({}, '../outside.pdf');
+    await getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY)({}, '../outside.pdf');
     expect(retryUpload).toHaveBeenCalledTimes(1);
   });
 
   it('reports a control failure instead of claiming the request succeeded', async () => {
     reselectSource.mockResolvedValueOnce(false);
 
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT]({}, 'upload-1')).resolves.toBe(
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT)({}, 'upload-1')).resolves.toBe(
       false,
     );
 
     reselectSource.mockResolvedValueOnce(true);
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT]({}, 'upload-1')).resolves.toBe(
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT)({}, 'upload-1')).resolves.toBe(
       true,
     );
     // Void controls have no outcome of their own, so dispatch still counts as success.
-    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY]({}, 'upload-1')).resolves.toBe(true);
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY)({}, 'upload-1')).resolves.toBe(
+      true,
+    );
   });
 
   describe('KNOWLEDGE_OPEN_WEB_LINK', () => {

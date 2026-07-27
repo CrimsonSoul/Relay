@@ -127,7 +127,7 @@ describe('AlertReminderManagerModal', () => {
   });
 
   it('shows empty, loading, and error states with actions', () => {
-    const props = renderModal({ loading: true, error: new Error('load failed') });
+    const props = renderModal({ loading: true, error: 'load failed' });
 
     expect(screen.getByText('Loading alarms...')).toBeInTheDocument();
     expect(screen.getByText('Could not load alarms.')).toBeInTheDocument();
@@ -140,8 +140,8 @@ describe('AlertReminderManagerModal', () => {
 
   it.each([
     ['loading', { loading: true, error: null }],
-    ['errored', { loading: false, error: new Error('load failed') }],
-    ['both loading and errored', { loading: true, error: new Error('load failed') }],
+    ['errored', { loading: false, error: 'load failed' }],
+    ['both loading and errored', { loading: true, error: 'load failed' }],
   ])('does not claim there are no pending alarms while %s', (_caseName, overrides) => {
     renderModal({ pendingReminders: [], ...overrides });
 

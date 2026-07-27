@@ -5,7 +5,7 @@ import type { Contact } from '@shared/ipc';
 
 describe('useAppAssembler', () => {
   const makeContact = (email: string): Contact => ({
-    name: email.split('@')[0],
+    name: email.split('@')[0] ?? email,
     email,
     phone: '',
     title: '',

@@ -68,9 +68,10 @@ describe('KnowledgeReaderSidebarBody', () => {
         },
       } satisfies KnowledgeSearchResult;
       const fuzzyVisible = hiddenGenerationKey !== generationKey;
+      const fuzzyResult = { source: 'fuzzy' as const, id: 'fuzzy:fuzzy', match: fuzzy };
       const results = [
         { source: 'local-exact' as const, id: `local:${exact.id}`, match: exact },
-        ...(fuzzyVisible ? [{ source: 'fuzzy' as const, id: 'fuzzy:fuzzy', match: fuzzy }] : []),
+        ...(fuzzyVisible ? [fuzzyResult] : []),
       ];
       const contentsSearch = {
         query: 'rf',
@@ -89,7 +90,7 @@ describe('KnowledgeReaderSidebarBody', () => {
         enhancedUnavailable: false,
         enhancedGenerationKey: generationKey,
         activeResultIndex: fuzzyVisible ? 1 : -1,
-        activeResult: fuzzyVisible ? results[1] : null,
+        activeResult: fuzzyVisible ? fuzzyResult : null,
         navigationRequest: null,
         setQuery: vi.fn(),
         activateResult: async (index: number) => onActivate(index),

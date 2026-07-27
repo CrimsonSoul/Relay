@@ -9,7 +9,7 @@ function cssBlock(css: string, selector: string): string {
 }
 
 function declaration(block: string, property: string): string | undefined {
-  return new RegExp(`${property}\\s*:\\s*([^;]+);`).exec(block)?.[1].trim();
+  return new RegExp(`${property}\\s*:\\s*([^;]+);`).exec(block)?.[1]?.trim();
 }
 
 describe('KnowledgeHome', () => {
@@ -47,7 +47,7 @@ describe('KnowledgeHome', () => {
     ]);
 
     buttons.forEach((button) => expect(button).toHaveClass('knowledge-home__destination'));
-    buttons[0].focus();
+    buttons[0]?.focus();
     expect(buttons[0]).toHaveFocus();
   });
 

@@ -1,15 +1,18 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useListFilters, type FilterDef } from '../useListFilters';
+import type { NoteEntry } from '@shared/ipc';
 
 type Item = { id: string };
+
+const makeNote = (tags: string[]): NoteEntry => ({ note: 'note body', tags, updatedAt: 0 });
 
 describe('useListFilters', () => {
   const items: Item[] = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
-  const notesById: Record<string, { tags?: string[] } | undefined> = {
-    a: { tags: ['zeta', 'alpha'] },
-    b: { tags: ['beta'] },
+  const notesById: Record<string, NoteEntry | undefined> = {
+    a: makeNote(['zeta', 'alpha']),
+    b: makeNote(['beta']),
     c: undefined,
   };
 

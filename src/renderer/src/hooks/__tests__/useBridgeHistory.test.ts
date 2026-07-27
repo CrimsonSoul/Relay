@@ -66,7 +66,7 @@ describe('useBridgeHistory', () => {
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
 
     expect(result.current.history).toHaveLength(2);
-    expect(result.current.history[0].id).toBe('h1');
+    expect(result.current.history[0]?.id).toBe('h1');
     expect(result.current.loading).toBe(false);
   });
 
@@ -75,8 +75,8 @@ describe('useBridgeHistory', () => {
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
 
     expect(result.current.history).toHaveLength(1);
-    expect(result.current.history[0].groups).toEqual([]);
-    expect(result.current.history[0].contacts).toEqual([]);
+    expect(result.current.history[0]?.groups).toEqual([]);
+    expect(result.current.history[0]?.contacts).toEqual([]);
   });
 
   it('returns empty array when no records', () => {

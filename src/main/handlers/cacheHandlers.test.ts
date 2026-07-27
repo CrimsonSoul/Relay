@@ -28,6 +28,11 @@ describe('cacheHandlers', () => {
   const SECRET_FIELD = 'secret';
   const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
 
   const mockCache = {
     readCollection: vi.fn(),
@@ -64,12 +69,10 @@ describe('cacheHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(ipcMain.handle).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers[channel] = handler;
-        return ipcMain;
-      },
-    );
+    vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
+      handlers[channel] = (...args: unknown[]) => Reflect.apply(handler, undefined, args);
+      return ipcMain;
+    });
 
     setupCacheHandlers(getCache, getPendingChanges, getSyncManager, getAppConfig);
   });
@@ -79,7 +82,7 @@ describe('cacheHandlers', () => {
       const mockData = [{ id: '1', name: 'Test' }];
       mockCache.readCollection.mockReturnValue(mockData);
 
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'contacts');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'contacts');
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('contacts');
       expect(result).toEqual(mockData);
@@ -89,7 +92,7 @@ describe('cacheHandlers', () => {
       const snapshot = [{ id: 'snapshot', key: 'current' }];
       mockCache.readCollection.mockReturnValue(snapshot);
 
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'cloud_status_snapshot');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'cloud_status_snapshot');
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_snapshot');
       expect(result).toEqual(snapshot);
@@ -98,7 +101,7 @@ describe('cacheHandlers', () => {
     it('does not expose the retired roster cache', () => {
       const retiredCollection = ['relay', 'operators'].join('_');
 
-      expect(handlers[IPC_CHANNELS.CACHE_READ]({}, retiredCollection)).toEqual([]);
+      expect(getHandler(IPC_CHANNELS.CACHE_READ)({}, retiredCollection)).toEqual([]);
       expect(mockCache.readCollection).not.toHaveBeenCalled();
     });
 
@@ -109,7 +112,7 @@ describe('cacheHandlers', () => {
       ];
       mockCache.readCollection.mockReturnValue(documents);
 
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'knowledge_documents');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'knowledge_documents');
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('knowledge_documents');
       expect(result).toEqual([documents[0]]);
@@ -119,7 +122,7 @@ describe('cacheHandlers', () => {
       const categories = [{ id: 'category1', name: 'Operations', sortOrder: 100 }];
       mockCache.readCollection.mockReturnValue(categories);
 
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'knowledge_categories');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'knowledge_categories');
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('knowledge_categories');
       expect(result).toEqual(categories);
@@ -131,26 +134,26 @@ describe('cacheHandlers', () => {
       'knowledge_library_state',
       'relay_privileged_commands',
     ])('does not expose protected management collection %s', (collection) => {
-      expect(handlers[IPC_CHANNELS.CACHE_READ]({}, collection)).toEqual([]);
+      expect(getHandler(IPC_CHANNELS.CACHE_READ)({}, collection)).toEqual([]);
       expect(mockCache.readCollection).not.toHaveBeenCalled();
     });
 
     it('returns empty array for invalid collection', () => {
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'invalidCollection');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'invalidCollection');
 
       expect(mockCache.readCollection).not.toHaveBeenCalled();
       expect(result).toEqual([]);
     });
 
     it('does not expose archived standalone notes through the cache', () => {
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'standalone_notes');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'standalone_notes');
 
       expect(result).toEqual([]);
       expect(mockCache.readCollection).not.toHaveBeenCalled();
     });
 
     it('returns empty array for non-string collection', () => {
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 42);
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 42);
 
       expect(mockCache.readCollection).not.toHaveBeenCalled();
       expect(result).toEqual([]);
@@ -159,7 +162,7 @@ describe('cacheHandlers', () => {
     it('returns empty array when cache is null', () => {
       getCache.mockReturnValueOnce(null as never);
 
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'contacts');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'contacts');
 
       expect(result).toEqual([]);
     });
@@ -180,7 +183,7 @@ describe('cacheHandlers', () => {
       ];
       for (const collection of validCollections) {
         mockCache.readCollection.mockReturnValue([]);
-        handlers[IPC_CHANNELS.CACHE_READ]({}, collection);
+        getHandler(IPC_CHANNELS.CACHE_READ)({}, collection);
         expect(mockCache.readCollection).toHaveBeenCalledWith(collection);
       }
     });
@@ -189,7 +192,7 @@ describe('cacheHandlers', () => {
   describe('CACHE_WRITE', () => {
     it('updates record for valid inputs', () => {
       const record = { id: '1', name: 'Test' };
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', record);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', record);
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith('contacts', 'create', record);
     });
@@ -197,18 +200,18 @@ describe('cacheHandlers', () => {
     it('accepts all valid actions', () => {
       for (const action of ['create', 'update', 'delete']) {
         const record = { id: '1' };
-        handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', action, record);
+        getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', action, record);
         expect(mockCache.updateRecord).toHaveBeenCalledWith('contacts', action, record);
       }
     });
 
     it('returns early for invalid collection', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'bogus', 'create', { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'bogus', 'create', { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('does not ingest archived standalone note records', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'standalone_notes', 'create', { id: 'note-1' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'standalone_notes', 'create', { id: 'note-1' });
 
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
@@ -216,7 +219,7 @@ describe('cacheHandlers', () => {
     it('ingests realtime updates for an existing server-owned readable collection', () => {
       const record = { id: 'snapshot', key: 'current', providers: [] };
 
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'cloud_status_snapshot', 'update', record);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'cloud_status_snapshot', 'update', record);
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith(
         'cloud_status_snapshot',
@@ -228,7 +231,7 @@ describe('cacheHandlers', () => {
     it('does not ingest retired roster realtime updates', () => {
       const retiredCollection = ['relay', 'operators'].join('_');
 
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, retiredCollection, 'update', {
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, retiredCollection, 'update', {
         id: 'retired-record',
       });
 
@@ -238,7 +241,7 @@ describe('cacheHandlers', () => {
     it('ingests knowledge metadata without queueing a server mutation', () => {
       const record = { id: 'document123', title: 'Updated Runbook' };
 
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'knowledge_documents', 'update', record);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'knowledge_documents', 'update', record);
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_documents', 'update', record);
       expect(mockPending.getAll).not.toHaveBeenCalled();
@@ -248,7 +251,7 @@ describe('cacheHandlers', () => {
     it('ingests category metadata without making it offline writable', () => {
       const record = { id: 'category1', name: 'Operations', sortOrder: 100 };
 
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'knowledge_categories', 'update', record);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'knowledge_categories', 'update', record);
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_categories', 'update', record);
       expect(mockPending.getAll).not.toHaveBeenCalled();
@@ -256,7 +259,7 @@ describe('cacheHandlers', () => {
 
     it('removes trashed knowledge metadata instead of caching it', () => {
       const record = { id: 'document123', title: 'Runbook', lifecycleState: 'trashed' };
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'knowledge_documents', 'update', record);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'knowledge_documents', 'update', record);
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_documents', 'delete', {
         id: 'document123',
@@ -264,50 +267,50 @@ describe('cacheHandlers', () => {
     });
 
     it('returns early for non-string collection', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 123, 'create', { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 123, 'create', { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early for invalid action', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'upsert', { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'upsert', { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early for non-string action', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 99, { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 99, { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early for null record', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', null);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', null);
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early for non-object record', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', 'string');
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', 'string');
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early for array record', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', [1, 2, 3]);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', [1, 2, 3]);
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early when record id is missing', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { name: 'No Id' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', { name: 'No Id' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early when record id is not a non-empty string', () => {
       for (const id of ['', '   ', 123, null]) {
-        handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id });
+        getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', { id });
       }
 
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early when record exceeds the cache size limit', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', {
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', {
         id: '1',
         body: 'x'.repeat(257 * 1024),
       });
@@ -316,14 +319,14 @@ describe('cacheHandlers', () => {
     });
 
     it('returns early when record cannot be serialized', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id: '1', value: 1n });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', { id: '1', value: 1n });
 
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('returns early when cache is null', () => {
       getCache.mockReturnValueOnce(null as never);
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'contacts', 'create', { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
   });
@@ -332,7 +335,7 @@ describe('cacheHandlers', () => {
     it('writes collection for valid inputs', () => {
       const records = [{ id: '1' }, { id: '2' }];
       const signature = '2:0123456789abcdef';
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', signature, records);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', signature, records);
 
       expect(mockCache.writeCollection).toHaveBeenCalledWith('contacts', signature, records);
     });
@@ -340,7 +343,7 @@ describe('cacheHandlers', () => {
     it('persists the shared cloud status snapshot for offline clients', () => {
       const records = [{ id: 'snapshot', key: 'current' }];
 
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT](
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)(
         {},
         'cloud_status_snapshot',
         '1:0123456789abcdef',
@@ -360,7 +363,7 @@ describe('cacheHandlers', () => {
         { id: 'trashed123', title: 'Old Runbook', lifecycleState: 'trashed' },
       ];
 
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT](
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)(
         {},
         'knowledge_documents',
         '1:0123456789abcdef',
@@ -382,7 +385,7 @@ describe('cacheHandlers', () => {
       mockCache.writeCollection.mockReturnValue(true);
       mockCache.getUsableCacheMarker.mockReturnValue(null);
 
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', '1:0123456789abcdef', [
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', '1:0123456789abcdef', [
         { id: 'abc123abc123abc' },
       ]);
 
@@ -394,18 +397,18 @@ describe('cacheHandlers', () => {
     });
 
     it('returns early when the revision signature is invalid', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', 'invalid', [{ id: '1' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', 'invalid', [{ id: '1' }]);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early for invalid collection', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'invalid', []);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'invalid', []);
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('does not persist archived standalone note snapshots', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'standalone_notes', '1:0123456789abcdef', [
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'standalone_notes', '1:0123456789abcdef', [
         { id: 'note-1' },
       ]);
 
@@ -413,33 +416,33 @@ describe('cacheHandlers', () => {
     });
 
     it('returns early for non-string collection', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 42, []);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 42, []);
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early when records is not an array', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', 'not-an-array');
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', 'not-an-array');
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early when records is an object', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', { id: '1' });
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', { id: '1' });
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early when records is null', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', null);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', null);
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early when any snapshot record lacks a valid id', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', [{ id: '1' }, { name: 'No Id' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', [{ id: '1' }, { name: 'No Id' }]);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early when any snapshot record id is not a non-empty string', () => {
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', [{ id: '1' }, { id: '   ' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', [{ id: '1' }, { id: '   ' }]);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
@@ -447,7 +450,7 @@ describe('cacheHandlers', () => {
     it('returns early when snapshot has too many records', () => {
       const records = Array.from({ length: 10_001 }, (_, index) => ({ id: `r${index}` }));
 
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', records);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', records);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
@@ -455,14 +458,14 @@ describe('cacheHandlers', () => {
     it('returns early when snapshot exceeds serialized size limits', () => {
       const records = [{ id: '1', body: 'x'.repeat(257 * 1024) }];
 
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', records);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', records);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early when cache is null', () => {
       getCache.mockReturnValueOnce(null as never);
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', [{ id: '1' }]);
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, 'contacts', [{ id: '1' }]);
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
   });
@@ -470,19 +473,19 @@ describe('cacheHandlers', () => {
   describe('SYNC_PENDING', () => {
     it('returns zero counts when pendingChanges is null', async () => {
       getPendingChanges.mockReturnValueOnce(null as never);
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
       expect(result).toEqual({ total: 0, conflicts: 0, errors: [] });
     });
 
     it('returns zero counts when syncManager is null', async () => {
       getSyncManager.mockReturnValueOnce(null as never);
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
       expect(result).toEqual({ total: 0, conflicts: 0, errors: [] });
     });
 
     it('returns zero counts when there are no pending changes', async () => {
       mockPending.getAll.mockReturnValue([]);
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
       expect(result).toEqual({ total: 0, conflicts: 0, errors: [] });
     });
 
@@ -498,7 +501,7 @@ describe('cacheHandlers', () => {
         failed: [],
       });
 
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(mockSync.syncAll).toHaveBeenCalledWith(changes);
       expect(mockPending.clear).not.toHaveBeenCalled();
@@ -519,7 +522,7 @@ describe('cacheHandlers', () => {
         failed: [{ changeId: 2, error: 'one error' }],
       });
 
-      await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(mockPending.clear).not.toHaveBeenCalled();
       expect(mockPending.remove).toHaveBeenCalledWith(1);
@@ -539,7 +542,7 @@ describe('cacheHandlers', () => {
         failed: [],
       });
 
-      await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(mockPending.remove).toHaveBeenCalledWith(1);
       expect(mockPending.remove).toHaveBeenCalledWith(2);
@@ -561,7 +564,7 @@ describe('cacheHandlers', () => {
         failed: [],
       });
 
-      await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(mockSync.reauthenticate).toHaveBeenCalledWith('relay@relay.app', reauthPassphrase);
       expect(mockSync.syncAll).toHaveBeenCalledWith(changes);
@@ -575,7 +578,7 @@ describe('cacheHandlers', () => {
       mockAppConfig.load.mockReturnValue({ [SECRET_FIELD]: reauthPassphrase });
       mockSync.reauthenticate.mockRejectedValue(new Error(`server reflected ${reauthPassphrase}`));
 
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(result).toEqual({
         total: 2,
@@ -596,7 +599,7 @@ describe('cacheHandlers', () => {
       mockSync.isAuthenticated.mockReturnValue(false);
       mockAppConfig.load.mockReturnValue({});
 
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       // Syncing unauthenticated would stamp every change with a raw PocketBase
       // transport error and hide the real cause from the pending-changes banner.
@@ -619,7 +622,7 @@ describe('cacheHandlers', () => {
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
 
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
 
       expect(mockSync.reauthenticate).not.toHaveBeenCalled();
       expect(mockSync.syncAll).not.toHaveBeenCalled();
@@ -628,16 +631,14 @@ describe('cacheHandlers', () => {
 
     it('handles getPendingChanges and getSyncManager not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
+        handlers[channel] = (...args: unknown[]) => Reflect.apply(handler, undefined, args);
+        return ipcMain;
+      });
 
       setupCacheHandlers(getCache); // no optional params
 
-      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();
       expect(result).toEqual({ total: 0, conflicts: 0, errors: [] });
     });
   });

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssemblerTab } from '../AssemblerTab';
+import type { useAssembler } from '../../hooks/useAssembler';
 import type { BridgeGroup, Contact, BridgeHistoryEntry } from '@shared/ipc';
 
 // ── mock sub-components ─────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ vi.mock('../assembler', () => ({
               groups: ['Alpha'],
               contacts: ['a@example.com'],
               recipientCount: 1,
-              createdAt: Date.now(),
+              timestamp: Date.now(),
             })
           }
         >
@@ -80,7 +81,7 @@ vi.mock('../assembler', () => ({
               groups: ['Alpha'],
               contacts: ['a@example.com', 'manual@example.com'],
               recipientCount: 2,
-              createdAt: Date.now(),
+              timestamp: Date.now(),
             })
           }
         >
@@ -94,7 +95,7 @@ vi.mock('../assembler', () => ({
               groups: [],
               contacts: ['x@example.com'],
               recipientCount: 1,
-              createdAt: Date.now(),
+              timestamp: Date.now(),
             })
           }
         >
@@ -255,7 +256,39 @@ const mockHandleCopy = vi.fn().mockResolvedValue(undefined);
 const mockExecuteDraftBridge = vi.fn();
 const mockHandleAddToContacts = vi.fn();
 
-const baseAsm = {
+type AssemblerHookState = ReturnType<typeof useAssembler>;
+
+/**
+ * The subset of `useAssembler`'s state that `AssemblerTab` actually consumes,
+ * typed from the real hook so fixtures cannot drift from production shapes.
+ */
+type MockAssemblerState = Pick<
+  AssemblerHookState,
+  | 'sortConfig'
+  | 'setSortConfig'
+  | 'isBridgeReminderOpen'
+  | 'setIsBridgeReminderOpen'
+  | 'isAddContactModalOpen'
+  | 'setIsAddContactModalOpen'
+  | 'pendingEmail'
+  | 'compositionContextMenu'
+  | 'setCompositionContextMenu'
+  | 'isHeaderCollapsed'
+  | 'setIsHeaderCollapsed'
+  | 'contactMap'
+  | 'allRecipients'
+  | 'log'
+  | 'itemData'
+  | 'handleCopy'
+  | 'executeDraftBridge'
+  | 'handleAddToContacts'
+  | 'handleContactSaved'
+> & {
+  search: string;
+  setSearch: (value: string) => void;
+};
+
+const baseAsm: MockAssemblerState = {
   sortConfig: { key: 'name', direction: 'asc' },
   setSortConfig: mockSetSortConfig,
   isBridgeReminderOpen: false,
@@ -272,7 +305,14 @@ const baseAsm = {
   allRecipients: [],
   log: [],
   contactMap: new Map(),
-  itemData: {},
+  itemData: {
+    log: [],
+    contactMap: new Map(),
+    groupMap: new Map(),
+    onRemoveManual: vi.fn(),
+    onAddToContacts: vi.fn(),
+    onContextMenu: vi.fn(),
+  },
   handleCopy: mockHandleCopy,
   executeDraftBridge: mockExecuteDraftBridge,
   handleAddToContacts: mockHandleAddToContacts,
@@ -290,8 +330,8 @@ const makeGroup = (id: string, name: string, contacts: string[] = []): BridgeGro
   id,
   name,
   contacts,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
 });
 
 const defaultProps = {
@@ -444,7 +484,17 @@ describe('AssemblerTab', () => {
       allRecipients: [{ email: 'a@example.com', source: 'group' }],
       log: [{ email: 'a@example.com', source: 'group' }],
       contactMap: new Map([
-        ['a@example.com', { name: 'Alice', email: 'a@example.com', phone: '', title: '' }],
+        [
+          'a@example.com',
+          {
+            name: 'Alice',
+            email: 'a@example.com',
+            phone: '',
+            title: '',
+            _searchString: 'alice a@example.com',
+            raw: {},
+          },
+        ],
       ]),
     };
     render(<AssemblerTab {...defaultProps} />);

@@ -6,12 +6,30 @@ import { DynatraceProblemsTab } from '../DynatraceProblemsTab';
 const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   setAddressed: vi.fn(async () => ({})),
-  addNote: vi.fn(async () => ({ id: 'new-response-note' })),
+  addNote: vi.fn(async (_problemId: string, _note: string, _author?: string) => ({
+    id: 'new-response-note',
+  })),
   refetch: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
   connectionState: 'online',
   hookValue: {} as Record<string, unknown>,
 }));
+
+/**
+ * Reads the nth entry of a mock's invocation order, failing loudly rather than
+ * silently comparing `undefined` when the mock was called fewer times.
+ */
+const nthCallOrder = (
+  mock: { mock: { invocationCallOrder: number[] } },
+  index: number,
+  label: string,
+): number => {
+  const order = mock.mock.invocationCallOrder.at(index);
+  if (order === undefined) {
+    throw new Error(`Expected ${label} to have been called at least ${index + 1} time(s)`);
+  }
+  return order;
+};
 
 vi.mock('../../components/Toast', () => ({
   useToast: () => ({ showToast: mocks.showToast }),
@@ -757,8 +775,8 @@ describe('DynatraceProblemsTab', () => {
       );
     });
     expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
-    expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.setAddressed.mock.invocationCallOrder[0],
+    expect(nthCallOrder(mocks.addNote, 0, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.setAddressed, 0, 'setAddressed'),
     );
   });
 
@@ -783,8 +801,8 @@ describe('DynatraceProblemsTab', () => {
         'Ryan',
       );
     });
-    expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.setAddressed.mock.invocationCallOrder[0],
+    expect(nthCallOrder(mocks.addNote, 0, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.setAddressed, 0, 'setAddressed'),
     );
   });
 
@@ -806,11 +824,11 @@ describe('DynatraceProblemsTab', () => {
       'Ticket: INC0099999',
       'Traffic shifted to the secondary pool.',
     ]);
-    expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.addNote.mock.invocationCallOrder[1],
+    expect(nthCallOrder(mocks.addNote, 0, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.addNote, 1, 'addNote'),
     );
-    expect(mocks.addNote.mock.invocationCallOrder[1]).toBeLessThan(
-      mocks.setAddressed.mock.invocationCallOrder[0],
+    expect(nthCallOrder(mocks.addNote, 1, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.setAddressed, 0, 'setAddressed'),
     );
   });
 
@@ -953,7 +971,7 @@ describe('DynatraceProblemsTab', () => {
     mocks.addNote.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          finishTicket = () => resolve({});
+          finishTicket = () => resolve({ id: 'queued-ticket-note' });
         }),
     );
     render(<DynatraceProblemsTab relayMode="client" />);
@@ -974,11 +992,11 @@ describe('DynatraceProblemsTab', () => {
       expect(mocks.addNote).toHaveBeenCalledTimes(2);
       expect(mocks.setAddressed).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.addNote.mock.invocationCallOrder[1],
+    expect(nthCallOrder(mocks.addNote, 0, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.addNote, 1, 'addNote'),
     );
-    expect(mocks.addNote.mock.invocationCallOrder[1]).toBeLessThan(
-      mocks.setAddressed.mock.invocationCallOrder[0],
+    expect(nthCallOrder(mocks.addNote, 1, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.setAddressed, 0, 'setAddressed'),
     );
   });
 
@@ -1044,8 +1062,8 @@ describe('DynatraceProblemsTab', () => {
     expect(mocks.setAddressed).not.toHaveBeenCalled();
     finishNote?.();
     await waitFor(() => expect(mocks.setAddressed).toHaveBeenCalledTimes(1));
-    expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.setAddressed.mock.invocationCallOrder[0],
+    expect(nthCallOrder(mocks.addNote, 0, 'addNote')).toBeLessThan(
+      nthCallOrder(mocks.setAddressed, 0, 'setAddressed'),
     );
   });
 

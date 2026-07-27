@@ -55,7 +55,7 @@ describe('ScheduleBridgeModal', () => {
     vi.clearAllMocks();
     localStorage.clear();
     vi.useFakeTimers({ now: new Date(2026, 5, 12, 10, 12, 0), toFake: ['Date'] });
-    (globalThis as Window & { api?: unknown }).api = {
+    globalThis.api = {
       runtime: ELECTRON_RUNTIME,
       saveAndOpenIcs: mockSaveAndOpenIcs,
     } as unknown as typeof globalThis.api;
@@ -115,7 +115,7 @@ describe('ScheduleBridgeModal', () => {
 
     await waitFor(() => expect(mockSaveAndOpenIcs).toHaveBeenCalledTimes(1));
     // Unfold RFC 5545 folded lines before asserting on content
-    const ics = (mockSaveAndOpenIcs.mock.calls[0][0] as string).replaceAll('\r\n ', '');
+    const ics = (mockSaveAndOpenIcs.mock.calls[0]?.[0] as string).replaceAll('\r\n ', '');
     expect(ics).toContain('BEGIN:VCALENDAR');
     expect(ics).toContain('mailto:alice@test.com');
     expect(ics).toContain('mailto:bob@test.com');

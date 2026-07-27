@@ -74,7 +74,7 @@ describe('useAlertHistory', () => {
       const { result } = renderHook(() => useAlertHistory());
 
       expect(result.current.history).toHaveLength(2);
-      expect(result.current.history[0].id).toBe('a1');
+      expect(result.current.history[0]?.id).toBe('a1');
       expect(result.current.loading).toBe(false);
     });
 
@@ -87,8 +87,8 @@ describe('useAlertHistory', () => {
     it('includes pinned and label when present', () => {
       mockCollectionData.current = [makeRecord({ id: 'p1', pinned: true, label: 'My Template' })];
       const { result } = renderHook(() => useAlertHistory());
-      expect(result.current.history[0].pinned).toBe(true);
-      expect(result.current.history[0].label).toBe('My Template');
+      expect(result.current.history[0]?.pinned).toBe(true);
+      expect(result.current.history[0]?.label).toBe('My Template');
     });
   });
 

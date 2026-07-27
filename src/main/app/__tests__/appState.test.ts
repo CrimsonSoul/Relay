@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -113,12 +114,12 @@ describe('appState getters/setters', () => {
   });
 
   it('owns the privileged runtime and relays only public session views', () => {
-    let runtimeListener: ((view: unknown) => void) | null = null;
+    const runtimeListeners: ((view: unknown) => void)[] = [];
     const stopRuntimeSubscription = vi.fn();
     const runtime = {
       getView: vi.fn(() => ({ state: 'signed-out', capabilities: [] })),
-      onSessionChanged: vi.fn((listener) => {
-        runtimeListener = listener;
+      onSessionChanged: vi.fn((listener: (view: unknown) => void) => {
+        runtimeListeners.push(listener);
         return stopRuntimeSubscription;
       }),
       dispose: vi.fn(),
@@ -128,7 +129,9 @@ describe('appState getters/setters', () => {
 
     setPrivilegedRuntime(runtime);
     expect(getPrivilegedRuntime()).toBe(runtime);
-    runtimeListener?.({ state: 'active', capabilities: ['settings.manage'] });
+    const [runtimeListener] = runtimeListeners;
+    if (!runtimeListener) throw new Error('onSessionChanged listener was never registered');
+    runtimeListener({ state: 'active', capabilities: ['settings.manage'] });
     expect(listener).toHaveBeenCalledWith({
       state: 'active',
       capabilities: ['settings.manage'],
@@ -316,12 +319,38 @@ describe('setupIpc', () => {
   });
 });
 
+/**
+ * Shapes of the two permission callbacks `setupPermissions` registers, limited to
+ * the fields these tests exercise (the session itself is a stub, not a real
+ * Electron.Session).
+ */
+type PermissionRequestHandler = (
+  webContents: { id?: number },
+  permission: string,
+  callback: (granted: boolean) => void,
+  details: { requestingUrl: string },
+) => void;
+type PermissionCheckHandler = (
+  webContents: { id?: number },
+  permission: string,
+  requestingOrigin: string,
+) => boolean;
+
+const createPermissionSession = () => ({
+  setPermissionRequestHandler: vi.fn<(handler: PermissionRequestHandler) => void>(),
+  setPermissionCheckHandler: vi.fn<(handler: PermissionCheckHandler) => void>(),
+});
+
+/** Returns the handler a mock was registered with, failing loudly if it never was. */
+function registeredHandler<H>(mock: Mock<(handler: H) => void>): H {
+  const [call] = mock.mock.calls;
+  if (!call) throw new Error('Expected a handler to have been registered');
+  return call[0];
+}
+
 describe('setupPermissions', () => {
   it('registers permission request and check handlers', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
 
     setupPermissions(mockSession as never);
 
@@ -330,14 +359,11 @@ describe('setupPermissions', () => {
   });
 
   it('blocks non-geo/media permissions in request handler', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
 
     setupPermissions(mockSession as never);
 
-    const requestHandler = mockSession.setPermissionRequestHandler.mock.calls[0][0];
+    const requestHandler = registeredHandler(mockSession.setPermissionRequestHandler);
     const callback = vi.fn();
 
     // Unknown permission should be denied
@@ -346,14 +372,11 @@ describe('setupPermissions', () => {
   });
 
   it('blocks geolocation permissions in request handler', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
 
     setupPermissions(mockSession as never);
 
-    const requestHandler = mockSession.setPermissionRequestHandler.mock.calls[0][0];
+    const requestHandler = registeredHandler(mockSession.setPermissionRequestHandler);
     const callback = vi.fn();
 
     requestHandler({}, 'geolocation', callback, { requestingUrl: 'https://example.com' });
@@ -361,16 +384,13 @@ describe('setupPermissions', () => {
   });
 
   it('blocks media permissions in request handler even for the main window', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
     const webContents = { id: 1 };
     setMainWindow({ webContents } as never);
 
     setupPermissions(mockSession as never);
 
-    const requestHandler = mockSession.setPermissionRequestHandler.mock.calls[0][0];
+    const requestHandler = registeredHandler(mockSession.setPermissionRequestHandler);
     const callback = vi.fn();
 
     requestHandler(webContents, 'media', callback, { requestingUrl: 'file:///app/index.html' });
@@ -378,44 +398,35 @@ describe('setupPermissions', () => {
   });
 
   it('blocks non-geo/media permissions in check handler', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
 
     setupPermissions(mockSession as never);
 
-    const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
+    const checkHandler = registeredHandler(mockSession.setPermissionCheckHandler);
 
     const result = checkHandler({ id: 999 }, 'clipboard-read', '');
     expect(result).toBe(false);
   });
 
   it('blocks geolocation permissions in check handler', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
 
     setupPermissions(mockSession as never);
 
-    const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
+    const checkHandler = registeredHandler(mockSession.setPermissionCheckHandler);
 
     const result = checkHandler({ id: 999 }, 'geolocation', 'https://example.com');
     expect(result).toBe(false);
   });
 
   it('blocks media permissions in check handler even for the main window', () => {
-    const mockSession = {
-      setPermissionRequestHandler: vi.fn(),
-      setPermissionCheckHandler: vi.fn(),
-    };
+    const mockSession = createPermissionSession();
     const webContents = { id: 1 };
     setMainWindow({ webContents } as never);
 
     setupPermissions(mockSession as never);
 
-    const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
+    const checkHandler = registeredHandler(mockSession.setPermissionCheckHandler);
 
     const result = checkHandler(webContents, 'media', 'file:///app/index.html');
     expect(result).toBe(false);

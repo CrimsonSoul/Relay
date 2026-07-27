@@ -20,21 +20,22 @@ vi.mock('../../services/contactService', () => ({
   findContactByEmail: (...args: unknown[]) => mockFindContactByEmail(...args),
 }));
 
-const makeContact = (email: string, name?: string): Contact => ({
-  name: name || email.split('@')[0],
-  email,
-  phone: '',
-  title: '',
-  _searchString: `${name || email.split('@')[0]} ${email}`.toLowerCase(),
-  raw: {},
-});
+const makeContact = (email: string, name?: string): Contact => {
+  const displayName = name || email.split('@')[0] || email;
+  return {
+    name: displayName,
+    email,
+    phone: '',
+    title: '',
+    _searchString: `${displayName} ${email}`.toLowerCase(),
+    raw: {},
+  };
+};
 
 describe('useDirectoryContacts', () => {
-  const contacts = [
-    makeContact('alice@test.com', 'Alice'),
-    makeContact('bob@test.com', 'Bob'),
-    makeContact('charlie@test.com', 'Charlie'),
-  ];
+  const alice = makeContact('alice@test.com', 'Alice');
+  const bob = makeContact('bob@test.com', 'Bob');
+  const contacts = [alice, bob, makeContact('charlie@test.com', 'Charlie')];
 
   beforeEach(() => {
     vi.clearAllMocks();

@@ -117,6 +117,11 @@ vi.mock('../utils/trustedSender', () => ({
 
 describe('pocketbaseConnectionHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
 
   const mockAppConfig = {
     load: vi.fn(),
@@ -138,12 +143,10 @@ describe('pocketbaseConnectionHandlers', () => {
     mockPbProcess.getLocalUrl.mockReturnValue('http://127.0.0.1:8090');
     currentAuthStore = createMockAuthStore();
 
-    vi.mocked(ipcMain.handle).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers[channel] = handler;
-        return ipcMain;
-      },
-    );
+    vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
+      handlers[channel] = (...args: unknown[]) => Reflect.apply(handler, undefined, args);
+      return ipcMain;
+    });
 
     mockOfflineCache.getUsableCacheMarker.mockReturnValue(null);
     mockOfflineCache.hasUsableCacheFor.mockReturnValue(false);
@@ -158,7 +161,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockResolvedValue({});
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(mockCollection).toHaveBeenCalledWith('_pb_users_auth_');
     expect(mockAppUserAuthWithPassword).toHaveBeenCalledWith(
@@ -191,7 +194,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockResolvedValue({});
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result)).not.toContain('super-secret-passphrase');
@@ -211,8 +214,8 @@ describe('pocketbaseConnectionHandlers', () => {
         }),
     );
 
-    const first = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
-    const second = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const first = getHandler(IPC_CHANNELS.PB_GET_CONNECTION)() as Promise<PbConnectionResult>;
+    const second = getHandler(IPC_CHANNELS.PB_GET_CONNECTION)() as Promise<PbConnectionResult>;
     await vi.waitFor(() => expect(mockAppUserAuthWithPassword).toHaveBeenCalledOnce());
     release();
 
@@ -264,7 +267,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockResolvedValue({});
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({
       ok: true,
@@ -294,7 +297,7 @@ describe('pocketbaseConnectionHandlers', () => {
     mockPbProcess.isRunning.mockReturnValue(true);
     mockAppUserAuthWithPassword.mockResolvedValue({});
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result.ok).toBe(true);
     // eslint-disable-next-line sonarjs/no-clear-text-protocols
@@ -316,7 +319,7 @@ describe('pocketbaseConnectionHandlers', () => {
     );
     mockSuperuserAuthWithPassword.mockResolvedValueOnce({});
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(mockAppUserAuthWithPassword).toHaveBeenCalledWith(
       'relay@relay.app',
@@ -347,7 +350,9 @@ describe('pocketbaseConnectionHandlers', () => {
       Object.assign(new Error('server error'), { status: 500 }),
     );
 
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const resultPromise = getHandler(
+      IPC_CHANNELS.PB_GET_CONNECTION,
+    )() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750);
 
     await expect(resultPromise).resolves.toEqual({ ok: false, error: 'auth-failed' });
@@ -363,7 +368,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockRejectedValue(new Error('bad credentials'));
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
     expect(mockSuperuserAuthWithPassword).not.toHaveBeenCalled();
@@ -380,7 +385,9 @@ describe('pocketbaseConnectionHandlers', () => {
       .mockRejectedValueOnce(new Error('server still provisioning app user'))
       .mockResolvedValueOnce({});
 
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const resultPromise = getHandler(
+      IPC_CHANNELS.PB_GET_CONNECTION,
+    )() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750);
 
     await expect(resultPromise).resolves.toEqual({
@@ -405,7 +412,7 @@ describe('pocketbaseConnectionHandlers', () => {
   it('returns not-configured when no config is saved', async () => {
     mockAppConfig.load.mockReturnValue(null);
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'not-configured' });
   });
@@ -417,7 +424,7 @@ describe('pocketbaseConnectionHandlers', () => {
       secret: 'super-secret-passphrase',
     });
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'invalid-config' });
   });
@@ -431,7 +438,7 @@ describe('pocketbaseConnectionHandlers', () => {
       secret: 'super-secret-passphrase',
     });
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'pb-unavailable' });
   });
@@ -452,7 +459,9 @@ describe('pocketbaseConnectionHandlers', () => {
         }),
     );
 
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const resultPromise = getHandler(
+      IPC_CHANNELS.PB_GET_CONNECTION,
+    )() as Promise<PbConnectionResult>;
 
     await vi.advanceTimersByTimeAsync(15_000);
 
@@ -472,7 +481,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockRejectedValue(new Error('bad credentials'));
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
   });
@@ -486,7 +495,9 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockRejectedValue(new TypeError('fetch failed'));
 
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const resultPromise = getHandler(
+      IPC_CHANNELS.PB_GET_CONNECTION,
+    )() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750 * 3);
     const result = await resultPromise;
 
@@ -513,7 +524,9 @@ describe('pocketbaseConnectionHandlers', () => {
     mockOfflineCache.hasUsableCacheFor.mockReturnValue(true);
     mockAppUserAuthWithPassword.mockRejectedValue(new TypeError('fetch failed'));
 
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const resultPromise = getHandler(
+      IPC_CHANNELS.PB_GET_CONNECTION,
+    )() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750 * 3);
 
     await expect(resultPromise).resolves.toEqual({
@@ -541,7 +554,7 @@ describe('pocketbaseConnectionHandlers', () => {
       Object.assign(new Error('invalid credentials'), { status: 401 }),
     );
 
-    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_GET_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
     expect(mockAppUserAuthWithPassword).toHaveBeenCalledOnce();
@@ -558,7 +571,9 @@ describe('pocketbaseConnectionHandlers', () => {
       Object.assign(new Error('rate limited'), { status: 429 }),
     );
 
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const resultPromise = getHandler(
+      IPC_CHANNELS.PB_GET_CONNECTION,
+    )() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750);
 
     await expect(resultPromise).resolves.toEqual({ ok: false, error: 'auth-failed' });
@@ -577,12 +592,12 @@ describe('pocketbaseConnectionHandlers', () => {
       Object.assign(new Error('temporary server error'), { status: 500 }),
     );
 
-    const initial = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const initial = getHandler(IPC_CHANNELS.PB_GET_CONNECTION)() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750);
     await expect(initial).resolves.toEqual({ ok: false, error: 'auth-failed' });
     const priorWarnings = vi.mocked(loggers.pocketbase.warn).mock.calls.length;
 
-    const cooledDown = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    const cooledDown = getHandler(IPC_CHANNELS.PB_GET_CONNECTION)() as Promise<PbConnectionResult>;
     await vi.advanceTimersByTimeAsync(750);
 
     await expect(cooledDown).resolves.toEqual({ ok: false, error: 'auth-failed' });
@@ -601,7 +616,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockResolvedValue({});
 
-    const result = (await handlers[IPC_CHANNELS.PB_REFRESH_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_REFRESH_CONNECTION)()) as PbConnectionResult;
 
     expect(mockCollection).toHaveBeenCalledWith('_pb_users_auth_');
     expect(mockAppUserAuthWithPassword).toHaveBeenCalledWith(
@@ -635,7 +650,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
     mockAppUserAuthWithPassword.mockRejectedValue(new Error('bad credentials'));
 
-    const result = (await handlers[IPC_CHANNELS.PB_REFRESH_CONNECTION]()) as PbConnectionResult;
+    const result = (await getHandler(IPC_CHANNELS.PB_REFRESH_CONNECTION)()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
     expect(mockAuthRefresh).not.toHaveBeenCalled();

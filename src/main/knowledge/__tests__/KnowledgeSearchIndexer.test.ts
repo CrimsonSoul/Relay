@@ -222,7 +222,7 @@ function extractedPage(
 ): KnowledgeSearchExtractedPage {
   return {
     pageNumber,
-    items: [{ str: text, hasEOL: false, transform: [1, 0, 0, 1, 0, 0], height: 12 }],
+    items: [{ str: text, hasEOL: false }],
   };
 }
 

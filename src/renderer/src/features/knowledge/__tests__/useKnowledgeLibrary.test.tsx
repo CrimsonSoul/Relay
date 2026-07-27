@@ -13,9 +13,13 @@ function validRecord(): KnowledgeDocumentRecord {
     id: 'doc-1',
     sourceKey: 'General/Guide.pdf',
     category: 'General',
+    categoryId: 'category-general',
+    documentType: 'sop',
     title: 'Guide',
+    displayTitle: 'Guide',
     fileName: 'Guide.pdf',
     pdf: 'Guide.pdf',
+    cover: null,
     checksum: 'a'.repeat(64),
     byteSize: 1024,
     pageCount: 2,
@@ -23,6 +27,19 @@ function validRecord(): KnowledgeDocumentRecord {
     outlineSource: 'none',
     sourceModifiedAt: '2026-07-14T12:00:00.000Z',
     indexedAt: '2026-07-14T12:00:00.000Z',
+    searchIndexState: 'ready',
+    searchIndexChecksum: 'a'.repeat(64),
+    searchIndexVersion: 1,
+    searchIndexedAt: '2026-07-14T12:00:00.000Z',
+    searchIndexError: null,
+    lifecycleState: 'active',
+    revision: 1,
+    publishedByAccountId: 'publisher',
+    publishedByName: 'Paris',
+    publishedAt: '2026-07-14T12:00:00.000Z',
+    trashedByAccountId: null,
+    trashedByName: null,
+    trashedAt: null,
     created: '2026-07-14T12:00:00.000Z',
     updated: '2026-07-14T12:00:00.000Z',
   };
@@ -116,7 +133,7 @@ describe('useKnowledgeLibrary', () => {
     };
     useCollectionMock.mockImplementation((name, options) => {
       let data: never[] = [];
-      if (options.enabled !== false) {
+      if (options?.enabled !== false) {
         data =
           name === 'knowledge_documents'
             ? ([documentRecord] as never)
@@ -126,7 +143,7 @@ describe('useKnowledgeLibrary', () => {
         data,
         loading: false,
         error: null,
-        hasLoadedSnapshot: options.enabled !== false,
+        hasLoadedSnapshot: options?.enabled !== false,
         refetch: vi.fn(async () => undefined),
       };
     });

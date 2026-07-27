@@ -60,8 +60,10 @@ const makeReadyBoardSettings = (
 describe('useOnCallManager', () => {
   const dismissAlert = vi.fn();
 
+  const alphaPrimaryRow = makeRow({ id: 'r1', team: 'Alpha', teamId: 'alpha', name: 'Alice' });
+
   const defaultRows: OnCallRow[] = [
-    makeRow({ id: 'r1', team: 'Alpha', teamId: 'alpha', name: 'Alice' }),
+    alphaPrimaryRow,
     makeRow({ id: 'r2', team: 'Alpha', teamId: 'alpha', role: 'Secondary', name: 'Bob' }),
     makeRow({ id: 'r3', team: 'Bravo', teamId: 'bravo', name: 'Charlie' }),
   ];
@@ -265,7 +267,7 @@ describe('useOnCallManager', () => {
       );
 
       await act(async () => {
-        await result.current.handleUpdateRows('Alpha', [defaultRows[0]]);
+        await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
       });
 
       expect(dismissAlert).toHaveBeenCalledWith('general');
@@ -314,7 +316,7 @@ describe('useOnCallManager', () => {
       );
 
       await act(async () => {
-        await result.current.handleUpdateRows('Alpha', [defaultRows[0]]);
+        await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
       });
 
       expect(dismissAlert).not.toHaveBeenCalled();

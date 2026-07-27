@@ -15,7 +15,7 @@ describe('download-pocketbase script', () => {
       let checksumUrl = '';
 
       await expect(
-        mod.verifyChecksum(zipPath, 'pocketbase_0.39.9_windows_amd64.zip', async (url) => {
+        mod.verifyChecksum(zipPath, 'pocketbase_0.39.9_windows_amd64.zip', async (url: string) => {
           checksumUrl = url;
           throw new Error('stop after url capture');
         }),

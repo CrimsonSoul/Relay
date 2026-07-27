@@ -16,6 +16,11 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown;
 
 describe('setupDynatraceProblemsHandlers', () => {
   const handlers: Record<string, Handler> = {};
+  const getHandler = (channel: string): Handler => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
   const manager = {
     getSettings: vi.fn(() => ({
       configured: true,
@@ -59,7 +64,7 @@ describe('setupDynatraceProblemsHandlers', () => {
   });
 
   it('returns only public configuration and never exposes the stored token', () => {
-    const result = handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_GET_SETTINGS]({});
+    const result = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_GET_SETTINGS)({});
 
     expect(result).toEqual({
       configured: true,
@@ -72,7 +77,7 @@ describe('setupDynatraceProblemsHandlers', () => {
 
   it('allows a server to preserve its stored token when saving the environment URL', () => {
     const input = { environmentUrl: 'https://abc123.apps.dynatrace.com' };
-    const result = handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS]({}, input);
+    const result = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS)({}, input);
 
     expect(result).toMatchObject({ success: true });
     expect(manager.saveSettings).toHaveBeenCalledWith(input);
@@ -86,7 +91,7 @@ describe('setupDynatraceProblemsHandlers', () => {
       'https://example.com',
       'https://abc123.apps.dynatrace.com/api/v2/problems',
     ]) {
-      const result = (await handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_TEST_SETTINGS](
+      const result = (await getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_TEST_SETTINGS)(
         {},
         {
           environmentUrl,
@@ -100,16 +105,17 @@ describe('setupDynatraceProblemsHandlers', () => {
   it('blocks configuration and sync operations from Relay client mode', async () => {
     appConfig.load.mockReturnValue({ mode: 'client' });
 
-    const save = handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS](
+    const save = getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS)(
       {},
       {
         environmentUrl: 'https://abc123.apps.dynatrace.com',
       },
     );
-    const sync = await handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC]({});
-    const profileFilter = await handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER]({}, [
-      'POS Store',
-    ]);
+    const sync = await getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC)({});
+    const profileFilter = await getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)(
+      {},
+      ['POS Store'],
+    );
 
     expect(save).toMatchObject({ success: false });
     expect(sync).toMatchObject({ success: false });
@@ -120,7 +126,7 @@ describe('setupDynatraceProblemsHandlers', () => {
   });
 
   it('wraps a server-side manual sync count in a safe result', async () => {
-    await expect(handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC]({})).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC)({})).resolves.toEqual({
       success: true,
       data: { count: 7 },
     });
@@ -129,7 +135,7 @@ describe('setupDynatraceProblemsHandlers', () => {
 
   it('validates, deduplicates, and saves a server-side profile filter', async () => {
     await expect(
-      handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER]({}, [
+      getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, [
         'POS Store',
         'Alerts for NOC',
         'POS Store',
@@ -138,7 +144,7 @@ describe('setupDynatraceProblemsHandlers', () => {
     expect(manager.saveAlertingProfiles).toHaveBeenCalledWith(['POS Store', 'Alerts for NOC']);
 
     await expect(
-      handlers[IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER]({}, []),
+      getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, []),
     ).resolves.toMatchObject({ success: false });
   });
 });

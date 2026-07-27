@@ -205,6 +205,15 @@ vi.mock('../AlertReminderModal', () => ({
     ) : null,
 }));
 
+/** The reminder the manager-modal mock acts on, failing loudly when none was passed. */
+const firstPendingReminder = (reminders: Array<{ id: string; title: string }>) => {
+  const [reminder] = reminders;
+  if (!reminder) {
+    throw new Error('Expected AlertReminderManagerModal to receive at least one pending reminder');
+  }
+  return reminder;
+};
+
 vi.mock('../AlertReminderManagerModal', () => ({
   AlertReminderManagerModal: (props: {
     isOpen: boolean;
@@ -220,18 +229,21 @@ vi.mock('../AlertReminderManagerModal', () => ({
         <button data-testid="manager-schedule" onClick={props.onScheduleNew}>
           manager-schedule
         </button>
-        <button data-testid="manager-edit" onClick={() => props.onEdit(props.pendingReminders[0])}>
+        <button
+          data-testid="manager-edit"
+          onClick={() => props.onEdit(firstPendingReminder(props.pendingReminders))}
+        >
           manager-edit
         </button>
         <button
           data-testid="manager-done"
-          onClick={() => props.onDone(props.pendingReminders[0].id)}
+          onClick={() => props.onDone(firstPendingReminder(props.pendingReminders).id)}
         >
           manager-done
         </button>
         <button
           data-testid="manager-dismiss"
-          onClick={() => props.onDismiss(props.pendingReminders[0].id)}
+          onClick={() => props.onDismiss(firstPendingReminder(props.pendingReminders).id)}
         >
           manager-dismiss
         </button>

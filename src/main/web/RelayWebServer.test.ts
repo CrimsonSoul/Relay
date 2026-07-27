@@ -1,5 +1,5 @@
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
-import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,9 +38,12 @@ async function rawRequestStatus(port: number, path: string): Promise<number> {
   });
 }
 
+const OUTSIDE_SECRET = 'relay-outside-the-static-root';
+
 describe('RelayWebServer', () => {
   let staticRoot: string;
   const openServers: NetServer[] = [];
+  const outsideRoots: string[] = [];
 
   beforeEach(() => {
     staticRoot = mkdtempSync(join(tmpdir(), 'relay-web-static-'));
@@ -52,6 +55,9 @@ describe('RelayWebServer', () => {
   afterEach(async () => {
     await Promise.all(openServers.map((server) => close(server)));
     rmSync(staticRoot, { recursive: true, force: true });
+    for (const outsideRoot of outsideRoots.splice(0)) {
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
   });
 
   async function freePort(): Promise<number> {
@@ -125,6 +131,34 @@ describe('RelayWebServer', () => {
     await server.start();
 
     expect(await rawRequestStatus(port, '/%2e%2e/%2e%2e/secret.txt')).toBe(400);
+    await server.stop();
+  });
+
+  it('never serves a symlink that escapes the static root', async (context) => {
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'relay-web-outside-'));
+    outsideRoots.push(outsideRoot);
+    writeFileSync(join(outsideRoot, 'secret.txt'), OUTSIDE_SECRET);
+    try {
+      symlinkSync(join(outsideRoot, 'secret.txt'), join(staticRoot, 'secret.txt'));
+      symlinkSync(outsideRoot, join(staticRoot, 'outside'));
+    } catch {
+      // Windows only allows unprivileged symlink creation under developer mode.
+      context.skip();
+    }
+    const port = await freePort();
+    const server = new RelayWebServer({ host: LOOPBACK, port, staticRoot });
+    await server.start();
+
+    const linkedFile = await fetch(loopbackUrl(port, '/secret.txt')).then((response) =>
+      response.text(),
+    );
+    const linkedDirectory = await fetch(loopbackUrl(port, '/outside/secret.txt')).then((response) =>
+      response.text(),
+    );
+    expect(linkedFile).not.toContain(OUTSIDE_SECRET);
+    expect(linkedDirectory).not.toContain(OUTSIDE_SECRET);
+    expect(linkedFile).toContain('<title>Relay Web</title>');
+    expect(linkedDirectory).toContain('<title>Relay Web</title>');
     await server.stop();
   });
 

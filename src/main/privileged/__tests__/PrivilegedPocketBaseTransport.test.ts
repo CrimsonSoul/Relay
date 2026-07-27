@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION,
@@ -8,6 +8,7 @@ import {
   PocketBasePrivilegedRepository,
   PrivilegedPocketBaseClientTransport,
   PrivilegedServerQueue,
+  type PrivilegedRecordClient,
 } from '../PrivilegedPocketBaseTransport';
 
 const envelope: SignedPrivilegedCommandEnvelope = {
@@ -27,13 +28,16 @@ const envelope: SignedPrivilegedCommandEnvelope = {
 };
 
 describe('PrivilegedPocketBaseClientTransport', () => {
-  let createRecord: ReturnType<typeof vi.fn>;
-  let getRecord: ReturnType<typeof vi.fn>;
+  let createRecord: Mock<PrivilegedRecordClient['createRecord']>;
+  let getRecord: Mock<PrivilegedRecordClient['getRecord']>;
 
   beforeEach(() => {
-    createRecord = vi.fn(async (_collection, data) => ({ id: 'record-1', ...data }));
+    createRecord = vi.fn<PrivilegedRecordClient['createRecord']>(async (_collection, data) => ({
+      id: 'record-1',
+      ...data,
+    }));
     getRecord = vi
-      .fn()
+      .fn<PrivilegedRecordClient['getRecord']>()
       .mockResolvedValueOnce({ id: 'record-1', state: 'pending' })
       .mockResolvedValueOnce({
         id: 'record-1',

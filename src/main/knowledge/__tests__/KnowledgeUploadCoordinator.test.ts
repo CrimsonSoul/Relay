@@ -748,7 +748,13 @@ describe('KnowledgeUploadCoordinator', () => {
       extractor: {
         extract: vi.fn(async () => {
           await extracting;
-          return { metadataTitle: null, pageCount: 1, outline: [], outlineSource: 'none' as const };
+          return {
+            metadataTitle: null,
+            pageCount: 1,
+            outline: [],
+            outlineSource: 'none' as const,
+            coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+          };
         }),
         stop,
       },

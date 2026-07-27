@@ -3,7 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { useAssembler } from '../useAssembler';
 import { NoopToastProvider } from '../../components/Toast';
-import type { BridgeGroup, Contact } from '@shared/ipc';
+import type { BridgeAPI, BridgeGroup, Contact } from '@shared/ipc';
+
+/**
+ * Installs a partial bridge API on the global the hook reads (`globalThis.api`).
+ * Pass `undefined` to simulate a renderer running without the preload bridge.
+ */
+function stubBridgeApi(api: Partial<BridgeAPI> | undefined): void {
+  vi.stubGlobal('api', api);
+}
 
 /** Creates a minimal React.MouseEvent mock with only the properties used by handlers. */
 function createMockMouseEvent(
@@ -53,15 +61,17 @@ vi.mock('../../services/contactService', () => ({
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
 
-const makeContact = (email: string, name?: string, title?: string, phone?: string): Contact => ({
-  name: name || email.split('@')[0],
-  email,
-  phone: phone || '',
-  title: title || '',
-  _searchString:
-    `${name || email.split('@')[0]} ${email} ${title || ''} ${phone || ''}`.toLowerCase(),
-  raw: {},
-});
+const makeContact = (email: string, name?: string, title?: string, phone?: string): Contact => {
+  const displayName = name || (email.split('@')[0] ?? email);
+  return {
+    name: displayName,
+    email,
+    phone: phone || '',
+    title: title || '',
+    _searchString: `${displayName} ${email} ${title || ''} ${phone || ''}`.toLowerCase(),
+    raw: {},
+  };
+};
 
 const makeGroup = (id: string, name: string, contacts: string[]): BridgeGroup => ({
   id,
@@ -253,7 +263,7 @@ describe('useAssembler', () => {
     );
 
     expect(result.current.log).toHaveLength(1);
-    expect(result.current.log[0].email).toBe('unknown@test.com');
+    expect(result.current.log[0]?.email).toBe('unknown@test.com');
   });
 
   it('sorts by phone', () => {
@@ -285,9 +295,8 @@ describe('useAssembler', () => {
   });
 
   it('handleCopy writes semicolon-separated emails to clipboard', async () => {
-    const mockWriteClipboard = vi.fn().mockResolvedValue(true);
-    const mockApi = { writeClipboard: mockWriteClipboard };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    const mockWriteClipboard = vi.fn<BridgeAPI['writeClipboard']>().mockResolvedValue(true);
+    stubBridgeApi({ writeClipboard: mockWriteClipboard });
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,
@@ -298,16 +307,15 @@ describe('useAssembler', () => {
     });
 
     expect(mockWriteClipboard).toHaveBeenCalledTimes(1);
-    const clipboardArg = mockWriteClipboard.mock.calls[0][0];
+    const clipboardArg = mockWriteClipboard.mock.calls[0]![0];
     expect(clipboardArg).toContain('alice@test.com');
     expect(clipboardArg).toContain('bob@test.com');
     expect(clipboardArg).toContain('; ');
   });
 
   it('handleCopy shows error toast on clipboard failure', async () => {
-    const mockWriteClipboard = vi.fn().mockResolvedValue(false);
-    const mockApi = { writeClipboard: mockWriteClipboard };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    const mockWriteClipboard = vi.fn<BridgeAPI['writeClipboard']>().mockResolvedValue(false);
+    stubBridgeApi({ writeClipboard: mockWriteClipboard });
 
     const { result } = renderHook(
       () => useAssembler({ ...baseProps, manualAdds: ['a@test.com'] }),
@@ -322,9 +330,8 @@ describe('useAssembler', () => {
   });
 
   it('executeDraftBridge opens the Teams client deep link with correct parameters', async () => {
-    const mockOpenExternal = vi.fn().mockResolvedValue(true);
-    const mockApi = { openExternal: mockOpenExternal };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    const mockOpenExternal = vi.fn<BridgeAPI['openExternal']>().mockResolvedValue(true);
+    stubBridgeApi({ openExternal: mockOpenExternal });
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,
@@ -335,7 +342,7 @@ describe('useAssembler', () => {
     });
 
     expect(mockOpenExternal).toHaveBeenCalledTimes(1);
-    const url = mockOpenExternal.mock.calls[0][0] as string;
+    const url = mockOpenExternal.mock.calls[0]![0];
     expect(url).toContain('msteams://teams.microsoft.com/l/meeting/new');
     expect(url).toContain('attendees=');
     expect(url).toContain('subject=');
@@ -345,9 +352,11 @@ describe('useAssembler', () => {
   });
 
   it('executeDraftBridge falls back to the https Teams URL when the deep link is refused', async () => {
-    const mockOpenExternal = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const mockApi = { openExternal: mockOpenExternal };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    const mockOpenExternal = vi
+      .fn<BridgeAPI['openExternal']>()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    stubBridgeApi({ openExternal: mockOpenExternal });
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,
@@ -358,8 +367,8 @@ describe('useAssembler', () => {
     });
 
     expect(mockOpenExternal).toHaveBeenCalledTimes(2);
-    const deepLink = mockOpenExternal.mock.calls[0][0] as string;
-    const fallback = mockOpenExternal.mock.calls[1][0] as string;
+    const deepLink = mockOpenExternal.mock.calls[0]![0];
+    const fallback = mockOpenExternal.mock.calls[1]![0];
     expect(deepLink).toContain('msteams://teams.microsoft.com/l/meeting/new');
     expect(fallback).toContain('https://teams.microsoft.com/l/meeting/new');
     expect(fallback.split('?')[1]).toBe(deepLink.split('?')[1]);
@@ -368,9 +377,8 @@ describe('useAssembler', () => {
   });
 
   it('executeDraftBridge shows an error toast only when both attempts are refused', async () => {
-    const mockOpenExternal = vi.fn().mockResolvedValue(false);
-    const mockApi = { openExternal: mockOpenExternal };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    const mockOpenExternal = vi.fn<BridgeAPI['openExternal']>().mockResolvedValue(false);
+    stubBridgeApi({ openExternal: mockOpenExternal });
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,
@@ -458,7 +466,7 @@ describe('useAssembler', () => {
   });
 
   it('executeDraftBridge works when api is undefined', () => {
-    (globalThis as Window & { api?: unknown }).api = undefined;
+    stubBridgeApi(undefined);
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,

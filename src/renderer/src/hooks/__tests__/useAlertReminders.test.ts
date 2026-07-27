@@ -9,7 +9,7 @@ vi.mock('../../components/Toast', () => ({
 
 const mockCollectionData = { current: [] as unknown[] };
 const mockRefetch = vi.fn();
-const mockUseCollection = vi.fn(() => ({
+const mockUseCollection = vi.fn((..._args: unknown[]) => ({
   data: mockCollectionData.current,
   loading: false,
   error: null,

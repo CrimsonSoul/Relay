@@ -68,26 +68,37 @@ describe('useContinuousPdfPages', () => {
     return { ...hook, root, rootRef };
   }
 
+  function firstObserver(): IntersectionObserverDouble {
+    const [observer] = IntersectionObserverDouble.instances;
+    if (!observer) throw new Error('No IntersectionObserver was constructed');
+    return observer;
+  }
+
   function registerPages(
     registerPage: (pageIndex: number) => (node: HTMLElement | null) => void,
     count: number,
-  ): HTMLDivElement[] {
-    return Array.from({ length: count }, (_, pageIndex) => {
+  ): (pageIndex: number) => HTMLDivElement {
+    const pages = Array.from({ length: count }, (_, pageIndex) => {
       const page = document.createElement('div');
       registerPage(pageIndex)(page);
       return page;
     });
+    return (pageIndex) => {
+      const page = pages[pageIndex];
+      if (!page) throw new Error(`Page ${pageIndex} was never registered`);
+      return page;
+    };
   }
 
   it('uses the greatest intersection ratio as the current page and renders bounded overscan', () => {
     const { result } = renderPages();
-    const pages = registerPages(result.current.registerPage, 8);
+    const pageAt = registerPages(result.current.registerPage, 8);
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[0], intersectionRatio: 0.25 },
-        { target: pages[1], intersectionRatio: 0.8 },
-        { target: pages[2], intersectionRatio: 0.4 },
+      firstObserver().emit([
+        { target: pageAt(0), intersectionRatio: 0.25 },
+        { target: pageAt(1), intersectionRatio: 0.8 },
+        { target: pageAt(2), intersectionRatio: 0.4 },
       ]);
     });
 
@@ -99,19 +110,19 @@ describe('useContinuousPdfPages', () => {
   it('uses dense intersection thresholds so clipped pages advance the render window', () => {
     renderPages();
 
-    expect(IntersectionObserverDouble.instances[0].options?.threshold).toEqual(
+    expect(firstObserver().options?.threshold).toEqual(
       Array.from({ length: 101 }, (_, index) => index / 100),
     );
   });
 
   it('chooses the smaller page index when intersection ratios are equal', () => {
     const { result } = renderPages({ initialPageIndex: 4 });
-    const pages = registerPages(result.current.registerPage, 8);
+    const pageAt = registerPages(result.current.registerPage, 8);
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[5], intersectionRatio: 0.6 },
-        { target: pages[3], intersectionRatio: 0.6 },
+      firstObserver().emit([
+        { target: pageAt(5), intersectionRatio: 0.6 },
+        { target: pageAt(3), intersectionRatio: 0.6 },
       ]);
     });
 
@@ -120,17 +131,17 @@ describe('useContinuousPdfPages', () => {
 
   it('clamps the overscan range at the first and last pages', () => {
     const { result } = renderPages({ pageCount: 4 });
-    const pages = registerPages(result.current.registerPage, 4);
+    const pageAt = registerPages(result.current.registerPage, 4);
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([{ target: pages[0], intersectionRatio: 1 }]);
+      firstObserver().emit([{ target: pageAt(0), intersectionRatio: 1 }]);
     });
     expect([...result.current.renderPageIndices]).toEqual([0, 1, 2]);
 
     act(() => {
-      IntersectionObserverDouble.instances[0].emit([
-        { target: pages[0], intersectionRatio: 0 },
-        { target: pages[3], intersectionRatio: 1 },
+      firstObserver().emit([
+        { target: pageAt(0), intersectionRatio: 0 },
+        { target: pageAt(3), intersectionRatio: 1 },
       ]);
     });
     expect([...result.current.renderPageIndices]).toEqual([1, 2, 3]);
@@ -138,8 +149,8 @@ describe('useContinuousPdfPages', () => {
 
   it('disconnects the viewer-rooted observer while inactive and ignores its later entries', () => {
     const { result, rerender, rootRef } = renderPages();
-    const pages = registerPages(result.current.registerPage, 8);
-    const observer = IntersectionObserverDouble.instances[0];
+    const pageAt = registerPages(result.current.registerPage, 8);
+    const observer = firstObserver();
 
     rerender({
       active: false,
@@ -150,15 +161,15 @@ describe('useContinuousPdfPages', () => {
     });
     expect(observer.disconnect).toHaveBeenCalledOnce();
 
-    act(() => observer.emit([{ target: pages[4], intersectionRatio: 1 }]));
+    act(() => observer.emit([{ target: pageAt(4), intersectionRatio: 1 }]));
     expect(result.current.currentPageIndex).toBe(0);
     expect([...result.current.renderPageIndices]).toEqual([]);
   });
 
   it('scrolls the registered page shell inside the viewer using its scaled target offset', () => {
     const { result, root } = renderPages({ reducedMotion: true });
-    const pages = registerPages(result.current.registerPage, 3);
-    Object.defineProperty(pages[1], 'offsetTop', { configurable: true, value: 200 });
+    const pageAt = registerPages(result.current.registerPage, 3);
+    Object.defineProperty(pageAt(1), 'offsetTop', { configurable: true, value: 200 });
 
     act(() => result.current.scrollToPage(1, 80));
 
@@ -185,7 +196,7 @@ describe('useContinuousPdfPages', () => {
     }
 
     const { rerender } = render(<PageHarness scale={1} />);
-    const observer = IntersectionObserverDouble.instances[0];
+    const observer = firstObserver();
     expect(observer.observe).toHaveBeenCalledTimes(3);
 
     rerender(<PageHarness scale={1.25} />);

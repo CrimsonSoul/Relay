@@ -25,7 +25,7 @@ describe('useKeyboardShortcuts', () => {
       }),
     );
 
-    fireEvent.keyDown(globalThis, { key, metaKey: true });
+    fireEvent.keyDown(window, { key, metaKey: true });
 
     expect(setActiveTab).toHaveBeenCalledWith(tab);
   });
@@ -45,12 +45,12 @@ describe('useKeyboardShortcuts', () => {
       { initialProps: { modalOpen: true } },
     );
 
-    fireEvent.keyDown(globalThis, { key: '1', metaKey: true });
+    fireEvent.keyDown(window, { key: '1', metaKey: true });
 
     expect(setActiveTab).not.toHaveBeenCalled();
 
     rerender({ modalOpen: false });
-    fireEvent.keyDown(globalThis, { key: '1', metaKey: true });
+    fireEvent.keyDown(window, { key: '1', metaKey: true });
 
     expect(setActiveTab).toHaveBeenCalledWith('Compose');
   });
@@ -66,7 +66,7 @@ describe('useKeyboardShortcuts', () => {
       }),
     );
 
-    fireEvent.keyDown(globalThis, { key, metaKey: true });
+    fireEvent.keyDown(window, { key, metaKey: true });
 
     expect(setActiveTab).not.toHaveBeenCalled();
   });

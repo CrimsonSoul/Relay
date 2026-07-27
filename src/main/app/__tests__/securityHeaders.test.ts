@@ -32,6 +32,13 @@ function getResponseHeaders(
   return result;
 }
 
+/** Helper: invoke the handler and return the single Content-Security-Policy header value */
+function getCsp(details: { responseHeaders?: Record<string, string[]> } = {}): string {
+  const [csp] = getResponseHeaders(details)['Content-Security-Policy'] ?? [];
+  if (csp === undefined) throw new Error('No Content-Security-Policy response header was set');
+  return csp;
+}
+
 describe('setupSecurityHeaders', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,23 +50,20 @@ describe('setupSecurityHeaders', () => {
     });
 
     it('does not include unsafe-eval in script-src', () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
+      const csp = getCsp();
       expect(csp).not.toContain("'unsafe-eval'");
     });
 
     it('does not include unsafe-inline in script-src', () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
+      const csp = getCsp();
       // Extract the script-src directive specifically
-      const scriptSrc = csp.match(/script-src[^;]*/)?.[0] ?? '';
+      const scriptSrc = /script-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(scriptSrc).not.toContain("'unsafe-inline'");
     });
 
     it('includes a sha256 hash for script-src in production', () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const scriptSrc = csp.match(/script-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const scriptSrc = /script-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(scriptSrc).toMatch(/'sha256-[A-Za-z0-9+/=]+'/);
     });
   });
@@ -70,16 +74,14 @@ describe('setupSecurityHeaders', () => {
     });
 
     it('includes unsafe-eval in script-src for HMR', () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const scriptSrc = csp.match(/script-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const scriptSrc = /script-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(scriptSrc).toContain("'unsafe-eval'");
     });
 
     it('includes unsafe-inline in script-src for dev', () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const scriptSrc = csp.match(/script-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const scriptSrc = /script-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(scriptSrc).toContain("'unsafe-inline'");
     });
   });
@@ -124,16 +126,14 @@ describe('setupSecurityHeaders', () => {
     });
 
     it("sets default-src to 'self'", () => {
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
+      const csp = getCsp();
       expect(csp).toMatch(/default-src 'self'/);
     });
 
     it.each(["object-src 'none'", "base-uri 'self'", "form-action 'self'"])(
       'sets the %s CSP directive',
       (directive) => {
-        const headers = getResponseHeaders();
-        const csp = headers['Content-Security-Policy']![0];
+        const csp = getCsp();
         expect(csp).toContain(directive);
       },
     );
@@ -147,9 +147,8 @@ describe('setupSecurityHeaders', () => {
     it('uses default localhost:8090 when appConfig is null', () => {
       mockAppConfig = null;
       setupSecurityHeaders(false);
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const connectSrc = /connect-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(connectSrc).toContain('http://127.0.0.1:8090');
       expect(connectSrc).toContain('ws://127.0.0.1:8090');
     });
@@ -159,9 +158,8 @@ describe('setupSecurityHeaders', () => {
         load: () => ({ mode: 'server', port: 9999 }),
       };
       setupSecurityHeaders(false);
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const connectSrc = /connect-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(connectSrc).toContain('http://127.0.0.1:9999');
       expect(connectSrc).toContain('ws://127.0.0.1:9999');
     });
@@ -173,9 +171,8 @@ describe('setupSecurityHeaders', () => {
         load: () => ({ mode: 'client', serverUrl: httpUrl }),
       };
       setupSecurityHeaders(false);
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const connectSrc = /connect-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(connectSrc).toContain(httpUrl);
       // eslint-disable-next-line sonarjs/no-clear-text-protocols -- The expected clear-text WS origin is the behavior under test for a trusted-LAN HTTP server.
       expect(connectSrc).toContain('ws://myserver.local:8090');
@@ -186,9 +183,8 @@ describe('setupSecurityHeaders', () => {
         load: () => ({ mode: 'client', serverUrl: 'https://secure.example.com' }),
       };
       setupSecurityHeaders(false);
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const connectSrc = /connect-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(connectSrc).toContain('https://secure.example.com');
       expect(connectSrc).toContain('wss://secure.example.com');
     });
@@ -201,9 +197,8 @@ describe('setupSecurityHeaders', () => {
         }),
       };
       setupSecurityHeaders(false);
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const connectSrc = /connect-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(connectSrc).toBe(
         "connect-src 'self' https://secure.example.com wss://secure.example.com",
       );
@@ -214,9 +209,8 @@ describe('setupSecurityHeaders', () => {
         load: () => undefined,
       };
       setupSecurityHeaders(false);
-      const headers = getResponseHeaders();
-      const csp = headers['Content-Security-Policy']![0];
-      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      const csp = getCsp();
+      const connectSrc = /connect-src[^;]*/.exec(csp)?.[0] ?? '';
       expect(connectSrc).toContain('http://127.0.0.1:8090');
     });
   });

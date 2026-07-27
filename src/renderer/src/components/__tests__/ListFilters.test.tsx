@@ -85,14 +85,18 @@ describe('ListFilters', () => {
   });
 
   it('renders extra filters', () => {
-    const extraFilters: FilterDef<unknown>[] = [{ key: 'on_call', label: 'On Call', fn: vi.fn() }];
+    const extraFilters: FilterDef<unknown>[] = [
+      { key: 'on_call', label: 'On Call', predicate: () => true },
+    ];
     render(<ListFilters {...defaultProps} extraFilters={extraFilters} />);
     expect(screen.getByText('On Call')).toBeInTheDocument();
   });
 
   it('calls onToggleExtra when extra filter is clicked', () => {
     const onToggleExtra = vi.fn();
-    const extraFilters: FilterDef<unknown>[] = [{ key: 'on_call', label: 'On Call', fn: vi.fn() }];
+    const extraFilters: FilterDef<unknown>[] = [
+      { key: 'on_call', label: 'On Call', predicate: () => true },
+    ];
     render(
       <ListFilters {...defaultProps} extraFilters={extraFilters} onToggleExtra={onToggleExtra} />,
     );

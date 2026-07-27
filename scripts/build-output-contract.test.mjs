@@ -13,16 +13,21 @@ const electronViteCli = path.join(
   'bin',
   'electron-vite.js',
 );
-// 525_000, not the original 500_000. The main entry is ~506KB. Two ways to get it
-// back under 500KB were tried and both rejected:
-//   - a `manualChunks` split of privileged/relay-web produced the circular chunks this
-//     same test forbids a few assertions above, because both have cyclic edges with the
-//     main entry;
-//   - demand-loading src/main/privileged through `await import()` did shrink the entry to
-//     ~358KB, but it broke resuming a Knowledge upload batch after an interruption
-//     (uploads settled as "PDF validation failed"). Unit tests and this contract both
-//     passed; only tests/e2e/critical-path.spec.ts caught it. Correctness wins over
-//     148KB, so the privileged runtime is statically linked again.
+// 525_000, not the original 500_000. The main entry is ~506KB. Three ways to get it
+// back under 500KB were tried and all three rejected:
+//   1. A `manualChunks` split of privileged/relay-web produced the circular chunks this
+//      same test forbids a few assertions above — both have cyclic edges with the entry.
+//   2. Demand-loading src/main/privileged with `await import()` at its two call sites did
+//      shrink the entry to ~358KB, but it broke resuming a Knowledge upload batch after an
+//      interruption: uploads settled as "PDF validation failed". Unit tests, lint and this
+//      contract all passed; only tests/e2e/critical-path.spec.ts caught it.
+//   3. Same split, but with the import kicked off at module scope so the graph still
+//      evaluates during startup — to rule out load *timing* as the cause. It failed
+//      identically, which says the breakage follows the chunk boundary itself rather than
+//      when it is loaded.
+// A 148KB saving is not worth an upload path that silently fails to resume, so the
+// privileged runtime stays statically linked and the ceiling carries ~4% headroom.
+// Raising it again should mean re-examining what grew, not nudging the number.
 const applicationChunkLimitBytes = 525_000;
 const buildTimeoutMs = 60_000;
 const testTimeoutMs = buildTimeoutMs + 5_000;

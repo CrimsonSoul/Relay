@@ -1,4 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ServerConfig } from '../../config/AppConfig';
+import type { PocketBaseConfig } from '../../pocketbase/PocketBaseProcess';
+
+/**
+ * The invocation-order stamp of a mock call, asserting the call actually
+ * happened so ordering assertions never silently compare against undefined.
+ */
+function callOrder(mock: { mock: { invocationCallOrder: number[] } }, index = 0): number {
+  const order = mock.mock.invocationCallOrder[index];
+  if (order === undefined) {
+    throw new Error(`Expected the mock to have been called at least ${index + 1} time(s)`);
+  }
+  return order;
+}
 
 /** The fixed sentences startup failures are reported with, per cause. */
 const START_FAILURE = {
@@ -50,9 +64,11 @@ const mocks = vi.hoisted(() => {
   const maintenancePb = {
     collection: vi.fn(() => ({ authWithPassword: superuserAuth })),
   };
-  const pocketBaseProcessConstructor = vi.fn(function MockPocketBaseProcess() {
-    return pbProcess;
-  });
+  const pocketBaseProcessConstructor = vi.fn<(config: PocketBaseConfig) => typeof pbProcess>(
+    function MockPocketBaseProcess() {
+      return pbProcess;
+    },
+  );
 
   return {
     app: {
@@ -61,8 +77,8 @@ const mocks = vi.hoisted(() => {
     pbProcess,
     getCrashCallback: () => crashCallback,
     setPbProcess: vi.fn(),
-    getPbProcess: vi.fn(() => null),
-    getRetentionManager: vi.fn(() => null),
+    getPbProcess: vi.fn<() => typeof pbProcess | null>(() => null),
+    getRetentionManager: vi.fn<() => typeof retentionManager | null>(() => null),
     getBackupManager: vi.fn(() => backupManager),
     getPbClient: vi.fn(() => maintenancePb),
     setRetentionManager: vi.fn(),
@@ -83,7 +99,7 @@ const mocks = vi.hoisted(() => {
     getFirstListItem,
     deleteRecord,
     createRecord,
-    existsSync: vi.fn(() => false),
+    existsSync: vi.fn<(path: unknown) => boolean>(() => false),
     ensurePocketBaseAuthRateLimit: vi.fn().mockResolvedValue(undefined),
     ensureKnowledgeBatchApi: vi.fn().mockResolvedValue(undefined),
     ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
@@ -297,8 +313,8 @@ describe('pocketbaseBootstrap', () => {
         method: 'POST',
       },
     );
-    expect(mocks.ensurePocketBaseAuthRateLimit.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.pbProcess.start.mock.invocationCallOrder[1],
+    expect(callOrder(mocks.ensurePocketBaseAuthRateLimit, 0)).toBeLessThan(
+      callOrder(mocks.pbProcess.start, 1),
     );
     expect(mocks.superuserAuth).toHaveBeenCalledWith('admin@relay.app', 'super-secret-passphrase');
     expect(mocks.superuserAuth).toHaveBeenCalledTimes(2);
@@ -307,30 +323,28 @@ describe('pocketbaseBootstrap', () => {
       recursive: true,
       force: true,
     });
-    expect(mocks.rmSync.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.pbProcess.start.mock.invocationCallOrder[0],
-    );
+    expect(callOrder(mocks.rmSync, 0)).toBeLessThan(callOrder(mocks.pbProcess.start, 0));
     expect(mocks.ensurePocketBaseAuthRateLimit).toHaveBeenCalledOnce();
-    expect(mocks.ensurePocketBaseAuthRateLimit.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.superuserAuth.mock.invocationCallOrder[0],
+    expect(callOrder(mocks.ensurePocketBaseAuthRateLimit, 0)).toBeGreaterThan(
+      callOrder(mocks.superuserAuth, 0),
     );
-    expect(onHealthy.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.ensurePocketBaseAuthRateLimit.mock.invocationCallOrder[0],
+    expect(callOrder(onHealthy, 0)).toBeGreaterThan(
+      callOrder(mocks.ensurePocketBaseAuthRateLimit, 0),
     );
     expect(onHealthy).toHaveBeenCalledOnce();
     expect(onCredentialsReady).toHaveBeenCalledOnce();
     expect(onSchemaReady).toHaveBeenCalledOnce();
     expect(mocks.clearRelayAppUserAuthCoordinator).toHaveBeenCalledOnce();
-    expect(mocks.clearRelayAppUserAuthCoordinator.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.pbProcess.start.mock.invocationCallOrder[0],
+    expect(callOrder(mocks.clearRelayAppUserAuthCoordinator, 0)).toBeLessThan(
+      callOrder(mocks.pbProcess.start, 0),
     );
     expect(mocks.primeRelayAppUserAuth).toHaveBeenCalledWith(
       expect.anything(),
       'http://127.0.0.1:8090',
       'super-secret-passphrase',
     );
-    expect(mocks.primeRelayAppUserAuth.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.appUserAuth.mock.invocationCallOrder[0],
+    expect(callOrder(mocks.primeRelayAppUserAuth, 0)).toBeGreaterThan(
+      callOrder(mocks.appUserAuth, 0),
     );
   });
 
@@ -359,9 +373,7 @@ describe('pocketbaseBootstrap', () => {
     expect(mocks.setRetentionManager).toHaveBeenCalledWith(null);
     // The retired process is stopped before anything new starts, which cancels
     // its pending crash restart.
-    expect(mocks.pbProcess.stop.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.pbProcess.start.mock.invocationCallOrder[0],
-    );
+    expect(callOrder(mocks.pbProcess.stop, 0)).toBeLessThan(callOrder(mocks.pbProcess.start, 0));
   });
 
   it('reports an occupied port when the PocketBase process cannot start', async () => {
@@ -603,12 +615,12 @@ describe('pocketbaseBootstrap', () => {
     });
     expect(mocks.superuserAuth).toHaveBeenCalledTimes(3);
     expect(mocks.ensurePocketBaseAuthRateLimit).toHaveBeenCalledOnce();
-    expect(mocks.ensurePocketBaseAuthRateLimit.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.superuserAuth.mock.invocationCallOrder[1],
+    expect(callOrder(mocks.ensurePocketBaseAuthRateLimit, 0)).toBeGreaterThan(
+      callOrder(mocks.superuserAuth, 1),
     );
     expect(onHealthy).toHaveBeenCalledOnce();
-    expect(onHealthy.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.ensurePocketBaseAuthRateLimit.mock.invocationCallOrder[0],
+    expect(callOrder(onHealthy, 0)).toBeGreaterThan(
+      callOrder(mocks.ensurePocketBaseAuthRateLimit, 0),
     );
   });
 
@@ -692,9 +704,7 @@ describe('pocketbaseBootstrap', () => {
       stdio: 'ignore',
       windowsHide: true,
     });
-    expect(mocks.writeFileSync.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.execFileSync.mock.invocationCallOrder[0],
-    );
+    expect(callOrder(mocks.writeFileSync, 0)).toBeGreaterThan(callOrder(mocks.execFileSync, 0));
     expect(mocks.execFileSync.mock.calls[1]?.[1]).toEqual([
       'migrate',
       'up',
@@ -760,8 +770,8 @@ describe('pocketbaseBootstrap', () => {
       .mockResolvedValueOnce({});
     const { startPocketBase } = await import('../pocketbaseBootstrap');
 
-    const config = {
-      mode: 'server' as const,
+    const config: ServerConfig = {
+      mode: 'server',
       bindHost: '0.0.0.0',
       port: 8090,
       secret: 'rotated-secret',
@@ -1159,6 +1169,7 @@ describe('pocketbaseBootstrap', () => {
 
     const cancel = startDeferredPocketBaseServices({
       mode: 'server',
+      bindHost: '127.0.0.1',
       port: 8090,
       secret: 'super-secret-passphrase',
     });
@@ -1181,6 +1192,7 @@ describe('pocketbaseBootstrap', () => {
 
     startDeferredPocketBaseServices({
       mode: 'server',
+      bindHost: '127.0.0.1',
       port: 8090,
       secret: 'super-secret-passphrase',
     });

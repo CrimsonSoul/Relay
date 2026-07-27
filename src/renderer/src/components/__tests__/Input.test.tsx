@@ -45,7 +45,7 @@ describe('Input Component', () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     const { unmount } = render(<Input autoFocus placeholder="Autofocus input" />);
     const focusTimer = setTimeoutSpy.mock.results.find(
-      (_, index) => setTimeoutSpy.mock.calls[index][1] === 150,
+      (_, index) => setTimeoutSpy.mock.calls[index]?.[1] === 150,
     )?.value;
 
     expect(focusTimer).toBeDefined();

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type PocketBase from 'pocketbase';
-import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
+import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
 import {
   CloudStatusManager,
   DEGRADED_CLOUD_STATUS_INTERVAL_MS,
@@ -14,21 +14,18 @@ const collection = vi.fn(() => ({ create, update, getFirstListItem }));
 const pb = { collection } as unknown as PocketBase;
 
 function data(items: CloudStatusItem[] = []): CloudStatusData {
-  const providers = Object.fromEntries(
-    [
-      'aws',
-      'azure',
-      'm365',
-      'jira',
-      'github',
-      'cloudflare',
-      'google',
-      'anthropic',
-      'openai',
-      'salesforce',
-    ].map((provider) => [provider, []]),
-  ) as Record<CloudStatusProvider, CloudStatusItem[]>;
-  providers.aws = items;
+  const providers: CloudStatusData['providers'] = {
+    aws: items,
+    azure: [],
+    m365: [],
+    jira: [],
+    github: [],
+    cloudflare: [],
+    google: [],
+    anthropic: [],
+    openai: [],
+    salesforce: [],
+  };
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 

@@ -8,11 +8,15 @@ describe('deferred server services', () => {
   it('yields before starting data managers and PocketBase background work', async () => {
     const calls: string[] = [];
     const services = createDeferredServerServices({
-      startDataManagers: () => calls.push('data-managers'),
-      startPocketBaseServices: () => calls.push('pocketbase-services'),
+      startDataManagers: () => {
+        calls.push('data-managers');
+      },
+      startPocketBaseServices: () => {
+        calls.push('pocketbase-services');
+      },
     });
 
-    services.schedule({ mode: 'server', port: 8090, secret: 'test' });
+    services.schedule({ mode: 'server', bindHost: '127.0.0.1', port: 8090, secret: 'test' });
     expect(calls).toEqual([]);
 
     await vi.runOnlyPendingTimersAsync();
@@ -26,7 +30,7 @@ describe('deferred server services', () => {
       startPocketBaseServices: vi.fn(),
     });
 
-    services.schedule({ mode: 'server', port: 8090, secret: 'test' });
+    services.schedule({ mode: 'server', bindHost: '127.0.0.1', port: 8090, secret: 'test' });
     services.cancel();
     await vi.runOnlyPendingTimersAsync();
 
@@ -40,7 +44,7 @@ describe('deferred server services', () => {
       startPocketBaseServices: vi.fn(() => cleanupPocketBaseServices),
     });
 
-    services.schedule({ mode: 'server', port: 8090, secret: 'test' });
+    services.schedule({ mode: 'server', bindHost: '127.0.0.1', port: 8090, secret: 'test' });
     await vi.runOnlyPendingTimersAsync();
     services.cancel();
 

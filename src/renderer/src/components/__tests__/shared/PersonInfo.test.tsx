@@ -10,14 +10,12 @@ vi.mock('../../Tooltip', () => ({
 }));
 
 const makeContact = (name: string, id: string): Contact => ({
-  id,
   name,
   title: '',
   email: '',
   phone: '',
-  callSign: '',
-  groups: [],
-  servers: [],
+  _searchString: name.toLowerCase(),
+  raw: { id },
 });
 
 describe('getPlatformColor', () => {

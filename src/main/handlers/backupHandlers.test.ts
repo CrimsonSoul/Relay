@@ -21,6 +21,11 @@ vi.mock('../utils/trustedSender', () => ({
 
 describe('backupHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
 
   const mockBackupManager = {
     listBackups: vi.fn(),
@@ -39,12 +44,10 @@ describe('backupHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(ipcMain.handle).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers[channel] = handler;
-        return ipcMain;
-      },
-    );
+    vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
+      handlers[channel] = (...args: unknown[]) => Reflect.apply(handler, undefined, args);
+      return ipcMain;
+    });
 
     setupBackupHandlers(getBackupManager, restartPb, getOfflineCache);
   });
@@ -64,7 +67,7 @@ describe('backupHandlers', () => {
         { name: 'backup-002.zip', date, size: 2048 },
       ]);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_LIST]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_LIST)();
 
       expect(result).toEqual([
         { name: 'backup-001.zip', date: date.toISOString(), size: 1024 },
@@ -75,7 +78,7 @@ describe('backupHandlers', () => {
     it('returns empty array when backup manager is null', async () => {
       getBackupManager.mockReturnValueOnce(null as never);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_LIST]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_LIST)();
 
       expect(result).toEqual([]);
     });
@@ -83,7 +86,7 @@ describe('backupHandlers', () => {
     it('returns empty array when no backups exist', async () => {
       mockBackupManager.listBackups.mockReturnValue([]);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_LIST]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_LIST)();
 
       expect(result).toEqual([]);
     });
@@ -93,7 +96,7 @@ describe('backupHandlers', () => {
     it('creates a backup and returns success with path', async () => {
       mockBackupManager.backup.mockResolvedValue('/path/to/backup.zip');
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_CREATE]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_CREATE)();
 
       expect(result).toEqual({ success: true, data: '/path/to/backup.zip' });
     });
@@ -101,7 +104,7 @@ describe('backupHandlers', () => {
     it('returns failure when backup manager is null', async () => {
       getBackupManager.mockReturnValueOnce(null as never);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_CREATE]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_CREATE)();
 
       expect(result).toEqual({ success: false, error: 'Backup manager not available' });
     });
@@ -109,7 +112,7 @@ describe('backupHandlers', () => {
     it('returns failure when backup throws an Error', async () => {
       mockBackupManager.backup.mockRejectedValue(new Error('Disk full'));
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_CREATE]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_CREATE)();
 
       expect(result).toEqual({ success: false, error: 'Disk full' });
     });
@@ -117,7 +120,7 @@ describe('backupHandlers', () => {
     it('returns failure with stringified error for non-Error throws', async () => {
       mockBackupManager.backup.mockRejectedValue('string error');
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_CREATE]();
+      const result = await getHandler(IPC_CHANNELS.BACKUP_CREATE)();
 
       expect(result).toEqual({ success: false, error: 'string error' });
     });
@@ -128,7 +131,7 @@ describe('backupHandlers', () => {
       mockBackupManager.restore.mockResolvedValue(undefined);
       restartPb.mockResolvedValue(true);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup-001.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup-001.zip');
 
       expect(mockBackupManager.restore).toHaveBeenCalledWith('backup-001.zip');
       expect(mockOfflineCache.clear).toHaveBeenCalled();
@@ -143,7 +146,7 @@ describe('backupHandlers', () => {
       ['a non-string value', 42],
       ['path separators', 'sub/dir/backup.zip'],
     ])('rejects backup names with %s', async (_case, name) => {
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, name);
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, name);
 
       expect(mockBackupManager.restore).not.toHaveBeenCalled();
       expect(result).toEqual({ success: false, error: 'Invalid backup name' });
@@ -152,7 +155,7 @@ describe('backupHandlers', () => {
     it('returns failure when backup manager is null', async () => {
       getBackupManager.mockReturnValueOnce(null as never);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
 
       expect(result).toEqual({ success: false, error: 'Backup manager not available' });
     });
@@ -160,7 +163,7 @@ describe('backupHandlers', () => {
     it('returns failure when restore throws an Error', async () => {
       mockBackupManager.restore.mockRejectedValue(new Error('Corrupted archive'));
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
 
       expect(result).toEqual({ success: false, error: 'Corrupted archive' });
     });
@@ -168,7 +171,7 @@ describe('backupHandlers', () => {
     it('returns failure with stringified error for non-Error throws', async () => {
       mockBackupManager.restore.mockRejectedValue('unknown error');
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
 
       expect(result).toEqual({ success: false, error: 'unknown error' });
     });
@@ -177,7 +180,7 @@ describe('backupHandlers', () => {
       mockBackupManager.restore.mockResolvedValue(undefined);
       restartPb.mockResolvedValue(false);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
 
       expect(result).toEqual({
         success: false,
@@ -194,8 +197,8 @@ describe('backupHandlers', () => {
       );
       restartPb.mockResolvedValue(true);
 
-      const first = handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup-a.zip') as Promise<unknown>;
-      const second = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup-b.zip');
+      const first = getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup-a.zip') as Promise<unknown>;
+      const second = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup-b.zip');
 
       expect(second).toEqual({ success: false, error: 'Backup restore already in progress' });
       expect(mockBackupManager.restore).toHaveBeenCalledOnce();
@@ -211,7 +214,7 @@ describe('backupHandlers', () => {
       });
       restartPb.mockResolvedValue(true);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
 
       expect(result).toEqual({ success: true });
     });
@@ -221,7 +224,7 @@ describe('backupHandlers', () => {
       mockBackupManager.restore.mockResolvedValue(undefined);
       restartPb.mockResolvedValue(true);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
 
       expect(result).toEqual({ success: true });
     });
@@ -230,7 +233,10 @@ describe('backupHandlers', () => {
       mockBackupManager.restore.mockResolvedValue(undefined);
       restartPb.mockResolvedValue(true);
 
-      const result = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'relay_backup-2026.03.27.zip');
+      const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)(
+        {},
+        'relay_backup-2026.03.27.zip',
+      );
 
       expect(mockBackupManager.restore).toHaveBeenCalledWith('relay_backup-2026.03.27.zip');
       expect(result).toEqual({ success: true });

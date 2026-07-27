@@ -27,6 +27,7 @@ describe('ContactCard Component', () => {
     const contactWithInvalidName: Contact = {
       name: '...',
       email: 'test@example.com',
+      phone: '',
       title: 'Tester',
       _searchString: 'test@example.com tester',
       raw: {},

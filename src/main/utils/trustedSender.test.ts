@@ -26,6 +26,16 @@ vi.mock('../logger', () => ({
 
 const mockApp = app as unknown as { isPackaged: boolean };
 
+// electron-vite's ambient types declare ELECTRON_RENDERER_URL readonly, so the tests
+// mutate it reflectively. Passing `undefined` removes it, matching `delete`.
+function setRendererUrl(value: string | undefined): void {
+  if (value === undefined) {
+    Reflect.deleteProperty(process.env, 'ELECTRON_RENDERER_URL');
+  } else {
+    Reflect.set(process.env, 'ELECTRON_RENDERER_URL', value);
+  }
+}
+
 function makeEvent(frameUrl: string, isMainFrame = true) {
   const frame = { url: frameUrl } as unknown as Electron.WebFrameMain;
   return {
@@ -40,15 +50,11 @@ describe('isTrustedIpcSender', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockApp.isPackaged = false;
-    delete process.env.ELECTRON_RENDERER_URL;
+    setRendererUrl(undefined);
   });
 
   afterEach(() => {
-    if (originalRendererUrl === undefined) {
-      delete process.env.ELECTRON_RENDERER_URL;
-    } else {
-      process.env.ELECTRON_RENDERER_URL = originalRendererUrl;
-    }
+    setRendererUrl(originalRendererUrl);
   });
 
   it('rejects a null senderFrame', () => {
@@ -68,7 +74,7 @@ describe('isTrustedIpcSender', () => {
 
   it('rejects the dev-server origin when packaged, even with the env var set', () => {
     mockApp.isPackaged = true;
-    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+    setRendererUrl('http://localhost:5173');
     expect(isTrustedIpcSender(makeEvent('http://localhost:5173/'))).toBe(false);
   });
 
@@ -77,12 +83,12 @@ describe('isTrustedIpcSender', () => {
   });
 
   it('rejects a different origin than the dev server in dev', () => {
-    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+    setRendererUrl('http://localhost:5173');
     expect(isTrustedIpcSender(makeEvent('http://evil.example:5173/'))).toBe(false);
   });
 
   it('accepts the dev-server origin in dev', () => {
-    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+    setRendererUrl('http://localhost:5173');
     expect(isTrustedIpcSender(makeEvent('http://localhost:5173/index.html'))).toBe(true);
   });
 
@@ -107,7 +113,7 @@ describe('assertTrustedIpcSender', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockApp.isPackaged = true;
-    delete process.env.ELECTRON_RENDERER_URL;
+    setRendererUrl(undefined);
   });
 
   it('returns true and stays silent for trusted senders', () => {

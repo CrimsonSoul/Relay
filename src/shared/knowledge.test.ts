@@ -489,9 +489,9 @@ describe('knowledge contracts', () => {
 
   it('normalizes metadata-only management snapshots without exposing PDF fields', () => {
     const document = normalizeKnowledgeDocumentRecord(validRecord)!;
-    const safeDocument: typeof document & { pdf?: string; outline?: unknown[] } = { ...document };
-    delete safeDocument.pdf;
-    delete safeDocument.outline;
+    // Management snapshots carry metadata only: drop the PDF payload and outline.
+    // eslint-disable-next-line sonarjs/no-unused-vars -- destructured to omit payload fields
+    const { pdf: _pdf, outline: _outline, ...safeDocument } = document;
     const snapshot = normalizeKnowledgeManagementSnapshot({
       mode: 'managed',
       categories: [category('Operations', 100)],

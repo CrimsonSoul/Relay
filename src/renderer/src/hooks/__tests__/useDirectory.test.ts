@@ -15,14 +15,17 @@ vi.mock('../../utils/logger', () => ({
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
 
-const makeContact = (email: string, name?: string, title?: string): Contact => ({
-  name: name || email.split('@')[0],
-  email,
-  phone: '',
-  title: title || '',
-  _searchString: `${name || email.split('@')[0]} ${email} ${title || ''}`.toLowerCase(),
-  raw: {},
-});
+const makeContact = (email: string, name?: string, title?: string): Contact => {
+  const displayName = name || email.split('@')[0] || email;
+  return {
+    name: displayName,
+    email,
+    phone: '',
+    title: title || '',
+    _searchString: `${displayName} ${email} ${title || ''}`.toLowerCase(),
+    raw: {},
+  };
+};
 
 const makeGroup = (id: string, name: string, emails: string[]): BridgeGroup => ({
   id,
@@ -33,8 +36,9 @@ const makeGroup = (id: string, name: string, emails: string[]): BridgeGroup => (
 });
 
 describe('useDirectory', () => {
+  const alice = makeContact('alice@test.com', 'Alice Adams', 'Engineer');
   const contacts = [
-    makeContact('alice@test.com', 'Alice Adams', 'Engineer'),
+    alice,
     makeContact('bob@test.com', 'Bob Baker', 'Manager'),
     makeContact('charlie@test.com', 'Charlie Clark', 'Director'),
   ];
@@ -46,6 +50,10 @@ describe('useDirectory', () => {
 
   const onAddToAssembler = vi.fn();
 
+  // NOTE: useDirectory never reads globalThis.api, and neither addContact nor
+  // removeContact exists on BridgeAPI — this stub is inert. It is installed via
+  // defineProperty so the partial shape does not have to be cast over the real
+  // BridgeAPI declaration.
   const mockApi = {
     addContact: vi.fn(),
     removeContact: vi.fn(),
@@ -54,7 +62,11 @@ describe('useDirectory', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'api', {
+      value: mockApi,
+      configurable: true,
+      writable: true,
+    });
   });
 
   afterEach(() => {
@@ -75,7 +87,7 @@ describe('useDirectory', () => {
     });
 
     expect(result.current.filtered).toHaveLength(1);
-    expect(result.current.filtered[0].email).toBe('alice@test.com');
+    expect(result.current.filtered[0]?.email).toBe('alice@test.com');
   });
 
   it('search is case insensitive', () => {
@@ -84,7 +96,7 @@ describe('useDirectory', () => {
     });
 
     expect(result.current.filtered).toHaveLength(1);
-    expect(result.current.filtered[0].email).toBe('bob@test.com');
+    expect(result.current.filtered[0]?.email).toBe('bob@test.com');
   });
 
   it('sorts by name ascending by default', () => {
@@ -155,10 +167,10 @@ describe('useDirectory', () => {
     });
 
     act(() => {
-      result.current.handleAddWrapper(contacts[0]);
+      result.current.handleAddWrapper(alice);
     });
 
-    expect(onAddToAssembler).toHaveBeenCalledWith(contacts[0]);
+    expect(onAddToAssembler).toHaveBeenCalledWith(alice);
     expect(result.current.recentlyAdded.has('alice@test.com')).toBe(true);
 
     // Auto-clears after RECENTLY_ADDED_RESET_MS (2000ms)
@@ -175,7 +187,7 @@ describe('useDirectory', () => {
     });
 
     act(() => {
-      result.current.handleAddWrapper(contacts[0]);
+      result.current.handleAddWrapper(alice);
     });
 
     // Advance 1500ms (still within 2000ms timeout)
@@ -186,7 +198,7 @@ describe('useDirectory', () => {
 
     // Re-add the same contact — should reset timeout
     act(() => {
-      result.current.handleAddWrapper(contacts[0]);
+      result.current.handleAddWrapper(alice);
     });
 
     // Advance 1500ms more — first timeout would have fired, but second hasn't

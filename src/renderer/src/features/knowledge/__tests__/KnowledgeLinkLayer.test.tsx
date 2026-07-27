@@ -17,6 +17,18 @@ function viewport(convertToViewportPoint = vi.fn((x: number, y: number) => [x, y
   return { convertToViewportPoint } as never;
 }
 
+function extractSingleLinkItem(annotation: unknown): KnowledgeLinkItem {
+  const [item] = extractKnowledgeLinkItems([annotation]);
+  if (!item) throw new Error('Expected the annotation to yield exactly one link item');
+  return item;
+}
+
+function assertButton(node: HTMLElement | undefined): asserts node is HTMLButtonElement {
+  if (!(node instanceof HTMLButtonElement)) {
+    throw new Error('Expected the rendered link target to be a button element');
+  }
+}
+
 function renderLayer(
   items: readonly KnowledgeLinkItem[],
   options: {
@@ -137,14 +149,12 @@ describe('extractKnowledgeLinkItems', () => {
 
 describe('KnowledgeLinkLayer', () => {
   it('reinterprets a flattened HTTPS URL only through the resolver until activation', () => {
-    const [item] = extractKnowledgeLinkItems([
-      {
-        annotationType: AnnotationType.LINK,
-        id: 'flattened-web',
-        rect: [0, 0, 10, 10],
-        unsafeUrl: 'https://example.com/runbook',
-      },
-    ]);
+    const item = extractSingleLinkItem({
+      annotationType: AnnotationType.LINK,
+      id: 'flattened-web',
+      rect: [0, 0, 10, 10],
+      unsafeUrl: 'https://example.com/runbook',
+    });
     const resolvedLink: KnowledgeResolvedLink = {
       kind: 'web',
       url: 'https://example.com/runbook',
@@ -167,14 +177,12 @@ describe('KnowledgeLinkLayer', () => {
 
   it('passes a flattened PDF path only to the Knowledge resolver until activation', () => {
     const flattenedPath = 'C:\\Author\\Runbooks\\Linked Guide.pdf';
-    const [item] = extractKnowledgeLinkItems([
-      {
-        annotationType: AnnotationType.LINK,
-        id: 'flattened-pdf',
-        rect: [0, 0, 10, 10],
-        unsafeUrl: flattenedPath,
-      },
-    ]);
+    const item = extractSingleLinkItem({
+      annotationType: AnnotationType.LINK,
+      id: 'flattened-pdf',
+      rect: [0, 0, 10, 10],
+      unsafeUrl: flattenedPath,
+    });
     const resolvedLink: KnowledgeResolvedLink = {
       kind: 'knowledge-document',
       documentId: 'linked-guide',
@@ -196,14 +204,12 @@ describe('KnowledgeLinkLayer', () => {
   });
 
   it('keeps a flattened javascript URL non-focusable and inert', () => {
-    const [item] = extractKnowledgeLinkItems([
-      {
-        annotationType: AnnotationType.LINK,
-        id: 'flattened-javascript',
-        rect: [0, 0, 10, 10],
-        unsafeUrl: 'javascript:alert(1)',
-      },
-    ]);
+    const item = extractSingleLinkItem({
+      annotationType: AnnotationType.LINK,
+      id: 'flattened-javascript',
+      rect: [0, 0, 10, 10],
+      unsafeUrl: 'javascript:alert(1)',
+    });
     const resolveUrl = vi.fn((): KnowledgeResolvedLink => ({
       kind: 'unavailable',
       reason: 'unsupported',
@@ -222,9 +228,13 @@ describe('KnowledgeLinkLayer', () => {
       id: 'current',
       sourceKey: 'General/Current.pdf',
       category: 'General',
+      categoryId: 'category-general',
+      documentType: 'sop',
       title: 'Current guide',
+      displayTitle: 'Current guide',
       fileName: 'Current.pdf',
       pdf: 'Current.pdf',
+      cover: null,
       checksum: 'a'.repeat(64),
       byteSize: 1024,
       pageCount: 1,
@@ -232,6 +242,19 @@ describe('KnowledgeLinkLayer', () => {
       outlineSource: 'none',
       sourceModifiedAt: '2026-07-14T12:00:00.000Z',
       indexedAt: '2026-07-14T12:00:00.000Z',
+      searchIndexState: 'ready',
+      searchIndexChecksum: 'a'.repeat(64),
+      searchIndexVersion: 1,
+      searchIndexedAt: '2026-07-14T12:00:00.000Z',
+      searchIndexError: null,
+      lifecycleState: 'active',
+      revision: 1,
+      publishedByAccountId: 'publisher',
+      publishedByName: 'Paris',
+      publishedAt: '2026-07-14T12:00:00.000Z',
+      trashedByAccountId: null,
+      trashedByName: null,
+      trashedAt: null,
       created: '2026-07-14T12:00:00.000Z',
       updated: '2026-07-14T12:00:00.000Z',
     } satisfies KnowledgeDocumentRecord;
@@ -393,8 +416,10 @@ describe('KnowledgeLinkLayer', () => {
 
     expect(destinationButton).toBeInstanceOf(HTMLButtonElement);
     expect(webButton).toBeInstanceOf(HTMLButtonElement);
-    expect((destinationButton as HTMLButtonElement).type).toBe('button');
-    expect((webButton as HTMLButtonElement).type).toBe('button');
+    assertButton(destinationButton);
+    assertButton(webButton);
+    expect(destinationButton.type).toBe('button');
+    expect(webButton.type).toBe('button');
     fireEvent.click(destinationButton);
     fireEvent.click(webButton);
 
@@ -416,16 +441,26 @@ describe('KnowledgeLinkLayer', () => {
         { id: 'ambiguous', rect: [0, 20, 10, 30], action: { kind: 'url', url: 'ambiguous.pdf' } },
       ],
       {
-        resolveUrl: (url) =>
-          ({ 'missing.pdf': missing, 'blocked.exe': unsupported, 'ambiguous.pdf': ambiguous })[url],
+        resolveUrl: (url) => {
+          const link = {
+            'missing.pdf': missing,
+            'blocked.exe': unsupported,
+            'ambiguous.pdf': ambiguous,
+          }[url];
+          if (!link) throw new Error(`Unexpected link URL passed to the resolver: ${url}`);
+          return link;
+        },
         onActivateResolvedLink,
       },
     );
 
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(2);
-    fireEvent.click(buttons[0]);
-    fireEvent.click(buttons[1]);
+    const [missingButton, ambiguousButton] = buttons;
+    assertButton(missingButton);
+    assertButton(ambiguousButton);
+    fireEvent.click(missingButton);
+    fireEvent.click(ambiguousButton);
     expect(onActivateResolvedLink).toHaveBeenNthCalledWith(1, missing);
     expect(onActivateResolvedLink).toHaveBeenNthCalledWith(2, ambiguous);
   });

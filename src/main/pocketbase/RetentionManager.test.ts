@@ -54,7 +54,7 @@ describe('RetentionManager', () => {
       await manager.runCleanup();
 
       // Each of the three cleaners calls getFullList at least once
-      const collections = pb.collection.mock.calls.map((c) => c[0]);
+      const collections = vi.mocked(pb.collection).mock.calls.map(([name]) => name);
       expect(collections).toContain('bridge_history');
       expect(collections).toContain('alert_history');
       expect(collections).toContain('conflict_log');
