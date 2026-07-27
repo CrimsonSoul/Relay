@@ -42,7 +42,10 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   const handleNameChange = (val: string) => {
     const nextRow = { ...row, name: val };
     const match = contacts.find((c) => c.name.toLowerCase() === val.toLowerCase());
-    if (match?.phone) nextRow.contact = formatPhoneNumber(match.phone);
+    // A directory match always takes over the phone field — including when the
+    // contact has no number on record. Leaving the old value would pair the new
+    // person's name with the previous person's number on the on-call board.
+    if (match) nextRow.contact = match.phone ? formatPhoneNumber(match.phone) : '';
     onUpdate(nextRow);
   };
 

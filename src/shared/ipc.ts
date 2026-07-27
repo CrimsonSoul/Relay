@@ -86,6 +86,7 @@ export type PrivilegedIpcError =
   | 'offline'
   | 'pairing-required'
   | 'conflict'
+  | 'rate-limited'
   | 'approval-required'
   | 'server-error';
 

@@ -18,6 +18,9 @@ import {
 
 const RECONCILIATION_INTERVAL_MS = 5 * 60_000;
 const SNOOZE_MS = 10 * 60_000;
+/** Local quiet period after a failed reminder write — long enough to free the
+ *  UI, short enough that the still-pending reminder returns on its own. */
+const FAILED_ACTION_RETRY_MS = 60_000;
 const FALLBACK_ALARM_REPEAT_MS = 1_500;
 const REMINDER_ALARM_GAIN = 0.38;
 const REMINDER_ALARM_PULSES = [
@@ -164,6 +167,24 @@ export function AlertReminderManager() {
     mutedUntilRef.current.set(id, Number.POSITIVE_INFINITY);
   }, []);
 
+  /**
+   * Release the alarm after a write fails. Without this, a reminder action that
+   * cannot reach the server (reconnecting, offline, auth-failed) leaves the
+   * looping audio playing behind a focus-trapped dialog with no way out.
+   * The reminder is deliberately *not* marked resolved — it stays pending and
+   * re-alarms after a short quiet period, so nothing is silently dropped.
+   */
+  const releaseAlarmAfterFailure = useCallback(
+    (id: string, message: string) => {
+      stopReminderAlarm();
+      chimedIdsRef.current.delete(id);
+      mutedUntilRef.current.set(id, Date.now() + FAILED_ACTION_RETRY_MS);
+      setCurrent(null);
+      showToast(message, 'error');
+    },
+    [showToast, stopReminderAlarm],
+  );
+
   const startRepeatingFallbackAlarm = useCallback(() => {
     if (fallbackIntervalRef.current !== null) return;
 
@@ -297,7 +318,10 @@ export function AlertReminderManager() {
       setCurrent(null);
       refreshDue();
     } catch {
-      showToast('Failed to snooze alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Could not snooze the alarm — it will sound again shortly.',
+      );
     }
   };
 
@@ -312,7 +336,10 @@ export function AlertReminderManager() {
       setCurrent(null);
       refreshDue();
     } catch {
-      showToast('Failed to dismiss alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Alert loaded, but the alarm could not be dismissed — it will sound again shortly.',
+      );
     }
   };
 
@@ -326,7 +353,10 @@ export function AlertReminderManager() {
       setCurrent(null);
       refreshDue();
     } catch {
-      showToast('Failed to complete alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Could not mark the alarm done — it will sound again shortly.',
+      );
     }
   };
 
@@ -340,7 +370,10 @@ export function AlertReminderManager() {
       setCurrent(null);
       refreshDue();
     } catch {
-      showToast('Failed to dismiss alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Could not dismiss the alarm — it will sound again shortly.',
+      );
     }
   };
 

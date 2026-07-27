@@ -264,6 +264,7 @@ const PrivilegedIpcErrorSchema = z.enum([
   'offline',
   'pairing-required',
   'conflict',
+  'rate-limited',
   'approval-required',
   'server-error',
 ]);

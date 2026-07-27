@@ -158,6 +158,16 @@ export function createPrivilegedRateLimiters() {
       idleTtlMs: 30 * 60 * 1_000,
       name: 'PrivilegedLogin',
     }),
+    // Reauthentication re-checks the account password to mint the proof that
+    // gates destructive privileged commands, so it is as guessable as login and
+    // needs the same kind of ceiling. Budget matches the Relay Web route
+    // (10/min) so the IPC and HTTP surfaces cannot be played against each other.
+    reauthentication: new KeyedRateLimiter({
+      maxTokens: 10,
+      refillRate: 10 / 60,
+      idleTtlMs: 15 * 60 * 1_000,
+      name: 'PrivilegedReauthentication',
+    }),
     pairingVerification: new KeyedRateLimiter({
       maxTokens: 5,
       refillRate: 5 / (10 * 60),

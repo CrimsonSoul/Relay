@@ -316,4 +316,67 @@ describe('useDirectoryContacts', () => {
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('alice@test.com');
   });
+
+  it('renames the existing record when the email changes, rather than duplicating', async () => {
+    // clearAllMocks() resets calls but not implementations, so pin these here.
+    mockUpdateContact.mockResolvedValue({});
+    mockAddContact.mockResolvedValue({});
+    mockFindContactByEmail.mockResolvedValue({
+      id: 'rec-alice',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '5551234567',
+      title: 'Engineer',
+    });
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    act(() => {
+      result.current.setEditingContact(contacts[0]); // editing alice@test.com
+    });
+
+    await act(async () => {
+      await result.current.handleUpdateContact({
+        name: 'Alice',
+        email: 'alice.renamed@test.com',
+        phone: '5551234567',
+        title: 'Engineer',
+      });
+    });
+
+    // Looked up by the address the record actually has, not the new one.
+    expect(mockFindContactByEmail).toHaveBeenCalledWith('alice@test.com');
+    expect(mockAddContact).not.toHaveBeenCalled();
+    expect(mockUpdateContact).toHaveBeenCalledWith(
+      'rec-alice',
+      expect.objectContaining({ email: 'alice.renamed@test.com' }),
+    );
+  });
+
+  it('persists a cleared phone and title instead of reverting to the stored values', async () => {
+    mockUpdateContact.mockResolvedValue({});
+    mockFindContactByEmail.mockResolvedValue({
+      id: 'rec-alice',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '5551234567',
+      title: 'Engineer',
+    });
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    await act(async () => {
+      await result.current.handleUpdateContact({
+        name: 'Alice',
+        email: 'alice@test.com',
+        phone: '',
+        title: '',
+      });
+    });
+
+    expect(mockUpdateContact).toHaveBeenCalledWith(
+      'rec-alice',
+      expect.objectContaining({ phone: '', title: '' }),
+    );
+  });
 });

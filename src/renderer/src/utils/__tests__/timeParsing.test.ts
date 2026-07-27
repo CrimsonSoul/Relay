@@ -110,6 +110,39 @@ describe('timeParsing - isTimeWindowActive', () => {
     it('handles wrap-around day range (fri-sun) on monday', () => {
       expect(isTimeWindowActive('fri-sun', monday10am)).toBe(false);
     });
+
+    it('treats full day names in a range like their abbreviations', () => {
+      // A range written out in full must cover the interior days, not just the
+      // two endpoints — otherwise a weekday team reads as off-duty midweek.
+      expect(isTimeWindowActive('monday-friday', monday10am)).toBe(true);
+      expect(isTimeWindowActive('monday-friday', wednesday2pm)).toBe(true);
+      expect(isTimeWindowActive('monday-friday', friday4pm)).toBe(true);
+      expect(isTimeWindowActive('monday-friday', saturday8pm)).toBe(false);
+      expect(isTimeWindowActive('monday-friday', sunday3am)).toBe(false);
+    });
+
+    it('covers every full day name in a range', () => {
+      expect(isTimeWindowActive('tuesday-thursday', wednesday2pm)).toBe(true);
+      expect(isTimeWindowActive('tuesday-thursday', monday10am)).toBe(false);
+      expect(isTimeWindowActive('saturday-sunday', saturday8pm)).toBe(true);
+      expect(isTimeWindowActive('wednesday-wednesday', wednesday2pm)).toBe(true);
+    });
+
+    it('handles mixed full and abbreviated day ranges', () => {
+      expect(isTimeWindowActive('monday-fri', wednesday2pm)).toBe(true);
+      expect(isTimeWindowActive('mon-friday', wednesday2pm)).toBe(true);
+    });
+
+    it('handles full day names alongside a time range', () => {
+      expect(isTimeWindowActive('Monday-Friday 8am-5pm', wednesday2pm)).toBe(true);
+      expect(isTimeWindowActive('Monday-Friday 8am-5pm', friday6pm)).toBe(false);
+    });
+
+    it('accepts "to" and "through" as day-range separators', () => {
+      expect(isTimeWindowActive('monday to friday', wednesday2pm)).toBe(true);
+      expect(isTimeWindowActive('mon through fri', wednesday2pm)).toBe(true);
+      expect(isTimeWindowActive('monday to friday', saturday8pm)).toBe(false);
+    });
   });
 
   describe('combined day and time', () => {

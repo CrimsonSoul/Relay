@@ -196,7 +196,47 @@ describe('SortableEditRow', () => {
     });
 
     expect(formatPhoneNumber).not.toHaveBeenCalled();
-    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ name: 'No Phone' }));
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'No Phone', contact: '' }),
+    );
+  });
+
+  it('clears the previous number when the newly picked contact has no phone', () => {
+    // The board must never show one person's name beside another's number.
+    const contactsNoPhone = [
+      { id: 'c3', name: 'No Phone', phone: '', email: 'no@test.com', title: 'Intern' },
+    ];
+
+    render(
+      <SortableEditRow
+        row={{ ...mockRow, name: 'John Doe', contact: '5551234567' }}
+        contacts={contactsNoPhone}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('combobox-select-contact'), {
+      target: { value: 'No Phone' },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'No Phone', contact: '' }),
+    );
+  });
+
+  it('leaves a hand-entered number alone when the name matches no contact', () => {
+    // Only a directory match may overwrite the phone; anything else (free text,
+    // or clearing the name) must leave a manually entered number untouched.
+    renderRow({ name: 'John Doe', contact: '5551112222' });
+
+    fireEvent.change(screen.getByTestId('combobox-select-contact'), {
+      target: { value: '' },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '', contact: '5551112222' }),
+    );
   });
 
   it('calls onUpdate when phone input changes', () => {

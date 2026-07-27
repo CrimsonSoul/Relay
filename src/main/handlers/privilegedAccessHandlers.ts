@@ -64,6 +64,7 @@ export type PrivilegedAccessHandlerOptions = {
   broadcast?: (channel: string, value: unknown) => void;
   subscribeSessionChanged?: (listener: (view: unknown) => void) => () => void;
   loginLimiter?: KeyedRateLimiter;
+  reauthenticationLimiter?: KeyedRateLimiter;
   getAccountManager?: () => Pick<
     PrivilegedAccountManager,
     'setupInitialAdministrator' | 'setupCredential'
@@ -113,6 +114,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     broadcast = broadcastToAllWindows,
     subscribeSessionChanged = () => () => undefined,
     loginLimiter = privilegedRateLimiters.login,
+    reauthenticationLimiter = privilegedRateLimiters.reauthentication,
     getAccountManager = () => null,
     getApprovalCodes = () => null,
     subscribeApprovalRequestsChanged = () => () => undefined,
@@ -132,7 +134,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     const runtime = getRuntime();
     if (!runtime) return failure('offline');
     const limiterKey = `${parsed.data.username}:${runtime.getView().deviceId ?? 'unpaired'}`;
-    if (!loginLimiter.tryConsume(limiterKey).allowed) return failure('conflict');
+    if (!loginLimiter.tryConsume(limiterKey).allowed) return failure('rate-limited');
     try {
       return success(publicView(await runtime.login(parsed.data)));
     } catch (error) {
@@ -156,6 +158,11 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     if (!parsed.success) return failure('invalid-input');
     const runtime = getRuntime();
     if (!runtime) return failure('offline');
+    // Without a ceiling here the reauth proof that gates destructive commands
+    // could be brute-forced at IPC speed by an already-signed-in session.
+    const view = runtime.getView();
+    const reauthKey = `${view.accountId ?? 'unknown'}:${view.deviceId ?? 'unpaired'}`;
+    if (!reauthenticationLimiter.tryConsume(reauthKey).allowed) return failure('rate-limited');
     try {
       return success(await runtime.reauthenticate(parsed.data.password));
     } catch (error) {
