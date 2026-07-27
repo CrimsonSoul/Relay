@@ -300,6 +300,7 @@ function safeStoredError(value: PrivilegedCommandError | null): PrivilegedComman
     'expired',
     'replayed',
     'conflict',
+    'rate-limited',
     'server-error',
   ]);
   return value && allowed.has(value) ? value : 'server-error';
@@ -494,7 +495,9 @@ export class PrivilegedCommandProcessor {
       ? this.knowledgeUploadCommandLimiter
       : this.commandLimiter;
     if (!limiter.tryConsume(limiterKey).allowed) {
-      return { ok: false, error: 'conflict' };
+      // Not a conflict: nothing changed underneath the caller, so prompting a
+      // refresh-and-retry would only spend more of an already-empty budget.
+      return { ok: false, error: 'rate-limited' };
     }
     return {
       ok: true,

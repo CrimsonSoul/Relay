@@ -18,6 +18,7 @@ const SAFE_ERRORS = {
   expired: 'The request expired. Try again.',
   replayed: 'Relay could not safely repeat that request.',
   conflict: 'The server state changed. Review the refreshed information and try again.',
+  'rate-limited': 'Too many administration requests. Wait a moment and try again.',
   'server-error': 'Relay could not complete the administration request.',
 } as const;
 

@@ -288,14 +288,15 @@ describe('useServers', () => {
     expect(mockedPbDeleteServer).not.toHaveBeenCalled();
   });
 
-  it('deleteServer catches errors', async () => {
+  it('deleteServer propagates errors so the caller can report them', async () => {
+    // A rejected delete emits no realtime event, so swallowing here made a
+    // failure indistinguishable from a success — the row just stayed put.
     mockedPbDeleteServer.mockRejectedValueOnce(new Error('fail'));
     const { result } = renderHook(() => useServers([], []));
 
-    // Should not throw
-    await act(async () => {
-      await result.current.deleteServer(makeServer({ raw: { id: 'srv-fail' } }));
-    });
+    await expect(
+      result.current.deleteServer(makeServer({ raw: { id: 'srv-fail' } })),
+    ).rejects.toThrow('fail');
 
     expect(mockedPbDeleteServer).toHaveBeenCalled();
   });

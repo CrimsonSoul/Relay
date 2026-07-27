@@ -377,6 +377,27 @@ describe('PrivilegedCommandProcessor', () => {
     expect(commandLimiter.tryConsume).not.toHaveBeenCalled();
   });
 
+  it('reports a throttled command as rate-limited rather than a conflict', async () => {
+    // 'conflict' tells the admin the server state changed and to refresh and
+    // retry — which spends more of an already-empty budget. Nothing changed
+    // underneath them; they just need to wait.
+    const knowledgeUploadCommandLimiter = { tryConsume: vi.fn(() => ({ allowed: false })) };
+    const processor = createProcessor({
+      knowledgeUploadCommandLimiter: knowledgeUploadCommandLimiter as never,
+    });
+    processor.registerCommand(
+      'knowledge.upload.status',
+      'knowledge.manage',
+      vi.fn(async () => ({ batch: {}, uploads: [] })),
+    );
+
+    await expect(
+      processor.process(
+        envelope({ command: 'knowledge.upload.status', payload: { batchId: 'batch-1' } }),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: 'rate-limited' });
+  });
+
   it('verifies the registered fingerprint and ECDSA signature before claiming the request', async () => {
     const processor = createProcessor();
     vi.mocked(repository.getDevice).mockResolvedValueOnce({

@@ -124,14 +124,15 @@ describe('useServers', () => {
     expect(result.current.editingServer).toBeUndefined();
   });
 
-  it('swallows server delete errors', async () => {
+  it('propagates server delete errors so the caller can report them', async () => {
+    // Previously swallowed here, which made a failed delete look identical to a
+    // successful one: no realtime event fires for a rejected delete, so the row
+    // simply stayed in the list with no message.
     mockDeleteServer.mockRejectedValue(new Error('boom'));
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
-    await act(async () => {
-      await result.current.deleteServer(servers[0]);
-    });
+    await expect(result.current.deleteServer(servers[0])).rejects.toThrow('boom');
 
     expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
   });

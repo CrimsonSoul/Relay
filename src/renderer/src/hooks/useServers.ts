@@ -81,13 +81,13 @@ export function useServers(servers: Server[], contacts: Contact[], searchQuery =
   }, []);
 
   const deleteServer = useCallback(async (server: Server) => {
-    try {
-      const serverId = server.raw?.id;
-      if (serverId) {
-        await pbDeleteServer(serverId);
-      }
-    } catch {
-      // Errors surface via useCollection realtime updates
+    // Deliberately not swallowed. A *rejected* delete produces no realtime
+    // event, so catching here made a failure look exactly like a success — the
+    // row simply stayed in the list. The caller's confirmation dialog reports
+    // the rejection instead.
+    const serverId = server.raw?.id;
+    if (serverId) {
+      await pbDeleteServer(serverId);
     }
   }, []);
 

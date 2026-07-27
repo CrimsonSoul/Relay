@@ -207,6 +207,9 @@ export type PrivilegedCommandError =
   | 'expired'
   | 'replayed'
   | 'conflict'
+  // Distinct from 'conflict': a throttled request has not lost a race, so
+  // telling the admin to refresh and retry only spends more of the budget.
+  | 'rate-limited'
   | 'server-error';
 
 export type PrivilegedCommandResult<T = unknown> =

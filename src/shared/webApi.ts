@@ -338,6 +338,7 @@ export const WebPrivilegedCommandResultSchema: z.ZodType<PrivilegedCommandResult
           'expired',
           'replayed',
           'conflict',
+          'rate-limited',
           'server-error',
         ]),
         message: z.string().max(2_000).optional(),
