@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockGetFullList = vi.fn();
+// Typed with the argument pb.backups.create actually takes, so the recorded
+// call carries the backup name the assertion below reads.
+const mockBackupCreate = vi.fn(async (_name: string) => undefined);
 const mockCreate = vi.fn();
 const mockDelete = vi.fn();
 const mockGetOne = vi.fn();
@@ -77,6 +80,7 @@ const mockPb = {
   },
   collection: mockPbCollection,
   createBatch: mockCreateBatch,
+  backups: { create: mockBackupCreate },
 } as never;
 
 import {
@@ -90,6 +94,7 @@ beforeEach(() => {
   // clearAllMocks keeps implementations, so collection-level stubs have to be
   // reset explicitly or a fixture leaks into the next test.
   mockGetFullList.mockReset();
+  mockBackupCreate.mockReset().mockResolvedValue(undefined);
   mockGetOne.mockReset();
   mockUpdate.mockReset();
   mockDelete.mockReset();
@@ -1131,6 +1136,49 @@ describe('ensureCollections', () => {
         ({ name }) => name === 'ownerAccountId',
       ),
     ).toMatchObject({ id: 'field_ownerAccountId', required: true });
+  });
+
+  it('snapshots the workspace before converting a legacy roster', async () => {
+    // The conversion deletes relay_operators and then patches the columns it just
+    // populated. Nothing else backs the database up first: the schedule that calls
+    // backupIfDue() only starts after ensureCollections returns.
+    mockGetFullList.mockResolvedValue([
+      { id: 'roster-col', name: 'relay_operators' },
+      { id: 'accounts-col', name: 'relay_privileged_accounts' },
+    ]);
+    mockCreate.mockResolvedValue({ id: 'created-col' });
+
+    await ensureCollections(mockPb).catch(() => undefined);
+
+    expect(mockBackupCreate).toHaveBeenCalledOnce();
+    const [backupName] = mockBackupCreate.mock.lastCall ?? [];
+    expect(backupName).toMatch(/^pre_role_migration_/);
+  });
+
+  it('refuses to convert a legacy roster it could not back up', async () => {
+    // Proceeding without a snapshot would make an irreversible migration
+    // unrecoverable, so blocking startup is the lesser harm.
+    mockGetFullList.mockResolvedValue([
+      { id: 'roster-col', name: 'relay_operators' },
+      { id: 'accounts-col', name: 'relay_privileged_accounts' },
+    ]);
+    mockCreate.mockResolvedValue({ id: 'created-col' });
+    mockBackupCreate.mockRejectedValue(new Error('no space left on device'));
+
+    await expect(ensureCollections(mockPb)).rejects.toThrow(/could not back up the workspace/i);
+
+    // The roster is the only record of who the operators were; it must survive.
+    expect(mockDelete).not.toHaveBeenCalledWith('roster-col');
+    expect(mockCollectionDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not snapshot on an install that has no legacy roster', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'contacts-id', name: 'contacts' }]);
+    mockCreate.mockResolvedValue({ id: 'created-col' });
+
+    await ensureCollections(mockPb).catch(() => undefined);
+
+    expect(mockBackupCreate).not.toHaveBeenCalled();
   });
 
   it('does not reapply the compatibility auth identity after the roster is retired', async () => {

@@ -1777,6 +1777,64 @@ export async function ensureKnowledgeSearchCollections(
 }
 
 /**
+ * Snapshot the database immediately before the one-time legacy role conversion.
+ *
+ * The conversion deletes `relay_operators` — the only record of who the
+ * operators were — and then patches the very columns it just populated. That
+ * patch has been wrong before: it re-sent already-created fields without the ids
+ * PocketBase assigned, dropping and recreating the username column *after* the
+ * roster was gone. Nothing else backs the database up first; the maintenance
+ * schedule that calls `backupIfDue()` only starts once `ensureCollections`
+ * returns, so a failure here had nothing to restore from.
+ *
+ * This runs at most once per install — only while a legacy roster is present —
+ * and refuses to continue if the snapshot cannot be written. Blocking startup is
+ * the lesser harm: the alternative is an irreversible migration with no way back.
+ */
+async function snapshotBeforeRoleAccountMigration(pb: PocketBase): Promise<void> {
+  const name = `pre_role_migration_${new Date().toISOString().replaceAll(/[:.]/g, '-')}.zip`;
+  try {
+    await pb.backups.create(name, { requestKey: null });
+    logger.info('Captured pre-migration backup', { name });
+  } catch (error) {
+    logger.error('Could not capture the pre-migration backup', { error, name });
+    throw new Error(
+      'Relay could not back up the workspace before upgrading its accounts, so the upgrade was ' +
+        'stopped. Free disk space in the Relay data folder and restart Relay to try again.',
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * Confirm the conversion's own output survived the final-definition patch.
+ *
+ * The defect this guards against was silent: the accounts were still there, just
+ * with empty usernames, so nobody could sign in and nothing said why. Checking
+ * here turns that into a loud failure next to the backup taken moments earlier,
+ * while the operator still has an obvious way back.
+ */
+async function assertMigratedUsernamesSurvived(pb: PocketBase): Promise<void> {
+  const accounts = await pb
+    .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+    .getFullList<{ id: string; username?: unknown }>({ requestKey: null });
+  const blank = accounts.filter(
+    (account) => typeof account.username !== 'string' || account.username.trim() === '',
+  );
+  if (blank.length === 0) return;
+
+  logger.error('Account upgrade left usernames empty', {
+    blankCount: blank.length,
+    totalCount: accounts.length,
+  });
+  throw new Error(
+    `Relay upgraded its accounts but ${blank.length} of ${accounts.length} lost their sign-in ` +
+      'name, so startup was stopped before the change could be used. Restore the ' +
+      'pre_role_migration backup from the Relay data folder and report this.',
+  );
+}
+
+/**
  * Ensure all required collections exist in PocketBase.
  * Creates missing collections, patches required fields and API rules, and warns about
  * unmanaged collections without deleting them.
@@ -1791,6 +1849,9 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
   }
 
   const existing = new Set(allCols.map((c) => c.name));
+  // Before the first schema write, not merely before the conversion: the
+  // compatibility patch below already reshapes a legacy database.
+  if (existing.has(LEGACY_ROSTER_COLLECTION)) await snapshotBeforeRoleAccountMigration(pb);
   const collectionIds = new Map(allCols.map((collection) => [collection.name, collection.id]));
   await repairDuplicateBoardSettings(pb, existing);
   const bootstrapDefinitions = COLLECTIONS.map((definition) => {
@@ -1842,6 +1903,7 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
       }
     }
     if (migration.status === 'migrated') {
+      await assertMigratedUsernamesSurvived(pb);
       allCols = allCols.filter(
         ({ name }) => name !== LEGACY_ROSTER_COLLECTION && name !== LEGACY_LOGIN_ROSTER_VIEW,
       );
