@@ -28,6 +28,7 @@ import { createPrivilegedRateLimiters, type KeyedRateLimiter } from '../rateLimi
 const IN_PROGRESS_RECOVERY_MS = 2 * 60 * 1_000;
 const REAUTHENTICATION_PROOF_MS = 5 * 60 * 1_000;
 const MAX_SAFE_RESULT_BYTES = 16 * 1_024;
+const MAX_SAFE_MESSAGE_LENGTH = 200;
 
 export type PrivilegedCommandClaim = {
   requestId: string;
@@ -158,8 +159,16 @@ export class PrivilegedCommandAuthorizationError extends Error {
 }
 
 export class PrivilegedCommandSafeError extends Error {
-  constructor(readonly code: 'invalid-request' | 'insufficient-storage' | 'duplicate-file-name') {
-    super('The privileged command could not be completed safely.');
+  constructor(
+    readonly code: 'invalid-request' | 'insufficient-storage' | 'duplicate-file-name',
+    /**
+     * Vetted explanation returned verbatim to the requesting client. Only pass a
+     * fixed string authored here; never server internals, record data, or caller
+     * input.
+     */
+    readonly safeMessage?: string,
+  ) {
+    super(safeMessage ?? 'The privileged command could not be completed safely.');
     this.name = 'PrivilegedCommandSafeError';
   }
 }
@@ -220,15 +229,19 @@ function errorResult(
   error: PrivilegedCommandError,
   requestId?: string,
   conflict?: { currentRevision: number },
+  safeMessage?: string,
 ): PrivilegedCommandResult<never> {
   const base = requestId ? { ok: false as const, requestId, error } : { ok: false as const, error };
-  return conflict
-    ? {
-        ...base,
-        message: 'Refresh administration data and try again.',
-        currentRevision: conflict.currentRevision,
-        refresh: true,
-      }
+  if (conflict) {
+    return {
+      ...base,
+      message: 'Refresh administration data and try again.',
+      currentRevision: conflict.currentRevision,
+      refresh: true,
+    };
+  }
+  return safeMessage && safeMessage.length <= MAX_SAFE_MESSAGE_LENGTH
+    ? { ...base, message: safeMessage }
     : base;
 }
 
@@ -665,7 +678,9 @@ export class PrivilegedCommandProcessor {
           safeError: error.code,
           completedAt: new Date(this.now()).toISOString(),
         });
-        return errorResult(error.code, command.requestId);
+        // The vetted reason travels with the result so the caller can say what
+        // actually blocked the change instead of a generic refusal.
+        return errorResult(error.code, command.requestId, undefined, error.safeMessage);
       }
       this.warnFailure(command.requestId, 'handler');
       await this.repository.completeCommand(command.requestId, {

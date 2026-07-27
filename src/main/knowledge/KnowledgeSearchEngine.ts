@@ -10,7 +10,6 @@ import {
   type KnowledgeSearchRequest,
   type KnowledgeSearchResponse,
   type KnowledgeSearchResult,
-  type KnowledgeSearchSourceRange,
 } from '@shared/knowledgeSearch';
 
 const TOKEN_PATTERN = /[\p{L}\p{N}][\p{L}\p{N}._:/-]*/gu;
@@ -44,7 +43,6 @@ type IndexedDocument = {
 type IndexedChunk = {
   record: KnowledgeSearchChunkRecord;
   document: IndexedDocument;
-  sourceRanges: KnowledgeSearchSourceRange[];
   fields: Pick<Record<SearchField, IndexedToken[]>, 'heading' | 'passage'>;
 };
 
@@ -80,7 +78,9 @@ type FieldAcceptance = {
 };
 
 type ScoredResult = {
-  result: KnowledgeSearchResult;
+  chunk: IndexedChunk;
+  highlight: { start: number; end: number };
+  result: Omit<KnowledgeSearchResult, 'excerpt'>;
   passageStart: number;
   passageEnd: number;
 };
@@ -223,14 +223,12 @@ function createIndexedChunk(
   document: IndexedDocument,
 ): IndexedChunk | null {
   if (record.checksum !== document.record.checksum) return null;
-  const normalized = normalizeKnowledgeSearchTextWithRanges(record.text);
-  if (normalized.text !== record.normalizedText) {
+  if (normalizeKnowledgeSearchText(record.text) !== record.normalizedText) {
     throw new Error(`Knowledge search chunk ${record.id} normalizedText does not match text`);
   }
   return {
     record,
     document,
-    sourceRanges: normalized.sourceRanges,
     fields: {
       heading: tokens(normalizeKnowledgeSearchText(record.heading ?? '')),
       passage: tokens(record.normalizedText),
@@ -761,8 +759,11 @@ function passageHighlight(
 }
 
 function excerptForHighlight(chunk: IndexedChunk, start: number, end: number): string {
-  const rawStart = chunk.sourceRanges[start]?.start ?? 0;
-  const rawEnd = chunk.sourceRanges[end - 1]?.end ?? rawStart + 1;
+  // Retaining one range per normalized character of every indexed chunk costs more than the whole
+  // corpus text; only the results that survive collapseAndLimit ever need them.
+  const { sourceRanges } = normalizeKnowledgeSearchTextWithRanges(chunk.record.text);
+  const rawStart = sourceRanges[start]?.start ?? 0;
+  const rawEnd = sourceRanges[end - 1]?.end ?? rawStart + 1;
   const source = chunk.record.text;
   const beforeAll = Array.from(source.slice(0, rawStart));
   const match = source.slice(rawStart, rawEnd);
@@ -816,6 +817,8 @@ function scoreChunk(
     return null;
   const document = chunk.document.record;
   return {
+    chunk,
+    highlight,
     passageStart: chunk.record.normalizedStart,
     passageEnd: chunk.record.normalizedEnd,
     result: {
@@ -831,7 +834,6 @@ function scoreChunk(
       heading: chunk.record.heading,
       pageIndex: chunk.record.pageNumber - 1,
       passageNumber: chunk.record.passageNumber,
-      excerpt: excerptForHighlight(chunk, highlight.start, highlight.end),
       matchKind: best.matchKind,
       highlightText,
       normalizedStart: chunk.record.normalizedStart + highlight.start,
@@ -869,7 +871,10 @@ function collapseAndLimit(results: readonly ScoredResult[], request: KnowledgeSe
     perDocument.set(candidate.result.documentId, count + 1);
     if (selected.length >= request.limit) break;
   }
-  return selected.map(({ result }) => result);
+  return selected.map(({ chunk, highlight, result }) => ({
+    ...result,
+    excerpt: excerptForHighlight(chunk, highlight.start, highlight.end),
+  }));
 }
 
 async function vocabularyAtAllowedLengths(

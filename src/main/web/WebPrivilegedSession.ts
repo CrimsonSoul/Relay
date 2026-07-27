@@ -10,7 +10,9 @@ export type SafeWebPrivilegedSource = {
 };
 
 type WebPrivilegedSessionOptions = {
-  sessionId: string;
+  // The stable logical session id, never the browser cookie: /session/refresh rotates the
+  // cookie, and a privileged runtime keyed on it would be lost on the next refresh.
+  logicalSessionId: string;
   host: ProductionPrivilegedHost;
   sessions: WebSessionStore;
   userAgent: string;
@@ -38,16 +40,22 @@ export class WebPrivilegedSession {
   constructor(private readonly options: WebPrivilegedSessionOptions) {
     this.source = WebPrivilegedSession.safeSource(options.userAgent, options.remoteAddress);
     this.runtime = options.host.createWebRuntime({
-      sessionId: options.sessionId,
+      sessionId: options.logicalSessionId,
       source: this.source,
     });
     this.stopSessionEvents = this.runtime.onSessionChanged((view) => {
-      options.sessions.publish(options.sessionId, 'privileged-session-changed', view);
+      options.sessions.publishByRateLimitId(
+        options.logicalSessionId,
+        'privileged-session-changed',
+        view,
+      );
     });
-    const registered = options.sessions.registerCleanup(options.sessionId, () => this.dispose());
+    const registered = options.sessions.registerCleanupByRateLimitId(options.logicalSessionId, () =>
+      this.dispose(),
+    );
     if (!registered) {
       this.stopSessionEvents();
-      disposeRejectedSession(options.host, options.sessionId);
+      disposeRejectedSession(options.host, options.logicalSessionId);
       throw new TypeError('Ordinary web session is unavailable.');
     }
   }
@@ -77,9 +85,9 @@ export class WebPrivilegedSession {
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.stopSessionEvents();
-    this.options.host.approvalCodes.clearSession(this.options.sessionId);
+    this.options.host.approvalCodes.clearSession(this.options.logicalSessionId);
     this.options.onDispose?.();
-    this.disposePromise = this.options.host.disposeWebRuntime(this.options.sessionId);
+    this.disposePromise = this.options.host.disposeWebRuntime(this.options.logicalSessionId);
     return this.disposePromise;
   }
 }

@@ -2,7 +2,12 @@ import { EventEmitter } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KNOWLEDGE_MAX_PDF_BYTES, type KnowledgePdfResult } from '@shared/knowledge';
+import {
+  KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
+  type KnowledgePdfResult,
+} from '@shared/knowledge';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { WebRequestSecurity } from '../WebRequestSecurity';
 import {
@@ -36,14 +41,18 @@ function knowledgePdfUrl(origin: string): string {
   return `${origin}/relay-api/v1/knowledge/pdf?documentId=doc-1&checksum=${'a'.repeat(64)}`;
 }
 
-function knowledgePdfRoute(router: WebRouter): WebRoute {
+function knowledgeRoute(router: WebRouter, suffix: string): WebRoute {
   const route = (
     router as unknown as {
       routes: WebRoute[];
     }
-  ).routes.find((candidate) => candidate.path.endsWith('/knowledge/pdf'));
-  if (!route) throw new Error('Expected Knowledge PDF route');
+  ).routes.find((candidate) => candidate.path.endsWith(suffix));
+  if (!route) throw new Error(`Expected Knowledge route ${suffix}`);
   return route;
+}
+
+function knowledgePdfRoute(router: WebRouter): WebRoute {
+  return knowledgeRoute(router, '/knowledge/pdf');
 }
 
 function pdfRouteContext(
@@ -434,5 +443,18 @@ describe('Relay Web Knowledge routes', () => {
     expect(chunk.status).toBe(200);
     expect(knowledgeSession.append).toHaveBeenCalledOnce();
     expect(new TextDecoder().decode(stagedBytes[0])).toBe('%PDF-first!!');
+  });
+
+  it('budgets chunk uploads for a full advertised batch instead of stalling mid-transfer', async () => {
+    const { router } = await fixture();
+    const chunkedRequestsForMaximumBatch =
+      KNOWLEDGE_UPLOAD_MAX_FILES *
+      Math.ceil(KNOWLEDGE_MAX_PDF_BYTES / KNOWLEDGE_UPLOAD_CHUNK_BYTES);
+
+    const limit = knowledgeRoute(router, '/knowledge/upload/chunk').rateLimit;
+
+    expect(chunkedRequestsForMaximumBatch).toBe(1_300);
+    expect(limit?.windowMs).toBe(60_000);
+    expect(limit?.limit).toBeGreaterThanOrEqual(chunkedRequestsForMaximumBatch);
   });
 });

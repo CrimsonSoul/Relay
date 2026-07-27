@@ -479,7 +479,10 @@ export const WebSessionBootstrapResultSchema = z.discriminatedUnion('ok', [
   z
     .object({
       ok: z.literal(false),
-      error: z.enum(['unauthenticated', 'unavailable']),
+      // 'rate-limited' is what the router returns for a 429. Without it here the response failed
+      // validation and collapsed into 'unavailable', telling a user with the correct passphrase
+      // that the passphrase was wrong.
+      error: z.enum(['unauthenticated', 'rate-limited', 'unavailable']),
     })
     .strict(),
 ]);

@@ -6,12 +6,18 @@ import {
   type WebSessionBootstrapResult,
   type WebSessionLoginInput,
 } from '@shared/webApi';
-import { createWebBridge } from './WebBridge';
+import { createWebBridge, createWebEventSubscriber } from './WebBridge';
 
 type WebSessionClientOptions = {
   fetcher?: typeof fetch;
   install?: (session: WebSessionBootstrap) => void | (() => void);
 };
+
+// Every activate() installs a fresh bridge, but the event stream must outlive it. A per-bridge
+// subscriber left long-lived listeners attached to the previous EventSource while new listeners
+// opened another, so each refresh leaked a live SSE stream until the server's per-session stream
+// limit started rejecting them.
+const sharedEventSubscriber = createWebEventSubscriber();
 
 type WebLogoutResult = { ok: true } | { ok: false; error: 'unavailable' };
 
@@ -29,6 +35,7 @@ export class WebSessionClient {
       ((session) => {
         const api = createWebBridge(session, {
           fetcher: this.#fetcher,
+          subscribe: sharedEventSubscriber,
           refreshSession: () => this.refresh(),
         });
         globalThis.api = api;

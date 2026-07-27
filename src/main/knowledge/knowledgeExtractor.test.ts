@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { renderKnowledgeDocumentCover } from './knowledgeCover';
 import { extractKnowledgePdf } from './knowledgeExtractor';
+
+vi.mock('./knowledgeCover', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./knowledgeCover')>();
+  return { ...actual, renderKnowledgeDocumentCover: vi.fn(actual.renderKnowledgeDocumentCover) };
+});
 
 function buildPdf({
   outline = false,
@@ -159,6 +165,19 @@ describe('extractKnowledgePdf', () => {
     const result = await extractKnowledgePdf(buildPdf({ title: 'Unsafe\u0007Title' }));
 
     expect(result.metadataTitle).toBeNull();
+  });
+
+  it('falls back to a placeholder cover instead of failing a readable PDF', async () => {
+    vi.mocked(renderKnowledgeDocumentCover).mockRejectedValueOnce(new Error('render-failed'));
+
+    const result = await extractKnowledgePdf(buildPdf({ outline: true }));
+
+    expect(result).toMatchObject({
+      metadataTitle: 'Operations Runbook',
+      pageCount: 1,
+      outlineSource: 'native',
+    });
+    expect([...result.coverPng.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 
   it('rejects malformed PDF bytes', async () => {

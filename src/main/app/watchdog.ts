@@ -3,6 +3,12 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
+import {
+  appendToRelaunchHistory,
+  readRelaunchHistory,
+  shouldBlockRelaunch,
+  writeRelaunchHistory,
+} from './relaunch';
 
 const WATCHDOG_POLL_MS = 2_000;
 const WATCHDOG_FLAG = '--relay-watchdog';
@@ -122,6 +128,21 @@ export function runCrashWatchdogIfRequested(argv = process.argv): boolean {
     const lastExitMarker = readLastExitMarker();
 
     if (shouldRestartAfterParentExit({ lastExitMarker, startedAt: args.startedAt })) {
+      // Every successor spawns its own watchdog, so an exit the marker cannot
+      // explain — Task Manager "End task", a native crash, an OOM kill — would
+      // otherwise respawn Relay forever. Share the relaunch budget so the two
+      // recovery paths cannot take turns restarting a deterministic failure.
+      const now = Date.now();
+      const history = readRelaunchHistory();
+      if (shouldBlockRelaunch(history, now)) {
+        loggers.main.error('Relay restart loop detected; watchdog will not restart Relay again', {
+          parentPid: args.parentPid,
+          recentRestarts: history.length,
+        });
+        app.exit(0);
+        return;
+      }
+      writeRelaunchHistory(appendToRelaunchHistory(history, now));
       loggers.main.warn('Relay parent exited unexpectedly; restarting Relay', {
         parentPid: args.parentPid,
       });

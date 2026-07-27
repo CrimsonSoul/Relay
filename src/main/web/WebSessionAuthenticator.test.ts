@@ -91,6 +91,32 @@ describe('createWebSessionAuthenticator', () => {
     expect(JSON.stringify(result)).not.toContain('saved-config-secret');
   });
 
+  it('advertises PocketBase on the host the browser reached, not the first LAN interface', async () => {
+    const { authenticate } = fixture();
+    const vpnAddress = ['10', '20', '30', '40'].join('.');
+
+    const result = await authenticate('fixture-passphrase', vpnAddress);
+
+    expect(result).toMatchObject({
+      pbUrl: ['http', '://', vpnAddress, ':8090'].join(''),
+      // The advertised LAN address still describes the server itself.
+      publicConfig: { lanIp: LAN_ADDRESS },
+    });
+  });
+
+  it('falls back to the LAN interface when the requested host is unusable', async () => {
+    const { authenticate } = fixture();
+
+    await expect(authenticate('fixture-passphrase', 'relay-server/../evil')).resolves.toMatchObject(
+      {
+        pbUrl: PUBLIC_PB_URL,
+      },
+    );
+    await expect(authenticate('fixture-passphrase')).resolves.toMatchObject({
+      pbUrl: PUBLIC_PB_URL,
+    });
+  });
+
   it('keeps a separate refreshable PocketBase auth store per accepted session', async () => {
     const { authenticate, authRefresh, authStore } = fixture();
     const result = await authenticate('fixture-passphrase');

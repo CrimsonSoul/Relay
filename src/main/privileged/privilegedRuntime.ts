@@ -13,6 +13,7 @@ import {
   canonicalPrivilegedSigningBytes,
   canonicalizePrivilegedValue,
   PRIVILEGED_COMMAND_MAX_LIFETIME_MS,
+  type PrivilegedCommandError,
   type PrivilegedCommandName,
   type PrivilegedCommandPayloadMap,
   type PrivilegedCommandResult,
@@ -140,6 +141,14 @@ type AuthenticationTransition = {
   cancelled: boolean;
   deferredReadyView: PrivilegedSessionView | null;
 };
+
+// Probe failures that prove nothing about the paired device: the workstation is
+// still paired, the server simply could not answer right now.
+const TRANSIENT_PROBE_ERRORS = new Set<PrivilegedCommandError>([
+  'offline',
+  'server-error',
+  'conflict',
+]);
 
 function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
@@ -446,6 +455,10 @@ export class PrivilegedRuntime {
     this.sessionManager.handleAuthorityChanged(accountIds);
   }
 
+  handleDeviceRevoked(accountId: string, deviceId: string): void {
+    this.sessionManager.handleDeviceRevoked(accountId, deviceId);
+  }
+
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
@@ -481,11 +494,19 @@ export class PrivilegedRuntime {
       null,
       false,
     );
-    return {
-      ...identity,
-      deviceId: probe.ok ? device.deviceId : null,
-      paired: probe.ok,
-    };
+    if (probe.ok) return { ...identity, deviceId: device.deviceId, paired: true };
+    if (TRANSIENT_PROBE_ERRORS.has(probe.error)) {
+      // A blip, a throttled server, or a fault says nothing about this pairing.
+      // Reporting it as pairing-required would send the operator hunting for an
+      // admin pairing code that the workstation does not actually need.
+      throw new PrivilegedSessionError('offline');
+    }
+    if (probe.error === 'pairing-required') {
+      // The server no longer honours this key. Dropping it locally stops the next
+      // sign-in from replaying the dead device and appending yet another key.
+      await this.deviceStore.remove(account.id, device.deviceId).catch(() => undefined);
+    }
+    return { ...identity, deviceId: null, paired: false };
   }
 
   private async confirmReauthentication(input: {
@@ -546,11 +567,17 @@ export class PrivilegedRuntime {
       },
     );
     if (!initiatingSession) return result;
-    return result.then((resolved) =>
-      this.matchesPrivilegedSession(initiatingSession)
-        ? resolved
-        : { ok: false, error: 'unauthorized' },
-    );
+    return result.then((resolved) => {
+      if (this.matchesPrivilegedSession(initiatingSession)) return resolved;
+      // A command can legitimately retire the session that issued it: an accepted
+      // ownership.transfer invalidates the outgoing Owner before this gate runs,
+      // and rewriting that success as 'unauthorized' told the Owner the change was
+      // refused while the server had already applied it. Reporting the success is
+      // safe only while the runtime holds no session at all; if another account has
+      // taken over, it must never receive the previous account's response.
+      if (resolved.ok && this.hasNoPrivilegedSession()) return resolved;
+      return { ok: false, error: 'unauthorized' };
+    });
   }
 
   private async submitRemote<K extends PrivilegedCommandName>(
@@ -600,7 +627,14 @@ export class PrivilegedRuntime {
     if (initiatingSession && !this.matchesPrivilegedSession(initiatingSession)) {
       return { ok: false, requestId: envelope.requestId, error: 'unauthorized' };
     }
-    if (initiatingSession && !result.ok && result.error === 'unauthorized') {
+    if (
+      initiatingSession &&
+      !result.ok &&
+      // A revoked device answers 'pairing-required', not 'unauthorized'. Without
+      // it here the revoked workstation kept rendering an active session with full
+      // capabilities while every action it offered failed.
+      (result.error === 'unauthorized' || result.error === 'pairing-required')
+    ) {
       void this.logout();
     }
     return result;
@@ -647,6 +681,14 @@ export class PrivilegedRuntime {
       current.accountId === expected.accountId &&
       current.deviceId === expected.deviceId &&
       current.role === expected.role
+    );
+  }
+
+  /** True when the runtime is holding no privileged session for anyone. */
+  private hasNoPrivilegedSession(): boolean {
+    const current = this.getView();
+    return (
+      !this.authenticationTransition && current.state === 'signed-out' && current.accountId === null
     );
   }
 
@@ -755,6 +797,7 @@ export function registerProductionAdministrationCommands(options: {
     context: { accountId: string; deviceId: string | null },
   ) => Promise<boolean>;
   onAuthorityChanged?: (accountIds: string[]) => void | Promise<void>;
+  onDeviceRevoked?: (accountId: string, deviceId: string) => void | Promise<void>;
 }): {
   roleAccountManager: RoleAccountManager;
   publisherManager: PublisherAssignmentManager;
@@ -762,7 +805,12 @@ export function registerProductionAdministrationCommands(options: {
   snapshotReader: RelayAdministrationSnapshotReader;
   coordinator: AuthorityMutationCoordinator;
 } {
-  const deviceManager = new PrivilegedDeviceManager({ pb: options.pb });
+  const deviceManager = new PrivilegedDeviceManager({
+    pb: options.pb,
+    // Revoking a device has to end that device's live session too; without this
+    // the manager's revocation hook was wired to nothing.
+    ...(options.onDeviceRevoked ? { onDeviceRevoked: options.onDeviceRevoked } : {}),
+  });
   const snapshotReader = new RelayAdministrationSnapshotReader({
     pb: options.pb,
     deviceManager,
@@ -830,6 +878,7 @@ type ProductionServerSharedResources = {
   pairingService: PrivilegedPairingService;
   searchIndexer: KnowledgeSearchIndexer;
   setAuthorityChangedHandler(handler: (accountIds: string[]) => void): void;
+  setDeviceRevokedHandler(handler: (accountId: string, deviceId: string) => void): void;
   dispose(): Promise<void>;
 };
 
@@ -848,6 +897,8 @@ async function createProductionServerSharedResources(
     ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
     : undefined;
   let authorityChanged: (accountIds: string[]) => void = (_accountIds) => undefined;
+  let deviceRevoked: (accountId: string, deviceId: string) => void = (_accountId, _deviceId) =>
+    undefined;
   registerProductionAdministrationCommands({
     pb: options.serverClient,
     registrar: commandProcessor,
@@ -855,6 +906,7 @@ async function createProductionServerSharedResources(
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
     onAuthorityChanged: (accountIds) => authorityChanged(accountIds),
+    onDeviceRevoked: (accountId, deviceId) => deviceRevoked(accountId, deviceId),
   });
   const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
   const searchIndexer = new KnowledgeSearchIndexer({ pb: options.serverClient });
@@ -893,6 +945,9 @@ async function createProductionServerSharedResources(
     searchIndexer,
     setAuthorityChangedHandler: (handler) => {
       authorityChanged = handler;
+    },
+    setDeviceRevokedHandler: (handler) => {
+      deviceRevoked = handler;
     },
     dispose: async () => {
       try {
@@ -977,6 +1032,9 @@ export async function createProductionPrivilegedHost(
     },
   });
   shared.setAuthorityChangedHandler((accountIds) => host.handleAuthorityChanged(accountIds));
+  shared.setDeviceRevokedHandler((accountId, deviceId) =>
+    host.handleDeviceRevoked(accountId, deviceId),
+  );
   return host;
 }
 
@@ -1023,5 +1081,8 @@ export async function createProductionPrivilegedRuntime(
     additionalDisposable: shared,
   });
   shared.setAuthorityChangedHandler((accountIds) => runtime?.handleAuthorityChanged(accountIds));
+  shared.setDeviceRevokedHandler((accountId, deviceId) =>
+    runtime?.handleDeviceRevoked(accountId, deviceId),
+  );
   return runtime;
 }

@@ -49,45 +49,34 @@ function activeInterfaceAddresses(): string[] {
     .map((entry) => entry.address);
 }
 
-function formatHost(address: string): string {
-  const normalized = address.trim().toLowerCase();
-  return normalized.includes(':') ? `[${normalized}]` : normalized;
-}
-
-function origin(address: string, port: number): string {
-  return ['http', '://', formatHost(address), ':', String(port)].join('');
-}
-
 export class RelayWebGateway {
   private readonly sessions = new WebSessionStore();
   private readonly security: WebRequestSecurity;
   private readonly router: WebRouter;
   private readonly stopOperationalEvents: (() => void) | null;
+  // Both maps are keyed on the stable logical session id. Keying them on the browser cookie
+  // silently rebuilt a signed-out runtime after every /session/refresh rotation.
   private readonly privilegedSessions = new Map<string, WebPrivilegedSession>();
   private readonly knowledgeSessions = new Map<string, WebKnowledgeSession>();
 
   constructor(options: RelayWebGatewayOptions) {
     const hostname = options.hostname ?? getHostname();
     const getInterfaces = options.getInterfaceAddresses ?? activeInterfaceAddresses;
-    const interfaceAddresses = getInterfaces();
     this.security = new WebRequestSecurity({
       port: options.config.web?.port ?? 8091,
       hostname,
       getInterfaceAddresses: getInterfaces,
-      connectOrigins: [
-        origin(hostname, options.config.port),
-        origin('localhost', options.config.port),
-        origin('127.0.0.1', options.config.port),
-        origin('::1', options.config.port),
-        ...interfaceAddresses.map((address) => origin(address, options.config.port)),
-      ],
+      // The PocketBase origin handed to the browser follows the host it actually reached, so
+      // connect-src is derived per response from the same live interface list instead of a
+      // boot-time snapshot that misses interfaces raised later (VPN, docking station).
+      connectPort: options.config.port,
     });
     this.router = new WebRouter({
       security: this.security,
       sessions: this.sessions,
-      authorizeCapability: (sessionId, capability) =>
-        this.privilegedSessions.get(sessionId)?.authorize(capability) ??
-        options.authorizeCapability?.(sessionId, capability) ??
+      authorizeCapability: (logicalSessionId, capability) =>
+        this.privilegedSessions.get(logicalSessionId)?.authorize(capability) ??
+        options.authorizeCapability?.(logicalSessionId, capability) ??
         false,
     });
     registerWebSessionRoutes(this.router, {
@@ -111,11 +100,11 @@ export class RelayWebGateway {
       registerPrivilegedRoutes(this.router, {
         approvalCodes: host.approvalCodes,
         getAccountManager: options.getAccountManager ?? (() => null),
-        getSession: (sessionId, context) => {
-          let privileged = this.privilegedSessions.get(sessionId);
+        getSession: (logicalSessionId, context) => {
+          let privileged = this.privilegedSessions.get(logicalSessionId);
           if (!privileged) {
             privileged = new WebPrivilegedSession({
-              sessionId,
+              logicalSessionId,
               host,
               sessions: this.sessions,
               userAgent:
@@ -123,9 +112,9 @@ export class RelayWebGateway {
                   ? context.request.headers['user-agent']
                   : '',
               remoteAddress: context.remoteAddress,
-              onDispose: () => this.privilegedSessions.delete(sessionId),
+              onDispose: () => this.privilegedSessions.delete(logicalSessionId),
             });
-            this.privilegedSessions.set(sessionId, privileged);
+            this.privilegedSessions.set(logicalSessionId, privileged);
           }
           return { runtime: privileged.runtime, sourceLabel: privileged.sourceLabel };
         },
@@ -135,19 +124,19 @@ export class RelayWebGateway {
       startPreparingKnowledgeRoot(options.knowledgeUploadRoot);
       registerKnowledgeRoutes(this.router, {
         services: options.knowledgeServices,
-        getSession: (sessionId) => {
-          let knowledge = this.knowledgeSessions.get(sessionId);
+        getSession: (logicalSessionId) => {
+          let knowledge = this.knowledgeSessions.get(logicalSessionId);
           if (knowledge) return knowledge;
-          const privileged = this.privilegedSessions.get(sessionId);
+          const privileged = this.privilegedSessions.get(logicalSessionId);
           if (!privileged?.authorize('knowledge.manage')) return null;
           knowledge = new WebKnowledgeSession({
-            sessionId,
+            logicalSessionId,
             sessions: this.sessions,
             runtime: privileged.runtime,
             rootDir: options.knowledgeUploadRoot!,
-            onDispose: () => this.knowledgeSessions.delete(sessionId),
+            onDispose: () => this.knowledgeSessions.delete(logicalSessionId),
           });
-          this.knowledgeSessions.set(sessionId, knowledge);
+          this.knowledgeSessions.set(logicalSessionId, knowledge);
           return knowledge;
         },
       });
@@ -159,13 +148,15 @@ export class RelayWebGateway {
   }
 
   authorizeStatic(request: IncomingMessage, response: ServerResponse): boolean {
-    for (const [name, value] of Object.entries(this.security.responseHeaders())) {
-      response.setHeader(name, value);
-    }
+    // Validate first: it refreshes the interface list, so the emitted connect-src reflects the
+    // interfaces that just admitted this request rather than a stale snapshot.
     const network = this.security.validateNetwork(
       request.socket.remoteAddress,
       request.headers.host,
     );
+    for (const [name, value] of Object.entries(this.security.responseHeaders())) {
+      response.setHeader(name, value);
+    }
     if (network.ok) return true;
     response.statusCode = 403;
     response.setHeader('Content-Type', 'text/plain; charset=utf-8');

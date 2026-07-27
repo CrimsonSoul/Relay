@@ -17,6 +17,9 @@ export const KNOWLEDGE_UPLOAD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const KNOWLEDGE_UPLOAD_MAX_RETRIES = 8;
 export const KNOWLEDGE_UPLOAD_CONCURRENCY = 2;
 export const KNOWLEDGE_MAX_PAGES = 1_000;
+// Writer and reader must agree: chunks written past this cap would make the search service drop the
+// whole document from its index.
+export const KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT = 16 * KNOWLEDGE_MAX_PAGES;
 export const KNOWLEDGE_MAX_OUTLINE_NODES = 500;
 export const KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH = 240;
 export const KNOWLEDGE_MAX_CATEGORY_LENGTH = 120;
@@ -220,7 +223,8 @@ export type KnowledgeUploadSelectionResult =
   | { ok: true; uploads: KnowledgeUploadQueueItemView[] }
   | {
       ok: false;
-      error: 'cancelled' | 'offline' | 'unauthorized' | 'invalid-file' | 'upload-failed';
+      error:
+        'cancelled' | 'offline' | 'unauthorized' | 'invalid-file' | 'too-large' | 'upload-failed';
     };
 
 export type KnowledgeAuditAction =
@@ -909,9 +913,14 @@ export function normalizeKnowledgeUploadSelectionResult(
 ): KnowledgeUploadSelectionResult | null {
   if (!isRecord(value) || typeof value.ok !== 'boolean') return null;
   if (!value.ok) {
-    return ['cancelled', 'offline', 'unauthorized', 'invalid-file', 'upload-failed'].includes(
-      String(value.error),
-    )
+    return [
+      'cancelled',
+      'offline',
+      'unauthorized',
+      'invalid-file',
+      'too-large',
+      'upload-failed',
+    ].includes(String(value.error))
       ? {
           ok: false,
           error: value.error as Extract<KnowledgeUploadSelectionResult, { ok: false }>['error'],

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
   const mockOn = vi.fn();
   const mockOnce = vi.fn();
   const mockSetAppDetails = vi.fn();
+  const mockDestroy = vi.fn();
 
   let lastOpts: Record<string, unknown> | null = null;
 
@@ -44,6 +45,7 @@ const mocks = vi.hoisted(() => {
       on: mockOn,
       once: mockOnce,
       setAppDetails: mockSetAppDetails,
+      destroy: mockDestroy,
       isDestroyed: vi.fn(() => false),
     };
   }
@@ -69,6 +71,7 @@ const mocks = vi.hoisted(() => {
     mockOn,
     mockOnce,
     mockSetAppDetails,
+    mockDestroy,
     MockBrowserWindow,
     getLastOptions: () => lastOpts,
     resetLastOptions: () => {
@@ -694,6 +697,41 @@ describe('windowFactory', () => {
       expect(mocks.mockLoadURL).toHaveBeenCalledWith(
         expect.stringMatching(/^file:\/\/.*renderer\/index\.html\?popout=oncall$/),
       );
+    });
+  });
+
+  describe('createAuxWindow - load failures', () => {
+    it('tears down the popout instead of rejecting when its load is aborted', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = true;
+      delete process.env.ELECTRON_RENDERER_URL;
+      mocks.mockLoadURL.mockRejectedValueOnce(
+        new Error('ERR_ABORTED (-3) loading file:///renderer/index.html?popout=oncall'),
+      );
+
+      const { createAuxWindow } = await import('../windowFactory');
+
+      // Callers invoke this as void, so a rejection would land in the global
+      // unhandledRejection handler.
+      await expect(createAuxWindow('oncall')).resolves.toBeUndefined();
+      expect(mocks.mockDestroy).toHaveBeenCalledOnce();
+      expect(loggers.main.warn).toHaveBeenCalledWith(
+        'Failed to load aux window',
+        expect.objectContaining({ route: 'oncall' }),
+      );
+    });
+
+    it('releases the route so the popout can be reopened after a failed load', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = true;
+      delete process.env.ELECTRON_RENDERER_URL;
+      mocks.mockLoadURL.mockRejectedValueOnce(new Error('ERR_CONNECTION_REFUSED (-102)'));
+
+      const { createAuxWindow } = await import('../windowFactory');
+
+      await createAuxWindow('oncall');
+      mocks.resetLastOptions();
+      await createAuxWindow('oncall');
+
+      expect(mocks.getLastOptions()).not.toBeNull();
     });
   });
 

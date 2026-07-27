@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { setupSetupHandlers } from './setupHandlers';
+import { rateLimiters } from '../rateLimiter';
+import { loggers } from '../logger';
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
@@ -30,6 +32,12 @@ vi.mock('node:os', () => ({
 vi.mock('../logger', () => ({
   loggers: {
     main: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  },
+}));
+
+vi.mock('../rateLimiter', () => ({
+  rateLimiters: {
+    network: { tryConsume: vi.fn(() => ({ allowed: true })) },
   },
 }));
 
@@ -87,6 +95,7 @@ describe('setupHandlers', () => {
 
   const mockPendingChanges = {
     clear: vi.fn(),
+    count: vi.fn(() => 0),
   };
 
   const getAppConfig = vi.fn(() => mockAppConfig as never);
@@ -376,6 +385,66 @@ describe('setupHandlers', () => {
       expect(mockPendingChanges.clear).toHaveBeenCalled();
     });
 
+    it('keeps unsynced offline edits when the wizard re-saves the same server target', () => {
+      const config = buildClientConfig({ serverUrl: privateLanHttpUrl });
+      mockAppConfig.load.mockReturnValue({
+        ...config,
+        [SECRET_FIELD]: createFixturePassphrase(),
+      });
+      mockPendingChanges.count.mockReturnValue(4);
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
+
+      expect(result).toBe(true);
+      expect(mockAppConfig.save).toHaveBeenCalled();
+      expect(mockOfflineCache.clear).not.toHaveBeenCalled();
+      expect(mockPendingChanges.clear).not.toHaveBeenCalled();
+    });
+
+    it('keeps unsynced offline edits when only the connection secret is rotated', () => {
+      mockAppConfig.load.mockReturnValue(
+        buildClientConfig({
+          serverUrl: privateLanHttpUrl,
+          [SECRET_FIELD]: ['previous', 'passphrase'].join('-'),
+        }),
+      );
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+        {},
+        buildClientConfig({ serverUrl: privateLanHttpUrl }),
+      );
+
+      expect(result).toBe(true);
+      expect(mockPendingChanges.clear).not.toHaveBeenCalled();
+    });
+
+    it('discards offline state and reports the count when the server target changes', () => {
+      mockAppConfig.load.mockReturnValue(buildClientConfig({ serverUrl: privateLanHttpUrl }));
+      mockPendingChanges.count.mockReturnValue(7);
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+        {},
+        buildClientConfig({ serverUrl: 'https://relay.example.com' }),
+      );
+
+      expect(result).toBe(true);
+      expect(mockOfflineCache.clear).toHaveBeenCalled();
+      expect(mockPendingChanges.clear).toHaveBeenCalled();
+      expect(loggers.main.warn).toHaveBeenCalledWith(
+        'Unsynced pending changes discarded after reconfiguration',
+        { discardedPendingCount: 7 },
+      );
+    });
+
+    it('discards offline state when switching between client and server mode', () => {
+      mockAppConfig.load.mockReturnValue(buildClientConfig({ serverUrl: privateLanHttpUrl }));
+
+      handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, buildServerConfig());
+
+      expect(mockOfflineCache.clear).toHaveBeenCalled();
+      expect(mockPendingChanges.clear).toHaveBeenCalled();
+    });
+
     it('handles offline cache clear failure gracefully', () => {
       mockOfflineCache.clear.mockImplementation(() => {
         throw new Error('disk error');
@@ -512,7 +581,10 @@ describe('setupHandlers', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('probes a public HTTP URL when insecure HTTP is explicitly allowed', async () => {
+    it('probes a public HTTP URL when the persisted config opted into insecure HTTP', async () => {
+      mockAppConfig.load.mockReturnValue(
+        buildClientConfig({ serverUrl: publicHttpUrl, allowInsecureHttp: true }),
+      );
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }),
@@ -523,11 +595,64 @@ describe('setupHandlers', () => {
         {
           serverUrl: publicHttpUrl,
           secret: createFixturePassphrase(),
-          allowInsecureHttp: true,
         },
       );
 
       expect(result).toEqual({ ok: true });
+    });
+
+    it('refuses a public HTTP probe authorized only by the payload flag', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      // No persisted opt-in: the renderer cannot vouch for its own target, or the
+      // probe becomes a port scanner for any host:port it names.
+      mockAppConfig.load.mockReturnValue(buildClientConfig({ serverUrl: privateLanHttpUrl }));
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: publicHttpUrl,
+          secret: createFixturePassphrase(),
+          allowInsecureHttp: true,
+        },
+      );
+
+      expect(result).toEqual({ ok: false, error: 'invalid-url' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses to probe once the network rate limit is exhausted', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      vi.mocked(rateLimiters.network.tryConsume).mockReturnValueOnce({ allowed: false });
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: privateLanHttpUrl,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: false, error: 'unreachable' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('meters every accepted probe against the network limiter', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }),
+      );
+
+      await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: privateLanHttpUrl,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(rateLimiters.network.tryConsume).toHaveBeenCalledTimes(1);
     });
 
     it('POSTs the secret to the PocketBase auth endpoint in the JSON body, not the URL', async () => {

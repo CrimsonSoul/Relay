@@ -575,7 +575,7 @@ describe('KnowledgeSearchService', () => {
     });
   });
 
-  it('fails closed on buffered event-count overflow and permits a later reconciliation', async () => {
+  it('keeps serving the stale index on buffered event-count overflow and reconciles later', async () => {
     const network = pbWith([readyDocument], [validChunk]);
     const engine = {
       replaceSnapshot: vi.fn(),
@@ -615,11 +615,11 @@ describe('KnowledgeSearchService', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(engine.replaceSnapshot).not.toHaveBeenCalled();
+    // Dropped buffered events leave the index stale, which is still worth serving.
     await expect(service.search(request('failover', 'after-overflow'))).resolves.toMatchObject({
-      ok: false,
-      error: 'unavailable',
+      ok: true,
     });
-    expect(engine.search).not.toHaveBeenCalled();
+    expect(engine.search).toHaveBeenCalledOnce();
     const recoveredDocument = { ...readyDocument, title: 'Recovered snapshot' };
     network.documentCollection.getFullList.mockResolvedValueOnce([recoveredDocument]);
     network.chunkCollection.getFullList.mockResolvedValueOnce([validChunk]);
@@ -1195,5 +1195,145 @@ describe('KnowledgeSearchService', () => {
     await vi.waitFor(() => expect(lateUnsubscribe).toHaveBeenCalledOnce());
     expect(network.chunkCollection.subscribe).not.toHaveBeenCalled();
     expect(network.pb.realtime.onDisconnect).toBeNull();
+  });
+
+  it('indexes every other document when one exceeds the per-document chunk cap', async () => {
+    const second = knowledgeSearchFixtureDocument({ id: 'document2', title: 'Second Guide' });
+    const oversized = [
+      knowledgeSearchFixtureChunk(readyDocument, 'First oversize passage', {
+        id: 'oversize-1',
+      }),
+      knowledgeSearchFixtureChunk(readyDocument, 'Second oversize passage', {
+        id: 'oversize-2',
+        passageNumber: 2,
+        normalizedStart: 100,
+      }),
+    ];
+    const kept = knowledgeSearchFixtureChunk(second, 'Kept passage', { id: 'kept-1' });
+    const network = pbWith([readyDocument, second], [...oversized, kept]);
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(),
+    };
+    const service = new KnowledgeSearchService({
+      engine: engine as never,
+      limits: { maxChunksPerDocument: 1 },
+    });
+
+    await service.start(network.pb as never);
+
+    expect(engine.replaceSnapshot).toHaveBeenCalledWith([readyDocument, second], [kept]);
+    await service.dispose();
+  });
+
+  it('scales the snapshot deadline with the corpus it already holds', async () => {
+    vi.useFakeTimers();
+    const cachedChunks = Array.from({ length: 20 }, (_, index) =>
+      knowledgeSearchFixtureChunk(readyDocument, `Cached failover passage ${index}`, {
+        id: `cached-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const network = pbWith([readyDocument], [validChunk]);
+    const documents = deferred<unknown[]>();
+    const chunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => documents.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => chunks.promise);
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(),
+    };
+    const service = new KnowledgeSearchService({
+      cache: cacheWith([readyDocument], cachedChunks) as never,
+      cacheIdentity: SERVER_URL,
+      engine: engine as never,
+    });
+
+    const startup = service.start(network.pb as never);
+    // A fixed five-second budget would already have abandoned this fetch.
+    await vi.advanceTimersByTimeAsync(5_100);
+    documents.resolve([readyDocument]);
+    chunks.resolve([validChunk]);
+    await startup;
+
+    expect(engine.replaceSnapshot).toHaveBeenLastCalledWith([readyDocument], [validChunk]);
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('retries a failed connection on a backoff instead of staying unavailable', async () => {
+    vi.useFakeTimers();
+    const network = pbWith([readyDocument], [validChunk]);
+    network.documentCollection.getFullList.mockRejectedValueOnce(new Error('network unavailable'));
+    const service = new KnowledgeSearchService({ engine: new KnowledgeSearchEngine() });
+
+    await service.start(network.pb as never);
+    await expect(service.search(request('failover'))).resolves.toMatchObject({
+      ok: false,
+      error: 'unavailable',
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(service.search(request('failover', 'after-retry'))).resolves.toMatchObject({
+      ok: true,
+      availability: 'ready',
+    });
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('repairs a failed realtime buffer on a backoff instead of at the next interval', async () => {
+    vi.useFakeTimers();
+    const network = pbWith([readyDocument], [validChunk]);
+    const engine = {
+      replaceSnapshot: vi.fn(),
+      upsertDocument: vi.fn(),
+      removeDocument: vi.fn(),
+      upsertChunk: vi.fn(),
+      removeChunk: vi.fn(),
+      search: vi.fn(),
+    };
+    const service = new KnowledgeSearchService({
+      engine: engine as never,
+      bufferLimits: { maxUniqueEvents: 1, maxRetainedBytes: 100_000 },
+    });
+    await service.start(network.pb as never);
+    engine.replaceSnapshot.mockClear();
+
+    const documents = deferred<unknown[]>();
+    const chunks = deferred<unknown[]>();
+    network.documentCollection.getFullList.mockImplementationOnce(() => documents.promise);
+    network.chunkCollection.getFullList.mockImplementationOnce(() => chunks.promise);
+    network.disconnect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    network.emitDocument('update', readyDocument);
+    network.emitDocument(
+      'update',
+      knowledgeSearchFixtureDocument({ id: 'document2', title: 'Second document' }),
+    );
+    documents.resolve([readyDocument]);
+    chunks.resolve([validChunk]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(engine.replaceSnapshot).not.toHaveBeenCalled();
+
+    const recovered = { ...readyDocument, title: 'Recovered snapshot' };
+    network.documentCollection.getFullList.mockResolvedValue([recovered]);
+    network.chunkCollection.getFullList.mockResolvedValue([validChunk]);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(engine.replaceSnapshot).toHaveBeenCalledWith([recovered], [validChunk]);
+    await service.dispose();
+    vi.useRealTimers();
   });
 });

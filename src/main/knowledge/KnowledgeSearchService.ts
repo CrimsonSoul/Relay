@@ -2,8 +2,8 @@ import { performance } from 'node:perf_hooks';
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
-  KNOWLEDGE_MAX_PAGES,
   KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
   normalizeKnowledgeDocumentRecord,
   type KnowledgeDocumentRecord,
 } from '@shared/knowledge';
@@ -27,10 +27,17 @@ import { KnowledgeSearchEngine } from './KnowledgeSearchEngine';
 const SEARCH_DEADLINE_MS = 1_000;
 const RECONCILIATION_INTERVAL_MS = 15 * 60_000;
 const RECONCILIATION_DEADLINE_MS = 5_000;
+// A whole-corpus fetch takes longer the larger the corpus is, so the snapshot deadline grows with
+// the number of chunks already known rather than timing every library out at the same five seconds.
+const SNAPSHOT_DEADLINE_PER_CHUNK_MS = 10;
+const SNAPSHOT_DEADLINE_MAX_MS = 120_000;
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_MAX_DELAY_MS = 60_000;
+const RETRY_MAX_EXPONENT = 6;
 const UNSUBSCRIBE_DEADLINE_MS = 1_000;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 30_000;
-const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = KNOWLEDGE_MAX_PAGES * 16;
+const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT;
 const DEFAULT_MAX_TEXT_BYTES_PER_DOCUMENT = KNOWLEDGE_MAX_PDF_BYTES;
 const DEFAULT_MAX_BUFFERED_UNIQUE_EVENTS = 10_000;
 const DEFAULT_MAX_BUFFERED_EVENT_BYTES = 16 * 1024 * 1024;
@@ -152,17 +159,12 @@ function textBytes(chunk: KnowledgeSearchChunkRecord): number {
   return Buffer.byteLength(chunk.text, 'utf8') + Buffer.byteLength(chunk.normalizedText, 'utf8');
 }
 
-function parseSnapshot(
+type SizedChunk = { chunk: KnowledgeSearchChunkRecord; bytes: number };
+type ChunkIntake = { accepted: SizedChunk[]; oversizedDocuments: Set<string> };
+
+function normalizeSnapshotDocuments(
   rawDocuments: readonly unknown[],
-  rawChunks: readonly unknown[],
-  limits: SearchLimits,
-): Snapshot | null {
-  if (rawChunks.length > limits.maxChunks) {
-    knowledgeLogger().warn('Rejected oversized Wiki search snapshot', {
-      reason: 'record-limit',
-    });
-    return null;
-  }
+): Map<string, KnowledgeDocumentRecord> | null {
   const documentMap = new Map<string, KnowledgeDocumentRecord>();
   for (const raw of rawDocuments) {
     const document = normalizeKnowledgeDocumentRecord(raw);
@@ -176,11 +178,19 @@ function parseSnapshot(
     if (documentMap.has(document.id)) return null;
     documentMap.set(document.id, document);
   }
+  return documentMap;
+}
 
-  const chunkMap = new Map<string, KnowledgeSearchChunkRecord>();
+/** Normalizes chunks and names the documents whose own share of the corpus is over the limit. */
+function normalizeSnapshotChunks(
+  rawChunks: readonly unknown[],
+  limits: SearchLimits,
+): ChunkIntake | null {
+  const accepted: SizedChunk[] = [];
+  const seenChunkIds = new Set<string>();
   const perDocumentCount = new Map<string, number>();
   const perDocumentBytes = new Map<string, number>();
-  let totalBytes = 0;
+  const oversizedDocuments = new Set<string>();
   for (const raw of rawChunks) {
     const chunk = normalizeKnowledgeSearchChunkRecord(raw);
     if (!chunk) {
@@ -190,26 +200,67 @@ function parseSnapshot(
       });
       continue;
     }
-    if (chunkMap.has(chunk.id)) return null;
+    if (seenChunkIds.has(chunk.id)) return null;
+    seenChunkIds.add(chunk.id);
     const bytes = textBytes(chunk);
     const count = (perDocumentCount.get(chunk.documentId) ?? 0) + 1;
     const documentBytes = (perDocumentBytes.get(chunk.documentId) ?? 0) + bytes;
+    perDocumentCount.set(chunk.documentId, count);
+    perDocumentBytes.set(chunk.documentId, documentBytes);
+    // A per-document overrun is attributable, so it costs that document its chunks rather than
+    // discarding every other document's index along with it.
+    if (count > limits.maxChunksPerDocument || documentBytes > limits.maxTextBytesPerDocument) {
+      oversizedDocuments.add(chunk.documentId);
+    }
+    accepted.push({ chunk, bytes });
+  }
+  for (const documentId of oversizedDocuments) {
+    knowledgeLogger().warn('Skipped oversized Wiki search document', {
+      documentId,
+      reason: 'document-limit',
+    });
+  }
+  return { accepted, oversizedDocuments };
+}
+
+function collectSnapshotChunks(
+  intake: ChunkIntake,
+  limits: SearchLimits,
+): Map<string, KnowledgeSearchChunkRecord> | null {
+  const chunkMap = new Map<string, KnowledgeSearchChunkRecord>();
+  let totalBytes = 0;
+  for (const { chunk, bytes } of intake.accepted) {
+    if (intake.oversizedDocuments.has(chunk.documentId)) continue;
     totalBytes += bytes;
-    if (
-      chunkMap.size + 1 > limits.maxChunks ||
-      totalBytes > limits.maxTextBytes ||
-      count > limits.maxChunksPerDocument ||
-      documentBytes > limits.maxTextBytesPerDocument
-    ) {
+    // Corpus-wide overruns cannot be blamed on one document, so they still reject the snapshot.
+    if (chunkMap.size + 1 > limits.maxChunks || totalBytes > limits.maxTextBytes) {
       knowledgeLogger().warn('Rejected oversized Wiki search snapshot', {
         reason: 'corpus-limit',
       });
       return null;
     }
     chunkMap.set(chunk.id, chunk);
-    perDocumentCount.set(chunk.documentId, count);
-    perDocumentBytes.set(chunk.documentId, documentBytes);
   }
+  return chunkMap;
+}
+
+function parseSnapshot(
+  rawDocuments: readonly unknown[],
+  rawChunks: readonly unknown[],
+  limits: SearchLimits,
+): Snapshot | null {
+  if (rawChunks.length > limits.maxChunks) {
+    knowledgeLogger().warn('Rejected oversized Wiki search snapshot', {
+      reason: 'record-limit',
+    });
+    return null;
+  }
+  const documentMap = normalizeSnapshotDocuments(rawDocuments);
+  if (!documentMap) return null;
+  const intake = normalizeSnapshotChunks(rawChunks, limits);
+  if (!intake) return null;
+  const chunkMap = collectSnapshotChunks(intake, limits);
+  if (!chunkMap) return null;
 
   const eligibleDocuments = new Map(
     [...documentMap.values()].filter(eligibleDocument).map((document) => [document.id, document]),
@@ -337,6 +388,10 @@ export class KnowledgeSearchService {
   private reconciliationTimer: ReturnType<typeof setInterval> | null = null;
   private reconciliation: Reconciliation | null = null;
   private eventBuffer: EventBuffer | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectAttempts = 0;
+  private reconcileTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconcileAttempts = 0;
   private connectionEpoch = 0;
   private failureCount = 0;
   private circuitOpenUntil = 0;
@@ -369,6 +424,7 @@ export class KnowledgeSearchService {
 
   async connect(pb: PocketBase): Promise<void> {
     if (this.disposed) return;
+    this.cancelConnectRetry();
     const epoch = ++this.connectionEpoch;
     await this.stopSubscriptions();
     const nextPb = pb as unknown as SearchPocketBase;
@@ -388,13 +444,20 @@ export class KnowledgeSearchService {
       if (!this.isCurrentConnection(epoch, nextPb)) return;
       this.scheduleReconciliation();
       this.availability = 'ready';
+      this.connectAttempts = 0;
+      this.reconcileAttempts = 0;
       this.resetFailures();
     } catch {
       if (this.isCurrentConnection(epoch, nextPb)) {
         this.flushBufferedEvents(epoch);
         await this.stopSubscriptions();
         if (!this.availability) this.hydrateFromCache();
-        if (this.isCurrent(epoch)) this.recordFailure('connect-failed');
+        if (this.isCurrent(epoch)) {
+          this.recordFailure('connect-failed');
+          // Without a retry the torn-down connection would leave every search unavailable for the
+          // rest of the session, since nothing else re-establishes the subscriptions.
+          this.scheduleConnectRetry(pb, epoch);
+        }
       }
     } finally {
       subscriptionDeadline?.cancel();
@@ -479,6 +542,8 @@ export class KnowledgeSearchService {
     if (this.disposed) return;
     this.disposed = true;
     this.connectionEpoch += 1;
+    this.cancelConnectRetry();
+    this.cancelReconcileRetry();
     this.availability = null;
     this.eventBuffer = null;
     for (const active of this.activeSearches.values()) {
@@ -511,12 +576,19 @@ export class KnowledgeSearchService {
     }
   }
 
+  private snapshotDeadlineMs(): number {
+    return Math.min(
+      SNAPSHOT_DEADLINE_MAX_MS,
+      RECONCILIATION_DEADLINE_MS + this.chunks.size * SNAPSHOT_DEADLINE_PER_CHUNK_MS,
+    );
+  }
+
   private async synchronizeSnapshot(pb: SearchPocketBase, epoch: number): Promise<void> {
     const fetch = Promise.all([
       pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).getFullList({ requestKey: null }),
       pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
     ]);
-    const deadline = rejectedAfter(RECONCILIATION_DEADLINE_MS, new Error('refresh-timeout'));
+    const deadline = rejectedAfter(this.snapshotDeadlineMs(), new Error('refresh-timeout'));
     try {
       const [rawDocuments, rawChunks] = await Promise.race([fetch, deadline.promise]);
       if (!this.isCurrentConnection(epoch, pb)) return;
@@ -688,8 +760,10 @@ export class KnowledgeSearchService {
     buffer.events.clear();
     buffer.retainedBytes = 0;
     buffer.failureReason = reason;
-    this.availability = null;
     knowledgeLogger().warn('Rejected Wiki search realtime buffer', { reason });
+    // Dropping buffered events leaves the index stale, not wrong. Blanking availability would take
+    // every search offline until the 15-minute timer, so repair it on a backoff instead.
+    this.scheduleReconcileRetry();
   }
 
   private applyRealtimeEvent(event: BufferedRealtimeEvent): void {
@@ -846,6 +920,45 @@ export class KnowledgeSearchService {
     this.reconciliationTimer.unref?.();
   }
 
+  private backoffDelay(attempts: number): number {
+    return Math.min(
+      RETRY_MAX_DELAY_MS,
+      RETRY_BASE_DELAY_MS * 2 ** Math.min(attempts, RETRY_MAX_EXPONENT),
+    );
+  }
+
+  private scheduleConnectRetry(pb: PocketBase, epoch: number): void {
+    if (this.disposed || this.connectTimer || !this.isCurrent(epoch)) return;
+    const delay = this.backoffDelay(this.connectAttempts);
+    this.connectAttempts += 1;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (this.isCurrent(epoch)) void this.connect(pb);
+    }, delay);
+    this.connectTimer.unref?.();
+  }
+
+  private cancelConnectRetry(): void {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
+  }
+
+  private scheduleReconcileRetry(): void {
+    if (this.disposed || this.reconcileTimer || !this.pb) return;
+    const delay = this.backoffDelay(this.reconcileAttempts);
+    this.reconcileAttempts += 1;
+    this.reconcileTimer = setTimeout(() => {
+      this.reconcileTimer = null;
+      void this.reconcile();
+    }, delay);
+    this.reconcileTimer.unref?.();
+  }
+
+  private cancelReconcileRetry(): void {
+    if (this.reconcileTimer) clearTimeout(this.reconcileTimer);
+    this.reconcileTimer = null;
+  }
+
   private reconcile(): Promise<void> {
     if (this.disposed || !this.pb) return Promise.resolve();
     const pb = this.pb;
@@ -856,6 +969,7 @@ export class KnowledgeSearchService {
       .then(() => {
         if (!this.isCurrentConnection(epoch, pb)) return;
         this.availability = 'ready';
+        this.reconcileAttempts = 0;
         this.resetFailures();
       })
       .catch(() => {
@@ -873,6 +987,7 @@ export class KnowledgeSearchService {
   private async stopSubscriptions(): Promise<void> {
     if (this.reconciliationTimer) clearInterval(this.reconciliationTimer);
     this.reconciliationTimer = null;
+    this.cancelReconcileRetry();
     const pb = this.pb;
     const disconnectOwner = this.disconnectOwner;
     if (

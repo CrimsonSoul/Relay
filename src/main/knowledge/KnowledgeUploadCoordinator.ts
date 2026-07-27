@@ -572,6 +572,8 @@ export class KnowledgeUploadCoordinator {
       if (!uploadId) continue;
       try {
         await this.processUpload(uploadId);
+      } catch {
+        // One upload must never abort the worker or surface as an unhandled rejection.
       } finally {
         this.queued.delete(uploadId);
       }
@@ -579,7 +581,16 @@ export class KnowledgeUploadCoordinator {
   }
 
   private async processUpload(uploadId: string): Promise<void> {
-    let upload = await this.requireUpload(uploadId);
+    let upload: KnowledgeUploadManifestRecord;
+    try {
+      const claimed = await this.repository.getUpload(uploadId);
+      // Retention cleanup hard-deletes expired uploads, so a queued id can vanish before the
+      // worker reaches it. That is a benign skip, not a processing failure.
+      if (!claimed) return;
+      upload = claimed;
+    } catch {
+      return;
+    }
     try {
       let bytes: Uint8Array;
       if (upload.state === 'assembling') {

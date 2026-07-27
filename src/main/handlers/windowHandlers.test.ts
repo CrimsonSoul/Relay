@@ -85,6 +85,8 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
   stat: vi.fn(),
   mkdir: vi.fn(),
+  mkdtemp: vi.fn(),
+  rm: vi.fn(),
   unlink: vi.fn(),
 }));
 
@@ -108,10 +110,6 @@ vi.mock('../logger', () => ({
   },
 }));
 
-vi.mock('../utils/pathSafety', () => ({
-  validatePath: vi.fn(),
-}));
-
 vi.mock('../utils/broadcastToAllWindows', () => ({
   broadcastToAllWindows: vi.fn(),
 }));
@@ -125,8 +123,10 @@ vi.mock('../rateLimiter', () => ({
 }));
 
 import { rateLimiters } from '../rateLimiter';
-import { readFile, stat, unlink } from 'node:fs/promises';
+import { readFile, stat, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { loggers } from '../logger';
+
+const PRIVATE_TEMP_DIR = '/mock-temp/relay-a1b2c3';
 
 // Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
 // exercised for real (positive + negative) in authHandlers.test.ts.
@@ -178,6 +178,8 @@ describe('windowHandlers', () => {
     );
 
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
+    vi.mocked(mkdtemp).mockResolvedValue(PRIVATE_TEMP_DIR as never);
+    vi.mocked(rm).mockResolvedValue(undefined);
     vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
     vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
       if (typeof callback === 'function') callback(null, '', '');
@@ -407,7 +409,7 @@ describe('windowHandlers', () => {
   });
 
   describe('ICS_SAVE_AND_OPEN', () => {
-    it('writes the ICS to a temp file, opens it, and returns true', async () => {
+    it('writes the ICS to a private temp directory, opens it, and returns true', async () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockResolvedValue(undefined);
       vi.mocked(shell.openPath).mockResolvedValue('');
@@ -418,10 +420,64 @@ describe('windowHandlers', () => {
       );
 
       expect(result).toBe(true);
-      const [filePath, content] = vi.mocked(writeFile).mock.calls[0] as [string, string];
-      expect(filePath).toMatch(/^\/mock-temp\/relay-bridge-\d+\.ics$/);
+      expect(mkdtemp).toHaveBeenCalledWith('/mock-temp/relay-');
+      const [filePath, content, options] = vi.mocked(writeFile).mock.calls[0] as [
+        string,
+        string,
+        { encoding: string; mode: number },
+      ];
+      // Never a guessable path in the shared temp dir: on Linux another local
+      // user could read the invite there, or pre-plant the path as a symlink.
+      expect(filePath).toBe(`${PRIVATE_TEMP_DIR}/relay-bridge.ics`);
       expect(content).toBe('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
+      expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
       expect(shell.openPath).toHaveBeenCalledWith(filePath);
+    });
+
+    it('sweeps a handed-off invite on the next call, never after opening it', async () => {
+      // shell.openPath resolves when the helper app is launched, not when it has
+      // read the file, so removing the payload later in the same call can race a
+      // cold-starting Outlook on Windows with a 20MB draft.
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+      vi.mocked(rm).mockClear();
+      vi.mocked(shell.openPath).mockClear();
+
+      await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+
+      expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
+      expect(vi.mocked(rm).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(shell.openPath).mock.invocationCallOrder[0],
+      );
+    });
+
+    it('removes the temp directory even when the open fails', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('no handler registered for .ics files');
+
+      await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+
+      expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
+    });
+
+    it('still reports success when the temp directory cannot be removed', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+      vi.mocked(rm).mockRejectedValue(new Error('EBUSY'));
+
+      // First call hands off; the deferred sweep runs on the second one.
+      await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+
+      expect(result).toBe(true);
+      expect(loggers.ipc.warn).toHaveBeenCalledWith('Temp document cleanup failed', {
+        error: 'EBUSY',
+      });
     });
 
     it('returns false for non-string content', async () => {
@@ -506,7 +562,8 @@ describe('windowHandlers', () => {
         string,
         { encoding: string; mode: number },
       ];
-      expect(filePath).toMatch(/^\/mock-temp\/relay-alert-\d+\.eml$/);
+      expect(mkdtemp).toHaveBeenCalledWith('/mock-temp/relay-');
+      expect(filePath).toBe(`${PRIVATE_TEMP_DIR}/relay-alert.eml`);
       expect(content).toBe(validEml);
       expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
       if (process.platform === 'darwin') {
@@ -566,6 +623,16 @@ describe('windowHandlers', () => {
         );
       },
     );
+
+    it('does not leave 20MB drafts accumulating in shared temp storage', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, validEml);
+
+      expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
+    });
 
     it('returns false when the draft cannot be opened', async () => {
       const { writeFile } = await import('node:fs/promises');

@@ -2,9 +2,20 @@ import { useState, type ComponentProps } from 'react';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
 
+export type WebLoginOutcome = 'accepted' | 'rejected' | 'rate-limited' | 'unavailable';
+
+type WebLoginFailure = Exclude<WebLoginOutcome, 'accepted'>;
+
+// A throttled sign-in must never read as a wrong passphrase: the operator's next action differs.
+const FAILURE_MESSAGE: Readonly<Record<WebLoginFailure, string>> = {
+  rejected: 'Sign-in failed. Check the passphrase and try again.',
+  'rate-limited': 'Too many attempts. Wait a minute, then try the same passphrase again.',
+  unavailable: 'Relay Web is unavailable right now. Try again in a moment.',
+};
+
 type Props = {
   serverLabel: string;
-  onLogin: (passphrase: string) => Promise<boolean>;
+  onLogin: (passphrase: string) => Promise<WebLoginOutcome>;
 };
 
 type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']>>[0];
@@ -12,19 +23,19 @@ type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']
 export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
   const [passphrase, setPassphrase] = useState('');
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<WebLoginFailure | null>(null);
 
   const handleSubmit = async (event: FormSubmitEvent) => {
     event.preventDefault();
     if (pending || passphrase.length < 8) return;
     const submittedPassphrase = passphrase;
     setPending(true);
-    setFailed(false);
+    setFailure(null);
     try {
-      const accepted = await onLogin(submittedPassphrase);
-      setFailed(!accepted);
+      const outcome = await onLogin(submittedPassphrase);
+      setFailure(outcome === 'accepted' ? null : outcome);
     } catch {
-      setFailed(true);
+      setFailure('unavailable');
     } finally {
       setPassphrase('');
       setPending(false);
@@ -57,9 +68,9 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
             disabled={pending}
             onChange={(event) => setPassphrase(event.target.value)}
           />
-          {failed && (
+          {failure && (
             <div className="web-login__error" role="alert">
-              Sign-in failed. Check the passphrase and try again.
+              {FAILURE_MESSAGE[failure]}
             </div>
           )}
           <TactileButton

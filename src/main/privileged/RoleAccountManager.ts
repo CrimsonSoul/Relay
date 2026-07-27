@@ -17,6 +17,7 @@ import {
   normalizeRoleUsername,
 } from '@shared/roleAccounts';
 import type { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
+import { PrivilegedCommandSafeError } from './PrivilegedCommandProcessor';
 import {
   AuthorityMutationCoordinator,
   type AuthorityMutationCoordinatorPort,
@@ -77,6 +78,16 @@ export class RoleAccountNotificationError extends Error {
   }
 }
 
+/**
+ * Refuse a request for a reason the administrator is allowed to read. A plain
+ * Error matches none of the typed branches in the command processor, so every
+ * one of these used to reach the operator as "Relay could not complete the
+ * administration request" with the actual reason discarded.
+ */
+function refuse(reason: string): never {
+  throw new PrivilegedCommandSafeError('invalid-request', reason);
+}
+
 function internalEmail(username: string): string {
   return `${username}@relay.invalid`;
 }
@@ -88,9 +99,9 @@ function normalizeIdentity(input: { username: string; displayName: string }): {
   const username = normalizeRoleUsername(input.username);
   const displayName = normalizeRoleDisplayName(input.displayName);
   const usernameError = getRoleUsernameError(username);
-  if (usernameError) throw new Error(usernameError);
+  if (usernameError) refuse(usernameError);
   const displayNameError = getRoleDisplayNameError(displayName);
-  if (displayNameError) throw new Error(displayNameError);
+  if (displayNameError) refuse(displayNameError);
   return { username, displayName };
 }
 
@@ -125,7 +136,7 @@ export class RoleAccountManager {
       accounts.filter(({ storedRole }) => storedRole === 'administrator').length >=
       MAX_PRIVILEGED_ADMINISTRATORS
     ) {
-      throw new Error('Relay already has the maximum number of administrators.');
+      refuse('Relay already has the maximum number of administrators.');
     }
     const created = await this.createAccount(accounts, input, 'administrator');
     await this.commitCreatedAccount(created, () =>
@@ -147,12 +158,10 @@ export class RoleAccountManager {
     this.assertRevision(state.assignmentVersion, input.expectedStateRevision);
     const accounts = await this.listAccounts();
     if (state.publisherAccountId) {
-      throw new Error('Assign or replace the current Publisher before creating another one.');
+      refuse('Assign or replace the current Publisher before creating another one.');
     }
     if (accounts.some(({ storedRole }) => storedRole === 'publisher')) {
-      throw new Error(
-        'A retained Publisher account already exists. Assign or reactivate that account.',
-      );
+      refuse('A retained Publisher account already exists. Assign or reactivate that account.');
     }
     const created = await this.createAccount(accounts, input, 'publisher');
     await this.commitCreatedAccount(created, () =>
@@ -182,7 +191,7 @@ export class RoleAccountManager {
     this.assertRevision(target.revision, input.expectedRevision);
     const displayName = normalizeRoleDisplayName(input.displayName);
     const error = getRoleDisplayNameError(displayName);
-    if (error) throw new Error(error);
+    if (error) refuse(error);
     const [commitState, commitActor, commitTarget] = await Promise.all([
       this.getState(),
       this.getAccount(input.actorAccountId),
@@ -216,7 +225,7 @@ export class RoleAccountManager {
     ]);
     this.assertCanManageTarget(state, actor, target);
     if (!input.active && target.id === state.ownerAccountId) {
-      throw new Error('The current Owner cannot be deactivated.');
+      refuse('The current Owner cannot be deactivated.');
     }
     this.assertRevision(target.revision, input.expectedRevision);
     if (target.active !== input.active) {
@@ -227,7 +236,7 @@ export class RoleAccountManager {
       ]);
       this.assertCanManageTarget(commitState, commitActor, commitTarget);
       if (!input.active && commitTarget.id === commitState.ownerAccountId) {
-        throw new Error('The current Owner cannot be deactivated.');
+        refuse('The current Owner cannot be deactivated.');
       }
       this.assertRevision(commitTarget.revision, input.expectedRevision);
       await this.pb
@@ -255,7 +264,7 @@ export class RoleAccountManager {
     this.assertRevision(state.assignmentVersion, input.expectedStateRevision);
     const target = await this.getAccount(input.accountId);
     if (!target.active || target.storedRole !== 'administrator') {
-      throw new Error('Select an active administrator as the new owner.');
+      refuse('Select an active administrator as the new owner.');
     }
     if (target.id !== state.ownerAccountId) {
       await this.updateState(state, {
@@ -274,7 +283,7 @@ export class RoleAccountManager {
   ): Promise<RelayPrivilegedAccountRecord> {
     const identity = normalizeIdentity(input);
     if (accounts.some(({ username }) => normalizeRoleUsername(username) === identity.username)) {
-      throw new Error('That username is already in use.');
+      refuse('That username is already in use.');
     }
     const password = randomBytes(48).toString('base64url');
     return this.pb
@@ -349,7 +358,7 @@ export class RoleAccountManager {
     actor: RelayPrivilegedAccountRecord,
   ): void {
     if (!actor.active || actor.id !== state.ownerAccountId) {
-      throw new Error('Only the Relay owner can manage administrators.');
+      refuse('Only the Relay owner can manage administrators.');
     }
   }
 
@@ -359,7 +368,7 @@ export class RoleAccountManager {
   ): void {
     const role = getEffectiveRole(actor, state);
     if (!actor.active || (role !== 'owner' && role !== 'admin')) {
-      throw new Error('Only the Relay owner or an administrator can manage the Publisher.');
+      refuse('Only the Relay owner or an administrator can manage the Publisher.');
     }
   }
 

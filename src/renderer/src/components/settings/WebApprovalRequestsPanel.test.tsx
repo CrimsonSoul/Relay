@@ -56,6 +56,35 @@ describe('WebApprovalRequestsPanel', () => {
     expect(screen.queryByText('Chrome from 10.0.0.8')).toBeNull();
   });
 
+  it('reports a failed load instead of claiming no browser is waiting', async () => {
+    listWebApprovalRequests.mockRejectedValueOnce(new Error('ipc unavailable'));
+    render(<WebApprovalRequestsPanel relayMode="server" />);
+
+    expect(await screen.findByText('Browser requests could not be loaded')).toBeVisible();
+    expect(screen.queryByText('No browser requests waiting')).toBeNull();
+
+    listener?.([request]);
+    expect(await screen.findByText('Chrome from 10.0.0.8')).toBeVisible();
+    expect(screen.queryByText('Browser requests could not be loaded')).toBeNull();
+  });
+
+  it('surfaces a refused approval code and a failed cancellation', async () => {
+    generateWebApprovalCode.mockResolvedValueOnce({ ok: false, error: 'rate-limited' });
+    cancelWebApprovalRequest.mockResolvedValueOnce(false);
+    render(<WebApprovalRequestsPanel relayMode="server" />);
+    await screen.findByText('Chrome from 10.0.0.8');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate approval code' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i);
+    expect(screen.queryByText('123456')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel approval request' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/could not cancel that request/i),
+    );
+    expect(screen.getByText('Chrome from 10.0.0.8')).toBeVisible();
+  });
+
   it('renders nothing outside the server Electron runtime', () => {
     const { rerender } = render(<WebApprovalRequestsPanel relayMode="client" />);
     expect(screen.queryByText('Browser approval requests')).toBeNull();

@@ -5,6 +5,8 @@ import type { RelayRuntimeDescriptor } from '@shared/runtime';
 export const WEB_SESSION_IDLE_TIMEOUT_MS = 60 * 60 * 1_000;
 export const WEB_SESSION_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1_000;
 
+const EVENT_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+
 export type WebSessionCreateInput = {
   pbUrl: string;
   auth: PbAuthSession;
@@ -121,6 +123,15 @@ export class WebSessionStore {
     return true;
   }
 
+  // Session-scoped services outlive the cookie: refresh rotates entry.id, so anything that
+  // must survive a rotation has to be attached through the stable logical identifier.
+  registerCleanupByRateLimitId(rateLimitId: string, cleanup: () => void | Promise<void>): boolean {
+    const entry = this.getLogicalEntry(rateLimitId);
+    if (!entry) return false;
+    entry.cleanups.add(cleanup);
+    return true;
+  }
+
   unregisterCleanupByRateLimitId(rateLimitId: string, cleanup: () => void | Promise<void>): void {
     this.sessionsByRateLimitId.get(rateLimitId)?.cleanups.delete(cleanup);
   }
@@ -138,8 +149,16 @@ export class WebSessionStore {
   }
 
   publish(id: string, event: string, data: unknown): boolean {
-    if (!/^[a-z][a-z0-9-]{0,63}$/u.test(event)) return false;
+    if (!EVENT_NAME_PATTERN.test(event)) return false;
     const entry = this.getEntry(id, false);
+    if (!entry) return false;
+    for (const sink of entry.eventSinks) sink(event, data);
+    return true;
+  }
+
+  publishByRateLimitId(rateLimitId: string, event: string, data: unknown): boolean {
+    if (!EVENT_NAME_PATTERN.test(event)) return false;
+    const entry = this.getLogicalEntry(rateLimitId);
     if (!entry) return false;
     for (const sink of entry.eventSinks) sink(event, data);
     return true;
@@ -229,6 +248,16 @@ export class WebSessionStore {
 
   async finishedDisposals(): Promise<void> {
     await Promise.all(this.pendingDisposals);
+  }
+
+  private getLogicalEntry(rateLimitId: string): WebSessionEntry | null {
+    const entry = this.sessionsByRateLimitId.get(rateLimitId);
+    if (!entry || entry.revoked) return null;
+    if (this.isExpired(entry, this.now())) {
+      void this.destroyEntry(entry);
+      return null;
+    }
+    return entry;
   }
 
   private getEntry(id: string, touch: boolean): WebSessionEntry | null {

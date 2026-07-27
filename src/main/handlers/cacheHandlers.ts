@@ -119,30 +119,51 @@ const WRITABLE_CACHE_COLLECTIONS = new Set<string>([
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
 ]);
 
+const NOT_SIGNED_IN_ERROR = 'Relay is not signed in';
+const REAUTH_FAILED_ERROR = 'Re-authentication failed';
+
+/** Attributes the whole batch to one cause instead of letting each change carry
+ *  a raw transport error, and returns that cause to the caller. */
+function failPendingBatch(
+  pending: PendingChanges,
+  changes: ReturnType<PendingChanges['getAll']>,
+  reason: string,
+): string {
+  for (const change of changes) pending.markFailure(change.id, reason);
+  broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
+    pendingCount: changes.length,
+    issueCount: changes.length,
+    lastError: reason,
+  });
+  return reason;
+}
+
+/** Resolves to null when the replay may proceed, or the reason it may not. */
 async function ensureSyncAuthentication(
   sync: SyncManager,
   pending: PendingChanges,
   changes: ReturnType<PendingChanges['getAll']>,
   getAppConfig?: () => AppConfig | null,
-): Promise<boolean> {
-  if (sync.isAuthenticated()) return true;
+): Promise<string | null> {
+  if (sync.isAuthenticated()) return null;
   const config = getAppConfig?.()?.load();
-  if (!config?.secret) return true;
+  // An unauthenticated client with no readable secret — the config was cleared
+  // mid-session, or its secret cannot be decrypted — cannot sign in at all.
+  // Syncing anyway just fails every change with a raw PocketBase error that
+  // names the symptom instead of the cause.
+  if (!config?.secret) {
+    loggers.sync.error('Pending sync skipped: no stored Relay credential');
+    return failPendingBatch(pending, changes, NOT_SIGNED_IN_ERROR);
+  }
   try {
     await sync.reauthenticate(RELAY_APP_USER_EMAIL, config.secret);
     loggers.sync.info('SyncManager re-authenticated');
-    return true;
+    return null;
   } catch (authErr) {
     loggers.sync.error('SyncManager re-auth failed', {
       authFailure: safePocketBaseAuthFailure(authErr),
     });
-    for (const change of changes) pending.markFailure(change.id, 'Re-authentication failed');
-    broadcastToAllWindows(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, {
-      pendingCount: changes.length,
-      issueCount: changes.length,
-      lastError: 'Re-authentication failed',
-    });
-    return false;
+    return failPendingBatch(pending, changes, REAUTH_FAILED_ERROR);
   }
 }
 
@@ -256,11 +277,12 @@ export function setupCacheHandlers(
     const changes = pending.getAll();
     if (changes.length === 0) return { total: 0, conflicts: 0, errors: [] };
 
-    if (!(await ensureSyncAuthentication(sync, pending, changes, getAppConfig))) {
+    const authFailure = await ensureSyncAuthentication(sync, pending, changes, getAppConfig);
+    if (authFailure) {
       return {
         total: changes.length,
         conflicts: 0,
-        errors: ['Re-authentication failed'],
+        errors: [authFailure],
         remaining: changes.length,
         remainingChanges: pendingOverlays(changes),
       };

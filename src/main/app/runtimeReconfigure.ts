@@ -111,7 +111,8 @@ async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> 
   let privilegedRuntimeReady = config?.mode !== 'server';
   if (config?.mode === 'server') {
     const result = await startPocketBase(config, configDataDir);
-    if (result.status !== 'started') throw new Error('Failed to start PocketBase server.');
+    // The reason is a fixed, user-safe sentence describing the actual cause.
+    if (result.status !== 'started') throw new Error(result.reason);
     privilegedRuntimeReady = result.privilegedRuntimeReady;
     if (!result.privilegedRuntimeReady) {
       loggers.security.warn('Privileged runtime deferred until role account migration completes', {

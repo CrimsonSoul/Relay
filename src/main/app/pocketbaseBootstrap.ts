@@ -50,6 +50,43 @@ class AppUserEnsureError extends Error {
     this.name = 'AppUserEnsureError';
   }
 }
+
+/**
+ * A startup failure whose cause is already understood well enough to tell the
+ * user what to do about it. `userMessage` is always a fixed sentence so no
+ * server-reflected text — and therefore no secret — can reach the UI.
+ */
+class PocketBaseStartupError extends Error {
+  constructor(
+    readonly userMessage: string,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'PocketBaseStartupError';
+  }
+}
+
+const POCKETBASE_START_FAILURE = {
+  binaryMissing:
+    'The PocketBase server bundled with Relay is missing for this platform. Reinstall Relay to restore it.',
+  hooksMissing:
+    "Relay's bundled PocketBase hook files are missing. Reinstall Relay to restore them.",
+  reauthenticationRoute:
+    'Relay could not verify its privileged PocketBase route. Reinstall Relay to restore its bundled hook files.',
+  rateLimit: 'Relay could not apply the PocketBase rate limits its privileged routes depend on.',
+  credentialRepair:
+    'Relay could not repair its PocketBase administrator credentials. Restore a backup or reconfigure the workspace.',
+  authentication:
+    'Relay could not sign in to its PocketBase workspace with the stored passphrase. Reconfigure the workspace to set a new one.',
+  appUser:
+    'Relay could not prepare the PocketBase account remote clients sign in with. Restart the workspace to try again.',
+  fallback: 'Relay could not start its PocketBase workspace. See the Relay logs for details.',
+} as const;
+
+function describePortUnavailable(port: number): string {
+  return `PocketBase could not start on port ${port}. Another program may already be using that port.`;
+}
 const MAINTENANCE_INITIAL_DELAY_MS = 30_000;
 const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SUPERUSER_REPAIR_DIRECTORY_PREFIX = '.relay-pb-repair-';
@@ -284,9 +321,38 @@ function getRequiredPocketBaseHooksDir(appRoot: string): string {
     : join(appRoot, 'resources', 'pocketbase', 'hooks');
   const reauthenticationHookPath = join(hooksDir, PRIVILEGED_REAUTHENTICATION_HOOK_FILE);
   if (!existsSync(reauthenticationHookPath)) {
-    throw new Error('PocketBase privileged reauthentication hook is missing');
+    throw new PocketBaseStartupError(
+      POCKETBASE_START_FAILURE.hooksMissing,
+      'PocketBase privileged reauthentication hook is missing',
+    );
   }
   return hooksDir;
+}
+
+type PocketBaseStartContext = Readonly<{
+  binaryPath: string;
+  port: number;
+}>;
+
+/**
+ * Start the managed process, mapping the two failures a user can actually act
+ * on — a missing bundled binary and an occupied port — onto distinct causes.
+ */
+async function startManagedProcess(
+  pbProcess: PocketBaseProcess,
+  context: PocketBaseStartContext,
+): Promise<void> {
+  try {
+    await pbProcess.start();
+  } catch (error) {
+    throw new PocketBaseStartupError(
+      existsSync(context.binaryPath)
+        ? describePortUnavailable(context.port)
+        : POCKETBASE_START_FAILURE.binaryMissing,
+      'PocketBase server process failed to start',
+      { cause: error },
+    );
+  }
 }
 
 async function enforcePocketBaseAuthRateLimit(
@@ -298,7 +364,11 @@ async function enforcePocketBaseAuthRateLimit(
     await ensurePocketBaseAuthRateLimit(pb);
   } catch (error) {
     await pbProcess.stop();
-    throw error;
+    throw new PocketBaseStartupError(
+      POCKETBASE_START_FAILURE.rateLimit,
+      'PocketBase authentication rate limits could not be enforced',
+      { cause: error },
+    );
   }
 }
 
@@ -317,9 +387,11 @@ async function verifyPrivilegedReauthenticationRoute(
     }
   } catch (error) {
     await pbProcess.stop();
-    throw new Error('PocketBase privileged reauthentication route is unavailable', {
-      cause: error,
-    });
+    throw new PocketBaseStartupError(
+      POCKETBASE_START_FAILURE.reauthenticationRoute,
+      'PocketBase privileged reauthentication route is unavailable',
+      { cause: error },
+    );
   }
 }
 
@@ -378,7 +450,10 @@ function repairSuperuserCredentials(binaryPath: string, pbDataDir: string, secre
       binaryPath,
       pbDataDir,
     });
-    throw new Error('PocketBase superuser credential repair failed.');
+    throw new PocketBaseStartupError(
+      POCKETBASE_START_FAILURE.credentialRepair,
+      'PocketBase superuser credential repair failed.',
+    );
   } finally {
     try {
       rmSync(secretPath, { force: true });
@@ -456,15 +531,24 @@ async function ensureAppUser(localUrl: string, secret: string): Promise<PocketBa
 }
 
 async function stopRunningPocketBaseForReconfigure(): Promise<void> {
-  const existingProcess = getPbProcess();
-  if (!existingProcess?.isRunning()) return;
-
-  loggers.pocketbase.info('Stopping PocketBase for reconfigure');
+  // A successful start replaces the retention manager unconditionally, so the
+  // previous one has to be stopped even when PocketBase is currently down.
+  // Otherwise every restart after a crash orphans a daily schedule that keeps
+  // authenticating as the superuser against the retired client, against a
+  // two-requests-per-three-seconds auth limit.
   const retentionManager = getRetentionManager();
   if (retentionManager) {
     retentionManager.stop();
     setRetentionManager(null);
   }
+
+  const existingProcess = getPbProcess();
+  if (!existingProcess) return;
+
+  loggers.pocketbase.info('Stopping PocketBase for reconfigure');
+  // Stop regardless of isRunning(): a crashed process may still be waiting out
+  // its restart backoff, and only stop() cancels that pending restart before a
+  // second server is spawned onto the same port and data directory.
   await existingProcess.stop();
 }
 
@@ -519,7 +603,7 @@ async function authenticatePocketBaseSuperuser(
   PocketBaseClient: PocketBaseClientConstructor,
   localUrl: string,
   pbProcess: PocketBaseProcess,
-  binaryPath: string,
+  context: PocketBaseStartContext,
   pbDataDir: string,
   secret: string,
 ): Promise<PocketBase> {
@@ -532,8 +616,8 @@ async function authenticatePocketBaseSuperuser(
     }
     loggers.pocketbase.warn('PocketBase superuser credentials rejected; repairing once');
     await pbProcess.stop();
-    repairSuperuserCredentials(binaryPath, pbDataDir, secret);
-    await pbProcess.start();
+    repairSuperuserCredentials(context.binaryPath, pbDataDir, secret);
+    await startManagedProcess(pbProcess, context);
     pb = new PocketBaseClient(localUrl);
     try {
       await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
@@ -575,9 +659,22 @@ async function stopPocketBaseAfterStartupFailure(
 }
 
 export type PocketBaseStartResult =
-  | { status: 'failed' }
+  | { status: 'failed'; reason: string }
   | { status: 'started'; privilegedRuntimeReady: true }
   | { status: 'started'; privilegedRuntimeReady: false; reason: string };
+
+/**
+ * Translate a startup failure into a fixed, actionable sentence. Callers show
+ * this to the user, so it must never carry text the server or OS produced.
+ */
+function describePocketBaseStartFailure(error: unknown): string {
+  if (error instanceof PocketBaseStartupError) return error.userMessage;
+  if (error instanceof AppUserEnsureError) return POCKETBASE_START_FAILURE.appUser;
+  if (error instanceof PocketBaseAuthenticationError) {
+    return POCKETBASE_START_FAILURE.authentication;
+  }
+  return POCKETBASE_START_FAILURE.fallback;
+}
 
 export type PocketBaseStartOptions = Readonly<{
   onHealthy?: () => void;
@@ -639,6 +736,7 @@ const doStartPocketBase = async (
       hooksDir,
       port: serverConfig.port,
     };
+    const startContext: PocketBaseStartContext = { binaryPath, port: serverConfig.port };
 
     // Apply the authoritative PocketBase rate policy while bound to loopback.
     // A LAN listener is created only after that policy has been persisted.
@@ -649,7 +747,7 @@ const doStartPocketBase = async (
     managedPbProcess = pbProcess;
     setPbProcess(pbProcess);
 
-    await pbProcess.start();
+    await startManagedProcess(pbProcess, startContext);
 
     const localUrl = pbProcess.getLocalUrl();
     await verifyPrivilegedReauthenticationRoute(localUrl, pbProcess);
@@ -658,7 +756,7 @@ const doStartPocketBase = async (
       PocketBaseClient,
       localUrl,
       pbProcess,
-      binaryPath,
+      startContext,
       pbDataDir,
       serverConfig.secret,
     );
@@ -671,7 +769,7 @@ const doStartPocketBase = async (
       });
       managedPbProcess = pbProcess;
       setPbProcess(pbProcess);
-      await pbProcess.start();
+      await startManagedProcess(pbProcess, startContext);
       await verifyPrivilegedReauthenticationRoute(localUrl, pbProcess);
       pb = new PocketBaseClient(localUrl);
       try {
@@ -719,6 +817,6 @@ const doStartPocketBase = async (
     clearRelayAppUserAuthCoordinator();
     await stopPocketBaseAfterStartupFailure(managedPbProcess);
     loggers.pocketbase.error('Failed to start PocketBase', { error: pbError });
-    return { status: 'failed' };
+    return { status: 'failed', reason: describePocketBaseStartFailure(pbError) };
   }
 };

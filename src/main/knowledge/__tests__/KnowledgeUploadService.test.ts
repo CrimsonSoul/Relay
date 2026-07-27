@@ -10,6 +10,7 @@ import {
   type KnowledgeUploadManifestView,
 } from '@shared/knowledge';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import { KnowledgeSourceError } from '../knowledgeChunking';
 import type { KnowledgeUploadQueueState } from '../KnowledgeUploadQueueStore';
 import {
   KnowledgeUploadScheduler,
@@ -4279,5 +4280,61 @@ describe('KnowledgeUploadService', () => {
       KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
       expect.anything(),
     );
+  });
+
+  it('keeps persisting after a rejected queue save and flags the affected entries', async () => {
+    const store = queueStore();
+    store.save.mockRejectedValueOnce(new Error('disk-full'));
+    const { runtime } = commandRuntime();
+    const emitSnapshot = vi.fn();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => candidate()),
+      planSource: vi.fn(async () => ({
+        ...candidate(),
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      emitSnapshot,
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
+
+    await expect(
+      service.queuePaths(['/private/work/First.pdf'], 'web-session-a'),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(emitSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ safeError: 'upload-failed' })],
+      }),
+    );
+
+    await service.whenIdle();
+
+    // A poisoned tail would leave the store holding nothing but its initial empty queue.
+    expect(store.save.mock.calls.length).toBeGreaterThan(1);
+    expect(store.current().entries).toHaveLength(1);
+  });
+
+  it('names the size limit when a selected PDF exceeds the maximum', async () => {
+    const store = queueStore();
+    const { runtime } = commandRuntime();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      inspectCandidate: vi.fn(async () => {
+        throw new KnowledgeSourceError('too-large');
+      }),
+    });
+
+    await expect(service.queuePaths(['/private/work/Huge.pdf'], 'web-session-a')).resolves.toEqual({
+      ok: false,
+      error: 'too-large',
+    });
   });
 });

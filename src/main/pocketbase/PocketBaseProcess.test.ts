@@ -651,6 +651,71 @@ describe('PocketBaseProcess', () => {
     vi.useRealTimers();
   });
 
+  it('stop() cancels a restart that is still waiting out its crash backoff', async () => {
+    const children = [makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    vi.useFakeTimers();
+
+    await pbProcess.start();
+    children[0].exitCode = 1;
+    children[0]._emit('exit', 1, null);
+
+    // The child reference is already null while the backoff runs, so stop() has
+    // to record the intent without one or the retired instance respawns.
+    await pbProcess.stop();
+    await vi.advanceTimersByTimeAsync(20000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it('killSync() cancels a restart that is still waiting out its crash backoff', async () => {
+    const children = [makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    vi.useFakeTimers();
+
+    await pbProcess.start();
+    children[0].exitCode = 1;
+    children[0]._emit('exit', 1, null);
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    pbProcess.killSync();
+    processKillSpy.mockRestore();
+    await vi.advanceTimersByTimeAsync(20000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it('start() re-arms crash handling after a stop that found no child', async () => {
+    const children = [makeMockChild(), makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    vi.useFakeTimers();
+
+    // stop() with no child latches the stop intent; a deliberate restart of the
+    // same instance must clear it again.
+    await pbProcess.stop();
+    await pbProcess.start();
+    children[0].exitCode = 1;
+    children[0]._emit('exit', 1, null);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
   // ── stdout/stderr listeners ──────────────────────────────────────────────────
 
   it('logs stdout data from PocketBase', async () => {

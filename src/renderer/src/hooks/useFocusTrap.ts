@@ -1,7 +1,19 @@
 import { useEffect, useRef, useCallback } from 'react';
 
 const FOCUSABLE_SELECTOR =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Elements the browser will actually focus. Disabled and hidden controls match
+ * a plain selector but can never become document.activeElement — treating one
+ * as the cycle boundary silently broke the trap, letting Tab escape the dialog,
+ * and a disabled first match made the initial focus() call a no-op.
+ */
+function focusableWithin(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
+    (element) => !element.hidden && !element.closest('[hidden],[aria-hidden="true"],[inert]'),
+  );
+}
 
 type FocusTrapOptions = Readonly<{
   restoreOnDeactivate?: boolean;
@@ -50,14 +62,12 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const focusableElements =
-      containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusableElements.length > 0) {
-      // Small delay to ensure modal content is rendered
-      requestAnimationFrame(() => {
-        focusableElements[0]!.focus();
-      });
-    }
+    const focusableElements = focusableWithin(containerRef.current);
+    if (focusableElements.length === 0) return;
+    // Small delay to ensure modal content is rendered. Cancelled on teardown so
+    // a modal closed within the same frame cannot steal focus back afterwards.
+    const frame = requestAnimationFrame(() => focusableElements[0]!.focus());
+    return () => cancelAnimationFrame(frame);
   }, [isActive]);
 
   // Handle Tab key to trap focus
@@ -66,8 +76,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       if (!isActive || !containerRef.current) return;
       if (e.key !== 'Tab') return;
 
-      const focusableElements =
-        containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      const focusableElements = focusableWithin(containerRef.current);
       if (focusableElements.length === 0) return;
 
       const firstElement = focusableElements[0]!;

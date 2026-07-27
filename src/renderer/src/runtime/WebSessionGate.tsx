@@ -7,7 +7,7 @@ import {
   type ReactElement,
 } from 'react';
 import type { WebSessionBootstrap, WebSessionBootstrapResult } from '@shared/webApi';
-import { WebLoginScreen } from '../components/WebLoginScreen';
+import { WebLoginScreen, type WebLoginOutcome } from '../components/WebLoginScreen';
 import { loadAuthSession } from '../services/pocketbase';
 import { webSessionClient } from './WebSessionClient';
 
@@ -20,6 +20,7 @@ export type WebSessionClientPort = {
   bootstrap(): Promise<WebSessionBootstrapResult>;
   login(input: { passphrase: string }): Promise<WebSessionBootstrapResult>;
   activate(session: WebSessionBootstrap): Promise<void>;
+  logout(): Promise<unknown>;
 };
 
 type AppModule = { default: ComponentType<WebSessionAppProps> };
@@ -43,7 +44,7 @@ async function resolveSession(
   return { stage: 'ready', App };
 }
 
-function defaultSignIn(login: (passphrase: string) => Promise<boolean>): ReactElement {
+function defaultSignIn(login: (passphrase: string) => Promise<WebLoginOutcome>): ReactElement {
   return (
     <WebLoginScreen serverLabel={globalThis.location?.hostname || 'Relay server'} onLogin={login} />
   );
@@ -56,7 +57,7 @@ export function WebSessionGate({
 }: Readonly<{
   client?: WebSessionClientPort;
   appLoader?: () => Promise<AppModule>;
-  renderSignIn?: (login: (passphrase: string) => Promise<boolean>) => ReactElement;
+  renderSignIn?: (login: (passphrase: string) => Promise<WebLoginOutcome>) => ReactElement;
 }>): ReactElement {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<GateState>({ stage: 'checking' });
@@ -71,21 +72,24 @@ export function WebSessionGate({
   const requestSignIn = useCallback(() => {
     resolutionRef.current = null;
     setState({ stage: 'sign-in' });
-  }, []);
+    // React state alone does not sign anyone out: the relay_web_session cookie survives, so a
+    // reload on a shared browser would hand the next person the previous user's session.
+    void client.logout();
+  }, [client]);
 
   const signIn = useCallback(
-    async (passphrase: string) => {
+    async (passphrase: string): Promise<WebLoginOutcome> => {
       const result = await client.login({ passphrase });
-      if (!result.ok) return false;
+      if (!result.ok) return result.error === 'unauthenticated' ? 'rejected' : result.error;
       setState({ stage: 'checking' });
       try {
         await client.activate(result.session);
         const { default: App } = await appLoader();
         setState({ stage: 'ready', App });
-        return true;
+        return 'accepted';
       } catch {
         setState({ stage: 'error' });
-        return false;
+        return 'unavailable';
       }
     },
     [appLoader, client],

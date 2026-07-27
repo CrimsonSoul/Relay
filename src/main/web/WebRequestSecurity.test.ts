@@ -80,6 +80,29 @@ describe('WebRequestSecurity', () => {
     expect(security.validateOrigin('GET', undefined, expectedOrigin, true)).toBe(true);
   });
 
+  it('rebuilds connect-src from the refreshed interfaces so a later host is never CSP-blocked', () => {
+    const getInterfaceAddresses = vi
+      .fn()
+      .mockReturnValueOnce(['192.168.1.25'])
+      .mockReturnValue(['192.168.1.25', '10.20.30.40']);
+    const security = new WebRequestSecurity({
+      port: 8091,
+      hostname: 'relay-server',
+      getInterfaceAddresses,
+      connectPort: 8090,
+    });
+
+    expect(security.responseHeaders()['Content-Security-Policy']).not.toContain(
+      'http://10.20.30.40:8090',
+    );
+    expect(security.validateNetwork('10.20.30.41', '10.20.30.40:8091')).toMatchObject({ ok: true });
+
+    const policy = security.responseHeaders()['Content-Security-Policy'];
+    expect(policy).toContain('http://10.20.30.40:8090');
+    expect(policy).toContain('http://relay-server:8090');
+    expect(policy).toContain('http://127.0.0.1:8090');
+  });
+
   it('emits restrictive browser headers without permissive CORS', () => {
     const security = new WebRequestSecurity({
       port: 8091,

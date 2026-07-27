@@ -191,6 +191,33 @@ describe('WebBridge', () => {
     });
   });
 
+  it('waits out a throttled chunk instead of discarding the whole upload', async () => {
+    const file = new File(['%PDF-throttle'], 'Runbook.pdf', { type: 'application/pdf' });
+    const actions = createBrowserActions({ pickPdfFiles: async () => [file] });
+    const request = vi.fn(async (path: string) => {
+      if (path === '/knowledge/upload/begin') {
+        return { batchId: 'batch-1', files: [{ id: 'file-1', name: file.name, size: file.size }] };
+      }
+      if (path === '/knowledge/upload/commit') return { ok: true, uploads: [] };
+      return EMPTY_STATUS;
+    });
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'retry-after': '1' } }))
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const bridge = createWebBridge(SESSION, { actions, request, fetcher });
+
+    const upload = bridge.selectAndQueueKnowledgePdfs();
+    // The retried chunk waits out the advertised Retry-After before it is re-sent.
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2), { timeout: 5_000 });
+
+    await expect(upload).resolves.toEqual({ ok: true, uploads: [] });
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      '/knowledge/upload/begin',
+      '/knowledge/upload/commit',
+    ]);
+  });
+
   it('multiplexes subscriptions over one event stream and closes it when idle', () => {
     const instances: Array<{
       addEventListener: ReturnType<typeof vi.fn>;

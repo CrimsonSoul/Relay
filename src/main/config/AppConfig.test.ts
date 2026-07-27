@@ -172,6 +172,68 @@ describe('AppConfig', () => {
     expect(config.load()).toBeNull();
   });
 
+  it('reports an absent config separately from one it cannot decrypt', () => {
+    expect(new AppConfig(tempDir).readState()).toEqual({ status: 'absent' });
+
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+        decryptString: () => {
+          throw new Error('decryption failed after OS profile change');
+        },
+      },
+    } as never);
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        lanAccessConfigured: true,
+        encryptedSecret: Buffer.from('encrypted:workspace-secret').toString('base64'),
+      }),
+      'utf-8',
+    );
+
+    const state = new AppConfig(tempDir).readState();
+
+    expect(state.status).toBe('unreadable');
+    expect(state).toMatchObject({ reason: expect.stringMatching(/could not read/i) });
+  });
+
+  it('refuses to overwrite a configuration it cannot decrypt', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+        decryptString: () => {
+          throw new Error('decryption failed after OS profile change');
+        },
+      },
+    } as never);
+    const configPath = join(tempDir, 'config.json');
+    const serialized = JSON.stringify({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      lanAccessConfigured: true,
+      encryptedSecret: Buffer.from('encrypted:workspace-secret').toString('base64'),
+    });
+    writeFileSync(configPath, serialized, 'utf-8');
+    const config = new AppConfig(tempDir);
+
+    // Completing setup here would mint a new secret and invalidate every remote
+    // client's stored credential.
+    expect(() =>
+      config.save({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'replacement' }),
+    ).toThrow(/could not read/i);
+    expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
+    expect(existsSync(`${configPath}.tmp`)).toBe(false);
+  });
+
   it('load uses plaintext secret when encryptedSecret absent', () => {
     writeFileSync(
       join(tempDir, 'config.json'),

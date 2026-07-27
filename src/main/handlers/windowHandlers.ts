@@ -1,6 +1,6 @@
 import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { execFile } from 'node:child_process';
-import { writeFile, readFile, stat } from 'node:fs/promises';
+import { writeFile, readFile, stat, mkdtemp, rm } from 'node:fs/promises';
 import { basename, extname, parse, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS, MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
@@ -63,6 +63,58 @@ function openMacOutlookDraft(filePath: string): Promise<string> {
 function openAlertDraftFile(filePath: string): Promise<string> {
   if (process.platform === 'darwin') return openMacOutlookDraft(filePath);
   return shell.openPath(filePath);
+}
+
+/**
+ * Hands a generated document to another desktop app by path without exposing it
+ * to the rest of the machine. A predictable name in the shared temp directory is
+ * readable by every local user on Linux, and can be pre-created there as a
+ * symlink for writeFile to follow; mkdtemp instead yields a fresh 0700 directory
+ * owned by this user. The payload is removed once the opener has taken it, so
+ * invites and 20MB alert drafts stop accumulating for the life of the machine.
+ *
+ * Resolves with the opener's error string, or '' when the document opened.
+ */
+/**
+ * Directories whose document was successfully handed to another app, removed on
+ * the NEXT call rather than immediately. On Windows `shell.openPath` resolves
+ * once the helper app has been launched — not once it has read the file — so
+ * deleting straight away can pull a 20MB draft out from under a cold-starting
+ * Outlook. Deferring bounds the residue to a single 0700 directory while giving
+ * the opener unbounded time to read.
+ */
+let handedOffTempDirectories: string[] = [];
+
+async function removeTempDirectory(directory: string): Promise<void> {
+  // Best effort — a leftover 0700 directory is not a disclosure risk.
+  await rm(directory, { recursive: true, force: true }).catch((err: unknown) => {
+    loggers.ipc.warn('Temp document cleanup failed', { error: getErrorMessage(err) });
+  });
+}
+
+async function openThroughPrivateTempFile(
+  fileName: string,
+  content: string,
+  open: (filePath: string) => Promise<string>,
+): Promise<string> {
+  const previous = handedOffTempDirectories;
+  handedOffTempDirectories = [];
+  await Promise.all(previous.map(removeTempDirectory));
+
+  const directory = await mkdtemp(join(app.getPath('temp'), 'relay-'));
+  let handedOff = false;
+  try {
+    const filePath = join(directory, fileName);
+    await writeFile(filePath, content, { encoding: 'utf8', mode: 0o600 });
+    const openError = await open(filePath);
+    handedOff = openError === '';
+    return openError;
+  } finally {
+    // Nothing consumed the file if the open threw or reported an error, so it
+    // can go now; only a real hand-off has to outlive this call.
+    if (handedOff) handedOffTempDirectories.push(directory);
+    else await removeTempDirectory(directory);
+  }
 }
 
 /**
@@ -264,10 +316,10 @@ export function setupWindowHandlers(
       return false;
     }
     try {
-      const filePath = join(app.getPath('temp'), `relay-bridge-${Date.now()}.ics`);
-      await writeFile(filePath, content, 'utf8');
       // shell.openPath never rejects; it resolves with a non-empty error string on failure
-      const openError = await shell.openPath(filePath);
+      const openError = await openThroughPrivateTempFile('relay-bridge.ics', content, (filePath) =>
+        shell.openPath(filePath),
+      );
       if (openError) {
         loggers.ipc.warn('ICS open failed', { error: openError });
         return false;
@@ -298,9 +350,11 @@ export function setupWindowHandlers(
       return false;
     }
     try {
-      const filePath = join(app.getPath('temp'), `relay-alert-${Date.now()}.eml`);
-      await writeFile(filePath, content, { encoding: 'utf8', mode: 0o600 });
-      const openError = await openAlertDraftFile(filePath);
+      const openError = await openThroughPrivateTempFile(
+        'relay-alert.eml',
+        content,
+        openAlertDraftFile,
+      );
       if (openError) {
         loggers.ipc.warn('Alert draft open failed', { error: openError });
         return false;

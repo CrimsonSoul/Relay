@@ -266,6 +266,17 @@ export class DynatraceWindowManager {
 
     window.on('closed', () => {
       this.windows.delete(id);
+
+      // 'closed' arrives asynchronously, so removeDashboard() has already dropped
+      // the store and runtime entries by the time it fires. Recording state here
+      // would resurrect an id nothing can ever read or delete again.
+      if (!this.options.store.list().some((dashboard) => dashboard.id === id)) return;
+
+      // A load failure is terminal and carries the only explanation the user gets
+      // (DNS failure, VPN down). openDashboard() closes the window it just failed
+      // to load, so a bare 'closed' here would erase that reason immediately.
+      if (this.runtime.get(id)?.state === 'load-failed') return;
+
       this.updateRuntime(id, 'closed');
     });
   }

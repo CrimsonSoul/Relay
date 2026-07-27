@@ -60,6 +60,10 @@ export class PocketBaseProcess {
   }
 
   async start(): Promise<void> {
+    // Starting cancels any earlier stop intent. stop()/killSync() latch the flag
+    // even when no child is alive, so a reused instance would otherwise spawn a
+    // child whose crashes are silently ignored.
+    this.stopping = false;
     this.cleanupStalePocketBaseProcesses();
 
     const args = this.getSpawnArgs();
@@ -134,8 +138,14 @@ export class PocketBaseProcess {
   }
 
   async stop(): Promise<void> {
-    if (!this.child || this.stopping) return;
+    if (this.stopping) return;
+    // Claim the stop intent before the "no child" check. Between a crash and the
+    // end of its restart backoff there is no child, and handleCrash() only honours
+    // a stop that was recorded before the delay elapsed. Returning early without
+    // it lets the retired instance spawn a second server that kills whatever is
+    // already listening on the port.
     this.stopping = true;
+    if (!this.child) return;
 
     logger.info('Stopping PocketBase');
 
@@ -185,8 +195,10 @@ export class PocketBaseProcess {
 
   /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */
   killSync(): void {
-    if (!this.child?.pid) return;
+    // Recorded before the "no child" check so a restart backoff still running at
+    // quit time cannot resurrect PocketBase after the app has torn everything down.
     this.stopping = true;
+    if (!this.child?.pid) return;
     const pid = this.child.pid;
     logger.info('Force-killing PocketBase (sync)', { pid });
 

@@ -300,6 +300,21 @@ describe('knowledgeHandlers', () => {
     expect(retryUpload).toHaveBeenCalledTimes(1);
   });
 
+  it('reports a control failure instead of claiming the request succeeded', async () => {
+    reselectSource.mockResolvedValueOnce(false);
+
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT]({}, 'upload-1')).resolves.toBe(
+      false,
+    );
+
+    reselectSource.mockResolvedValueOnce(true);
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT]({}, 'upload-1')).resolves.toBe(
+      true,
+    );
+    // Void controls have no outcome of their own, so dispatch still counts as success.
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY]({}, 'upload-1')).resolves.toBe(true);
+  });
+
   describe('KNOWLEDGE_OPEN_WEB_LINK', () => {
     it('rejects an untrusted sender before rate limiting or opening', async () => {
       trusted.mockReturnValueOnce(false);

@@ -32,7 +32,9 @@ type UploadServiceFactoryOptions = {
 };
 
 type WebKnowledgeSessionOptions = {
-  sessionId: string;
+  // Staging directories and queue identity must survive cookie rotation, so this is the
+  // stable logical session id rather than the rotating browser cookie value.
+  logicalSessionId: string;
   sessions: WebSessionStore;
   runtime: PrivilegedRuntime;
   rootDir: string;
@@ -71,9 +73,13 @@ export class WebKnowledgeSession {
   private disposePromise: Promise<void> | null = null;
 
   constructor(private readonly options: WebKnowledgeSessionOptions) {
-    this.localSourceId = `web-${options.sessionId}`;
+    this.localSourceId = `web-${options.logicalSessionId}`;
     const emitSnapshot = (snapshot: KnowledgeUploadQueueView) => {
-      options.sessions.publish(options.sessionId, 'knowledge-upload-queue-changed', snapshot);
+      options.sessions.publishByRateLimitId(
+        options.logicalSessionId,
+        'knowledge-upload-queue-changed',
+        snapshot,
+      );
     };
     this.upload = options.createUploadService
       ? options.createUploadService({ emitSnapshot })
@@ -84,7 +90,7 @@ export class WebKnowledgeSession {
         });
     this.staging = new WebKnowledgeUploadStaging({
       rootDir: options.rootDir,
-      sessionId: options.sessionId,
+      sessionId: options.logicalSessionId,
       localSourceId: this.localSourceId,
       queuePaths: (paths, localSourceId, replacementDocumentId) =>
         replacementDocumentId
@@ -94,7 +100,9 @@ export class WebKnowledgeSession {
     this.stopRuntime = options.runtime.onSessionChanged((view: PrivilegedSessionView) => {
       this.upload.handleSessionChanged(view);
     });
-    if (!options.sessions.registerCleanup(options.sessionId, () => this.dispose())) {
+    if (
+      !options.sessions.registerCleanupByRateLimitId(options.logicalSessionId, () => this.dispose())
+    ) {
       this.stopRuntime();
       disposeRejectedKnowledgeSession(this.upload, this.staging);
       throw new TypeError('Ordinary web session is unavailable.');

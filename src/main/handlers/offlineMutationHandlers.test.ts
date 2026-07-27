@@ -12,6 +12,9 @@ vi.mock('electron', () => ({
 }));
 vi.mock('../utils/trustedSender', () => ({ assertTrustedIpcSender: () => true }));
 
+const mockCheckMutationRateLimit = vi.hoisted(() => vi.fn(() => true));
+vi.mock('./ipcHelpers', () => ({ checkMutationRateLimit: mockCheckMutationRateLimit }));
+
 describe('offlineMutationHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
   const cache = {
@@ -30,6 +33,7 @@ describe('offlineMutationHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCheckMutationRateLimit.mockReturnValue(true);
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = handler as (...args: unknown[]) => unknown;
       return ipcMain;
@@ -68,6 +72,38 @@ describe('offlineMutationHandlers', () => {
       IPC_CHANNELS.OFFLINE_MUTATION_APPLIED,
       expect.objectContaining({ collection: 'contacts', pendingCount: 1 }),
     );
+  });
+
+  it('meters accepted mutations against the data mutation rate limit', () => {
+    handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      {},
+      {
+        collection: 'contacts',
+        action: 'update',
+        recordId: 'abc123abc123abc',
+        data: { name: 'After' },
+      },
+    );
+
+    expect(mockCheckMutationRateLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to queue or persist a mutation once the rate limit is exhausted', () => {
+    mockCheckMutationRateLimit.mockReturnValue(false);
+
+    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      {},
+      {
+        collection: 'contacts',
+        action: 'update',
+        recordId: 'abc123abc123abc',
+        data: { name: 'After' },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('assigns a valid stable PocketBase ID to offline creates', () => {

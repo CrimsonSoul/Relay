@@ -110,6 +110,44 @@ describe('WebSessionClient', () => {
     expect(cleanup).toHaveBeenCalledTimes(2);
   });
 
+  it('maps a throttled sign-in to rate-limited instead of the generic unavailable state', async () => {
+    fetcher.mockResolvedValue(
+      new Response(JSON.stringify({ ok: false, error: 'rate-limited' }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '30' },
+      }),
+    );
+    const client = new WebSessionClient({ fetcher, install });
+
+    await expect(client.login({ passphrase: 'exact browser passphrase' })).resolves.toEqual({
+      ok: false,
+      error: 'rate-limited',
+    });
+  });
+
+  it('keeps one event stream across the bridge reinstall that every refresh performs', async () => {
+    const instances: unknown[] = [];
+    class TestEventSource {
+      addEventListener = vi.fn();
+      removeEventListener = vi.fn();
+      close = vi.fn();
+      constructor(_url: string) {
+        instances.push(this);
+      }
+    }
+    vi.stubGlobal('EventSource', TestEventSource);
+    const client = new WebSessionClient({ fetcher });
+
+    await client.activate(SESSION);
+    // A shell-level subscriber never unsubscribes, so it stays attached to the first stream.
+    globalThis.api!.onAlertDismissed(vi.fn());
+    await client.activate({ ...SESSION, csrfToken: 'd'.repeat(43) });
+    globalThis.api!.onAlertDismissed(vi.fn());
+
+    expect(instances).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+
   it('installs a bootstrap bridge that exposes only the current session connection', async () => {
     const client = new WebSessionClient();
     await client.activate(SESSION);

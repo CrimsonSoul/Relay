@@ -6,6 +6,10 @@ type WebRequestSecurityOptions = {
   hostname?: string;
   getInterfaceAddresses?: () => string[];
   connectOrigins?: readonly string[];
+  // Port of the PocketBase origin the browser is told to use. connect-src is rebuilt from the
+  // live interface list for this port on every response so a host that became reachable after
+  // start (VPN, new adapter) is never handed a pbUrl the CSP then blocks.
+  connectPort?: number;
 };
 
 type NetworkValidation = { ok: true; origin: string } | { ok: false };
@@ -33,12 +37,14 @@ export class WebRequestSecurity {
   private readonly hostname: string;
   private readonly getInterfaceAddresses: () => string[];
   private readonly connectOrigins: readonly string[];
+  private readonly connectPort: number | null;
 
   constructor(options: WebRequestSecurityOptions) {
     this.port = options.port;
     this.hostname = (options.hostname ?? getHostname()).trim().toLowerCase();
     this.getInterfaceAddresses = options.getInterfaceAddresses ?? activeInterfaceAddresses;
     this.connectOrigins = options.connectOrigins ?? [];
+    this.connectPort = options.connectPort ?? null;
     this.interfaceAddresses = this.getInterfaceAddresses();
   }
 
@@ -79,7 +85,9 @@ export class WebRequestSecurity {
   }
 
   responseHeaders(): Readonly<Record<string, string>> {
-    const connectSources = ["'self'", ...this.connectOrigins].join(' ');
+    const connectSources = ["'self'", ...this.connectOrigins, ...this.liveConnectOrigins()].join(
+      ' ',
+    );
     return {
       'Cache-Control': 'no-store',
       'Content-Security-Policy': [
@@ -104,13 +112,20 @@ export class WebRequestSecurity {
     this.interfaceAddresses = this.getInterfaceAddresses();
   }
 
-  private allowedHosts(): Set<string> {
+  private liveConnectOrigins(): string[] {
+    if (this.connectPort === null) return [];
+    // Same host set validateNetwork admits, so every host a browser can legitimately reach
+    // Relay Web on also has its PocketBase origin allowed.
+    return [...this.allowedHosts(this.connectPort)].map((host) => `http://${host}`);
+  }
+
+  private allowedHosts(port = this.port): Set<string> {
     return new Set([
-      hostWithPort(this.hostname, this.port),
-      hostWithPort('localhost', this.port),
-      hostWithPort('127.0.0.1', this.port),
-      hostWithPort('::1', this.port),
-      ...this.interfaceAddresses.map((address) => hostWithPort(address, this.port)),
+      hostWithPort(this.hostname, port),
+      hostWithPort('localhost', port),
+      hostWithPort('127.0.0.1', port),
+      hostWithPort('::1', port),
+      ...this.interfaceAddresses.map((address) => hostWithPort(address, port)),
     ]);
   }
 }

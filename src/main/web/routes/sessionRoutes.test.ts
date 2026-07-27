@@ -12,7 +12,11 @@ import {
   type WebRouteResponse,
 } from '../WebRouter';
 import { WebSessionStore } from '../WebSessionStore';
-import { registerWebSessionRoutes } from './sessionRoutes';
+import {
+  registerWebSessionRoutes,
+  MAX_ABANDONED_EVENT_BYTES,
+  MAX_BUFFERED_EVENT_BYTES,
+} from './sessionRoutes';
 
 const LOOPBACK = ['127', '0', '0', '1'].join('.');
 const PASSPHRASE = ['fixture', 'passphrase', '123'].join('-');
@@ -47,10 +51,10 @@ describe('Relay Web session routes', () => {
     const sessions = new WebSessionStore();
     const dispose = vi.fn(async () => undefined);
     const refresh = vi.fn(async () => ({ token: 'refreshed-token', record: { id: 'relay-user' } }));
-    const authenticate = vi.fn(async (passphrase: string) => {
+    const authenticate = vi.fn(async (passphrase: string, browserHost?: string) => {
       if (passphrase !== PASSPHRASE) return null;
       return {
-        pbUrl: `${origin}/pocketbase`,
+        pbUrl: `http://${browserHost ?? LOOPBACK}:8090`,
         auth: { token: 'app-user-token', record: { id: 'relay-user' } },
         publicConfig: {
           mode: 'server' as const,
@@ -105,7 +109,7 @@ describe('Relay Web session routes', () => {
     expect(body).toMatchObject({
       ok: true,
       session: {
-        pbUrl: `${origin}/pocketbase`,
+        pbUrl: `http://${LOOPBACK}:8090`,
         auth: { token: 'app-user-token' },
         runtime: WEB_RUNTIME,
         presenceLabel: 'Web · Other · 127.0.0.1',
@@ -113,7 +117,7 @@ describe('Relay Web session routes', () => {
     });
     expect(body.session.csrfToken.length).toBeGreaterThanOrEqual(32);
     expect(body.session).not.toHaveProperty('rateLimitId');
-    expect(authenticate).toHaveBeenCalledWith(PASSPHRASE);
+    expect(authenticate).toHaveBeenCalledWith(PASSPHRASE, LOOPBACK);
     expect(JSON.stringify(body)).not.toContain(PASSPHRASE);
   });
 
@@ -355,6 +359,59 @@ describe('Relay Web session routes', () => {
 
     await sessions.destroy(sessionId);
     await expect(reader.read()).resolves.toMatchObject({ done: true });
+  });
+
+  it('drops events for a stalled reader and abandons the stream past the hard buffer cap', async () => {
+    const sessions = new WebSessionStore();
+    const session = sessions.create({
+      pbUrl: ['http', '://', 'relay-server', ':8090'].join(''),
+      auth: { token: 'ordinary-token', record: null },
+      publicConfig: { mode: 'server', port: 8090 },
+      runtime: WEB_RUNTIME,
+      refresh: async () => ({ token: 'fresh-token', record: null }),
+    });
+    const routes: WebRoute[] = [];
+    registerWebSessionRoutes({ register: (route: WebRoute) => routes.push(route) } as WebRouter, {
+      sessions,
+      authenticate: async () => null,
+    });
+    const eventRoute = routes.find((route) => route.path.endsWith('/session/events'))!;
+    const response = Object.assign(new EventEmitter(), {
+      writableEnded: false,
+      writableLength: 0,
+      statusCode: 0,
+      setHeader: vi.fn(),
+      write: vi.fn(() => true),
+      end: vi.fn(),
+    });
+    response.end.mockImplementation(() => {
+      response.writableEnded = true;
+    });
+    const result = (await eventRoute.handler({
+      request: new EventEmitter() as IncomingMessage,
+      body: undefined,
+      session,
+      sessionId: session.id,
+      logicalSessionId: session.rateLimitId,
+      remoteAddress: LOOPBACK,
+      origin: ['http', '://', 'relay-server', ':8091'].join(''),
+    })) as WebRouteResponse;
+    result.stream?.(response as unknown as ServerResponse);
+    expect(response.write).toHaveBeenCalledExactlyOnceWith(': connected\n\n');
+
+    // A sleeping laptop never drains the socket, so events past the soft cap are dropped rather
+    // than queued in the main process.
+    response.writableLength = MAX_BUFFERED_EVENT_BYTES + 1;
+    sessions.publish(session.id, 'alert-dismissed', { type: 'stalled' });
+    expect(response.write).toHaveBeenCalledOnce();
+    expect(response.end).not.toHaveBeenCalled();
+
+    response.writableLength = MAX_ABANDONED_EVENT_BYTES + 1;
+    sessions.publish(session.id, 'alert-dismissed', { type: 'stalled' });
+    expect(response.write).toHaveBeenCalledOnce();
+    expect(response.end).toHaveBeenCalledOnce();
+
+    await sessions.destroy(session.id);
   });
 
   it('bounds live event streams per session and reuses a permit after close', async () => {

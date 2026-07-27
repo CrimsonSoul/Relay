@@ -307,9 +307,17 @@ export class PrivilegedDeviceStore implements PrivilegedDeviceKeyStore {
         (key) => key.accountId === normalizedAccountId && key.deviceId === normalizedDeviceId,
       );
       if (index < 0 || deviceAlreadyBound) throw pairingRequired();
-      const key = registry.keys[index] as StoredDeviceKey;
-      const keys = [...registry.keys];
-      keys[index] = { ...key, deviceId: normalizedDeviceId };
+      // This workstation holds exactly one live device per account. Retiring the
+      // account's earlier bound keys as part of the bind keeps findForAccount from
+      // resurrecting a revoked device after a re-pair, which otherwise trapped the
+      // account in a permanent pairing loop and left orphan device records behind.
+      const keys = registry.keys
+        .filter((key) => key.accountId !== normalizedAccountId || key.deviceId === null)
+        .map((key) =>
+          key.accountId === normalizedAccountId && key.pendingKeyId === normalizedPendingKeyId
+            ? { ...key, deviceId: normalizedDeviceId }
+            : key,
+        );
       await this.writeRegistry({ ...registry, keys });
     });
   }

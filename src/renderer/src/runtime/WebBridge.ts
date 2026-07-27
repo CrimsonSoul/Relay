@@ -209,6 +209,38 @@ function validSelectedPdfs(files: readonly File[], replacementDocumentId?: strin
   return true;
 }
 
+// A maximum batch is ~1 GB of transfer. Treating a 429 as fatal discarded the whole thing, so a
+// throttled chunk waits out the server's Retry-After instead and only fails after the budget is
+// genuinely exhausted.
+const MAX_CHUNK_RETRIES = 5;
+const DEFAULT_CHUNK_RETRY_MS = 1_000;
+const MAX_CHUNK_RETRY_MS = 30_000;
+
+function chunkRetryDelayMs(response: Response, attempt: number): number {
+  const seconds = Number(response.headers.get('retry-after'));
+  const advertised = Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 0;
+  return Math.min(MAX_CHUNK_RETRY_MS, Math.max(advertised, DEFAULT_CHUNK_RETRY_MS * 2 ** attempt));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function uploadChunk(
+  fetcher: typeof fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let response = await fetcher(url, init);
+  for (let attempt = 0; response.status === 429 && attempt < MAX_CHUNK_RETRIES; attempt += 1) {
+    await delay(chunkRetryDelayMs(response, attempt));
+    response = await fetcher(url, init);
+  }
+  return response;
+}
+
 async function uploadKnowledgePdfs(
   files: readonly File[],
   request: WebBridgeRequest,
@@ -244,7 +276,8 @@ async function uploadKnowledgePdfs(
       for (let offset = 0; offset < file.size; offset += KNOWLEDGE_UPLOAD_CHUNK_BYTES) {
         const body = file.slice(offset, Math.min(file.size, offset + KNOWLEDGE_UPLOAD_CHUNK_BYTES));
         const parameters = new URLSearchParams({ fileId: staged.id, offset: String(offset) });
-        const response = await fetcher(
+        const response = await uploadChunk(
+          fetcher,
           `${RELAY_WEB_API_PREFIX}/knowledge/upload/chunk?${parameters}`,
           {
             cache: 'no-store',

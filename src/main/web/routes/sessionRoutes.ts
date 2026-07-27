@@ -14,14 +14,30 @@ const SESSION_COOKIE_PATH = '/relay-api';
 const SSE_HEARTBEAT_MS = 25_000;
 export const MAX_EVENT_STREAMS_PER_SESSION = 2;
 export const MAX_EVENT_STREAMS_GLOBAL = 128;
+// A browser that stops reading (sleeping laptop) never closes the socket, so the 25s heartbeat
+// cannot detect it. Past the soft cap events are dropped rather than queued in the main process;
+// past the hard cap the stream is abandoned and the client reconnects from scratch.
+export const MAX_BUFFERED_EVENT_BYTES = 256 * 1024;
+export const MAX_ABANDONED_EVENT_BYTES = 1024 * 1024;
 
 type WebSessionRouteOptions = {
   sessions: WebSessionStore;
-  authenticate: (passphrase: string) => Promise<WebSessionCreateInput | null>;
+  authenticate: (passphrase: string, browserHost?: string) => Promise<WebSessionCreateInput | null>;
 };
 
 function sessionCookie(id: string): string {
   return `${WEB_SESSION_COOKIE_NAME}=${id}; HttpOnly; SameSite=Strict; Path=${SESSION_COOKIE_PATH}`;
+}
+
+// The origin was produced by WebRequestSecurity.validateNetwork, so its host is already inside the
+// allowlist; this only strips the port and the IPv6 brackets the URL parser keeps.
+function browserHost(origin: string): string | undefined {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;
+  } catch {
+    return undefined;
+  }
 }
 
 function clearedSessionCookie(): string {
@@ -53,9 +69,9 @@ export function registerWebSessionRoutes(
     bodySchema: WebSessionLoginInputSchema,
     maxBodyBytes: 1024,
     rateLimit: { bucket: 'session-login', key: 'ip', limit: 5, windowMs: 60_000 },
-    handler: async ({ body, request, remoteAddress, sessionId, logicalSessionId }) => {
+    handler: async ({ body, request, remoteAddress, sessionId, logicalSessionId, origin }) => {
       try {
-        const authenticated = await authenticate(body.passphrase);
+        const authenticated = await authenticate(body.passphrase, browserHost(origin));
         if (!authenticated) {
           return { status: 401, body: { ok: false, error: 'unauthenticated' } };
         }
@@ -169,24 +185,33 @@ export function registerWebSessionRoutes(
             releasePermit();
             if (!response.writableEnded) response.end();
           };
+          const write = (frame: string) => {
+            if (response.writableEnded) return;
+            const buffered = response.writableLength ?? 0;
+            if (buffered > MAX_BUFFERED_EVENT_BYTES) {
+              // A stalled reader must not grow main-process memory without bound. Dropping is
+              // safe: every consumer refetches its authoritative snapshot on reconnect.
+              if (buffered > MAX_ABANDONED_EVENT_BYTES) close();
+              return;
+            }
+            response.write(frame);
+          };
           try {
             if (!sessions.registerCleanup(sessionId, close)) {
               close();
               return;
             }
             stopEvents = sessions.subscribeEvents(sessionId, (event, data) => {
-              if (!response.writableEnded) {
-                response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-              }
+              write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
             });
             heartbeat = setInterval(() => {
-              if (!response.writableEnded) response.write(': heartbeat\n\n');
+              write(': heartbeat\n\n');
             }, SSE_HEARTBEAT_MS);
             heartbeat.unref();
             request.once('close', close);
             response.once('close', close);
             response.once('error', close);
-            response.write(': connected\n\n');
+            write(': connected\n\n');
           } catch (error) {
             close();
             throw error;

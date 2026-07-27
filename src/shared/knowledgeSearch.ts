@@ -180,15 +180,18 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
+// Constructing a Segmenter costs more than the segmentation itself for passage-sized strings, and
+// this runs for every indexed chunk and every search result, so it is built once for the process.
+const GRAPHEME_SEGMENTER = new Intl.Segmenter('en-US', { granularity: 'grapheme' });
+
 export function normalizeKnowledgeSearchTextWithRanges(value: string): {
   text: string;
   sourceRanges: KnowledgeSearchSourceRange[];
 } {
-  const segmenter = new Intl.Segmenter('en-US', { granularity: 'grapheme' });
   const sourceRanges: KnowledgeSearchSourceRange[] = [];
   let text = '';
 
-  for (const segment of segmenter.segment(value)) {
+  for (const segment of GRAPHEME_SEGMENTER.segment(value)) {
     const sourceRange = {
       start: segment.index,
       end: segment.index + segment.segment.length,

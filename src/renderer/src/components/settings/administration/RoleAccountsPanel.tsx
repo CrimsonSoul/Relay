@@ -8,6 +8,7 @@ import {
 } from '@shared/roleAccounts';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
+import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
@@ -35,6 +36,15 @@ const COMMAND_ERRORS = {
     'The server state changed. Close the dialog, review the refreshed accounts, and try again.',
   'server-error': 'Relay could not apply this protected change. Try again.',
 } as const;
+
+function commandFailureMessage(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
+  // A vetted server message names the actual blocker ("That username is already in
+  // use."); the local map only knows the error class. Conflicts keep the local
+  // wording because it explains the dialog-specific recovery step.
+  return result.error === 'conflict' || !result.message
+    ? COMMAND_ERRORS[result.error]
+    : result.message;
+}
 
 const ROLE_LABELS: Record<EffectivePrivilegedRole, string> = {
   owner: 'OWNER',
@@ -155,6 +165,9 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState<RelayRoleAccountAdminView | null>(null);
+  const retainedDeactivation = useRetainedValue(deactivating);
   const publisherPointer = snapshot.publisherAccountId;
   const sessionRole = session.state === 'active' ? session.role : null;
   const isOwner = sessionRole === 'owner';
@@ -162,6 +175,8 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   const credentialAccount = snapshot.accounts.find(
     ({ accountId }) => accountId === credentialAccountId,
   );
+  const deactivationBusy =
+    retainedDeactivation !== null && savingId === retainedDeactivation.accountId;
 
   useEffect(() => setPublisherAccountId(publisherPointer ?? ''), [publisherPointer]);
   useEffect(
@@ -186,11 +201,12 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
     const usernameError = getRoleUsernameError(newUsername);
     const displayNameError = getRoleDisplayNameError(newDisplayName);
     if (usernameError || displayNameError) {
-      setFeedback(usernameError ?? displayNameError);
+      setFailure(usernameError ?? displayNameError);
       return;
     }
     const command =
       createRole === 'administrator' ? 'account.admin.create' : 'account.publisher.create';
+    setFailure(null);
     setSavingId('create');
     const result = await execute({
       command,
@@ -207,15 +223,18 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         `${createRole === 'administrator' ? 'Administrator' : 'Publisher'} account created. Set its password on the Relay server PC.`,
       );
       closeCreate();
+    } else {
+      setFailure(commandFailureMessage(result));
     }
   };
 
   const renameAccount = async (account: RelayRoleAccountAdminView) => {
     const validation = getRoleDisplayNameError(editDisplayName);
     if (validation) {
-      setFeedback(validation);
+      setFailure(validation);
       return;
     }
+    setFailure(null);
     setSavingId(account.accountId);
     const result = await execute({
       command: 'account.display-name.update',
@@ -231,10 +250,13 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       setEditingAccountId(null);
       setEditDisplayName('');
       setFeedback('Account display name updated.');
+    } else {
+      setFailure(commandFailureMessage(result));
     }
   };
 
   const setAccountActive = async (account: RelayRoleAccountAdminView) => {
+    setFailure(null);
     setSavingId(account.accountId);
     const result = await execute({
       command: 'account.active.set',
@@ -246,9 +268,23 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       expectedRevision: null,
     });
     setSavingId(null);
+    setDeactivating(null);
     if (result.ok) {
       setFeedback(account.active ? 'Account deactivated.' : 'Account reactivated.');
+    } else {
+      setFailure(commandFailureMessage(result));
     }
+  };
+
+  // Deactivation ends that person's live session the moment it commits, so it asks
+  // first. Reactivation restores access and stays a single click.
+  const requestActiveChange = (account: RelayRoleAccountAdminView) => {
+    if (!account.active) {
+      void setAccountActive(account);
+      return;
+    }
+    setFailure(null);
+    setDeactivating(account);
   };
 
   const confirmReauthentication = async (password: string) => {
@@ -286,7 +322,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       setReauthAction(null);
       clearError();
     } else {
-      setDialogError(COMMAND_ERRORS[result.error]);
+      setDialogError(commandFailureMessage(result));
     }
   };
 
@@ -353,7 +389,15 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   );
   const canManageAccount = (account: RelayRoleAccountAdminView) =>
     isOwner || account.storedRole === 'publisher';
-  const credentialTargets = snapshot.accounts.filter(canManageAccount);
+  // A retained Publisher that no longer holds the assignment has no effective role,
+  // and every credential or activation path rejects it on the server. Offering those
+  // actions here was a dead end; assigning the Publisher role is the way back.
+  const credentialTargets = snapshot.accounts.filter(
+    (account) => canManageAccount(account) && account.effectiveRole !== null,
+  );
+  const unassignedAccounts = snapshot.accounts.filter(
+    (account) => canManageAccount(account) && account.effectiveRole === null,
+  );
 
   return (
     <section className="administration-panel role-accounts" aria-labelledby="role-accounts-title">
@@ -449,6 +493,9 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
                 <span>
                   @{account.username} · {account.active ? 'Active' : 'Inactive'}
                 </span>
+                {account.effectiveRole === null && (
+                  <span>Assign the Publisher role to use this account.</span>
+                )}
               </div>
               <div className="administration-row__badges">
                 <span
@@ -489,11 +536,11 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
                       >
                         Rename
                       </TactileButton>
-                      {!owner && (
+                      {!owner && account.effectiveRole !== null && (
                         <TactileButton
                           size="sm"
                           loading={savingId === account.accountId}
-                          onClick={() => void setAccountActive(account)}
+                          onClick={() => requestActiveChange(account)}
                           aria-label={`${account.active ? 'Deactivate' : 'Reactivate'} ${account.displayName}`}
                         >
                           {account.active ? 'Deactivate' : 'Reactivate'}
@@ -571,6 +618,12 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
                   Set {account.displayName}
                 </TactileButton>
               ))}
+              {unassignedAccounts.length > 0 && (
+                <span>
+                  Assign the Publisher role before setting a password for{' '}
+                  {unassignedAccounts.map(({ displayName }) => displayName).join(', ')}.
+                </span>
+              )}
             </div>
           ) : (
             <form
@@ -653,6 +706,51 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
           {feedback}
         </div>
       )}
+
+      {failure && (
+        <div className="administration-feedback administration-feedback--error" role="alert">
+          {failure}
+        </div>
+      )}
+
+      <Modal
+        isOpen={deactivating !== null}
+        onClose={() => setDeactivating(null)}
+        title="Deactivate account"
+        subtitle="Protected account change"
+        variant="confirmation"
+        dismissible={!deactivationBusy}
+        footer={
+          <>
+            <TactileButton
+              type="button"
+              variant="secondary"
+              onClick={() => setDeactivating(null)}
+              disabled={deactivationBusy}
+            >
+              Cancel
+            </TactileButton>
+            <TactileButton
+              type="button"
+              variant="primary"
+              loading={deactivationBusy}
+              onClick={() => {
+                if (deactivating) void setAccountActive(deactivating);
+              }}
+            >
+              Deactivate account
+            </TactileButton>
+          </>
+        }
+      >
+        {retainedDeactivation && (
+          <p>
+            {retainedDeactivation.displayName} (@{retainedDeactivation.username}) loses privileged
+            access immediately and any signed-in session for this account ends. Reactivating it
+            later restores the same role.
+          </p>
+        )}
+      </Modal>
 
       <ReauthenticationDialog
         action={reauthAction}

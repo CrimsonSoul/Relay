@@ -94,7 +94,7 @@ describe('Relay Web privileged routes', () => {
           value: { revision: 4 },
         })),
       };
-      privileged.set(session.id, {
+      privileged.set(session.rateLimitId, {
         runtime,
         sourceLabel: index === 0 ? 'Chrome from 10.0.0.8' : 'Safari from 10.0.0.9',
       });
@@ -124,13 +124,13 @@ describe('Relay Web privileged routes', () => {
         connectOrigins: [],
       }),
       sessions: ordinary,
-      authorizeCapability: (sessionId, capability) => {
-        const view = privileged.get(sessionId)?.runtime.getView();
+      authorizeCapability: (logicalSessionId, capability) => {
+        const view = privileged.get(logicalSessionId)?.runtime.getView();
         return view?.state === 'active' && view.capabilities.includes(capability);
       },
     });
     registerPrivilegedRoutes(router, {
-      getSession: (sessionId) => privileged.get(sessionId) ?? null,
+      getSession: (logicalSessionId) => privileged.get(logicalSessionId) ?? null,
       approvalCodes: approvals,
       getAccountManager: () => accountManager,
     });

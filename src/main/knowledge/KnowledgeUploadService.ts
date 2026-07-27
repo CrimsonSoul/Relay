@@ -218,6 +218,15 @@ function preparationFailure(error: unknown): {
   return { state: 'failed', safeError: 'upload-failed' };
 }
 
+/** Size rejections carry their own code so the renderer can name the 50 MiB limit. */
+function selectionFailure(
+  error: unknown,
+): Extract<KnowledgeUploadSelectionResult, { ok: false }>['error'] {
+  return error instanceof KnowledgeSourceError && error.code === 'too-large'
+    ? 'too-large'
+    : 'invalid-file';
+}
+
 function errorCode(error: unknown): string {
   return typeof error === 'object' && error !== null && 'code' in error
     ? String((error as { code?: unknown }).code)
@@ -381,8 +390,8 @@ export class KnowledgeUploadService {
         names.add(nameKey);
         candidates.push(candidate);
       }
-    } catch {
-      return { ok: false, error: 'invalid-file' };
+    } catch (error) {
+      return { ok: false, error: selectionFailure(error) };
     }
     if (!this.matchesCurrentSession(session)) {
       return { ok: false, error: 'unauthorized' };
@@ -1613,8 +1622,17 @@ export class KnowledgeUploadService {
 
   private async persist(): Promise<void> {
     const snapshot = structuredClone(this.queue);
-    this.persistTail = this.persistTail.then(() => this.store.save(snapshot));
+    const save = this.persistTail.then(() => this.store.save(snapshot));
+    // A rejected save must not poison the tail: every later persist still has to reach the store,
+    // and `void persistAndEmit()` callers must never see an unhandled rejection.
+    this.persistTail = save.then(undefined, () => this.recordPersistFailure());
     await this.persistTail;
+  }
+
+  private recordPersistFailure(): void {
+    for (const entry of this.queue.entries) {
+      if (!isTerminal(entry.state)) entry.safeError = 'upload-failed';
+    }
   }
 
   private async persistAndEmit(): Promise<void> {

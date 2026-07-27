@@ -54,7 +54,7 @@ describe('WebPrivilegedSession', () => {
     sessions.subscribeEvents(ordinary.id, (event, data) => events.push({ event, data }));
 
     const privileged = new WebPrivilegedSession({
-      sessionId: ordinary.id,
+      logicalSessionId: ordinary.rateLimitId,
       host: host as never,
       sessions,
       userAgent: 'Mozilla/5.0 Chrome/126.0.0.0 Safari/537.36 secret-token-value-that-must-not-leak',
@@ -62,7 +62,7 @@ describe('WebPrivilegedSession', () => {
     });
 
     expect(host.createWebRuntime).toHaveBeenCalledWith({
-      sessionId: ordinary.id,
+      sessionId: ordinary.rateLimitId,
       source: { browserFamily: 'Chrome', addressLabel: PRIVATE_ADDRESS },
     });
     expect(privileged.sourceLabel).toBe('Chrome from 10.0.0.8');
@@ -78,8 +78,8 @@ describe('WebPrivilegedSession', () => {
     ]);
 
     await sessions.destroy(ordinary.id);
-    expect(host.approvalCodes.clearSession).toHaveBeenCalledWith(ordinary.id);
-    expect(host.disposeWebRuntime).toHaveBeenCalledWith(ordinary.id);
+    expect(host.approvalCodes.clearSession).toHaveBeenCalledWith(ordinary.rateLimitId);
+    expect(host.disposeWebRuntime).toHaveBeenCalledWith(ordinary.rateLimitId);
   });
 
   it.each([

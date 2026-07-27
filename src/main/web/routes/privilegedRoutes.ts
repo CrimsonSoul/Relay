@@ -33,7 +33,7 @@ type AccountManagerPort = Pick<
 >;
 
 export type PrivilegedRouteOptions = {
-  getSession(sessionId: string, context: WebRouteContext): WebPrivilegedRouteSession | null;
+  getSession(logicalSessionId: string, context: WebRouteContext): WebPrivilegedRouteSession | null;
   approvalCodes: WebApprovalCodeStore;
   getAccountManager(): AccountManagerPort | null;
 };
@@ -67,17 +67,19 @@ function mappedError(error: unknown, fallback: PrivilegedIpcError): PrivilegedIp
     : fallback;
 }
 
+// Everything privileged is keyed on the logical session id: an approval code issued before a
+// /session/refresh must still be consumable afterwards, and the cookie has rotated by then.
 function routeSession(
   options: PrivilegedRouteOptions,
   context: WebRouteContext,
 ): WebPrivilegedRouteSession | null {
-  return context.sessionId ? options.getSession(context.sessionId, context) : null;
+  return context.logicalSessionId ? options.getSession(context.logicalSessionId, context) : null;
 }
 
 function approvalRequired(
   options: PrivilegedRouteOptions,
   session: WebPrivilegedRouteSession,
-  sessionId: string,
+  logicalSessionId: string,
   operation: WebApprovalOperation,
   input: { approvalRequestId?: string; approvalCode?: string },
 ): WebApprovalRequest | null {
@@ -86,7 +88,7 @@ function approvalRequired(
     input.approvalCode &&
     options.approvalCodes.consume({
       requestId: input.approvalRequestId,
-      sessionId,
+      sessionId: logicalSessionId,
       operation,
       code: input.approvalCode,
     })
@@ -94,11 +96,15 @@ function approvalRequired(
     return null;
   }
   const existing = input.approvalRequestId
-    ? options.approvalCodes.getForSession(input.approvalRequestId, sessionId, operation)
+    ? options.approvalCodes.getForSession(input.approvalRequestId, logicalSessionId, operation)
     : null;
   return (
     existing ??
-    options.approvalCodes.request({ sessionId, operation, sourceLabel: session.sourceLabel })
+    options.approvalCodes.request({
+      sessionId: logicalSessionId,
+      operation,
+      sourceLabel: session.sourceLabel,
+    })
   );
 }
 
@@ -222,11 +228,11 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
     rateLimit: { bucket: 'privileged-approval', key: 'session', limit: 10, windowMs: 60_000 },
     handler: async (context) => {
       const session = routeSession(options, context);
-      if (!session || !context.sessionId) return { status: 200, body: failure('offline') };
+      if (!session || !context.logicalSessionId) return { status: 200, body: failure('offline') };
       const pending = approvalRequired(
         options,
         session,
-        context.sessionId,
+        context.logicalSessionId,
         'initial-owner-credential',
         context.body,
       );
@@ -255,7 +261,7 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
     rateLimit: { bucket: 'privileged-approval', key: 'session', limit: 10, windowMs: 60_000 },
     handler: async (context) => {
       const session = routeSession(options, context);
-      if (!session || !context.sessionId) return { status: 200, body: failure('offline') };
+      if (!session || !context.logicalSessionId) return { status: 200, body: failure('offline') };
       const view = session.runtime.getView();
       if (
         view.state !== 'active' ||
@@ -268,7 +274,7 @@ export function registerPrivilegedRoutes(router: WebRouter, options: PrivilegedR
       const pending = approvalRequired(
         options,
         session,
-        context.sessionId,
+        context.logicalSessionId,
         'credential-recovery',
         context.body,
       );

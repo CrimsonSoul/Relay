@@ -721,6 +721,39 @@ describe('DynatraceWindowManager', () => {
     ]);
   });
 
+  it('keeps the load-failed reason when the failed window finishes closing', async () => {
+    vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
+      new Error('ERR_NAME_NOT_RESOLVED while loading https://abc.live.dynatrace.com/dashboard'),
+    );
+
+    await expect(manager.openDashboard('dt_1')).resolves.toBe(false);
+    // openDashboard closes the window it just failed to load; a bare 'closed'
+    // here would replace the only explanation the user ever sees.
+    mockHostWindowHandlers.get('closed')?.();
+
+    expect(manager.listDashboards()[0]).toEqual(
+      expect.objectContaining({
+        state: 'load-failed',
+        lastUrl: 'https://abc.live.dynatrace.com',
+        error: 'ERR_NAME_NOT_RESOLVED',
+      }),
+    );
+  });
+
+  it('does not resurrect runtime state for a dashboard that was already removed', async () => {
+    const listener = vi.fn();
+    manager.onStateChange(listener);
+    await manager.openDashboard('dt_1');
+    expect(manager.removeDashboard('dt_1')).toBe(true);
+    listener.mockClear();
+
+    // 'closed' lands after removeDashboard dropped both entries; re-recording
+    // state would leak a runtime entry nothing can read or delete again.
+    mockHostWindowHandlers.get('closed')?.();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('cleans up closed windows even when bounds persistence fails', async () => {
     vi.mocked(store.setBounds).mockImplementation(() => {
       throw new Error('disk full');

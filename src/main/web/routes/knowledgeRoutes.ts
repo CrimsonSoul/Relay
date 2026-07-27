@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
   type KnowledgeCoverRequest,
   type KnowledgeCoverResult,
   type KnowledgeIndexStatus,
@@ -38,12 +40,21 @@ export type KnowledgeRouteServices = {
 
 type KnowledgeRouteOptions = {
   services: KnowledgeRouteServices;
-  getSession(sessionId: string): WebKnowledgeSession | null;
+  getSession(logicalSessionId: string): WebKnowledgeSession | null;
 };
+
+// A single advertised maximum batch is 100 files of 50 MiB uploaded in 4 MiB chunks, which is
+// 1_300 POSTs. Budgeting below that turned a legal upload into a mid-transfer 429, so the bucket
+// has to cover the documented maximum with headroom for one retried chunk per file.
+export const MAX_UPLOAD_CHUNKS_PER_FILE = Math.ceil(
+  KNOWLEDGE_MAX_PDF_BYTES / KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+);
+export const UPLOAD_CHUNK_REQUESTS_PER_MINUTE =
+  KNOWLEDGE_UPLOAD_MAX_FILES * (MAX_UPLOAD_CHUNKS_PER_FILE + 1);
 
 const uploadMutationLimit = {
   key: 'session' as const,
-  limit: 240,
+  limit: UPLOAD_CHUNK_REQUESTS_PER_MINUTE,
   windowMs: 60_000,
 };
 export const MAX_CONCURRENT_PDF_READS_PER_SESSION = 2;
@@ -136,11 +147,13 @@ function stagingFailure(error: unknown): WebRouteResponse {
   };
 }
 
+// Staging state is bound to the logical session so a /session/refresh mid-upload keeps appending
+// to the same batch instead of silently starting an empty one.
 function uploadSession(
   options: KnowledgeRouteOptions,
-  sessionId: string | null,
+  logicalSessionId: string | null | undefined,
 ): WebKnowledgeSession | null {
-  return sessionId ? options.getSession(sessionId) : null;
+  return logicalSessionId ? options.getSession(logicalSessionId) : null;
 }
 
 export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRouteOptions): void {
@@ -260,9 +273,9 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
     bodySchema: WebKnowledgeUploadBeginSchema,
     maxBodyBytes: 32_768,
     rateLimit: { bucket: 'knowledge-upload-begin', key: 'session', limit: 10, windowMs: 60_000 },
-    handler: async ({ body, sessionId }) => {
+    handler: async ({ body, logicalSessionId }) => {
       try {
-        const session = uploadSession(options, sessionId);
+        const session = uploadSession(options, logicalSessionId);
         return session
           ? {
               status: 200,
@@ -282,7 +295,7 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
     csrf: true,
     capability: 'knowledge.manage',
     rateLimit: { bucket: 'knowledge-upload-chunk', ...uploadMutationLimit },
-    handler: async ({ request, origin, sessionId }) => {
+    handler: async ({ request, origin, logicalSessionId }) => {
       const parameters = query(request.url, origin);
       const parsed = z
         .object({
@@ -291,7 +304,7 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
         })
         .strict()
         .safeParse({ fileId: parameters?.get('fileId'), offset: parameters?.get('offset') });
-      const session = uploadSession(options, sessionId);
+      const session = uploadSession(options, logicalSessionId);
       if (!parsed.success || !session) {
         request.resume();
         return { status: 400, body: { ok: false, error: 'invalid-request' } };
@@ -341,9 +354,9 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
         limit: 30,
         windowMs: 60_000,
       },
-      handler: async ({ body, sessionId }) => {
+      handler: async ({ body, logicalSessionId }) => {
         try {
-          const session = uploadSession(options, sessionId);
+          const session = uploadSession(options, logicalSessionId);
           return session
             ? { status: 200, body: await invoke(session, body.batchId) }
             : { status: 403, body: { ok: false, error: 'unauthorized' } };
@@ -359,8 +372,8 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
     path: `${RELAY_WEB_API_PREFIX}/knowledge/upload/queue`,
     authenticated: true,
     capability: 'knowledge.manage',
-    handler: async ({ sessionId }) => {
-      const session = uploadSession(options, sessionId);
+    handler: async ({ logicalSessionId }) => {
+      const session = uploadSession(options, logicalSessionId);
       return session
         ? { status: 200, body: await session.getQueue() }
         : { status: 403, body: { ok: false, error: 'unauthorized' } };
@@ -389,8 +402,8 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
         limit: 60,
         windowMs: 60_000,
       },
-      handler: async ({ body, sessionId }) => {
-        const session = uploadSession(options, sessionId);
+      handler: async ({ body, logicalSessionId }) => {
+        const session = uploadSession(options, logicalSessionId);
         if (!session) return { status: 403, body: false };
         const result = await invoke(session, body.id);
         return { status: 200, body: typeof result === 'boolean' ? result : true };

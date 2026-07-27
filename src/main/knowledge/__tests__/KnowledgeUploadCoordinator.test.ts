@@ -776,4 +776,46 @@ describe('KnowledgeUploadCoordinator', () => {
       coordinator.beginBatch(publisher, { requestId: 'late', fileCount: 1, totalBytes: 1 }),
     ).rejects.toMatchObject({ code: 'unavailable' });
   });
+
+  it('skips a queued upload that retention cleanup deleted instead of rejecting the worker', async () => {
+    const repository = new MemoryRepository();
+    const bytes = Buffer.from('%PDF-test');
+    const { coordinator } = createCoordinator(repository);
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    stageChunks(repository, upload.id, batch.id, bytes);
+    const record = repository.uploads.get(upload.id)!;
+    // Retention cleanup hard-deletes expired rows, so recovery can name an upload that is gone by
+    // the time the worker reads it.
+    repository.uploads.delete(upload.id);
+    vi.spyOn(repository, 'listRecoverableUploads').mockResolvedValue([
+      { ...record, state: 'assembling' },
+    ]);
+    const recovered = createCoordinator(repository).coordinator;
+
+    await recovered.start();
+
+    await expect(recovered.whenIdle()).resolves.toBeUndefined();
+    expect(repository.uploads.has(upload.id)).toBe(false);
+  });
+
+  it('keeps draining the worker after one upload fails to load', async () => {
+    const repository = new MemoryRepository();
+    const bytes = Buffer.from('%PDF-test');
+    const { coordinator } = createCoordinator(repository);
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    stageChunks(repository, upload.id, batch.id, bytes);
+    const record = { ...repository.uploads.get(upload.id)!, state: 'assembling' as const };
+    repository.uploads.set(upload.id, record);
+    // The first id no longer resolves; the second must still be processed.
+    vi.spyOn(repository, 'listRecoverableUploads').mockResolvedValue([
+      { ...record, id: 'upload-missing' },
+      record,
+    ]);
+    const recovered = createCoordinator(repository).coordinator;
+
+    await recovered.start();
+    await recovered.whenIdle();
+
+    expect(repository.uploads.get(upload.id)).toMatchObject({ state: 'ready' });
+  });
 });

@@ -143,6 +143,55 @@ describe('production administration command wiring', () => {
     expect(pb.collection).not.toHaveBeenCalledWith('relay_operators');
   });
 
+  it('reports a production device revocation so the revoked session can be ended', async () => {
+    const registered = new Map<
+      string,
+      (context: PrivilegedCommandHandlerContext, payload: never) => Promise<unknown>
+    >();
+    const deviceCollection = {
+      getFirstListItem: vi.fn(async () => pairedDevice),
+      update: vi.fn(async (_id: string, patch: Record<string, unknown>) => ({
+        ...pairedDevice,
+        ...patch,
+      })),
+    };
+    const pb = {
+      collection: vi.fn((name: string) => {
+        if (name === RELAY_PRIVILEGED_DEVICES_COLLECTION) return deviceCollection;
+        if (name === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+          return { getOne: async () => ownerAccount };
+        throw new Error(`Unexpected collection ${name}`);
+      }),
+    };
+    const onDeviceRevoked = vi.fn();
+    registerProductionAdministrationCommands({
+      pb: pb as never,
+      registrar: {
+        registerCommand: vi.fn((command: string, _capability: string, handler: never) => {
+          registered.set(command, handler);
+        }),
+      } as never,
+      consumeReauthenticationProof: vi.fn(async () => true),
+      onDeviceRevoked,
+    });
+
+    await registered.get('privileged.device.revoke')!(
+      {
+        account: ownerAccount,
+        device: null,
+        role: 'owner',
+        requestId: 'request-owner',
+      } as unknown as PrivilegedCommandHandlerContext,
+      {
+        deviceId: pairedDevice.deviceId,
+        expectedRevision: 3,
+        reauthRequestId: 'reauth-owner',
+      } as never,
+    );
+
+    expect(onDeviceRevoked).toHaveBeenCalledWith(ownerAccount.id, pairedDevice.deviceId);
+  });
+
   it('does not mutate through the production handler when account projection cannot be proven', async () => {
     const registered = new Map<
       string,

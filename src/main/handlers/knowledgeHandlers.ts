@@ -166,8 +166,9 @@ export function setupKnowledgeHandlers(
       const parsed = KnowledgeUploadControlIdSchema.safeParse(value);
       const service = getUploadService();
       if (!parsed.success || !service) return false;
-      await control(service, parsed.data);
-      return true;
+      const outcome = await control(service, parsed.data);
+      // Controls such as reselectSource report their own success; void controls only report dispatch.
+      return typeof outcome === 'boolean' ? outcome : true;
     });
   };
 

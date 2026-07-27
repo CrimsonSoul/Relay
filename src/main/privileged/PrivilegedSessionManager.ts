@@ -159,10 +159,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       if (!this.isOperationCurrent(operation)) {
         throw new PrivilegedSessionError('unauthorized');
       }
-      if (isOfflineAuthenticationError(error)) {
-        this.invalidateSession({ ...SIGNED_OUT_VIEW, state: 'offline' });
-        throw new PrivilegedSessionError('offline');
-      }
+      if (isOfflineAuthenticationError(error)) this.failOffline();
       this.invalidateSession();
       throw error;
     }
@@ -175,10 +172,13 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     let authorization: PrivilegedAuthorization;
     try {
       authorization = await this.resolveAuthorization(account);
-    } catch {
+    } catch (error) {
       if (!this.isOperationCurrent(operation)) {
         throw new PrivilegedSessionError('unauthorized');
       }
+      // An unreachable server is not a failed authorization: keep the account out
+      // of the pairing flow so it retries once the connection returns.
+      if (isOfflineAuthorizationError(error)) this.failOffline();
       this.failAuthorization();
     }
     this.assertOperationCurrent(operation);
@@ -250,12 +250,7 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       throw new PrivilegedSessionError('unauthorized');
     }
 
-    let authorization: PrivilegedAuthorization;
-    try {
-      authorization = await this.resolveAuthorization(refreshed);
-    } catch {
-      this.failReauthentication(operation);
-    }
+    const authorization = await this.reauthorizeOrFail(refreshed, operation);
     this.assertOperationCurrent(operation);
     if (!authorization.assigned || !authorization.role || authorization.role !== this.view.role) {
       this.invalidateSession();
@@ -362,6 +357,14 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     if (this.account && accountIds.includes(this.account.id)) this.invalidateSession();
   }
 
+  handleDeviceRevoked(accountId: string, deviceId: string): void {
+    // Only the session signed in on the revoked device loses its authority; the
+    // account's other workstations keep working.
+    if (this.account?.id === accountId && this.view.deviceId === deviceId) {
+      this.invalidateSession();
+    }
+  }
+
   handleAuthoritySnapshot(
     changedAccount: RelayPrivilegedAccountRecord,
     state: RelayPrivilegedStateRecord,
@@ -396,6 +399,27 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
     throw new PrivilegedSessionError('unauthorized');
   }
 
+  private async reauthorizeOrFail(
+    account: RelayPrivilegedAccountRecord,
+    operation: number,
+  ): Promise<PrivilegedAuthorization> {
+    try {
+      return await this.resolveAuthorization(account);
+    } catch (error) {
+      // An unreachable server during reauthentication is a connectivity fault, not
+      // proof that this account lost its authority.
+      if (isOfflineAuthorizationError(error) && this.isOperationCurrent(operation)) {
+        this.failOffline();
+      }
+      this.failReauthentication(operation);
+    }
+  }
+
+  private failOffline(): never {
+    this.invalidateSession({ ...SIGNED_OUT_VIEW, state: 'offline' });
+    throw new PrivilegedSessionError('offline');
+  }
+
   private failReauthentication(operation: number): never {
     if (this.isOperationCurrent(operation)) this.invalidateSession();
     throw new PrivilegedSessionError('unauthorized');
@@ -424,6 +448,10 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
   private assertNotDisposed(): void {
     if (this.disposed) throw new PrivilegedSessionError('unauthorized');
   }
+}
+
+function isOfflineAuthorizationError(error: unknown): boolean {
+  return error instanceof PrivilegedSessionError && error.code === 'offline';
 }
 
 function isOfflineAuthenticationError(error: unknown): boolean {

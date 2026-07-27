@@ -67,7 +67,7 @@ describe('WebKnowledgeSession', () => {
       events.push({ event, data }),
     );
     const knowledge = new WebKnowledgeSession({
-      sessionId: ordinary.id,
+      logicalSessionId: ordinary.rateLimitId,
       sessions,
       runtime: runtime as never,
       rootDir: await mkdtemp(join(tmpdir(), 'relay-web-knowledge-session-')),

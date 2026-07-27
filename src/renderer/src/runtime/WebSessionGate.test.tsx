@@ -37,6 +37,9 @@ function RelayShell(props: Readonly<WebSessionAppProps>) {
       <button type="button" onClick={() => void props.onWebReauthenticate?.('reauth-passphrase')}>
         Reauthenticate
       </button>
+      <button type="button" onClick={() => props.onWebSessionRequired?.()}>
+        Discard session
+      </button>
     </div>
   );
 }
@@ -54,6 +57,7 @@ describe('WebSessionGate', () => {
         calls.push('activate');
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
       }),
+      logout: vi.fn(async () => ({ ok: true })),
     };
     const appLoader = vi.fn(async () => {
       calls.push('load-app');
@@ -75,6 +79,7 @@ describe('WebSessionGate', () => {
       bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
       login: vi.fn(),
       activate: vi.fn(),
+      logout: vi.fn(async () => ({ ok: true })),
     };
     const appLoader = vi.fn(async () => ({ default: RelayShell }));
 
@@ -96,6 +101,7 @@ describe('WebSessionGate', () => {
       bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
       login: vi.fn(),
       activate: vi.fn(),
+      logout: vi.fn(async () => ({ ok: true })),
     };
 
     render(<WebSessionGate client={client} renderSignIn={() => <div>Stable Relay sign-in</div>} />);
@@ -112,6 +118,7 @@ describe('WebSessionGate', () => {
       activate: vi.fn(async () => {
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
       }),
+      logout: vi.fn(async () => ({ ok: true })),
     };
     const appLoader = vi.fn(async () => ({ default: RelayShell }));
     render(<WebSessionGate client={client} appLoader={appLoader} />);
@@ -135,6 +142,7 @@ describe('WebSessionGate', () => {
       activate: vi.fn(async () => {
         globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
       }),
+      logout: vi.fn(async () => ({ ok: true })),
     };
     render(<WebSessionGate client={client} appLoader={async () => ({ default: RelayShell })} />);
 
@@ -148,5 +156,42 @@ describe('WebSessionGate', () => {
     });
     expect(client.activate).toHaveBeenLastCalledWith({ ...SESSION, csrfToken: 'next-csrf' });
     expect(screen.getByText('Relay shell · Web')).toBeInTheDocument();
+  });
+
+  it('clears the server session when the app discards its session and returns to sign in', async () => {
+    const client: WebSessionClientPort = {
+      bootstrap: vi.fn(async () => ({ ok: true, session: SESSION })),
+      login: vi.fn(),
+      activate: vi.fn(async () => {
+        globalThis.api = { runtime: WEB_RUNTIME } as BridgeAPI;
+      }),
+      logout: vi.fn(async () => ({ ok: true })),
+    };
+    render(<WebSessionGate client={client} appLoader={async () => ({ default: RelayShell })} />);
+
+    expect(await screen.findByText('Relay shell · Web')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard session' }));
+
+    // Local React state alone leaves relay_web_session intact, so a reload would restore this
+    // user's session for whoever uses the browser next.
+    expect(await screen.findByLabelText('Connection passphrase')).toBeInTheDocument();
+    expect(client.logout).toHaveBeenCalledOnce();
+  });
+
+  it('separates a throttled sign-in from a wrong passphrase on the default sign-in screen', async () => {
+    const client: WebSessionClientPort = {
+      bootstrap: vi.fn(async () => ({ ok: false, error: 'unauthenticated' as const })),
+      login: vi.fn(async () => ({ ok: false, error: 'rate-limited' as const })),
+      activate: vi.fn(),
+      logout: vi.fn(async () => ({ ok: true })),
+    };
+    render(<WebSessionGate client={client} appLoader={async () => ({ default: RelayShell })} />);
+
+    const passphrase = await screen.findByLabelText('Connection passphrase');
+    fireEvent.change(passphrase, { target: { value: 'fixture-passphrase' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts');
+    expect(screen.queryByText(/Check the passphrase/u)).not.toBeInTheDocument();
   });
 });

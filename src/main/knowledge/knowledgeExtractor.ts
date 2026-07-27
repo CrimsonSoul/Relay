@@ -11,7 +11,7 @@ import {
   type KnowledgeTextPage,
   type NativeKnowledgeOutlineEntry,
 } from './knowledgeOutline';
-import { renderKnowledgeDocumentCover } from './knowledgeCover';
+import { renderKnowledgeCoverPlaceholder, renderKnowledgeDocumentCover } from './knowledgeCover';
 
 export type KnowledgeExtractionResult = {
   metadataTitle: string | null;
@@ -163,7 +163,9 @@ export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeEx
     const [metadata, rawOutline, coverPng] = await Promise.all([
       document.getMetadata(),
       document.getOutline(),
-      renderKnowledgeDocumentCover(document),
+      // A thumbnail that will not rasterize says nothing about the document's validity, so it must
+      // not surface to the operator as "validation failed" on an otherwise readable PDF.
+      renderKnowledgeDocumentCover(document).catch(() => renderKnowledgeCoverPlaceholder()),
     ]);
     const nativeOutline = await normalizeNativeKnowledgeOutline(
       asNativeOutline(rawOutline),

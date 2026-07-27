@@ -87,6 +87,12 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps implementations, so collection-level stubs have to be
+  // reset explicitly or a fixture leaks into the next test.
+  mockGetFullList.mockReset();
+  mockGetOne.mockReset();
+  mockUpdate.mockReset();
+  mockDelete.mockReset();
   mockCollectionGetList.mockReset();
   mockCollectionGetFullList.mockReset();
   mockCollectionCreate.mockReset();
@@ -930,6 +936,198 @@ describe('ensureCollections', () => {
       ),
     ).toMatchObject({ values: ['admin', 'publisher'] });
     expect(mockDelete.mock.calls).toEqual([['login-roster-view'], ['operators-col']]);
+  });
+
+  it('re-reads collections it already patched before applying the final definitions', async () => {
+    // A real getFullList() response is a complete collection object, so the
+    // pre-migration listing satisfies hasCompleteCollectionSnapshot() and the
+    // final patch would reuse a snapshot taken before the compatibility phase
+    // added fields to the same collections.
+    const serverCollections: Record<string, Record<string, unknown>> = {
+      'accounts-col': {
+        id: 'accounts-col',
+        name: 'relay_privileged_accounts',
+        type: 'auth',
+        fields: [
+          { id: 'field_operatorId', type: 'text', name: 'operatorId', required: true, max: 200 },
+          {
+            id: 'field_role',
+            type: 'select',
+            name: 'role',
+            required: true,
+            values: ['admin', 'publisher', 'operator'],
+            maxSelect: 1,
+          },
+          { id: 'field_active', type: 'bool', name: 'active' },
+          { id: 'field_mustChangePassword', type: 'bool', name: 'mustChangePassword' },
+          { id: 'field_credentialVersion', type: 'number', name: 'credentialVersion' },
+        ],
+        indexes: [
+          'CREATE UNIQUE INDEX idx_relay_privileged_accounts_operator_id ON relay_privileged_accounts (operatorId)',
+        ],
+        listRule: null,
+        viewRule: null,
+        createRule: null,
+        updateRule: null,
+        deleteRule: null,
+        authRule: 'active = true',
+        manageRule: null,
+        passwordAuth: { enabled: true, identityFields: ['operatorId'] },
+      },
+      'state-col': {
+        id: 'state-col',
+        name: 'relay_privileged_state',
+        type: 'base',
+        fields: [
+          { id: 'field_key', type: 'text', name: 'key', required: true, max: 40 },
+          {
+            id: 'field_adminOperatorId',
+            type: 'text',
+            name: 'adminOperatorId',
+            required: true,
+            max: 200,
+          },
+          { id: 'field_adminOperatorIds', type: 'json', name: 'adminOperatorIds' },
+          {
+            id: 'field_publisherOperatorId',
+            type: 'text',
+            name: 'publisherOperatorId',
+            max: 200,
+          },
+          {
+            id: 'field_assignmentVersion',
+            type: 'number',
+            name: 'assignmentVersion',
+            required: true,
+          },
+        ],
+        indexes: [
+          'CREATE UNIQUE INDEX idx_relay_privileged_state_key ON relay_privileged_state (key)',
+        ],
+        listRule: '@request.auth.id != ""',
+        viewRule: '@request.auth.id != ""',
+        createRule: null,
+        updateRule: null,
+        deleteRule: null,
+      },
+      'operators-col': { id: 'operators-col', name: 'relay_operators' },
+      'login-roster-view': {
+        id: 'login-roster-view',
+        name: 'relay_login_roster',
+        type: 'view',
+        viewQuery: 'SELECT id, displayName FROM relay_operators WHERE active = TRUE',
+      },
+    };
+
+    mockGetFullList.mockImplementation(async () =>
+      structuredClone(Object.values(serverCollections)),
+    );
+    mockGetOne.mockImplementation(async (id: string) => structuredClone(serverCollections[id]));
+    mockSuccessfulCollectionCreation();
+    mockDelete.mockResolvedValue(undefined);
+    mockUpdate.mockImplementation(async (id: string, patch: Record<string, unknown>) => {
+      const collection = serverCollections[id];
+      const storedFields = collection.fields as Array<Record<string, unknown>>;
+      const patchFields = patch.fields as Array<Record<string, unknown>> | undefined;
+      if (patchFields) {
+        const storedByName = new Map(storedFields.map((field) => [field.name, field]));
+        for (const field of patchFields) {
+          const stored = storedByName.get(field.name);
+          if (stored && field.id !== stored.id) {
+            // PocketBase matches fields by id: a same-named field submitted
+            // without the stored id drops the column and recreates it empty.
+            throw new Error(
+              `Field ${String(field.name)} on ${String(collection.name)} would be dropped and recreated`,
+            );
+          }
+        }
+        collection.fields = patchFields.map((field) => ({
+          ...field,
+          id: field.id ?? `field_${String(field.name)}`,
+        }));
+      }
+      for (const [key, value] of Object.entries(patch)) {
+        if (key !== 'fields') collection[key] = value;
+      }
+      return structuredClone(collection);
+    });
+
+    const accounts = [
+      {
+        id: 'account-ryan',
+        operatorId: 'ryan-op',
+        role: 'admin',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 5,
+      },
+      {
+        id: 'account-charles',
+        operatorId: 'charles-op',
+        role: 'admin',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 3,
+      },
+    ];
+    const states = [
+      {
+        id: 'privileged-state',
+        key: 'primary',
+        adminOperatorId: 'ryan-op',
+        adminOperatorIds: ['ryan-op', 'charles-op'],
+        publisherOperatorId: '',
+        assignmentVersion: 2,
+      },
+    ];
+    mockPrivilegedAccountGetFullList.mockImplementation(async () => structuredClone(accounts));
+    mockPrivilegedStateGetFullList.mockImplementation(async () => structuredClone(states));
+    mockPrivilegedAccountUpdate.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const account = accounts.find((candidate) => candidate.id === id)!;
+        Object.assign(account, data);
+        return structuredClone(account);
+      },
+    );
+    mockPrivilegedStateUpdate.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const state = states.find((candidate) => candidate.id === id)!;
+        Object.assign(state, data);
+        return structuredClone(state);
+      },
+    );
+    mockCollectionGetFullList.mockResolvedValue([
+      { id: 'ryan-op', displayName: 'Ryan Bledsoe', active: true },
+      { id: 'charles-op', displayName: 'Charles Gibbs', active: true },
+    ]);
+
+    await ensureCollections(mockPb);
+
+    const accountPatches = mockUpdate.mock.calls
+      .filter(([id]) => id === 'accounts-col')
+      .map(([, patch]) => patch as Record<string, unknown>);
+    expect(accountPatches).toHaveLength(2);
+    // The username column carries the values the migration just wrote, so the
+    // final patch has to address it by the id PocketBase assigned in phase one.
+    expect(
+      (accountPatches[1]?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'username',
+      ),
+    ).toMatchObject({ id: 'field_username', required: true });
+    expect(
+      (serverCollections['accounts-col'].fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'username',
+      ),
+    ).toMatchObject({ id: 'field_username' });
+
+    const statePatches = mockUpdate.mock.calls
+      .filter(([id]) => id === 'state-col')
+      .map(([, patch]) => patch as Record<string, unknown>);
+    expect(
+      (statePatches.at(-1)?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'ownerAccountId',
+      ),
+    ).toMatchObject({ id: 'field_ownerAccountId', required: true });
   });
 
   it('does not reapply the compatibility auth identity after the roster is retired', async () => {

@@ -342,6 +342,22 @@ describe('PrivilegedCommandProcessor', () => {
     );
   });
 
+  it('returns the vetted refusal reason from a safe handler error', async () => {
+    const processor = createProcessor();
+    processor.registerCommand('administration.snapshot.read', 'settings.manage', async () => {
+      throw new PrivilegedCommandSafeError('invalid-request', 'That username is already in use.');
+    });
+
+    await expect(
+      processor.process(envelope({ command: 'administration.snapshot.read', payload: {} })),
+    ).resolves.toEqual({
+      ok: false,
+      requestId: 'request-1',
+      error: 'invalid-request',
+      message: 'That username is already in use.',
+    });
+  });
+
   it('isolates resumable upload control traffic from the administrative command limiter', async () => {
     const commandLimiter = { tryConsume: vi.fn(() => ({ allowed: false })) };
     const knowledgeUploadCommandLimiter = { tryConsume: vi.fn(() => ({ allowed: true })) };

@@ -1,5 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** The fixed sentences startup failures are reported with, per cause. */
+const START_FAILURE = {
+  binaryMissing:
+    'The PocketBase server bundled with Relay is missing for this platform. Reinstall Relay to restore it.',
+  hooksMissing:
+    "Relay's bundled PocketBase hook files are missing. Reinstall Relay to restore them.",
+  reauthenticationRoute:
+    'Relay could not verify its privileged PocketBase route. Reinstall Relay to restore its bundled hook files.',
+  rateLimit: 'Relay could not apply the PocketBase rate limits its privileged routes depend on.',
+  credentialRepair:
+    'Relay could not repair its PocketBase administrator credentials. Restore a backup or reconfigure the workspace.',
+  authentication:
+    'Relay could not sign in to its PocketBase workspace with the stored passphrase. Reconfigure the workspace to set a new one.',
+  appUser:
+    'Relay could not prepare the PocketBase account remote clients sign in with. Restart the workspace to try again.',
+  fallback: 'Relay could not start its PocketBase workspace. See the Relay logs for details.',
+} as const;
+
 const REPAIR_DIRECTORY_PATTERN =
   /^C:\\Users\\Relay\\AppData\\Local\\Temp[/\\]\.relay-pb-repair-[0-9a-f]{16}$/;
 const REPAIR_MIGRATIONS_ARGUMENT_PATTERN =
@@ -316,6 +334,82 @@ describe('pocketbaseBootstrap', () => {
     );
   });
 
+  it('retires the previous retention schedule even when PocketBase is not running', async () => {
+    // A crashed process is not "running" while it waits out its restart backoff.
+    mocks.getPbProcess.mockReturnValue(mocks.pbProcess);
+    mocks.pbProcess.isRunning.mockReturnValue(false);
+    mocks.getRetentionManager.mockReturnValue(mocks.retentionManager);
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+
+    // Otherwise the orphaned daily schedule keeps authenticating on the retired
+    // client alongside the new one.
+    expect(mocks.retentionManager.stop).toHaveBeenCalledOnce();
+    expect(mocks.setRetentionManager).toHaveBeenCalledWith(null);
+    // The retired process is stopped before anything new starts, which cancels
+    // its pending crash restart.
+    expect(mocks.pbProcess.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.pbProcess.start.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('reports an occupied port when the PocketBase process cannot start', async () => {
+    mocks.existsSync.mockImplementation(
+      (path) =>
+        String(path).endsWith('relay_privileged_reauth.pb.js') ||
+        String(path).endsWith('pocketbase.exe'),
+    );
+    mocks.pbProcess.start.mockRejectedValueOnce(
+      new Error('PocketBase failed to become healthy within 10000ms'),
+    );
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({
+      status: 'failed',
+      reason:
+        'PocketBase could not start on port 8090. Another program may already be using that port.',
+    });
+  });
+
+  it('reports a missing bundled binary when the PocketBase process cannot start', async () => {
+    // Only the hook file exists, so the platform binary is absent.
+    mocks.pbProcess.start.mockRejectedValueOnce(new Error('spawn ENOENT'));
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({ status: 'failed', reason: START_FAILURE.binaryMissing });
+  });
+
   it('never logs a server-reflected secret while retrying app-user authentication', async () => {
     vi.useFakeTimers();
     const secret = ['reflected', 'bootstrap', 'secret'].join('-');
@@ -339,7 +433,10 @@ describe('pocketbaseBootstrap', () => {
       );
       await vi.advanceTimersByTimeAsync(1_500);
 
-      await expect(startup).resolves.toEqual({ status: 'failed' });
+      await expect(startup).resolves.toEqual({
+        status: 'failed',
+        reason: START_FAILURE.appUser,
+      });
       expect(mocks.appUserAuth).toHaveBeenCalledTimes(3);
       expect(mocks.loggers.pocketbase.warn).toHaveBeenCalledWith(
         'Failed to ensure app user',
@@ -372,7 +469,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.hooksMissing,
+    });
 
     expect(mocks.pocketBaseProcessConstructor).not.toHaveBeenCalled();
     expect(mocks.pbProcess.start).not.toHaveBeenCalled();
@@ -393,7 +493,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.reauthenticationRoute,
+    });
 
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
@@ -624,7 +727,10 @@ describe('pocketbaseBootstrap', () => {
           },
           'C:\\Users\\Relay\\data',
         ),
-      ).resolves.toEqual({ status: 'failed' });
+      ).resolves.toEqual({
+        status: 'failed',
+        reason: START_FAILURE.credentialRepair,
+      });
     } finally {
       Object.defineProperty(process, 'platform', {
         configurable: true,
@@ -708,7 +814,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.authentication,
+    });
 
     expect(mocks.execFileSync).not.toHaveBeenCalled();
     expect(mocks.pbProcess.stop).not.toHaveBeenCalled();
@@ -736,7 +845,10 @@ describe('pocketbaseBootstrap', () => {
         'C:\\Users\\Relay\\data',
         { onHealthy, onCredentialsReady, onSchemaReady },
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.rateLimit,
+    });
 
     expect(mocks.ensurePocketBaseAuthRateLimit).toHaveBeenCalledOnce();
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
@@ -767,7 +879,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.credentialRepair,
+    });
 
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
@@ -790,7 +905,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.authentication,
+    });
 
     expect(mocks.pbProcess.start).toHaveBeenCalledTimes(2);
     expect(mocks.pbProcess.stop).toHaveBeenCalledTimes(2);
@@ -815,7 +933,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.credentialRepair,
+    });
 
     expect(mocks.execFileSync).toHaveBeenCalledOnce();
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
@@ -862,7 +983,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.credentialRepair,
+    });
 
     const repairLog = mocks.loggers.pocketbase.error.mock.calls.find(
       ([message]) => message === 'Failed to repair superuser via CLI',
@@ -927,7 +1051,10 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\\\Users\\\\Relay\\\\data',
       ),
-    ).resolves.toEqual({ status: 'failed' });
+    ).resolves.toEqual({
+      status: 'failed',
+      reason: START_FAILURE.fallback,
+    });
 
     expect(mocks.ensureCollections).not.toHaveBeenCalled();
     expect(mocks.ensureKnowledgeSearchCollections).not.toHaveBeenCalled();

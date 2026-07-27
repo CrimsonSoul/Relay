@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
   isKnowledgeChecksum,
   normalizeKnowledgeDocumentRecord,
   type KnowledgeDocumentRecord,
@@ -18,6 +19,7 @@ import { buildKnowledgeSearchPassages } from './knowledgeSearchPassages';
 const DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{1,200}$/;
 const PDF_SIGNATURE = '%PDF-';
 const WRITE_BATCH_SIZE = 100;
+const REMOVAL_SWEEP_DELAY_MS = 30_000;
 
 type SearchCollectionPort = {
   getFullList(options?: Record<string, unknown>): Promise<unknown[]>;
@@ -112,6 +114,7 @@ export class KnowledgeSearchIndexer {
   private readonly now: () => number;
   private readonly pending = new Set<string>();
   private readonly removedDocumentIds = new Set<string>();
+  private readonly pendingRemovals = new Set<string>();
   private readonly removalOperations = new Set<Promise<void>>();
   private readonly idleWaiters = new Set<() => void>();
   private running = false;
@@ -119,6 +122,7 @@ export class KnowledgeSearchIndexer {
   private activeJob: ActiveJob | null = null;
   private pumpPromise: Promise<void> | null = null;
   private disposalPromise: Promise<void> | null = null;
+  private removalSweepTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: KnowledgeSearchIndexerOptions) {
     this.pb = options.pb as KnowledgeSearchStoragePort;
@@ -138,6 +142,7 @@ export class KnowledgeSearchIndexer {
         }
       }
       this.kickPump();
+      void this.trackRemoval(this.sweepOrphanedChunks(documents));
     } catch (error) {
       loggers.main.warn('Wiki search backfill is unavailable', { error });
     }
@@ -191,7 +196,10 @@ export class KnowledgeSearchIndexer {
     if (this.disposed || !DOCUMENT_ID_PATTERN.test(documentId)) return Promise.resolve();
     this.removedDocumentIds.add(documentId);
     this.pending.delete(documentId);
-    const operation = this.removePermanently(documentId);
+    return this.trackRemoval(this.removePermanently(documentId));
+  }
+
+  private trackRemoval(operation: Promise<void>): Promise<void> {
     this.removalOperations.add(operation);
     void operation.then(() => {
       this.removalOperations.delete(operation);
@@ -204,16 +212,65 @@ export class KnowledgeSearchIndexer {
     try {
       const active = this.activeJob;
       if (active?.documentId === documentId) await active.done;
-      await this.deleteChunks(documentId, () => true, false);
+      if (await this.deleteChunks(documentId, () => true, false)) {
+        this.pendingRemovals.delete(documentId);
+        return;
+      }
     } catch (error) {
       loggers.main.warn('Wiki search chunk removal is unavailable', { error });
     }
+    // Chunks whose document is gone have no other owner, so remember the id and sweep it again.
+    this.pendingRemovals.add(documentId);
+    this.scheduleRemovalSweep();
+  }
+
+  private scheduleRemovalSweep(): void {
+    if (this.disposed || this.removalSweepTimer || this.pendingRemovals.size === 0) return;
+    this.removalSweepTimer = setTimeout(() => {
+      this.removalSweepTimer = null;
+      void this.sweepPendingRemovals();
+    }, REMOVAL_SWEEP_DELAY_MS);
+    this.removalSweepTimer.unref?.();
+  }
+
+  private async sweepPendingRemovals(): Promise<void> {
+    for (const documentId of [...this.pendingRemovals]) {
+      if (this.disposed) return;
+      await this.trackRemoval(this.removePermanently(documentId));
+    }
+  }
+
+  /**
+   * Chunks outlive their document whenever a removal fails or the app stops mid-removal, and no
+   * other code path ever revisits them. Startup is the only place with the full active document
+   * set, so it is where the strays get collected.
+   */
+  private async sweepOrphanedChunks(active: readonly KnowledgeDocumentRecord[]): Promise<void> {
+    const activeIds = new Set(active.map((document) => document.id));
+    try {
+      const chunks = await this.storageCall(() =>
+        this.pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION).getFullList({ requestKey: null }),
+      );
+      for (const raw of chunks) {
+        const documentId = (raw as Partial<KnowledgeSearchChunkRecord>).documentId;
+        if (typeof documentId !== 'string' || activeIds.has(documentId)) continue;
+        if (!DOCUMENT_ID_PATTERN.test(documentId)) continue;
+        this.removedDocumentIds.add(documentId);
+        this.pendingRemovals.add(documentId);
+      }
+    } catch (error) {
+      loggers.main.warn('Wiki search orphan sweep is unavailable', { error });
+      return;
+    }
+    await this.sweepPendingRemovals();
   }
 
   dispose(): Promise<void> {
     if (this.disposalPromise) return this.disposalPromise;
     this.disposed = true;
     this.pending.clear();
+    if (this.removalSweepTimer) clearTimeout(this.removalSweepTimer);
+    this.removalSweepTimer = null;
     this.disposalPromise = this.finishDisposal();
     return this.disposalPromise;
   }
@@ -449,6 +506,11 @@ export class KnowledgeSearchIndexer {
     passages: ReturnType<typeof buildKnowledgeSearchPassages>,
     indexedAt: string,
   ): Promise<void> {
+    // Writing past the reader's per-document cap would cost this document its place in the search
+    // index, so refuse here and let the document surface as failed instead.
+    if (passages.length > KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT) {
+      throw new Error('document-chunk-limit');
+    }
     for (let offset = 0; offset < passages.length; offset += WRITE_BATCH_SIZE) {
       const batchPassages = passages.slice(offset, offset + WRITE_BATCH_SIZE);
       const batch = this.pb.createBatch();
@@ -514,28 +576,32 @@ export class KnowledgeSearchIndexer {
     });
   }
 
+  /** Resolves true only when every matching chunk was confirmed deleted. */
   private async deleteChunks(
     documentId: string,
     predicate: (chunk: KnowledgeSearchChunkRecord) => boolean,
     required: boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     let chunks: KnowledgeSearchChunkRecord[];
     try {
       chunks = await this.readDocumentChunks(documentId);
     } catch (error) {
       if (required) throw error;
-      return;
+      return false;
     }
     const collection = this.pb.collection(KNOWLEDGE_SEARCH_CHUNKS_COLLECTION);
+    let complete = true;
     for (const chunk of chunks) {
       if (!predicate(chunk)) continue;
       try {
         await collection.delete(chunk.id, { requestKey: null });
       } catch (error) {
         if (required) throw storageError();
+        complete = false;
         loggers.main.warn('Wiki search chunk cleanup failed', { documentId, error });
       }
     }
+    return complete;
   }
 
   private async cleanupJobChunks(documentId: string, checksum: string): Promise<void> {

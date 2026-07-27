@@ -1370,14 +1370,27 @@ async function createManagedCollection(
   }
 }
 
+type PatchManagedCollectionOptions = Readonly<{
+  /**
+   * Reuse the listing snapshot instead of re-reading the collection. Only safe
+   * before anything in the same run has patched it: a stale snapshot omits the
+   * fields PocketBase created during an earlier patch, and re-sending those
+   * fields without the ids PocketBase assigned them drops and recreates their
+   * columns — silently discarding every value already written to them.
+   */
+  reuseSnapshot?: boolean;
+}>;
+
 async function patchManagedCollection(
   pb: PocketBase,
   def: CollectionDef,
   allCols: ExistingCollection[],
   collectionIds: ReadonlyMap<string, string>,
+  options: PatchManagedCollectionOptions = {},
 ): Promise<boolean> {
   const col = allCols.find((candidate) => candidate.name === def.name);
   if (!col) return false;
+  const reuseSnapshot = options.reuseSnapshot ?? true;
   try {
     return await patchCollectionDefinition({
       pb,
@@ -1387,7 +1400,7 @@ async function patchManagedCollection(
       expectedIndexes: def.indexes,
       expectedRules: def.rules ?? DEFAULT_AUTH_RULES,
       expectedAuth: def.auth,
-      snapshot: hasCompleteCollectionSnapshot(col, def.auth) ? col : undefined,
+      snapshot: reuseSnapshot && hasCompleteCollectionSnapshot(col, def.auth) ? col : undefined,
     });
   } catch (err) {
     logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
@@ -1815,7 +1828,18 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
       PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
       PRIVILEGED_STATE_FINAL_DEFINITION,
     ]) {
-      if (await patchManagedCollection(pb, definition, allCols, collectionIds)) patched += 1;
+      // These collections were already patched above with their compatibility
+      // definitions, so the listing snapshot no longer describes them. Re-read
+      // each one instead: the fields phase one created must be re-sent with the
+      // ids PocketBase gave them, or the columns holding the usernames the
+      // migration just wrote are dropped and recreated empty.
+      if (
+        await patchManagedCollection(pb, definition, allCols, collectionIds, {
+          reuseSnapshot: false,
+        })
+      ) {
+        patched += 1;
+      }
     }
     if (migration.status === 'migrated') {
       allCols = allCols.filter(

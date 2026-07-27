@@ -12,6 +12,7 @@ import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import { checkMutationRateLimit } from './ipcHelpers';
 
 const MAX_MUTATION_BYTES = 256 * 1024;
 const RECORD_ID_PATTERN = /^[a-z0-9]{15}$/;
@@ -120,6 +121,12 @@ export function setupOfflineMutationHandlers(
     (event, input: OfflineMutationInput): OfflineMutationResult => {
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.OFFLINE_MUTATE)) {
         return { ok: false, error: 'Untrusted mutation request' };
+      }
+      // Each accepted mutation costs a durable queue write plus a cache write, so
+      // the renderer cannot be allowed to drive them in an unbounded loop. The
+      // budget (100 burst, 10/s) is sized for human-paced CRUD.
+      if (!checkMutationRateLimit()) {
+        return { ok: false, error: 'Too many changes at once — try again in a moment' };
       }
       const validationError = invalidInput(input);
       if (validationError) return { ok: false, error: validationError };

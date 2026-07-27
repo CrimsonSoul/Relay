@@ -32,6 +32,18 @@ async function renderPage(page: PDFPageProxy): Promise<Uint8Array> {
   return png;
 }
 
+/**
+ * Blank sheet used when page one cannot be rasterized. A missing thumbnail is a cosmetic loss,
+ * so callers can keep a structurally valid PDF instead of failing the whole document.
+ */
+export async function renderKnowledgeCoverPlaceholder(): Promise<Uint8Array> {
+  const canvas = createCanvas(MAX_COVER_WIDTH, MAX_COVER_HEIGHT);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  return new Uint8Array(await canvas.encode('png'));
+}
+
 export async function renderKnowledgeDocumentCover(
   document: PDFDocumentProxy,
 ): Promise<Uint8Array> {

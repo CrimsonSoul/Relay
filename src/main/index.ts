@@ -1,7 +1,7 @@
 import { app, BrowserWindow, session, dialog, ipcMain, crashReporter, safeStorage } from 'electron';
 import { join } from 'node:path';
 import { loggers } from './logger';
-import { AppConfig, type ServerConfig } from './config/AppConfig';
+import { AppConfig, type RelayConfig, type ServerConfig } from './config/AppConfig';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 import { validateEnv } from './env';
@@ -50,7 +50,7 @@ import { setupErrorHandlers } from './app/errorHandlers';
 import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
 import { createDeferredServerServices } from './app/deferredServerServices';
-import { requestAppQuit } from './app/relaunch';
+import { recordAppExitMarker, requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
 import {
@@ -92,13 +92,66 @@ import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusSer
 import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
 import { setupStartupIpc, shouldExitAfterStartupBenchmark } from './app/startupIpc';
-import { assertRequiredStartupSucceeded, runStartupSequence } from './app/startupSequence';
+import { runStartupSequence } from './app/startupSequence';
 import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
 import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
+
+/** Server startup either succeeded or failed with a cause worth showing. */
+type ServerStartOutcome = { started: true } | { started: false; reason: string };
+
+/**
+ * A configuration that exists but cannot be decoded blocks startup: showing
+ * first-run setup would overwrite it with a secret no existing client knows.
+ */
+type WorkspaceConfigResolution =
+  { status: 'resolved'; config: RelayConfig | null } | { status: 'blocked'; reason: string };
+
+function resolveWorkspaceConfig(appConfig: AppConfig | null): WorkspaceConfigResolution {
+  const state = appConfig?.readState() ?? { status: 'absent' as const };
+  if (state.status === 'unreadable') return { status: 'blocked', reason: state.reason };
+  return { status: 'resolved', config: state.status === 'loaded' ? state.config : null };
+}
+
+type RequiredWorkspace =
+  | { status: 'ready'; config: RelayConfig | null }
+  | { status: 'blocked'; reason: string; context: string };
+
+/**
+ * Settle everything the workspace cannot publish "ready" without. A blocked
+ * result names a cause the user can act on rather than a generic failure.
+ */
+async function prepareRequiredWorkspace(
+  appConfig: AppConfig | null,
+  startServerServices: (config: ServerConfig) => Promise<ServerStartOutcome>,
+): Promise<RequiredWorkspace> {
+  const resolution = resolveWorkspaceConfig(appConfig);
+  if (resolution.status === 'blocked') {
+    return { status: 'blocked', reason: resolution.reason, context: 'config-unreadable' };
+  }
+
+  const config = resolution.config;
+  if (config?.mode !== 'server') return { status: 'ready', config };
+
+  const outcome = await startServerServices(config);
+  return outcome.started
+    ? { status: 'ready', config }
+    : { status: 'blocked', reason: outcome.reason, context: 'pocketbase-start-failed' };
+}
+
+function registerWindowActivation(): void {
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => {
+        loggers.main.error('Failed to create window on app activate', { error });
+        requestAppQuit('activate-window-create-failed');
+      });
+    }
+  });
+}
 
 async function waitForStartupTestDelay(): Promise<void> {
   if (process.env.NODE_ENV !== 'test') return;
@@ -436,13 +489,13 @@ if (gotLock) {
         }
       };
 
-      const startServerServices = async (config: ServerConfig): Promise<boolean> => {
+      const startServerServices = async (config: ServerConfig): Promise<ServerStartOutcome> => {
         const result = await startPocketBase(config, configDataDir, {
           onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
           onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
           onSchemaReady: () => startupTimeline.mark('schema-ready'),
         });
-        if (result.status !== 'started') return false;
+        if (result.status !== 'started') return { started: false, reason: result.reason };
         if (result.privilegedRuntimeReady) {
           await startPrivilegedAccess(config);
         } else {
@@ -454,13 +507,13 @@ if (gotLock) {
           );
         }
         await getRelayWebServerManager()?.applyConfig(config);
-        return true;
+        return { started: true };
       };
 
       const startServerServicesAfterReady = async (config: ServerConfig): Promise<boolean> => {
-        const started = await startServerServices(config);
-        if (started) deferredServerServices?.schedule(config);
-        return started;
+        const outcome = await startServerServices(config);
+        if (outcome.started) deferredServerServices?.schedule(config);
+        return outcome.started;
       };
 
       // Resolve data root before loading the renderer
@@ -518,18 +571,43 @@ if (gotLock) {
 
       // Register shutdown cleanup before starting embedded services so an early
       // startup failure cannot leave PocketBase or SQLite handles behind.
-      app.on('before-quit', cleanupAppResources);
+      app.on('before-quit', () => {
+        // The crash watchdog only treats an exit as intentional when a marker is
+        // newer than its own start, and requestAppQuit/requestAppRelaunch cannot
+        // cover a shutdown that Electron initiates on its own. On Windows this
+        // also covers system shutdown/restart and user logoff, so no separate
+        // session-end listener is needed — and 'session-end' is a BrowserWindow
+        // event, not an app one, so registering it here would never fire.
+        recordAppExitMarker('before-quit');
+        cleanupAppResources();
+      });
+
+      // Registered before the required-startup gate so a workspace that failed to
+      // start can still be brought back to the foreground on macOS.
+      registerWindowActivation();
+
+      /**
+       * Publish a startup failure the user can act on and stop bootstrapping,
+       * leaving the window and the restart/reconfigure IPC handlers alive.
+       * Quitting here replaced the actual cause with one fixed sentence in a
+       * modal and put Relay's own recovery UI out of reach.
+       */
+      const failStartupRecoverably = (reason: string, context: string): void => {
+        loggers.main.error('Relay could not complete startup', { context, reason });
+        startupState.transition(startupState.getSnapshot().generation, 'failed', reason);
+        workspaceSettled = true;
+        rejectWorkspace?.(new Error(reason));
+        void startupSequence?.catch(() => undefined);
+      };
 
       // Required server startup must settle before the workspace can publish
       // ready, even though the window and static shell are already visible.
-      const relayConfig = getAppConfig()?.load();
-      if (relayConfig?.mode === 'server') {
-        const serverStarted = await startServerServices(relayConfig);
-        assertRequiredStartupSucceeded(
-          serverStarted,
-          'Relay could not start its PocketBase workspace.',
-        );
+      const workspace = await prepareRequiredWorkspace(getAppConfig(), startServerServices);
+      if (workspace.status === 'blocked') {
+        failStartupRecoverably(workspace.reason, workspace.context);
+        return;
       }
+      const relayConfig = workspace.config;
 
       // Open the local client cache before the renderer asks for its bootstrap
       // connection. Server authentication is deferred, so this step remains
@@ -575,15 +653,6 @@ if (gotLock) {
         onError: (error) => {
           loggers.main.warn('Windows runtime cleanup failed', { error });
         },
-      });
-
-      app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-          createWindow().catch((error_) => {
-            loggers.main.error('Failed to create window on app activate', { error: error_ });
-            requestAppQuit('activate-window-create-failed');
-          });
-        }
       });
 
       if (relayConfig?.mode === 'client') {

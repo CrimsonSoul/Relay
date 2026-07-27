@@ -590,42 +590,40 @@ describe('cacheHandlers', () => {
       );
     });
 
-    it('skips re-auth when config has no secret', async () => {
-      const changes = [{ id: '1' }];
+    it('reports the missing credential instead of syncing when config has no secret', async () => {
+      const changes = [{ id: '1' }, { id: '2' }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
       mockAppConfig.load.mockReturnValue({});
-      mockSync.syncAll.mockResolvedValue({
-        total: 1,
-        conflicts: 0,
-        errors: [],
-        synced: [],
-        failed: [],
-      });
 
-      await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
+      // Syncing unauthenticated would stamp every change with a raw PocketBase
+      // transport error and hide the real cause from the pending-changes banner.
       expect(mockSync.reauthenticate).not.toHaveBeenCalled();
-      expect(mockSync.syncAll).toHaveBeenCalled();
+      expect(mockSync.syncAll).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        total: 2,
+        conflicts: 0,
+        errors: ['Relay is not signed in'],
+        remaining: 2,
+        remainingChanges: [],
+      });
+      expect(mockPending.markFailure).toHaveBeenCalledWith('1', 'Relay is not signed in');
+      expect(mockPending.markFailure).toHaveBeenCalledWith('2', 'Relay is not signed in');
     });
 
-    it('skips re-auth when appConfig is null', async () => {
+    it('reports the missing credential instead of syncing when appConfig is null', async () => {
       getAppConfig.mockReturnValueOnce(null as never);
       const changes = [{ id: '1' }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
-      mockSync.syncAll.mockResolvedValue({
-        total: 1,
-        conflicts: 0,
-        errors: [],
-        synced: [],
-        failed: [],
-      });
 
-      await handlers[IPC_CHANNELS.SYNC_PENDING]();
+      const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
       expect(mockSync.reauthenticate).not.toHaveBeenCalled();
-      expect(mockSync.syncAll).toHaveBeenCalled();
+      expect(mockSync.syncAll).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ errors: ['Relay is not signed in'] });
     });
 
     it('handles getPendingChanges and getSyncManager not provided', async () => {

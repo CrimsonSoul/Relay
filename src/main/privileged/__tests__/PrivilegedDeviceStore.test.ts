@@ -231,6 +231,25 @@ describe('PrivilegedDeviceStore', () => {
     await expect(store.findForAccount('different-account')).resolves.toBeNull();
   });
 
+  it('retires the account earlier bound key when a replacement device is bound', async () => {
+    const { store } = await createBoundDevice();
+    const replacement = await store.create(ACCOUNT_ID, 'Repaired workstation');
+    const otherAccount = await store.create('account-publisher', 'Publisher workstation');
+    await store.bind('account-publisher', otherAccount.pendingKeyId, 'device-publisher');
+
+    await store.bind(ACCOUNT_ID, replacement.pendingKeyId, 'device-repaired');
+
+    // The revoked device must not be what the next sign-in probes, or the account
+    // re-pairs forever while every probe replays the dead key.
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toMatchObject({
+      deviceId: 'device-repaired',
+    });
+    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
+    await expect(store.findForAccount('account-publisher')).resolves.toMatchObject({
+      deviceId: 'device-publisher',
+    });
+  });
+
   it('does not log private key material when protected data is corrupt', async () => {
     const { store } = await createBoundDevice();
     const privateKey = secureStorage.encryptedPlaintexts[0] as string;

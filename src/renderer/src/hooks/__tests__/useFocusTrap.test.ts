@@ -235,4 +235,54 @@ describe('useFocusTrap', () => {
     expect(preventSpy).toHaveBeenCalled();
     expect(document.activeElement).toBe(btn1);
   });
+
+  it('wraps Tab at the last ENABLED control when the trailing button is disabled', () => {
+    // A disabled element can never be document.activeElement, so treating it as
+    // the boundary let Tab fall through and escape the dialog entirely. Modals
+    // whose primary action starts disabled (e.g. Add Server) hit this on open.
+    const container = document.createElement('div');
+    const first = document.createElement('button');
+    const last = document.createElement('button');
+    const disabled = document.createElement('button');
+    disabled.disabled = true;
+    container.append(first, last, disabled);
+    document.body.appendChild(container);
+
+    const { result } = renderHook(() => useFocusTrap(true));
+    Object.defineProperty(result.current, 'current', { value: container, writable: true });
+
+    last.focus();
+    const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
+    Object.defineProperty(tabEvent, 'shiftKey', { value: false });
+    const preventSpy = vi.spyOn(tabEvent, 'preventDefault');
+
+    document.dispatchEvent(tabEvent);
+
+    expect(preventSpy).toHaveBeenCalled();
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('moves initial focus past a disabled leading control', () => {
+    const container = document.createElement('div');
+    const disabled = document.createElement('button');
+    disabled.disabled = true;
+    const usable = document.createElement('button');
+    container.append(disabled, usable);
+    document.body.appendChild(container);
+
+    const { result } = renderHook(() => useFocusTrap(true));
+    Object.defineProperty(result.current, 'current', { value: container, writable: true });
+
+    // Shift+Tab from the first enabled control must wrap to the last enabled one,
+    // proving the disabled leading button is excluded from the cycle.
+    usable.focus();
+    const shiftTab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
+    Object.defineProperty(shiftTab, 'shiftKey', { value: true });
+    const preventSpy = vi.spyOn(shiftTab, 'preventDefault');
+
+    document.dispatchEvent(shiftTab);
+
+    expect(preventSpy).toHaveBeenCalled();
+    expect(document.activeElement).toBe(usable);
+  });
 });

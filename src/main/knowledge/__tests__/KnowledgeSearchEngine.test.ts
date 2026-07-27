@@ -490,23 +490,78 @@ describe('KnowledgeSearchEngine snapshot mutations', () => {
         normalizedStart: index * 100,
       }),
     );
+    // The segmenter itself is process-wide, so a normalization pass is one segment() call.
+    const segmentSpy = vi.spyOn(Intl.Segmenter.prototype, 'segment');
+
+    try {
+      for (const update of updates) engine.upsertChunk(update);
+      expect(segmentSpy).toHaveBeenCalledTimes(100);
+
+      segmentSpy.mockClear();
+      engine.upsertDocument({ ...document, displayTitle: 'Incremental Updated', revision: 2 });
+      expect(segmentSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      segmentSpy.mockRestore();
+    }
+  });
+
+  it('derives highlight source ranges for returned results only', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'ranges', title: 'Ranges' });
+    const chunks = Array.from({ length: 40 }, (_, index) =>
+      knowledgeSearchFixtureChunk(document, `target passage ${index}`, {
+        id: `ranges-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const engine = new KnowledgeSearchEngine();
+    engine.replaceSnapshot([document], chunks);
+    const query = request('target passage', {
+      scope: { kind: 'document', documentId: 'ranges' },
+      limit: 5,
+    });
+    const segmentSpy = vi.spyOn(Intl.Segmenter.prototype, 'segment');
+
+    try {
+      const response = await engine.search(query, context());
+
+      expect(response.results).toHaveLength(5);
+      expect(response.results[0]?.excerpt).toBe('target passage 0');
+      // One pass normalizes the query and one derives each returned excerpt; the other 35
+      // candidates cost nothing. Ranges retained per chunk would leave this at one pass total and
+      // the whole corpus worth of ranges resident in the index.
+      expect(segmentSpy).toHaveBeenCalledTimes(1 + response.results.length);
+    } finally {
+      segmentSpy.mockRestore();
+    }
+  });
+
+  it('reuses one grapheme segmenter across indexing and searching', async () => {
+    const document = knowledgeSearchFixtureDocument({ id: 'segmenter', title: 'Segmenter' });
+    const chunks = Array.from({ length: 25 }, (_, index) =>
+      knowledgeSearchFixtureChunk(document, `target passage ${index}`, {
+        id: `segmenter-${index}`,
+        passageNumber: index + 1,
+        normalizedStart: index * 100,
+      }),
+    );
+    const engine = new KnowledgeSearchEngine();
     const OriginalSegmenter = Intl.Segmenter;
-    let normalizationPasses = 0;
+    let constructions = 0;
     class CountingSegmenter extends OriginalSegmenter {
       constructor(...args: ConstructorParameters<typeof Intl.Segmenter>) {
-        normalizationPasses += 1;
+        constructions += 1;
         super(...args);
       }
     }
     Object.defineProperty(Intl, 'Segmenter', { configurable: true, value: CountingSegmenter });
 
     try {
-      for (const update of updates) engine.upsertChunk(update);
-      expect(normalizationPasses).toBe(100);
+      engine.replaceSnapshot([document], chunks);
+      const response = await engine.search(request('target passage'), context());
 
-      normalizationPasses = 0;
-      engine.upsertDocument({ ...document, displayTitle: 'Incremental Updated', revision: 2 });
-      expect(normalizationPasses).toBe(3);
+      expect(response.ok).toBe(true);
+      expect(constructions).toBe(0);
     } finally {
       Object.defineProperty(Intl, 'Segmenter', {
         configurable: true,

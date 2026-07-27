@@ -49,7 +49,8 @@ type WebRouterOptions = {
   security: WebRequestSecurity;
   sessions: WebSessionStore;
   limiter?: WebRateLimiter;
-  authorizeCapability?: (sessionId: string, capability: PrivilegedCapability) => boolean;
+  // Keyed on the stable logical session id so privileged state survives cookie rotation.
+  authorizeCapability?: (logicalSessionId: string, capability: PrivilegedCapability) => boolean;
 };
 
 type ResolvedWebRequest = {
@@ -233,9 +234,11 @@ export class WebRouter {
       this.send(response, { status: 403, body: { ok: false, error: 'forbidden' } });
       return null;
     }
+    const logicalSessionId = session?.rateLimitId;
     if (
       resolved.route.capability &&
-      (!sessionId || !this.options.authorizeCapability?.(sessionId, resolved.route.capability))
+      (!logicalSessionId ||
+        !this.options.authorizeCapability?.(logicalSessionId, resolved.route.capability))
     ) {
       this.send(response, { status: 403, body: { ok: false, error: 'forbidden' } });
       return null;

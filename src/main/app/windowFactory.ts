@@ -333,15 +333,26 @@ export async function createAuxWindow(route: string): Promise<void> {
     return { action: 'deny' };
   });
 
-  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    const url = `${process.env.ELECTRON_RENDERER_URL}?popout=${route}`;
-    loggers.main.info(`Loading aux window URL: ${url}`);
+  const isDevPopout = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
+  const url = isDevPopout
+    ? `${process.env.ELECTRON_RENDERER_URL}?popout=${route}`
+    : buildRendererPopoutFileUrl(join(mainDir, '../renderer/index.html'), route);
+  loggers.main.info(`Loading aux window ${isDevPopout ? 'URL' : 'file URL'}: ${url}`);
+
+  try {
     await auxWindow.loadURL(url);
-  } else {
-    const indexPath = join(mainDir, '../renderer/index.html');
-    const url = buildRendererPopoutFileUrl(indexPath, route);
-    loggers.main.info(`Loading aux window file URL: ${url}`);
-    await auxWindow.loadURL(url);
+  } catch (error) {
+    // Callers invoke createAuxWindow as void, so a rejection here surfaces as an
+    // unhandled rejection instead of a window problem. Closing the popout while
+    // it loads (ERR_ABORTED) or a dev server that is not listening yet
+    // (ERR_CONNECTION_REFUSED) both land here; either way the half-built window
+    // has to go.
+    loggers.main.warn('Failed to load aux window', {
+      route,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    auxWindows.delete(route);
+    if (!auxWindow.isDestroyed()) auxWindow.destroy();
   }
 
   // Data is managed by PocketBase — aux windows subscribe via the SDK

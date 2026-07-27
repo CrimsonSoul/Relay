@@ -315,6 +315,87 @@ describe('RoleAccountsPanel', () => {
     });
   });
 
+  it('confirms before deactivating an account and does nothing when the dialog is cancelled', async () => {
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate Charles Gibbs' }));
+    expect(execute).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Deactivate account' });
+    expect(dialog).toHaveTextContent(/Charles Gibbs.*loses privileged access immediately/i);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(execute).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate Charles Gibbs' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Deactivate account' })).getByRole('button', {
+        name: 'Deactivate account',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith({
+        command: 'account.active.set',
+        payload: { accountId: 'account-charles', active: false, expectedRevision: 2 },
+        expectedRevision: null,
+      }),
+    );
+  });
+
+  it('reactivates without a confirmation dialog', async () => {
+    const reactivatable: RelayAdministrationSnapshot = {
+      ...snapshot,
+      accounts: [
+        account('account-ryan', 'ryan', 'Ryan Bledsoe', 'administrator', 'owner'),
+        account('account-charles', 'charles', 'Charles Gibbs', 'administrator', 'admin', false),
+      ],
+    };
+    render(<RoleAccountsPanel snapshot={reactivatable} execute={execute} relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivate Charles Gibbs' }));
+
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith({
+        command: 'account.active.set',
+        payload: { accountId: 'account-charles', active: true, expectedRevision: 2 },
+        expectedRevision: null,
+      }),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Deactivate account' })).toBeNull();
+  });
+
+  it('offers no dead-end credential or activation actions for an unassigned Publisher', () => {
+    globalThis.api = { setupPrivilegedCredential: vi.fn() } as never;
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="server" />);
+
+    expect(screen.queryByRole('button', { name: 'Set credential for Morgan Lee' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reactivate Morgan Lee' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Set credential for Tristan Bowles' })).toBeVisible();
+    expect(
+      screen.getByText(/Assign the Publisher role before setting a password for Morgan Lee/i),
+    ).toBeVisible();
+  });
+
+  it('shows the reason a protected change was refused instead of a generic failure', async () => {
+    execute.mockResolvedValueOnce({
+      ok: false,
+      error: 'invalid-request',
+      message: 'That username is already in use.',
+    });
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Administrator' }));
+    fireEvent.change(screen.getByLabelText('Administrator username'), {
+      target: { value: 'charles' },
+    });
+    fireEvent.change(screen.getByLabelText('Administrator display name'), {
+      target: { value: 'Duplicate Charles' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Administrator' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That username is already in use.');
+  });
+
   it('renders no protected account controls for Publisher sessions', () => {
     mockUsePrivilegedAccess.mockReturnValue({
       ...mockUsePrivilegedAccess(),

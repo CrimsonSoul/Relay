@@ -89,6 +89,13 @@ export class ProductionPrivilegedHost {
     }
   }
 
+  handleDeviceRevoked(accountId: string, deviceId: string): void {
+    this.electronRuntime?.handleDeviceRevoked(accountId, deviceId);
+    for (const runtime of this.webRuntimes.values()) {
+      runtime.handleDeviceRevoked(accountId, deviceId);
+    }
+  }
+
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.disposePromise = (async () => {

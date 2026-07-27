@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import type { KnowledgeDocumentRecord } from '@shared/knowledge';
+import {
+  KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT,
+  type KnowledgeDocumentRecord,
+} from '@shared/knowledge';
 import {
   KNOWLEDGE_SEARCH_INDEX_VERSION,
   type KnowledgeSearchChunkRecord,
@@ -1084,5 +1087,73 @@ describe('KnowledgeSearchIndexer', () => {
     expect(resolvedBeforeRemovalFinished).toBe(false);
     expect(storage.chunkDeletes).toHaveLength(1);
     expect(storage.chunkDeletes).toHaveLength(deletesAtResolution);
+  });
+
+  it('refuses to write more chunks than the search service will read back', async () => {
+    const current = document('chunkcap', { pageCount: 1 });
+    const pages = new Map([
+      [
+        current.id,
+        Array.from({ length: KNOWLEDGE_SEARCH_MAX_CHUNKS_PER_DOCUMENT + 1 }, (_, index) =>
+          extractedPage(index + 1, `Page ${index + 1}`),
+        ),
+      ],
+    ]);
+    const { indexer, storage } = createHarness({ documents: [current], pagesByDocument: pages });
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+
+    expect(storage.chunkCreates).toEqual([]);
+    expect(storage.documents.get(current.id)).toMatchObject({
+      searchIndexState: 'failed',
+      searchIndexError: 'extraction-failed',
+    });
+  });
+
+  it('retries a failed chunk removal instead of orphaning the chunks', async () => {
+    const current = document('retryremoval');
+    const { indexer, storage } = createHarness({ documents: [current] });
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+    expect(storage.chunks.size).toBe(1);
+
+    vi.useFakeTimers();
+    try {
+      storage.deleteError = new Error('storage-offline');
+      await indexer.remove(current.id);
+      expect(storage.chunks.size).toBe(1);
+
+      storage.deleteError = null;
+      await vi.advanceTimersByTimeAsync(30_000);
+      await indexer.whenIdleForTest();
+
+      expect(storage.chunks.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sweeps chunks whose document no longer exists at startup', async () => {
+    const current = document('orphansweep');
+    const { indexer, storage, extractor, readPdf } = createHarness({ documents: [current] });
+
+    indexer.enqueue(current.id);
+    await indexer.whenIdleForTest();
+    expect(storage.chunks.size).toBe(1);
+    // The document row is gone while its chunks survived an earlier removal failure.
+    storage.documents.delete(current.id);
+
+    const restarted = new KnowledgeSearchIndexer({
+      pb: storage,
+      extractor,
+      readPdf,
+      now: () => NOW,
+    });
+    await restarted.start();
+    await restarted.whenIdleForTest();
+
+    expect(storage.chunks.size).toBe(0);
   });
 });

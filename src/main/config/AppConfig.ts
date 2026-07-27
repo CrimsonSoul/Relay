@@ -98,6 +98,23 @@ function toRelayConfig(stored: StoredConfig, secret: string): RelayConfig {
   return clientConfig;
 }
 
+/**
+ * Why the stored configuration could not be turned into a usable RelayConfig.
+ * `unreadable` means the workspace IS configured — the file just cannot be
+ * decoded right now — and must never be treated as a first run.
+ */
+export type AppConfigReadResult =
+  | { status: 'absent' }
+  | { status: 'loaded'; config: RelayConfig }
+  | { status: 'unreadable'; reason: string };
+
+const UNREADABLE_SECRET_REASON =
+  'Relay found its saved workspace configuration but could not read the stored passphrase. ' +
+  'Sign in to the original Windows/macOS user account, or restore a Relay backup, and start Relay again.';
+const UNREADABLE_FILE_REASON =
+  'Relay found its saved workspace configuration but could not read it. ' +
+  'Restore a Relay backup, or delete config.json from the Relay data folder to start over.';
+
 export class AppConfig {
   private readonly configPath: string;
 
@@ -105,8 +122,17 @@ export class AppConfig {
     this.configPath = join(dataDir, 'config.json');
   }
 
-  load(): RelayConfig | null {
-    if (!existsSync(this.configPath)) return null;
+  /**
+   * Decode the stored configuration without any repair side effects, so save()
+   * can consult it without re-entering itself through the encryption upgrade.
+   */
+  private readStoredConfig(): {
+    result: AppConfigReadResult;
+    needsEncryptionUpgrade: boolean;
+  } {
+    if (!existsSync(this.configPath)) {
+      return { result: { status: 'absent' }, needsEncryptionUpgrade: false };
+    }
     try {
       const raw = readFileSync(this.configPath, 'utf-8');
       const stored = JSON.parse(raw) as StoredConfig;
@@ -123,26 +149,71 @@ export class AppConfig {
             'Secure storage is unavailable; refusing to load plaintext Relay secret',
             { path: this.configPath },
           );
-          return null;
+          return {
+            result: { status: 'unreadable', reason: UNREADABLE_SECRET_REASON },
+            needsEncryptionUpgrade: false,
+          };
         }
         secret = stored.secret;
+      } else if (stored.encryptedSecret) {
+        loggers.main.error('Secure storage cannot decrypt the stored Relay secret', {
+          path: this.configPath,
+        });
+        return {
+          result: { status: 'unreadable', reason: UNREADABLE_SECRET_REASON },
+          needsEncryptionUpgrade: false,
+        };
       } else {
         loggers.main.error('Config has no readable secret', { path: this.configPath });
-        return null;
+        return {
+          result: { status: 'unreadable', reason: UNREADABLE_FILE_REASON },
+          needsEncryptionUpgrade: false,
+        };
       }
 
-      const config = toRelayConfig(stored, secret);
-      if (stored.secret && encryptionAvailable) {
-        this.save(config);
-      }
-      return config;
+      return {
+        result: { status: 'loaded', config: toRelayConfig(stored, secret) },
+        needsEncryptionUpgrade: Boolean(stored.secret) && encryptionAvailable,
+      };
     } catch (err) {
-      loggers.main.error('Failed to parse config file', { path: this.configPath, error: err });
-      return null;
+      loggers.main.error('Failed to read config file', { path: this.configPath, error: err });
+      return {
+        result: { status: 'unreadable', reason: UNREADABLE_FILE_REASON },
+        needsEncryptionUpgrade: false,
+      };
     }
   }
 
+  /**
+   * Read the stored configuration, keeping "never configured" separate from
+   * "configured but currently unreadable". Callers that only need the happy
+   * path can keep using load().
+   */
+  readState(): AppConfigReadResult {
+    const { result, needsEncryptionUpgrade } = this.readStoredConfig();
+    if (result.status === 'loaded' && needsEncryptionUpgrade) {
+      this.save(result.config);
+    }
+    return result;
+  }
+
+  load(): RelayConfig | null {
+    const state = this.readState();
+    return state.status === 'loaded' ? state.config : null;
+  }
+
   save(config: RelayConfig): void {
+    // Refuse to replace a configuration that exists but cannot be read. Writing
+    // a fresh secret over it would silently invalidate the credentials every
+    // remote client and browser session already holds.
+    const { result: existing } = this.readStoredConfig();
+    if (existing.status === 'unreadable') {
+      loggers.main.error('Refusing to overwrite an unreadable Relay configuration', {
+        path: this.configPath,
+      });
+      throw new Error(existing.reason);
+    }
+
     mkdirSync(this.dataDir, { recursive: true });
 
     const stored: StoredConfig = { mode: config.mode };

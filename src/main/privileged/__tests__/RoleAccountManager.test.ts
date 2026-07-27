@@ -6,6 +6,7 @@ import {
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
 import { AuthorityMutationCoordinator } from '../AuthorityMutationCoordinator';
+import { PrivilegedCommandSafeError } from '../PrivilegedCommandProcessor';
 import { RoleAccountConflictError, RoleAccountManager } from '../RoleAccountManager';
 
 const NOW = '2026-07-17T15:00:00.000Z';
@@ -591,6 +592,63 @@ describe('RoleAccountManager', () => {
     expect(currentState.ownerAccountId).toBe('account-charles');
     expect(currentAccounts.get('account-charles')?.displayName).toBe('Charles Gibbs');
     expect(accountCollection.update).not.toHaveBeenCalled();
+  });
+
+  it('raises domain refusals as safe errors so administrators read the actual reason', async () => {
+    stateCollection.getFirstListItem.mockResolvedValue(
+      state({ publisherAccountId: 'account-publisher' }),
+    );
+    accountCollection.getOne.mockImplementation(async (id: string) =>
+      id === 'account-publisher'
+        ? account({ id, username: 'publisher', storedRole: 'publisher', active: false })
+        : accounts.find((entry) => entry.id === id)!,
+    );
+
+    const refusals = await Promise.all([
+      manager()
+        .createPublisher({
+          actorAccountId: 'account-charles',
+          username: 'replacement',
+          displayName: 'Replacement Publisher',
+          expectedStateRevision: 4,
+        })
+        .catch((error: unknown) => error),
+      manager()
+        .createAdministrator({
+          actorAccountId: 'account-charles',
+          username: 'admin-2',
+          displayName: 'Admin Two',
+          expectedStateRevision: 4,
+        })
+        .catch((error: unknown) => error),
+      manager()
+        .transferOwnership({
+          actorAccountId: 'account-ryan',
+          accountId: 'account-publisher',
+          expectedStateRevision: 4,
+        })
+        .catch((error: unknown) => error),
+      manager()
+        .createAdministrator({
+          actorAccountId: 'account-ryan',
+          username: 'charles',
+          displayName: 'Duplicate Charles',
+          expectedStateRevision: 4,
+        })
+        .catch((error: unknown) => error),
+    ]);
+
+    for (const refusal of refusals) {
+      expect(refusal).toBeInstanceOf(PrivilegedCommandSafeError);
+      expect(refusal).toMatchObject({ code: 'invalid-request' });
+    }
+    expect(refusals.map((refusal) => (refusal as Error).message)).toEqual([
+      'Assign or replace the current Publisher before creating another one.',
+      'Only the Relay owner can manage administrators.',
+      'Select an active administrator as the new owner.',
+      'That username is already in use.',
+    ]);
+    expect(accountCollection.create).not.toHaveBeenCalled();
   });
 
   it('serializes simultaneous renames so one account revision cannot commit twice', async () => {

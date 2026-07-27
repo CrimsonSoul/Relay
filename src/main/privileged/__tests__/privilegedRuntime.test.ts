@@ -634,6 +634,69 @@ describe('PrivilegedRuntime', () => {
     });
   });
 
+  it('drops a revoked device key so the workstation stops replaying it', async () => {
+    const runtime = createClientRuntime();
+    submitCommand.mockResolvedValueOnce({
+      ok: false as const,
+      requestId: 'request-1',
+      error: 'pairing-required' as const,
+    });
+
+    await expect(runtime.login({ username: USERNAME, password: PASSWORD })).resolves.toMatchObject({
+      state: 'pairing-required',
+      accountId: ACCOUNT_ID,
+      deviceId: null,
+    });
+    expect(deviceStore.remove).toHaveBeenCalledWith(ACCOUNT_ID, DEVICE_ID);
+  });
+
+  it.each(['offline', 'server-error', 'conflict'] as const)(
+    'keeps a paired workstation offline when the login probe fails with %s',
+    async (error) => {
+      const runtime = createClientRuntime();
+      submitCommand.mockResolvedValueOnce({ ok: false as const, requestId: 'request-1', error });
+
+      await expect(runtime.login({ username: USERNAME, password: PASSWORD })).rejects.toMatchObject(
+        { code: 'offline' },
+      );
+
+      // A blip must never demand a fresh admin pairing code or discard the key.
+      expect(runtime.getView()).toMatchObject({ state: 'offline', accountId: null });
+      expect(deviceStore.remove).not.toHaveBeenCalled();
+    },
+  );
+
+  it('signs out a revoked workstation whose command reports pairing-required', async () => {
+    const runtime = createClientRuntime();
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+    submitCommand.mockResolvedValueOnce({
+      ok: false as const,
+      requestId: 'request-1',
+      error: 'pairing-required' as const,
+    });
+
+    await expect(
+      runtime.submitPublicCommand({
+        command: 'privileged.status.read',
+        payload: { clientVersion: '1' },
+        expectedRevision: null,
+      }),
+    ).resolves.toMatchObject({ ok: false, error: 'pairing-required' });
+    expect(runtime.getView().state).toBe('signed-out');
+    expect(stopAuthorityMonitor).toHaveBeenCalledOnce();
+  });
+
+  it('ends only the session signed in on a revoked device', async () => {
+    const runtime = createClientRuntime();
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+
+    runtime.handleDeviceRevoked(ACCOUNT_ID, 'device-someone-else');
+    expect(runtime.getView()).toMatchObject({ state: 'active', deviceId: DEVICE_ID });
+
+    runtime.handleDeviceRevoked(ACCOUNT_ID, DEVICE_ID);
+    expect(runtime.getView()).toMatchObject({ state: 'signed-out', deviceId: null });
+  });
+
   it('does not clear fresh authentication when a login pairing probe is unauthorized', async () => {
     const runtime = createClientRuntime();
     await runtime.login({ username: USERNAME, password: PASSWORD });
@@ -941,6 +1004,44 @@ describe('PrivilegedRuntime', () => {
     );
     expect(resolvePairingTarget).toHaveBeenCalledWith('account-publisher');
     expect(challenge.code).toBe('ABCD2345');
+  });
+
+  it('reports an accepted ownership transfer that retired the initiating Owner session', async () => {
+    let runtime: PrivilegedRuntime;
+    const processor = {
+      process: vi.fn(),
+      // A committed transfer invalidates the outgoing Owner before the command
+      // result is handed back, exactly as the production handler does.
+      processLocal: vi.fn(async () => {
+        runtime.handleAuthorityChanged([ACCOUNT_ID]);
+        return { ok: true as const, requestId: 'local-1', value: { transferred: true } };
+      }),
+    };
+    runtime = new PrivilegedRuntime({
+      authClient,
+      commandProcessor: processor,
+      createId: () => 'local-1',
+      deviceStore,
+      hostname: 'RELAY-SERVER',
+      mode: 'server',
+      now: () => START_TIME,
+      pairingService: { createChallenge: vi.fn(), completePairing: vi.fn(), dispose: vi.fn() },
+      resolveAccountIdentity: vi.fn(async () => ({ assigned: true, role: 'owner' })),
+    } as never);
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+
+    await expect(
+      runtime.submitPublicCommand({
+        command: 'ownership.transfer',
+        payload: {
+          accountId: replacementAccount.id,
+          expectedStateRevision: 1,
+          reauthRequestId: 'reauth-1',
+        },
+        expectedRevision: null,
+      }),
+    ).resolves.toMatchObject({ ok: true, value: { transferred: true } });
+    expect(runtime.getView().state).toBe('signed-out');
   });
 
   it('does not create a pairing challenge after its authorizing session is replaced', async () => {
