@@ -48,8 +48,8 @@ function textOf(html: string): string {
 }
 
 function toneOf(classNames: string): RadarStatusColor {
-  const names = classNames.toLowerCase().split(/\s+/);
-  return STATUS_COLORS.find((color) => names.includes(color)) ?? 'unknown';
+  const names = new Set(classNames.toLowerCase().split(/\s+/));
+  return STATUS_COLORS.find((color) => names.has(color)) ?? 'unknown';
 }
 
 function toCount(raw: string): number | null {
@@ -102,7 +102,7 @@ function extractXCenterSection(html: string): string | null {
 }
 
 function readLabelledCount(section: string, label: string): number | null {
-  const pattern = new RegExp(`>\\s*${label}\\s*:?\\s*</td>\\s*<td[^>]*>\\s*([\\d,]+)\\s*<`, 'i');
+  const pattern = new RegExp(String.raw`>\s*${label}\s*:?\s*</td>\s*<td[^>]*>\s*([\d,]+)\s*<`, 'i');
   const match = pattern.exec(section);
   return match?.[1] ? toCount(match[1]) : null;
 }
@@ -184,7 +184,7 @@ function classifyRow(cells: Cell[]): ClassifiedRow {
     return {
       kind: 'depth',
       name: first.text,
-      depth: toCount(cells[cells.length - 1]?.text ?? ''),
+      depth: toCount(cells.at(-1)?.text ?? ''),
     };
   }
   return { kind: 'skip' };

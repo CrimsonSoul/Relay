@@ -77,19 +77,22 @@ export const RadarTab: React.FC = () => {
         </div>
       </header>
 
+      {/*
+        <output> carries an implicit status role and is a live region, so a
+        failure arriving on the next poll is announced without a redundant role
+        attribute on a div.
+      */}
       {signInRequired && (
-        <div className="radar-notice" role="status">
+        <output className="radar-notice">
           <span>Your CW Dashboard session has expired.</span>
           <TactileButton variant="primary" onClick={signIn} aria-label="Sign in to CW Dashboard">
             SIGN IN
           </TactileButton>
-        </div>
+        </output>
       )}
 
       {error && !signInRequired && (
-        <div className="radar-notice radar-notice--error" role="status">
-          Could not reach Radar: {error}
-        </div>
+        <output className="radar-notice radar-notice--error">Could not reach Radar: {error}</output>
       )}
 
       <section className="radar-lead" aria-label="XCenter counts">
