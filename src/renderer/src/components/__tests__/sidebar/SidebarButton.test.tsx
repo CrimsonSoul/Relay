@@ -117,4 +117,107 @@ describe('SidebarButton', () => {
     expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
     expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
   });
+
+  /**
+   * The one deliberate exception to the fixed height above. A status button
+   * carries a third line of figures, and 56px less padding fits the icon and
+   * label only. The width stays pinned so the nav column keeps its rhythm, and
+   * the floor is the standard height so a status button is never shorter.
+   */
+  it('lets only the status variant grow past the fixed height, and never narrower', () => {
+    const statusStyles = cssBlockFor('.sidebar-button--status');
+    expect(statusStyles).toContain('height: auto');
+    expect(statusStyles).toContain('min-height: var(--sidebar-button-height)');
+    expect(statusStyles).not.toContain('width:');
+  });
+});
+
+describe('SidebarButton status', () => {
+  const baseProps = {
+    icon: <span>icon</span>,
+    label: 'Radar',
+    isActive: false,
+    onClick: vi.fn(),
+  };
+
+  it('stays a plain button when it reports no status', () => {
+    render(<SidebarButton {...baseProps} />);
+
+    const button = screen.getByRole('button', { name: 'Radar' });
+    expect(button).not.toHaveAttribute('data-status-tone');
+    expect(button).not.toHaveClass('sidebar-button--status');
+  });
+
+  it('shows the figures alongside the icon and label', () => {
+    render(
+      <SidebarButton
+        {...baseProps}
+        status={{ tone: 'green', announcement: 'Healthy', detail: '2,000 · 1,807' }}
+      />,
+    );
+
+    expect(screen.getByText('2,000 · 1,807')).toBeInTheDocument();
+    expect(screen.getByText('Radar')).toBeInTheDocument();
+  });
+
+  /**
+   * `aria-label` replaces a button's inner text for assistive tech, so figures
+   * rendered in `detail` are only reachable if `announcement` repeats them.
+   * Without this the button reads as a bare "Radar".
+   */
+  it('folds the status into the accessible name so the figures are not lost', () => {
+    render(
+      <SidebarButton
+        {...baseProps}
+        status={{
+          tone: 'red',
+          announcement: 'Critical. XCenter OK 5, Pending 9,000',
+          detail: '5 · 9,000',
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Radar — Critical. XCenter OK 5, Pending 9,000' }),
+    ).toBeInTheDocument();
+  });
+
+  it('carries the tone as data so the tint is styleable', () => {
+    render(<SidebarButton {...baseProps} status={{ tone: 'yellow', announcement: 'Warning' }} />);
+
+    const button = screen.getByRole('button', { name: 'Radar — Warning' });
+    expect(button).toHaveAttribute('data-status-tone', 'yellow');
+    expect(button).toHaveClass('sidebar-button--status');
+  });
+
+  it('omits the figures line when the status carries no detail', () => {
+    const { container } = render(
+      <SidebarButton {...baseProps} status={{ tone: 'unknown', announcement: 'Unknown' }} />,
+    );
+
+    expect(container.querySelector('.sidebar-button-detail')).toBeNull();
+  });
+
+  it('still reports the pressed state while showing a status', () => {
+    render(
+      <SidebarButton
+        {...baseProps}
+        isActive
+        status={{ tone: 'green', announcement: 'Healthy', detail: '1 · 2' }}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Radar — Healthy' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('shows the status in the tooltip too', () => {
+    render(<SidebarButton {...baseProps} status={{ tone: 'red', announcement: 'Critical' }} />);
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Radar — Critical' }));
+
+    expect(document.body.querySelector('.tooltip-popup')).toHaveTextContent('Radar — Critical');
+  });
 });

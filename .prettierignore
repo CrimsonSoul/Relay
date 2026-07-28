@@ -1,2 +1,7 @@
 .claude/worktrees
 output/
+
+# Saved upstream pages used as parser fixtures. These must stay byte-faithful
+# to what the source actually serves — reformatting would make the parser tests
+# assert against Prettier's output instead of the real markup.
+tests/fixtures/radar/

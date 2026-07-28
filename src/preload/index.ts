@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type BridgeAPI, type AuthRequest, type StartupSnapshot } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  type BridgeAPI,
+  type AuthRequest,
+  type RadarSnapshot,
+  type StartupSnapshot,
+} from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 
@@ -37,6 +43,17 @@ const api: BridgeAPI = {
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
   getCloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CLOUD_STATUS),
+
+  // Dispatcher Radar
+  getRadarSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.RADAR_GET_SNAPSHOT),
+  refreshRadar: () => ipcRenderer.invoke(IPC_CHANNELS.RADAR_REFRESH),
+  openRadarSignIn: () => ipcRenderer.invoke(IPC_CHANNELS.RADAR_OPEN_SIGN_IN),
+  onRadarSnapshot: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: RadarSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.RADAR_SNAPSHOT_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.RADAR_SNAPSHOT_CHANGED, handler);
+  },
   logToMain: (entry) => ipcRenderer.send(IPC_CHANNELS.LOG_TO_MAIN, entry),
 
   // Dynatrace dashboards

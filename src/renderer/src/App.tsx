@@ -93,6 +93,7 @@ const DynatraceProblemsTab = lazyTab(
   'DynatraceProblemsTab',
 );
 const AlertsTab = lazyTab(() => import('./tabs/AlertsTab'), 'AlertsTab');
+const RadarTab = lazyTab(() => import('./tabs/RadarTab'), 'RadarTab');
 
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
 const getTabPanelClassName = (active: boolean) => `tab-panel${active ? ' tab-panel--active' : ''}`;
@@ -378,6 +379,7 @@ export function MainApp({
                   Knowledge: 'Knowledge',
                   Status: 'Service Status',
                   Problems: 'Dynatrace Problems',
+                  Radar: 'Dispatcher Radar',
                   Alerts: 'Alerts',
                   Settings: 'Settings',
                 }[activeTab] ?? activeTab}
@@ -486,6 +488,15 @@ export function MainApp({
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <DynatraceProblemsTab relayMode={relayConfig?.mode} />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
+            )}
+            {mountedTabs.has('Radar') && (
+              <RetainedTabPanel active={activeTab === 'Radar'}>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <RadarTab />
                   </Suspense>
                 </ErrorBoundary>
               </RetainedTabPanel>

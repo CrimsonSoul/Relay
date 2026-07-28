@@ -1,0 +1,299 @@
+/* ============================================================================
+   Dispatcher Radar tab
+
+   A reconstruction of the CW Dashboard Radar page in Relay's design system.
+   The source is a fixed-width nested-table layout; this reflows instead.
+   ============================================================================ */
+
+.radar-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 16px 24px 24px;
+  background: transparent;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.radar-tab-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.radar-tab-context {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-text-quaternary);
+}
+
+.radar-tab-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.radar-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ---- Status tones -------------------------------------------------------- */
+
+/* Every tone is mirrored by a text label in the markup, so the colour is
+   reinforcement rather than the sole carrier of the state. */
+.radar-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.radar-overall-dot,
+.radar-panel-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-quaternary);
+}
+
+[data-radar-tone='green'] > .radar-overall-dot,
+.radar-panel-dot[data-radar-tone='green'] {
+  background: var(--ok);
+}
+
+[data-radar-tone='yellow'] > .radar-overall-dot,
+.radar-panel-dot[data-radar-tone='yellow'] {
+  background: var(--color-warning);
+}
+
+[data-radar-tone='red'] > .radar-overall-dot,
+.radar-panel-dot[data-radar-tone='red'] {
+  background: var(--color-danger);
+}
+
+/* The dashboard defines a magenta state with no counterpart in Relay's
+   palette, so this mirrors its colour directly. */
+[data-radar-tone='magenta'] > .radar-overall-dot,
+.radar-panel-dot[data-radar-tone='magenta'] {
+  background: #b200ff;
+}
+
+/* ---- Notices ------------------------------------------------------------- */
+
+.radar-notice {
+  align-self: flex-start;
+  max-width: 560px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-bg-surface-elevated);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.radar-notice--error {
+  color: var(--color-danger);
+}
+
+/* ---- Board --------------------------------------------------------------- */
+
+/*
+ * The XCenter figures are the reason this tab exists, so they lead at full
+ * width and the rest of the board follows as supporting detail. An even grid of
+ * identically weighted cards would bury them among four peers — and a uniform
+ * card grid is a named anti-reference for this product.
+ *
+ * Sections are separated by rule and space rather than boxed, which is how the
+ * rest of Relay organises dense data.
+ */
+.radar-lead {
+  display: flex;
+  align-items: baseline;
+  gap: 48px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.radar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: start;
+  gap: 28px 40px;
+}
+
+.radar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.radar-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-quaternary);
+}
+
+.radar-figures {
+  display: flex;
+  gap: 48px;
+}
+
+.radar-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.radar-figure-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-quaternary);
+}
+
+/* The one place on this surface that earns display-scale type. */
+.radar-figure-value {
+  font-family: var(--font-family-mono);
+  font-size: 34px;
+  line-height: 1.05;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.radar-pairs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.radar-pairs > div {
+  display: contents;
+}
+
+.radar-pairs dt {
+  color: var(--color-text-tertiary);
+}
+
+.radar-pairs dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+}
+
+/* ---- Depth tables -------------------------------------------------------- */
+
+.radar-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.radar-table th {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  font-weight: 700;
+  color: var(--color-text-quaternary);
+}
+
+.radar-table td {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
+.radar-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Queue names are long dotted identifiers with no spaces; they have to be
+   allowed to break or they force the panel wider than its column. */
+.radar-table-name {
+  overflow-wrap: anywhere;
+  padding-right: 12px;
+}
+
+.radar-table-number {
+  text-align: right;
+  white-space: nowrap;
+  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-quaternary);
+}
+
+/* ---- Service metrics ----------------------------------------------------- */
+
+.radar-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.radar-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--text-xs);
+}
+
+.radar-metric-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  min-width: 0;
+}
+
+.radar-metric-value {
+  font-family: var(--font-family-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+.radar-updated {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-quaternary);
+}

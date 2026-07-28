@@ -29,6 +29,7 @@ import {
   setDynatraceProblemsManager,
   getCloudStatusManager,
   setCloudStatusManager,
+  setRadarManager,
   setKnowledgePdfService,
   setKnowledgeCoverService,
   getKnowledgeUploadService,
@@ -73,6 +74,7 @@ import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import { DynatraceProblemsConfigStore } from './dynatrace/DynatraceProblemsConfigStore';
 import { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
 import { CloudStatusManager } from './handlers/cloudStatus/CloudStatusManager';
+import { RadarManager } from './handlers/radar/RadarManager';
 import {
   cleanupKnowledgePdfCache,
   initializeKnowledgePdfService,
@@ -437,6 +439,13 @@ if (gotLock) {
         new DynatraceProblemsManager(new DynatraceProblemsConfigStore(configDataDir), getPbClient),
       );
       setCloudStatusManager(new CloudStatusManager(getPbClient));
+
+      // Radar authenticates with each user's own SSO cookie rather than a
+      // shared server credential, so it starts per instance instead of joining
+      // the server-only data managers below.
+      const radarManager = new RadarManager();
+      setRadarManager(radarManager);
+      radarManager.start();
 
       const startServerDataManagers = () => {
         getDynatraceProblemsManager()?.start();

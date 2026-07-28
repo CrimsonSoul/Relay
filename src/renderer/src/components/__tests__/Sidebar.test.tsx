@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, afterEach } from 'vitest';
 import { Sidebar } from '../Sidebar';
+import type { RadarSnapshot } from '@shared/ipc';
 
 // Mock SidebarButton to a simple button that captures props
 vi.mock('../sidebar/SidebarButton', () => ({
@@ -9,13 +10,18 @@ vi.mock('../sidebar/SidebarButton', () => ({
     label,
     isActive,
     onClick,
+    status,
   }: {
     label: string;
     isActive: boolean;
     onClick: () => void;
+    status?: { tone: string; announcement: string; detail?: string } | null;
   }) => (
     <button
       data-testid={`sidebar-btn-${label.toLowerCase()}`}
+      data-status-tone={status?.tone}
+      data-status-announcement={status?.announcement}
+      data-status-detail={status?.detail}
       data-active={isActive}
       onClick={onClick}
     >
@@ -36,6 +42,7 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   KnowledgeIcon: () => <span>KnowledgeIcon</span>,
   StatusIcon: () => <span>StatusIcon</span>,
   ProblemsIcon: () => <span>ProblemsIcon</span>,
+  RadarIcon: () => <span>RadarIcon</span>,
   DashboardsIcon: () => <span>DashboardsIcon</span>,
   SettingsIcon: () => <span>SettingsIcon</span>,
   AppIcon: () => <span>AppIcon</span>,
@@ -49,16 +56,127 @@ describe('Sidebar', () => {
     clientPresence: { count: 0, hostnames: [] },
   };
 
-  it('renders only the six top-level destinations in their shortcut order', () => {
+  const navLabelsOf = (container: HTMLElement) =>
+    [...container.querySelectorAll('.sidebar-nav button')].map((button) => button.textContent);
+
+  const stubRuntime = (kind: 'electron' | 'web', radar?: Partial<RadarSnapshot>) => {
+    const snapshot: RadarSnapshot = {
+      color: 'green',
+      dispatchers: [],
+      papa: [],
+      metrics: [],
+      xcenter: { ok: 2000, pending: 1807 },
+      currentTime: null,
+      lastUpdated: 1,
+      signInRequired: false,
+      error: null,
+      ...radar,
+    };
+    Object.defineProperty(globalThis, 'api', {
+      configurable: true,
+      writable: true,
+      value: {
+        runtime: { kind },
+        getRadarSnapshot: async () => snapshot,
+        onRadarSnapshot: () => () => undefined,
+      },
+    });
+  };
+
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis as Record<string, unknown>, 'api');
+  });
+
+  it('renders only the six shared destinations in their shortcut order', () => {
+    stubRuntime('web');
     const { container } = render(<Sidebar {...defaultProps} />);
 
-    const navLabels = [...container.querySelectorAll('.sidebar-nav button')].map(
-      (button) => button.textContent,
-    );
-    expect(navLabels).toEqual(['Compose', 'Alerts', 'On-Call', 'Knowledge', 'Status', 'Problems']);
+    expect(navLabelsOf(container)).toEqual([
+      'Compose',
+      'Alerts',
+      'On-Call',
+      'Knowledge',
+      'Status',
+      'Problems',
+    ]);
     expect(screen.queryByTestId('sidebar-btn-notes')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-people')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-servers')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Radar polls the CW dashboard through the desktop session, so a browser tab
+   * could only ever reach an unavailable message. The entry is desktop-only.
+   */
+  it('adds Radar in the desktop app', () => {
+    stubRuntime('electron');
+    const { container } = render(<Sidebar {...defaultProps} />);
+
+    expect(navLabelsOf(container)).toEqual([
+      'Compose',
+      'Alerts',
+      'On-Call',
+      'Knowledge',
+      'Status',
+      'Problems',
+      'Radar',
+    ]);
+  });
+
+  /**
+   * The point of the coloured button: the board can be read without opening the
+   * tab. `aria-label` replaces a button's inner text, so the figures have to be
+   * spoken there or a screen reader gets only the word "Radar".
+   */
+  it('hands the Radar button its live tone and XCenter counts', async () => {
+    stubRuntime('electron');
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      const radar = screen.getByTestId('sidebar-btn-radar');
+      expect(radar).toHaveAttribute('data-status-tone', 'green');
+      expect(radar).toHaveAttribute(
+        'data-status-announcement',
+        'Healthy. XCenter OK 2,000, Pending 1,807',
+      );
+      expect(radar).toHaveAttribute('data-status-detail', '2,000 · 1,807');
+    });
+  });
+
+  it('passes the board colour through to the button', async () => {
+    stubRuntime('electron', { color: 'red' });
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute('data-status-tone', 'red');
+    });
+  });
+
+  /** Before the first poll lands there are no figures to announce. */
+  it('announces the state alone before any counts have arrived', async () => {
+    stubRuntime('electron', { color: 'unknown', xcenter: { ok: null, pending: null } });
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
+        'data-status-announcement',
+        'Unknown',
+      );
+    });
+  });
+
+  it('gives the other destinations no status', () => {
+    stubRuntime('electron');
+    render(<Sidebar {...defaultProps} />);
+
+    expect(screen.getByTestId('sidebar-btn-alerts')).not.toHaveAttribute('data-status-tone');
+  });
+
+  it('hides Radar when Relay is served to a browser', () => {
+    stubRuntime('web');
+    const { container } = render(<Sidebar {...defaultProps} />);
+
+    expect(navLabelsOf(container)).not.toContain('Radar');
   });
 
   it('renders Settings button', () => {

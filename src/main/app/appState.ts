@@ -16,6 +16,7 @@ import type { SyncManager } from '../cache/SyncManager';
 import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
+import type { RadarManager } from '../handlers/radar/RadarManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
 import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
@@ -41,6 +42,7 @@ export interface AppState {
   dynatraceWindowManager: DynatraceWindowManager | null;
   dynatraceProblemsManager: DynatraceProblemsManager | null;
   cloudStatusManager: CloudStatusManager | null;
+  radarManager: RadarManager | null;
   knowledgePdfService: KnowledgePdfService | null;
   knowledgeCoverService: KnowledgeCoverService | null;
   knowledgeUploadService: KnowledgeUploadService | null;
@@ -64,6 +66,7 @@ const state: AppState = {
   dynatraceWindowManager: null,
   dynatraceProblemsManager: null,
   cloudStatusManager: null,
+  radarManager: null,
   knowledgePdfService: null,
   knowledgeCoverService: null,
   knowledgeUploadService: null,
@@ -117,6 +120,15 @@ export function getDynatraceWindowManager() {
 export function getDynatraceProblemsManager() {
   return state.dynatraceProblemsManager;
 }
+export function getRadarManager() {
+  return state.radarManager;
+}
+
+export function setRadarManager(mgr: RadarManager | null) {
+  log.debug('appState.radarManager changed');
+  state.radarManager = mgr;
+}
+
 export function getCloudStatusManager() {
   return state.cloudStatusManager;
 }

@@ -174,6 +174,7 @@ export const TAB_NAMES = [
   'Knowledge',
   'Status',
   'Problems',
+  'Radar',
   'Settings',
 ] as const;
 
@@ -216,6 +217,80 @@ export type CloudStatusSnapshotRecord = CloudStatusData & {
   contentHash: string;
   created: string;
   updated: string;
+};
+
+// Dispatcher Radar Types
+
+/**
+ * The Radar page paints one `<td class="<color> statusBar">` as its overall
+ * signal, and reuses the same colour classes per row. `unknown` covers a cell
+ * that parsed but carried no recognised colour.
+ */
+export type RadarStatusColor = 'green' | 'yellow' | 'red' | 'magenta' | 'unknown';
+
+/**
+ * Every tone is paired with a word wherever it is rendered, so the state never
+ * depends on telling the swatch colours apart. Lives beside the type so the
+ * sidebar can label the status without pulling in the lazy Radar tab chunk.
+ */
+export const RADAR_STATUS_LABELS: Record<RadarStatusColor, string> = {
+  green: 'Healthy',
+  yellow: 'Warning',
+  red: 'Critical',
+  magenta: 'Attention',
+  unknown: 'Unknown',
+};
+
+/** A queue or message-type row: a name and its depth. */
+export type RadarRow = {
+  name: string;
+  depth: number;
+};
+
+export type RadarDispatcher = {
+  name: string;
+  tone: RadarStatusColor;
+  lastScheduleDate: string;
+  lastPubSubDate: string;
+  queues: RadarRow[];
+};
+
+/**
+ * A single-line figure from the board, e.g. `Cardservices Requests (Last Hour)`.
+ * `value` is null for rows that carry only a colour, such as the EDW daily load
+ * status.
+ */
+export type RadarMetric = {
+  label: string;
+  value: string | null;
+  tone: RadarStatusColor;
+};
+
+export type RadarXCenterCounts = {
+  ok: number | null;
+  pending: number | null;
+};
+
+/** Everything Relay reconstructs from one fetch of the dashboard. */
+export type RadarBoard = {
+  color: RadarStatusColor;
+  dispatchers: RadarDispatcher[];
+  papa: RadarRow[];
+  metrics: RadarMetric[];
+  xcenter: RadarXCenterCounts;
+  currentTime: string | null;
+};
+
+export type RadarSnapshot = RadarBoard & {
+  /** Epoch ms of the last successful parse; 0 before the first one lands. */
+  lastUpdated: number;
+  /**
+   * Set when the poller reached the dashboard but got the SSO form back. The
+   * renderer offers a sign-in window instead of showing a stale board as live.
+   */
+  signInRequired: boolean;
+  /** Human-readable reason the most recent refresh failed, if it did. */
+  error: string | null;
 };
 
 /** Display order for provider cards and filters. */
@@ -468,6 +543,11 @@ export type BridgeAPI = {
   useCachedAuth: (nonce: string) => Promise<boolean>;
   logBridge: (groups: string[]) => void;
   getCloudStatus: () => Promise<CloudStatusData>;
+  // Dispatcher Radar
+  getRadarSnapshot: () => Promise<RadarSnapshot>;
+  refreshRadar: () => Promise<RadarSnapshot>;
+  openRadarSignIn: () => Promise<boolean>;
+  onRadarSnapshot: (callback: (snapshot: RadarSnapshot) => void) => () => void;
   // Dynatrace dashboards
   listDynatraceDashboards: () => Promise<DynatraceDashboardState[]>;
   addDynatraceDashboard: (
@@ -668,6 +748,11 @@ export const IPC_CHANNELS = {
   AUTH_USE_CACHED: 'auth:useCached',
   LOG_BRIDGE: 'metrics:logBridge',
   GET_CLOUD_STATUS: 'cloudstatus:get',
+  // Dispatcher Radar
+  RADAR_GET_SNAPSHOT: 'radar:getSnapshot',
+  RADAR_REFRESH: 'radar:refresh',
+  RADAR_OPEN_SIGN_IN: 'radar:openSignIn',
+  RADAR_SNAPSHOT_CHANGED: 'radar:snapshotChanged',
   LOG_TO_MAIN: 'logger:toMain',
   // Dynatrace dashboards
   DYNATRACE_LIST_DASHBOARDS: 'dynatrace:listDashboards',

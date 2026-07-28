@@ -1,6 +1,7 @@
 import { ipcMain, type BrowserWindow } from 'electron';
 import type PocketBase from 'pocketbase';
 import { setupCloudStatusHandlers } from './handlers/cloudStatus';
+import { setupRadarHandlers } from './handlers/radar';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
 import { setupRelayWebServerHandlers } from './handlers/webServerHandlers';
@@ -102,6 +103,7 @@ export function setupIpcHandlers(opts: {
   };
 
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
+  safeSetup('radar', () => setupRadarHandlers());
 
   safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager?.() ?? null));
 

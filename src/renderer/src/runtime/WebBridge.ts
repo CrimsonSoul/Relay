@@ -1,4 +1,10 @@
-import type { BridgeAPI, IpcResult, PbConnectionResult, PrivilegedIpcResult } from '@shared/ipc';
+import type {
+  BridgeAPI,
+  IpcResult,
+  PbConnectionResult,
+  PrivilegedIpcResult,
+  RadarSnapshot,
+} from '@shared/ipc';
 import { z } from 'zod';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -391,6 +397,17 @@ export function createWebBridge(
     connection: { pbUrl: session.pbUrl, auth: session.auth },
   });
   const noopSubscription = () => () => undefined;
+  const webOnlyRadarSnapshot = (): RadarSnapshot => ({
+    color: 'unknown',
+    dispatchers: [],
+    papa: [],
+    metrics: [],
+    xcenter: { ok: null, pending: null },
+    currentTime: null,
+    lastUpdated: 0,
+    signInRequired: false,
+    error: 'Dispatcher Radar is only available in the Relay desktop app',
+  });
 
   const bridge = {
     runtime: session.runtime,
@@ -555,6 +572,13 @@ export function createWebBridge(
     generateWebApprovalCode: async () => ({ ok: false, error: 'unauthorized' }),
     cancelWebApprovalRequest: async () => false,
     onWebApprovalRequestsChanged: noopSubscription,
+    // Radar reads the dashboard through Chromium's cookie jar in the desktop
+    // main process. A browser tab has no equivalent, so this reports the
+    // limitation rather than silently returning an empty board.
+    getRadarSnapshot: async () => webOnlyRadarSnapshot(),
+    refreshRadar: async () => webOnlyRadarSnapshot(),
+    openRadarSignIn: async () => false,
+    onRadarSnapshot: noopSubscription,
     windowMinimize: () => undefined,
     windowMaximize: () => undefined,
     windowClose: () => undefined,

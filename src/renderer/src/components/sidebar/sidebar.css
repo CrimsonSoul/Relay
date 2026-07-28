@@ -396,3 +396,62 @@
   font-size: var(--text-xs);
   line-height: 1.35;
 }
+
+/* ============================================================================
+   Status-reporting nav buttons (Dispatcher Radar)
+
+   The button carries its destination's state directly, so the board can be read
+   without opening the tab. The tint is reinforcement only — SidebarButton also
+   folds the state into the accessible name, and the figures are shown as text.
+   ============================================================================ */
+
+.sidebar-button--status {
+  height: auto;
+  min-height: var(--sidebar-button-height);
+  padding-bottom: 7px;
+  background: var(--sidebar-status-wash, transparent);
+  border-left-color: var(--sidebar-status-rail, transparent);
+}
+
+.sidebar-button--status:hover {
+  background: var(--sidebar-status-wash, transparent);
+}
+
+/* The active accent still wins, so the selected tab always reads as selected. */
+.sidebar-button--status.sidebar-button--active {
+  border-left-color: var(--accent);
+}
+
+.sidebar-button--status[data-status-tone='green'] {
+  --sidebar-status-rail: var(--ok);
+  --sidebar-status-wash: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.sidebar-button--status[data-status-tone='yellow'] {
+  --sidebar-status-rail: var(--color-warning);
+  --sidebar-status-wash: color-mix(in srgb, var(--color-warning) 12%, transparent);
+}
+
+.sidebar-button--status[data-status-tone='red'] {
+  --sidebar-status-rail: var(--color-danger);
+  --sidebar-status-wash: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+
+/* Mirrors the dashboard's own magenta, which has no Relay palette counterpart. */
+.sidebar-button--status[data-status-tone='magenta'] {
+  --sidebar-status-rail: #b200ff;
+  --sidebar-status-wash: color-mix(in srgb, #b200ff 14%, transparent);
+}
+
+.sidebar-button-detail {
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
