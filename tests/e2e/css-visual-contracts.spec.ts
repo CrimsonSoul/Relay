@@ -13,6 +13,15 @@ const componentsCss = readFileSync(
   join(testDirectory, '../../src/renderer/src/styles/components.css'),
   'utf8',
 );
+const sidebarCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/components/sidebar/sidebar.css'),
+  'utf8',
+);
+const responsiveCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/styles/responsive.css'),
+  'utf8',
+);
+const radarCss = readFileSync(join(testDirectory, '../../src/renderer/src/tabs/radar.css'), 'utf8');
 const scrollCss = [
   'components/directory/directory.css',
   'components/oncall/oncall.css',
@@ -804,6 +813,136 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       expect(after[mode].error.scrollLeft, mode).toBe(after[mode].error.maxScrollLeft);
       expect(after[mode].error.scrollLeft, mode).toBeGreaterThan(0);
     }
+  } finally {
+    await app.close();
+  }
+});
+
+test('Radar status keeps the standard sidebar footprint in full and compact shells', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${sidebarCss}
+        ${responsiveCss}
+        html, body { margin: 0; }
+      </style>
+      <button
+        class="sidebar-button sidebar-button--status sidebar-button--active"
+        data-status-tone="yellow"
+      >
+        <span class="sidebar-button-icon"><svg></svg></span>
+        <span class="sidebar-button-label">Radar</span>
+        <span
+          class="sidebar-button-status-dot"
+          data-status-tone="yellow"
+          aria-hidden="true"
+        ></span>
+        <span class="sidebar-button-detail" aria-hidden="true">
+          <span class="sidebar-button-detail--full">2k · 1.8k</span>
+          <span class="sidebar-button-detail--compact">2k·1.8k</span>
+        </span>
+      </button>
+    `);
+
+    const button = window.locator('.sidebar-button');
+    const fullDetail = window.locator('.sidebar-button-detail--full');
+    const compactDetail = window.locator('.sidebar-button-detail--compact');
+
+    await window.setViewportSize({ width: 1440, height: 900 });
+    await expect
+      .poll(async () => {
+        const box = await button.boundingBox();
+        return box && { width: box.width, height: box.height };
+      })
+      .toEqual({ width: 120, height: 56 });
+    await expect(fullDetail).toBeVisible();
+    await expect(compactDetail).toBeHidden();
+
+    await window.setViewportSize({ width: 1100, height: 900 });
+    await expect
+      .poll(async () => {
+        const box = await button.boundingBox();
+        return box && { width: box.width, height: box.height };
+      })
+      .toEqual({ width: 56, height: 48 });
+    await expect(fullDetail).toBeHidden();
+    await expect(compactDetail).toBeVisible();
+    await expect(window.locator('.sidebar-button-status-dot')).toHaveCount(1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Radar keeps the health rail left when wide and stacks without overflow when narrow', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${radarCss}
+        html, body { margin: 0; width: 100%; height: 100%; }
+        .radar-tab { box-sizing: border-box; width: 100%; height: 100%; }
+      </style>
+      <div class="radar-tab">
+        <div class="radar-workspace">
+          <aside class="radar-health-rail">
+            <section class="radar-health-section">
+              <h3 class="radar-section-title">XCenter</h3>
+              <div class="radar-figures">
+                <span class="radar-figure-value">2,000</span>
+                <span class="radar-figure-value">1,807</span>
+              </div>
+            </section>
+          </aside>
+          <section class="radar-dispatcher-lanes">
+            <h3 class="radar-section-title">Dispatchers</h3>
+            <div class="radar-lane-grid">
+              <section class="radar-lane">
+                <h4 class="radar-lane-title">prod01</h4>
+                <table class="radar-table">
+                  <tbody>
+                    <tr>
+                      <td class="radar-table-name">
+                        TRANSACTION.MEMBERSHIPS.RECONCILIATION.EXCEPTION.RETRY.DEAD.LETTER.QUEUE
+                      </td>
+                      <td class="radar-table-number">12,534</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+          </section>
+        </div>
+      </div>
+    `);
+
+    const rail = window.locator('.radar-health-rail');
+    const lanes = window.locator('.radar-dispatcher-lanes');
+    const tab = window.locator('.radar-tab');
+
+    await window.setViewportSize({ width: 1400, height: 900 });
+    const wideRail = await rail.boundingBox();
+    const wideLanes = await lanes.boundingBox();
+    expect(wideRail).not.toBeNull();
+    expect(wideLanes).not.toBeNull();
+    expect((wideRail?.x ?? 0) + (wideRail?.width ?? 0)).toBeLessThan(wideLanes?.x ?? 0);
+
+    await window.setViewportSize({ width: 680, height: 900 });
+    await expect
+      .poll(async () => {
+        const [railBox, laneBox] = await Promise.all([rail.boundingBox(), lanes.boundingBox()]);
+        return Boolean(railBox && laneBox && railBox.y + railBox.height <= laneBox.y);
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => tab.evaluate((element) => element.scrollWidth - element.clientWidth))
+      .toBeLessThanOrEqual(1);
   } finally {
     await app.close();
   }
