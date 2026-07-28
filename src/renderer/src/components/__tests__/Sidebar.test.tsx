@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, afterEach } from 'vitest';
-import { Sidebar } from '../Sidebar';
+import { Sidebar, formatRadarNavigationCount } from '../Sidebar';
 import type { RadarSnapshot } from '@shared/ipc';
 
 // Mock SidebarButton to a simple button that captures props
@@ -15,13 +15,19 @@ vi.mock('../sidebar/SidebarButton', () => ({
     label: string;
     isActive: boolean;
     onClick: () => void;
-    status?: { tone: string; announcement: string; detail?: string } | null;
+    status?: {
+      tone: string;
+      announcement: string;
+      detail?: string;
+      compactDetail?: string;
+    } | null;
   }) => (
     <button
       data-testid={`sidebar-btn-${label.toLowerCase()}`}
       data-status-tone={status?.tone}
       data-status-announcement={status?.announcement}
       data-status-detail={status?.detail}
+      data-status-compact-detail={status?.compactDetail}
       data-active={isActive}
       onClick={onClick}
     >
@@ -58,6 +64,18 @@ describe('Sidebar', () => {
 
   const navLabelsOf = (container: HTMLElement) =>
     [...container.querySelectorAll('.sidebar-nav button')].map((button) => button.textContent);
+
+  it.each([
+    [null, '—'],
+    [0, '0'],
+    [999, '999'],
+    [1000, '1k'],
+    [1807, '1.8k'],
+    [2000, '2k'],
+    [9999, '10k'],
+  ] as const)('formats Radar navigation count %s as %s', (value, expected) => {
+    expect(formatRadarNavigationCount(value)).toBe(expected);
+  });
 
   const stubRuntime = (kind: 'electron' | 'web', radar?: Partial<RadarSnapshot>) => {
     const snapshot: RadarSnapshot = {
@@ -139,7 +157,8 @@ describe('Sidebar', () => {
         'data-status-announcement',
         'Healthy. XCenter OK 2,000, Pending 1,807',
       );
-      expect(radar).toHaveAttribute('data-status-detail', '2,000 · 1,807');
+      expect(radar).toHaveAttribute('data-status-detail', '2k · 1.8k');
+      expect(radar).toHaveAttribute('data-status-compact-detail', '2k·1.8k');
     });
   });
 
@@ -161,6 +180,14 @@ describe('Sidebar', () => {
       expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
         'data-status-announcement',
         'Unknown',
+      );
+      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
+        'data-status-detail',
+        '— · —',
+      );
+      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
+        'data-status-compact-detail',
+        '—·—',
       );
     });
   });

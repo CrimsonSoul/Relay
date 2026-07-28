@@ -14,6 +14,7 @@ export type SidebarButtonStatus = {
   tone: string;
   announcement: string;
   detail?: string;
+  compactDetail?: string;
 };
 
 interface SidebarButtonProps {

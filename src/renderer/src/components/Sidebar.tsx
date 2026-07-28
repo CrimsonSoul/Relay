@@ -43,6 +43,14 @@ const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'Radar', tab: 'Radar', icon: <RadarIcon /> },
 ];
 
+export function formatRadarNavigationCount(value: number | null): string {
+  if (value === null) return '—';
+  if (value < 1000) return value.toLocaleString('en-US');
+
+  const compactValue = Math.round(value / 100) / 10;
+  return `${compactValue.toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
@@ -63,13 +71,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // The sidebar subscribes rather than the tab, so the button stays live even
   // when the Radar tab has never been opened.
   const { snapshot: radar } = useRadarSnapshot();
+  const okCompact = formatRadarNavigationCount(radar.xcenter.ok);
+  const pendingCompact = formatRadarNavigationCount(radar.xcenter.pending);
   const radarStatus: SidebarButtonStatus = {
     tone: radar.color,
     announcement:
       radar.xcenter.ok === null && radar.xcenter.pending === null
         ? RADAR_STATUS_LABELS[radar.color]
-        : `${RADAR_STATUS_LABELS[radar.color]}. XCenter OK ${radar.xcenter.ok?.toLocaleString() ?? 'unknown'}, Pending ${radar.xcenter.pending?.toLocaleString() ?? 'unknown'}`,
-    detail: `${radar.xcenter.ok?.toLocaleString() ?? '—'} · ${radar.xcenter.pending?.toLocaleString() ?? '—'}`,
+        : `${RADAR_STATUS_LABELS[radar.color]}. XCenter OK ${radar.xcenter.ok?.toLocaleString('en-US') ?? 'unknown'}, Pending ${radar.xcenter.pending?.toLocaleString('en-US') ?? 'unknown'}`,
+    detail: `${okCompact} · ${pendingCompact}`,
+    compactDetail: `${okCompact}·${pendingCompact}`,
   };
 
   return (
