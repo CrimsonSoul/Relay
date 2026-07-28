@@ -45,7 +45,7 @@ describe('TeamRow layout CSS', () => {
 
   it('scales name and phone from a board-scoped font variable while keeping role markers visible', () => {
     const rowRule = ruleFor('.team-row');
-    const rootRule = ruleFor('.personnel-tab-root, .popout-board');
+    const rootRule = ruleFor('.personnel-tab-root');
     const nameRule = ruleFor('.team-row-name');
     const nameTooltipRule = ruleFor('.team-row-name-wrapper .tooltip-trigger');
     const phoneRule = ruleFor('.team-row-phone');
@@ -67,7 +67,7 @@ describe('TeamRow layout CSS', () => {
   });
 
   it('uses compact row spacing so wall-display scaling does not waste vertical space', () => {
-    const rootRule = ruleFor('.personnel-tab-root, .popout-board');
+    const rootRule = ruleFor('.personnel-tab-root');
     const topRule = ruleFor('.team-row-top');
     const bottomRule = ruleFor('.team-row-bottom');
     const roleCodeRule = ruleFor('.team-row-role-code');

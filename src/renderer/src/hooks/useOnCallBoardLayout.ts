@@ -6,9 +6,9 @@ import {
 } from '../theme/onCallDisplay';
 
 /**
- * Shared font-scale styling and masonry column sizing for the on-call board.
- * PersonnelTab and PopoutBoard must render identically, so both consume this
- * hook instead of carrying their own copies of the scale/column math.
+ * Font-scale styling and masonry column sizing for the on-call board, kept in
+ * one place so the scale/column math stays consistent with the theme helpers
+ * it wraps rather than being re-derived at the call site.
  */
 export function useOnCallBoardLayout(onCallFontScale: number) {
   const effectiveOnCallFontScale = clampOnCallFontScale(onCallFontScale);

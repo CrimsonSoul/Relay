@@ -239,7 +239,6 @@ describe('CSS zero-warning contracts', () => {
 
     const scrollContracts = [
       [cssSources.directory, '.detail-panel-body', 'overflow-y', 'auto'],
-      [cssSources.oncall, '.popout-board', 'overflow-y', 'auto'],
       [cssSources.oncall, '.personnel-tab-root', 'overflow-y', 'auto'],
       [cssSources.oncall, '.oncall-masonry', 'overflow-y', 'auto'],
       [cssSources.components, '.combobox-dropdown', 'overflow-y', 'auto'],
@@ -265,7 +264,6 @@ describe('CSS zero-warning contracts', () => {
 
     const stableGutterContracts = [
       [cssSources.directory, '.detail-panel-body'],
-      [cssSources.oncall, '.popout-board'],
       [cssSources.oncall, '.personnel-tab-root'],
       [cssSources.oncall, '.oncall-masonry'],
       [cssSources.components, '.combobox-dropdown'],

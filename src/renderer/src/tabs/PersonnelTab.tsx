@@ -137,7 +137,7 @@ export const PersonnelTab: React.FC<{
     setLastUpdated(new Date());
   }, [localOnCall]);
 
-  // Font scale + masonry column distribution (shared with PopoutBoard)
+  // Font scale + masonry column distribution
   const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
     useOnCallBoardLayout(onCallFontScale);
 
@@ -181,8 +181,6 @@ export const PersonnelTab: React.FC<{
       globalThis.api?.notifyDragStop();
     };
   }, []);
-
-  const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -326,36 +324,6 @@ export const PersonnelTab: React.FC<{
             >
               EXPORT
             </TactileButton>
-            {!isPopout && (
-              <TactileButton
-                variant="secondary"
-                onClick={() => {
-                  globalThis.api?.openAuxWindow('popout/board');
-                }}
-                title="Pop Out Board"
-                aria-label="Pop Out Board"
-                tooltip="Pop out board"
-                className="oncall-command-action"
-                icon={
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                    <polyline points="15 3 21 3 21 9"></polyline>
-                    <line x1="10" y1="14" x2="21" y2="3"></line>
-                  </svg>
-                }
-              >
-                POP OUT
-              </TactileButton>
-            )}
           </div>
           <div className="oncall-command-group oncall-command-group--workflow">
             <TactileButton

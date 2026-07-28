@@ -1,10 +1,10 @@
 import { app, BrowserWindow } from 'electron';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { loggers } from '../logger';
 import { isAllowedRendererFileUrl } from '../utils/trustedSender';
 import { getMainWindow, setMainWindow } from './appState';
-import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHandlers';
+import { setupWindowListeners } from '../handlers/windowHandlers';
 import { setupSecurityHeaders } from './securityHeaders';
 import { setupContextMenu } from './contextMenu';
 import { attachWindowLifecycleListeners } from './processLifecycle';
@@ -17,12 +17,6 @@ const mainDir = dirname(fileURLToPath(import.meta.url));
 
 // Re-exported so existing call sites and tests keep working after the move.
 export { isAllowedRendererFileUrl };
-
-export function buildRendererPopoutFileUrl(indexPath: string, route: string): string {
-  const url = pathToFileURL(indexPath);
-  url.searchParams.set('popout', route);
-  return url.href;
-}
 
 export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boolean {
   try {
@@ -255,105 +249,4 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
     if (revealFallback) clearTimeout(revealFallback);
     setMainWindow(null);
   });
-}
-
-const MAX_AUX_WINDOWS = 5;
-/** Track open aux windows by route so we can focus existing ones and enforce limits. */
-const auxWindows = new Map<string, BrowserWindow>();
-
-export async function createAuxWindow(route: string): Promise<void> {
-  if (!ALLOWED_AUX_ROUTES.has(route)) {
-    loggers.security.warn(`Blocked aux window with invalid route: ${route}`);
-    return;
-  }
-
-  // If an aux window for this route already exists, focus it instead
-  const existing = auxWindows.get(route);
-  if (existing && !existing.isDestroyed()) {
-    existing.focus();
-    return;
-  }
-
-  // Enforce max aux window limit
-  // Clean up destroyed entries first
-  for (const [r, win] of auxWindows) {
-    if (win.isDestroyed()) auxWindows.delete(r);
-  }
-  if (auxWindows.size >= MAX_AUX_WINDOWS) {
-    loggers.main.warn(`Aux window limit reached (${MAX_AUX_WINDOWS}), not opening: ${route}`);
-    return;
-  }
-
-  const auxWindow = new BrowserWindow({
-    width: 960,
-    height: 800,
-    backgroundColor: '#060608',
-    title: 'Relay - On-Call Board',
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 24, y: 16 },
-    webPreferences: {
-      preload: join(mainDir, '../preload/index.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-    },
-  });
-  configureWindowsTaskbarWindow(auxWindow, {
-    platform: process.platform,
-    isPackaged: app.isPackaged,
-    execPath: process.execPath,
-  });
-
-  setupWindowListeners(auxWindow);
-  lockWindowZoom(auxWindow);
-  attachWindowLifecycleListeners(auxWindow, { label: `aux:${route}`, autoReload: true });
-
-  // Track aux window and clean up on close
-  auxWindows.set(route, auxWindow);
-  auxWindow.on('closed', () => {
-    auxWindows.delete(route);
-  });
-
-  // Prevent aux window navigation hijacking
-  const auxAllowedFilePath = join(mainDir, '../renderer');
-  auxWindow.webContents.on('will-navigate', (event, url) => {
-    if (
-      !app.isPackaged &&
-      process.env.ELECTRON_RENDERER_URL &&
-      isAllowedDevRendererUrl(url, process.env.ELECTRON_RENDERER_URL)
-    )
-      return;
-    if (isAllowedRendererFileUrl(url, auxAllowedFilePath)) return;
-    loggers.security.warn(`Blocked aux window navigation to: ${describeUrlForLog(url)}`);
-    event.preventDefault();
-  });
-  auxWindow.webContents.setWindowOpenHandler(({ url }) => {
-    loggers.security.warn(`Blocked aux window.open() attempt: ${describeUrlForLog(url)}`);
-    return { action: 'deny' };
-  });
-
-  const isDevPopout = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
-  const url = isDevPopout
-    ? `${process.env.ELECTRON_RENDERER_URL}?popout=${route}`
-    : buildRendererPopoutFileUrl(join(mainDir, '../renderer/index.html'), route);
-  loggers.main.info(`Loading aux window ${isDevPopout ? 'URL' : 'file URL'}: ${url}`);
-
-  try {
-    await auxWindow.loadURL(url);
-  } catch (error) {
-    // Callers invoke createAuxWindow as void, so a rejection here surfaces as an
-    // unhandled rejection instead of a window problem. Closing the popout while
-    // it loads (ERR_ABORTED) or a dev server that is not listening yet
-    // (ERR_CONNECTION_REFUSED) both land here; either way the half-built window
-    // has to go.
-    loggers.main.warn('Failed to load aux window', {
-      route,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    auxWindows.delete(route);
-    if (!auxWindow.isDestroyed()) auxWindow.destroy();
-  }
-
-  // Data is managed by PocketBase — aux windows subscribe via the SDK
 }

@@ -116,7 +116,6 @@ vi.mock('../appState', () => ({
 
 vi.mock('../../handlers/windowHandlers', () => ({
   setupWindowListeners: vi.fn(),
-  ALLOWED_AUX_ROUTES: new Set(['oncall']),
 }));
 
 vi.mock('../securityHeaders', () => ({
@@ -129,7 +128,7 @@ vi.mock('../contextMenu', () => ({
 
 import { app } from 'electron';
 import { loggers } from '../../logger';
-import { buildRendererPopoutFileUrl, isAllowedRendererFileUrl } from '../windowFactory';
+import { isAllowedRendererFileUrl } from '../windowFactory';
 
 /** The options the most recently constructed BrowserWindow was given. */
 function lastWindowOptions(): BrowserWindowConstructorOptions {
@@ -349,15 +348,6 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - will-navigate with allowed file paths', () => {
-    it('builds encoded packaged popout file URLs', () => {
-      const url = buildRendererPopoutFileUrl(
-        '/Applications/Relay QA/renderer/index.html',
-        'oncall',
-      );
-
-      expect(url).toBe('file:///Applications/Relay%20QA/renderer/index.html?popout=oncall');
-    });
-
     it('allows file URLs that resolve inside the renderer directory', () => {
       const rendererDir = '/app/dist/renderer';
       expect(isAllowedRendererFileUrl('file:///app/dist/renderer/index.html', rendererDir)).toBe(
@@ -601,213 +591,6 @@ describe('windowFactory', () => {
       expect(mocks.mockRestore).not.toHaveBeenCalled();
       expect(mocks.mockShow).not.toHaveBeenCalled();
       expect(mocks.mockFocus).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('createAuxWindow - existing window tracking', () => {
-    it('replaces a destroyed aux window entry with a new window', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-
-      // Create first window
-      await createAuxWindow('oncall');
-
-      // Simulate the closed event to clean up the tracking map
-      const closedCall = mocks.mockOn.mock.calls.find((call: unknown[]) => call[0] === 'closed');
-      closedCall![1]();
-
-      // Now creating another should work (not just focus)
-      mocks.resetLastOptions();
-      await createAuxWindow('oncall');
-
-      expect(mocks.getLastOptions()).not.toBeNull();
-    });
-  });
-
-  describe('createAuxWindow - max limit enforcement', () => {
-    it('blocks opening when aux window limit is reached', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      // We need a fresh module to get clean auxWindows map
-      const { createAuxWindow } = await import('../windowFactory');
-
-      // The mock ALLOWED_AUX_ROUTES only has 'oncall', so we cannot easily open 5 different routes.
-      // Instead, we open one, close it, open again etc. Since the map is keyed by route,
-      // we need to test the limit differently. The limit check happens after cleanup of destroyed entries.
-      // With the mock setup, isDestroyed returns false, so entries stay.
-      // Since we can only open 'oncall' and it dedupes by route, this branch is hard to hit
-      // with a single allowed route. We verify the warn log path indirectly.
-      // For now, just verify the first aux window opens successfully.
-      await createAuxWindow('oncall');
-      expect(mocks.getLastOptions()).not.toBeNull();
-    });
-  });
-
-  describe('createAuxWindow - navigation blocking', () => {
-    it('blocks navigation to external URLs in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsOn.mockClear();
-      await createAuxWindow('oncall');
-
-      const navCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-navigate',
-      );
-      expect(navCall).toBeDefined();
-
-      const handler = navCall![1];
-      const event = { preventDefault: vi.fn() };
-
-      handler(event, 'https://evil.example.com');
-
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(loggers.security.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Blocked aux window navigation'),
-      );
-    });
-
-    it('allows dev server URL navigation in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = false;
-      env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsOn.mockClear();
-      await createAuxWindow('oncall');
-
-      const navCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-navigate',
-      );
-      const handler = navCall![1];
-      const event = { preventDefault: vi.fn() };
-
-      handler(event, 'http://localhost:5173/oncall');
-
-      expect(event.preventDefault).not.toHaveBeenCalled();
-    });
-
-    it('allows file:// navigation within renderer directory in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsOn.mockClear();
-      await createAuxWindow('oncall');
-
-      const navCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-navigate',
-      );
-      const handler = navCall![1];
-      const event = { preventDefault: vi.fn() };
-
-      // file:// outside renderer dir should be blocked
-      handler(event, 'file:///etc/passwd');
-      expect(event.preventDefault).toHaveBeenCalled();
-    });
-  });
-
-  describe('createAuxWindow - dev vs prod loading', () => {
-    it('loads dev URL with popout query param when ELECTRON_RENDERER_URL is set', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = false;
-      env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockLoadURL.mockClear();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.mockLoadURL).toHaveBeenCalledWith('http://localhost:5173?popout=oncall');
-    });
-
-    it('loads file URL with popout query param in production', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete env.ELECTRON_RENDERER_URL;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockLoadURL.mockClear();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.mockLoadURL).toHaveBeenCalledWith(
-        expect.stringMatching(/^file:\/\/.*renderer\/index\.html\?popout=oncall$/),
-      );
-    });
-  });
-
-  describe('createAuxWindow - load failures', () => {
-    it('tears down the popout instead of rejecting when its load is aborted', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete env.ELECTRON_RENDERER_URL;
-      mocks.mockLoadURL.mockRejectedValueOnce(
-        new Error('ERR_ABORTED (-3) loading file:///renderer/index.html?popout=oncall'),
-      );
-
-      const { createAuxWindow } = await import('../windowFactory');
-
-      // Callers invoke this as void, so a rejection would land in the global
-      // unhandledRejection handler.
-      await expect(createAuxWindow('oncall')).resolves.toBeUndefined();
-      expect(mocks.mockDestroy).toHaveBeenCalledOnce();
-      expect(loggers.main.warn).toHaveBeenCalledWith(
-        'Failed to load aux window',
-        expect.objectContaining({ route: 'oncall' }),
-      );
-    });
-
-    it('releases the route so the popout can be reopened after a failed load', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete env.ELECTRON_RENDERER_URL;
-      mocks.mockLoadURL.mockRejectedValueOnce(new Error('ERR_CONNECTION_REFUSED (-102)'));
-
-      const { createAuxWindow } = await import('../windowFactory');
-
-      await createAuxWindow('oncall');
-      mocks.resetLastOptions();
-      await createAuxWindow('oncall');
-
-      expect(mocks.getLastOptions()).not.toBeNull();
-    });
-  });
-
-  describe('createAuxWindow - security', () => {
-    it('blocks disallowed routes', async () => {
-      const { createAuxWindow } = await import('../windowFactory');
-      await createAuxWindow('malicious-route');
-
-      expect(loggers.security.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Blocked aux window'),
-      );
-    });
-
-    it('creates aux window with correct security webPreferences', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.MockBrowserWindow.getAllWindows.mockClear();
-      mocks.resetLastOptions();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.getLastOptions()).not.toBeNull();
-      const webPreferences = lastWebPreferences();
-      expect(webPreferences.contextIsolation).toBe(true);
-      expect(webPreferences.nodeIntegration).toBe(false);
-      expect(webPreferences.sandbox).toBe(true);
-      expect(webPreferences.webSecurity).toBe(true);
-    });
-
-    it('blocks window.open() in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsSetWindowOpenHandler.mockClear();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.mockWebContentsSetWindowOpenHandler).toHaveBeenCalled();
-      const handler = registeredWindowOpenHandler();
-      const result = handler({ url: 'https://evil.example.com' });
-      expect(result).toEqual({ action: 'deny' });
     });
   });
 });

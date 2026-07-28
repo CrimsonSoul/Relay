@@ -43,7 +43,6 @@ import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 export function setupIpcHandlers(opts: {
   getMainWindow: () => BrowserWindow | null;
   getDataRoot: () => Promise<string>;
-  createAuxWindow?: (route: string) => void;
   getAppConfig?: () => AppConfig | null;
   getCache?: () => OfflineCache | null;
   getPendingChanges?: () => PendingChanges | null;
@@ -71,7 +70,6 @@ export function setupIpcHandlers(opts: {
   const {
     getMainWindow,
     getDataRoot,
-    createAuxWindow,
     getAppConfig,
     getCache,
     getPendingChanges,
@@ -151,7 +149,7 @@ export function setupIpcHandlers(opts: {
   );
 
   // Window Management
-  safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot));
+  safeSetup('window', () => setupWindowHandlers(getMainWindow, getDataRoot));
 
   // PocketBase Setup Handlers (always registered — uses getter for lazy access)
   safeSetup('setup', () =>

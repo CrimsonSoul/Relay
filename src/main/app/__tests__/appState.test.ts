@@ -269,18 +269,12 @@ describe('setupIpc', () => {
     expect(setupLoggerHandlers).toHaveBeenCalled();
   });
 
-  it('passes createAuxWindow and restartPb to setupIpcHandlers', () => {
-    const createAux = vi.fn();
+  it('passes restartPb to setupIpcHandlers', () => {
     const restartPb = vi.fn();
 
-    setupIpc(createAux, restartPb as never);
+    setupIpc(restartPb as never);
 
-    expect(setupIpcHandlers).toHaveBeenCalledWith(
-      expect.objectContaining({
-        createAuxWindow: createAux,
-        restartPb,
-      }),
-    );
+    expect(setupIpcHandlers).toHaveBeenCalledWith(expect.objectContaining({ restartPb }));
   });
 
   it('passes the current authenticated PocketBase client getter to setupIpcHandlers', () => {

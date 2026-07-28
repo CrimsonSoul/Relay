@@ -48,7 +48,7 @@ export function useAlertDismissal() {
         return next;
       });
 
-      // Persist to PocketBase, then broadcast to popout windows on success.
+      // Persist to PocketBase, then broadcast to other windows on success.
       pbDismissAlert(type, todayKey)
         .then(() => {
           globalThis.api?.notifyAlertDismissed(type);

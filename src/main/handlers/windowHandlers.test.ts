@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain, BrowserWindow, clipboard, nativeImage, shell, dialog } from 'electron';
 import { execFile } from 'node:child_process';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { setupWindowHandlers, setupWindowListeners, ALLOWED_AUX_ROUTES } from './windowHandlers';
+import { setupWindowHandlers, setupWindowListeners } from './windowHandlers';
 
 const mockNativeImage = {
   isEmpty: vi.fn(() => false),
@@ -174,7 +174,6 @@ describe('windowHandlers', () => {
     });
   };
   const getMainWindow = vi.fn(() => null as BrowserWindow | null);
-  const createAuxWindow = vi.fn();
   const getDataRoot = vi.fn(async () => '/data/root');
 
   let mockWin: BrowserWindow;
@@ -209,22 +208,7 @@ describe('windowHandlers', () => {
       return {};
     });
 
-    setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot);
-  });
-
-  describe('ALLOWED_AUX_ROUTES', () => {
-    it('contains expected routes', () => {
-      expect(ALLOWED_AUX_ROUTES.has('oncall')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('directory')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('servers')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('assembler')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('popout/board')).toBe(true);
-    });
-
-    it('does not contain disallowed routes', () => {
-      expect(ALLOWED_AUX_ROUTES.has('admin')).toBe(false);
-      expect(ALLOWED_AUX_ROUTES.has('../evil')).toBe(false);
-    });
+    setupWindowHandlers(getMainWindow, getDataRoot);
   });
 
   it('does not register a generic file-path opening channel', () => {
@@ -799,30 +783,6 @@ describe('windowHandlers', () => {
     });
   });
 
-  describe('WINDOW_OPEN_AUX', () => {
-    it('calls createAuxWindow for allowed route', () => {
-      getOnHandler(IPC_CHANNELS.WINDOW_OPEN_AUX)(null, 'oncall');
-      expect(createAuxWindow).toHaveBeenCalledWith('oncall');
-    });
-
-    it('ignores non-string route', () => {
-      getOnHandler(IPC_CHANNELS.WINDOW_OPEN_AUX)(null, 123);
-      expect(createAuxWindow).not.toHaveBeenCalled();
-    });
-
-    it('ignores disallowed route', () => {
-      getOnHandler(IPC_CHANNELS.WINDOW_OPEN_AUX)(null, 'admin');
-      expect(createAuxWindow).not.toHaveBeenCalled();
-    });
-
-    it('handles missing createAuxWindow gracefully', () => {
-      vi.clearAllMocks();
-      captureIpcRegistrations();
-      setupWindowHandlers(getMainWindow); // no createAuxWindow
-      expect(() => getOnHandler(IPC_CHANNELS.WINDOW_OPEN_AUX)(null, 'oncall')).not.toThrow();
-    });
-  });
-
   describe('DRAG_STARTED', () => {
     it('broadcasts drag started to all windows', () => {
       expect(() => getOnHandler(IPC_CHANNELS.DRAG_STARTED)()).not.toThrow();
@@ -968,7 +928,7 @@ describe('windowHandlers', () => {
       vi.clearAllMocks();
       captureIpcRegistrations();
 
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
+      setupWindowHandlers(getMainWindow); // no getDataRoot
 
       const result = await getHandler(IPC_CHANNELS.GET_COMPANY_LOGO)();
       expect(result).toBeNull();
@@ -1024,7 +984,7 @@ describe('windowHandlers', () => {
       vi.clearAllMocks();
       captureIpcRegistrations();
 
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
+      setupWindowHandlers(getMainWindow); // no getDataRoot
 
       const result = await getHandler(IPC_CHANNELS.REMOVE_COMPANY_LOGO)();
       expect(result).toEqual({ success: false, error: 'Data root not available' });
@@ -1046,7 +1006,7 @@ describe('windowHandlers', () => {
       vi.clearAllMocks();
       captureIpcRegistrations();
 
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
+      setupWindowHandlers(getMainWindow); // no getDataRoot
 
       const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
       expect(result).toEqual({ success: false, error: 'Data root not available' });

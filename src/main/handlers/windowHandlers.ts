@@ -13,14 +13,6 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { rateLimiters } from '../rateLimiter';
 import { BrandAssetService } from '../services/operationalServices';
 
-export const ALLOWED_AUX_ROUTES = new Set([
-  'oncall',
-  'directory',
-  'servers',
-  'assembler',
-  'personnel',
-  'popout/board',
-]);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 
@@ -285,7 +277,6 @@ function normalizeAllowedExternalUrl(value: unknown): string | null {
 
 export function setupWindowHandlers(
   getMainWindow: () => BrowserWindow | null,
-  createAuxWindow?: (route: string) => void,
   getDataRoot?: () => Promise<string>,
 ) {
   const brandAssets = getDataRoot ? new BrandAssetService(getDataRoot) : null;
@@ -448,14 +439,6 @@ export function setupWindowHandlers(
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_MINIMIZE)) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     win?.minimize();
-  });
-
-  ipcMain.on(IPC_CHANNELS.WINDOW_OPEN_AUX, (event, route: string) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_OPEN_AUX)) return;
-    if (typeof route !== 'string' || !ALLOWED_AUX_ROUTES.has(route)) {
-      return;
-    }
-    createAuxWindow?.(route);
   });
 
   // Drag Sync - broadcast to all windows

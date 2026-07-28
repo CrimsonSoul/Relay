@@ -1588,12 +1588,6 @@ body.modal-open {
 /* command-palette-search-icon removed — replaced by header search bar */
 
 /* ============================================================================
-   PopoutBoard Subtitle Elements
-   ============================================================================ */
-
-/* popout-subtitle-row and popout-subtitle-label removed — popout now uses oncall-header-info */
-
-/* ============================================================================
    ContactCard Tooltip Spans
    ============================================================================ */
 

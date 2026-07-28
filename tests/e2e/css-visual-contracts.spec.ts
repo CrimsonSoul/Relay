@@ -280,8 +280,7 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
           padding: 20px;
         }
         .fixture-assembler,
-        .fixture-oncall,
-        .fixture-popout {
+        .fixture-oncall {
           box-sizing: border-box;
           width: 440px;
           height: 300px;
@@ -362,18 +361,6 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
             </div>
           </aside>
           <div class="assembler-recipients-pane"></div>
-        </section>
-
-        <section class="popout-board fixture-popout" data-scroll-contract="popout">
-          <header class="oncall-page-header">
-            <div><div class="oncall-page-context">Popout</div><h2>Coverage board</h2></div>
-            <button class="tactile-button" data-inline-control>Manage</button>
-          </header>
-          <div data-row-kind="popout">
-            <section class="fixture-team-card">
-              <button class="tactile-button" data-row-control>Primary popout team</button>
-            </section>
-          </div>
         </section>
 
         <section class="personnel-tab-root fixture-oncall" data-scroll-contract="oncall-root">
@@ -627,7 +614,6 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
 
         const wrapper = globalThis.document.createElement(kind === 'search' ? 'li' : 'section');
         if (kind === 'oncall') wrapper.className = 'oncall-masonry-item fixture-team-card';
-        if (kind === 'popout') wrapper.className = 'fixture-team-card';
         if (kind === 'search') wrapper.className = 'search-dropdown-item fixture-row';
         if (kind === 'detail') wrapper.className = 'detail-panel-field fixture-detail-section';
         button.className = kind === 'search' ? 'search-dropdown-hitbox' : 'tactile-button';
@@ -669,10 +655,10 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       expect(Math.abs(snapshot.scrollTop - snapshot.maxScrollTop), label).toBeLessThanOrEqual(1);
     };
 
-    expect(before.overlay.snapshots).toHaveLength(8);
-    expect(before.classic.snapshots).toHaveLength(8);
-    expect(after.overlay.snapshots).toHaveLength(8);
-    expect(after.classic.snapshots).toHaveLength(8);
+    expect(before.overlay.snapshots).toHaveLength(7);
+    expect(before.classic.snapshots).toHaveLength(7);
+    expect(after.overlay.snapshots).toHaveLength(7);
+    expect(after.classic.snapshots).toHaveLength(7);
     expect(before.classic.wideNativeGutterSimulation).toEqual({
       nativeGutter: 24,
       emulatedGutter: 0,
@@ -721,7 +707,6 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
       ),
     ).toEqual({
       assembler: 0,
-      popout: 0,
       'oncall-root': 0,
       'oncall-masonry': 0,
       combobox: 1,
@@ -737,7 +722,6 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         ),
       ).toEqual({
         assembler: 263,
-        popout: 424,
         'oncall-root': 424,
         'oncall-masonry': 360,
         combobox: 282,
@@ -784,7 +768,6 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
 
     const scrollableIds = [
       'assembler',
-      'popout',
       'oncall-root',
       'oncall-masonry',
       'combobox',

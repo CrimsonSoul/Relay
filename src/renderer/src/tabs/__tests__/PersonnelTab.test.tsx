@@ -136,7 +136,7 @@ describe('PersonnelTab — page header and command toolbar', () => {
       screen.getByRole('group', { name: 'On-call board font scale' }),
     );
 
-    for (const name of ['Copy All On-Call Info', 'Export to CSV', 'Pop Out Board', 'Lock Board']) {
+    for (const name of ['Copy All On-Call Info', 'Export to CSV', 'Lock Board']) {
       const button = screen.getByRole('button', { name });
       expect(toolbar).toContainElement(button);
       expect(button).toHaveClass('tactile-button--secondary', 'oncall-command-action');
@@ -336,24 +336,19 @@ describe('PersonnelTab — Copy All button', () => {
   });
 });
 
-describe('PersonnelTab — Pop Out button', () => {
+describe('PersonnelTab — command bar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders POP OUT button when not in popout mode', () => {
+  // The board no longer opens in a second window: the aux-window IPC route it
+  // used was removed along with it, so a reintroduced button would send to a
+  // channel the main process does not register.
+  it('offers no pop-out control', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    expect(screen.getByRole('button', { name: 'Pop Out Board' })).toBeDefined();
-  });
-
-  it('calls openAuxWindow when POP OUT is clicked', () => {
-    const bs = makeReadyBoardSettings(['network']);
-    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pop Out Board' }));
-    expect(globalThis.api?.openAuxWindow).toHaveBeenCalledWith('popout/board');
+    expect(screen.queryByRole('button', { name: /pop ?out/i })).toBeNull();
   });
 });
 

@@ -245,7 +245,6 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.PB_CRASHED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.PB_CRASHED, handler);
   },
-  openAuxWindow: (route) => ipcRenderer.send(IPC_CHANNELS.WINDOW_OPEN_AUX, route),
   platform: process.platform,
 };
 

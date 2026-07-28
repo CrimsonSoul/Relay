@@ -102,17 +102,12 @@ describe('setupIpcHandlers', () => {
     );
   });
 
-  it('passes getMainWindow, createAuxWindow, getDataRoot to window handlers', () => {
+  it('passes getMainWindow and getDataRoot to window handlers', () => {
     const getMainWindow = vi.fn();
     const getDataRoot = vi.fn();
-    const createAuxWindow = vi.fn();
-    setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot, createAuxWindow }));
+    setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot }));
 
-    expect(mockSetupWindowHandlers).toHaveBeenCalledWith(
-      getMainWindow,
-      createAuxWindow,
-      getDataRoot,
-    );
+    expect(mockSetupWindowHandlers).toHaveBeenCalledWith(getMainWindow, getDataRoot);
   });
 
   it('passes cache-related getters to setup handlers', () => {

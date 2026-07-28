@@ -93,7 +93,6 @@ const DynatraceProblemsTab = lazyTab(
   'DynatraceProblemsTab',
 );
 const AlertsTab = lazyTab(() => import('./tabs/AlertsTab'), 'AlertsTab');
-const PopoutBoard = lazyTab(() => import('./components/PopoutBoard'), 'PopoutBoard');
 
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
 const getTabPanelClassName = (active: boolean) => `tab-panel${active ? ' tab-panel--active' : ''}`;
@@ -337,9 +336,7 @@ export function MainApp({
       <div className={`popout-container${isDynatracePopout ? ' popout-container--dynatrace' : ''}`}>
         <div className="popout-header">
           <div className="popout-title-stack">
-            <span className="popout-title">
-              {isDynatracePopout ? 'RELAY' : 'RELAY ON-CALL BOARD'}
-            </span>
+            <span className="popout-title">RELAY</span>
             {isDynatracePopout && dynatracePopoutName && (
               <span className="popout-subtitle">{dynatracePopoutName}</span>
             )}
@@ -350,20 +347,6 @@ export function MainApp({
         </div>
         <div className={`popout-body${isDynatracePopout ? ' popout-body--dynatrace' : ''}`}>
           {isDynatracePopout && <div className="dynatrace-shell-body" aria-hidden="true" />}
-          {popoutRoute?.includes('board') && (
-            <ErrorBoundary fallback={errorFallback}>
-              <Suspense fallback={<TabFallback />}>
-                <PopoutBoard
-                  onCall={data.onCall}
-                  contacts={data.contacts}
-                  boardSettings={boardSettings}
-                  onBoardSettingsChange={setBoardSettings}
-                  onCallFontScale={onCallFontScale}
-                  onOnCallFontScaleChange={handleOnCallFontScaleChange}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
         </div>
       </div>
     );

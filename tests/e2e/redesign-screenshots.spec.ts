@@ -577,31 +577,6 @@ test.describe('Redesign screenshot harness', () => {
             .toBe(accent);
           await shoot(window, `oncall-${accent}.png`);
         }
-
-        // --- Kiosk popout window ---
-        await setAccentViaStorage(window, 'red');
-        try {
-          await setOnCallFontScaleViaStorage(window, 150);
-          const popoutPromise = electronApp.waitForEvent('window', { timeout: 20_000 });
-          await window.getByRole('button', { name: 'Pop Out Board' }).click();
-          const popout = await popoutPromise;
-          await popout.waitForLoadState('domcontentloaded');
-          await electronApp.evaluate(({ BrowserWindow }) => {
-            const wins = BrowserWindow.getAllWindows();
-            // Resize the most recently created window (the popout).
-            wins[wins.length - 1]?.setSize(1920, 1080);
-          });
-          await expect(popout.locator('.popout-title')).toBeVisible({ timeout: 20_000 });
-          await expect(popout.locator('.oncall-font-scale-value')).toContainText('150%');
-          await expect(popout.locator('body')).toContainText('Database Reliability');
-          await expectNoEllipsizedOnCallNames(popout);
-          await shoot(popout, 'popout.png');
-          await popout.close().catch(() => {});
-        } catch (error) {
-          console.warn('Popout capture skipped:', error);
-        } finally {
-          await setOnCallFontScaleViaStorage(window, 100);
-        }
       }
 
       // Reset accent to the default red before shutting down.

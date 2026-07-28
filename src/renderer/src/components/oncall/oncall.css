@@ -83,121 +83,6 @@
   background: var(--color-danger-subtle);
 }
 
-/* ===========================
-   Popout Board
-   =========================== */
-.personnel-tab-root,
-.popout-board {
-  --oncall-font-scale: 1;
-  --oncall-row-padding-y: clamp(6px, calc(7px * var(--oncall-font-scale)), 10px);
-  --oncall-name-font-size: clamp(16px, calc(18px * var(--oncall-font-scale)), 30px);
-  --oncall-phone-font-size: clamp(15px, calc(17px * var(--oncall-font-scale)), 28px);
-  --oncall-role-code-font-size: clamp(11px, calc(12px * var(--oncall-font-scale)), 16px);
-  --oncall-secondary-font-size: clamp(11px, calc(12px * var(--oncall-font-scale)), 16px);
-}
-
-.popout-board {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 16px 24px;
-  background: var(--color-bg-app);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  position: relative;
-}
-
-.popout-board > .oncall-masonry {
-  max-width: calc(100vw - var(--sidebar-width-collapsed));
-}
-
-.popout-board--kiosk {
-  padding: 0;
-}
-
-.popout-drag-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: var(--color-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: all;
-  transition: opacity var(--transition-smooth);
-}
-
-.popout-drag-overlay-inner {
-  background: var(--color-bg-surface-elevated);
-  padding: 20px 40px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border-strong);
-  color: #fff;
-  font-size: var(--text-md);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  box-shadow: var(--shadow-modal);
-}
-
-.popout-drag-spinner {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 3px solid var(--color-border-strong);
-  border-top-color: var(--color-accent);
-  border-radius: 50%;
-}
-
-.popout-kiosk-controls {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  opacity: 0.5;
-  transition: opacity var(--transition-smooth);
-}
-
-.popout-kiosk-controls:hover {
-  opacity: 1;
-}
-
-.popout-kiosk-timestamp {
-  background: transparent;
-  padding: 4px 12px;
-  border: none;
-  border-radius: 0;
-  font-family: var(--font-family-mono);
-  font-size: var(--text-xs);
-  color: var(--color-text-quaternary);
-  display: flex;
-  align-items: center;
-}
-
-.popout-alert-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  padding: 6px 12px;
-  margin-left: 8px;
-  letter-spacing: -0.01em;
-  user-select: none;
-}
-
-.popout-alert-indicator {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  animation: breathe 2.4s ease-in-out infinite;
-}
-
 /* ============================================================================
    Team Row (OnCall)
    ============================================================================ */
@@ -513,6 +398,12 @@
    ============================================================================ */
 
 .personnel-tab-root {
+  --oncall-font-scale: 1;
+  --oncall-row-padding-y: clamp(6px, calc(7px * var(--oncall-font-scale)), 10px);
+  --oncall-name-font-size: clamp(16px, calc(18px * var(--oncall-font-scale)), 30px);
+  --oncall-phone-font-size: clamp(15px, calc(17px * var(--oncall-font-scale)), 28px);
+  --oncall-role-code-font-size: clamp(11px, calc(12px * var(--oncall-font-scale)), 16px);
+  --oncall-secondary-font-size: clamp(11px, calc(12px * var(--oncall-font-scale)), 16px);
   flex: 1;
   min-height: 0;
   display: flex;
@@ -898,38 +789,6 @@
 }
 
 /* ============================================================================
-   Popout Board Alert Variants
-   ============================================================================ */
-
-.popout-alert-chip,
-.popout-alert-chip:hover {
-  border-radius: 2px;
-}
-
-.popout-alert-chip.popout-alert-chip--info,
-.popout-alert-chip.popout-alert-chip--info:hover {
-  background: var(--accent-dim);
-  border-color: transparent;
-  color: var(--accent-bright);
-}
-
-.popout-alert-chip.popout-alert-chip--danger,
-.popout-alert-chip.popout-alert-chip--danger:hover {
-  background: var(--alarm);
-  border-color: transparent;
-  color: #000;
-  font-weight: 800;
-}
-
-.popout-alert-indicator--info {
-  background: var(--accent);
-}
-
-.popout-alert-indicator--danger {
-  background: #000;
-}
-
-/* ============================================================================
    Kiosk — 55" wall TV at 10ft: bump the load-bearing type
    ============================================================================ */
 
@@ -943,20 +802,6 @@
 
 .oncall-grid--kiosk .team-card-name {
   font-size: var(--text-sm);
-}
-
-/* ============================================================================
-   Popout Kiosk Exit Button
-   ============================================================================ */
-
-.popout-kiosk-exit-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-tertiary);
-}
-
-.popout-kiosk-exit-btn:hover {
-  color: var(--color-text-primary);
 }
 
 /* ============================================================================

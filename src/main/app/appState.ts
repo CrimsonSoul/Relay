@@ -296,14 +296,10 @@ export async function getDataRoot(): Promise<string> {
   return dataRootPromise;
 }
 
-export function setupIpc(
-  createAuxWindow?: (route: string) => void,
-  restartPb?: () => Promise<boolean>,
-) {
+export function setupIpc(restartPb?: () => Promise<boolean>) {
   setupIpcHandlers({
     getMainWindow: () => state.mainWindow,
     getDataRoot,
-    createAuxWindow,
     getAppConfig: () => state.appConfig,
     getCache: () => state.offlineCache,
     getPendingChanges: () => state.pendingChanges,

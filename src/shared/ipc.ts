@@ -538,7 +538,6 @@ export type BridgeAPI = {
     callback: (notification: { title: string; message: string }) => void,
   ) => () => void;
   onPbCrashed: (callback: (info: { error: string }) => void) => () => void;
-  openAuxWindow: (route: string) => void;
   logToMain: (entry: LogEntry) => void;
   // Drag and Drop Sync
   notifyDragStart: () => void;
@@ -662,7 +661,6 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'window:close',
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_MAXIMIZE_CHANGE: 'window:maximizeChange',
-  WINDOW_OPEN_AUX: 'window:openAux',
   OPEN_EXTERNAL: 'shell:openExternal',
   AUTH_REQUESTED: 'auth:requested',
   AUTH_SUBMIT: 'auth:submit',

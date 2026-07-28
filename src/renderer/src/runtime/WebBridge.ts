@@ -562,9 +562,6 @@ export function createWebBridge(
     onMaximizeChange: noopSubscription,
     onErrorNotification: (callback) => subscribe('error-notification', callback),
     onPbCrashed: (callback) => subscribe('pb-crashed', callback),
-    openAuxWindow: (route) => {
-      actions.openAuxWindow(route);
-    },
     logToMain: (entry) => {
       void request('/operations/log', { method: 'POST', body: entry }).catch(() => undefined);
     },

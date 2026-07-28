@@ -95,7 +95,6 @@
     animation: none !important;
   }
 
-  .popout-alert-indicator,
   .team-row-active-indicator {
     opacity: 1;
     animation: none;

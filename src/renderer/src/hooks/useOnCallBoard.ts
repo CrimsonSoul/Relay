@@ -33,7 +33,7 @@ interface UseOnCallBoardOptions {
 }
 
 /**
- * Shared logic for the on-call board used by both PersonnelTab and PopoutBoard.
+ * Shared logic for the on-call board rendered by PersonnelTab.
  *
  * Provides:
  * - `animationParent` ref and `enableAnimations` control (auto-animate)

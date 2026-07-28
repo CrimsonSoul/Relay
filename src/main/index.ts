@@ -45,7 +45,7 @@ import {
   setRelayWebServerManager,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
-import { createWindow, createAuxWindow, showAndFocusWindow } from './app/windowFactory';
+import { createWindow, showAndFocusWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
 import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { scheduleGpuDiagnostics } from './app/gpuDiagnostics';
@@ -567,7 +567,7 @@ if (gotLock) {
         await stopPrivilegedAccess();
         return startServerServicesAfterReady(config);
       };
-      setupIpc(createAuxWindow, restartPb);
+      setupIpc(restartPb);
 
       // Register shutdown cleanup before starting embedded services so an early
       // startup failure cannot leave PocketBase or SQLite handles behind.

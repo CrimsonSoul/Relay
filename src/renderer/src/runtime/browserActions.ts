@@ -188,11 +188,6 @@ export function createBrowserActions(options: BrowserActionsOptions = {}) {
       }
     },
 
-    openAuxWindow(route: string): boolean {
-      if (!/^popout\/[A-Za-z0-9/_-]+$/u.test(route)) return false;
-      return launch(openWindow, `/${route}`);
-    },
-
     selectImage(maxBytes: number): Promise<string | null> {
       return (options.pickImage ?? pickBrowserImage)(maxBytes);
     },

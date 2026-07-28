@@ -64,10 +64,6 @@ let lastPersonnelTabProps: {
   onCallFontScale?: number;
   onOnCallFontScaleChange?: (scale: number) => void;
 } | null = null;
-let lastPopoutBoardProps: {
-  onCallFontScale?: number;
-  onOnCallFontScaleChange?: (scale: number) => void;
-} | null = null;
 let lastKnowledgeWorkspaceProps: {
   active: boolean;
   relayMode?: string;
@@ -378,19 +374,6 @@ vi.mock('../components/DataManagerModal', () => ({
   },
 }));
 
-vi.mock('../components/PopoutBoard', () => ({
-  PopoutBoard: ({
-    onCallFontScale,
-    onOnCallFontScaleChange,
-  }: {
-    onCallFontScale?: number;
-    onOnCallFontScaleChange?: (scale: number) => void;
-  }) => {
-    lastPopoutBoardProps = { onCallFontScale, onOnCallFontScaleChange };
-    return <div data-testid="popout-board" />;
-  },
-}));
-
 // ── mock app hooks ───────────────────────────────────────────────────────────
 const mockHandleSync = vi.fn();
 vi.mock('../hooks/useAppData', () => ({
@@ -504,7 +487,6 @@ describe('MainApp', () => {
     lastCloudStatusTabProps = null;
     lastCloudStatusOpenProvider = undefined;
     lastPersonnelTabProps = null;
-    lastPopoutBoardProps = null;
     localStorage.removeItem('relay-oncall-display-size');
     localStorage.removeItem('relay-oncall-font-scale');
     acknowledgeKnowledgeDestinationOpen('wiki');
@@ -691,7 +673,7 @@ describe('MainApp', () => {
   });
 
   it('disables Dynatrace dashboard subscriptions in popout mode', () => {
-    renderApp('?popout=board');
+    renderApp('?popout=dynatrace');
 
     expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast, { enabled: false });
   });
@@ -789,8 +771,8 @@ describe('MainApp', () => {
   });
 
   it('shows popout mode when ?popout search param is present', () => {
-    renderApp('?popout=board');
-    expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
+    renderApp('?popout=dynatrace');
+    expect(screen.getByText('RELAY')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
   });
 
@@ -900,22 +882,13 @@ describe('MainApp', () => {
     },
   );
 
-  it('renders popout without board route', () => {
-    renderApp('?popout=other');
-    expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
-    // PopoutBoard should NOT render because route doesn't include 'board'
-    expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
-  });
-
-  it('renders the Dynatrace popout shell without the on-call board', () => {
+  it('renders the Dynatrace popout shell', () => {
     renderApp('?popout=dynatrace&name=NOC%20Dashboard');
 
     expect(screen.getByText('RELAY')).toBeInTheDocument();
     expect(screen.getByText('NOC Dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
     expect(screen.queryByText('RELAY DYNATRACE')).not.toBeInTheDocument();
-    expect(screen.queryByText('RELAY ON-CALL BOARD')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
   });
 
   it('opens data manager modal from settings', async () => {
@@ -942,24 +915,8 @@ describe('MainApp', () => {
   });
 
   it('adds is-popout class to body in popout mode', () => {
-    renderApp('?popout=board');
+    renderApp('?popout=dynatrace');
     expect(document.body.classList.contains('is-popout')).toBe(true);
-  });
-
-  it('renders popout board when popout param contains board', async () => {
-    localStorage.setItem('relay-oncall-font-scale', '130');
-    renderApp('?popout=board');
-    await vi.waitFor(() => {
-      expect(screen.getByTestId('popout-board')).toBeInTheDocument();
-    });
-    expect(lastPopoutBoardProps?.onCallFontScale).toBe(130);
-
-    act(() => {
-      lastPopoutBoardProps?.onOnCallFontScaleChange?.(100);
-    });
-
-    expect(localStorage.getItem('relay-oncall-font-scale')).toBe('100');
-    expect(lastPopoutBoardProps?.onCallFontScale).toBe(100);
   });
 });
 
@@ -1112,7 +1069,7 @@ describe('App default export', () => {
 
   it('uses NoopToastProvider in popout mode', async () => {
     Object.defineProperty(globalThis, 'location', {
-      value: { search: '?popout=board' },
+      value: { search: '?popout=dynatrace' },
       writable: true,
     });
     const { default: App } = await import('../App');

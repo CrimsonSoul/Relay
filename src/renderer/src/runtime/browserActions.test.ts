@@ -67,24 +67,19 @@ describe('browser actions', () => {
     expect(sanitizeDownloadName('alert\u0007name.txt')).toBe('alert_name.txt');
   });
 
-  it('uses only built-in audio and browser tabs', async () => {
+  it('uses only built-in audio', async () => {
     const play = vi.fn(async () => undefined);
     class TestAudio {
       preload = '';
       currentTime = 4;
       play = play;
     }
-    const openWindow = vi.fn(() => ({ opener: null }) as Window);
     const actions = createBrowserActions({
       AudioConstructor: TestAudio as unknown as typeof Audio,
-      openWindow,
     });
 
     await expect(actions.playBuiltInAlert()).resolves.toBe(true);
     expect(play).toHaveBeenCalledOnce();
-    expect(actions.openAuxWindow('popout/board')).toBe(true);
-    expect(actions.openAuxWindow('https://example.com')).toBe(false);
-    expect(openWindow).toHaveBeenCalledWith('/popout/board', '_blank', 'noopener,noreferrer');
   });
 
   it('selects browser images without exposing a filesystem path', async () => {

@@ -168,7 +168,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
   }, [oncallRecords, oncallLoading]);
 
   // --- Realtime subscription for board settings ---
-  // Keeps boardSettings in sync across popout windows and connected clients.
+  // Keeps boardSettings in sync across connected clients.
   const boardSettingsSubRef = useRef<(() => void | Promise<void>) | null>(null);
   const boardSettingsSubGenRef = useRef(0);
 
