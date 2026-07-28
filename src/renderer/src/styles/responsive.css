@@ -55,6 +55,43 @@
     display: none;
   }
 
+  .sidebar-button--status {
+    grid-template-columns: 1fr;
+    grid-template-rows: 20px auto;
+    grid-template-areas:
+      'icon'
+      'detail';
+    justify-items: center;
+    align-content: center;
+    gap: 2px;
+    padding: 4px 0;
+  }
+
+  .sidebar-button--status .sidebar-button-icon {
+    align-self: center;
+  }
+
+  .sidebar-button-status-dot {
+    top: 6px;
+    right: 7px;
+    width: 6px;
+    height: 6px;
+  }
+
+  .sidebar-button-detail {
+    font-size: 9px;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+
+  .sidebar-button-detail--full {
+    display: none;
+  }
+
+  .sidebar-button-detail--compact {
+    display: inline;
+  }
+
   .sidebar-footer {
     width: 100%;
     padding: 8px 4px;

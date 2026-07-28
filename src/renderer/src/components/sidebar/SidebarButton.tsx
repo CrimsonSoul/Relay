@@ -45,7 +45,21 @@ export const SidebarButton: React.FC<SidebarButtonProps> = React.memo(
         >
           <div className="sidebar-button-icon">{icon}</div>
           <span className="sidebar-button-label">{label}</span>
-          {status?.detail && <span className="sidebar-button-detail">{status.detail}</span>}
+          {status && (
+            <span
+              className="sidebar-button-status-dot"
+              data-status-tone={status.tone}
+              aria-hidden="true"
+            />
+          )}
+          {status?.detail && (
+            <span className="sidebar-button-detail" aria-hidden="true">
+              <span className="sidebar-button-detail--full">{status.detail}</span>
+              <span className="sidebar-button-detail--compact">
+                {status.compactDetail ?? status.detail}
+              </span>
+            </span>
+          )}
 
           {isActive && <div className="sidebar-button-indicator" />}
         </button>

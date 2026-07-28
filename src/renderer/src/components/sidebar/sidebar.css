@@ -400,58 +400,75 @@
 /* ============================================================================
    Status-reporting nav buttons (Dispatcher Radar)
 
-   The button carries its destination's state directly, so the board can be read
-   without opening the tab. The tint is reinforcement only — SidebarButton also
-   folds the state into the accessible name, and the figures are shown as text.
+   The active Relay rail keeps its normal meaning. Health is a compact dot only,
+   while exact state and counts remain in the accessible name and tooltip.
    ============================================================================ */
 
 .sidebar-button--status {
-  height: auto;
-  min-height: var(--sidebar-button-height);
-  padding-bottom: 7px;
-  background: var(--sidebar-status-wash, transparent);
-  border-left-color: var(--sidebar-status-rail, transparent);
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    'icon label'
+    'icon detail';
+  align-content: center;
+  column-gap: 8px;
+  row-gap: 2px;
 }
 
-.sidebar-button--status:hover {
-  background: var(--sidebar-status-wash, transparent);
+.sidebar-button--status .sidebar-button-icon {
+  grid-area: icon;
+  align-self: center;
 }
 
-/* The active accent still wins, so the selected tab always reads as selected. */
-.sidebar-button--status.sidebar-button--active {
-  border-left-color: var(--accent);
+.sidebar-button--status .sidebar-button-label {
+  grid-area: label;
+  min-width: 0;
+  padding-right: 12px;
 }
 
-.sidebar-button--status[data-status-tone='green'] {
-  --sidebar-status-rail: var(--ok);
-  --sidebar-status-wash: color-mix(in srgb, var(--ok) 10%, transparent);
+.sidebar-button-status-dot {
+  position: absolute;
+  top: 11px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-quaternary);
+  pointer-events: none;
 }
 
-.sidebar-button--status[data-status-tone='yellow'] {
-  --sidebar-status-rail: var(--color-warning);
-  --sidebar-status-wash: color-mix(in srgb, var(--color-warning) 12%, transparent);
+.sidebar-button-status-dot[data-status-tone='green'] {
+  background: var(--ok);
 }
 
-.sidebar-button--status[data-status-tone='red'] {
-  --sidebar-status-rail: var(--color-danger);
-  --sidebar-status-wash: color-mix(in srgb, var(--color-danger) 14%, transparent);
+.sidebar-button-status-dot[data-status-tone='yellow'] {
+  background: var(--color-warning);
 }
 
-/* Mirrors the dashboard's own magenta, which has no Relay palette counterpart. */
-.sidebar-button--status[data-status-tone='magenta'] {
-  --sidebar-status-rail: #b200ff;
-  --sidebar-status-wash: color-mix(in srgb, #b200ff 14%, transparent);
+.sidebar-button-status-dot[data-status-tone='red'] {
+  background: var(--color-danger);
+}
+
+.sidebar-button-status-dot[data-status-tone='magenta'] {
+  background: #b200ff;
 }
 
 .sidebar-button-detail {
+  grid-area: detail;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
   font-family: var(--font-family-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1.2;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  white-space: nowrap;
+}
+
+.sidebar-button-detail--compact {
+  display: none;
 }

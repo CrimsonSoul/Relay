@@ -118,17 +118,24 @@ describe('SidebarButton', () => {
     expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
   });
 
-  /**
-   * The one deliberate exception to the fixed height above. A status button
-   * carries a third line of figures, and 56px less padding fits the icon and
-   * label only. The width stays pinned so the nav column keeps its rhythm, and
-   * the floor is the standard height so a status button is never shorter.
-   */
-  it('lets only the status variant grow past the fixed height, and never narrower', () => {
+  it('keeps status buttons inside the standard navigation footprint', () => {
+    const buttonStyles = cssBlockFor('.sidebar-button');
     const statusStyles = cssBlockFor('.sidebar-button--status');
-    expect(statusStyles).toContain('height: auto');
-    expect(statusStyles).toContain('min-height: var(--sidebar-button-height)');
-    expect(statusStyles).not.toContain('width:');
+
+    expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
+    expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
+    expect(statusStyles).not.toContain('height: auto');
+    expect(statusStyles).not.toContain('min-height:');
+  });
+
+  it('does not give status buttons a health wash or health rail', () => {
+    expect(sidebarCss).not.toContain('--sidebar-status-wash');
+    expect(sidebarCss).not.toContain('--sidebar-status-rail');
+  });
+
+  it('keeps the Relay accent rail as the active-state signal', () => {
+    const activeStyles = cssBlockFor('.sidebar-button--active');
+    expect(activeStyles).toContain('border-left-color: var(--accent)');
   });
 });
 
@@ -156,8 +163,36 @@ describe('SidebarButton status', () => {
       />,
     );
 
-    expect(screen.getByText('2,000 · 1,807')).toBeInTheDocument();
+    expect(
+      screen.getByText('2,000 · 1,807', { selector: '.sidebar-button-detail--full' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Radar')).toBeInTheDocument();
+  });
+
+  it('renders one semantic dot and both responsive detail strings', () => {
+    const { container } = render(
+      <SidebarButton
+        {...baseProps}
+        status={{
+          tone: 'yellow',
+          announcement: 'Warning. XCenter OK 2,000, Pending 1,807',
+          detail: '2k · 1.8k',
+          compactDetail: '2k·1.8k',
+        }}
+      />,
+    );
+
+    const dots = container.querySelectorAll('.sidebar-button-status-dot');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveAttribute('data-status-tone', 'yellow');
+    expect(dots[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('2k · 1.8k')).toHaveClass('sidebar-button-detail--full');
+    expect(screen.getByText('2k·1.8k')).toHaveClass('sidebar-button-detail--compact');
+  });
+
+  it('renders no semantic dot for an ordinary navigation button', () => {
+    const { container } = render(<SidebarButton {...baseProps} status={null} />);
+    expect(container.querySelector('.sidebar-button-status-dot')).toBeNull();
   });
 
   /**
