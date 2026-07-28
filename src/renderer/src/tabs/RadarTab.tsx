@@ -40,8 +40,10 @@ const DepthRows: React.FC<{ rows: RadarRow[]; nameHeading: string }> = ({ rows, 
     <tbody>
       {rows.map((row) => (
         <tr key={row.name}>
-          <td className="radar-table-name">{row.name}</td>
-          <td className="radar-table-number">{row.depth.toLocaleString()}</td>
+          <td className="radar-table-name" title={row.name}>
+            {row.name}
+          </td>
+          <td className="radar-table-number">{row.depth.toLocaleString('en-US')}</td>
         </tr>
       ))}
     </tbody>
@@ -50,8 +52,22 @@ const DepthRows: React.FC<{ rows: RadarRow[]; nameHeading: string }> = ({ rows, 
 
 export const RadarTab: React.FC = () => {
   const { snapshot, refreshing, refresh, signIn } = useRadarSnapshot();
-  const { color, dispatchers, papa, metrics, xcenter, currentTime, signInRequired, error } =
-    snapshot;
+  const {
+    color,
+    dispatchers,
+    papa,
+    metrics,
+    xcenter,
+    currentTime,
+    lastUpdated,
+    signInRequired,
+    error,
+  } = snapshot;
+  const isStale = signInRequired || Boolean(error);
+  const hasUsableSnapshot = lastUpdated > 0;
+  const overallTone = isStale ? 'unknown' : color;
+  const overallLabel = isStale ? 'Stale' : RADAR_STATUS_LABELS[color];
+  const lastUpdatedDate = hasUsableSnapshot ? new Date(lastUpdated) : null;
 
   return (
     <div className="radar-tab">
@@ -61,9 +77,9 @@ export const RadarTab: React.FC = () => {
           <h2 className="radar-tab-title">Dispatcher Radar</h2>
         </div>
         <div className="radar-tab-actions">
-          <span className="radar-overall" data-radar-tone={color}>
+          <span className="radar-overall" data-radar-tone={overallTone}>
             <span className="radar-overall-dot" aria-hidden="true" />
-            {RADAR_STATUS_LABELS[color]}
+            {overallLabel}
           </span>
           <TactileButton
             variant="secondary"
@@ -84,7 +100,7 @@ export const RadarTab: React.FC = () => {
       */}
       {signInRequired && (
         <output className="radar-notice">
-          <span>Your CW Dashboard session has expired.</span>
+          <span>Your CW Dashboard session has expired. Retained Radar data is stale.</span>
           <TactileButton variant="primary" onClick={signIn} aria-label="Sign in to CW Dashboard">
             SIGN IN
           </TactileButton>
@@ -92,89 +108,137 @@ export const RadarTab: React.FC = () => {
       )}
 
       {error && !signInRequired && (
-        <output className="radar-notice radar-notice--error">Could not reach Radar: {error}</output>
+        <output className="radar-notice radar-notice--error">
+          Could not reach Radar: {error}. Retained Radar data is stale.
+        </output>
       )}
 
-      <section className="radar-lead" aria-label="XCenter counts">
-        <div className="radar-figures">
-          <div className="radar-figure">
-            <span className="radar-figure-label">XCenter OK</span>
-            <span className="radar-figure-value">{formatCount(xcenter.ok)}</span>
-          </div>
-          <div className="radar-figure">
-            <span className="radar-figure-label">XCenter Pending</span>
-            <span className="radar-figure-value">{formatCount(xcenter.pending)}</span>
-          </div>
-        </div>
-      </section>
+      <div className="radar-workspace">
+        <aside className="radar-health-rail" aria-label="Radar health summary">
+          <section className="radar-health-section" aria-label="XCenter counts">
+            <h3 className="radar-section-title">XCenter</h3>
+            <div className="radar-figures">
+              <div className="radar-figure">
+                <span className="radar-figure-label">OK</span>
+                <span className="radar-figure-value">{formatCount(xcenter.ok)}</span>
+              </div>
+              <div className="radar-figure">
+                <span className="radar-figure-label">Pending</span>
+                <span className="radar-figure-value">{formatCount(xcenter.pending)}</span>
+              </div>
+            </div>
+          </section>
 
-      <div className="radar-grid">
-        {dispatchers.map((dispatcher) => (
-          <section
-            key={dispatcher.name}
-            className="radar-panel"
-            aria-label={`Dispatcher ${dispatcher.name} — ${RADAR_STATUS_LABELS[dispatcher.tone]}`}
-          >
-            <h3 className="radar-panel-title">
-              <span
-                className="radar-panel-dot"
-                data-radar-tone={dispatcher.tone}
-                aria-hidden="true"
-              />
-              {dispatcher.name}
-            </h3>
-            <dl className="radar-pairs">
-              <div>
-                <dt>Last schedule</dt>
-                <dd>{dispatcher.lastScheduleDate || '—'}</dd>
-              </div>
-              <div>
-                <dt>Last pub/sub</dt>
-                <dd>{dispatcher.lastPubSubDate || '—'}</dd>
-              </div>
-            </dl>
-            {dispatcher.queues.length > 0 ? (
-              <DepthRows rows={dispatcher.queues} nameHeading="Queue" />
+          <section className="radar-health-section" aria-label="PaPA Processor Service">
+            <h3 className="radar-section-title">PaPA Processor Service</h3>
+            {papa.length > 0 ? (
+              <DepthRows rows={papa} nameHeading="Message type" />
             ) : (
-              <p className="radar-empty">No queues reported</p>
+              <p className="radar-empty">No PaPA data</p>
             )}
           </section>
-        ))}
 
-        {papa.length > 0 && (
-          <section className="radar-panel" aria-label="PaPA Processor Service">
-            <h3 className="radar-panel-title">PaPA Processor Service</h3>
-            <DepthRows rows={papa} nameHeading="Message type" />
+          <section className="radar-health-section" aria-label="Service metrics">
+            <h3 className="radar-section-title">Services</h3>
+            {metrics.length > 0 ? (
+              <ul className="radar-metrics">
+                {metrics.map((metric) => (
+                  <li
+                    key={metric.label}
+                    className="radar-metric"
+                    aria-label={`${metric.label} — ${RADAR_STATUS_LABELS[metric.tone]}${
+                      metric.value === null ? '' : `: ${formatMetricValue(metric.value)}`
+                    }`}
+                  >
+                    <span className="radar-metric-label">
+                      <span
+                        className="radar-panel-dot"
+                        data-radar-tone={metric.tone}
+                        aria-hidden="true"
+                      />
+                      {metric.label}
+                    </span>
+                    <span className="radar-metric-value">
+                      {metric.value === null
+                        ? RADAR_STATUS_LABELS[metric.tone]
+                        : formatMetricValue(metric.value)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="radar-empty">No service data</p>
+            )}
           </section>
-        )}
 
-        {metrics.length > 0 && (
-          <section className="radar-panel" aria-label="Service metrics">
-            <h3 className="radar-panel-title">Services</h3>
-            <ul className="radar-metrics">
-              {metrics.map((metric) => (
-                <li key={metric.label} className="radar-metric">
-                  <span className="radar-metric-label">
+          <section className="radar-health-section" aria-label="Dashboard timing">
+            <h3 className="radar-section-title">Dashboard timing</h3>
+            <dl className="radar-clock">
+              <div>
+                <dt>Dashboard clock</dt>
+                <dd>{currentTime ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Last successful update</dt>
+                <dd>
+                  {lastUpdatedDate ? (
+                    <time dateTime={lastUpdatedDate.toISOString()}>
+                      {lastUpdatedDate.toLocaleString()}
+                    </time>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
+
+        <section className="radar-dispatcher-lanes" aria-labelledby="radar-dispatchers-title">
+          <h3 id="radar-dispatchers-title" className="radar-section-title">
+            Dispatchers
+          </h3>
+          <div className="radar-lane-grid">
+            {dispatchers.length > 0 ? (
+              dispatchers.map((dispatcher) => (
+                <section
+                  key={dispatcher.name}
+                  className="radar-lane"
+                  aria-label={`Dispatcher ${dispatcher.name} — ${RADAR_STATUS_LABELS[dispatcher.tone]}`}
+                >
+                  <h4 className="radar-lane-title">
                     <span
                       className="radar-panel-dot"
-                      data-radar-tone={metric.tone}
+                      data-radar-tone={dispatcher.tone}
                       aria-hidden="true"
                     />
-                    {metric.label}
-                  </span>
-                  <span className="radar-metric-value">
-                    {metric.value === null
-                      ? RADAR_STATUS_LABELS[metric.tone]
-                      : formatMetricValue(metric.value)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+                    {dispatcher.name}
+                  </h4>
+                  <dl className="radar-pairs">
+                    <div>
+                      <dt>Last schedule</dt>
+                      <dd>{dispatcher.lastScheduleDate || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Last pub/sub</dt>
+                      <dd>{dispatcher.lastPubSubDate || '—'}</dd>
+                    </div>
+                  </dl>
+                  {dispatcher.queues.length > 0 ? (
+                    <DepthRows rows={dispatcher.queues} nameHeading="Queue" />
+                  ) : (
+                    <p className="radar-empty">No queues reported</p>
+                  )}
+                </section>
+              ))
+            ) : (
+              <p className="radar-empty radar-empty--workspace">
+                {hasUsableSnapshot ? 'No dispatcher data reported' : 'Radar snapshot unavailable'}
+              </p>
+            )}
+          </div>
+        </section>
       </div>
-
-      {currentTime && <p className="radar-updated">Dashboard clock: {currentTime}</p>}
     </div>
   );
 };

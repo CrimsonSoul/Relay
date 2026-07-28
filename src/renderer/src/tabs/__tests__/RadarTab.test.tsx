@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RadarSnapshot } from '@shared/ipc';
 import { RadarTab } from '../RadarTab';
@@ -98,6 +98,34 @@ describe('RadarTab', () => {
     expect(overall).toHaveTextContent('Warning');
   });
 
+  it('places the health rail before dispatcher lanes in DOM order', async () => {
+    const { container } = render(<RadarTab />);
+    await screen.findByText('prod01');
+
+    const workspace = container.querySelector('.radar-workspace');
+    expect(workspace?.children[0]).toHaveClass('radar-health-rail');
+    expect(workspace?.children[1]).toHaveClass('radar-dispatcher-lanes');
+  });
+
+  it('marks retained data stale without discarding the last good snapshot', async () => {
+    getRadarSnapshot.mockResolvedValue(
+      snapshotWith({
+        color: 'green',
+        error: 'ECONNREFUSED',
+      }),
+    );
+    const { container } = render(<RadarTab />);
+
+    expect(await screen.findByText('Stale')).toBeInTheDocument();
+    expect(container.querySelector('.radar-overall')).toHaveAttribute('data-radar-tone', 'unknown');
+    expect(screen.getByText('prod01')).toBeInTheDocument();
+    expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
+    expect(screen.getByText(/ECONNREFUSED/)).toHaveTextContent('stale');
+    expect(
+      screen.getByText('Last successful update').nextElementSibling?.querySelector('time'),
+    ).toHaveAttribute('dateTime', '2026-07-28T19:57:00.000Z');
+  });
+
   /** Per-dispatcher tones are independent of the board's overall colour. */
   it('carries each dispatcher’s own tone', async () => {
     getRadarSnapshot.mockResolvedValue(
@@ -140,13 +168,46 @@ describe('RadarTab', () => {
     await waitFor(() => expect(refreshRadar).toHaveBeenCalledOnce());
   });
 
-  it('offers a sign-in when the session has expired', async () => {
-    getRadarSnapshot.mockResolvedValue(snapshotWith({ signInRequired: true }));
+  it('keeps the snapshot visible and prevents repeated refresh while refreshing', async () => {
+    let resolveRefresh: ((snapshot: RadarSnapshot) => void) | null = null;
+    refreshRadar.mockReturnValue(
+      new Promise<RadarSnapshot>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    render(<RadarTab />);
+    await screen.findByText('prod01');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Radar now' }));
+
+    const refreshing = screen.getByRole('button', { name: 'Refresh Radar now' });
+    expect(refreshing).toBeDisabled();
+    expect(refreshing).toHaveTextContent('REFRESHING');
+    expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
+    fireEvent.click(refreshing);
+    expect(refreshRadar).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      resolveRefresh?.(snapshotWith());
+    });
+    await waitFor(() => expect(refreshing).not.toBeDisabled());
+  });
+
+  it('keeps retained data visible while offering sign-in recovery', async () => {
+    getRadarSnapshot.mockResolvedValue(
+      snapshotWith({
+        color: 'green',
+        signInRequired: true,
+      }),
+    );
     render(<RadarTab />);
 
-    const signIn = await screen.findByRole('button', { name: 'Sign in to CW Dashboard' });
-    fireEvent.click(signIn);
+    expect(await screen.findByText('Stale')).toBeInTheDocument();
+    expect(screen.getByText('prod01')).toBeInTheDocument();
+    expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
 
+    const signIn = screen.getByRole('button', { name: 'Sign in to CW Dashboard' });
+    fireEvent.click(signIn);
     await waitFor(() => expect(openRadarSignIn).toHaveBeenCalledOnce());
   });
 
@@ -172,7 +233,18 @@ describe('RadarTab', () => {
     render(<RadarTab />);
 
     expect(await screen.findByText('Unknown')).toBeInTheDocument();
-    expect(screen.getAllByText('—')).toHaveLength(2);
+    const xcenter = screen.getByRole('region', { name: 'XCenter counts' });
+    expect(within(xcenter).getAllByText('—')).toHaveLength(2);
+    expect(screen.getByRole('region', { name: 'PaPA Processor Service' })).toHaveTextContent(
+      'No PaPA data',
+    );
+    expect(screen.getByRole('region', { name: 'Service metrics' })).toHaveTextContent(
+      'No service data',
+    );
+    expect(screen.getByRole('region', { name: 'Dashboard timing' })).toHaveTextContent(
+      'Dashboard clock—',
+    );
+    expect(screen.getByText('Radar snapshot unavailable')).toBeInTheDocument();
   });
 
   it('rebuilds the dispatchers, their queues and the board clock', async () => {
@@ -201,5 +273,37 @@ describe('RadarTab', () => {
 
     const edw = await screen.findByText('EDW Daily Load Date Status');
     expect(edw.closest('li')).toHaveTextContent('Warning');
+  });
+
+  it('pairs every service tone with an accessible status word', async () => {
+    render(<RadarTab />);
+
+    expect(
+      await screen.findByRole('listitem', { name: 'Order API Counts — Healthy: 6,063' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('listitem', { name: 'EDW Daily Load Date Status — Warning' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps a complete long queue name available while allowing visual truncation', async () => {
+    const queueName = 'TRANSACTION.MEMBERSHIPS.RECONCILIATION.EXCEPTION.RETRY.DEAD.LETTER.QUEUE';
+    getRadarSnapshot.mockResolvedValue(
+      snapshotWith({
+        dispatchers: [
+          {
+            name: 'prod01',
+            tone: 'yellow',
+            lastScheduleDate: 'x',
+            lastPubSubDate: 'y',
+            queues: [{ name: queueName, depth: 12534 }],
+          },
+        ],
+      }),
+    );
+    render(<RadarTab />);
+
+    expect(await screen.findByText(queueName)).toHaveAttribute('title', queueName);
+    expect(screen.getByText('12,534')).not.toHaveAttribute('data-radar-tone');
   });
 });
