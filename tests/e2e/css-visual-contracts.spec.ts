@@ -22,6 +22,10 @@ const responsiveCss = readFileSync(
   'utf8',
 );
 const radarCss = readFileSync(join(testDirectory, '../../src/renderer/src/tabs/radar.css'), 'utf8');
+const dynatraceProblemsCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/tabs/dynatrace-problems.css'),
+  'utf8',
+);
 const scrollCss = [
   'components/directory/directory.css',
   'components/oncall/oncall.css',
@@ -990,7 +994,7 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
   }
 });
 
-test('Radar header actions match the established header control height', async () => {
+test('Radar refresh matches the Problems header control and source link shares its height', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
@@ -1000,6 +1004,7 @@ test('Radar header actions match the established header control height', async (
         ${themeCss}
         ${componentsCss}
         ${radarCss}
+        ${dynatraceProblemsCss}
         html, body { margin: 0; }
       </style>
       <div class="radar-tab">
@@ -1016,22 +1021,58 @@ test('Radar header actions match the established header control height', async (
               OPEN ORIGINAL
             </button>
             <button
-              class="tactile-button tactile-button--secondary tactile-button--md radar-header-action"
+              class="radar-refresh"
               type="button"
+              aria-label="Refresh Radar now"
             >
-              REFRESH
+              <svg width="20" height="20" viewBox="0 0 24 24"></svg>
             </button>
           </div>
         </header>
       </div>
+      <div class="dt-problems__sync-meta">
+        <button class="dt-problems__refresh" type="button" aria-label="Reference refresh">
+          <svg width="20" height="20" viewBox="0 0 24 24"></svg>
+        </button>
+      </div>
     `);
 
-    const actions = window.locator('.radar-header-action');
-    await expect(actions).toHaveCount(2);
-    const boxes = await actions.evaluateAll((buttons) =>
-      buttons.map((button) => button.getBoundingClientRect().height),
-    );
-    expect(boxes).toEqual([40, 40]);
+    const openOriginal = window.locator('.radar-header-action');
+    const radarRefresh = window.locator('.radar-refresh');
+    const problemsRefresh = window.locator('.dt-problems__refresh');
+    await expect(openOriginal).toHaveCount(1);
+    await expect(radarRefresh).toHaveCount(1);
+    const [openBox, refreshBox] = await Promise.all([
+      openOriginal.boundingBox(),
+      radarRefresh.boundingBox(),
+    ]);
+    expect([openBox?.height, refreshBox?.width, refreshBox?.height]).toEqual([40, 40, 40]);
+
+    const comparableStyle = (locator: typeof radarRefresh) =>
+      locator.evaluate((element) => {
+        const style = globalThis.getComputedStyle(element);
+        return {
+          alignItems: style.alignItems,
+          backgroundColor: style.backgroundColor,
+          borderRadius: style.borderRadius,
+          borderTopColor: style.borderTopColor,
+          display: style.display,
+          justifyContent: style.justifyContent,
+          padding: style.padding,
+        };
+      });
+    const [radarStyle, problemsStyle] = await Promise.all([
+      comparableStyle(radarRefresh),
+      comparableStyle(problemsRefresh),
+    ]);
+    expect(radarStyle).toEqual(problemsStyle);
+
+    expect(
+      await radarRefresh.locator('svg').evaluate((icon) => ({
+        height: icon.getBoundingClientRect().height,
+        width: icon.getBoundingClientRect().width,
+      })),
+    ).toEqual({ height: 20, width: 20 });
   } finally {
     await app.close();
   }

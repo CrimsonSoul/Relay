@@ -91,16 +91,30 @@ export const RadarTab: React.FC = () => {
           >
             OPEN ORIGINAL
           </TactileButton>
-          <TactileButton
-            variant="secondary"
-            className="radar-header-action"
+          <button
+            type="button"
+            className="radar-refresh"
             onClick={refresh}
             disabled={refreshing}
-            title="Refresh now"
             aria-label="Refresh Radar now"
           >
-            {refreshing ? 'REFRESHING' : 'REFRESH'}
-          </TactileButton>
+            <svg
+              className={refreshing ? 'radar-refresh-icon--spinning' : ''}
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+            </svg>
+          </button>
         </div>
       </header>
 

@@ -183,7 +183,9 @@ describe('RadarTab', () => {
     await screen.findByText('Healthy');
 
     const refreshButton = screen.getByRole('button', { name: 'Refresh Radar now' });
-    expect(refreshButton).toHaveClass('radar-header-action');
+    expect(refreshButton).toHaveClass('radar-refresh');
+    expect(refreshButton).not.toHaveClass('tactile-button');
+    expect(refreshButton.querySelector('svg')).not.toBeNull();
     fireEvent.click(refreshButton);
 
     await waitFor(() => expect(refreshRadar).toHaveBeenCalledOnce());
@@ -203,7 +205,7 @@ describe('RadarTab', () => {
 
     const refreshing = screen.getByRole('button', { name: 'Refresh Radar now' });
     expect(refreshing).toBeDisabled();
-    expect(refreshing).toHaveTextContent('REFRESHING');
+    expect(refreshing.querySelector('svg')).toHaveClass('radar-refresh-icon--spinning');
     expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
     fireEvent.click(refreshing);
     expect(refreshRadar).toHaveBeenCalledOnce();
