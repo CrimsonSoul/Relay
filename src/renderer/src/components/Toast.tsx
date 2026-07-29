@@ -11,7 +11,8 @@ import React, {
 import { createClientId } from '../utils/clientId';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
-export type ToastDelivery = 'routine' | 'cloud-degradation' | 'cloud-outage' | 'dynatrace-problem';
+export type ToastDelivery =
+  'routine' | 'cloud-degradation' | 'cloud-outage' | 'radar-critical' | 'dynatrace-problem';
 
 export type ToastOptions = {
   title?: string;
@@ -54,6 +55,8 @@ function isOperationalToast(toast: ToastMessage): boolean {
 function deliveryPriority(delivery: ToastDelivery): number {
   switch (delivery) {
     case 'dynatrace-problem':
+      return 4;
+    case 'radar-critical':
       return 3;
     case 'cloud-outage':
       return 2;
@@ -119,6 +122,7 @@ function findNextOperationalId(toasts: ToastMessage[]): string | null {
   const queued = toasts.filter((toast) => toast.state === 'queued');
   return (
     queued.find((toast) => deliveryOf(toast) === 'dynatrace-problem')?.id ??
+    queued.find((toast) => deliveryOf(toast) === 'radar-critical')?.id ??
     queued.find((toast) => deliveryOf(toast) === 'cloud-outage')?.id ??
     queued.find((toast) => deliveryOf(toast) === 'cloud-degradation')?.id ??
     null

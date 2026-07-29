@@ -61,6 +61,17 @@ const OperationalToastTrigger: React.FC<{ onAction?: () => void }> = ({ onAction
       </button>
       <button
         onClick={() =>
+          showToast('Prod01 is red on Dispatcher Radar.', 'error', {
+            title: 'Radar queue critical',
+            durationMs: 8_000,
+            delivery: 'radar-critical',
+          })
+        }
+      >
+        Radar
+      </button>
+      <button
+        onClick={() =>
           showToast('Dynatrace one', 'error', {
             title: 'New Dynatrace problem',
             durationMs: 8_000,
@@ -296,7 +307,7 @@ describe('ToastProvider', () => {
     expect(screen.queryByText('Azure degradation')).not.toBeInTheDocument();
   });
 
-  it('orders Dynatrace, outage, then degradation regardless of arrival order', async () => {
+  it('orders Dynatrace, Radar, outage, then degradation regardless of arrival order', async () => {
     render(
       <ToastProvider>
         <OperationalToastTrigger />
@@ -304,18 +315,44 @@ describe('ToastProvider', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Degradation' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Radar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
 
     expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+    expect(screen.queryByText('Prod01 is red on Dispatcher Radar.')).not.toBeInTheDocument();
     expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
     expect(screen.queryByText('Azure degradation')).not.toBeInTheDocument();
 
+    await act(async () => vi.advanceTimersByTime(8_160));
+    expect(
+      screen.getByText('Prod01 is red on Dispatcher Radar.', { selector: '.toast-message' }),
+    ).toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(8_160));
     expect(screen.getByText('AWS outage', { selector: '.toast-message' })).toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(4_160));
     expect(
       screen.getByText('Azure degradation', { selector: '.toast-message' }),
     ).toBeInTheDocument();
+  });
+
+  it('lets Radar preempt cloud while remaining queued behind Dynatrace', () => {
+    render(
+      <ToastProvider>
+        <OperationalToastTrigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Radar' }));
+
+    expect(
+      screen.getByText('Prod01 is red on Dispatcher Radar.', { selector: '.toast-message' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('AWS outage')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dynatrace one' }));
+
+    expect(screen.getByText('Dynatrace one', { selector: '.toast-message' })).toBeInTheDocument();
+    expect(screen.queryByText('Prod01 is red on Dispatcher Radar.')).not.toBeInTheDocument();
   });
 
   it('does not let the interrupted cloud timer remove a queued outage', async () => {
