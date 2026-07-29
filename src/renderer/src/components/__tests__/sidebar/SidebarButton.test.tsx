@@ -124,8 +124,18 @@ describe('SidebarButton', () => {
 
     expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
     expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
-    expect(statusStyles).not.toContain('height: auto');
-    expect(statusStyles).not.toContain('min-height:');
+    expect(statusStyles).not.toContain('display: grid');
+    expect(statusStyles).not.toContain('grid-template');
+    expect(sidebarCss).not.toContain('.sidebar-button-detail');
+  });
+
+  it('centers the status pip on the standard button axis', () => {
+    const dotStyles = cssBlockFor('.sidebar-button-status-dot');
+
+    expect(dotStyles).toContain('top: 50%');
+    expect(dotStyles).toContain('transform: translateY(-50%)');
+    expect(dotStyles).toContain('width: 6px');
+    expect(dotStyles).toContain('height: 6px');
   });
 
   it('does not give status buttons a health wash or health rail', () => {
@@ -155,29 +165,13 @@ describe('SidebarButton status', () => {
     expect(button).not.toHaveClass('sidebar-button--status');
   });
 
-  it('shows the figures alongside the icon and label', () => {
-    render(
-      <SidebarButton
-        {...baseProps}
-        status={{ tone: 'green', announcement: 'Healthy', detail: '2,000 · 1,807' }}
-      />,
-    );
-
-    expect(
-      screen.getByText('2,000 · 1,807', { selector: '.sidebar-button-detail--full' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Radar')).toBeInTheDocument();
-  });
-
-  it('renders one semantic dot and both responsive detail strings', () => {
+  it('renders one semantic dot without a persistent detail row', () => {
     const { container } = render(
       <SidebarButton
         {...baseProps}
         status={{
           tone: 'yellow',
           announcement: 'Warning. XCenter OK 2,000, Pending 1,807',
-          detail: '2k · 1.8k',
-          compactDetail: '2k·1.8k',
         }}
       />,
     );
@@ -186,8 +180,8 @@ describe('SidebarButton status', () => {
     expect(dots).toHaveLength(1);
     expect(dots[0]).toHaveAttribute('data-status-tone', 'yellow');
     expect(dots[0]).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByText('2k · 1.8k')).toHaveClass('sidebar-button-detail--full');
-    expect(screen.getByText('2k·1.8k')).toHaveClass('sidebar-button-detail--compact');
+    expect(container.querySelector('.sidebar-button-detail')).toBeNull();
+    expect(screen.getByText('Radar')).toBeInTheDocument();
   });
 
   it('renders no semantic dot for an ordinary navigation button', () => {
@@ -195,19 +189,13 @@ describe('SidebarButton status', () => {
     expect(container.querySelector('.sidebar-button-status-dot')).toBeNull();
   });
 
-  /**
-   * `aria-label` replaces a button's inner text for assistive tech, so figures
-   * rendered in `detail` are only reachable if `announcement` repeats them.
-   * Without this the button reads as a bare "Radar".
-   */
-  it('folds the status into the accessible name so the figures are not lost', () => {
+  it('folds the status and exact figures into the accessible name', () => {
     render(
       <SidebarButton
         {...baseProps}
         status={{
           tone: 'red',
           announcement: 'Critical. XCenter OK 5, Pending 9,000',
-          detail: '5 · 9,000',
         }}
       />,
     );
@@ -225,21 +213,9 @@ describe('SidebarButton status', () => {
     expect(button).toHaveClass('sidebar-button--status');
   });
 
-  it('omits the figures line when the status carries no detail', () => {
-    const { container } = render(
-      <SidebarButton {...baseProps} status={{ tone: 'unknown', announcement: 'Unknown' }} />,
-    );
-
-    expect(container.querySelector('.sidebar-button-detail')).toBeNull();
-  });
-
   it('still reports the pressed state while showing a status', () => {
     render(
-      <SidebarButton
-        {...baseProps}
-        isActive
-        status={{ tone: 'green', announcement: 'Healthy', detail: '1 · 2' }}
-      />,
+      <SidebarButton {...baseProps} isActive status={{ tone: 'green', announcement: 'Healthy' }} />,
     );
 
     expect(screen.getByRole('button', { name: 'Radar — Healthy' })).toHaveAttribute(

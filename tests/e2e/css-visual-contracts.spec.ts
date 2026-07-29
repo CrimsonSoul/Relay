@@ -830,48 +830,81 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
         ${responsiveCss}
         html, body { margin: 0; }
       </style>
-      <button
-        class="sidebar-button sidebar-button--status sidebar-button--active"
-        data-status-tone="yellow"
-      >
-        <span class="sidebar-button-icon"><svg></svg></span>
-        <span class="sidebar-button-label">Radar</span>
-        <span
-          class="sidebar-button-status-dot"
+      <div>
+        <button class="sidebar-button" data-kind="ordinary">
+          <span class="sidebar-button-icon"><svg></svg></span>
+          <span class="sidebar-button-label">Problems</span>
+        </button>
+        <button
+          class="sidebar-button sidebar-button--status sidebar-button--active"
+          data-kind="radar"
           data-status-tone="yellow"
-          aria-hidden="true"
-        ></span>
-        <span class="sidebar-button-detail" aria-hidden="true">
-          <span class="sidebar-button-detail--full">2k · 1.8k</span>
-          <span class="sidebar-button-detail--compact">2k·1.8k</span>
-        </span>
-      </button>
+        >
+          <span class="sidebar-button-icon"><svg></svg></span>
+          <span class="sidebar-button-label">Radar</span>
+          <span
+            class="sidebar-button-status-dot"
+            data-status-tone="yellow"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </div>
     `);
 
-    const button = window.locator('.sidebar-button');
-    const fullDetail = window.locator('.sidebar-button-detail--full');
-    const compactDetail = window.locator('.sidebar-button-detail--compact');
+    const ordinaryButton = window.locator('[data-kind="ordinary"]');
+    const radarButton = window.locator('[data-kind="radar"]');
+    const ordinaryIcon = ordinaryButton.locator('.sidebar-button-icon');
+    const radarIcon = radarButton.locator('.sidebar-button-icon');
+    const ordinaryLabel = ordinaryButton.locator('.sidebar-button-label');
+    const radarLabel = radarButton.locator('.sidebar-button-label');
+    const pip = radarButton.locator('.sidebar-button-status-dot');
+
+    const relativePosition = async (button: typeof ordinaryButton, child: typeof ordinaryIcon) => {
+      const buttonBox = await button.boundingBox();
+      const childBox = await child.boundingBox();
+      return {
+        x: (childBox?.x ?? 0) - (buttonBox?.x ?? 0),
+        y: (childBox?.y ?? 0) - (buttonBox?.y ?? 0),
+      };
+    };
+
+    const expectMatchingButtons = async (width: number, height: number) => {
+      const ordinaryBox = await ordinaryButton.boundingBox();
+      const radarBox = await radarButton.boundingBox();
+      expect(ordinaryBox && { width: ordinaryBox.width, height: ordinaryBox.height }).toEqual({
+        width,
+        height,
+      });
+      expect(radarBox && { width: radarBox.width, height: radarBox.height }).toEqual({
+        width,
+        height,
+      });
+      expect(await relativePosition(radarButton, radarIcon)).toEqual(
+        await relativePosition(ordinaryButton, ordinaryIcon),
+      );
+
+      const pipBox = await pip.boundingBox();
+      expect(pipBox).not.toBeNull();
+      expect((pipBox?.x ?? 0) + (pipBox?.width ?? 0)).toBeLessThanOrEqual(
+        (radarBox?.x ?? 0) + (radarBox?.width ?? 0),
+      );
+      expect(
+        Math.abs((pipBox?.y ?? 0) + (pipBox?.height ?? 0) / 2 - ((radarBox?.y ?? 0) + height / 2)),
+      ).toBeLessThanOrEqual(1);
+    };
 
     await window.setViewportSize({ width: 1440, height: 900 });
-    await expect
-      .poll(async () => {
-        const box = await button.boundingBox();
-        return box && { width: box.width, height: box.height };
-      })
-      .toEqual({ width: 120, height: 56 });
-    await expect(fullDetail).toBeVisible();
-    await expect(compactDetail).toBeHidden();
+    await expectMatchingButtons(120, 56);
+    expect(await relativePosition(radarButton, radarLabel)).toEqual(
+      await relativePosition(ordinaryButton, ordinaryLabel),
+    );
+    await expect(window.locator('.sidebar-button-detail')).toHaveCount(0);
 
     await window.setViewportSize({ width: 1100, height: 900 });
-    await expect
-      .poll(async () => {
-        const box = await button.boundingBox();
-        return box && { width: box.width, height: box.height };
-      })
-      .toEqual({ width: 56, height: 48 });
-    await expect(fullDetail).toBeHidden();
-    await expect(compactDetail).toBeVisible();
-    await expect(window.locator('.sidebar-button-status-dot')).toHaveCount(1);
+    await expectMatchingButtons(56, 48);
+    await expect(ordinaryLabel).toBeHidden();
+    await expect(radarLabel).toBeHidden();
+    await expect(pip).toHaveCount(1);
   } finally {
     await app.close();
   }

@@ -6,15 +6,13 @@ import { Tooltip } from '../Tooltip';
  * report its state without the user opening it.
  *
  * `announcement` is not optional decoration: `aria-label` replaces a button's
- * inner text for assistive tech, so anything shown in `detail` has to be spoken
- * here too or it is invisible to a screen reader. It also means the state never
- * depends on distinguishing the tint colours.
+ * inner text for assistive tech, so the announcement carries the full state
+ * description and ensures the signal never depends on distinguishing tint
+ * colours.
  */
 export type SidebarButtonStatus = {
   tone: string;
   announcement: string;
-  detail?: string;
-  compactDetail?: string;
 };
 
 interface SidebarButtonProps {
@@ -51,14 +49,6 @@ export const SidebarButton: React.FC<SidebarButtonProps> = React.memo(
               data-status-tone={status.tone}
               aria-hidden="true"
             />
-          )}
-          {status?.detail && (
-            <span className="sidebar-button-detail" aria-hidden="true">
-              <span className="sidebar-button-detail--full">{status.detail}</span>
-              <span className="sidebar-button-detail--compact">
-                {status.compactDetail ?? status.detail}
-              </span>
-            </span>
           )}
 
           {isActive && <div className="sidebar-button-indicator" />}

@@ -401,40 +401,19 @@
    Status-reporting nav buttons (Dispatcher Radar)
 
    The active Relay rail keeps its normal meaning. Health is a compact dot only,
-   while exact state and counts remain in the accessible name and tooltip.
+   while exact state and counts remain in the accessible name and tooltip. The
+   button otherwise keeps the same layout as every primary destination.
    ============================================================================ */
-
-.sidebar-button--status {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  grid-template-areas:
-    'icon label'
-    'icon detail';
-  align-content: center;
-  column-gap: 8px;
-  row-gap: 2px;
-}
-
-.sidebar-button--status .sidebar-button-icon {
-  grid-area: icon;
-  align-self: center;
-}
-
-.sidebar-button--status .sidebar-button-label {
-  grid-area: label;
-  min-width: 0;
-  padding-right: 12px;
-}
 
 .sidebar-button-status-dot {
   position: absolute;
-  top: 11px;
+  top: 50%;
   right: 10px;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--color-text-quaternary);
+  transform: translateY(-50%);
   pointer-events: none;
 }
 
@@ -452,23 +431,4 @@
 
 .sidebar-button-status-dot[data-status-tone='magenta'] {
   background: #b200ff;
-}
-
-.sidebar-button-detail {
-  grid-area: detail;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-button-detail--compact {
-  display: none;
 }

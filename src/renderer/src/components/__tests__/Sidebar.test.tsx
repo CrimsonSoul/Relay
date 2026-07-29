@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, afterEach } from 'vitest';
-import { Sidebar, formatRadarNavigationCount } from '../Sidebar';
+import { Sidebar } from '../Sidebar';
 import type { RadarSnapshot } from '@shared/ipc';
 
 // Mock SidebarButton to a simple button that captures props
@@ -64,18 +64,6 @@ describe('Sidebar', () => {
 
   const navLabelsOf = (container: HTMLElement) =>
     [...container.querySelectorAll('.sidebar-nav button')].map((button) => button.textContent);
-
-  it.each([
-    [null, '—'],
-    [0, '0'],
-    [999, '999'],
-    [1000, '1k'],
-    [1807, '1.8k'],
-    [2000, '2k'],
-    [9999, '10k'],
-  ] as const)('formats Radar navigation count %s as %s', (value, expected) => {
-    expect(formatRadarNavigationCount(value)).toBe(expected);
-  });
 
   const stubRuntime = (kind: 'electron' | 'web', radar?: Partial<RadarSnapshot>) => {
     const snapshot: RadarSnapshot = {
@@ -146,7 +134,7 @@ describe('Sidebar', () => {
    * tab. `aria-label` replaces a button's inner text, so the figures have to be
    * spoken there or a screen reader gets only the word "Radar".
    */
-  it('hands the Radar button its live tone and XCenter counts', async () => {
+  it('hands the Radar button its live tone and exact XCenter tooltip text', async () => {
     stubRuntime('electron');
     render(<Sidebar {...defaultProps} />);
 
@@ -157,8 +145,8 @@ describe('Sidebar', () => {
         'data-status-announcement',
         'Healthy. XCenter OK 2,000, Pending 1,807',
       );
-      expect(radar).toHaveAttribute('data-status-detail', '2k · 1.8k');
-      expect(radar).toHaveAttribute('data-status-compact-detail', '2k·1.8k');
+      expect(radar).not.toHaveAttribute('data-status-detail');
+      expect(radar).not.toHaveAttribute('data-status-compact-detail');
     });
   });
 
@@ -181,13 +169,22 @@ describe('Sidebar', () => {
         'data-status-announcement',
         'Unknown',
       );
-      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
-        'data-status-detail',
-        '— · —',
-      );
-      expect(screen.getByTestId('sidebar-btn-radar')).toHaveAttribute(
-        'data-status-compact-detail',
-        '—·—',
+    });
+  });
+
+  it.each([
+    ['refresh error', { error: 'ECONNREFUSED' }],
+    ['expired sign-in', { signInRequired: true }],
+  ] as const)('uses a neutral stale status for %s', async (_label, override) => {
+    stubRuntime('electron', override);
+    render(<Sidebar {...defaultProps} />);
+
+    await vi.waitFor(() => {
+      const radar = screen.getByTestId('sidebar-btn-radar');
+      expect(radar).toHaveAttribute('data-status-tone', 'unknown');
+      expect(radar).toHaveAttribute(
+        'data-status-announcement',
+        'Stale. XCenter OK 2,000, Pending 1,807',
       );
     });
   });
