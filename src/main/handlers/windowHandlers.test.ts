@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain, BrowserWindow, clipboard, nativeImage, shell, dialog } from 'electron';
 import { execFile } from 'node:child_process';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { RADAR_URL } from '@shared/radar';
 import { setupWindowHandlers, setupWindowListeners } from './windowHandlers';
 
 const mockNativeImage = {
@@ -231,6 +232,13 @@ describe('windowHandlers', () => {
       );
 
       expect(shell.openExternal).toHaveBeenCalledWith('https://status.openai.com/incidents/1');
+      expect(result).toBe(true);
+    });
+
+    it('opens the fixed Dispatcher Radar intranet URL and returns true', async () => {
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, RADAR_URL);
+
+      expect(shell.openExternal).toHaveBeenCalledWith(RADAR_URL);
       expect(result).toBe(true);
     });
 

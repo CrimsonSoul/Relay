@@ -84,6 +84,7 @@ export const RadarTab: React.FC = () => {
           </span>
           <TactileButton
             variant="secondary"
+            className="radar-header-action"
             onClick={() => void globalThis.api?.openExternal(RADAR_URL)}
             title="Open original Dispatcher Radar page"
             aria-label="Open original Dispatcher Radar page"
@@ -92,6 +93,7 @@ export const RadarTab: React.FC = () => {
           </TactileButton>
           <TactileButton
             variant="secondary"
+            className="radar-header-action"
             onClick={refresh}
             disabled={refreshing}
             title="Refresh now"

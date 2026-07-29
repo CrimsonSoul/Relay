@@ -5,6 +5,7 @@ import { basename, extname, parse, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS, MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
 import { isDynatraceHost } from '@shared/dynatrace';
+import { RADAR_URL } from '@shared/radar';
 import { getErrorMessage } from '@shared/types';
 import { describeUrlForLog } from '@shared/urlSecurity';
 import { loggers } from '../logger';
@@ -170,6 +171,7 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'x.com',
   'twitter.com',
   'downdetector.com',
+  new URL(RADAR_URL).hostname.toLowerCase(),
 ]);
 const MAX_EXTERNAL_URL_LENGTH = 2_081;
 const MAX_TEAMS_SUBJECT_LENGTH = 200;

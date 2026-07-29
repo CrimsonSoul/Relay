@@ -170,7 +170,7 @@ describe('RadarTab', () => {
     });
     expect(button).toHaveTextContent('OPEN ORIGINAL');
     expect(button).toHaveAttribute('title', 'Open original Dispatcher Radar page');
-    expect(button).toHaveClass('tactile-button--secondary');
+    expect(button).toHaveClass('tactile-button--secondary', 'radar-header-action');
 
     fireEvent.click(button);
 
@@ -182,7 +182,9 @@ describe('RadarTab', () => {
     render(<RadarTab />);
     await screen.findByText('Healthy');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh Radar now' }));
+    const refreshButton = screen.getByRole('button', { name: 'Refresh Radar now' });
+    expect(refreshButton).toHaveClass('radar-header-action');
+    fireEvent.click(refreshButton);
 
     await waitFor(() => expect(refreshRadar).toHaveBeenCalledOnce());
   });

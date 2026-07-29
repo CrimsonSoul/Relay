@@ -989,3 +989,50 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
     await app.close();
   }
 });
+
+test('Radar header actions match the established header control height', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${componentsCss}
+        ${radarCss}
+        html, body { margin: 0; }
+      </style>
+      <div class="radar-tab">
+        <header class="radar-tab-header">
+          <div>
+            <div class="radar-tab-context">RADAR</div>
+            <h2 class="radar-tab-title">Dispatcher Radar</h2>
+          </div>
+          <div class="radar-tab-actions">
+            <button
+              class="tactile-button tactile-button--secondary tactile-button--md radar-header-action"
+              type="button"
+            >
+              OPEN ORIGINAL
+            </button>
+            <button
+              class="tactile-button tactile-button--secondary tactile-button--md radar-header-action"
+              type="button"
+            >
+              REFRESH
+            </button>
+          </div>
+        </header>
+      </div>
+    `);
+
+    const actions = window.locator('.radar-header-action');
+    await expect(actions).toHaveCount(2);
+    const boxes = await actions.evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().height),
+    );
+    expect(boxes).toEqual([40, 40]);
+  } finally {
+    await app.close();
+  }
+});

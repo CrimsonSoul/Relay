@@ -48,6 +48,12 @@
   flex-wrap: wrap;
 }
 
+.radar-header-action.tactile-button {
+  height: 40px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-xs);
+}
+
 /* ---- Status tones -------------------------------------------------------- */
 
 /* Every tone is mirrored by a text label in the markup, so the colour is
