@@ -1,5 +1,6 @@
 import React from 'react';
 import { RADAR_STATUS_LABELS, type RadarRow } from '@shared/ipc';
+import { RADAR_URL } from '@shared/radar';
 import { TactileButton } from '../components/TactileButton';
 import { useRadarSnapshot } from '../hooks/useRadarSnapshot';
 import './radar.css';
@@ -81,6 +82,14 @@ export const RadarTab: React.FC = () => {
             <span className="radar-overall-dot" aria-hidden="true" />
             {overallLabel}
           </span>
+          <TactileButton
+            variant="secondary"
+            onClick={() => void globalThis.api?.openExternal(RADAR_URL)}
+            title="Open original Dispatcher Radar page"
+            aria-label="Open original Dispatcher Radar page"
+          >
+            OPEN ORIGINAL
+          </TactileButton>
           <TactileButton
             variant="secondary"
             onClick={refresh}

@@ -1,4 +1,5 @@
 import { session, type Session } from 'electron';
+import { RADAR_URL } from '@shared/radar';
 import { loggers } from '../../logger';
 import { describeUrlForLog } from '@shared/urlSecurity';
 
@@ -10,8 +11,6 @@ import { describeUrlForLog } from '@shared/urlSecurity';
  * the Dynatrace integration authenticates.
  */
 export const RADAR_SESSION_PARTITION = 'persist:relay-radar';
-
-export const RADAR_URL = 'https://cw-intra-web/CWDashboard/Home/Radar';
 
 /** Anything the sign-in window is allowed to navigate to while completing SSO. */
 export function isAllowedRadarUrl(url: string): boolean {

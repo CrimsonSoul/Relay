@@ -1,7 +1,8 @@
 import { BrowserWindow } from 'electron';
+import { RADAR_URL } from '@shared/radar';
 import { loggers } from '../../logger';
 import { describeUrlForLog } from '@shared/urlSecurity';
-import { isAllowedRadarUrl, RADAR_SESSION_PARTITION, RADAR_URL } from './radarSession';
+import { isAllowedRadarUrl, RADAR_SESSION_PARTITION } from './radarSession';
 
 let signInWindow: BrowserWindow | null = null;
 

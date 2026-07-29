@@ -43,12 +43,14 @@ let listener: ((snapshot: RadarSnapshot) => void) | null = null;
 const getRadarSnapshot = vi.fn(async () => snapshotWith());
 const refreshRadar = vi.fn(async () => snapshotWith());
 const openRadarSignIn = vi.fn(async () => true);
+const openExternal = vi.fn(async () => true);
 
 beforeEach(() => {
   listener = null;
   getRadarSnapshot.mockClear().mockResolvedValue(snapshotWith());
   refreshRadar.mockClear().mockResolvedValue(snapshotWith());
   openRadarSignIn.mockClear();
+  openExternal.mockClear();
 
   Object.defineProperty(globalThis, 'api', {
     configurable: true,
@@ -57,6 +59,7 @@ beforeEach(() => {
       getRadarSnapshot,
       refreshRadar,
       openRadarSignIn,
+      openExternal,
       onRadarSnapshot: (callback: (snapshot: RadarSnapshot) => void) => {
         listener = callback;
         return () => {
@@ -157,6 +160,22 @@ describe('RadarTab', () => {
     expect(await screen.findByText('Critical')).toBeInTheDocument();
     expect(screen.getByText('9,000')).toBeInTheDocument();
     expect(getRadarSnapshot).toHaveBeenCalledOnce();
+  });
+
+  it('opens the canonical original Radar page through the secure external action', async () => {
+    render(<RadarTab />);
+
+    const button = await screen.findByRole('button', {
+      name: 'Open original Dispatcher Radar page',
+    });
+    expect(button).toHaveTextContent('OPEN ORIGINAL');
+    expect(button).toHaveAttribute('title', 'Open original Dispatcher Radar page');
+    expect(button).toHaveClass('tactile-button--secondary');
+
+    fireEvent.click(button);
+
+    expect(openExternal).toHaveBeenCalledOnce();
+    expect(openExternal).toHaveBeenCalledWith('https://cw-intra-web/CWDashboard/Home/Radar');
   });
 
   it('refreshes on demand', async () => {

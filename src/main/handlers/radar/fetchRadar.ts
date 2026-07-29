@@ -1,7 +1,8 @@
 import type { Session } from 'electron';
 import type { RadarSnapshot } from '@shared/ipc';
+import { RADAR_URL } from '@shared/radar';
 import { looksLikeSignInPage, parseBoard, parseXCenterCounts } from './parseRadar';
-import { getRadarSession, RADAR_URL } from './radarSession';
+import { getRadarSession } from './radarSession';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
