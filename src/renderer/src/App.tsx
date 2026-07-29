@@ -20,6 +20,7 @@ import { TabFallback } from './components/TabFallback';
 import { HeaderSearch } from './components/HeaderSearch';
 import { AlertReminderManager } from './components/AlertReminderManager';
 import { DynatraceProblemNotificationManager } from './components/DynatraceProblemNotificationManager';
+import { RadarQueueNotificationManager } from './components/RadarQueueNotificationManager';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
@@ -164,6 +165,7 @@ export function MainApp({
 
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
+  const isDesktop = globalThis.api?.runtime?.kind === 'electron';
   const popoutRoute = searchParams.get('popout');
   const isDynatracePopout = popoutRoute === 'dynatrace';
   const dynatracePopoutName = searchParams.get('name')?.trim() || '';
@@ -221,6 +223,7 @@ export function MainApp({
   } = useAppCloudStatus(showToast, handleOpenCloudStatusProvider);
   const [knowledgeDestination, setKnowledgeDestination] = useState<KnowledgeDestination>('home');
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
+  const handleOpenRadar = useCallback(() => setActiveTab('Radar'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
   const handleTabRequest = useCallback(
     (requestedTab: string) => {
@@ -564,6 +567,12 @@ export function MainApp({
         <ErrorBoundary fallback={null}>
           <DynatraceProblemNotificationManager onOpenProblems={handleOpenDynatraceProblems} />
         </ErrorBoundary>
+
+        {!isPopout && isDesktop && (
+          <ErrorBoundary fallback={null}>
+            <RadarQueueNotificationManager onOpenRadar={handleOpenRadar} />
+          </ErrorBoundary>
+        )}
       </div>
     </SearchProvider>
   );

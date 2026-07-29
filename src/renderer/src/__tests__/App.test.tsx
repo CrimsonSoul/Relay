@@ -14,7 +14,7 @@ import {
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
   type KnowledgeOpenRequest,
 } from '../features/knowledge/knowledgeNavigation';
-import { WEB_RUNTIME } from '@shared/runtime';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import type { BridgeAPI, CloudStatusProvider } from '@shared/ipc';
 
 const mockIsConfigured = vi.fn();
@@ -288,6 +288,14 @@ vi.mock('../components/DynatraceProblemNotificationManager', () => ({
   ),
 }));
 
+vi.mock('../components/RadarQueueNotificationManager', () => ({
+  RadarQueueNotificationManager: ({ onOpenRadar }: { onOpenRadar: () => void }) => (
+    <button data-testid="radar-queue-notification-manager" onClick={onOpenRadar}>
+      Open Radar notification
+    </button>
+  ),
+}));
+
 // Lazy loaded tabs
 vi.mock('../tabs/AssemblerTab', () => ({
   AssemblerTab: () => <div data-testid="assembler-tab" />,
@@ -523,6 +531,46 @@ describe('MainApp', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('world-clock')).toBeInTheDocument();
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+  });
+
+  it('mounts Radar queue notifications in the desktop main window and opens Radar', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp();
+      fireEvent.click(screen.getByTestId('radar-queue-notification-manager'));
+
+      expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
+  it('does not mount Radar queue notifications in a desktop popout', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp('?popout=dynatrace');
+
+      expect(screen.queryByTestId('radar-queue-notification-manager')).not.toBeInTheDocument();
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
+  it('does not mount Radar queue notifications in Relay Web', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: WEB_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp();
+
+      expect(screen.queryByTestId('radar-queue-notification-manager')).not.toBeInTheDocument();
+    } finally {
+      globalThis.api = previousApi;
+    }
   });
 
   it('renders the active tab breadcrumb', () => {
