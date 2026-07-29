@@ -183,7 +183,7 @@ toast context and Radar snapshot hook.
     nextTone: RadarStatusColor,
   ): nextTone is RadarAlertTone {
     if (previousTone === undefined) return false;
-    if (nextTone === 'red') return previousTone !== 'red';
+    if (nextTone === 'red') return previousTone === 'green' || previousTone === 'yellow';
     return nextTone === 'yellow' && previousTone === 'green';
   }
   ```
