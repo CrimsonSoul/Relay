@@ -14,7 +14,7 @@ Increase the Radar status dot from 6px to 10px. Keep it vertically centered at
 the right edge of the standard sidebar button:
 
 - expanded sidebar: 120px by 56px button, 10px right inset;
-- collapsed sidebar: 56px by 48px button, 7px right inset.
+- collapsed sidebar: 56px by 48px button, 5px right inset.
 
 The status dot continues to use the existing semantic Radar colors and remains
 decorative because the button's accessible name and tooltip contain the

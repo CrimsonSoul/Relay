@@ -20,7 +20,7 @@ Electron, Relay's existing bridge API and TactileButton component.
 
 - The Radar status dot is exactly 10px by 10px.
 - The expanded Radar tab remains 120px by 56px with a 10px right dot inset.
-- The collapsed Radar tab remains 56px by 48px with a 7px right dot inset.
+- The collapsed Radar tab remains 56px by 48px with a 5px right dot inset.
 - The dot remains vertically centered, contained, and clear of the collapsed
   icon.
 - The button label is `OPEN ORIGINAL`.
@@ -217,7 +217,7 @@ Electron, Relay's existing bridge API and TactileButton component.
 **Interfaces:**
 
 - Consumes: the existing `.sidebar-button-status-dot` element and compact
-  `.sidebar-button-status-dot { right: 7px; }` responsive override.
+  `.sidebar-button-status-dot { right: 5px; }` responsive override.
 - Produces: a 10px semantic status dot with unchanged positioning and navigation
   button dimensions.
 
@@ -273,8 +273,9 @@ Electron, Relay's existing bridge API and TactileButton component.
   }
   ```
 
-  Keep `top: 50%`, `right: 10px`, `transform: translateY(-50%)`, and the compact
-  `right: 7px` override unchanged.
+  Keep `top: 50%`, `right: 10px`, and `transform: translateY(-50%)`; set the
+  compact override to `right: 5px` so the 10px dot clears the icon after the
+  active border shifts the collapsed content center.
 
 - [ ] **Step 4: Run both focused tests and verify the GREEN state**
 

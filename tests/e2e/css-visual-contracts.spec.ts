@@ -885,6 +885,10 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
 
       const pipBox = await pip.boundingBox();
       expect(pipBox).not.toBeNull();
+      expect(pipBox && { width: pipBox.width, height: pipBox.height }).toEqual({
+        width: 10,
+        height: 10,
+      });
       expect((pipBox?.x ?? 0) + (pipBox?.width ?? 0)).toBeLessThanOrEqual(
         (radarBox?.x ?? 0) + (radarBox?.width ?? 0),
       );
@@ -905,6 +909,11 @@ test('Radar status keeps the standard sidebar footprint in full and compact shel
     await expect(ordinaryLabel).toBeHidden();
     await expect(radarLabel).toBeHidden();
     await expect(pip).toHaveCount(1);
+    const compactIconBox = await radarIcon.boundingBox();
+    const compactPipBox = await pip.boundingBox();
+    expect(
+      (compactPipBox?.x ?? 0) - ((compactIconBox?.x ?? 0) + (compactIconBox?.width ?? 0)),
+    ).toBeGreaterThanOrEqual(1);
   } finally {
     await app.close();
   }

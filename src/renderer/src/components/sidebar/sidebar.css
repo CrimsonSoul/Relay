@@ -409,8 +409,8 @@
   position: absolute;
   top: 50%;
   right: 10px;
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--color-text-quaternary);
   transform: translateY(-50%);

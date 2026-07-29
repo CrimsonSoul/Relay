@@ -134,8 +134,8 @@ describe('SidebarButton', () => {
 
     expect(dotStyles).toContain('top: 50%');
     expect(dotStyles).toContain('transform: translateY(-50%)');
-    expect(dotStyles).toContain('width: 6px');
-    expect(dotStyles).toContain('height: 6px');
+    expect(dotStyles).toContain('width: 10px');
+    expect(dotStyles).toContain('height: 10px');
   });
 
   it('does not give status buttons a health wash or health rail', () => {
