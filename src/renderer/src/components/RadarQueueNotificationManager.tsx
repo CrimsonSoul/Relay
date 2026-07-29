@@ -10,6 +10,13 @@ type RadarTarget = {
   label: string;
 };
 
+type RadarAlertTone = Extract<RadarStatusColor, 'yellow' | 'red'>;
+
+type RadarEscalation = {
+  label: string;
+  tone: RadarAlertTone;
+};
+
 const TARGETS: readonly RadarTarget[] = [
   { key: 'prod01', label: 'Prod01' },
   { key: 'prod02', label: 'Prod02' },
@@ -43,6 +50,19 @@ export function formatRadarTargetList(labels: string[]): string {
   return `${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`;
 }
 
+function isRadarEscalation(
+  previousTone: RadarStatusColor | undefined,
+  nextTone: RadarStatusColor,
+): nextTone is RadarAlertTone {
+  if (previousTone === undefined) return false;
+  if (nextTone === 'red') return previousTone === 'green' || previousTone === 'yellow';
+  return nextTone === 'yellow' && previousTone === 'green';
+}
+
+function describeRadarGroup(labels: string[], tone: RadarAlertTone): string {
+  return `${formatRadarTargetList(labels)} ${labels.length === 1 ? 'is' : 'are'} ${tone}`;
+}
+
 function isUsableSnapshot(snapshot: RadarSnapshot): boolean {
   return snapshot.lastUpdated > 0 && !snapshot.signInRequired && !snapshot.error;
 }
@@ -63,26 +83,39 @@ export function RadarQueueNotificationManager({
       return;
     }
 
-    const newlyRed: string[] = [];
+    const escalations: RadarEscalation[] = [];
     for (const target of TARGETS) {
       const nextTone = currentTones.get(target.key);
       if (nextTone === undefined) continue;
 
       const previousTone = previousTonesRef.current.get(target.key);
-      if (nextTone === 'red' && previousTone !== undefined && previousTone !== 'red') {
-        newlyRed.push(target.label);
+      if (isRadarEscalation(previousTone, nextTone)) {
+        escalations.push({ label: target.label, tone: nextTone });
       }
       previousTonesRef.current.set(target.key, nextTone);
     }
 
-    if (newlyRed.length === 0) return;
+    if (escalations.length === 0) return;
 
-    const targetNames = formatRadarTargetList(newlyRed);
+    const yellowLabels = escalations
+      .filter(({ tone }) => tone === 'yellow')
+      .map(({ label }) => label);
+    const redLabels = escalations.filter(({ tone }) => tone === 'red').map(({ label }) => label);
+    const statusGroups = [
+      ...(yellowLabels.length > 0 ? [describeRadarGroup(yellowLabels, 'yellow')] : []),
+      ...(redLabels.length > 0 ? [describeRadarGroup(redLabels, 'red')] : []),
+    ];
+    const hasRed = redLabels.length > 0;
+    const hasMixedTones = yellowLabels.length > 0 && hasRed;
+    const queueLabel = escalations.length === 1 ? 'Radar queue' : 'Radar queues';
+    let title = `${queueLabel} ${hasRed ? 'critical' : 'warning'}`;
+    if (hasMixedTones) title = 'Radar queues need attention';
+
     showToast(
-      `${targetNames} ${newlyRed.length === 1 ? 'is' : 'are'} red on Dispatcher Radar.`,
-      'error',
+      `${formatRadarTargetList(statusGroups)} on Dispatcher Radar.`,
+      hasRed ? 'error' : 'warning',
       {
-        title: newlyRed.length === 1 ? 'Radar queue critical' : 'Radar queues critical',
+        title,
         durationMs: 8_000,
         delivery: 'radar-critical',
         action: {

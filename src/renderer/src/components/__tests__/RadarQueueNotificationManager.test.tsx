@@ -91,14 +91,17 @@ describe('RadarQueueNotificationManager', () => {
     globalThis.api = { playAlertSound: mocks.playAlertSound } as never;
   });
 
-  it('uses an initially red snapshot as a silent baseline', () => {
-    mocks.snapshot = snapshotWith({ prod01: 'red' });
+  it.each(['yellow', 'red'] as const)(
+    'uses an initially %s snapshot as a silent baseline',
+    (tone) => {
+      mocks.snapshot = snapshotWith({ prod01: tone });
 
-    render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+      render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
 
-    expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(mocks.playAlertSound).not.toHaveBeenCalled();
-  });
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.playAlertSound).not.toHaveBeenCalled();
+    },
+  );
 
   it('waits for the first usable snapshot before establishing the silent baseline', () => {
     mocks.snapshot = snapshotWith({ prod01: 'red', lastUpdated: 0 });
@@ -131,6 +134,55 @@ describe('RadarQueueNotificationManager', () => {
     );
   });
 
+  it.each([
+    ['Prod01', { prod01: 'yellow' as const }],
+    ['Prod02', { prod02: 'yellow' as const }],
+    ['Transactional Emails Queue Depth', { email: 'yellow' as const }],
+  ])('notifies when %s transitions from green to yellow', (label, targetOverride) => {
+    const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+    mocks.snapshot = snapshotWith({ ...targetOverride, lastUpdated: 2 });
+
+    view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      `${label} is yellow on Dispatcher Radar.`,
+      'warning',
+      expect.objectContaining({
+        title: 'Radar queue warning',
+        durationMs: 8_000,
+        delivery: 'radar-critical',
+      }),
+    );
+  });
+
+  it('notifies again when a yellow queue escalates to red', () => {
+    const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+
+    mocks.snapshot = snapshotWith({ prod01: 'yellow', lastUpdated: 2 });
+    view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+    mocks.snapshot = snapshotWith({ prod01: 'red', lastUpdated: 3 });
+    view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+
+    expect(mocks.showToast).toHaveBeenCalledTimes(2);
+    expect(mocks.showToast).toHaveBeenLastCalledWith(
+      'Prod01 is red on Dispatcher Radar.',
+      'error',
+      expect.objectContaining({ title: 'Radar queue critical' }),
+    );
+  });
+
+  it('does not notify when a red queue recovers to yellow', () => {
+    const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+    mocks.snapshot = snapshotWith({ prod01: 'red', lastUpdated: 2 });
+    view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+    mocks.showToast.mockClear();
+
+    mocks.snapshot = snapshotWith({ prod01: 'yellow', lastUpdated: 3 });
+    view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
+
   it('batches simultaneous red transitions in one ordered toast', () => {
     const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
     mocks.snapshot = snapshotWith({
@@ -153,6 +205,41 @@ describe('RadarQueueNotificationManager', () => {
       }),
     );
   });
+
+  it('batches simultaneous yellow and red escalations in one critical toast', () => {
+    const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+    mocks.snapshot = snapshotWith({
+      prod01: 'yellow',
+      prod02: 'red',
+      lastUpdated: 2,
+    });
+
+    view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      'Prod01 is yellow and Prod02 is red on Dispatcher Radar.',
+      'error',
+      expect.objectContaining({
+        title: 'Radar queues need attention',
+        durationMs: 8_000,
+        delivery: 'radar-critical',
+      }),
+    );
+  });
+
+  it.each(['magenta', 'unknown'] as const)(
+    'does not treat %s to red as an approved severity escalation',
+    (previousTone) => {
+      mocks.snapshot = snapshotWith({ prod01: previousTone });
+      const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+      mocks.snapshot = snapshotWith({ prod01: 'red', lastUpdated: 2 });
+
+      view.rerender(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
+
+      expect(mocks.showToast).not.toHaveBeenCalled();
+    },
+  );
 
   it('re-arms only after an explicit non-red tone', () => {
     const view = render(<RadarQueueNotificationManager onOpenRadar={onOpenRadar} />);
