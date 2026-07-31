@@ -38,6 +38,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
     stats,
     exporting,
     importing,
+    importProgress,
     lastImportResult,
     loadStats,
     exportData,
@@ -138,6 +139,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
             importCategory={importCategory}
             setImportCategory={setImportCategory}
             importing={importing}
+            importProgress={importProgress}
             onImport={handleImport}
             lastImportResult={lastImportResult}
             onClearResult={clearLastImportResult}

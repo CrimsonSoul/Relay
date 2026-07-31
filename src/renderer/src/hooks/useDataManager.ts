@@ -1,5 +1,11 @@
 import { useState, useCallback } from 'react';
-import type { ImportResult, DataStats, DataCategory, ExportFormat } from '@shared/ipc';
+import type {
+  ImportResult,
+  ImportProgress,
+  DataStats,
+  DataCategory,
+  ExportFormat,
+} from '@shared/ipc';
 import { loggers } from '../utils/logger';
 import { getPb } from '../services/pocketbase';
 import { useMounted } from './useMounted';
@@ -85,6 +91,7 @@ async function performExport(
 export function useDataManager() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [lastImportResult, setLastImportResult] = useState<ImportResult | null>(null);
   const mounted = useMounted();
@@ -163,6 +170,7 @@ export function useDataManager() {
         return null;
       }
 
+      setImportProgress(null);
       setImporting(true);
       try {
         const selection = await pickBrowserFile({
@@ -176,14 +184,17 @@ export function useDataManager() {
         const collection = CATEGORY_TO_COLLECTION[category];
         let result: { imported: number; updated: number; errors: string[] };
         const lowerFileName = selection.name.toLowerCase();
+        const onProgress = (next: ImportProgress): void => {
+          if (mounted.current) setImportProgress(next);
+        };
 
         if (lowerFileName.endsWith('.xlsx')) {
-          result = await importFromExcel(collection, selection.buffer);
+          result = await importFromExcel(collection, selection.buffer, onProgress);
         } else if (lowerFileName.endsWith('.csv')) {
-          result = await importFromCsv(collection, selection.text);
+          result = await importFromCsv(collection, selection.text, onProgress);
         } else {
           // Default to JSON
-          result = await importFromJson(collection, selection.text);
+          result = await importFromJson(collection, selection.text, onProgress);
         }
 
         const importResult: ImportResult = {
@@ -223,6 +234,7 @@ export function useDataManager() {
     importing,
     stats,
     lastImportResult,
+    importProgress,
     // Actions
     loadStats,
     exportData,

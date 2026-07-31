@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import type { Cell, Row, Sheet } from 'write-excel-file/browser';
 import type { Sheet as ReadSheet } from 'read-excel-file/browser';
+import type { ImportProgress } from '@shared/ipc';
 import { getPb, escapeFilter, requireOnline } from './pocketbase';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,8 @@ export interface ImportResult {
   updated: number;
   errors: string[];
 }
+
+export type ImportProgressCallback = (progress: ImportProgress) => void;
 
 // Metadata fields stripped before create/update.
 // Includes both PocketBase format (created, updated) and legacy Relay format (createdAt, updatedAt).
@@ -223,6 +226,8 @@ async function upsertOne(
 async function bulkUpsert(
   collection: CollectionName,
   records: Record<string, unknown>[],
+  onProgress?: ImportProgressCallback,
+  initialErrorCount = 0,
 ): Promise<ImportResult> {
   const limitError = getImportLimitError(records.length);
   if (limitError) {
@@ -231,7 +236,19 @@ async function bulkUpsert(
 
   let imported = 0;
   let updated = 0;
+  let processed = 0;
   const errors: string[] = [];
+  const emitProgress = (): void => {
+    onProgress?.({
+      processed,
+      total: records.length,
+      imported,
+      updated,
+      errors: initialErrorCount + errors.length,
+    });
+  };
+
+  emitProgress();
 
   for (let i = 0; i < records.length; i++) {
     try {
@@ -249,6 +266,9 @@ async function bulkUpsert(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`Row ${i + 1}: ${msg}`);
+    } finally {
+      processed++;
+      emitProgress();
     }
   }
 
@@ -331,6 +351,7 @@ export async function exportToExcel(collection: CollectionName | 'all'): Promise
 export async function importFromJson(
   collection: CollectionName,
   jsonString: string,
+  onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
   let parsed: unknown;
@@ -367,7 +388,7 @@ export async function importFromJson(
     };
   }
 
-  return bulkUpsert(collection, records);
+  return bulkUpsert(collection, records, onProgress);
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +399,7 @@ export async function importFromJson(
 export async function importFromCsv(
   collection: CollectionName,
   csvString: string,
+  onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
   const parseResult = Papa.parse<Record<string, string>>(csvString, {
@@ -397,7 +419,7 @@ export async function importFromCsv(
     }
   }
 
-  const result = await bulkUpsert(collection, parseResult.data);
+  const result = await bulkUpsert(collection, parseResult.data, onProgress, parseErrors.length);
   return { ...result, errors: [...parseErrors, ...result.errors] };
 }
 
@@ -409,6 +431,7 @@ export async function importFromCsv(
 export async function importFromExcel(
   collection: CollectionName,
   buffer: ArrayBuffer,
+  onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
   const sheets = await readWorkbook(buffer);
@@ -452,5 +475,5 @@ export async function importFromExcel(
     return { imported: 0, updated: 0, errors: ['Excel sheet has no header row'] };
   }
 
-  return bulkUpsert(collection, records);
+  return bulkUpsert(collection, records, onProgress);
 }

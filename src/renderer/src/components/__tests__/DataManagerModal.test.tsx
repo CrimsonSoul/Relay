@@ -15,6 +15,13 @@ vi.mock('../../hooks/useDataManager', () => ({
     stats: { contacts: 10, servers: 5, groups: 3, oncall: 8 },
     exporting: false,
     importing: false,
+    importProgress: {
+      processed: 12,
+      total: 20,
+      imported: 10,
+      updated: 1,
+      errors: 1,
+    },
     lastImportResult: null,
     loadStats: mockLoadStats,
     exportData: mockExportData,
@@ -43,10 +50,23 @@ vi.mock('../data-manager/DataManagerOverview', () => ({
 }));
 
 vi.mock('../data-manager/DataManagerImport', () => ({
-  DataManagerImport: ({ onImport }: { onImport: () => void }) => (
-    <button data-testid="import-btn" onClick={onImport}>
-      Run Import
-    </button>
+  DataManagerImport: ({
+    onImport,
+    importProgress,
+  }: {
+    onImport: () => void;
+    importProgress?: { processed: number; total: number } | null;
+  }) => (
+    <div>
+      <button data-testid="import-btn" onClick={onImport}>
+        Run Import
+      </button>
+      {importProgress && (
+        <span data-testid="import-progress-prop">
+          {importProgress.processed}/{importProgress.total}
+        </span>
+      )}
+    </div>
   ),
 }));
 
@@ -147,6 +167,13 @@ describe('DataManagerModal', () => {
     await vi.waitFor(() => {
       expect(mockImportData).toHaveBeenCalledWith('contacts');
     });
+  });
+
+  it('passes live import progress to the Import panel', () => {
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Import'));
+
+    expect(screen.getByTestId('import-progress-prop')).toHaveTextContent('12/20');
   });
 
   it('switches to Backups tab', () => {

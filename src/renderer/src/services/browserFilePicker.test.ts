@@ -104,10 +104,14 @@ describe('pickBrowserFile', () => {
   it.each([
     [
       'text',
-      async () => Promise.reject(new Error('text read failed')),
-      async () => new ArrayBuffer(8),
+      (): Promise<string> => Promise.reject(new Error('text read failed')),
+      async (): Promise<ArrayBuffer> => new ArrayBuffer(8),
     ],
-    ['buffer', async () => '[]', async () => Promise.reject(new Error('buffer read failed'))],
+    [
+      'buffer',
+      async (): Promise<string> => '[]',
+      (): Promise<ArrayBuffer> => Promise.reject(new Error('buffer read failed')),
+    ],
   ] as const)(
     'reports a specific error when the %s read fails',
     async (_label, text, arrayBuffer) => {

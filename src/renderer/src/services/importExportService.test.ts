@@ -197,6 +197,41 @@ describe('exportToExcel', () => {
 // importFromJson
 // ---------------------------------------------------------------------------
 describe('importFromJson', () => {
+  it('reports cumulative progress for created, updated, invalid, and failed rows', async () => {
+    const created = { email: 'created@example.com', name: 'Created' };
+    const updated = { email: 'updated@example.com', name: 'Updated' };
+    const failed = { email: 'failed@example.com', name: 'Failed' };
+    const notFound = Object.assign(new Error('Not found'), { status: 404 });
+    mockGetFirstListItem
+      .mockRejectedValueOnce(notFound)
+      .mockResolvedValueOnce({ ...sampleRecord, id: 'existing-id' })
+      .mockRejectedValueOnce(notFound);
+    mockCreate.mockResolvedValueOnce(created).mockRejectedValueOnce(new Error('write failed'));
+    mockUpdate.mockResolvedValueOnce(updated);
+    const onProgress = vi.fn();
+
+    const result = await importFromJson(
+      'contacts',
+      JSON.stringify([created, updated, 123, failed]),
+      onProgress,
+    );
+
+    expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
+      { processed: 0, total: 4, imported: 0, updated: 0, errors: 0 },
+      { processed: 1, total: 4, imported: 1, updated: 0, errors: 0 },
+      { processed: 2, total: 4, imported: 1, updated: 1, errors: 0 },
+      { processed: 3, total: 4, imported: 1, updated: 1, errors: 1 },
+      { processed: 4, total: 4, imported: 1, updated: 1, errors: 2 },
+    ]);
+    expect(result).toEqual({
+      imported: 1,
+      updated: 1,
+      errors: ['Row 3: expected an object record', 'Row 4: write failed'],
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockUpdate).toHaveBeenCalledOnce();
+  });
+
   it('imports records from a JSON array', async () => {
     const notFound = Object.assign(new Error('Not found'), { status: 404 });
     mockGetFirstListItem.mockRejectedValueOnce(notFound);
@@ -307,6 +342,25 @@ describe('importFromJson', () => {
 // importFromCsv
 // ---------------------------------------------------------------------------
 describe('importFromCsv', () => {
+  it('includes parse warnings in every progress snapshot', async () => {
+    mockPapaParse.mockReturnValueOnce({
+      data: [{ email: 'alice@example.com', name: 'Alice' }],
+      errors: [{ row: 2, message: 'Too few fields' }],
+    });
+    mockGetFirstListItem.mockRejectedValueOnce(
+      Object.assign(new Error('Not found'), { status: 404 }),
+    );
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+    const onProgress = vi.fn();
+
+    await importFromCsv('contacts', 'email,name\nalice@example.com,Alice\nbroken', onProgress);
+
+    expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
+      { processed: 0, total: 1, imported: 0, updated: 0, errors: 1 },
+      { processed: 1, total: 1, imported: 1, updated: 0, errors: 1 },
+    ]);
+  });
+
   it('parses CSV and imports records', async () => {
     mockPapaParse.mockReturnValueOnce({
       data: [{ email: 'alice@example.com', name: 'Alice' }],
@@ -383,6 +437,30 @@ describe('importFromCsv', () => {
 // importFromExcel
 // ---------------------------------------------------------------------------
 describe('importFromExcel', () => {
+  it('reports parsed worksheet progress through the shared bulk path', async () => {
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'contacts',
+        data: [
+          ['email', 'name'],
+          ['alice@example.com', 'Alice'],
+        ],
+      },
+    ]);
+    mockGetFirstListItem.mockRejectedValueOnce(
+      Object.assign(new Error('Not found'), { status: 404 }),
+    );
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+    const onProgress = vi.fn();
+
+    await importFromExcel('contacts', new ArrayBuffer(8), onProgress);
+
+    expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
+      { processed: 0, total: 1, imported: 0, updated: 0, errors: 0 },
+      { processed: 1, total: 1, imported: 1, updated: 0, errors: 0 },
+    ]);
+  });
+
   it('reads rows from the matching worksheet and imports records', async () => {
     mockReadExcelFile.mockResolvedValueOnce([
       {
