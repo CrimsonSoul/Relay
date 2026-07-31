@@ -994,7 +994,7 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
   }
 });
 
-test('Radar refresh matches the Problems header control and source link shares its height', async () => {
+test('Radar refresh matches the Problems header control and source action stays compact', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
@@ -1018,7 +1018,7 @@ test('Radar refresh matches the Problems header control and source link shares i
               class="tactile-button tactile-button--secondary tactile-button--md radar-header-action"
               type="button"
             >
-              OPEN ORIGINAL
+              ORIGINAL
             </button>
             <button
               class="radar-refresh"
@@ -1047,6 +1047,7 @@ test('Radar refresh matches the Problems header control and source link shares i
       radarRefresh.boundingBox(),
     ]);
     expect([openBox?.height, refreshBox?.width, refreshBox?.height]).toEqual([40, 40, 40]);
+    expect(openBox?.width).toBeLessThanOrEqual(96);
 
     const comparableStyle = (locator: typeof radarRefresh) =>
       locator.evaluate((element) => {
