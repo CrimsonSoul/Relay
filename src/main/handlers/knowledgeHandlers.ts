@@ -25,6 +25,7 @@ import {
 } from '@shared/knowledgeSearch';
 import { normalizeKnowledgeWebUrl } from '../knowledge/knowledgeWebLinks';
 import { loggers } from '../logger';
+import { shouldSuppressDesktopSideEffects } from '../app/e2eSafety';
 import { rateLimiters } from '../rateLimiter';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 
@@ -206,7 +207,7 @@ export function setupKnowledgeHandlers(
         return { ok: false, error: 'invalid-url' };
       }
       try {
-        await shell.openExternal(url);
+        if (!shouldSuppressDesktopSideEffects()) await shell.openExternal(url);
         return { ok: true };
       } catch {
         loggers.ipc.warn('Knowledge web link open failed');

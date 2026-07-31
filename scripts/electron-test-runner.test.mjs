@@ -148,4 +148,25 @@ describe('runElectronTests', () => {
       expect.any(Object),
     );
   });
+
+  it('marks Playwright as free of desktop side effects without changing the caller environment', () => {
+    const spawnSync = vi.fn().mockReturnValue(success());
+    const env = { NODE_ENV: 'test', RELAY_CALLER_MARKER: 'preserved' };
+    const options = makeOptions(spawnSync, { env });
+
+    expect(runElectronTests(options)).toBe(0);
+    expect(spawnSync).toHaveBeenNthCalledWith(
+      2,
+      options.nodePath,
+      [options.playwrightPath, 'test', '-c', 'playwright.electron.config.ts'],
+      expect.objectContaining({
+        env: {
+          NODE_ENV: 'test',
+          RELAY_CALLER_MARKER: 'preserved',
+          RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS: '1',
+        },
+      }),
+    );
+    expect(env).toEqual({ NODE_ENV: 'test', RELAY_CALLER_MARKER: 'preserved' });
+  });
 });

@@ -170,7 +170,7 @@ describe('RadarTab', () => {
     const button = await screen.findByRole('button', {
       name: 'Open original Dispatcher Radar page',
     });
-    expect(button).toHaveTextContent('OPEN ORIGINAL');
+    expect(button).toHaveTextContent(/^ORIGINAL$/);
     expect(button).toHaveAttribute('title', 'Open original Dispatcher Radar page');
     expect(button).toHaveClass('tactile-button--secondary', 'radar-header-action');
 

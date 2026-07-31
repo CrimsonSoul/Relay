@@ -2104,7 +2104,7 @@ test.describe('Vital Critical Path', () => {
     ).toContainText('Page 1 of 1');
   });
 
-  test('Knowledge PDF links navigate within Relay and open HTTPS in the system browser', async () => {
+  test('Knowledge PDF links navigate within Relay without escaping the E2E desktop boundary', async () => {
     test.setTimeout(120_000);
     const connectedClient = await launchConnectedClient();
     const rendererLogs: string[] = [];
@@ -2204,7 +2204,7 @@ test.describe('Vital Critical Path', () => {
             ).__relayKnowledgeOpenExternalUrls ?? [],
         ),
       )
-      .toContain('https://example.com/relay-knowledge-test');
+      .toEqual([]);
     expect(rendererErrors, `Renderer console errors:\n${rendererErrors.join('\n')}`).toEqual([]);
     expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
   });

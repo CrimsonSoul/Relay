@@ -181,6 +181,7 @@ describe('windowHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS;
 
     mockWin = {
       minimize: vi.fn(),
@@ -335,6 +336,19 @@ describe('windowHandlers', () => {
         'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
       expect(result).toBe(true);
+    });
+
+    it('accepts a valid E2E external launch without opening a desktop app', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+        {},
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
+      );
+
+      expect(result).toBe(true);
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
     it('blocks msteams: deep links to other hosts and returns false', async () => {

@@ -91,7 +91,7 @@ export const RadarTab: React.FC = () => {
             title="Open original Dispatcher Radar page"
             aria-label="Open original Dispatcher Radar page"
           >
-            OPEN ORIGINAL
+            ORIGINAL
           </TactileButton>
           <button
             type="button"
