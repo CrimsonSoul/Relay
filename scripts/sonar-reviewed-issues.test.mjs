@@ -12,6 +12,7 @@ import {
   safeMessage,
   validateReviewedIssueManifest,
 } from './sonar-reviewed-issues.mjs';
+import { SCANNER_OUTCOME, ScannerGateError } from './scanner-gate-policy.mjs';
 
 const { test } = process.env.VITEST ? await import('vitest') : await import('node:test');
 const TOKEN = 'sonar-reviewed-token-sentinel-never-print';
@@ -490,6 +491,39 @@ test('fails on search API, JSON, duplicate, and pagination errors', async () => 
   );
 });
 
+test('types reviewed-issue service availability separately from authentication', async () => {
+  const options = {
+    hostUrl: HOST_URL,
+    projectKey: PROJECT_KEY,
+    token: TOKEN,
+  };
+  for (const status of [429, 503]) {
+    await assert.rejects(
+      fetchCurrentSonarIssues({
+        ...options,
+        fetcher: async () => response({}, { ok: false, status }),
+      }),
+      (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+    );
+  }
+  await assert.rejects(
+    fetchCurrentSonarIssues({
+      ...options,
+      fetcher: async () => response({}, { ok: false, status: 401 }),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
+  );
+  await assert.rejects(
+    fetchCurrentSonarIssues({
+      ...options,
+      fetcher: async () => {
+        throw new Error('network offline');
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+});
+
 test('transition failures are deterministic, resumable, and token-safe', async () => {
   const openIssues = REVIEWED_ISSUES.slice(0, 2).map((issue) => issueFromManifest(issue, 'OPEN'));
   const sortedKeys = openIssues
@@ -567,10 +601,11 @@ test('requires environment authentication and never emits the token sentinel', a
   assert.equal(output.join('\n').includes(TOKEN), false);
 });
 
-test('the security workflow reconciles reviewed issues only on test-branch pushes', async () => {
-  const [workflow, packageText] = await Promise.all([
+test('the Sonar CI runner reconciles reviewed issues only on test-branch pushes', async () => {
+  const [workflow, packageText, runner] = await Promise.all([
     readFile(new URL('../.github/workflows/security.yml', import.meta.url), 'utf8'),
     readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    readFile(new URL('./run-sonar-ci.mjs', import.meta.url), 'utf8'),
   ]);
   const packageJson = JSON.parse(packageText);
   assert.equal(
@@ -579,14 +614,11 @@ test('the security workflow reconciles reviewed issues only on test-branch pushe
   );
 
   assert.doesNotMatch(workflow, /workflow_dispatch:/);
-  assert.match(
-    workflow,
-    /Reconcile exact reviewed Sonar issues[\s\S]*?if:\s+>-?\s+github\.event_name == 'push' &&\s+github\.ref == 'refs\/heads\/test'/,
-  );
-  const reconcileStep = workflow.indexOf(
-    'npm run security:sonar:reviewed -- --branch=test --apply',
-  );
-  const openFindingGate = workflow.indexOf('npm run security:sonar:issues --');
+  assert.match(workflow, /npm run security:sonar:ci --/u);
+  const branchGuard = runner.indexOf("if ('branch' in scope)");
+  const reconcileStep = runner.indexOf("await reconcile({ argv: ['--branch=test', '--apply']");
+  const openFindingGate = runner.indexOf('await readIssues');
+  assert.ok(branchGuard >= 0 && branchGuard < reconcileStep, 'missing branch-only guard');
   assert.ok(reconcileStep >= 0, 'missing reviewed-issue reconciliation step');
   assert.ok(openFindingGate > reconcileStep, 'reviewed reconciliation must precede the open gate');
 });

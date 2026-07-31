@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
 const EXPECTED_PROJECT_KEY = 'CrimsonSoul_Relay';
@@ -533,12 +534,13 @@ async function fetchJson(fetcher, url, options, operation) {
   let response;
   try {
     response = await fetcher(url, options);
-  } catch {
-    throw new Error(`${operation} failed before receiving a response.`);
+  } catch (error) {
+    throw unavailableError(`${operation} failed before receiving a response.`, {
+      cause: error,
+    });
   }
   if (!response?.ok) {
-    const status = Number.isInteger(response?.status) ? ` ${response.status}` : '';
-    throw new Error(`${operation} failed with HTTP${status}.`);
+    throw classifyHttpFailure(operation, response?.status);
   }
   let payload;
   try {
@@ -729,12 +731,13 @@ async function applyTransition(fetcher, base, token, item) {
       },
       body,
     });
-  } catch {
-    throw new Error(`Sonar transition failed for reviewed issue ${item.key}.`);
+  } catch (error) {
+    throw unavailableError(`Sonar transition failed for reviewed issue ${item.key}.`, {
+      cause: error,
+    });
   }
   if (!response?.ok) {
-    const status = Number.isInteger(response?.status) ? ` with HTTP ${response.status}` : '';
-    throw new Error(`Sonar transition failed for reviewed issue ${item.key}${status}.`);
+    throw classifyHttpFailure(`Sonar transition for reviewed issue ${item.key}`, response?.status);
   }
 }
 

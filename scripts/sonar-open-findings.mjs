@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
 const PAGE_SIZE = 500;
@@ -175,12 +176,13 @@ async function fetchIssuePage(fetcher, url, token, page) {
         Authorization: `Bearer ${token}`,
       },
     });
-  } catch {
-    throw new Error('Sonar API request failed before receiving a response.');
+  } catch (error) {
+    throw unavailableError('Sonar API request failed before receiving a response.', {
+      cause: error,
+    });
   }
   if (!response?.ok) {
-    const status = Number.isInteger(response?.status) ? ` ${response.status}` : '';
-    throw new Error(`Sonar API request failed with HTTP${status}.`);
+    throw classifyHttpFailure('Sonar API', response?.status);
   }
 
   let payload;

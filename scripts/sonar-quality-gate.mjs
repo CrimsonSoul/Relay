@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
+import { classifyHttpFailure, findingError, unavailableError } from './scanner-gate-policy.mjs';
 import { parseProjectKey, parseScopeArgs } from './sonar-open-findings.mjs';
 
 const DEFAULT_SONAR_HOST_URL = 'https://sonarcloud.io';
@@ -153,12 +154,13 @@ async function requestJson({ fetcher, url, token, timeoutMs }) {
         Math.max(1, Math.floor(Math.min(timeoutMs, MAX_REQUEST_TIMEOUT_MS))),
       ),
     });
-  } catch {
-    throw new Error('Sonar API request failed before receiving a response.');
+  } catch (error) {
+    throw unavailableError('Sonar API request failed before receiving a response.', {
+      cause: error,
+    });
   }
   if (!response?.ok) {
-    const status = Number.isInteger(response?.status) ? ` ${response.status}` : '';
-    throw new Error(`Sonar API request failed with HTTP${status}.`);
+    throw classifyHttpFailure('Sonar API', response?.status);
   }
   try {
     return await response.json();
@@ -235,7 +237,7 @@ export async function waitForComputeTask({
   while (true) {
     const remainingBeforeRequest = deadline - now();
     if (!firstRequest && remainingBeforeRequest <= 0) {
-      throw new Error(`Sonar compute task timed out for ${scopeLabel(validatedScope)}.`);
+      throw unavailableError(`Sonar compute task timed out for ${scopeLabel(validatedScope)}.`);
     }
     firstRequest = false;
     const payload = await requestJson({
@@ -258,7 +260,7 @@ export async function waitForComputeTask({
 
     const remaining = deadline - now();
     if (remaining <= 0) {
-      throw new Error(`Sonar compute task timed out for ${scopeLabel(validatedScope)}.`);
+      throw unavailableError(`Sonar compute task timed out for ${scopeLabel(validatedScope)}.`);
     }
     await sleep(Math.min(pollIntervalMs, remaining));
   }
@@ -308,7 +310,7 @@ function validateLatestBranchAnalysis(payload, expectedAnalysisId, scope) {
 function remainingGateTime(deadline, now, scope) {
   const remaining = deadline - now();
   if (remaining <= 0) {
-    throw new Error(`Sonar quality gate timed out for ${scopeLabel(scope)}.`);
+    throw unavailableError(`Sonar quality gate timed out for ${scopeLabel(scope)}.`);
   }
   return remaining;
 }
@@ -369,11 +371,15 @@ async function waitForBranchQualityGate({
       return projectStatus;
     }
     if (projectStatus.status !== 'ERROR') {
-      throw new Error(
+      throw findingError(
         `Sonar quality gate failed for ${scopeLabel(scope)} with status ${projectStatus.status}.`,
       );
     }
-    await sleep(Math.min(pollIntervalMs, remainingGateTime(deadline, now, scope)));
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      throw findingError(`Sonar quality gate failed for ${scopeLabel(scope)} with status ERROR.`);
+    }
+    await sleep(Math.min(pollIntervalMs, remaining));
   }
 }
 
@@ -386,7 +392,7 @@ async function checkPullRequestQualityGate({ fetcher, statusUrl, scope, token, t
   });
   const projectStatus = validateQualityGate(payload);
   if (projectStatus.status !== 'OK') {
-    throw new Error(
+    throw findingError(
       `Sonar quality gate failed for ${scopeLabel(scope)} with status ${projectStatus.status}.`,
     );
   }
