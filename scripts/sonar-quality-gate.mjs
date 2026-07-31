@@ -346,6 +346,7 @@ async function waitForBranchQualityGate({
   pollIntervalMs,
 }) {
   const deadline = now() + timeoutMs;
+  let lastStatus;
   const assertLatest = () =>
     assertLatestBranchAnalysis({
       fetcher,
@@ -358,6 +359,9 @@ async function waitForBranchQualityGate({
     });
 
   while (true) {
+    if (lastStatus === 'ERROR' && deadline - now() <= 0) {
+      throw findingError(`Sonar quality gate failed for ${scopeLabel(scope)} with status ERROR.`);
+    }
     await assertLatest();
     const payload = await requestJson({
       fetcher,
@@ -375,6 +379,7 @@ async function waitForBranchQualityGate({
         `Sonar quality gate failed for ${scopeLabel(scope)} with status ${projectStatus.status}.`,
       );
     }
+    lastStatus = projectStatus.status;
     const remaining = deadline - now();
     if (remaining <= 0) {
       throw findingError(`Sonar quality gate failed for ${scopeLabel(scope)} with status ERROR.`);
@@ -470,6 +475,14 @@ export async function runSonarQualityGate({
 } = {}) {
   const token = env.SONAR_TOKEN;
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
+  if (typeof now !== 'function') throw new TypeError('Sonar gate timing function is required.');
+  validateTiming(timeoutMs, pollIntervalMs);
+  const deadline = now() + timeoutMs;
+  const remainingTimeout = () => {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) throw unavailableError('Sonar quality-gate workflow timed out.');
+    return remaining;
+  };
   const { action, scope } = parseSonarGateArgs(argv);
   const expectedProjectKey = parseProjectKey(readProjectProperties());
   validateIdentifier(expectedProjectKey, 'Sonar project key');
@@ -478,6 +491,7 @@ export async function runSonarQualityGate({
     configuredHostUrl: env.SONAR_HOST_URL || DEFAULT_SONAR_HOST_URL,
     expectedProjectKey,
   });
+  const computeTimeoutMs = remainingTimeout();
   const task = await waitForComputeTask({
     fetcher,
     serverUrl: report.serverUrl,
@@ -487,8 +501,8 @@ export async function runSonarQualityGate({
     token,
     now,
     sleep,
-    timeoutMs,
-    pollIntervalMs,
+    timeoutMs: computeTimeoutMs,
+    pollIntervalMs: Math.min(pollIntervalMs, computeTimeoutMs),
   });
 
   if (action === 'wait-analysis') {
@@ -496,6 +510,7 @@ export async function runSonarQualityGate({
     return { ...task, scope };
   }
 
+  const qualityTimeoutMs = remainingTimeout();
   const qualityGate = await waitForQualityGate({
     fetcher,
     serverUrl: report.serverUrl,
@@ -505,8 +520,8 @@ export async function runSonarQualityGate({
     token,
     now,
     sleep,
-    timeoutMs,
-    pollIntervalMs,
+    timeoutMs: qualityTimeoutMs,
+    pollIntervalMs: Math.min(pollIntervalMs, qualityTimeoutMs),
   });
   write(`Sonar quality gate passed for ${scopeLabel(scope)} (analysis ${task.analysisId}).`);
   return { ...task, qualityGate, scope };

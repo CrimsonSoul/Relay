@@ -567,6 +567,41 @@ test('types bounded Sonar polling timeouts as unavailable', async () => {
   );
 });
 
+test('shares one deadline across compute and final quality-gate polling', async () => {
+  const clock = fakeClock();
+  let computeRequests = 0;
+  await assert.rejects(
+    runSonarQualityGate({
+      argv: ['check-quality-gate', '--branch=test'],
+      env: { SONAR_HOST_URL: HOST_URL, SONAR_TOKEN: TOKEN },
+      readProjectProperties: () => `sonar.projectKey=${PROJECT_KEY}\n`,
+      readReportTask: () => reportTask(),
+      fetcher: async (url) => {
+        const requested = new URL(url);
+        if (requested.pathname === '/api/ce/task') {
+          computeRequests += 1;
+          return response(
+            successfulBranchTask({
+              status: computeRequests === 1 ? 'PENDING' : 'SUCCESS',
+              analysisId: computeRequests === 1 ? undefined : ANALYSIS_ID,
+            }),
+          );
+        }
+        if (requested.pathname === '/api/project_analyses/search') {
+          return response(latestAnalyses());
+        }
+        return response({ projectStatus: { status: 'ERROR', conditions: [] } });
+      },
+      now: clock.now,
+      sleep: clock.sleep,
+      timeoutMs: 100,
+      pollIntervalMs: 60,
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.FINDING,
+  );
+  assert.equal(clock.now(), 100);
+});
+
 test('runs both phases from the fixed scanner report without exposing the token', async () => {
   const output = [];
   const requests = [];
