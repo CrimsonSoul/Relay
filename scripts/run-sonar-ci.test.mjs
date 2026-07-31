@@ -154,6 +154,44 @@ test('softens only typed downstream availability failures', async () => {
   );
 });
 
+test('uses one aggregate deadline across Sonar upload and API phases', async () => {
+  let clock = 0;
+  const calls = [];
+  const reports = [];
+  const result = await runSonarCi({
+    argv: ['--branch=test'],
+    env: configuredEnv,
+    now: () => clock,
+    runCommand: async (command) => {
+      calls.push(['upload', command.timeoutMs]);
+      clock += 600_000;
+      return { code: 0, timedOut: false, output: '' };
+    },
+    waitAnalysis: async (options) => {
+      calls.push(['wait', options.timeoutMs]);
+      clock += 300_000;
+    },
+    reconcile: async (options) => {
+      calls.push(['reconcile', options.timeoutMs]);
+      clock += 180_000;
+    },
+    readIssues: async () => {
+      calls.push(['issues']);
+      return { summary: { open: [] } };
+    },
+    checkGate: async () => calls.push(['gate']),
+    reportUnavailable: (report) => reports.push(report),
+  });
+
+  assert.equal(result.outcome, SCANNER_OUTCOME.UNAVAILABLE);
+  assert.deepEqual(calls, [
+    ['upload', 600_000],
+    ['wait', 300_000],
+    ['reconcile', 180_000],
+  ]);
+  assert.equal(reports.length, 1);
+});
+
 test('rejects missing configuration, insecure hosts, and non-test branch scope', async () => {
   for (const [env, argv] of [
     [{ ...configuredEnv, SONAR_TOKEN: '' }, ['--branch=test']],

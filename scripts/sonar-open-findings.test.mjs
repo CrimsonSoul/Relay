@@ -345,6 +345,61 @@ test('types Sonar availability separately from authentication and contract failu
   );
 });
 
+test('bounds each Sonar issue-search request with an abort signal', async () => {
+  let receivedSignal = false;
+  await assert.rejects(
+    fetchSonarIssues({
+      hostUrl: 'https://sonarcloud.io',
+      projectKey: 'CrimsonSoul_Relay',
+      scope: { branch: 'test' },
+      token: TOKEN,
+      requestTimeoutMs: 10,
+      fetcher: async (_url, options) => {
+        receivedSignal = options.signal instanceof AbortSignal;
+        if (!receivedSignal) throw new Error('missing abort signal');
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+            once: true,
+          });
+        });
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+  assert.equal(receivedSignal, true);
+});
+
+test('uses one aggregate deadline across Sonar issue-search pages', async () => {
+  let clock = 0;
+  let requests = 0;
+  await assert.rejects(
+    fetchSonarIssues({
+      hostUrl: 'https://sonarcloud.io',
+      projectKey: 'CrimsonSoul_Relay',
+      scope: { branch: 'test' },
+      token: TOKEN,
+      timeoutMs: 50,
+      now: () => clock,
+      fetcher: async () => {
+        requests += 1;
+        clock += 50;
+        return response({
+          paging: { pageIndex: requests, pageSize: 500, total: 501 },
+          issues:
+            requests === 1
+              ? Array.from({ length: 500 }, (_, index) => ({
+                  key: `issue-${index}`,
+                  status: 'ACCEPTED',
+                }))
+              : [{ key: 'issue-500', status: 'ACCEPTED' }],
+        });
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+  assert.equal(requests, 1);
+});
+
 test('requires environment authentication and never emits the token sentinel', async () => {
   const output = [];
   await assert.rejects(

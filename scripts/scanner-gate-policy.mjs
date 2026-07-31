@@ -52,6 +52,29 @@ function appendBounded(buffer, chunk, maximum) {
   return combined.length <= maximum ? combined : combined.subarray(combined.length - maximum);
 }
 
+function signalProcessTree(child, signal) {
+  if (!Number.isInteger(child?.pid)) return;
+  if (process.platform === 'win32') {
+    if (signal === 'SIGKILL') {
+      const terminator = spawn(
+        'C:\\Windows\\System32\\taskkill.exe',
+        ['/pid', String(child.pid), '/t', '/f'],
+        { shell: false, stdio: 'ignore', windowsHide: true },
+      );
+      terminator.on('error', () => child.kill());
+      return;
+    }
+    child.kill(signal);
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    child.kill(signal);
+  }
+}
+
 export class ScannerGateError extends Error {
   constructor(outcome, message, options = {}) {
     if (!ERROR_OUTCOMES.has(outcome)) {
@@ -97,9 +120,9 @@ export function classifyCommandResult(result, policy) {
   ) {
     throw new TypeError('Scanner command policy is invalid.');
   }
+  if (policy.findingExitCodes.includes(result.code)) return SCANNER_OUTCOME.FINDING;
   if (result.timedOut === true) return SCANNER_OUTCOME.UNAVAILABLE;
   if (result.code === 0) return SCANNER_OUTCOME.CLEAN;
-  if (policy.findingExitCodes.includes(result.code)) return SCANNER_OUTCOME.FINDING;
   if (policy.unavailableExitCodes.includes(result.code)) return SCANNER_OUTCOME.UNAVAILABLE;
   policy.transientOutput.lastIndex = 0;
   if (policy.transientOutput.test(String(result.output ?? ''))) {
@@ -111,6 +134,7 @@ export function classifyCommandResult(result, policy) {
 export async function runBoundedCommand({
   file,
   args,
+  cwd,
   env,
   timeoutMs,
   maxOutputBytes,
@@ -119,6 +143,9 @@ export async function runBoundedCommand({
   if (!nonEmptyString(file)) throw new TypeError('Scanner command file is required.');
   if (!Array.isArray(args) || args.some((argument) => typeof argument !== 'string')) {
     throw new TypeError('Scanner command arguments are invalid.');
+  }
+  if (cwd !== undefined && !nonEmptyString(cwd)) {
+    throw new TypeError('Scanner command working directory is invalid.');
   }
   if (!env || typeof env !== 'object' || Array.isArray(env)) {
     throw new TypeError('Scanner command environment is invalid.');
@@ -136,15 +163,23 @@ export async function runBoundedCommand({
     let timedOut = false;
     let deadline;
     let killTimer;
+    let settleTimer;
     let child;
+    let settled = false;
+    let observedExitCode = null;
 
     const retain = (chunk) => {
       retained = appendBounded(retained, chunk, maxOutputBytes);
     };
 
     const finish = (code) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(deadline);
       clearTimeout(killTimer);
+      clearTimeout(settleTimer);
+      child?.stdout?.destroy();
+      child?.stderr?.destroy();
       const output = sanitizeScannerText(retained.toString('utf8'), env);
       if (output) write(output.endsWith('\n') ? output : `${output}\n`);
       resolve({ code: Number.isInteger(code) ? code : null, timedOut, output });
@@ -152,9 +187,12 @@ export async function runBoundedCommand({
 
     try {
       child = spawn(file, args, {
+        cwd,
+        detached: process.platform !== 'win32',
         env,
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
       });
     } catch (error) {
       retain(error instanceof Error ? error.message : 'Scanner command could not start.');
@@ -165,13 +203,18 @@ export async function runBoundedCommand({
     child.stdout.on('data', retain);
     child.stderr.on('data', retain);
     child.on('error', (error) => retain(error.message));
-    child.once('close', finish);
+    child.once('exit', (code) => {
+      if (Number.isInteger(code)) observedExitCode = code;
+    });
+    child.once('close', (code) => finish(Number.isInteger(code) ? code : observedExitCode));
 
     deadline = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 250);
+      signalProcessTree(child, 'SIGTERM');
+      killTimer = setTimeout(() => signalProcessTree(child, 'SIGKILL'), 250);
       killTimer.unref?.();
+      settleTimer = setTimeout(() => finish(observedExitCode), 1_000);
+      settleTimer.unref?.();
     }, timeoutMs);
     deadline.unref?.();
   });

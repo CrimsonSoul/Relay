@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import {
   SCANNER_OUTCOME,
   ScannerGateError,
@@ -12,6 +13,7 @@ import {
 } from './scanner-gate-policy.mjs';
 
 const COMMAND_TIMEOUT_MS = 600_000;
+const AGGREGATE_TIMEOUT_MS = 1_080_000;
 const MAX_OUTPUT_BYTES = 32_768;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9._-]{1,200}$/u;
 const SAFE_REPOSITORY = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
@@ -27,6 +29,7 @@ const MONITOR_POLICY = Object.freeze({
   unavailableExitCodes: [69, 75],
   transientOutput: TRANSIENT_OUTPUT,
 });
+const monotonicNow = () => performance.now();
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -71,12 +74,12 @@ function validateConfiguration(env) {
   return { serverUrl, testPush };
 }
 
-function npmCommand(env, script, args) {
+function npmCommand(env, script, args, timeoutMs) {
   return {
     file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
     args: ['run', script, '--', ...args],
     env,
-    timeoutMs: COMMAND_TIMEOUT_MS,
+    timeoutMs,
     maxOutputBytes: MAX_OUTPUT_BYTES,
   };
 }
@@ -90,8 +93,14 @@ function repositoryArguments(env, serverUrl) {
   ];
 }
 
-async function runPhase({ env, runCommand, script, args, policy, label }) {
-  const result = await runCommand(npmCommand(env, script, args));
+function phaseTimeout(deadline, now, label) {
+  const remaining = Math.floor(deadline - now());
+  if (remaining <= 0) throw unavailableError(`Snyk ${label} exceeded the aggregate deadline.`);
+  return Math.min(COMMAND_TIMEOUT_MS, remaining);
+}
+
+async function runPhase({ env, runCommand, script, args, policy, label, timeoutMs }) {
+  const result = await runCommand(npmCommand(env, script, args, timeoutMs));
   const outcome = classifyCommandResult(result, policy);
   if (outcome === SCANNER_OUTCOME.CLEAN) return;
   if (outcome === SCANNER_OUTCOME.FINDING) {
@@ -116,9 +125,12 @@ export async function runSnykCi({
   env = process.env,
   runCommand = runBoundedCommand,
   reportUnavailable = writeUnavailableReport,
+  now = monotonicNow,
 } = {}) {
   try {
+    if (typeof now !== 'function') throw configurationError('Snyk CI timing function is invalid.');
     const { serverUrl, testPush } = validateConfiguration(env);
+    const deadline = now() + AGGREGATE_TIMEOUT_MS;
     const projectArgs = repositoryArguments(env, serverUrl);
     await runPhase({
       env,
@@ -127,6 +139,7 @@ export async function runSnykCi({
       args: projectArgs,
       policy: SCAN_POLICY,
       label: 'Open Source scan',
+      timeoutMs: phaseTimeout(deadline, now, 'Open Source scan'),
     });
     await runPhase({
       env,
@@ -135,6 +148,7 @@ export async function runSnykCi({
       args: [`--org=${env.SNYK_ORG}`],
       policy: SCAN_POLICY,
       label: 'Code scan',
+      timeoutMs: phaseTimeout(deadline, now, 'Code scan'),
     });
     if (testPush) {
       await runPhase({
@@ -144,6 +158,7 @@ export async function runSnykCi({
         args: projectArgs,
         policy: MONITOR_POLICY,
         label: 'test-branch monitor',
+        timeoutMs: phaseTimeout(deadline, now, 'test-branch monitor'),
       });
     }
     return { outcome: SCANNER_OUTCOME.CLEAN };

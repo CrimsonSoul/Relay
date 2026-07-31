@@ -404,6 +404,10 @@ timeouts, transient network evidence, and Snyk exits 69 or 75. Missing credentia
 invalid scope or identity, malformed responses, and unknown errors fail closed. A successful job
 with an Unavailable warning is not a clean scan, so retry it before release.
 
+The wrappers use an 18-minute aggregate scanner budget inside the 25-minute job. Each child process
+and Sonar network request also has a shorter deadline, so a stalled descendant, pagination request,
+or review transition can be terminated and reported before GitHub applies its hard job timeout.
+
 `security:sonar` uses the pinned SonarScanner for NPM and reads `SONAR_TOKEN` plus the optional HTTPS-only `SONAR_HOST_URL` from the environment. `security:snyk` runs the pinned Snyk Open Source and Snyk Code gates and reads `SNYK_TOKEN`; pass `--org=<organization>` to either underlying Snyk command when the account default is not the intended organization. The Open Source gate includes development dependencies because Relay's build and packaging toolchain is part of its supply-chain surface. `security:snyk:ci` invokes monitor only after both finding gates pass on a merged `test` push; pull requests never publish a snapshot. `security:snyk:monitor` remains available as the lower-level command.
 
 `security:sonar:issues` queries every page of the branch or pull-request issue

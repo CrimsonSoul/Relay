@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import {
   SCANNER_OUTCOME,
   ScannerGateError,
@@ -7,6 +8,7 @@ import {
   findingError,
   runBoundedCommand,
   sanitizeScannerText,
+  unavailableError,
   writeUnavailableReport,
 } from './scanner-gate-policy.mjs';
 import { parseScopeArgs, runSonarOpenFindings } from './sonar-open-findings.mjs';
@@ -14,6 +16,9 @@ import { runSonarQualityGate } from './sonar-quality-gate.mjs';
 import { runSonarReviewedIssues } from './sonar-reviewed-issues.mjs';
 
 const COMMAND_TIMEOUT_MS = 600_000;
+const AGGREGATE_TIMEOUT_MS = 1_080_000;
+const API_PHASE_TIMEOUT_MS = 300_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 32_768;
 const SAFE_ORGANIZATION = /^[A-Za-z0-9._-]{1,200}$/u;
 const SONAR_UPLOAD_POLICY = Object.freeze({
@@ -22,6 +27,7 @@ const SONAR_UPLOAD_POLICY = Object.freeze({
   transientOutput:
     /(?:HTTP\s+(?:429|5\d\d)|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENOTFOUND|socket hang up|temporarily unavailable|service unavailable)/iu,
 });
+const monotonicNow = () => performance.now();
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -70,7 +76,7 @@ function scopeArgument(scope) {
   return 'branch' in scope ? `--branch=${scope.branch}` : `--pull-request=${scope.pullRequest}`;
 }
 
-function scannerCommand(env) {
+function scannerCommand(env, timeoutMs) {
   return {
     file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
     args: [
@@ -82,9 +88,15 @@ function scannerCommand(env) {
       ...(nonEmptyString(env.SONAR_HOST_URL) ? [`-Dsonar.host.url=${env.SONAR_HOST_URL}`] : []),
     ],
     env,
-    timeoutMs: COMMAND_TIMEOUT_MS,
+    timeoutMs,
     maxOutputBytes: MAX_OUTPUT_BYTES,
   };
+}
+
+function phaseTimeout(deadline, now, label, maximum = AGGREGATE_TIMEOUT_MS) {
+  const remaining = Math.floor(deadline - now());
+  if (remaining <= 0) throw unavailableError(`Sonar ${label} exceeded the aggregate deadline.`);
+  return Math.min(maximum, remaining);
 }
 
 function validateOpenIssueResult(result) {
@@ -112,11 +124,16 @@ export async function runSonarCi({
   readIssues = runSonarOpenFindings,
   checkGate = runSonarQualityGate,
   reportUnavailable = writeUnavailableReport,
+  now = monotonicNow,
 } = {}) {
   try {
+    if (typeof now !== 'function') throw configurationError('Sonar CI timing function is invalid.');
     const scope = validateConfiguration(argv, env);
+    const deadline = now() + AGGREGATE_TIMEOUT_MS;
     const scopedArgument = scopeArgument(scope);
-    const upload = await runCommand(scannerCommand(env));
+    const upload = await runCommand(
+      scannerCommand(env, phaseTimeout(deadline, now, 'upload', COMMAND_TIMEOUT_MS)),
+    );
     const uploadOutcome = classifyCommandResult(upload, SONAR_UPLOAD_POLICY);
     if (uploadOutcome === SCANNER_OUTCOME.UNAVAILABLE) {
       throw new ScannerGateError(
@@ -130,13 +147,33 @@ export async function runSonarCi({
       throw configurationError('Sonar upload failed without a confirmed scanner finding.');
     }
 
-    await waitAnalysis({ argv: ['wait-analysis', scopedArgument], env });
+    await waitAnalysis({
+      argv: ['wait-analysis', scopedArgument],
+      env,
+      timeoutMs: phaseTimeout(deadline, now, 'analysis wait', API_PHASE_TIMEOUT_MS),
+    });
     if ('branch' in scope) {
-      await reconcile({ argv: ['--branch=test', '--apply'], env });
+      const timeoutMs = phaseTimeout(deadline, now, 'reviewed-issue reconciliation');
+      await reconcile({
+        argv: ['--branch=test', '--apply'],
+        env,
+        timeoutMs,
+        requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, timeoutMs),
+      });
     }
-    const issues = await readIssues({ argv: [scopedArgument], env });
+    const issueTimeoutMs = phaseTimeout(deadline, now, 'open-issue inspection');
+    const issues = await readIssues({
+      argv: [scopedArgument],
+      env,
+      timeoutMs: issueTimeoutMs,
+      requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, issueTimeoutMs),
+    });
     validateOpenIssueResult(issues);
-    await checkGate({ argv: ['check-quality-gate', scopedArgument], env });
+    await checkGate({
+      argv: ['check-quality-gate', scopedArgument],
+      env,
+      timeoutMs: phaseTimeout(deadline, now, 'quality gate', API_PHASE_TIMEOUT_MS),
+    });
     return { outcome: SCANNER_OUTCOME.CLEAN, scope };
   } catch (error) {
     if (error instanceof ScannerGateError) {

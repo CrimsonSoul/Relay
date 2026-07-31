@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   SCANNER_OUTCOME,
   ScannerGateError,
@@ -42,7 +45,15 @@ test('classifies clean, finding, unavailable, timeout, transient, and unknown co
     SCANNER_OUTCOME.CLEAN,
   );
   assert.equal(
+    classifyCommandResult({ code: 0, timedOut: true, output: '' }, COMMAND_POLICY),
+    SCANNER_OUTCOME.UNAVAILABLE,
+  );
+  assert.equal(
     classifyCommandResult({ code: 1, timedOut: false, output: 'issues found' }, COMMAND_POLICY),
+    SCANNER_OUTCOME.FINDING,
+  );
+  assert.equal(
+    classifyCommandResult({ code: 1, timedOut: true, output: 'issues found' }, COMMAND_POLICY),
     SCANNER_OUTCOME.FINDING,
   );
   assert.equal(
@@ -112,6 +123,59 @@ test('kills a command at its internal deadline', async () => {
 
   assert.equal(result.timedOut, true);
   assert.equal(result.code, null);
+});
+
+test('bounds an npm command and its descendant process tree', async () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'relay-scanner-gate-'));
+  try {
+    writeFileSync(
+      join(fixture, 'package.json'),
+      JSON.stringify({
+        scripts: {
+          hang: `"${process.execPath}" -e "setInterval(() => {}, 1000)"`,
+        },
+      }),
+    );
+    const started = Date.now();
+    const result = await runBoundedCommand({
+      file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+      args: ['run', 'hang'],
+      cwd: fixture,
+      env: process.env,
+      timeoutMs: 100,
+      maxOutputBytes: 4_096,
+      write: () => {},
+    });
+
+    assert.equal(result.timedOut, true);
+    assert.equal(result.code, null);
+    assert.ok(Date.now() - started < 2_000, 'npm descendant tree exceeded the bounded deadline');
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test('preserves a finding exit code when inherited pipes outlive the command', async () => {
+  const escapedChild = [
+    "const { spawn } = require('node:child_process');",
+    "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], {",
+    "  detached: true, stdio: ['ignore', 1, 2],",
+    '});',
+    'child.unref();',
+    'process.exit(1);',
+  ].join('\n');
+  const result = await runBoundedCommand({
+    file: process.execPath,
+    args: ['-e', escapedChild],
+    env: process.env,
+    timeoutMs: 50,
+    maxOutputBytes: 4_096,
+    write: () => {},
+  });
+
+  assert.equal(result.timedOut, true);
+  assert.equal(result.code, 1);
+  assert.equal(classifyCommandResult(result, COMMAND_POLICY), SCANNER_OUTCOME.FINDING);
 });
 
 test('writes a bounded warning and job summary without echoing tokens', () => {

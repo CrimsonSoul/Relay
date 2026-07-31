@@ -210,6 +210,10 @@ malformed responses, identity drift, and unknown errors remain blocking configur
 green Unavailable job is not evidence that the revision is clean; retry the job and require a real
 scanner decision before a release.
 
+Each scanner wrapper has an 18-minute aggregate deadline inside its 25-minute GitHub job. Individual
+commands, paginated Sonar reads, and Sonar review transitions use shorter child or request deadlines,
+leaving time for checkout, installation, warning evidence, and orderly process-tree termination.
+
 CodeRabbit skips drafts and uses Request Changes for findings. Its availability status is not a
 required check; findings remain blocking through the review state and required resolution of review
 conversations. Automatic incremental review pauses after two already-reviewed commits so rapid

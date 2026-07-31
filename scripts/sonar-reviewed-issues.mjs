@@ -1,12 +1,17 @@
 import { readFileSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
+import { classifyHttpFailure, findingError, unavailableError } from './scanner-gate-policy.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
 const EXPECTED_PROJECT_KEY = 'CrimsonSoul_Relay';
 const EXPECTED_BRANCH = 'test';
 const PAGE_SIZE = 500;
 const MAX_ISSUES = 10_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
+const MAX_TIMEOUT_MS = 1_080_000;
 const SEARCHED_STATUSES = ['OPEN', 'CONFIRMED', 'ACCEPTED', 'FALSE_POSITIVE'];
 const OPEN_STATUSES = new Set(['OPEN', 'CONFIRMED']);
 const REVIEWED_STATUS_BY_TRANSITION = Object.freeze({
@@ -33,6 +38,7 @@ const REVIEW_COMMENT_BY_RULE = Object.freeze({
   'typescript:S8980':
     'Relay reviewed exception: direct hook state transitions require React act().',
 });
+const monotonicNow = () => performance.now();
 
 function reviewedIssue(key, rule, path, transition) {
   return Object.freeze({
@@ -530,10 +536,36 @@ function issueSearchUrl(base, projectKey, page) {
   return url;
 }
 
-async function fetchJson(fetcher, url, options, operation) {
+function validateRequestTimeout(requestTimeoutMs) {
+  if (
+    !Number.isSafeInteger(requestTimeoutMs) ||
+    requestTimeoutMs < 1 ||
+    requestTimeoutMs > MAX_REQUEST_TIMEOUT_MS
+  ) {
+    throw new Error('Sonar request timeout must be between 1 and 60000 milliseconds.');
+  }
+}
+
+function validateTiming(timeoutMs, now) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error('Sonar reconciliation timeout must be between 1 and 1080000 milliseconds.');
+  }
+  if (typeof now !== 'function') throw new TypeError('Sonar timing function is required.');
+}
+
+function remainingTime(deadline, now, operation) {
+  const remaining = Math.floor(deadline - now());
+  if (remaining <= 0) throw unavailableError(`${operation} exceeded its deadline.`);
+  return remaining;
+}
+
+async function fetchJson(fetcher, url, options, operation, requestTimeoutMs) {
   let response;
   try {
-    response = await fetcher(url, options);
+    response = await fetcher(url, {
+      ...options,
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
   } catch (error) {
     throw unavailableError(`${operation} failed before receiving a response.`, {
       cause: error,
@@ -556,19 +588,26 @@ export async function fetchCurrentSonarIssues({
   hostUrl,
   projectKey,
   token,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  now = monotonicNow,
 }) {
   if (typeof fetcher !== 'function') throw new Error('A Fetch implementation is required.');
   if (projectKey !== EXPECTED_PROJECT_KEY) {
     throw new Error('sonar.projectKey does not match the reviewed Sonar issue manifest.');
   }
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
+  validateRequestTimeout(requestTimeoutMs);
+  validateTiming(timeoutMs, now);
   const base = sonarApiBase(hostUrl);
   const issues = [];
   const seen = new Set();
   let page = 1;
   let expectedTotal;
+  const deadline = now() + timeoutMs;
 
   do {
+    const remaining = remainingTime(deadline, now, 'Sonar issue search');
     const payload = await fetchJson(
       fetcher,
       issueSearchUrl(base, projectKey, page),
@@ -579,6 +618,7 @@ export async function fetchCurrentSonarIssues({
         },
       },
       'Sonar issue search',
+      Math.min(requestTimeoutMs, remaining),
     );
     const validated = validatePage(payload, page);
     expectedTotal ??= validated.total;
@@ -691,7 +731,7 @@ export function planReviewedIssueReconciliation(issues, reviewedIssues = REVIEWE
   }
 
   if (state.unexpectedOpen.length > 0) {
-    throw new Error(unexpectedIssueMessage(state.unexpectedOpen));
+    throw findingError(unexpectedIssueMessage(state.unexpectedOpen));
   }
 
   const fixedOrMissing = reviewedIssues
@@ -713,7 +753,7 @@ export function planReviewedIssueReconciliation(issues, reviewedIssues = REVIEWE
   };
 }
 
-async function applyTransition(fetcher, base, token, item) {
+async function applyTransition(fetcher, base, token, item, requestTimeoutMs) {
   const url = new URL('api/issues/do_transition', base);
   const body = new URLSearchParams({
     comment: item.comment,
@@ -730,6 +770,7 @@ async function applyTransition(fetcher, base, token, item) {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body,
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
   } catch (error) {
     throw unavailableError(`Sonar transition failed for reviewed issue ${item.key}.`, {
@@ -747,18 +788,29 @@ export async function reconcileReviewedSonarIssues({
   projectKey,
   token,
   reviewedIssues = REVIEWED_ISSUES,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  now = monotonicNow,
 }) {
+  validateRequestTimeout(requestTimeoutMs);
+  validateTiming(timeoutMs, now);
   const base = sonarApiBase(hostUrl);
+  const deadline = now() + timeoutMs;
+  const searchTimeoutMs = remainingTime(deadline, now, 'Sonar reviewed-issue reconciliation');
   const issues = await fetchCurrentSonarIssues({
     fetcher,
     hostUrl: base,
     projectKey,
     token,
+    requestTimeoutMs,
+    timeoutMs: searchTimeoutMs,
+    now,
   });
   const plan = planReviewedIssueReconciliation(issues, reviewedIssues);
   const transitioned = [];
   for (const item of plan.transitions) {
-    await applyTransition(fetcher, base, token, item);
+    const remaining = remainingTime(deadline, now, 'Sonar reviewed-issue reconciliation');
+    await applyTransition(fetcher, base, token, item, Math.min(requestTimeoutMs, remaining));
     transitioned.push(item.key);
   }
   return {
@@ -790,6 +842,9 @@ export async function runSonarReviewedIssues({
   readProperties = () =>
     readFileSync(new URL('../sonar-project.properties', import.meta.url), 'utf8'),
   write = (line) => process.stdout.write(`${line}\n`),
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  now = monotonicNow,
 } = {}) {
   const token = env.SONAR_TOKEN;
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
@@ -800,6 +855,9 @@ export async function runSonarReviewedIssues({
     hostUrl: env.SONAR_HOST_URL || 'https://sonarcloud.io',
     projectKey,
     token,
+    requestTimeoutMs,
+    timeoutMs,
+    now,
   });
   write(formatReconciliationSummary(result));
   return result;

@@ -148,6 +148,32 @@ test('treats monitor availability as warning success but monitor exit 1 as confi
   );
 });
 
+test('uses one aggregate deadline across sequential Snyk phases', async () => {
+  let clock = 0;
+  const commands = [];
+  const reports = [];
+  const result = await runSnykCi({
+    env: {
+      ...configuredEnv,
+      GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF: 'refs/heads/test',
+    },
+    now: () => clock,
+    runCommand: async (command) => {
+      commands.push(command);
+      clock += commands.length === 1 ? 600_000 : 480_000;
+      return commandResult(0);
+    },
+    reportUnavailable: (report) => reports.push(report),
+  });
+
+  assert.equal(result.outcome, SCANNER_OUTCOME.UNAVAILABLE);
+  assert.equal(commands.length, 2);
+  assert.equal(commands[0].timeoutMs, 600_000);
+  assert.equal(commands[1].timeoutMs, 480_000);
+  assert.equal(reports.length, 1);
+});
+
 test('rejects missing credentials and unsupported GitHub context before scanning', async () => {
   for (const env of [
     { ...configuredEnv, SNYK_TOKEN: '' },
