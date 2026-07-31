@@ -13,6 +13,7 @@ import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { rateLimiters } from '../rateLimiter';
 import { BrandAssetService } from '../services/operationalServices';
+import { shouldSuppressDesktopSideEffects } from '../app/e2eSafety';
 
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
@@ -288,7 +289,7 @@ export function setupWindowHandlers(
     try {
       const normalizedUrl = normalizeAllowedExternalUrl(url);
       if (normalizedUrl) {
-        await shell.openExternal(normalizedUrl);
+        if (!shouldSuppressDesktopSideEffects()) await shell.openExternal(normalizedUrl);
         return true;
       }
       loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);

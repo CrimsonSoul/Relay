@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
   const mockLoadURL = vi.fn().mockResolvedValue(undefined);
   const mockLoadFile = vi.fn().mockResolvedValue(undefined);
   const mockShow = vi.fn();
+  const mockShowInactive = vi.fn();
   const mockFocus = vi.fn();
   const mockRestore = vi.fn();
   const mockIsVisible = vi.fn(() => false);
@@ -49,6 +50,7 @@ const mocks = vi.hoisted(() => {
       loadURL: mockLoadURL,
       loadFile: mockLoadFile,
       show: mockShow,
+      showInactive: mockShowInactive,
       focus: mockFocus,
       restore: mockRestore,
       isVisible: mockIsVisible,
@@ -75,6 +77,7 @@ const mocks = vi.hoisted(() => {
     mockLoadURL,
     mockLoadFile,
     mockShow,
+    mockShowInactive,
     mockFocus,
     mockRestore,
     mockIsVisible,
@@ -163,6 +166,7 @@ describe('windowFactory', () => {
     mockState.mainWindow = null;
     delete env.ELECTRON_RENDERER_URL;
     delete process.env.RELAY_TEST_WINDOW_SIZE;
+    delete process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS;
   });
 
   describe('createWindow - security webPreferences', () => {
@@ -574,6 +578,18 @@ describe('windowFactory', () => {
       expect(mocks.mockRestore).toHaveBeenCalledOnce();
       expect(mocks.mockShow).toHaveBeenCalledOnce();
       expect(mocks.mockFocus).toHaveBeenCalledOnce();
+    });
+
+    it('shows E2E windows without activating the desktop', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+      const { showAndFocusWindow } = await import('../windowFactory');
+      const window = mockState.mainWindow ?? mocks.MockBrowserWindow({});
+
+      expect(showAndFocusWindow(window as never, 'renderer-loaded')).toBe(true);
+      expect(mocks.mockShowInactive).toHaveBeenCalledOnce();
+      expect(mocks.mockShow).not.toHaveBeenCalled();
+      expect(mocks.mockFocus).not.toHaveBeenCalled();
     });
 
     it('does nothing when the existing window has already been destroyed', async () => {

@@ -10,6 +10,7 @@ import { setupContextMenu } from './contextMenu';
 import { attachWindowLifecycleListeners } from './processLifecycle';
 import { describeUrlForLog } from '@shared/urlSecurity';
 import { configureWindowsTaskbarWindow } from './windowsTaskbarIdentity';
+import { shouldSuppressDesktopSideEffects } from './e2eSafety';
 
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
@@ -90,8 +91,12 @@ export function showAndFocusWindow(window: BrowserWindow | null, reason: string)
   if (!window || window.isDestroyed()) return false;
 
   if (window.isMinimized()) window.restore();
-  if (!window.isVisible()) window.show();
-  window.focus();
+  if (shouldSuppressDesktopSideEffects()) {
+    if (!window.isVisible()) window.showInactive();
+  } else {
+    if (!window.isVisible()) window.show();
+    window.focus();
+  }
 
   loggers.main.info('Main window presented', {
     reason,

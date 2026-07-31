@@ -242,6 +242,7 @@ Object.defineProperty(process, 'resourcesPath', {
 describe('pocketbaseBootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS;
     mocks.getPbProcess.mockReturnValue(null);
     mocks.getRetentionManager.mockReturnValue(null);
     mocks.getPbClient.mockReturnValue(mocks.maintenancePb);
@@ -272,6 +273,27 @@ describe('pocketbaseBootstrap', () => {
     mocks.ensureKnowledgeBatchApi.mockResolvedValue(undefined);
     mocks.ensureCollections.mockResolvedValue({ privilegedRuntimeReady: true });
     mocks.ensureKnowledgeSearchCollections.mockResolvedValue(undefined);
+  });
+
+  it('creates the disposable E2E superuser before PocketBase can open its browser installer', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '127.0.0.1',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
+
+    expect(mocks.execFileSync).toHaveBeenCalledOnce();
+    expect(callOrder(mocks.execFileSync, 0)).toBeLessThan(callOrder(mocks.pbProcess.start, 0));
   });
 
   it('authenticates a healthy existing superuser without invoking CLI repair', async () => {

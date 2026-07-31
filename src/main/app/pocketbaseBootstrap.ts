@@ -35,6 +35,7 @@ import {
   restartKnowledgeSearchRuntime,
   stopKnowledgeSearchRuntime,
 } from '../knowledge/knowledgeSearchRuntime';
+import { shouldSuppressDesktopSideEffects } from './e2eSafety';
 
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
@@ -720,6 +721,14 @@ const doStartPocketBase = async (
     const pbDataDir = join(configDataDir, 'pb_data');
     cleanupSuperuserRepairArtifacts(pbDataDir);
     const hooksDir = getRequiredPocketBaseHooksDir(appRoot);
+
+    // PocketBase opens its first-run installer in the system browser when a
+    // fresh database has no superuser. Disposable E2E workspaces already have
+    // Relay's test secret, so create that account through the same private
+    // migration handoff used by credential repair before starting the server.
+    if (shouldSuppressDesktopSideEffects() && !existsSync(join(pbDataDir, 'data.db'))) {
+      repairSuperuserCredentials(binaryPath, pbDataDir, serverConfig.secret);
+    }
 
     loggers.pocketbase.info('PocketBase paths', {
       binaryPath,

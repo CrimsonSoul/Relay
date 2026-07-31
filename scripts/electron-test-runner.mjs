@@ -1,6 +1,7 @@
 import { spawnSync as defaultSpawnSync } from 'node:child_process';
 
 const FAILED_TO_START_EXIT_CODE = 1;
+const E2E_DESKTOP_SIDE_EFFECTS_FLAG = 'RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS';
 
 const runChild = (spawnSync, command, args, options) => {
   try {
@@ -59,6 +60,10 @@ export function runElectronTests({
   stderr = process.stderr,
 }) {
   const childOptions = { cwd, env, stdio: 'inherit' };
+  const playwrightChildOptions = {
+    ...childOptions,
+    env: { ...env, [E2E_DESKTOP_SIDE_EFFECTS_FLAG]: '1' },
+  };
 
   stdout.write(`Rebuilding better-sqlite3 for Electron ${electronVersion}...\n`);
   const rebuildOutcome = runChild(
@@ -83,7 +88,7 @@ export function runElectronTests({
       spawnSync,
       nodePath,
       [playwrightPath, 'test', '-c', playwrightConfigPath, ...playwrightArgs],
-      childOptions,
+      playwrightChildOptions,
     );
   }
 

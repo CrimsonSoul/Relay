@@ -81,6 +81,7 @@ describe('knowledgeHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS;
     trusted.mockReturnValue(true);
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
     vi.mocked(shell.openExternal).mockResolvedValue(undefined);
@@ -367,6 +368,16 @@ describe('knowledgeHandlers', () => {
     ])('opens valid Knowledge web link %s', async (value, normalized) => {
       await expect(getOpenWebLinkHandler()({}, value)).resolves.toEqual({ ok: true });
       expect(shell.openExternal).toHaveBeenCalledWith(normalized);
+    });
+
+    it('accepts a valid E2E Knowledge link without opening a desktop app', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+
+      await expect(
+        getOpenWebLinkHandler()({}, 'https://docs.example.com/runbook'),
+      ).resolves.toEqual({ ok: true });
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
     it('returns open-failed when shell.openExternal rejects', async () => {
