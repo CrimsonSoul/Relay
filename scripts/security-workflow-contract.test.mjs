@@ -12,10 +12,28 @@ const [buildWorkflow, securityWorkflow] = await Promise.all([
 const build = parse(buildWorkflow);
 const security = parse(securityWorkflow);
 const normalizeExpression = (value) => value.replaceAll(/\s+/gu, ' ').trim();
+const findStep = (job, name) => {
+  const step = job.steps.find((candidate) => candidate.name === name);
+  assert.ok(step, `missing workflow step: ${name}`);
+  return step;
+};
 
 test('test pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.on.pull_request.branches, ['main', 'test']);
   assert.equal(build.jobs.quality.name, 'Build quality gate');
+  assert.equal(build.jobs['package-windows'].needs, undefined);
+});
+
+test('scanner jobs retain stable required names and bounded CI entrypoints', () => {
+  assert.equal(security.jobs.sonarqube.name, 'SonarQube quality gate');
+  assert.equal(security.jobs.snyk.name, 'Snyk security gate');
+  assert.equal(security.jobs.sonarqube['timeout-minutes'], 25);
+  assert.equal(security.jobs.snyk['timeout-minutes'], 25);
+  assert.match(
+    findStep(security.jobs.sonarqube, 'Run Sonar finding gate').run,
+    /security:sonar:ci/u,
+  );
+  assert.match(findStep(security.jobs.snyk, 'Run Snyk finding gate').run, /security:snyk:ci/u);
 });
 
 test('Snyk delegates internal test pull requests and merged pushes to its CI gate', () => {
@@ -31,7 +49,6 @@ test('Snyk delegates internal test pull requests and merged pushes to its CI gat
     `),
   );
 
-  const scanStep = snyk.steps.find((step) => step.name === 'Run Snyk finding gate');
-  assert.ok(scanStep, 'missing Snyk finding gate');
+  const scanStep = findStep(snyk, 'Run Snyk finding gate');
   assert.equal(scanStep.run, 'npm run security:snyk:ci');
 });
