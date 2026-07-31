@@ -8,6 +8,7 @@ import type {
   PrivilegedPairingCompletionView,
   PrivilegedReauthenticationProof,
   PublicRelayConfig,
+  RadarSnapshot,
 } from './ipc';
 import type { PrivilegedCommandResult } from './privilegedCommands';
 import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
@@ -360,6 +361,52 @@ const CloudStatusProviderSchema = z.enum([
   'openai',
   'salesforce',
 ]);
+
+const RadarStatusColorSchema = z.enum(['green', 'yellow', 'red', 'magenta', 'unknown']);
+
+const WebRadarRowSchema = z
+  .object({
+    name: z.string().max(1_000),
+    depth: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const WebRadarDispatcherSchema = z
+  .object({
+    name: z.string().max(1_000),
+    tone: RadarStatusColorSchema,
+    lastScheduleDate: z.string().max(1_000),
+    lastPubSubDate: z.string().max(1_000),
+    queues: z.array(WebRadarRowSchema).max(5_000),
+  })
+  .strict();
+
+const WebRadarMetricSchema = z
+  .object({
+    label: z.string().max(1_000),
+    value: z.string().max(1_000).nullable(),
+    tone: RadarStatusColorSchema,
+  })
+  .strict();
+
+export const WebRadarSnapshotSchema: z.ZodType<RadarSnapshot> = z
+  .object({
+    color: RadarStatusColorSchema,
+    dispatchers: z.array(WebRadarDispatcherSchema).max(500),
+    papa: z.array(WebRadarRowSchema).max(5_000),
+    metrics: z.array(WebRadarMetricSchema).max(5_000),
+    xcenter: z
+      .object({
+        ok: z.number().int().nonnegative().nullable(),
+        pending: z.number().int().nonnegative().nullable(),
+      })
+      .strict(),
+    currentTime: z.string().max(256).nullable(),
+    lastUpdated: z.number().int().nonnegative(),
+    signInRequired: z.boolean(),
+    error: z.string().max(2_000).nullable(),
+  })
+  .strict();
 
 const CloudStatusItemSchema = z
   .object({

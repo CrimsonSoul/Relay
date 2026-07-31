@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CloudStatusData } from '@shared/ipc';
+import type { CloudStatusData, RadarSnapshot } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { WebRequestSecurity } from '../WebRequestSecurity';
 import { WebRouter, WEB_SESSION_COOKIE_NAME } from '../WebRouter';
@@ -41,6 +41,30 @@ function services(): OperationalServices {
         providers: emptyProviders(),
         lastUpdated: 12,
         errors: [],
+      })),
+    },
+    radar: {
+      snapshot: vi.fn((): RadarSnapshot => ({
+        color: 'unknown',
+        dispatchers: [],
+        papa: [],
+        metrics: [],
+        xcenter: { ok: null, pending: null },
+        currentTime: null,
+        lastUpdated: 0,
+        signInRequired: false,
+        error: null,
+      })),
+      refresh: vi.fn(async (): Promise<RadarSnapshot> => ({
+        color: 'unknown',
+        dispatchers: [],
+        papa: [],
+        metrics: [],
+        xcenter: { ok: null, pending: null },
+        currentTime: null,
+        lastUpdated: 0,
+        signInRequired: false,
+        error: null,
       })),
     },
     dashboards: {

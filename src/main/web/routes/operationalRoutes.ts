@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CloudStatusData, IpcResult, LogEntry } from '@shared/ipc';
+import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 import {
   type DynatraceProblemsPublicSettings,
@@ -24,6 +24,11 @@ export type BrandAssetKind = 'company' | 'footer';
 export type OperationalServices = {
   cloudStatus: {
     refresh: () => Promise<CloudStatusData>;
+  };
+  radar: {
+    snapshot: () => RadarSnapshot;
+    refresh: () => Promise<RadarSnapshot>;
+    onChange?: (listener: (snapshot: RadarSnapshot) => void) => () => void;
   };
   dashboards: {
     list: () => DynatraceDashboardState[];
