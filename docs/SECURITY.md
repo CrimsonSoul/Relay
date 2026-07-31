@@ -53,6 +53,8 @@ The gateway binds only when server-mode direct LAN access and Relay Web are both
 
 The browser receives the ordinary app-user connection needed by the shared renderer only after the web session is authenticated. Protected commands keep the existing authoritative capability, revision, replay, and audit controls. Browser protected sign-in and destructive approvals are server-mediated; they do not expose Electron secrets, local paths, the protected auth store, or private signing keys.
 
+Dispatcher Radar crosses this boundary only as a bounded, strictly validated `RadarSnapshot`. CW Dashboard cookies remain in the Electron Radar session on the Relay server PC and are never returned to the browser. Radar reads require an authenticated Web session. Manual refresh additionally requires same-origin and CSRF validation and is limited to 12 requests per logical session per minute. The browser cannot supply a Radar URL, cookie, credential, or alternate dashboard target.
+
 Relay Web deliberately has no service worker, browser push subscription, permissive cross-origin API, backup/restore endpoint, arbitrary filesystem bridge, connection-reconfiguration endpoint, or offline mutation queue.
 
 The service uses cleartext HTTP. Session credentials, operational data, and responses are not confidential against a network observer. Never port-forward or publish the Relay Web port through public DNS, a public reverse proxy, or a WAN-facing firewall rule. Restrict access to approved LAN/VPN devices. See `docs/relay-web.md` for deployment requirements.

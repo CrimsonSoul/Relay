@@ -138,11 +138,24 @@ Relay Web responsibilities:
 - Authenticate ordinary browser sessions with the Relay connection passphrase
 - Write browser heartbeats with a sanitized browser/address label
 - Adapt system actions through a bounded same-origin API while capability-gating desktop-only operations
+- Serve the server PC's validated Dispatcher Radar snapshot and refresh action to authenticated Web sessions
 - Require a desktop viewport at least 1,024 pixels wide
 
 Presence records expire from the UI after 90 seconds without a heartbeat. The collection stores desktop clients and browser sessions, so the Relay server itself is not counted.
 
 Relay Web is a backup access path, not an independent frontend. The same React components, PocketBase services, realtime subscriptions, and feature state are used in both runtimes. The Electron preload adapter and browser session adapter implement the runtime boundary. Native window management, connection reconfiguration, backup/restore, offline cache/replay, native alarm selection, and image clipboard capture remain desktop-only.
+
+Dispatcher Radar follows a server-owned operational path:
+
+```text
+RadarManager
+  -> OperationalServices
+  -> authenticated Radar snapshot/refresh routes and session event
+  -> WebBridge
+  -> shared Radar renderer, sidebar status, and queue notifications
+```
+
+`RadarManager` remains the polling, coalescing, stale-data, and CW-session authority on the Relay server PC. The Web gateway owns one Radar subscription and fans each validated snapshot out to active browser sessions. Gateway disposal releases that subscription along with the other operational-service subscriptions. Relay Web does not create a second dashboard session or receive CW cookies.
 
 ### Offline Resilience
 

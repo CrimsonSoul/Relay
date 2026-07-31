@@ -106,6 +106,107 @@ describe('WebBridge', () => {
     expect((bridge as unknown as Record<string, unknown>).openPath).toBeUndefined();
   });
 
+  it('keeps device-only capabilities excluded while shared operations use bounded Web paths', async () => {
+    const routeResponses: Record<string, unknown> = {
+      '/operations/cloud-status': EMPTY_STATUS,
+      '/operations/dynatrace-dashboards': [],
+      '/operations/dynatrace-problems/settings': {
+        configured: false,
+        environmentUrl: '',
+        profileFilterConfigured: false,
+        selectedAlertingProfiles: [],
+      },
+      '/operations/assets/company': 'data:image/png;base64,AA==',
+      '/privileged/session': SIGNED_OUT,
+      '/knowledge/index-status': {
+        state: 'idle',
+        documentCount: 0,
+        categoryCount: 0,
+        lastIndexedAt: null,
+      },
+      '/knowledge/search': { ok: false, requestId: 'search-1', error: 'unavailable' },
+      '/knowledge/upload/queue': {
+        restartRecovery: false,
+        activeBatchId: null,
+        totalBytes: 0,
+        acknowledgedBytes: 0,
+        items: [],
+      },
+      '/operations/radar': RADAR_SNAPSHOT,
+    };
+    const { request, calls } = stubWebRequest((path) => routeResponses[path] ?? { ok: true });
+    const actions = createBrowserActions({ executeCopy: () => true });
+    const writeClipboard = vi.spyOn(actions, 'writeClipboard');
+    const downloadText = vi.spyOn(actions, 'downloadText').mockReturnValue(true);
+    const bridge = createWebBridge(SESSION, { request, actions });
+
+    const deviceOnlyCapabilities = [
+      'connectionConfiguration',
+      'pocketBaseRecovery',
+      'offlineCache',
+      'offlineMutations',
+      'nativeWindowControls',
+      'customReminderSound',
+      'imageClipboard',
+    ] as const;
+    for (const capability of deviceOnlyCapabilities) {
+      expect(bridge.runtime.capabilities[capability], capability).toBe(false);
+    }
+    expect(bridge.runtime.capabilities.privilegedAccess).toBe(true);
+    expect(bridge.runtime.capabilities.knowledgePublishing).toBe(true);
+
+    await expect(bridge.createBackup()).resolves.toMatchObject({ success: false });
+    await expect(bridge.mutateOffline({} as never)).resolves.toEqual({
+      ok: false,
+      error: 'Web access is online-only.',
+    });
+    await expect(bridge.selectReminderSound()).resolves.toMatchObject({ success: false });
+    await expect(bridge.reselectKnowledgeUploadSource('upload-1')).resolves.toBe(false);
+
+    await bridge.getCloudStatus();
+    await bridge.listDynatraceDashboards();
+    await bridge.getDynatraceProblemsSettings();
+    await bridge.getCompanyLogo();
+    await bridge.getPrivilegedSession();
+    await bridge.getKnowledgeIndexStatus();
+    await bridge.searchKnowledge({
+      requestId: 'search-1',
+      query: 'server',
+      scope: { kind: 'all' },
+      categoryId: null,
+      documentType: null,
+      limit: 10,
+    });
+    await bridge.getKnowledgeUploadQueue();
+    await bridge.getRadarSnapshot();
+    bridge.logToMain({ level: 'INFO', module: 'parity', message: 'contract' });
+    bridge.notifyAlertDismissed('cloud-outage');
+    await bridge.writeClipboard('bridge text');
+    await bridge.saveAndOpenIcs('BEGIN:VCALENDAR\nEND:VCALENDAR');
+
+    expect(calls.mock.calls.map(([path]) => path)).toEqual(
+      expect.arrayContaining([
+        '/operations/cloud-status',
+        '/operations/dynatrace-dashboards',
+        '/operations/dynatrace-problems/settings',
+        '/operations/assets/company',
+        '/privileged/session',
+        '/knowledge/index-status',
+        '/knowledge/search',
+        '/knowledge/upload/queue',
+        '/operations/radar',
+        '/operations/log',
+        '/operations/alert-dismissed',
+      ]),
+    );
+    expect(writeClipboard).toHaveBeenCalledWith('bridge text');
+    expect(downloadText).toHaveBeenCalledWith(
+      'BEGIN:VCALENDAR\nEND:VCALENDAR',
+      'relay-schedule.ics',
+      'text/calendar',
+    );
+  });
+
   it('uses exact routes and unsubscribes event listeners', async () => {
     const { request, calls } = stubWebRequest(() => EMPTY_STATUS);
     const unsubscribe = vi.fn();

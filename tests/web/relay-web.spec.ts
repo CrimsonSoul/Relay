@@ -90,6 +90,40 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   relayWeb,
 }, testInfo) => {
   const failedPocketBaseRequests: string[] = [];
+  let radarRefreshRequests = 0;
+  const radarSnapshot = {
+    color: 'green',
+    dispatchers: [
+      {
+        name: 'Prod01',
+        tone: 'green',
+        lastScheduleDate: '2026-07-31 10:00',
+        lastPubSubDate: '2026-07-31 10:00',
+        queues: [{ name: 'Work', depth: 4 }],
+      },
+    ],
+    papa: [],
+    metrics: [],
+    xcenter: { ok: 977, pending: 0 },
+    currentTime: '10:00',
+    lastUpdated: Date.now(),
+    signInRequired: false,
+    error: null,
+  } as const;
+  await page.route('**/relay-api/v1/operations/radar**', async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith('/operations/radar/refresh') && request.method() === 'POST') {
+      radarRefreshRequests += 1;
+      await route.fulfill({ status: 200, json: radarSnapshot });
+      return;
+    }
+    if (pathname.endsWith('/operations/radar') && request.method() === 'GET') {
+      await route.fulfill({ status: 200, json: radarSnapshot });
+      return;
+    }
+    await route.continue();
+  });
   page.on('requestfailed', (request) => {
     if (request.url().startsWith(relayWeb.pocketBaseOrigin)) {
       failedPocketBaseRequests.push(
@@ -140,6 +174,23 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
       ),
     )
     .toBe('web');
+  const webCapabilities = await page.evaluate(
+    () =>
+      (
+        globalThis as typeof globalThis & {
+          api?: { runtime?: { capabilities?: Record<string, boolean> } };
+        }
+      ).api?.runtime?.capabilities,
+  );
+  expect(webCapabilities).toMatchObject({
+    connectionConfiguration: false,
+    pocketBaseRecovery: false,
+    offlineCache: false,
+    offlineMutations: false,
+    nativeWindowControls: false,
+    customReminderSound: false,
+    imageClipboard: false,
+  });
 
   const browserFamily = { chrome: 'Chrome', edge: 'Edge', safari: 'Safari' }[testInfo.project.name];
   expect(browserFamily).toBeTruthy();
@@ -172,11 +223,22 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
     ['Knowledge', 'Knowledge'],
     ['Status', 'Service Status'],
     ['Problems', 'Dynatrace Problems'],
+    ['Radar', 'Dispatcher Radar'],
   ] as const;
   for (const [button, breadcrumb] of destinations) {
-    await page.getByRole('button', { name: button, exact: true }).click();
+    const destinationButton =
+      button === 'Radar'
+        ? page.getByRole('button', { name: /^Radar(?: — .+)?$/ })
+        : page.getByRole('button', { name: button, exact: true });
+    await destinationButton.click();
     await expect(page.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumb}`);
   }
+  await expect(page.getByRole('heading', { name: 'Dispatcher Radar' })).toBeVisible();
+  const xcenter = page.getByRole('region', { name: 'XCenter counts' });
+  await expect(xcenter).toContainText('977');
+  await expect(xcenter).toContainText('0');
+  await page.getByRole('button', { name: 'Refresh Radar now' }).click();
+  await expect.poll(() => radarRefreshRequests).toBe(1);
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('tab', { name: 'Relay data' }).click();
@@ -188,7 +250,42 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   const dataManager = page.getByRole('dialog', { name: 'Data Manager' });
   await expect(dataManager).toBeVisible();
   await expect(dataManager.getByRole('tab', { name: 'Backups' })).toHaveCount(0);
+  await dataManager.getByRole('tab', { name: 'Import' }).click();
+  await dataManager.getByRole('combobox').selectOption('servers');
+  const importedServers = Array.from({ length: 20 }, (_, index) => ({
+    name: `Parity Server ${String(index + 1).padStart(2, '0')}`,
+    businessArea: 'Relay Web',
+    lob: 'Parity',
+    comment: `Imported by browser parity test ${index + 1}`,
+    owner: '',
+    contact: '',
+    os: index % 2 === 0 ? 'Windows Server' : 'Linux',
+  }));
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await dataManager.getByRole('button', { name: 'Import...' }).click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles({
+    name: 'relay-parity-servers.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(importedServers)),
+  });
+  await expect(dataManager.getByText(/^Processed (?:[1-9]|1\d) of 20$/)).toBeVisible();
+  await expect(dataManager.getByText(/^Imported \d+ · Updated \d+ · Errors 0$/)).toBeVisible();
+  await expect(dataManager.getByText('Imported: 20, Updated: 0, Skipped: 0')).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Knowledge', exact: true }).click();
+  await page.getByRole('button', { name: /^Open Servers, 20 servers$/ }).click();
+  await expect(page.getByRole('button', { name: /^Parity Server 01 / })).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Filter servers' }).fill('Parity Server 20');
+  await expect(page.getByRole('button', { name: /^Parity Server 20 / })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Alerts', exact: true }).click();
+  await page.getByRole('button', { name: 'ALARMS', exact: true }).click();
+  const reminderManager = page.getByRole('dialog', { name: 'Alarms' });
+  await expect(reminderManager).toBeVisible();
+  await expect(reminderManager.getByRole('button', { name: 'Choose MP3' })).toHaveCount(0);
+  await reminderManager.getByRole('button', { name: 'Close', exact: true }).click();
 
   await page.setViewportSize({ width: 1000, height: 800 });
   await expect(page.getByRole('heading', { name: 'Larger window required' })).toBeVisible();

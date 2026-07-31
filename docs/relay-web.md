@@ -24,7 +24,9 @@ The browser session remains signed in for up to one hour without activity and ei
 
 ## Supported experience
 
-Relay Web stays close to desktop parity by running the shared React renderer through a browser-safe runtime adapter. Compose, Alerts, On-Call, Knowledge (Wiki, Contacts, and Servers), Service Status, Dynatrace Problems, Settings, realtime updates, and protected workflows remain available.
+Relay Web stays close to desktop parity by running the shared React renderer through a browser-safe runtime adapter. Compose, Alerts, On-Call, Knowledge (Wiki, Contacts, and Servers), Service Status, Dynatrace Problems, Dispatcher Radar, Settings, realtime updates, and protected workflows remain available. Data Manager imports use the browser's file picker and show total processed, imported, updated, and error counts while the selected file is applied to the Relay server.
+
+Dispatcher Radar remains owned by Relay Desktop on the server PC. Relay Web receives validated Radar snapshots and live changes from that server session; it never receives CW Dashboard cookies or signs in to CW independently. If the CW session expires, open Relay Desktop on the server PC, sign in to CW Dashboard there, and then refresh Radar in the browser.
 
 Browser sessions appear in the server's client-presence list as `Web · Browser · address`. The address is sanitized before display.
 
