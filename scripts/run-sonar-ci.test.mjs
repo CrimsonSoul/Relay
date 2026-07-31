@@ -12,6 +12,7 @@ const configuredEnv = {
 };
 
 const cleanCommand = async () => ({ code: 0, timedOut: false, output: '' });
+const noSleep = async () => {};
 
 test('runs the clean pull-request phases in exact order with a bounded upload', async () => {
   const calls = [];
@@ -31,12 +32,15 @@ test('runs the clean pull-request phases in exact order with a bounded upload', 
       return { summary: { open: [] } };
     },
     checkGate: async (options) => calls.push(['gate', options.argv]),
+    sleep: noSleep,
   });
 
   assert.equal(result.outcome, SCANNER_OUTCOME.CLEAN);
   assert.deepEqual(calls, [
     'upload',
     ['wait', ['wait-analysis', '--pull-request=221']],
+    ['issues', ['--pull-request=221']],
+    ['issues', ['--pull-request=221']],
     ['issues', ['--pull-request=221']],
     ['gate', ['check-quality-gate', '--pull-request=221']],
   ]);
@@ -67,10 +71,18 @@ test('reconciles reviewed findings exactly once only for the test branch', async
       return { summary: { open: [] } };
     },
     checkGate: async () => calls.push('gate'),
+    sleep: noSleep,
   });
 
   assert.equal(result.outcome, SCANNER_OUTCOME.CLEAN);
-  assert.deepEqual(calls, ['wait', ['reconcile', ['--branch=test', '--apply']], 'issues', 'gate']);
+  assert.deepEqual(calls, [
+    'wait',
+    ['reconcile', ['--branch=test', '--apply']],
+    'issues',
+    'issues',
+    'issues',
+    'gate',
+  ]);
 });
 
 test('warns and succeeds for bounded or documented transient availability failures', async () => {
@@ -152,6 +164,30 @@ test('softens only typed downstream availability failures', async () => {
     }),
     (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
   );
+});
+
+test('catches findings that appear while the Sonar issue index settles', async () => {
+  let issueReads = 0;
+  let sleeps = 0;
+  await assert.rejects(
+    runSonarCi({
+      argv: ['--pull-request=221'],
+      env: configuredEnv,
+      runCommand: cleanCommand,
+      waitAnalysis: async () => {},
+      readIssues: async () => {
+        issueReads += 1;
+        return { summary: { open: issueReads === 1 ? [] : ['eventual-finding'] } };
+      },
+      checkGate: async () => {},
+      sleep: async () => {
+        sleeps += 1;
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.FINDING,
+  );
+  assert.equal(issueReads, 2);
+  assert.equal(sleeps, 1);
 });
 
 test('uses one aggregate deadline across Sonar upload and API phases', async () => {

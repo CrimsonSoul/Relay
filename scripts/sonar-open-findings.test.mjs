@@ -157,7 +157,7 @@ test('the Sonar CI gate reconciles only after the exact analysis and gates it la
   const scanner = runner.indexOf('const upload = await runCommand');
   const waitForAnalysis = runner.indexOf('await waitAnalysis');
   const reconcileReviewed = runner.indexOf('await reconcile');
-  const openFindings = runner.indexOf('await readIssues');
+  const openFindings = runner.indexOf('await waitForSettledIssues');
   const qualityGate = runner.indexOf('await checkGate');
 
   assert.ok(scanner >= 0, 'missing Sonar scanner invocation');

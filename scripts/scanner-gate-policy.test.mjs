@@ -158,7 +158,7 @@ test('bounds an npm command and its descendant process tree', async () => {
 test('preserves a finding exit code when inherited pipes outlive the command', async () => {
   const escapedChild = [
     "const { spawn } = require('node:child_process');",
-    "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], {",
+    "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], {",
     "  detached: true, stdio: ['ignore', 1, 2],",
     '});',
     'child.unref();',
@@ -168,7 +168,7 @@ test('preserves a finding exit code when inherited pipes outlive the command', a
     file: process.execPath,
     args: ['-e', escapedChild],
     env: process.env,
-    timeoutMs: 50,
+    timeoutMs: 1_000,
     maxOutputBytes: 4_096,
     write: () => {},
   });

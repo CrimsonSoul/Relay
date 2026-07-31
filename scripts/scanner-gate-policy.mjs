@@ -57,7 +57,7 @@ function signalProcessTree(child, signal) {
   if (process.platform === 'win32') {
     if (signal === 'SIGKILL') {
       const terminator = spawn(
-        'C:\\Windows\\System32\\taskkill.exe',
+        String.raw`C:\Windows\System32\taskkill.exe`,
         ['/pid', String(child.pid), '/t', '/f'],
         { shell: false, stdio: 'ignore', windowsHide: true },
       );

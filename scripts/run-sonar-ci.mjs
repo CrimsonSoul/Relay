@@ -19,6 +19,8 @@ const COMMAND_TIMEOUT_MS = 600_000;
 const AGGREGATE_TIMEOUT_MS = 1_080_000;
 const API_PHASE_TIMEOUT_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 30_000;
+const ISSUE_SETTLE_ATTEMPTS = 3;
+const ISSUE_SETTLE_INTERVAL_MS = 2_000;
 const MAX_OUTPUT_BYTES = 32_768;
 const SAFE_ORGANIZATION = /^[A-Za-z0-9._-]{1,200}$/u;
 const SONAR_UPLOAD_POLICY = Object.freeze({
@@ -100,13 +102,28 @@ function phaseTimeout(deadline, now, label, maximum = AGGREGATE_TIMEOUT_MS) {
 }
 
 function validateOpenIssueResult(result) {
-  if (!result || !result.summary || !Array.isArray(result.summary.open)) {
+  if (!Array.isArray(result?.summary?.open)) {
     throw configurationError('Sonar returned an invalid open-issue summary.');
   }
   if (result.summary.open.length > 0) {
     const visible = result.summary.open.slice(0, 20).join(', ');
     const remainder = result.summary.open.length > 20 ? ' and additional findings' : '';
     throw findingError(`Sonar reported open or confirmed issues: ${visible}${remainder}.`);
+  }
+}
+
+async function waitForSettledIssues({ deadline, now, readIssues, scopedArgument, env, sleep }) {
+  for (let attempt = 0; attempt < ISSUE_SETTLE_ATTEMPTS; attempt += 1) {
+    const timeoutMs = phaseTimeout(deadline, now, 'open-issue inspection');
+    const issues = await readIssues({
+      argv: [scopedArgument],
+      env,
+      timeoutMs,
+      requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, timeoutMs),
+    });
+    validateOpenIssueResult(issues);
+    if (attempt === ISSUE_SETTLE_ATTEMPTS - 1) return;
+    await sleep(phaseTimeout(deadline, now, 'issue-index settling', ISSUE_SETTLE_INTERVAL_MS));
   }
 }
 
@@ -125,9 +142,13 @@ export async function runSonarCi({
   checkGate = runSonarQualityGate,
   reportUnavailable = writeUnavailableReport,
   now = monotonicNow,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 } = {}) {
   try {
     if (typeof now !== 'function') throw configurationError('Sonar CI timing function is invalid.');
+    if (typeof sleep !== 'function') {
+      throw configurationError('Sonar CI sleep function is invalid.');
+    }
     const scope = validateConfiguration(argv, env);
     const deadline = now() + AGGREGATE_TIMEOUT_MS;
     const scopedArgument = scopeArgument(scope);
@@ -161,14 +182,14 @@ export async function runSonarCi({
         requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, timeoutMs),
       });
     }
-    const issueTimeoutMs = phaseTimeout(deadline, now, 'open-issue inspection');
-    const issues = await readIssues({
-      argv: [scopedArgument],
+    await waitForSettledIssues({
+      deadline,
+      now,
+      readIssues,
+      scopedArgument,
       env,
-      timeoutMs: issueTimeoutMs,
-      requestTimeoutMs: Math.min(REQUEST_TIMEOUT_MS, issueTimeoutMs),
+      sleep,
     });
-    validateOpenIssueResult(issues);
     await checkGate({
       argv: ['check-quality-gate', scopedArgument],
       env,
