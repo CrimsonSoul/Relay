@@ -142,6 +142,9 @@ New server setup enables direct LAN access by default and binds PocketBase to `0
 
 Client setup normalizes host-only server entries to HTTPS. Explicit HTTP URLs are accepted for trusted LAN targets such as private IPs, `.local` names, and single-label machine names. Public HTTP URLs are rejected unless the insecure HTTP opt-in is selected.
 
+Relay release artifacts target Windows only. macOS remains a supported local development host, so
+Darwin runtime branches, PocketBase downloads, and Electron development tests must remain working.
+
 ### PocketBase Binary Layout
 
 PocketBase binaries are downloaded into architecture-specific resource folders:
@@ -156,10 +159,11 @@ Use `npm run download:pocketbase -- --platform=<platform> --arch=<arch>` to fetc
 
 Checked-in PocketBase JavaScript hooks live separately under
 `resources/pocketbase/hooks/`. The binary directories remain ignored, but hooks are source and must
-be committed. Windows and macOS packages copy that directory to `pocketbase/hooks` beside the
-embedded binary. Server startup deliberately fails if the required privileged reauthentication hook
-is missing or not registered. The new hook and paired-client reauthentication call must be tested as
-a coordinated server/client rollout; mixed versions retain ordinary connectivity but cannot complete
+be committed. The Windows package copies that directory to `pocketbase/hooks` beside the embedded
+binary. Local macOS development loads the same checked-in hooks without producing a Mac release
+artifact. Server startup deliberately fails if the required privileged reauthentication hook is
+missing or not registered. The new hook and paired-client reauthentication call must be tested as a
+coordinated server/client rollout; mixed versions retain ordinary connectivity but cannot complete
 fresh-password protected actions.
 
 ### Role Accounts And Existing-Install Migration

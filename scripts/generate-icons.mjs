@@ -3,20 +3,18 @@
 /**
  * generate-icons.mjs
  *
- * Generates all app icon formats from build/icon.svg:
+ * Generates Windows app icon formats from build/icon.svg:
  *   - build/icon.png (512×512)
  *   - build/icon256.png (256×256)
  *   - build/icon.ico (multi-res, for Windows)
- *   - build/icon.icns (via iconutil, for macOS)
  *
  * Requirements: sharp, png-to-ico (devDependencies)
  * Usage: node scripts/generate-icons.mjs
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import pngToIco from 'png-to-ico';
 
@@ -24,9 +22,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const buildDir = join(__dirname, '..', 'build');
 const svgPath = join(buildDir, 'icon.svg');
 const svgBuffer = readFileSync(svgPath);
-const MACOS_ICONUTIL_PATH = '/usr/bin/iconutil';
 
-// All sizes needed across platforms
+// All sizes needed by the Windows ICO.
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
 async function renderPng(size) {
@@ -60,62 +57,12 @@ async function generateIco() {
   console.log(`  icon.ico (${ICO_SIZES.join(', ')}px)`);
 }
 
-async function generateIcns() {
-  console.log('Generating ICNS...');
-
-  const iconsetDir = join(buildDir, 'icon.iconset');
-  mkdirSync(iconsetDir, { recursive: true });
-
-  // macOS iconset naming convention
-  const iconsetFiles = [
-    { name: 'icon_16x16.png', size: 16 },
-    { name: 'icon_16x16@2x.png', size: 32 },
-    { name: 'icon_32x32.png', size: 32 },
-    { name: 'icon_32x32@2x.png', size: 64 },
-    { name: 'icon_128x128.png', size: 128 },
-    { name: 'icon_128x128@2x.png', size: 256 },
-    { name: 'icon_256x256.png', size: 256 },
-    { name: 'icon_256x256@2x.png', size: 512 },
-    { name: 'icon_512x512.png', size: 512 },
-    { name: 'icon_512x512@2x.png', size: 1024 },
-  ];
-
-  try {
-    await Promise.all(
-      iconsetFiles.map(async ({ name, size }) => {
-        const buf = await renderPng(size);
-        writeFileSync(join(iconsetDir, name), buf);
-      }),
-    );
-
-    if (!existsSync(MACOS_ICONUTIL_PATH)) {
-      console.log('  Skipping icon.icns: iconutil is only available on macOS');
-      return;
-    }
-
-    // On macOS a failing iconutil is a real error; swallowing it shipped a
-    // stale icon.icns while the script still reported success.
-    execFileSync(
-      MACOS_ICONUTIL_PATH,
-      ['-c', 'icns', iconsetDir, '-o', join(buildDir, 'icon.icns')],
-      {
-        stdio: 'pipe',
-      },
-    );
-    console.log('  icon.icns');
-  } finally {
-    // Clean up iconset folder even when rendering or iconutil failed.
-    rmSync(iconsetDir, { recursive: true, force: true });
-  }
-}
-
 async function main() {
   console.log('=== Relay Icon Generator ===\n');
   console.log(`Source: ${svgPath}\n`);
 
   await generatePngs();
   await generateIco();
-  await generateIcns();
 
   console.log('\nDone!');
 }

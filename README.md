@@ -2,7 +2,9 @@
 
 Relay is an Electron desktop command center for operations teams managing contacts, systems, on-call schedules, service health, and incident communications.
 
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2042-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%206.0-2ea043)
+Relay releases are distributed for Windows. macOS remains supported as a local development host.
+
+![Platform](https://img.shields.io/badge/platform-Windows-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2042-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%206.0-2ea043)
 
 ## Snapshot
 
