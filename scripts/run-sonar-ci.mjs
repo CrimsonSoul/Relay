@@ -26,6 +26,7 @@ const SAFE_ORGANIZATION = /^[A-Za-z0-9._-]{1,200}$/u;
 const SONAR_UPLOAD_POLICY = Object.freeze({
   findingExitCodes: [],
   unavailableExitCodes: [],
+  configurationExitCodes: [],
   transientOutput:
     /(?:HTTP\s+(?:429|5\d\d)|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENOTFOUND|socket hang up|temporarily unavailable|service unavailable)/iu,
 });
@@ -92,6 +93,7 @@ function scannerCommand(env, timeoutMs) {
     env,
     timeoutMs,
     maxOutputBytes: MAX_OUTPUT_BYTES,
+    transientOutput: SONAR_UPLOAD_POLICY.transientOutput,
   };
 }
 

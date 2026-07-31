@@ -404,6 +404,11 @@ timeouts, transient network evidence, and Snyk exits 69 or 75. Missing credentia
 invalid scope or identity, malformed responses, and unknown errors fail closed. A successful job
 with an Unavailable warning is not a clean scan, so retry it before release.
 
+Snyk exit 2 is a generic command failure and remains a blocking Configuration result unless the
+captured output contains positive evidence of a documented transient outage. Exit 3 means no
+supported project was detected, and exit 77 means permission was denied; both always block as
+Configuration failures. Missing Snyk credentials fail preflight before a scanner command starts.
+
 The wrappers use an 18-minute aggregate scanner budget inside the 25-minute job. Each child process
 and Sonar network request also has a shorter deadline, so a stalled descendant, pagination request,
 or review transition can be terminated and reported before GitHub applies its hard job timeout.
@@ -447,11 +452,13 @@ For rapid pull-request updates, keep the pull request in draft while pushing int
 Build, Sonar, and Snyk still validate each current revision, while CodeRabbit skips drafts. Once the
 revision is stable, mark the pull request ready so CodeRabbit can review it. Its incremental review
 automatically pauses after two already-reviewed commits; make additional rapid pushes in draft and
-request a final review only for the intended merge revision. Before merging, require clean Build,
-Sonar, and Snyk decisions, no CodeRabbit Request Changes, and no unresolved review conversations.
-Windows packaging remains independent and runs on the newest nonsuperseded merged `test` revision.
-Do not enable usage add-ons, paid scanner tiers, larger paid runners, or other paid-overage options
-to make this workflow pass.
+request a final review only for the intended merge revision. If a fix is pushed after CodeRabbit has
+paused, comment `@coderabbitai review` on the pull request and wait for the refreshed review to clear
+the Request Changes state. Before merging, require clean Build, Sonar, and Snyk decisions, no
+CodeRabbit Request Changes, and no unresolved review conversations. Windows packaging remains
+independent and runs on the newest nonsuperseded merged `test` revision. Do not enable usage
+add-ons, paid scanner tiers, larger paid runners, or other paid-overage options to make this
+workflow pass.
 
 ### Screenshot Refresh
 

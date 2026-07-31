@@ -110,22 +110,30 @@ export function classifyCommandResult(result, policy) {
   if (result === null || typeof result !== 'object' || Array.isArray(result)) {
     throw new TypeError('Scanner command result is invalid.');
   }
+  if (result.sawTransientOutput !== undefined && typeof result.sawTransientOutput !== 'boolean') {
+    throw new TypeError('Scanner command transient evidence is invalid.');
+  }
   if (
     !policy ||
     typeof policy !== 'object' ||
     Array.isArray(policy) ||
     !Array.isArray(policy.findingExitCodes) ||
     !Array.isArray(policy.unavailableExitCodes) ||
+    !Array.isArray(policy.configurationExitCodes) ||
     !(policy.transientOutput instanceof RegExp)
   ) {
     throw new TypeError('Scanner command policy is invalid.');
   }
   if (policy.findingExitCodes.includes(result.code)) return SCANNER_OUTCOME.FINDING;
+  if (policy.configurationExitCodes.includes(result.code)) return SCANNER_OUTCOME.CONFIGURATION;
   if (result.timedOut === true) return SCANNER_OUTCOME.UNAVAILABLE;
   if (result.code === 0) return SCANNER_OUTCOME.CLEAN;
   if (policy.unavailableExitCodes.includes(result.code)) return SCANNER_OUTCOME.UNAVAILABLE;
   policy.transientOutput.lastIndex = 0;
-  if (policy.transientOutput.test(String(result.output ?? ''))) {
+  if (
+    result.sawTransientOutput === true ||
+    policy.transientOutput.test(String(result.output ?? ''))
+  ) {
     return SCANNER_OUTCOME.UNAVAILABLE;
   }
   return SCANNER_OUTCOME.CONFIGURATION;
@@ -138,6 +146,7 @@ export async function runBoundedCommand({
   env,
   timeoutMs,
   maxOutputBytes,
+  transientOutput,
   write = (text) => process.stdout.write(text),
 }) {
   if (!nonEmptyString(file)) throw new TypeError('Scanner command file is required.');
@@ -156,10 +165,14 @@ export async function runBoundedCommand({
   if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1 || maxOutputBytes > 1_048_576) {
     throw new TypeError('Scanner command output bound is invalid.');
   }
+  if (transientOutput !== undefined && !(transientOutput instanceof RegExp)) {
+    throw new TypeError('Scanner command transient pattern is invalid.');
+  }
   if (typeof write !== 'function') throw new TypeError('Scanner command writer is invalid.');
 
   return new Promise((resolve) => {
     let retained = Buffer.alloc(0);
+    let sawTransientOutput = false;
     let timedOut = false;
     let deadline;
     let killTimer;
@@ -169,7 +182,14 @@ export async function runBoundedCommand({
     let observedExitCode = null;
 
     const retain = (chunk) => {
-      retained = appendBounded(retained, chunk, maxOutputBytes);
+      const addition = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      if (!sawTransientOutput && transientOutput) {
+        transientOutput.lastIndex = 0;
+        sawTransientOutput = transientOutput.test(
+          Buffer.concat([retained, addition]).toString('utf8'),
+        );
+      }
+      retained = appendBounded(retained, addition, maxOutputBytes);
     };
 
     const finish = (code) => {
@@ -182,7 +202,12 @@ export async function runBoundedCommand({
       child?.stderr?.destroy();
       const output = sanitizeScannerText(retained.toString('utf8'), env);
       if (output) write(output.endsWith('\n') ? output : `${output}\n`);
-      resolve({ code: Number.isInteger(code) ? code : null, timedOut, output });
+      resolve({
+        code: Number.isInteger(code) ? code : null,
+        timedOut,
+        output,
+        sawTransientOutput,
+      });
     };
 
     try {

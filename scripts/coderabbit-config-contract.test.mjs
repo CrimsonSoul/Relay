@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const configPath = '.coderabbit.yaml';
+const developmentPath = 'docs/DEVELOPMENT.md';
 const PAID_SETTING = /(?:usage|credit|billing|overage|paid)/iu;
 
 function collectKeys(value, keys = []) {
@@ -44,5 +45,6 @@ describe('CodeRabbit review contract', () => {
       },
     });
     expect(collectKeys(config).filter((key) => PAID_SETTING.test(key))).toEqual([]);
+    expect(readFileSync(developmentPath, 'utf8')).toContain('@coderabbitai review');
   });
 });

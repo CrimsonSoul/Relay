@@ -210,6 +210,10 @@ malformed responses, identity drift, and unknown errors remain blocking configur
 green Unavailable job is not evidence that the revision is clean; retry the job and require a real
 scanner decision before a release.
 
+Snyk exit 2 is a generic failure and blocks as Configuration unless the output contains positive
+evidence of a documented transient outage. Exit 3 (no supported projects), exit 77 (no permission),
+and missing Snyk credentials are always blocking Configuration failures.
+
 Each scanner wrapper has an 18-minute aggregate deadline inside its 25-minute GitHub job. Individual
 commands, paginated Sonar reads, and Sonar review transitions use shorter child or request deadlines,
 leaving time for checkout, installation, warning evidence, and orderly process-tree termination.
@@ -218,7 +222,9 @@ CodeRabbit skips drafts and uses Request Changes for findings. Its availability 
 required check; findings remain blocking through the review state and required resolution of review
 conversations. Automatic incremental review pauses after two already-reviewed commits so rapid
 pushes cannot consume the free allowance indefinitely. Relay does not enable CodeRabbit
-usage-based add-ons, paid scanner tiers, larger paid runners, or other paid-overage settings.
+usage-based add-ons, paid scanner tiers, larger paid runners, or other paid-overage settings. After
+fixing a blocking review when automatic review is paused, comment `@coderabbitai review` and wait
+for CodeRabbit to clear the Request Changes state before merging.
 
 Windows packaging is independent of Sonar, Snyk, and CodeRabbit availability. It starts from every
 merged `test` push without depending on an external-scanner job. Branch concurrency cancels

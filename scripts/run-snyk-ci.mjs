@@ -19,14 +19,18 @@ const SAFE_IDENTIFIER = /^[A-Za-z0-9._-]{1,200}$/u;
 const SAFE_REPOSITORY = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
 const TRANSIENT_OUTPUT =
   /(?:HTTP\s+(?:429|5\d\d)|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENOTFOUND|socket hang up|temporarily unavailable|service unavailable|maintenance window)/iu;
+// Snyk exit 2 is a generic failure: it is Unavailable only with positive transient evidence.
+// Exit 3 (no supported project) and 77 (no permission) are always configuration failures.
 const SCAN_POLICY = Object.freeze({
   findingExitCodes: [1],
   unavailableExitCodes: [69, 75],
+  configurationExitCodes: [3, 77],
   transientOutput: TRANSIENT_OUTPUT,
 });
 const MONITOR_POLICY = Object.freeze({
   findingExitCodes: [],
   unavailableExitCodes: [69, 75],
+  configurationExitCodes: [1, 3, 77],
   transientOutput: TRANSIENT_OUTPUT,
 });
 const monotonicNow = () => performance.now();
@@ -74,13 +78,14 @@ function validateConfiguration(env) {
   return { serverUrl, testPush };
 }
 
-function npmCommand(env, script, args, timeoutMs) {
+function npmCommand(env, script, args, timeoutMs, transientOutput) {
   return {
     file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
     args: ['run', script, '--', ...args],
     env,
     timeoutMs,
     maxOutputBytes: MAX_OUTPUT_BYTES,
+    transientOutput,
   };
 }
 
@@ -100,7 +105,7 @@ function phaseTimeout(deadline, now, label) {
 }
 
 async function runPhase({ env, runCommand, script, args, policy, label, timeoutMs }) {
-  const result = await runCommand(npmCommand(env, script, args, timeoutMs));
+  const result = await runCommand(npmCommand(env, script, args, timeoutMs, policy.transientOutput));
   const outcome = classifyCommandResult(result, policy);
   if (outcome === SCANNER_OUTCOME.CLEAN) return;
   if (outcome === SCANNER_OUTCOME.FINDING) {

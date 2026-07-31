@@ -54,7 +54,7 @@ fresh review on the final revision.
 
 ## Scanner Outcome Classification
 
-The security workflow will give Snyk and Sonar an explicit three-state policy:
+The security workflow will give Snyk and Sonar an explicit four-state policy:
 
 1. **Clean:** the scanner completed and found no blocking issue. The required check succeeds.
 2. **Finding:** the scanner completed and reported a vulnerability, unresolved issue, or failed
@@ -62,11 +62,12 @@ The security workflow will give Snyk and Sonar an explicit three-state policy:
 3. **Unavailable:** the service did not produce a security decision because of a documented rate
    limit, temporary outage, network timeout, or bounded server-side failure. The workflow emits a
    prominent warning and job summary, then the required check succeeds.
+4. **Configuration:** credentials, scope, identity, or scanner output is invalid or ambiguous. The
+   required check fails closed until the pipeline or repository configuration is repaired.
 
-An authentication failure, missing secret, invalid organization or project identifier, unsupported
-repository state, malformed scanner response, or contradiction in persisted Sonar issue state is a
-configuration or contract failure, not an unavailable result. Those cases remain red until the
-pipeline is repaired.
+Examples include an authentication failure, missing secret, invalid organization or project
+identifier, unsupported repository state, malformed scanner response, or contradiction in
+persisted Sonar issue state. Those cases are never softened into Unavailable.
 
 ### Snyk
 

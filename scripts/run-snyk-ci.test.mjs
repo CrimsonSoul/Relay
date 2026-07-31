@@ -42,6 +42,7 @@ test('runs Open Source and Code with exact bounded repository arguments on pull 
     assert.match(command.file, /npm(?:\.cmd)?$/u);
     assert.equal(command.timeoutMs, 600_000);
     assert.equal(command.maxOutputBytes, 32_768);
+    assert.ok(command.transientOutput instanceof RegExp);
     assert.equal(command.args.join(' ').includes(configuredEnv.SNYK_TOKEN), false);
   }
 });
@@ -104,11 +105,16 @@ test('warns for documented temporary exits, timeouts, and transient service fail
 });
 
 test('keeps unknown and documented configuration exits blocking', async () => {
-  for (const code of [2, 3, 77, null]) {
+  for (const scanResult of [
+    commandResult(2, 'generic scanner failure'),
+    commandResult(3, 'HTTP 503 but no supported projects detected'),
+    commandResult(77, 'service unavailable but permission denied'),
+    commandResult(null, 'scanner configuration failed'),
+  ]) {
     await assert.rejects(
       runSnykCi({
         env: configuredEnv,
-        runCommand: async () => commandResult(code, 'scanner configuration failed'),
+        runCommand: async () => scanResult,
       }),
       (error) =>
         error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,

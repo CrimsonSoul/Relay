@@ -19,6 +19,7 @@ const { test } = process.env.VITEST ? await import('vitest') : await import('nod
 const COMMAND_POLICY = {
   findingExitCodes: [1],
   unavailableExitCodes: [69, 75],
+  configurationExitCodes: [3, 77],
   transientOutput: /HTTP 429/iu,
 };
 
@@ -69,6 +70,16 @@ test('classifies clean, finding, unavailable, timeout, transient, and unknown co
     SCANNER_OUTCOME.UNAVAILABLE,
   );
   assert.equal(
+    classifyCommandResult({ code: 3, timedOut: false, output: 'HTTP 429' }, COMMAND_POLICY),
+    SCANNER_OUTCOME.CONFIGURATION,
+  );
+  for (const code of [3, 77]) {
+    assert.equal(
+      classifyCommandResult({ code, timedOut: true, output: '' }, COMMAND_POLICY),
+      SCANNER_OUTCOME.CONFIGURATION,
+    );
+  }
+  assert.equal(
     classifyCommandResult(
       { code: 2, timedOut: false, output: 'authentication failed' },
       COMMAND_POLICY,
@@ -109,6 +120,25 @@ test('runs a command, bounds retained output, and redacts token values', async (
   assert.ok(Buffer.byteLength(result.output) <= 24);
   assert.equal(result.output.includes('token-sentinel'), false);
   assert.equal(emitted.join('').includes('token-sentinel'), false);
+});
+
+test('preserves transient evidence after it scrolls out of the bounded output tail', async () => {
+  const result = await runBoundedCommand({
+    file: process.execPath,
+    args: [
+      '-e',
+      "process.stdout.write('HTTP 429 rate limited\\n'); process.stdout.write('x'.repeat(8192)); process.exit(2)",
+    ],
+    env: process.env,
+    timeoutMs: 1_000,
+    maxOutputBytes: 128,
+    transientOutput: COMMAND_POLICY.transientOutput,
+    write: () => {},
+  });
+
+  assert.equal(result.output.includes('HTTP 429'), false);
+  assert.equal(result.sawTransientOutput, true);
+  assert.equal(classifyCommandResult(result, COMMAND_POLICY), SCANNER_OUTCOME.UNAVAILABLE);
 });
 
 test('kills a command at its internal deadline', async () => {

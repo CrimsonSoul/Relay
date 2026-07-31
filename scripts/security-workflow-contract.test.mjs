@@ -13,6 +13,7 @@ const build = parse(buildWorkflow);
 const security = parse(securityWorkflow);
 const normalizeExpression = (value) => value.replaceAll(/\s+/gu, ' ').trim();
 const findStep = (job, name) => {
+  assert.ok(job?.steps, `missing workflow job for step: ${name}`);
   const step = job.steps.find((candidate) => candidate.name === name);
   assert.ok(step, `missing workflow step: ${name}`);
   return step;
@@ -21,7 +22,10 @@ const findStep = (job, name) => {
 test('test pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.on.pull_request.branches, ['main', 'test']);
   assert.equal(build.jobs.quality.name, 'Build quality gate');
-  assert.equal(build.jobs['package-windows'].needs, undefined);
+  assert.ok(
+    !('needs' in build.jobs['package-windows']),
+    'package-windows must not declare a needs dependency',
+  );
 });
 
 test('scanner jobs retain stable required names and bounded CI entrypoints', () => {
