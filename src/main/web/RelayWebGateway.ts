@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hostname as getHostname, networkInterfaces } from 'node:os';
 import type { ServerConfig } from '../config/AppConfig';
+import { WebRadarSnapshotSchema } from '@shared/webApi';
 import type { WebSessionCreateInput } from './WebSessionStore';
 import { WebSessionStore } from './WebSessionStore';
 import { WebRequestSecurity } from './WebRequestSecurity';
@@ -53,7 +54,7 @@ export class RelayWebGateway {
   private readonly sessions = new WebSessionStore();
   private readonly security: WebRequestSecurity;
   private readonly router: WebRouter;
-  private readonly stopOperationalEvents: (() => void) | null;
+  private readonly stopOperationalEvents: Array<() => void> = [];
   // Both maps are keyed on the stable logical session id. Keying them on the browser cookie
   // silently rebuilt a signed-out runtime after every /session/refresh rotation.
   private readonly privilegedSessions = new Map<string, WebPrivilegedSession>();
@@ -88,12 +89,15 @@ export class RelayWebGateway {
         services: options.operationalServices,
         sessions: this.sessions,
       });
-      this.stopOperationalEvents =
-        options.operationalServices.dashboards.onChange?.((dashboards) => {
-          this.sessions.publishAll('dynatrace-dashboards-changed', dashboards);
-        }) ?? null;
-    } else {
-      this.stopOperationalEvents = null;
+      const stopDashboards = options.operationalServices.dashboards.onChange?.((dashboards) => {
+        this.sessions.publishAll('dynatrace-dashboards-changed', dashboards);
+      });
+      if (stopDashboards) this.stopOperationalEvents.push(stopDashboards);
+      const stopRadar = options.operationalServices.radar.onChange?.((snapshot) => {
+        const parsed = WebRadarSnapshotSchema.safeParse(snapshot);
+        if (parsed.success) this.sessions.publishAll('radar-snapshot-changed', parsed.data);
+      });
+      if (stopRadar) this.stopOperationalEvents.push(stopRadar);
     }
     if (options.privilegedHost) {
       const host = options.privilegedHost;
@@ -169,7 +173,7 @@ export class RelayWebGateway {
   }
 
   async dispose(): Promise<void> {
-    this.stopOperationalEvents?.();
+    for (const stop of this.stopOperationalEvents.splice(0)) stop();
     await this.sessions.dispose();
     this.privilegedSessions.clear();
     this.knowledgeSessions.clear();
