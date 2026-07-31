@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 const read = (path) => readFileSync(path, 'utf8');
 
 describe('PocketBase privileged reauthentication hook contract', () => {
-  it('packages the hook beside PocketBase on Windows and macOS', () => {
+  it('packages the hook beside PocketBase in the Windows release', () => {
     const config = read('electron-builder.yml');
 
-    expect(config.match(/from: 'resources\/pocketbase\/hooks\/'/g)).toHaveLength(2);
-    expect(config.match(/to: 'pocketbase\/hooks\/'/g)).toHaveLength(2);
+    expect(config.match(/from: 'resources\/pocketbase\/hooks\/'/g)).toHaveLength(1);
+    expect(config.match(/to: 'pocketbase\/hooks\/'/g)).toHaveLength(1);
   });
 
   it('includes runtime hooks in Sonar static analysis without requiring runtime coverage', () => {

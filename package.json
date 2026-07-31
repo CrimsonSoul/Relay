@@ -13,7 +13,6 @@
     "build": "electron-vite build",
     "build:win": "node scripts/download-pocketbase.mjs --platform=win32 --arch=x64 && npm run package:win --",
     "package:win": "npm run build && node scripts/package-windows.mjs",
-    "build:mac": "node scripts/download-pocketbase.mjs --platform=darwin --arch=arm64 && node scripts/download-pocketbase.mjs --platform=darwin --arch=x64 && npm run build && electron-builder --mac --config electron-builder.yml",
     "release": "npm run build:win -- --publish always",
     "preview": "electron-vite preview",
     "seed:dynatrace": "node scripts/seed.mjs --dynatrace-only",

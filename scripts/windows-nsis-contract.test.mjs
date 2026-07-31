@@ -296,7 +296,7 @@ describe('Windows packaging integration contract', () => {
     for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
       const workflow = read(file);
       const windowsJobAndFollowing = workflow.slice(workflow.indexOf('  package-windows:'));
-      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}(?:package-mac|release):\n/);
+      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}release:\n/);
       const windowsJob =
         nextJobIndex === -1
           ? windowsJobAndFollowing
@@ -330,7 +330,7 @@ describe('Windows packaging integration contract', () => {
     for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
       const workflow = read(file);
       const windowsJobAndFollowing = workflow.slice(workflow.indexOf('  package-windows:'));
-      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}(?:package-mac|release):\n/);
+      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}release:\n/);
       const windowsJob =
         nextJobIndex === -1
           ? windowsJobAndFollowing
