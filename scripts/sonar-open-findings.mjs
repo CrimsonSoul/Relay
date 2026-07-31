@@ -1,10 +1,17 @@
 import { readFileSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
+import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
 const PAGE_SIZE = 500;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
+const MAX_TIMEOUT_MS = 1_080_000;
 const CURRENT_ISSUE_STATUSES = ['OPEN', 'CONFIRMED', 'ACCEPTED', 'FALSE_POSITIVE'];
 const OPEN_STATUSES = new Set(['OPEN', 'CONFIRMED']);
+const monotonicNow = () => performance.now();
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -166,7 +173,7 @@ function issueSearchUrl(base, projectKey, scope, page) {
   return url;
 }
 
-async function fetchIssuePage(fetcher, url, token, page) {
+async function fetchIssuePage(fetcher, url, token, page, requestTimeoutMs) {
   let response;
   try {
     response = await fetcher(url, {
@@ -174,13 +181,15 @@ async function fetchIssuePage(fetcher, url, token, page) {
         Accept: 'application/json',
         Authorization: `Bearer ${token}`,
       },
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
-  } catch {
-    throw new Error('Sonar API request failed before receiving a response.');
+  } catch (error) {
+    throw unavailableError('Sonar API request failed before receiving a response.', {
+      cause: error,
+    });
   }
   if (!response?.ok) {
-    const status = Number.isInteger(response?.status) ? ` ${response.status}` : '';
-    throw new Error(`Sonar API request failed with HTTP${status}.`);
+    throw classifyHttpFailure('Sonar API', response?.status);
   }
 
   let payload;
@@ -208,22 +217,40 @@ export async function fetchSonarIssues({
   projectKey,
   scope,
   token,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  now = monotonicNow,
 }) {
   if (typeof fetcher !== 'function') throw new Error('A Fetch implementation is required.');
   if (!nonEmptyString(projectKey)) throw new Error('A Sonar project key is required.');
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
+  if (typeof now !== 'function') throw new TypeError('Sonar timing function is required.');
+  if (
+    !Number.isSafeInteger(requestTimeoutMs) ||
+    requestTimeoutMs < 1 ||
+    requestTimeoutMs > MAX_REQUEST_TIMEOUT_MS
+  ) {
+    throw new Error('Sonar request timeout must be between 1 and 60000 milliseconds.');
+  }
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error('Sonar issue-search timeout must be between 1 and 1080000 milliseconds.');
+  }
   const base = sonarApiBase(hostUrl);
   const issues = [];
   const seen = new Set();
   let page = 1;
   let expectedTotal;
+  const deadline = now() + timeoutMs;
 
   do {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) throw unavailableError('Sonar issue search exceeded its deadline.');
     const validated = await fetchIssuePage(
       fetcher,
       issueSearchUrl(base, projectKey, scope, page),
       token,
       page,
+      Math.min(requestTimeoutMs, remaining),
     );
     expectedTotal ??= validated.total;
     if (validated.total !== expectedTotal) {
@@ -292,6 +319,9 @@ export async function runSonarOpenFindings({
   readProperties = () =>
     readFileSync(new URL('../sonar-project.properties', import.meta.url), 'utf8'),
   write = (line) => process.stdout.write(`${line}\n`),
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  now = monotonicNow,
 } = {}) {
   const token = env.SONAR_TOKEN;
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
@@ -303,6 +333,9 @@ export async function runSonarOpenFindings({
     projectKey,
     scope,
     token,
+    requestTimeoutMs,
+    timeoutMs,
+    now,
   });
   const summary = summarizeIssues(issues);
   write(formatSonarSummary(issues, scope));

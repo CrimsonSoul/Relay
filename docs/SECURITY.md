@@ -188,12 +188,50 @@ Currently enforced limits include:
 
 ## Automated Security And Quality Gates
 
-Relay's `Security and Code Quality` workflow provides two complementary gates:
+Relay's `Security and Code Quality` workflow provides two complementary required gates:
 
 - SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, waits for the exact uploaded analysis, reconciles only pinned `test`-branch review decisions, blocks if the analyzed branch or pull request retains any Open, Confirmed, or legacy Reopened issue, and then verifies the configured remote quality gate for that same analysis.
 - The pinned Snyk CLI blocks any current high- or critical-severity Open Source or Snyk Code finding, including findings in development dependencies, for internal pull requests and `test` pushes. The merged `test` push then publishes the canonical dependency snapshot identified as `test`.
 
-The workflow is intentionally anchored to Relay's authoritative `test` branch. Internal pull requests targeting `test` run the pinned SonarQube, Snyk Open Source, Snyk Code, and build quality gates. Pull-request scans never change Sonar issue state or the canonical Snyk monitored snapshot. After merge, the `test` push repeats the scanners, reconciles only the pinned Sonar review manifest, and updates the Snyk snapshot identified by target reference `test`. The SonarQube Cloud project's main analysis branch is also named `test`. The scanner uploads without making a premature quality-gate decision, and `security:sonar:quality-gate` validates the scanner report and waits for its exact compute task. After reconciliation, it proves that analysis is still the latest `test` analysis before and after reading the recalculated live branch gate; pull requests use their immutable analysis ID directly. After analysis, `security:sonar:issues` paginates the exact branch or pull-request issue set, fails on unresolved Open/Confirmed/Reopened issues, and reports Accepted/Won't Fix and False Positive decisions separately so reviewed exceptions remain visible. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
+The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
+
+| Outcome       | Meaning                                                                  | Merge effect                     |
+| ------------- | ------------------------------------------------------------------------ | -------------------------------- |
+| Clean         | The scanner completed and produced no blocking finding.                  | Required job succeeds.           |
+| Finding       | A completed scan or quality gate produced a blocking finding.            | Required job fails.              |
+| Unavailable   | The scanner produced no decision because a documented outage occurred.   | Required job warns and succeeds. |
+| Configuration | Credentials, scope, identity, response, or an unknown failure is unsafe. | Required job fails closed.       |
+
+A completed Sonar or Snyk finding remains a release blocker. The CI wrappers classify documented
+HTTP 429/5xx responses, bounded network timeouts, and documented temporary Snyk exit codes 69 and
+75 as Unavailable: the required job emits a GitHub warning and summary but succeeds because no
+negative security decision was produced. Missing credentials, HTTP 401/403 authorization failures,
+malformed responses, identity drift, and unknown errors remain blocking configuration failures. A
+green Unavailable job is not evidence that the revision is clean; retry the job and require a real
+scanner decision before a release.
+
+Snyk exit 2 is a generic failure and blocks as Configuration unless the output contains positive
+evidence of a documented transient outage. Exit 3 (no supported projects), exit 77 (no permission),
+and missing Snyk credentials are always blocking Configuration failures.
+
+Each scanner wrapper has an 18-minute aggregate deadline inside its 25-minute GitHub job. Individual
+commands, paginated Sonar reads, and Sonar review transitions use shorter child or request deadlines,
+leaving time for checkout, installation, warning evidence, and orderly process-tree termination.
+
+CodeRabbit skips drafts and uses Request Changes for findings. Its availability status is not a
+required check; findings remain blocking through the review state and required resolution of review
+conversations. Automatic incremental review pauses after two already-reviewed commits so rapid
+pushes cannot consume the free allowance indefinitely. Relay does not enable CodeRabbit
+usage-based add-ons, paid scanner tiers, larger paid runners, or other paid-overage settings. After
+fixing a blocking review when automatic review is paused, comment `@coderabbitai review` and wait
+for CodeRabbit to clear the Request Changes state before merging.
+
+Windows packaging is independent of Sonar, Snyk, and CodeRabbit availability. It starts from every
+merged `test` push without depending on an external-scanner job. Branch concurrency cancels
+superseded runs, so the retained successful artifact represents the newest nonsuperseded merged
+revision rather than an older queued build.
+
+The workflow is intentionally anchored to Relay's authoritative `test` branch. Internal pull requests targeting `test` run the pinned SonarQube, Snyk Open Source, Snyk Code, and build quality gates. Pull-request scans never change Sonar issue state or the canonical Snyk monitored snapshot. After merge, the `test` push repeats the scanners, reconciles only the pinned Sonar review manifest, and updates the Snyk snapshot identified by target reference `test`. The SonarQube Cloud project's main analysis branch is also named `test`. The scanner uploads without making a premature quality-gate decision, and `security:sonar:quality-gate` validates the scanner report and waits for its exact compute task. After reconciliation, it proves that analysis is still the latest `test` analysis before and after reading the recalculated live branch gate; pull requests use their immutable analysis ID directly. After analysis, `security:sonar:issues` paginates the exact branch or pull-request issue set, fails on unresolved Open/Confirmed/Reopened issues, and reports Accepted/Won't Fix and False Positive decisions separately so reviewed exceptions remain visible. Scanner output is bounded and secret values are redacted. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
 
 Pull-request scans never change issue state. A `test`-branch push invokes an
 exact 49-item reconciliation manifest only after fresh analysis and before the

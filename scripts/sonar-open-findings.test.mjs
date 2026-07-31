@@ -9,6 +9,7 @@ import {
   runSonarOpenFindings,
   sonarGateExitCode,
 } from './sonar-open-findings.mjs';
+import { SCANNER_OUTCOME, ScannerGateError } from './scanner-gate-policy.mjs';
 
 const { test } = process.env.VITEST ? await import('vitest') : await import('node:test');
 const TOKEN = 'sonar-token-sentinel-never-print';
@@ -142,33 +143,26 @@ test('rejects an insecure Sonar host before sending the bearer token', async () 
   assert.equal(requested, false);
 });
 
-test('the security workflow rejects insecure Sonar hosts before invoking the scanner', async () => {
-  const workflow = await readFile(
-    new URL('../.github/workflows/security.yml', import.meta.url),
-    'utf8',
-  );
-  const protocolGuard = workflow.indexOf(
-    'if [[ -n "$SONAR_HOST_URL" && "$SONAR_HOST_URL" != https://* ]]; then',
-  );
-  const scannerInvocation = workflow.indexOf('npm run security:sonar --');
-  assert.ok(protocolGuard >= 0, 'missing HTTPS-only Sonar host guard');
-  assert.ok(protocolGuard < scannerInvocation, 'Sonar host guard must run before the scanner');
+test('the security workflow delegates HTTPS validation to the Sonar CI gate', async () => {
+  const [workflow, runner] = await Promise.all([
+    readFile(new URL('../.github/workflows/security.yml', import.meta.url), 'utf8'),
+    readFile(new URL('./run-sonar-ci.mjs', import.meta.url), 'utf8'),
+  ]);
+  assert.match(workflow, /npm run security:sonar:ci --/u);
+  assert.match(runner, /SONAR_HOST_URL must be a credential-free HTTPS URL/u);
 });
 
-test('the security workflow reconciles only after the exact analysis and gates it last', async () => {
-  const workflow = await readFile(
-    new URL('../.github/workflows/security.yml', import.meta.url),
-    'utf8',
-  );
-  const scanner = workflow.indexOf('npm run security:sonar --');
-  const waitForAnalysis = workflow.indexOf('npm run security:sonar:quality-gate -- wait-analysis');
-  const reconcileReviewed = workflow.indexOf('npm run security:sonar:reviewed --');
-  const openFindings = workflow.indexOf('npm run security:sonar:issues --');
-  const qualityGate = workflow.indexOf('npm run security:sonar:quality-gate -- check-quality-gate');
+test('the Sonar CI gate reconciles only after the exact analysis and gates it last', async () => {
+  const runner = await readFile(new URL('./run-sonar-ci.mjs', import.meta.url), 'utf8');
+  const scanner = runner.indexOf('const upload = await runCommand');
+  const waitForAnalysis = runner.indexOf('await waitAnalysis');
+  const reconcileReviewed = runner.indexOf('await reconcile');
+  const openFindings = runner.indexOf('await waitForSettledIssues');
+  const qualityGate = runner.indexOf('await checkGate');
 
   assert.ok(scanner >= 0, 'missing Sonar scanner invocation');
-  assert.match(workflow, /-Dsonar\.qualitygate\.wait=false/u);
-  assert.doesNotMatch(workflow, /-Dsonar\.qualitygate\.wait=true/u);
+  assert.match(runner, /-Dsonar\.qualitygate\.wait=false/u);
+  assert.doesNotMatch(runner, /-Dsonar\.qualitygate\.wait=true/u);
   assert.ok(waitForAnalysis > scanner, 'the exact analysis must finish after scanner upload');
   assert.ok(
     reconcileReviewed > waitForAnalysis,
@@ -179,8 +173,8 @@ test('the security workflow reconciles only after the exact analysis and gates i
     'unresolved issues must be checked after test-branch reconciliation',
   );
   assert.ok(qualityGate > openFindings, 'the exact quality gate must be evaluated last');
-  assert.match(workflow, /--pull-request="\$\{\{ github\.event\.pull_request\.number \}\}"/u);
-  assert.match(workflow, /--branch=test/u);
+  assert.match(runner, /--pull-request=/u);
+  assert.match(runner, /--branch=test/u);
 });
 
 test('maps canonical and legacy reviewed states without hiding reopened findings', () => {
@@ -312,6 +306,98 @@ test('fails closed on malformed API data, duplicate keys, and HTTP errors', asyn
     }),
     /HTTP 503/,
   );
+});
+
+test('types Sonar availability separately from authentication and contract failures', async () => {
+  const options = {
+    hostUrl: 'https://sonarcloud.io',
+    projectKey: 'CrimsonSoul_Relay',
+    scope: { branch: 'test' },
+    token: TOKEN,
+  };
+  for (const status of [429, 503]) {
+    await assert.rejects(
+      fetchSonarIssues({
+        ...options,
+        fetcher: async () => response({}, { ok: false, status }),
+      }),
+      (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+    );
+  }
+  for (const status of [400, 401, 403]) {
+    await assert.rejects(
+      fetchSonarIssues({
+        ...options,
+        fetcher: async () => response({}, { ok: false, status }),
+      }),
+      (error) =>
+        error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
+    );
+  }
+  await assert.rejects(
+    fetchSonarIssues({
+      ...options,
+      fetcher: async () => {
+        throw new Error('network offline');
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+});
+
+test('bounds each Sonar issue-search request with an abort signal', async () => {
+  let receivedSignal = false;
+  await assert.rejects(
+    fetchSonarIssues({
+      hostUrl: 'https://sonarcloud.io',
+      projectKey: 'CrimsonSoul_Relay',
+      scope: { branch: 'test' },
+      token: TOKEN,
+      requestTimeoutMs: 10,
+      fetcher: async (_url, options) => {
+        receivedSignal = options.signal instanceof AbortSignal;
+        if (!receivedSignal) throw new Error('missing abort signal');
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+            once: true,
+          });
+        });
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+  assert.equal(receivedSignal, true);
+});
+
+test('uses one aggregate deadline across Sonar issue-search pages', async () => {
+  let clock = 0;
+  let requests = 0;
+  await assert.rejects(
+    fetchSonarIssues({
+      hostUrl: 'https://sonarcloud.io',
+      projectKey: 'CrimsonSoul_Relay',
+      scope: { branch: 'test' },
+      token: TOKEN,
+      timeoutMs: 50,
+      now: () => clock,
+      fetcher: async () => {
+        requests += 1;
+        clock += 50;
+        return response({
+          paging: { pageIndex: requests, pageSize: 500, total: 501 },
+          issues:
+            requests === 1
+              ? Array.from({ length: 500 }, (_, index) => ({
+                  key: `issue-${index}`,
+                  status: 'ACCEPTED',
+                }))
+              : [{ key: 'issue-500', status: 'ACCEPTED' }],
+        });
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+  assert.equal(requests, 1);
 });
 
 test('requires environment authentication and never emits the token sentinel', async () => {

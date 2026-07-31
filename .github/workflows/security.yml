@@ -24,6 +24,7 @@ jobs:
        github.event.pull_request.base.ref == 'test' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
@@ -47,82 +48,20 @@ jobs:
       - name: Generate LCOV coverage
         run: npm run test:coverage:sonar
 
-      - name: Upload SonarQube analysis
+      - name: Run Sonar finding gate
         shell: bash
         env:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          if [[ -z "$SONAR_TOKEN" || -z "$SONAR_ORGANIZATION" ]]; then
-            echo "SONAR_TOKEN and SONAR_ORGANIZATION must be configured."
-            exit 1
-          fi
-          if [[ -n "$SONAR_HOST_URL" && "$SONAR_HOST_URL" != https://* ]]; then
-            echo "SONAR_HOST_URL must use HTTPS."
-            exit 1
-          fi
-
-          SONAR_ARGS=(
-            "-Dsonar.organization=$SONAR_ORGANIZATION"
-            "-Dsonar.qualitygate.wait=false"
-          )
-          if [[ -n "$SONAR_HOST_URL" ]]; then
-            SONAR_ARGS+=("-Dsonar.host.url=$SONAR_HOST_URL")
-          fi
-
-          npm run security:sonar -- "${SONAR_ARGS[@]}"
-
-      - name: Wait for the exact Sonar analysis
-        shell: bash
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
           else
             SONAR_SCOPE=(--branch=test)
           fi
 
-          npm run security:sonar:quality-gate -- wait-analysis "${SONAR_SCOPE[@]}"
-
-      - name: Reconcile exact reviewed Sonar issues
-        if: >-
-          github.event_name == 'push' &&
-          github.ref == 'refs/heads/test'
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: npm run security:sonar:reviewed -- --branch=test --apply
-
-      - name: Verify no unresolved Sonar issues remain
-        shell: bash
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
-          else
-            SONAR_SCOPE=(--branch=test)
-          fi
-
-          npm run security:sonar:issues -- "${SONAR_SCOPE[@]}"
-
-      - name: Verify the exact Sonar quality gate
-        shell: bash
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
-          else
-            SONAR_SCOPE=(--branch=test)
-          fi
-
-          npm run security:sonar:quality-gate -- check-quality-gate "${SONAR_SCOPE[@]}"
+          npm run security:sonar:ci -- "${SONAR_SCOPE[@]}"
 
   snyk:
     name: Snyk security gate
@@ -132,6 +71,7 @@ jobs:
        github.event.pull_request.base.ref == 'test' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
@@ -150,34 +90,8 @@ jobs:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
-      - name: Run Snyk Open Source and Code scans
-        shell: bash
+      - name: Run Snyk finding gate
         env:
           SNYK_ORG: ${{ vars.SNYK_ORG }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          if [[ -z "$SNYK_TOKEN" || -z "$SNYK_ORG" ]]; then
-            echo "SNYK_TOKEN and SNYK_ORG must be configured."
-            exit 1
-          fi
-
-          npm run security:snyk:open-source -- \
-            "--org=$SNYK_ORG" \
-            "--project-name=${{ github.repository }}" \
-            "--target-reference=test" \
-            "--remote-repo-url=${{ github.server_url }}/${{ github.repository }}.git"
-          npm run security:snyk:code -- "--org=$SNYK_ORG"
-
-      - name: Update the Snyk test-branch dependency snapshot
-        if: >-
-          github.event_name == 'push' &&
-          github.ref == 'refs/heads/test'
-        env:
-          SNYK_ORG: ${{ vars.SNYK_ORG }}
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          npm run security:snyk:monitor -- \
-            "--org=$SNYK_ORG" \
-            "--project-name=${{ github.repository }}" \
-            "--target-reference=test" \
-            "--remote-repo-url=${{ github.server_url }}/${{ github.repository }}.git"
+        run: npm run security:snyk:ci

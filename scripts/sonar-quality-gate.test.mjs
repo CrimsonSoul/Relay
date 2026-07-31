@@ -6,6 +6,7 @@ import {
   waitForComputeTask,
   waitForQualityGate,
 } from './sonar-quality-gate.mjs';
+import { SCANNER_OUTCOME, ScannerGateError } from './scanner-gate-policy.mjs';
 
 const { test } = process.env.VITEST ? await import('vitest') : await import('node:test');
 const TOKEN = 'sonar-quality-token-sentinel-never-print';
@@ -499,6 +500,106 @@ test('preserves pull-request analysis-ID behavior and fails a non-passing gate i
   assert.equal(requests[0].searchParams.get('analysisId'), ANALYSIS_ID);
   assert.equal(requests[0].searchParams.size, 1);
   assert.equal(clock.now(), 0);
+});
+
+test('types Sonar quality findings, availability, and authentication separately', async () => {
+  const options = {
+    serverUrl: `${HOST_URL}/`,
+    analysisId: ANALYSIS_ID,
+    projectKey: PROJECT_KEY,
+    scope: { pullRequest: '42' },
+    token: TOKEN,
+    timeoutMs: 1_000,
+    pollIntervalMs: 10,
+  };
+
+  await assert.rejects(
+    waitForQualityGate({
+      ...options,
+      fetcher: async () => response({ projectStatus: { status: 'ERROR', conditions: [] } }),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.FINDING,
+  );
+  for (const status of [429, 503]) {
+    await assert.rejects(
+      waitForQualityGate({
+        ...options,
+        fetcher: async () => response({}, { ok: false, status }),
+      }),
+      (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+    );
+  }
+  await assert.rejects(
+    waitForQualityGate({
+      ...options,
+      fetcher: async () => response({}, { ok: false, status: 401 }),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
+  );
+  await assert.rejects(
+    waitForQualityGate({
+      ...options,
+      fetcher: async () => {
+        throw new Error('network offline');
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+});
+
+test('types bounded Sonar polling timeouts as unavailable', async () => {
+  const clock = fakeClock();
+  await assert.rejects(
+    waitForComputeTask({
+      fetcher: async () =>
+        response(successfulBranchTask({ status: 'PENDING', analysisId: undefined })),
+      serverUrl: `${HOST_URL}/`,
+      taskId: CE_TASK_ID,
+      projectKey: PROJECT_KEY,
+      scope: { branch: 'test' },
+      token: TOKEN,
+      now: clock.now,
+      sleep: clock.sleep,
+      timeoutMs: 100,
+      pollIntervalMs: 50,
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+});
+
+test('shares one deadline across compute and final quality-gate polling', async () => {
+  const clock = fakeClock();
+  let computeRequests = 0;
+  await assert.rejects(
+    runSonarQualityGate({
+      argv: ['check-quality-gate', '--branch=test'],
+      env: { SONAR_HOST_URL: HOST_URL, SONAR_TOKEN: TOKEN },
+      readProjectProperties: () => `sonar.projectKey=${PROJECT_KEY}\n`,
+      readReportTask: () => reportTask(),
+      fetcher: async (url) => {
+        const requested = new URL(url);
+        if (requested.pathname === '/api/ce/task') {
+          computeRequests += 1;
+          return response(
+            successfulBranchTask({
+              status: computeRequests === 1 ? 'PENDING' : 'SUCCESS',
+              analysisId: computeRequests === 1 ? undefined : ANALYSIS_ID,
+            }),
+          );
+        }
+        if (requested.pathname === '/api/project_analyses/search') {
+          return response(latestAnalyses());
+        }
+        return response({ projectStatus: { status: 'ERROR', conditions: [] } });
+      },
+      now: clock.now,
+      sleep: clock.sleep,
+      timeoutMs: 100,
+      pollIntervalMs: 60,
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.FINDING,
+  );
+  assert.equal(clock.now(), 100);
 });
 
 test('runs both phases from the fixed scanner report without exposing the token', async () => {
