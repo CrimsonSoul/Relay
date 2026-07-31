@@ -286,10 +286,11 @@ export function setupWindowHandlers(
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (event, url: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_EXTERNAL)) return false;
     if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
+    if (shouldSuppressDesktopSideEffects()) return normalizeAllowedExternalUrl(url) !== null;
     try {
       const normalizedUrl = normalizeAllowedExternalUrl(url);
       if (normalizedUrl) {
-        if (!shouldSuppressDesktopSideEffects()) await shell.openExternal(normalizedUrl);
+        await shell.openExternal(normalizedUrl);
         return true;
       }
       loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);
