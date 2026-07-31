@@ -44,6 +44,7 @@
     "security:snyk:code": "snyk code test --severity-threshold=high",
     "security:snyk:monitor": "snyk monitor --dev",
     "security:snyk": "npm run security:snyk:open-source && npm run security:snyk:code",
+    "security:snyk:ci": "node scripts/run-snyk-ci.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",

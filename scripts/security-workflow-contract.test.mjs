@@ -18,7 +18,7 @@ test('test pull requests emit the stable build quality gate', () => {
   assert.equal(build.jobs.quality.name, 'Build quality gate');
 });
 
-test('Snyk scans internal test pull requests and monitors only merged test pushes', () => {
+test('Snyk delegates internal test pull requests and merged pushes to its CI gate', () => {
   const snyk = security.jobs.snyk;
   assert.equal(snyk.name, 'Snyk security gate');
   assert.equal(
@@ -31,20 +31,7 @@ test('Snyk scans internal test pull requests and monitors only merged test pushe
     `),
   );
 
-  const scanStep = snyk.steps.find((step) => step.name === 'Run Snyk Open Source and Code scans');
-  assert.ok(scanStep, 'missing Snyk scan step');
-  assert.match(scanStep.run, /npm run security:snyk:open-source/u);
-  assert.match(scanStep.run, /npm run security:snyk:code/u);
-
-  const monitorStep = snyk.steps.find(
-    (step) => step.name === 'Update the Snyk test-branch dependency snapshot',
-  );
-  assert.ok(monitorStep, 'missing Snyk monitor step');
-  assert.equal(
-    normalizeExpression(monitorStep.if),
-    normalizeExpression(`
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/test'
-    `),
-  );
+  const scanStep = snyk.steps.find((step) => step.name === 'Run Snyk finding gate');
+  assert.ok(scanStep, 'missing Snyk finding gate');
+  assert.equal(scanStep.run, 'npm run security:snyk:ci');
 });
