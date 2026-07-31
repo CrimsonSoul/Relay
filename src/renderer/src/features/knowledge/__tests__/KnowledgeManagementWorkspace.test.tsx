@@ -204,7 +204,10 @@ describe('KnowledgeManagementWorkspace', () => {
 
     const { rerender } = render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
 
-    expect(screen.getByText('1 of 3 searchable')).toBeVisible();
+    const readinessOutput = screen.getByText('1 of 3 searchable');
+    expect(readinessOutput).toBeVisible();
+    expect(readinessOutput.tagName).toBe('OUTPUT');
+    expect(screen.getByText('3 shown · 3 loaded').tagName).toBe('OUTPUT');
     expect(screen.getByText('Search ready')).toBeVisible();
     expect(screen.getByText('Indexing search')).toBeVisible();
     expect(screen.getByText('Search needs retry')).toBeVisible();
