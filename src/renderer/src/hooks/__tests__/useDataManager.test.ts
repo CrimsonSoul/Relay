@@ -372,6 +372,38 @@ describe('useDataManager', () => {
       expect(mockImportFromExcel).not.toHaveBeenCalled();
     });
 
+    it('imports a selected file when window focus returns before the delayed change event', async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = renderHook(() => useDataManager());
+        let importPromise: Promise<unknown>;
+
+        act(() => {
+          importPromise = result.current.importData('contacts');
+        });
+
+        const input = document.body.querySelector('input[type="file"]') as HTMLInputElement | null;
+        expect(input).not.toBeNull();
+        const file = new File(['[{"name":"Alice"}]'], 'contacts.json', {
+          type: 'application/json',
+        });
+
+        await act(async () => {
+          globalThis.dispatchEvent(new Event('focus'));
+          await vi.advanceTimersByTimeAsync(100);
+          Object.defineProperty(input, 'files', { value: [file], configurable: true });
+          input!.dispatchEvent(new Event('change'));
+          await importPromise;
+        });
+
+        expect(mockImportFromJson).toHaveBeenCalledWith('contacts', '[{"name":"Alice"}]');
+        expect(result.current.importing).toBe(false);
+      } finally {
+        vi.runOnlyPendingTimers();
+        vi.useRealTimers();
+      }
+    });
+
     it('rejects oversized import files before reading or importing them', async () => {
       const { result } = renderHook(() => useDataManager());
       let importPromise: Promise<unknown>;

@@ -84,9 +84,10 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const handleImport = async () => {
     try {
       const result = await importData(importCategory);
-      if (result?.success) {
+      if (!result) return;
+      if (result.success) {
         showToast(`Imported ${result.imported} new, updated ${result.updated}`, 'success');
-      } else if (result?.errors?.length) {
+      } else if (result.errors.length) {
         showToast(`Import completed with errors`, 'info');
       } else {
         showToast('Import failed. Please try again.', 'error');

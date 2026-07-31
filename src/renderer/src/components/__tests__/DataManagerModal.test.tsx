@@ -216,16 +216,15 @@ describe('DataManagerModal', () => {
     });
   });
 
-  it('shows error toast when import returns no success and no errors', async () => {
-    mockImportData.mockResolvedValue({ success: false });
+  it('does not show an error toast when the file picker is cancelled', async () => {
+    mockImportData.mockResolvedValue(null);
 
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Import'));
     fireEvent.click(screen.getByTestId('import-btn'));
 
-    await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Import failed. Please try again.', 'error');
-    });
+    await vi.waitFor(() => expect(mockImportData).toHaveBeenCalledOnce());
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it('shows error toast when import throws', async () => {

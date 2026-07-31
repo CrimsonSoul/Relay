@@ -3,6 +3,7 @@ import type { ImportResult, DataStats, DataCategory, ExportFormat } from '@share
 import { loggers } from '../utils/logger';
 import { getPb } from '../services/pocketbase';
 import { useMounted } from './useMounted';
+import { pickBrowserFile } from '../services/browserFilePicker';
 import {
   exportToJson,
   exportToCsv,
@@ -39,80 +40,6 @@ function downloadBlob(blob: Blob, filename: string): void {
     a.remove();
     URL.revokeObjectURL(url);
   }, 100);
-}
-
-/** Open a browser file picker and return the chosen file's content. */
-function pickFile(
-  accept: string,
-): Promise<{ text: string; buffer: ArrayBuffer; name: string } | null> {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement('input');
-    let settled = false;
-    let focusTimer: ReturnType<typeof setTimeout> | null = null;
-    input.type = 'file';
-    input.accept = accept;
-    input.style.display = 'none';
-    document.body.appendChild(input);
-
-    function cleanup(): void {
-      if (focusTimer) {
-        clearTimeout(focusTimer);
-        focusTimer = null;
-      }
-      globalThis.removeEventListener('focus', handleWindowFocus);
-      input.removeEventListener('change', handleChange);
-      input.removeEventListener('cancel', handleCancel);
-      input.remove();
-    }
-
-    function resolveOnce(value: { text: string; buffer: ArrayBuffer; name: string } | null): void {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(value);
-    }
-
-    function rejectOnce(error: Error): void {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    }
-
-    async function handleChange(): Promise<void> {
-      const file = input.files?.[0];
-      if (!file) {
-        resolveOnce(null);
-        return;
-      }
-      if (file.size > MAX_IMPORT_FILE_BYTES) {
-        rejectOnce(new Error('Import file is too large. Choose a file under 25 MB.'));
-        return;
-      }
-      try {
-        const [text, buffer] = await Promise.all([file.text(), file.arrayBuffer()]);
-        resolveOnce({ text, buffer, name: file.name });
-      } catch {
-        resolveOnce(null);
-      }
-    }
-
-    function handleCancel(): void {
-      resolveOnce(null);
-    }
-
-    function handleWindowFocus(): void {
-      focusTimer = setTimeout(() => {
-        if (!input.files?.length) resolveOnce(null);
-      }, 0);
-    }
-
-    input.addEventListener('change', handleChange);
-    input.addEventListener('cancel', handleCancel);
-    globalThis.addEventListener('focus', handleWindowFocus, { once: true });
-
-    input.click();
-  });
 }
 
 async function performExport(
@@ -238,23 +165,25 @@ export function useDataManager() {
 
       setImporting(true);
       try {
-        const accept = '.json,.csv,.xlsx';
-        const file = await pickFile(accept);
-        if (!file) {
+        const selection = await pickBrowserFile({
+          accept: '.json,.csv,.xlsx',
+          maxBytes: MAX_IMPORT_FILE_BYTES,
+        });
+        if (selection.kind === 'cancelled') {
           return null;
         }
 
         const collection = CATEGORY_TO_COLLECTION[category];
         let result: { imported: number; updated: number; errors: string[] };
-        const lowerFileName = file.name.toLowerCase();
+        const lowerFileName = selection.name.toLowerCase();
 
         if (lowerFileName.endsWith('.xlsx')) {
-          result = await importFromExcel(collection, file.buffer);
+          result = await importFromExcel(collection, selection.buffer);
         } else if (lowerFileName.endsWith('.csv')) {
-          result = await importFromCsv(collection, file.text);
+          result = await importFromCsv(collection, selection.text);
         } else {
           // Default to JSON
-          result = await importFromJson(collection, file.text);
+          result = await importFromJson(collection, selection.text);
         }
 
         const importResult: ImportResult = {
