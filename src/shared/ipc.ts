@@ -977,6 +977,14 @@ export type ImportResult = {
   errors: string[];
 };
 
+export type ImportProgress = {
+  processed: number;
+  total: number;
+  imported: number;
+  updated: number;
+  errors: number;
+};
+
 export type DataStats = {
   contacts: { count: number; lastUpdated: number } | number;
   servers: { count: number; lastUpdated: number } | number;

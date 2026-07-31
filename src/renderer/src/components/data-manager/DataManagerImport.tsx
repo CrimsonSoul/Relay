@@ -1,12 +1,13 @@
 import React from 'react';
 import { CategorySelect } from './SharedComponents';
 import { TactileButton } from '../TactileButton';
-import type { DataCategory, ImportResult } from '@shared/ipc';
+import type { DataCategory, ImportProgress, ImportResult } from '@shared/ipc';
 
 interface Props {
   importCategory: DataCategory;
   setImportCategory: (category: DataCategory) => void;
   importing: boolean;
+  importProgress: ImportProgress | null;
   onImport: () => void;
   lastImportResult: ImportResult | null;
   onClearResult: () => void;
@@ -16,6 +17,7 @@ export const DataManagerImport: React.FC<Props> = ({
   importCategory,
   setImportCategory,
   importing,
+  importProgress,
   onImport,
   lastImportResult,
   onClearResult,
@@ -37,6 +39,19 @@ export const DataManagerImport: React.FC<Props> = ({
         {importing ? 'Importing...' : 'Import...'}
       </TactileButton>
     </div>
+    {importing && importProgress && (
+      <output className="data-manager-import-progress" aria-live="polite">
+        <strong>
+          Processed {importProgress.processed.toLocaleString()} of{' '}
+          {importProgress.total.toLocaleString()}
+        </strong>
+        <span>
+          Imported {importProgress.imported.toLocaleString()} · Updated{' '}
+          {importProgress.updated.toLocaleString()} · Errors{' '}
+          {importProgress.errors.toLocaleString()}
+        </span>
+      </output>
+    )}
     {lastImportResult && (
       <div
         className={`data-manager-import-result ${lastImportResult.success ? 'data-manager-import-result--success' : 'data-manager-import-result--error'}`}

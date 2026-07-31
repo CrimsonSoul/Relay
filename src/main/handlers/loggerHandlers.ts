@@ -23,10 +23,13 @@ function boundRendererLogData(data: unknown, depth = 0): LogData {
       : data;
   }
   if (typeof data === 'number' || typeof data === 'boolean') return data;
-  // Anything else primitive is a bigint (structured clone carries those across IPC) or a
-  // symbol/function. JSON.stringify throws on a bigint, which would drop the whole log
-  // line, so render it as text before it reaches the formatter.
-  if (typeof data !== 'object') return String(data);
+  // Structured clone carries bigint across IPC, but JSON.stringify rejects it and would
+  // drop the whole log line. Symbols and functions cannot cross IPC in production, but
+  // bounding remains explicit and JSON-safe if this helper receives either one.
+  if (typeof data === 'bigint') return data.toString();
+  if (typeof data === 'symbol' || typeof data === 'function') {
+    return `[Unsupported ${typeof data}]`;
+  }
   if (depth >= MAX_LOG_DATA_DEPTH) return '[MaxDepth]';
 
   if (Array.isArray(data)) {

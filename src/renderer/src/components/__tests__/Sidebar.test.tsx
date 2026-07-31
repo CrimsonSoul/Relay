@@ -93,7 +93,7 @@ describe('Sidebar', () => {
     Reflect.deleteProperty(globalThis as Record<string, unknown>, 'api');
   });
 
-  it('renders only the six shared destinations in their shortcut order', () => {
+  it('renders all seven shared destinations in their shortcut order', () => {
     stubRuntime('web');
     const { container } = render(<Sidebar {...defaultProps} />);
 
@@ -104,17 +104,14 @@ describe('Sidebar', () => {
       'Knowledge',
       'Status',
       'Problems',
+      'Radar',
     ]);
     expect(screen.queryByTestId('sidebar-btn-notes')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-people')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-btn-servers')).not.toBeInTheDocument();
   });
 
-  /**
-   * Radar polls the CW dashboard through the desktop session, so a browser tab
-   * could only ever reach an unavailable message. The entry is desktop-only.
-   */
-  it('adds Radar in the desktop app', () => {
+  it('keeps the same Radar destination in the desktop app', () => {
     stubRuntime('electron');
     const { container } = render(<Sidebar {...defaultProps} />);
 
@@ -196,11 +193,11 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('sidebar-btn-alerts')).not.toHaveAttribute('data-status-tone');
   });
 
-  it('hides Radar when Relay is served to a browser', () => {
+  it('shows Radar when Relay is served to a browser', () => {
     stubRuntime('web');
     const { container } = render(<Sidebar {...defaultProps} />);
 
-    expect(navLabelsOf(container)).not.toContain('Radar');
+    expect(navLabelsOf(container)).toContain('Radar');
   });
 
   it('renders Settings button', () => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CloudStatusData, IpcResult, LogEntry } from '@shared/ipc';
+import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 import {
   type DynatraceProblemsPublicSettings,
@@ -15,6 +15,7 @@ import {
   WebDynatraceDashboardUpdateSchema,
   WebDynatraceProblemProfileFilterSchema,
   WebDynatraceProblemsSettingsInputSchema,
+  WebRadarSnapshotSchema,
 } from '@shared/webApi';
 import type { WebSessionStore } from '../WebSessionStore';
 import type { WebRouter } from '../WebRouter';
@@ -24,6 +25,11 @@ export type BrandAssetKind = 'company' | 'footer';
 export type OperationalServices = {
   cloudStatus: {
     refresh: () => Promise<CloudStatusData>;
+  };
+  radar: {
+    snapshot: () => RadarSnapshot;
+    refresh: () => Promise<RadarSnapshot>;
+    onChange?: (listener: (snapshot: RadarSnapshot) => void) => () => void;
   };
   dashboards: {
     list: () => DynatraceDashboardState[];
@@ -76,6 +82,28 @@ export function registerOperationalRoutes(
     authenticated: true,
     rateLimit: { bucket: 'cloud-status', key: 'session', limit: 12, windowMs: 60_000 },
     handler: async () => ({ status: 200, body: await services.cloudStatus.refresh() }),
+  });
+
+  router.register({
+    method: 'GET',
+    path: `${RELAY_WEB_API_PREFIX}/operations/radar`,
+    authenticated: true,
+    handler: async () => ({
+      status: 200,
+      body: WebRadarSnapshotSchema.parse(services.radar.snapshot()),
+    }),
+  });
+
+  router.register({
+    method: 'POST',
+    path: `${RELAY_WEB_API_PREFIX}/operations/radar/refresh`,
+    authenticated: true,
+    csrf: true,
+    rateLimit: { bucket: 'radar-refresh', key: 'session', limit: 12, windowMs: 60_000 },
+    handler: async () => ({
+      status: 200,
+      body: WebRadarSnapshotSchema.parse(await services.radar.refresh()),
+    }),
   });
 
   router.register({

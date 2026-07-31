@@ -270,6 +270,21 @@ test('rejects a completed compute task from a different project or scope', async
     }),
     /pull request/i,
   );
+  await assert.rejects(
+    waitForComputeTask({
+      ...options,
+      fetcher: async () =>
+        response(
+          successfulBranchTask({
+            branch: 'feature/quality-gate',
+            branchType: 'BRANCH',
+            pullRequest: '42',
+          }),
+        ),
+      scope: { pullRequest: '42' },
+    }),
+    /pull request/i,
+  );
 });
 
 test('accepts the exact SonarCloud pull-request task schema', async () => {
@@ -277,8 +292,8 @@ test('accepts the exact SonarCloud pull-request task schema', async () => {
     fetcher: async () =>
       response(
         successfulBranchTask({
-          branch: 'feature/quality-gate',
-          branchType: 'PULL_REQUEST',
+          branch: undefined,
+          branchType: undefined,
           pullRequest: '42',
         }),
       ),

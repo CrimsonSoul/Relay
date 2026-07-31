@@ -237,7 +237,8 @@ export class KnowledgeSearchIndexer {
   }
 
   private async sweepPendingRemovals(): Promise<void> {
-    for (const documentId of [...this.pendingRemovals]) {
+    const pendingRemovals = new Set(this.pendingRemovals);
+    for (const documentId of pendingRemovals) {
       if (this.disposed) return;
       await this.trackRemoval(this.removePermanently(documentId));
     }

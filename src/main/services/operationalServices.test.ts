@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { nativeImage } from 'electron';
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RadarSnapshot } from '@shared/ipc';
 import { BrandAssetService, createOperationalServices } from './operationalServices';
 
 const { mockBridgeLogger } = vi.hoisted(() => ({
@@ -31,6 +32,35 @@ vi.mock('../logger', () => ({
   },
 }));
 
+const radarSnapshot: RadarSnapshot = {
+  color: 'yellow',
+  dispatchers: [],
+  papa: [],
+  metrics: [],
+  xcenter: { ok: 977, pending: 3 },
+  currentTime: '10:02',
+  lastUpdated: 1_785_515_320_000,
+  signInRequired: false,
+  error: null,
+};
+
+type RadarServicePort = {
+  snapshot: () => RadarSnapshot;
+  refresh: () => Promise<RadarSnapshot>;
+  onChange?: (listener: (snapshot: RadarSnapshot) => void) => () => void;
+};
+
+function servicesWithRadar(getRadarManager: () => unknown) {
+  return createOperationalServices({
+    getCloudStatusManager: () => null,
+    getDynatraceWindowManager: () => null,
+    getDynatraceProblemsManager: () => null,
+    getAppConfig: () => null,
+    getDataRoot: async () => '/unused',
+    getRadarManager,
+  } as never) as ReturnType<typeof createOperationalServices> & { radar?: RadarServicePort };
+}
+
 describe('operational services security boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,6 +71,7 @@ describe('operational services security boundaries', () => {
       getCloudStatusManager: () => null,
       getDynatraceWindowManager: () => null,
       getDynatraceProblemsManager: () => null,
+      getRadarManager: () => null,
       getAppConfig: () => null,
       getDataRoot: async () => '/unused',
     });
@@ -54,6 +85,54 @@ describe('operational services security boundaries', () => {
     expect(mockBridgeLogger.info).toHaveBeenCalledWith(
       '[web:auditforged] first\\r\\nsecond\\nthird\\rfourth\\u0085fifth\\u2028sixth\\u2029seventh',
     );
+  });
+
+  it('reads, refreshes, and subscribes through the current Radar manager', async () => {
+    let managerListener: ((snapshot: RadarSnapshot) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const manager = {
+      getSnapshot: vi.fn(() => radarSnapshot),
+      refresh: vi.fn(async () => radarSnapshot),
+      subscribe: vi.fn((listener: (snapshot: RadarSnapshot) => void) => {
+        managerListener = listener;
+        return unsubscribe;
+      }),
+    };
+    const services = servicesWithRadar(() => manager);
+    expect(services.radar).toBeDefined();
+    if (!services.radar) return;
+
+    expect(services.radar.snapshot()).toEqual(radarSnapshot);
+    await expect(services.radar.refresh()).resolves.toEqual(radarSnapshot);
+    const listener = vi.fn();
+    const stop = services.radar.onChange?.(listener);
+    managerListener?.(radarSnapshot);
+    stop?.();
+
+    expect(manager.getSnapshot).toHaveBeenCalledOnce();
+    expect(manager.refresh).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(radarSnapshot);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('returns a bounded unavailable Radar snapshot when no manager exists', async () => {
+    const services = servicesWithRadar(() => null);
+    expect(services.radar).toBeDefined();
+    if (!services.radar) return;
+
+    const expected = {
+      color: 'unknown',
+      dispatchers: [],
+      papa: [],
+      metrics: [],
+      xcenter: { ok: null, pending: null },
+      currentTime: null,
+      lastUpdated: 0,
+      signInRequired: false,
+      error: 'Dispatcher Radar is unavailable on the Relay server.',
+    };
+    expect(services.radar.snapshot()).toEqual(expected);
+    await expect(services.radar.refresh()).resolves.toEqual(expected);
   });
 
   it('rejects a logo above the decoded pixel budget before persistence', async () => {

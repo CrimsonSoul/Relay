@@ -316,9 +316,8 @@ export const KnowledgeContinuousPdf = forwardRef<
 
   useEffect(() => {
     const pendingScroll = pendingScrollRef.current;
-    if (!pendingScroll || pendingScroll.pdf !== pdf || measuredThrough < pendingScroll.pageIndex) {
-      return;
-    }
+    if (!pendingScroll) return;
+    if (pendingScroll.pdf !== pdf || measuredThrough < pendingScroll.pageIndex) return;
     pendingScrollRef.current = null;
     applyScrollRequest(pendingScroll);
   }, [applyScrollRequest, measuredThrough, pdf]);

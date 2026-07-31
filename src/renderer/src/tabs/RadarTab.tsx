@@ -3,6 +3,7 @@ import { RADAR_STATUS_LABELS, type RadarRow } from '@shared/ipc';
 import { RADAR_URL } from '@shared/radar';
 import { TactileButton } from '../components/TactileButton';
 import { useRadarSnapshot } from '../hooks/useRadarSnapshot';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 import './radar.css';
 
 /**
@@ -69,6 +70,7 @@ export const RadarTab: React.FC = () => {
   const overallTone = isStale ? 'unknown' : color;
   const overallLabel = isStale ? 'Stale' : RADAR_STATUS_LABELS[color];
   const lastUpdatedDate = hasUsableSnapshot ? new Date(lastUpdated) : null;
+  const isWeb = getRelayRuntime().kind === 'web';
 
   return (
     <div className="radar-tab">
@@ -125,10 +127,23 @@ export const RadarTab: React.FC = () => {
       */}
       {signInRequired && (
         <output className="radar-notice">
-          <span>Your CW Dashboard session has expired. Retained Radar data is stale.</span>
-          <TactileButton variant="primary" onClick={signIn} aria-label="Sign in to CW Dashboard">
-            SIGN IN
-          </TactileButton>
+          {isWeb ? (
+            <span>
+              The Relay server PC&apos;s CW Dashboard session has expired. Open Relay Desktop on the
+              server PC, sign in to CW Dashboard there, then refresh Radar.
+            </span>
+          ) : (
+            <>
+              <span>Your CW Dashboard session has expired. Retained Radar data is stale.</span>
+              <TactileButton
+                variant="primary"
+                onClick={signIn}
+                aria-label="Sign in to CW Dashboard"
+              >
+                SIGN IN
+              </TactileButton>
+            </>
+          )}
         </output>
       )}
 

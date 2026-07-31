@@ -13,7 +13,7 @@ const dayAbbrevs = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
  * were treated as in-window.
  */
 function dayRangeRegex(): RegExp {
-  const day = String.raw`(mon|tue|wed|thu|fri|sat|sun)(?:day|sday|nesday|rsday|urday)?`;
+  const day = '(mon|tue|wed|thu|fri|sat|sun)(?:day|sday|nesday|rsday|urday)?';
   const separator = String.raw`\s*(?:-|to|through)\s*`;
   return new RegExp(`${day}${separator}${day}`);
 }

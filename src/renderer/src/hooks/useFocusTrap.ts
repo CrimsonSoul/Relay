@@ -80,7 +80,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       if (focusableElements.length === 0) return;
 
       const firstElement = focusableElements[0]!;
-      const lastElement = focusableElements[focusableElements.length - 1]!;
+      const lastElement = focusableElements.at(-1)!;
 
       // Shift+Tab on first element -> go to last
       if (e.shiftKey && document.activeElement === (firstElement as Element)) {

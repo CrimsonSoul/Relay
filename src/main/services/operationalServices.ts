@@ -1,6 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { CloudStatusData, IpcResult, LogEntry } from '@shared/ipc';
+import type { CloudStatusData, IpcResult, LogEntry, RadarSnapshot } from '@shared/ipc';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 import {
   MAX_DYNATRACE_ALERTING_PROFILES,
@@ -20,6 +20,8 @@ import {
   emptyCloudStatusProviders,
   fetchCloudStatusData,
 } from '../handlers/cloudStatus/fetchCloudStatus';
+import type { RadarManager } from '../handlers/radar/RadarManager';
+import { emptyRadarSnapshot } from '../handlers/radar/fetchRadar';
 import { loggers } from '../logger';
 import type { BrandAssetKind, OperationalServices } from '../web/routes/operationalRoutes';
 
@@ -40,6 +42,29 @@ const unavailableSettings: DynatraceProblemsPublicSettings = {
   profileFilterConfigured: false,
   selectedAlertingProfiles: [],
 };
+
+function unavailableRadarSnapshot(): RadarSnapshot {
+  return {
+    ...emptyRadarSnapshot(),
+    error: 'Dispatcher Radar is unavailable on the Relay server.',
+  };
+}
+
+export class RadarSnapshotService {
+  constructor(private readonly getManager: () => RadarManager | null) {}
+
+  snapshot(): RadarSnapshot {
+    return this.getManager()?.getSnapshot() ?? unavailableRadarSnapshot();
+  }
+
+  async refresh(): Promise<RadarSnapshot> {
+    return (await this.getManager()?.refresh()) ?? unavailableRadarSnapshot();
+  }
+
+  onChange(listener: (snapshot: RadarSnapshot) => void): () => void {
+    return this.getManager()?.subscribe(listener) ?? (() => undefined);
+  }
+}
 
 function failure<T = void>(error: unknown): IpcResult<T> {
   return { success: false, error: getErrorMessage(error) };
@@ -367,6 +392,7 @@ export function createOperationalServices(options: {
   getCloudStatusManager: () => CloudStatusManager | null;
   getDynatraceWindowManager: () => DynatraceWindowManager | null;
   getDynatraceProblemsManager: () => DynatraceProblemsManager | null;
+  getRadarManager: () => RadarManager | null;
   getAppConfig: () => AppConfig | null;
   getDataRoot: () => Promise<string>;
 }): OperationalServices & {
@@ -374,6 +400,7 @@ export function createOperationalServices(options: {
 } {
   return {
     cloudStatus: new CloudStatusService(options.getCloudStatusManager),
+    radar: new RadarSnapshotService(options.getRadarManager),
     dashboards: new DynatraceDashboardService(options.getDynatraceWindowManager),
     problems: new DynatraceProblemsService(
       options.getDynatraceProblemsManager,

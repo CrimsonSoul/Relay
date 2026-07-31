@@ -58,6 +58,7 @@ describe('DataManagerImport', () => {
     importCategory: 'contacts' as const,
     setImportCategory: vi.fn(),
     importing: false,
+    importProgress: null,
     onImport: vi.fn(),
     lastImportResult: null,
     onClearResult: vi.fn(),
@@ -82,6 +83,31 @@ describe('DataManagerImport', () => {
     render(<DataManagerImport {...defaultImportProps} importing={true} />);
     const btn = screen.getByText('Importing...').closest('button');
     expect(btn).toBeDisabled();
+  });
+
+  it('shows exact processed, total, and outcome counts while importing', () => {
+    render(
+      <DataManagerImport
+        {...defaultImportProps}
+        importing
+        importProgress={{
+          processed: 977,
+          total: 977,
+          imported: 900,
+          updated: 72,
+          errors: 5,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Processed 977 of 977')).toBeInTheDocument();
+    expect(screen.getByText('Imported 900 · Updated 72 · Errors 5')).toBeInTheDocument();
+  });
+
+  it('does not show progress before an import starts', () => {
+    render(<DataManagerImport {...defaultImportProps} />);
+
+    expect(screen.queryByText(/Processed/)).not.toBeInTheDocument();
   });
 
   it('calls onImport when Import button is clicked', () => {

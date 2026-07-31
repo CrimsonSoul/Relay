@@ -127,7 +127,10 @@ jobs:
   snyk:
     name: Snyk security gate
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/test'
+      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'test' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -166,6 +169,9 @@ jobs:
           npm run security:snyk:code -- "--org=$SNYK_ORG"
 
       - name: Update the Snyk test-branch dependency snapshot
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/test'
         env:
           SNYK_ORG: ${{ vars.SNYK_ORG }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

@@ -1,13 +1,94 @@
 import { createServer as createNetServer } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
+import type { CloudStatusData, RadarSnapshot } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { RelayWebGateway } from './RelayWebGateway';
 import { RelayWebServer } from './RelayWebServer';
 import { WebApprovalCodeStore } from './WebApprovalCodeStore';
+import type { OperationalServices } from './routes/operationalRoutes';
 
 const LOOPBACK = '127.0.0.1';
 // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate synthetic credential exercises the approval-gated setup route.
 const OWNER_PASSWORD = 'Test-access-value-123!';
+
+const RADAR_SNAPSHOT: RadarSnapshot = {
+  color: 'yellow',
+  dispatchers: [],
+  papa: [],
+  metrics: [],
+  xcenter: { ok: 977, pending: 3 },
+  currentTime: '10:02',
+  lastUpdated: 1_785_515_320_000,
+  signInRequired: false,
+  error: null,
+};
+
+function emptyProviders(): CloudStatusData['providers'] {
+  return {
+    aws: [],
+    azure: [],
+    m365: [],
+    jira: [],
+    github: [],
+    cloudflare: [],
+    google: [],
+    anthropic: [],
+    openai: [],
+    salesforce: [],
+  };
+}
+
+function operationalEventsFixture() {
+  let radarListener: ((snapshot: RadarSnapshot) => void) | undefined;
+  const stopRadar = vi.fn();
+  const stopDashboards = vi.fn();
+  const services: OperationalServices = {
+    cloudStatus: {
+      refresh: async () => ({ providers: emptyProviders(), lastUpdated: 0, errors: [] }),
+    },
+    radar: {
+      snapshot: () => RADAR_SNAPSHOT,
+      refresh: async () => RADAR_SNAPSHOT,
+      onChange: (listener) => {
+        radarListener = listener;
+        return stopRadar;
+      },
+    },
+    dashboards: {
+      list: () => [],
+      add: () => ({ success: false, error: 'unused' }),
+      update: () => ({ success: false, error: 'unused' }),
+      remove: () => ({ success: false, error: 'unused' }),
+      url: () => null,
+      onChange: () => stopDashboards,
+    },
+    problems: {
+      getSettings: () => ({
+        configured: false,
+        environmentUrl: '',
+        profileFilterConfigured: false,
+        selectedAlertingProfiles: [],
+      }),
+      saveSettings: () => ({ success: false, error: 'unused' }),
+      testSettings: async () => ({ success: false, error: 'unused' }),
+      clearSettings: () => ({ success: false, error: 'unused' }),
+      sync: async () => ({ success: false, error: 'unused' }),
+      saveProfileFilter: async () => ({ success: false, error: 'unused' }),
+    },
+    assets: {
+      get: async () => null,
+      save: async () => ({ success: false, error: 'unused' }),
+      remove: async () => ({ success: false, error: 'unused' }),
+    },
+    log: () => undefined,
+  };
+  return {
+    services,
+    getRadarListener: () => radarListener,
+    stopRadar,
+    stopDashboards,
+  };
+}
 
 async function freePort(): Promise<number> {
   const probe = createNetServer();
@@ -75,6 +156,84 @@ async function sessionHeaders(origin: string, response: Response): Promise<Recor
 }
 
 describe('RelayWebGateway', () => {
+  it('publishes validated Radar changes to session events and releases subscriptions', async () => {
+    const port = await freePort();
+    const operational = operationalEventsFixture();
+    const gateway = new RelayWebGateway({
+      config: {
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        secret: 'never-public',
+        web: { enabled: true, port },
+      },
+      authenticate: async () => ({
+        pbUrl: `http://${LOOPBACK}:8090`,
+        auth: { token: 'app-user-token', record: null },
+        publicConfig: {
+          mode: 'server' as const,
+          port: 8090,
+          bindHost: '0.0.0.0' as const,
+          lanIp: LOOPBACK,
+          web: { enabled: true, port },
+        },
+        runtime: WEB_RUNTIME,
+        refresh: async () => ({ token: 'refreshed-token', record: null }),
+      }),
+      hostname: LOOPBACK,
+      getInterfaceAddresses: () => [],
+      operationalServices: operational.services,
+    });
+    expect(operational.getRadarListener()).toBeTypeOf('function');
+    if (!operational.getRadarListener()) {
+      await gateway.dispose();
+      return;
+    }
+    const server = new RelayWebServer({
+      host: LOOPBACK,
+      port,
+      staticRoot: '/missing-static-root',
+      gateway,
+    });
+    await server.start();
+    const origin = `http://${LOOPBACK}:${port}`;
+
+    try {
+      const headers = await sessionHeaders(
+        origin,
+        await fetch(`${origin}/relay-api/v1/session/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin },
+          // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake passphrase exercises authenticated SSE.
+          body: JSON.stringify({ passphrase: 'fixture-passphrase' }),
+        }),
+      );
+      const response = await fetch(`${origin}/relay-api/v1/session/events`, {
+        headers: { cookie: headers.cookie! },
+      });
+      const reader = response.body!.getReader();
+      const connected = await reader.read();
+      expect(new TextDecoder().decode(connected.value)).toContain(': connected');
+
+      operational.getRadarListener()?.({ cookie: 'must-not-cross' } as never);
+      operational.getRadarListener()?.(RADAR_SNAPSHOT);
+      const event = await reader.read();
+      const eventText = new TextDecoder().decode(event.value);
+      expect(eventText).not.toContain('must-not-cross');
+      expect(eventText).toContain(
+        `event: radar-snapshot-changed\ndata: ${JSON.stringify(RADAR_SNAPSHOT)}`,
+      );
+
+      await gateway.dispose();
+      await expect(reader.read()).resolves.toMatchObject({ done: true });
+      expect(operational.stopRadar).toHaveBeenCalledOnce();
+      expect(operational.stopDashboards).toHaveBeenCalledOnce();
+    } finally {
+      await server.stop();
+      await gateway.dispose();
+    }
+  });
+
   it('protects static content and provides live authenticated session routes on one origin', async () => {
     const port = await freePort();
     const authenticate = vi.fn(async () => ({

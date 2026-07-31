@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { z } from 'zod';
+import type { RadarSnapshot } from './ipc';
 import { WEB_RUNTIME } from './runtime';
+import * as webApi from './webApi';
 import {
   WebBrandAssetInputSchema,
   WebCloudStatusDataSchema,
@@ -61,6 +64,44 @@ describe('Relay Web session contracts', () => {
 });
 
 describe('Relay Web API operational schemas', () => {
+  it('accepts only complete bounded Radar snapshots', () => {
+    const schema = (webApi as unknown as { WebRadarSnapshotSchema?: z.ZodType<RadarSnapshot> })
+      .WebRadarSnapshotSchema;
+    expect(schema).toBeDefined();
+    if (!schema) return;
+
+    const snapshot: RadarSnapshot = {
+      color: 'green',
+      dispatchers: [
+        {
+          name: 'Prod01',
+          tone: 'yellow',
+          lastScheduleDate: '2026-07-31 10:00',
+          lastPubSubDate: '2026-07-31 10:01',
+          queues: [{ name: 'Work', depth: 4 }],
+        },
+      ],
+      papa: [{ name: 'Messages', depth: 2 }],
+      metrics: [{ label: 'Transactional Emails Queue Depth', value: '7', tone: 'red' }],
+      xcenter: { ok: 977, pending: 3 },
+      currentTime: '10:02',
+      lastUpdated: 1_785_515_320_000,
+      signInRequired: false,
+      error: null,
+    };
+
+    expect(schema.safeParse(snapshot).success).toBe(true);
+    expect(schema.safeParse({ ...snapshot, color: 'blue' }).success).toBe(false);
+    expect(
+      schema.safeParse({
+        ...snapshot,
+        dispatchers: [{ ...snapshot.dispatchers[0], queues: [{ name: 'Work', depth: -1 }] }],
+      }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ ...snapshot, error: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...snapshot, cookie: 'must-not-cross' }).success).toBe(false);
+  });
+
   it('accepts bounded cloud status data and rejects incomplete provider maps', () => {
     const providers = Object.fromEntries(
       [

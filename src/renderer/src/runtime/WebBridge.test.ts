@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BridgeAPI } from '@shared/ipc';
+import type { BridgeAPI, RadarSnapshot } from '@shared/ipc';
+import { RADAR_URL } from '@shared/radar';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
 import type { WebBridgeRequest } from './WebBridge';
@@ -44,6 +45,18 @@ const SIGNED_OUT = {
   capabilities: [],
   deviceId: null,
   expiresAt: null,
+};
+
+const RADAR_SNAPSHOT: RadarSnapshot = {
+  color: 'green',
+  dispatchers: [],
+  papa: [],
+  metrics: [],
+  xcenter: { ok: 977, pending: 3 },
+  currentTime: '10:02',
+  lastUpdated: 1_785_515_320_000,
+  signInRequired: false,
+  error: null,
 };
 
 /**
@@ -93,6 +106,107 @@ describe('WebBridge', () => {
     expect((bridge as unknown as Record<string, unknown>).openPath).toBeUndefined();
   });
 
+  it('keeps device-only capabilities excluded while shared operations use bounded Web paths', async () => {
+    const routeResponses: Record<string, unknown> = {
+      '/operations/cloud-status': EMPTY_STATUS,
+      '/operations/dynatrace-dashboards': [],
+      '/operations/dynatrace-problems/settings': {
+        configured: false,
+        environmentUrl: '',
+        profileFilterConfigured: false,
+        selectedAlertingProfiles: [],
+      },
+      '/operations/assets/company': 'data:image/png;base64,AA==',
+      '/privileged/session': SIGNED_OUT,
+      '/knowledge/index-status': {
+        state: 'idle',
+        documentCount: 0,
+        categoryCount: 0,
+        lastIndexedAt: null,
+      },
+      '/knowledge/search': { ok: false, requestId: 'search-1', error: 'unavailable' },
+      '/knowledge/upload/queue': {
+        restartRecovery: false,
+        activeBatchId: null,
+        totalBytes: 0,
+        acknowledgedBytes: 0,
+        items: [],
+      },
+      '/operations/radar': RADAR_SNAPSHOT,
+    };
+    const { request, calls } = stubWebRequest((path) => routeResponses[path] ?? { ok: true });
+    const actions = createBrowserActions({ executeCopy: () => true });
+    const writeClipboard = vi.spyOn(actions, 'writeClipboard');
+    const downloadText = vi.spyOn(actions, 'downloadText').mockReturnValue(true);
+    const bridge = createWebBridge(SESSION, { request, actions });
+
+    const deviceOnlyCapabilities = [
+      'connectionConfiguration',
+      'pocketBaseRecovery',
+      'offlineCache',
+      'offlineMutations',
+      'nativeWindowControls',
+      'customReminderSound',
+      'imageClipboard',
+    ] as const;
+    for (const capability of deviceOnlyCapabilities) {
+      expect(bridge.runtime.capabilities[capability], capability).toBe(false);
+    }
+    expect(bridge.runtime.capabilities.privilegedAccess).toBe(true);
+    expect(bridge.runtime.capabilities.knowledgePublishing).toBe(true);
+
+    await expect(bridge.createBackup()).resolves.toMatchObject({ success: false });
+    await expect(bridge.mutateOffline({} as never)).resolves.toEqual({
+      ok: false,
+      error: 'Web access is online-only.',
+    });
+    await expect(bridge.selectReminderSound()).resolves.toMatchObject({ success: false });
+    await expect(bridge.reselectKnowledgeUploadSource('upload-1')).resolves.toBe(false);
+
+    await bridge.getCloudStatus();
+    await bridge.listDynatraceDashboards();
+    await bridge.getDynatraceProblemsSettings();
+    await bridge.getCompanyLogo();
+    await bridge.getPrivilegedSession();
+    await bridge.getKnowledgeIndexStatus();
+    await bridge.searchKnowledge({
+      requestId: 'search-1',
+      query: 'server',
+      scope: { kind: 'all' },
+      categoryId: null,
+      documentType: null,
+      limit: 10,
+    });
+    await bridge.getKnowledgeUploadQueue();
+    await bridge.getRadarSnapshot();
+    bridge.logToMain({ level: 'INFO', module: 'parity', message: 'contract' });
+    bridge.notifyAlertDismissed('cloud-outage');
+    await bridge.writeClipboard('bridge text');
+    await bridge.saveAndOpenIcs('BEGIN:VCALENDAR\nEND:VCALENDAR');
+
+    expect(calls.mock.calls.map(([path]) => path)).toEqual(
+      expect.arrayContaining([
+        '/operations/cloud-status',
+        '/operations/dynatrace-dashboards',
+        '/operations/dynatrace-problems/settings',
+        '/operations/assets/company',
+        '/privileged/session',
+        '/knowledge/index-status',
+        '/knowledge/search',
+        '/knowledge/upload/queue',
+        '/operations/radar',
+        '/operations/log',
+        '/operations/alert-dismissed',
+      ]),
+    );
+    expect(writeClipboard).toHaveBeenCalledWith('bridge text');
+    expect(downloadText).toHaveBeenCalledWith(
+      'BEGIN:VCALENDAR\nEND:VCALENDAR',
+      'relay-schedule.ics',
+      'text/calendar',
+    );
+  });
+
   it('uses exact routes and unsubscribes event listeners', async () => {
     const { request, calls } = stubWebRequest(() => EMPTY_STATUS);
     const unsubscribe = vi.fn();
@@ -107,6 +221,40 @@ describe('WebBridge', () => {
     expect(subscribe).toHaveBeenCalledWith('dynatrace-dashboards-changed', onChange);
     cleanup();
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('maps validated Radar reads, refresh, events, and original-page navigation', async () => {
+    const { request, calls } = stubWebRequest(() => RADAR_SNAPSHOT);
+    const unsubscribe = vi.fn();
+    const subscribe = vi.fn(() => unsubscribe);
+    const openWindow = vi.fn(() => ({ opener: null }) as Window);
+    const actions = createBrowserActions({ openWindow });
+    const bridge = createWebBridge(SESSION, { request, subscribe, actions });
+
+    await expect(bridge.getRadarSnapshot()).resolves.toEqual(RADAR_SNAPSHOT);
+    await expect(bridge.refreshRadar()).resolves.toEqual(RADAR_SNAPSHOT);
+    expect(calls.mock.calls).toEqual([
+      ['/operations/radar', { method: 'GET' }],
+      ['/operations/radar/refresh', { method: 'POST' }],
+    ]);
+
+    const onSnapshot = vi.fn();
+    const cleanup = bridge.onRadarSnapshot(onSnapshot);
+    expect(subscribe).toHaveBeenCalledWith('radar-snapshot-changed', onSnapshot);
+    cleanup();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+
+    await expect(bridge.openExternal(RADAR_URL)).resolves.toBe(true);
+    expect(openWindow).toHaveBeenCalledWith(RADAR_URL, '_blank', 'noopener,noreferrer');
+  });
+
+  it('rejects a malformed Radar response from the server', async () => {
+    const { request } = stubWebRequest(() => ({ cookie: 'must-not-cross' }));
+    const bridge = createWebBridge(SESSION, { request });
+
+    await expect(bridge.getRadarSnapshot()).rejects.toThrow(
+      'Relay Web returned an invalid response',
+    );
   });
 
   it('maps protected actions onto exact privileged routes', async () => {

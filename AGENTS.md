@@ -77,24 +77,22 @@ routing here.
 - After a formatter or commit hook changes files, inspect the resulting diff
   and rerun affected gates. Report skipped or unavailable checks plainly.
 
-## Pushing to `origin/test`
+## Publishing to `origin/test`
 
-- "Push the changes to test" means commit the complete intended scope and
-  publish the verified local `HEAD` as the full `origin/test` branch tip. Do not
-  cherry-pick or partially publish unless the user explicitly requests it.
-- Reconfirm branch-tip scope after commit hooks and rerun task-relevant
-  verification on the committed result.
-- Then run:
-
-  ```bash
-  git fetch origin test
-  git rev-list --left-right --count origin/test...HEAD
-  git push origin HEAD:test
-  git rev-parse HEAD origin/test
-  git rev-list --left-right --count origin/test...HEAD
-  ```
-
-- If the pre-push divergence shows remote-only commits, stop and reconcile
-  explicitly. Never force-push without explicit authorization.
-- Completion requires matching `HEAD` and `origin/test` revisions plus final
-  divergence `0 0`. Report the exact pushed commit and verification performed.
+- "Push the changes to test" authorizes the full verified tip to enter `test`
+  through a temporary `codex/` branch and pull request; it does not authorize a
+  direct push or a partial cherry-pick.
+- Fetch `origin/test`, prove there are no remote-only commits, push the exact
+  verified tip to the temporary branch, and open a pull request targeting
+  `test`.
+- Require `Build quality gate`, `SonarQube quality gate`, and
+  `Snyk security gate`. A queued, skipped, cancelled, neutral, or stale check is
+  not success.
+- The agent may enable automatic merge after the user says “push to test.” Merge
+  only when every required check is successful. Diagnose and repair in-scope
+  failures on the same pull request; stop for user direction if a repair
+  requires new authority or unrelated work.
+- After merge, fetch `test`, fast-forward the local `test` branch, and prove
+  local `HEAD` and `origin/test` match with final divergence `0 0`. Report the
+  pull request, merge commit, checks, and any post-merge packaging still
+  running.

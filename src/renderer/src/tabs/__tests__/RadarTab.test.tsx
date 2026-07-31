@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RadarSnapshot } from '@shared/ipc';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { RadarTab } from '../RadarTab';
 
 function snapshotWith(overrides: Partial<RadarSnapshot> = {}): RadarSnapshot {
@@ -56,6 +57,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
+      runtime: ELECTRON_RUNTIME,
       getRadarSnapshot,
       refreshRadar,
       openRadarSignIn,
@@ -232,6 +234,31 @@ describe('RadarTab', () => {
     const signIn = screen.getByRole('button', { name: 'Sign in to CW Dashboard' });
     fireEvent.click(signIn);
     await waitFor(() => expect(openRadarSignIn).toHaveBeenCalledOnce());
+  });
+
+  it('directs Relay Web users to recover the server session without an inert sign-in button', async () => {
+    getRadarSnapshot.mockResolvedValue(
+      snapshotWith({
+        color: 'green',
+        signInRequired: true,
+      }),
+    );
+    Object.defineProperty(globalThis, 'api', {
+      configurable: true,
+      writable: true,
+      value: { ...globalThis.api, runtime: WEB_RUNTIME },
+    });
+
+    render(<RadarTab />);
+
+    expect(
+      await screen.findByText(
+        "The Relay server PC's CW Dashboard session has expired. Open Relay Desktop on the server PC, sign in to CW Dashboard there, then refresh Radar.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Sign in to CW Dashboard' }),
+    ).not.toBeInTheDocument();
   });
 
   it('surfaces a fetch failure instead of presenting stale counts as live', async () => {

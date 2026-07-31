@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CloudStatusData } from '@shared/ipc';
+import type { CloudStatusData, RadarSnapshot } from '@shared/ipc';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { WebRequestSecurity } from '../WebRequestSecurity';
 import { WebRouter, WEB_SESSION_COOKIE_NAME } from '../WebRouter';
@@ -9,6 +9,18 @@ import { WebSessionStore } from '../WebSessionStore';
 import { registerOperationalRoutes, type OperationalServices } from './operationalRoutes';
 
 const LOOPBACK = '127.0.0.1';
+
+const RADAR_SNAPSHOT: RadarSnapshot = {
+  color: 'green',
+  dispatchers: [],
+  papa: [],
+  metrics: [],
+  xcenter: { ok: 977, pending: 3 },
+  currentTime: '10:02',
+  lastUpdated: 1_785_515_320_000,
+  signInRequired: false,
+  error: null,
+};
 
 async function freePort(): Promise<number> {
   const probe = createNetServer();
@@ -42,6 +54,10 @@ function services(): OperationalServices {
         lastUpdated: 12,
         errors: [],
       })),
+    },
+    radar: {
+      snapshot: vi.fn((): RadarSnapshot => RADAR_SNAPSHOT),
+      refresh: vi.fn(async (): Promise<RadarSnapshot> => RADAR_SNAPSHOT),
     },
     dashboards: {
       list: vi.fn(() => []),
@@ -132,6 +148,60 @@ describe('Relay Web operational routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ lastUpdated: 12 });
     expect(operational.cloudStatus.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('serves the current Radar snapshot only to an authenticated session', async () => {
+    const { origin, headers, operational } = await fixture();
+    const unauthenticated = await fetch(`${origin}/relay-api/v1/operations/radar`);
+    expect(unauthenticated.status).toBe(401);
+
+    const response = await fetch(`${origin}/relay-api/v1/operations/radar`, { headers });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(RADAR_SNAPSHOT);
+    expect(operational.radar.snapshot).toHaveBeenCalledOnce();
+    expect(operational.radar.refresh).not.toHaveBeenCalled();
+  });
+
+  it('requires CSRF for Radar refresh and returns the refreshed snapshot', async () => {
+    const { origin, headers, operational } = await fixture();
+    const withoutCsrf = await fetch(`${origin}/relay-api/v1/operations/radar/refresh`, {
+      method: 'POST',
+      headers: { cookie: headers.cookie, origin },
+    });
+    expect(withoutCsrf.status).toBe(403);
+    expect(operational.radar.refresh).not.toHaveBeenCalled();
+
+    const response = await fetch(`${origin}/relay-api/v1/operations/radar/refresh`, {
+      method: 'POST',
+      headers,
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(RADAR_SNAPSHOT);
+    expect(operational.radar.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('rate limits Radar refresh after twelve requests per session per minute', async () => {
+    const { origin, headers, operational } = await fixture();
+    const request = () =>
+      fetch(`${origin}/relay-api/v1/operations/radar/refresh`, { method: 'POST', headers });
+
+    for (let requestIndex = 0; requestIndex < 12; requestIndex += 1) {
+      expect((await request()).status).toBe(200);
+    }
+    const throttled = await request();
+
+    expect(throttled.status).toBe(429);
+    expect(operational.radar.refresh).toHaveBeenCalledTimes(12);
+  });
+
+  it('rejects a malformed Radar snapshot at the Web response boundary', async () => {
+    const { origin, headers, operational } = await fixture();
+    vi.mocked(operational.radar.snapshot).mockReturnValue({ cookie: 'must-not-cross' } as never);
+
+    const response = await fetch(`${origin}/relay-api/v1/operations/radar`, { headers });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ ok: false, error: 'unavailable' });
   });
 
   it('validates each dashboard mutation and requires settings capability', async () => {

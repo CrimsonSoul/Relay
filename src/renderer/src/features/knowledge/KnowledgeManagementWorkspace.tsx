@@ -547,14 +547,14 @@ export function KnowledgeManagementWorkspace({
                   Documents
                 </h2>
                 {searchableDocumentCount !== documents.length && (
-                  <span className="knowledge-management__searchable-count" role="status">
+                  <output className="knowledge-management__searchable-count">
                     {searchableDocumentCount} of {documents.length} searchable
-                  </span>
+                  </output>
                 )}
-                <span className="knowledge-management__searchable-count" role="status">
+                <output className="knowledge-management__searchable-count">
                   {filteredDocuments.length} shown · {documents.length} loaded
                   {snapshot.documents.nextCursor ? ' · more available' : ''}
-                </span>
+                </output>
               </div>
               <div className="knowledge-management__toolbar">
                 <div className="knowledge-management__search scoped-search-control">

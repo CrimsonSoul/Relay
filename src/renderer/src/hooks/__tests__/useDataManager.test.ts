@@ -372,6 +372,144 @@ describe('useDataManager', () => {
       expect(mockImportFromExcel).not.toHaveBeenCalled();
     });
 
+    it('imports a selected file when window focus returns before the delayed change event', async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = renderHook(() => useDataManager());
+        let importPromise: Promise<unknown>;
+
+        act(() => {
+          importPromise = result.current.importData('contacts');
+        });
+
+        const input = document.body.querySelector('input[type="file"]') as HTMLInputElement | null;
+        expect(input).not.toBeNull();
+        const file = new File(['[{"name":"Alice"}]'], 'contacts.json', {
+          type: 'application/json',
+        });
+
+        await act(async () => {
+          globalThis.dispatchEvent(new Event('focus'));
+          await vi.advanceTimersByTimeAsync(100);
+          Object.defineProperty(input, 'files', { value: [file], configurable: true });
+          input!.dispatchEvent(new Event('change'));
+          await importPromise;
+        });
+
+        expect(mockImportFromJson).toHaveBeenCalledWith(
+          'contacts',
+          '[{"name":"Alice"}]',
+          expect.any(Function),
+        );
+        expect(result.current.importing).toBe(false);
+      } finally {
+        vi.runOnlyPendingTimers();
+        vi.useRealTimers();
+      }
+    });
+
+    it('publishes the importer total and cumulative outcome counts', async () => {
+      mockImportFromJson.mockImplementationOnce(
+        async (
+          _collection: string,
+          _text: string,
+          onProgress: (progress: {
+            processed: number;
+            total: number;
+            imported: number;
+            updated: number;
+            errors: number;
+          }) => void,
+        ) => {
+          onProgress({ processed: 0, total: 977, imported: 0, updated: 0, errors: 0 });
+          onProgress({
+            processed: 977,
+            total: 977,
+            imported: 900,
+            updated: 72,
+            errors: 5,
+          });
+          return { imported: 900, updated: 72, errors: ['five row errors'] };
+        },
+      );
+      const { result } = renderHook(() => useDataManager());
+      let importPromise: Promise<unknown>;
+
+      act(() => {
+        importPromise = result.current.importData('servers');
+      });
+
+      const input = document.body.querySelector('input[type="file"]') as HTMLInputElement | null;
+      const file = new File(['[{"name":"server-1"}]'], 'servers.json', {
+        type: 'application/json',
+      });
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+
+      await act(async () => {
+        input!.dispatchEvent(new Event('change'));
+        await importPromise;
+      });
+
+      expect(result.current.importProgress).toEqual({
+        processed: 977,
+        total: 977,
+        imported: 900,
+        updated: 72,
+        errors: 5,
+      });
+      expect(result.current.lastImportResult).toMatchObject({
+        success: false,
+        imported: 900,
+        updated: 72,
+      });
+    });
+
+    it('clears previous progress when the next file selection is cancelled', async () => {
+      mockImportFromJson.mockImplementationOnce(
+        async (
+          _collection: string,
+          _text: string,
+          onProgress: (progress: {
+            processed: number;
+            total: number;
+            imported: number;
+            updated: number;
+            errors: number;
+          }) => void,
+        ) => {
+          onProgress({ processed: 1, total: 1, imported: 1, updated: 0, errors: 0 });
+          return { imported: 1, updated: 0, errors: [] };
+        },
+      );
+      const { result } = renderHook(() => useDataManager());
+      let firstImport: Promise<unknown>;
+      act(() => {
+        firstImport = result.current.importData('servers');
+      });
+      const firstInput = document.body.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File(['[{"name":"server-1"}]'], 'servers.json', {
+        type: 'application/json',
+      });
+      Object.defineProperty(firstInput, 'files', { value: [file], configurable: true });
+      await act(async () => {
+        firstInput.dispatchEvent(new Event('change'));
+        await firstImport;
+      });
+      expect(result.current.importProgress?.processed).toBe(1);
+
+      let cancelledImport: Promise<unknown>;
+      act(() => {
+        cancelledImport = result.current.importData('servers');
+      });
+      const cancelInput = document.body.querySelector('input[type="file"]') as HTMLInputElement;
+      await act(async () => {
+        cancelInput.dispatchEvent(new Event('cancel'));
+        await cancelledImport;
+      });
+
+      expect(result.current.importProgress).toBeNull();
+    });
+
     it('rejects oversized import files before reading or importing them', async () => {
       const { result } = renderHook(() => useDataManager());
       let importPromise: Promise<unknown>;
@@ -471,6 +609,7 @@ describe('useDataManager', () => {
       expect(mockImportFromCsv).toHaveBeenCalledWith(
         'contacts',
         'email,name\nalice@example.com,Alice',
+        expect.any(Function),
       );
       expect(mockImportFromJson).not.toHaveBeenCalled();
       expect(mockImportFromExcel).not.toHaveBeenCalled();
@@ -496,7 +635,11 @@ describe('useDataManager', () => {
         await importPromise;
       });
 
-      expect(mockImportFromExcel).toHaveBeenCalledWith('contacts', expect.any(ArrayBuffer));
+      expect(mockImportFromExcel).toHaveBeenCalledWith(
+        'contacts',
+        expect.any(ArrayBuffer),
+        expect.any(Function),
+      );
       expect(mockImportFromCsv).not.toHaveBeenCalled();
       expect(mockImportFromJson).not.toHaveBeenCalled();
     });

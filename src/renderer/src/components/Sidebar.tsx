@@ -55,10 +55,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenDynatraceDashboard = () => undefined,
 }) => {
   const showClientPresence = relayMode !== 'client';
-  // Radar polls the dashboard through the desktop session; a browser tab has no
-  // equivalent, so the entry would only ever lead to an unavailable message.
-  const isDesktop = globalThis.api?.runtime?.kind === 'electron';
-  const visibleNavItems = isDesktop ? navItems : navItems.filter((item) => item.tab !== 'Radar');
 
   // The sidebar subscribes rather than the tab, so the button stays live even
   // when the Radar tab has never been opened.
@@ -93,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="sidebar-divider" />
 
       <nav className="sidebar-nav">
-        {visibleNavItems.map((item) => (
+        {navItems.map((item) => (
           <SidebarButton
             key={item.tab}
             label={item.label}

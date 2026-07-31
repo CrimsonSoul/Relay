@@ -10,6 +10,7 @@ on:
   pull_request:
     branches:
       - main
+      - test
 
 permissions:
   actions: read
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   quality:
+    name: Build quality gate
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1

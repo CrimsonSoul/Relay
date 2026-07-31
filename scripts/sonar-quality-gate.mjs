@@ -193,8 +193,11 @@ function validateComputeTask(payload, { taskId, projectKey, scope }) {
     if (!BRANCH_TASK_TYPES.has(task.branchType) || task.branch !== scope.branch) {
       throw new Error('Sonar compute task belongs to a different branch.');
     }
-  } else if (task.branchType !== 'PULL_REQUEST' || String(task.pullRequest) !== scope.pullRequest) {
-    throw new Error('Sonar compute task belongs to a different pull request.');
+  } else {
+    const hasBranchIdentity = task.branch !== undefined || task.branchType !== undefined;
+    if (hasBranchIdentity || task.pullRequest !== scope.pullRequest) {
+      throw new Error('Sonar compute task belongs to a different pull request.');
+    }
   }
   if (task.status === 'SUCCESS') {
     validateIdentifier(task.analysisId, 'Sonar analysis identifier', SAFE_TASK_IDENTIFIER_PATTERN);
