@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BridgeAPI } from '@shared/ipc';
+import type { BridgeAPI, RadarSnapshot } from '@shared/ipc';
+import { RADAR_URL } from '@shared/radar';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
 import type { WebBridgeRequest } from './WebBridge';
@@ -44,6 +45,18 @@ const SIGNED_OUT = {
   capabilities: [],
   deviceId: null,
   expiresAt: null,
+};
+
+const RADAR_SNAPSHOT: RadarSnapshot = {
+  color: 'green',
+  dispatchers: [],
+  papa: [],
+  metrics: [],
+  xcenter: { ok: 977, pending: 3 },
+  currentTime: '10:02',
+  lastUpdated: 1_785_515_320_000,
+  signInRequired: false,
+  error: null,
 };
 
 /**
@@ -107,6 +120,40 @@ describe('WebBridge', () => {
     expect(subscribe).toHaveBeenCalledWith('dynatrace-dashboards-changed', onChange);
     cleanup();
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('maps validated Radar reads, refresh, events, and original-page navigation', async () => {
+    const { request, calls } = stubWebRequest(() => RADAR_SNAPSHOT);
+    const unsubscribe = vi.fn();
+    const subscribe = vi.fn(() => unsubscribe);
+    const openWindow = vi.fn(() => ({ opener: null }) as Window);
+    const actions = createBrowserActions({ openWindow });
+    const bridge = createWebBridge(SESSION, { request, subscribe, actions });
+
+    await expect(bridge.getRadarSnapshot()).resolves.toEqual(RADAR_SNAPSHOT);
+    await expect(bridge.refreshRadar()).resolves.toEqual(RADAR_SNAPSHOT);
+    expect(calls.mock.calls).toEqual([
+      ['/operations/radar', { method: 'GET' }],
+      ['/operations/radar/refresh', { method: 'POST' }],
+    ]);
+
+    const onSnapshot = vi.fn();
+    const cleanup = bridge.onRadarSnapshot(onSnapshot);
+    expect(subscribe).toHaveBeenCalledWith('radar-snapshot-changed', onSnapshot);
+    cleanup();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+
+    await expect(bridge.openExternal(RADAR_URL)).resolves.toBe(true);
+    expect(openWindow).toHaveBeenCalledWith(RADAR_URL, '_blank', 'noopener,noreferrer');
+  });
+
+  it('rejects a malformed Radar response from the server', async () => {
+    const { request } = stubWebRequest(() => ({ cookie: 'must-not-cross' }));
+    const bridge = createWebBridge(SESSION, { request });
+
+    await expect(bridge.getRadarSnapshot()).rejects.toThrow(
+      'Relay Web returned an invalid response',
+    );
   });
 
   it('maps protected actions onto exact privileged routes', async () => {

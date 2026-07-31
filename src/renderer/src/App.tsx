@@ -165,7 +165,6 @@ export function MainApp({
 
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
-  const isDesktop = globalThis.api?.runtime?.kind === 'electron';
   const popoutRoute = searchParams.get('popout');
   const isDynatracePopout = popoutRoute === 'dynatrace';
   const dynatracePopoutName = searchParams.get('name')?.trim() || '';
@@ -568,7 +567,7 @@ export function MainApp({
           <DynatraceProblemNotificationManager onOpenProblems={handleOpenDynatraceProblems} />
         </ErrorBoundary>
 
-        {!isPopout && isDesktop && (
+        {!isPopout && (
           <ErrorBoundary fallback={null}>
             <RadarQueueNotificationManager onOpenRadar={handleOpenRadar} />
           </ErrorBoundary>

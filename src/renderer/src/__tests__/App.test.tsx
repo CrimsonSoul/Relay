@@ -560,14 +560,15 @@ describe('MainApp', () => {
     }
   });
 
-  it('does not mount Radar queue notifications in Relay Web', () => {
+  it('mounts Radar queue notifications in Relay Web and opens Radar', () => {
     const previousApi = globalThis.api;
     globalThis.api = { ...previousApi, runtime: WEB_RUNTIME } as typeof globalThis.api;
 
     try {
       renderApp();
+      fireEvent.click(screen.getByTestId('radar-queue-notification-manager'));
 
-      expect(screen.queryByTestId('radar-queue-notification-manager')).not.toBeInTheDocument();
+      expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
     } finally {
       globalThis.api = previousApi;
     }
