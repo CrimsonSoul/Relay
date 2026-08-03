@@ -2,7 +2,12 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AlertForm, type AlertFormHandle } from '../AlertForm';
+import { AlertForm as BaseAlertForm, type AlertFormProps } from '../AlertForm';
+import {
+  AlertDraftProvider,
+  initialAlertDraftState,
+  type AlertDraftState,
+} from '../alerts/AlertDraftContext';
 
 // --- Mocks ---
 
@@ -22,20 +27,11 @@ vi.mock('../alerts/AlertSeveritySelector', () => ({
 }));
 
 vi.mock('../alerts/AlertBodyEditor', () => ({
-  AlertBodyEditor: React.forwardRef(
-    (
-      { setBodyHtml }: { setBodyHtml: (s: string) => void },
-      ref: React.Ref<{ setEditorContent: (html: string) => void }>,
-    ) => {
-      React.useImperativeHandle(ref, () => ({
-        setEditorContent: vi.fn(),
-      }));
-      return (
-        <div data-testid="body-editor">
-          <button onClick={() => setBodyHtml('<p>test</p>')}>set-body</button>
-        </div>
-      );
-    },
+  AlertBodyEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+    <div data-testid="body-editor">
+      <span data-testid="body-editor-value">{value}</span>
+      <button onClick={() => onChange('<p>test</p>')}>set-body</button>
+    </div>
   ),
 }));
 
@@ -57,31 +53,69 @@ vi.mock('../alerts/AlertLogoUpload', () => ({
 
 const defaultProps = {
   severity: 'ISSUE' as const,
-  setSeverity: vi.fn(),
   subject: '',
-  setSubject: vi.fn(),
   bodyHtml: '',
-  setBodyHtml: vi.fn(),
   sender: '',
-  setSender: vi.fn(),
   recipient: '',
-  setRecipient: vi.fn(),
   clickThroughUrl: '',
-  setClickThroughUrl: vi.fn(),
   updateNumber: 0,
-  setUpdateNumber: vi.fn(),
   eventTimeStart: '',
-  setEventTimeStart: vi.fn(),
   eventTimeEnd: '',
-  setEventTimeEnd: vi.fn(),
   eventTimeSourceTz: 'America/Chicago',
-  setEventTimeSourceTz: vi.fn(),
   logoDataUrl: null,
   onSetLogo: vi.fn(),
   onRemoveLogo: vi.fn(),
   footerLogoDataUrl: null,
   onSetFooterLogo: vi.fn(),
   onRemoveFooterLogo: vi.fn(),
+};
+
+type AlertFormHarnessProps = AlertFormProps & Partial<AlertDraftState> & Record<string, unknown>;
+
+const AlertForm: React.FC<AlertFormHarnessProps> = ({
+  severity = defaultProps.severity,
+  subject = defaultProps.subject,
+  bodyHtml = defaultProps.bodyHtml,
+  sender = defaultProps.sender,
+  recipient = defaultProps.recipient,
+  clickThroughUrl = defaultProps.clickThroughUrl,
+  updateNumber = defaultProps.updateNumber,
+  eventTimeStart = defaultProps.eventTimeStart,
+  eventTimeEnd = defaultProps.eventTimeEnd,
+  eventTimeSourceTz = defaultProps.eventTimeSourceTz,
+  logoDataUrl,
+  onSetLogo,
+  onRemoveLogo,
+  footerLogoDataUrl,
+  onSetFooterLogo,
+  onRemoveFooterLogo,
+}) => {
+  const draftState = {
+    ...initialAlertDraftState,
+    severity,
+    subject,
+    bodyHtml,
+    sender,
+    recipient,
+    clickThroughUrl,
+    updateNumber,
+    eventTimeStart,
+    eventTimeEnd,
+    eventTimeSourceTz,
+  };
+
+  return (
+    <AlertDraftProvider key={JSON.stringify(draftState)} initialState={draftState}>
+      <BaseAlertForm
+        logoDataUrl={logoDataUrl}
+        onSetLogo={onSetLogo}
+        onRemoveLogo={onRemoveLogo}
+        footerLogoDataUrl={footerLogoDataUrl}
+        onSetFooterLogo={onSetFooterLogo}
+        onRemoveFooterLogo={onRemoveFooterLogo}
+      />
+    </AlertDraftProvider>
+  );
 };
 
 describe('AlertForm', () => {
@@ -210,24 +244,27 @@ describe('AlertForm', () => {
     expect(screen.getByLabelText(/To \/ Recipient/)).toBeInTheDocument();
   });
 
-  it('calls setSubject on subject input change', () => {
+  it('updates the draft subject on input change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/Subject/), { target: { value: 'Test Subject' } });
-    expect(defaultProps.setSubject).toHaveBeenCalledWith('Test Subject');
+    const input = screen.getByLabelText(/Subject/);
+    fireEvent.change(input, { target: { value: 'Test Subject' } });
+    expect(input).toHaveValue('Test Subject');
   });
 
-  it('calls setSender on sender input change', () => {
+  it('updates the draft sender on input change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/Sender/), { target: { value: 'IT Team' } });
-    expect(defaultProps.setSender).toHaveBeenCalledWith('IT Team');
+    const input = screen.getByLabelText(/Sender/);
+    fireEvent.change(input, { target: { value: 'IT Team' } });
+    expect(input).toHaveValue('IT Team');
   });
 
-  it('calls setRecipient on recipient input change', () => {
+  it('updates the draft recipient on input change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/To \/ Recipient/), {
+    const input = screen.getByLabelText(/To \/ Recipient/);
+    fireEvent.change(input, {
       target: { value: 'All Staff' },
     });
-    expect(defaultProps.setRecipient).toHaveBeenCalledWith('All Staff');
+    expect(input).toHaveValue('All Staff');
   });
 
   it('renders one optional whole-image click-through URL field', () => {
@@ -239,16 +276,13 @@ describe('AlertForm', () => {
   });
 
   it('updates and normalizes a valid click-through URL', () => {
-    const { rerender } = render(<AlertForm {...defaultProps} />);
+    render(<AlertForm {...defaultProps} />);
     const input = screen.getByLabelText('Clickable image URL');
     fireEvent.change(input, { target: { value: 'status.example.com/incident' } });
-    expect(defaultProps.setClickThroughUrl).toHaveBeenCalledWith('status.example.com/incident');
+    expect(input).toHaveValue('status.example.com/incident');
 
-    rerender(<AlertForm {...defaultProps} clickThroughUrl="status.example.com/incident" />);
-    fireEvent.blur(screen.getByLabelText('Clickable image URL'));
-    expect(defaultProps.setClickThroughUrl).toHaveBeenCalledWith(
-      'https://status.example.com/incident',
-    );
+    fireEvent.blur(input);
+    expect(input).toHaveValue('https://status.example.com/incident');
     expect(screen.getByText('LINK READY')).toBeInTheDocument();
   });
 
@@ -280,7 +314,8 @@ describe('AlertForm', () => {
   it('toggles update number on click', () => {
     render(<AlertForm {...defaultProps} />);
     fireEvent.click(screen.getByText('OFF'));
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(1);
+    expect(screen.getByText('ON')).toBeInTheDocument();
+    expect(screen.getByText('#1')).toBeInTheDocument();
   });
 
   it('shows stepper when updateNumber > 0', () => {
@@ -320,23 +355,16 @@ describe('AlertForm', () => {
     expect(screen.getByAltText('Footer logo')).toBeInTheDocument();
   });
 
-  it('exposes setEditorContent via ref', () => {
-    const ref = React.createRef<AlertFormHandle>();
-    render(<AlertForm {...defaultProps} ref={ref} />);
-    expect(ref.current).toBeTruthy();
-    expect(typeof ref.current!.setEditorContent).toBe('function');
-  });
-
   it('clicks ON to turn off update number', () => {
     render(<AlertForm {...defaultProps} updateNumber={2} />);
     fireEvent.click(screen.getByText('ON'));
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(0);
+    expect(screen.getByText('OFF')).toBeInTheDocument();
   });
 
   it('increments update number with + button', () => {
     render(<AlertForm {...defaultProps} updateNumber={2} />);
     fireEvent.click(screen.getByText('+'));
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(3);
+    expect(screen.getByText('#3')).toBeInTheDocument();
   });
 
   it('decrements update number with - button but not below 1', () => {
@@ -344,14 +372,14 @@ describe('AlertForm', () => {
     // The minus button text is a unicode minus
     const minusBtn = screen.getByText('\u2212');
     fireEvent.click(minusBtn);
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(1); // max(1, 1-1) = 1
+    expect(screen.getByText('#1')).toBeInTheDocument();
   });
 
   it('decrements update number correctly when > 1', () => {
     render(<AlertForm {...defaultProps} updateNumber={3} />);
     const minusBtn = screen.getByText('\u2212');
     fireEvent.click(minusBtn);
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(2);
+    expect(screen.getByText('#2')).toBeInTheDocument();
   });
 
   it('does not show stepper when updateNumber is 0', () => {
@@ -359,29 +387,32 @@ describe('AlertForm', () => {
     expect(screen.queryByText('+')).not.toBeInTheDocument();
   });
 
-  it('calls setEventTimeStart on start time change', () => {
+  it('updates the draft start time on change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-04-01T10:00' } });
-    expect(defaultProps.setEventTimeStart).toHaveBeenCalledWith('2026-04-01T10:00');
+    const input = screen.getByLabelText('Start');
+    fireEvent.change(input, { target: { value: '2026-04-01T10:00' } });
+    expect(input).toHaveValue('2026-04-01T10:00');
   });
 
-  it('calls setEventTimeEnd on end time change', () => {
+  it('updates the draft end time on change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/End/), { target: { value: '2026-04-01T14:00' } });
-    expect(defaultProps.setEventTimeEnd).toHaveBeenCalledWith('2026-04-01T14:00');
+    const input = screen.getByLabelText(/End/);
+    fireEvent.change(input, { target: { value: '2026-04-01T14:00' } });
+    expect(input).toHaveValue('2026-04-01T14:00');
   });
 
-  it('calls setEventTimeSourceTz on timezone change', () => {
+  it('updates the draft source timezone on change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText('Source TZ'), { target: { value: 'UTC' } });
-    expect(defaultProps.setEventTimeSourceTz).toHaveBeenCalledWith('UTC');
+    const select = screen.getByLabelText('Source TZ');
+    fireEvent.change(select, { target: { value: 'UTC' } });
+    expect(select).toHaveValue('UTC');
   });
 
   it('clears both event times when Clear is clicked', () => {
     render(<AlertForm {...defaultProps} eventTimeStart="2026-01-01T10:00" />);
     fireEvent.click(screen.getByText('Clear'));
-    expect(defaultProps.setEventTimeStart).toHaveBeenCalledWith('');
-    expect(defaultProps.setEventTimeEnd).toHaveBeenCalledWith('');
+    expect(screen.getByLabelText('Start')).toHaveValue('');
+    expect(screen.getByLabelText(/End/)).toHaveValue('');
   });
 
   it('does not show clear button when no event time is set', () => {
@@ -424,16 +455,16 @@ describe('AlertForm', () => {
     expect(screen.getByText('0')).toBeInTheDocument();
   });
 
-  it('calls setSeverity through severity selector mock', () => {
+  it('updates severity through the severity selector', () => {
     render(<AlertForm {...defaultProps} />);
     fireEvent.click(screen.getByText('change-severity'));
-    expect(defaultProps.setSeverity).toHaveBeenCalledWith('MAINTENANCE');
+    expect(screen.getByTestId('severity-selector')).toHaveTextContent('MAINTENANCE');
   });
 
-  it('calls setBodyHtml through body editor mock', () => {
+  it('updates body HTML through the body editor', () => {
     render(<AlertForm {...defaultProps} />);
     fireEvent.click(screen.getByText('set-body'));
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('<p>test</p>');
+    expect(screen.getByTestId('body-editor-value')).toHaveTextContent('<p>test</p>');
   });
 
   it('calls onSetLogo through logo upload mock', () => {

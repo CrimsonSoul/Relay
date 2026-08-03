@@ -251,79 +251,79 @@ vi.mock('../AlertReminderManagerModal', () => ({
     ) : null,
 }));
 
-// Mock AlertForm — forward ref and expose callbacks so we can trigger them from tests
-vi.mock('../AlertForm', () => ({
-  AlertForm: React.forwardRef(function MockAlertForm(
-    props: Record<string, unknown>,
-    ref: React.Ref<{ setEditorContent: (html: string) => void }>,
-  ) {
-    React.useImperativeHandle(ref, () => ({
-      setEditorContent: vi.fn(),
-    }));
-    const setSeverity = props.setSeverity as (s: string) => void;
-    const setSubject = props.setSubject as (s: string) => void;
-    const setBodyHtml = props.setBodyHtml as (s: string) => void;
-    const setSender = props.setSender as (s: string) => void;
-    const setRecipient = props.setRecipient as (s: string) => void;
-    const setClickThroughUrl = props.setClickThroughUrl as (s: string) => void;
-    const setUpdateNumber = props.setUpdateNumber as (n: number) => void;
-    const hasRetiredTransformProps = [
-      'isCompact',
-      'onToggleCompact',
-      'isEnhanced',
-      'onToggleEnhanced',
-    ].some((key) => Object.prototype.hasOwnProperty.call(props, key));
-    const hasRetiredFontSizeProps = ['alertBodyFontSize', 'setAlertBodyFontSize'].some((key) =>
-      Object.prototype.hasOwnProperty.call(props, key),
-    );
-    return (
-      <div data-testid="alert-form">
-        <button data-testid="set-severity-issue" onClick={() => setSeverity('ISSUE')}>
-          set-issue
-        </button>
-        <button data-testid="set-severity-maintenance" onClick={() => setSeverity('MAINTENANCE')}>
-          set-maintenance
-        </button>
-        <button data-testid="set-severity-info" onClick={() => setSeverity('INFO')}>
-          set-info
-        </button>
-        <button data-testid="set-severity-resolved" onClick={() => setSeverity('RESOLVED')}>
-          set-resolved
-        </button>
-        <button data-testid="set-subject" onClick={() => setSubject('Test Subject')}>
-          set-subject
-        </button>
-        <button data-testid="set-body" onClick={() => setBodyHtml('<p>body</p>')}>
-          set-body
-        </button>
-        <button data-testid="set-sender" onClick={() => setSender('Security')}>
-          set-sender
-        </button>
-        <button data-testid="set-recipient" onClick={() => setRecipient('Managers')}>
-          set-recipient
-        </button>
-        <button
-          data-testid="set-click-through-url"
-          onClick={() => setClickThroughUrl('https://status.example.com/incident')}
-        >
-          set-click-through-url
-        </button>
-        <button
-          data-testid="set-unsafe-click-through-url"
-          onClick={() => setClickThroughUrl('javascript:alert(1)')}
-        >
-          set-unsafe-click-through-url
-        </button>
-        <span data-testid="form-click-through-url">{String(props.clickThroughUrl)}</span>
-        <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
-          set-update
-        </button>
-        <span data-testid="form-retired-transform-props">{String(hasRetiredTransformProps)}</span>
-        <span data-testid="form-retired-font-size-props">{String(hasRetiredFontSizeProps)}</span>
-      </div>
-    );
-  }),
-}));
+// Mock AlertForm — use the real draft contract and expose controls for tab-level tests
+vi.mock('../AlertForm', async () => {
+  const { useAlertDraft } = await vi.importActual<typeof import('../alerts/AlertDraftContext')>(
+    '../alerts/AlertDraftContext',
+  );
+  return {
+    AlertForm: function MockAlertForm(props: Record<string, unknown>) {
+      const { state, setField } = useAlertDraft();
+      const hasRetiredTransformProps = [
+        'isCompact',
+        'onToggleCompact',
+        'isEnhanced',
+        'onToggleEnhanced',
+      ].some((key) => Object.prototype.hasOwnProperty.call(props, key));
+      const hasRetiredFontSizeProps = ['alertBodyFontSize', 'setAlertBodyFontSize'].some((key) =>
+        Object.prototype.hasOwnProperty.call(props, key),
+      );
+      return (
+        <div data-testid="alert-form">
+          <button data-testid="set-severity-issue" onClick={() => setField('severity', 'ISSUE')}>
+            set-issue
+          </button>
+          <button
+            data-testid="set-severity-maintenance"
+            onClick={() => setField('severity', 'MAINTENANCE')}
+          >
+            set-maintenance
+          </button>
+          <button data-testid="set-severity-info" onClick={() => setField('severity', 'INFO')}>
+            set-info
+          </button>
+          <button
+            data-testid="set-severity-resolved"
+            onClick={() => setField('severity', 'RESOLVED')}
+          >
+            set-resolved
+          </button>
+          <button data-testid="set-subject" onClick={() => setField('subject', 'Test Subject')}>
+            set-subject
+          </button>
+          <button data-testid="set-body" onClick={() => setField('bodyHtml', '<p>body</p>')}>
+            set-body
+          </button>
+          <button data-testid="set-sender" onClick={() => setField('sender', 'Security')}>
+            set-sender
+          </button>
+          <button data-testid="set-recipient" onClick={() => setField('recipient', 'Managers')}>
+            set-recipient
+          </button>
+          <button
+            data-testid="set-click-through-url"
+            onClick={() => setField('clickThroughUrl', 'https://status.example.com/incident')}
+          >
+            set-click-through-url
+          </button>
+          <button
+            data-testid="set-unsafe-click-through-url"
+            onClick={() => setField('clickThroughUrl', 'javascript:alert(1)')}
+          >
+            set-unsafe-click-through-url
+          </button>
+          <span data-testid="form-click-through-url">{state.clickThroughUrl}</span>
+          <span data-testid="form-body-html">{state.bodyHtml}</span>
+          <button data-testid="set-update-number" onClick={() => setField('updateNumber', 2)}>
+            set-update
+          </button>
+          <span data-testid="form-retired-transform-props">{String(hasRetiredTransformProps)}</span>
+          <span data-testid="form-retired-font-size-props">{String(hasRetiredFontSizeProps)}</span>
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock('../AlertCard', () => ({
   AlertCard: (props: Record<string, unknown>) => {
@@ -1197,6 +1197,8 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('Staff');
+    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>loaded</p>');
+    expect(screen.getByTestId('form-body-html')).toHaveTextContent('<p>loaded</p>');
   });
 
   it('calls deleteHistory when delete is triggered from history modal', () => {
@@ -1321,6 +1323,7 @@ describe('AlertsTab', () => {
     // Change state
     fireEvent.click(screen.getByTestId('set-severity-issue'));
     fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
     // Reset
     fireEvent.click(screen.getByText('RESET'));
@@ -1329,6 +1332,8 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('IT');
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('All Employees');
+    expect(screen.getByTestId('card-body')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('form-body-html')).toBeEmptyDOMElement();
   });
 
   it('keeps the composition when a reset is cancelled', () => {

@@ -85,13 +85,7 @@ vi.mock('../AlertHistoryModal', () => ({
 }));
 
 vi.mock('../AlertForm', () => ({
-  AlertForm: React.forwardRef(function MockAlertForm(
-    _props: Record<string, unknown>,
-    ref: React.Ref<{ setEditorContent: (html: string) => void }>,
-  ) {
-    React.useImperativeHandle(ref, () => ({ setEditorContent: vi.fn() }));
-    return <div>Alert form</div>;
-  }),
+  AlertForm: () => <div>Alert form</div>,
 }));
 
 vi.mock('../AlertCard', () => ({
