@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PublicRelayConfig } from '@shared/ipc';
 import { ConfirmModal } from '../ConfirmModal';
 import { TactileButton } from '../TactileButton';
@@ -7,6 +7,57 @@ import { useRelayConfiguration } from './RelayConfigurationContext';
 
 const RECONFIGURE_WARNING =
   'Reconfiguring erases the saved Relay server URL and the shared connection passphrase from this workstation. You will need the passphrase again to reconnect.';
+
+type RelayConnectionUiState = {
+  showConnectionSecret: boolean;
+  setShowConnectionSecret: React.Dispatch<React.SetStateAction<boolean>>;
+  reconfigurePrompt: boolean;
+  setReconfigurePrompt: React.Dispatch<React.SetStateAction<boolean>>;
+  pendingOfflineCount: number;
+  setPendingOfflineCount: React.Dispatch<React.SetStateAction<number>>;
+};
+
+const RelayConnectionUiContext = createContext<RelayConnectionUiState | null>(null);
+
+export function RelayConnectionUiProvider({
+  isOpen,
+  children,
+}: Readonly<{ isOpen: boolean; children: ReactNode }>) {
+  const [showConnectionSecret, setShowConnectionSecret] = useState(false);
+  const [reconfigurePrompt, setReconfigurePrompt] = useState(false);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setShowConnectionSecret(false);
+    setReconfigurePrompt(false);
+    setPendingOfflineCount(0);
+  }, [isOpen]);
+
+  const value = useMemo<RelayConnectionUiState>(
+    () => ({
+      showConnectionSecret,
+      setShowConnectionSecret,
+      reconfigurePrompt,
+      setReconfigurePrompt,
+      pendingOfflineCount,
+      setPendingOfflineCount,
+    }),
+    [pendingOfflineCount, reconfigurePrompt, showConnectionSecret],
+  );
+
+  return (
+    <RelayConnectionUiContext.Provider value={value}>{children}</RelayConnectionUiContext.Provider>
+  );
+}
+
+function useRelayConnectionUi(): RelayConnectionUiState {
+  const context = useContext(RelayConnectionUiContext);
+  if (!context) {
+    throw new Error('useRelayConnectionUi must be used within RelayConnectionUiProvider');
+  }
+  return context;
+}
 
 function reconfigureWarning(pendingOfflineCount: number): string {
   if (pendingOfflineCount <= 0) return RECONFIGURE_WARNING;
@@ -89,9 +140,14 @@ export function RelayConnectionSettings({
     connectionSecret,
     canConfigureConnection,
   } = useRelayConfiguration();
-  const [showConnectionSecret, setShowConnectionSecret] = useState(false);
-  const [reconfigurePrompt, setReconfigurePrompt] = useState(false);
-  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+  const {
+    showConnectionSecret,
+    setShowConnectionSecret,
+    reconfigurePrompt,
+    setReconfigurePrompt,
+    pendingOfflineCount,
+    setPendingOfflineCount,
+  } = useRelayConnectionUi();
 
   const handleReconfigureRequest = async () => {
     setPendingOfflineCount(await readPendingOfflineCount());

@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 const rendererRoot = resolve(process.cwd(), 'src/renderer/src');
 
+function directImports(path: string): string[] {
+  const absolutePath = resolve(rendererRoot, path);
+  const source = readFileSync(absolutePath, 'utf8');
+  return [...source.matchAll(/@import\s+['"]([^'"]+)['"];?/g)].map((match) => match[1]!);
+}
+
 function expandImports(path: string, visited = new Set<string>()): string {
   const absolutePath = resolve(rendererRoot, path);
   if (visited.has(absolutePath)) return '';
@@ -28,8 +34,35 @@ function finalDeclarations(source: string, selector: string): Record<string, str
   return result;
 }
 
+function topLevelRuleIndex(source: string, selector: string): number {
+  const root = postcss.parse(source);
+  const ruleIndex = root.nodes.findIndex(
+    (node) => node.type === 'rule' && node.selectors.includes(selector),
+  );
+  expect(ruleIndex, selector).toBeGreaterThanOrEqual(0);
+  return ruleIndex;
+}
+
 describe('Settings stylesheet outcomes', () => {
   const styles = expandImports('styles.css');
+
+  it('preserves the original components-before, Settings, components-after cascade', () => {
+    const manifestImports = directImports('styles.css');
+    const componentsIndex = manifestImports.indexOf('./styles/components.css');
+
+    expect(manifestImports.slice(componentsIndex, componentsIndex + 3)).toEqual([
+      './styles/components.css',
+      './components/settings/settings.css',
+      './styles/components-after-settings.css',
+    ]);
+
+    expect(topLevelRuleIndex(styles, '.context-menu-item-label')).toBeLessThan(
+      topLevelRuleIndex(styles, '.settings-page'),
+    );
+    expect(topLevelRuleIndex(styles, '.settings-page')).toBeLessThan(
+      topLevelRuleIndex(styles, '.modal-form-body'),
+    );
+  });
 
   it('keeps the page Appearance workspace in its two-column layout', () => {
     expect(finalDeclarations(styles, '.settings-page .settings-section--appearance')).toMatchObject(

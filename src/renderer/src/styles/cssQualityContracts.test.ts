@@ -11,6 +11,7 @@ const cssSources = {
   assembler: readCss('tabs/assembler/assembler.css'),
   cloudStatus: readCss('tabs/cloud-status.css'),
   components: readCss('styles/components.css'),
+  componentsAfterSettings: readCss('styles/components-after-settings.css'),
   directory: readCss('components/directory/directory.css'),
   dynatraceProblems: readCss('tabs/dynatrace-problems.css'),
   knowledge: readCss('features/knowledge/knowledge.css'),
@@ -290,7 +291,7 @@ describe('CSS zero-warning contracts', () => {
       [cssSources.alerts, '.alerts-email-subject'],
       [cssSources.alerts, '.alerts-email-body'],
       [cssSources.settings, '.settings-data-path'],
-      [cssSources.components, '.tooltip-popup'],
+      [cssSources.componentsAfterSettings, '.tooltip-popup'],
       [cssSources.toast, '.toast-message'],
       [cssSources.utilities, '.break-word'],
     ] as const;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import {
   ACCENT_SCHEMES,
   ACCENT_SCHEDULE_SLOTS,
@@ -23,7 +23,24 @@ import { TactileButton } from '../TactileButton';
 
 const CUSTOM_ACCENT_EXAMPLE = '#2dd4bf';
 
-export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
+type AppearanceSettingsState = {
+  accent: AccentId;
+  setAccent: React.Dispatch<React.SetStateAction<AccentId>>;
+  savedCustomAccents: string[];
+  setSavedCustomAccents: React.Dispatch<React.SetStateAction<string[]>>;
+  activeCustomAccent: string | null;
+  setActiveCustomAccent: React.Dispatch<React.SetStateAction<string | null>>;
+  customAccentInput: string;
+  setCustomAccentInput: React.Dispatch<React.SetStateAction<string>>;
+  accentSchedule: ReturnType<typeof getStoredAccentSchedule>;
+  setAccentSchedule: React.Dispatch<
+    React.SetStateAction<ReturnType<typeof getStoredAccentSchedule>>
+  >;
+};
+
+const AppearanceSettingsContext = createContext<AppearanceSettingsState | null>(null);
+
+export function AppearanceSettingsProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [accent, setAccent] = useState<AccentId>(() => getStoredAccent());
   const [savedCustomAccents, setSavedCustomAccents] = useState<string[]>(() =>
     getStoredCustomAccents(),
@@ -33,6 +50,51 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
   );
   const [customAccentInput, setCustomAccentInput] = useState(() => getStoredCustomAccent() ?? '');
   const [accentSchedule, setAccentSchedule] = useState(() => getStoredAccentSchedule());
+
+  const value = useMemo<AppearanceSettingsState>(
+    () => ({
+      accent,
+      setAccent,
+      savedCustomAccents,
+      setSavedCustomAccents,
+      activeCustomAccent,
+      setActiveCustomAccent,
+      customAccentInput,
+      setCustomAccentInput,
+      accentSchedule,
+      setAccentSchedule,
+    }),
+    [accent, accentSchedule, activeCustomAccent, customAccentInput, savedCustomAccents],
+  );
+
+  return (
+    <AppearanceSettingsContext.Provider value={value}>
+      {children}
+    </AppearanceSettingsContext.Provider>
+  );
+}
+
+function useAppearanceSettings(): AppearanceSettingsState {
+  const context = useContext(AppearanceSettingsContext);
+  if (!context) {
+    throw new Error('useAppearanceSettings must be used within AppearanceSettingsProvider');
+  }
+  return context;
+}
+
+export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
+  const {
+    accent,
+    setAccent,
+    savedCustomAccents,
+    setSavedCustomAccents,
+    activeCustomAccent,
+    setActiveCustomAccent,
+    customAccentInput,
+    setCustomAccentInput,
+    accentSchedule,
+    setAccentSchedule,
+  } = useAppearanceSettings();
 
   const handleAccentSelect = (id: AccentId) => {
     persistAccent(id);

@@ -14,13 +14,16 @@ import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { AdministrationSettings } from './settings/AdministrationSettings';
-import { AppearanceSettings } from './settings/AppearanceSettings';
+import { AppearanceSettings, AppearanceSettingsProvider } from './settings/AppearanceSettings';
 import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 import {
   RelayConfigurationProvider,
   useRelayConfiguration,
 } from './settings/RelayConfigurationContext';
-import { RelayConnectionSettings } from './settings/RelayConnectionSettings';
+import {
+  RelayConnectionSettings,
+  RelayConnectionUiProvider,
+} from './settings/RelayConnectionSettings';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -662,7 +665,11 @@ const SettingsModalContent: React.FC<Props> = ({
 };
 
 export const SettingsModal: React.FC<Props> = (props) => (
-  <RelayConfigurationProvider isOpen={props.isOpen}>
-    <SettingsModalContent {...props} />
-  </RelayConfigurationProvider>
+  <AppearanceSettingsProvider>
+    <RelayConnectionUiProvider isOpen={props.isOpen}>
+      <RelayConfigurationProvider isOpen={props.isOpen}>
+        <SettingsModalContent {...props} />
+      </RelayConfigurationProvider>
+    </RelayConnectionUiProvider>
+  </AppearanceSettingsProvider>
 );
