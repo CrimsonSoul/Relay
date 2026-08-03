@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type {
   CloudStatusData,
+  CloudStatusProvider,
   PbAuthSession,
   PrivilegedApprovalRequestView,
   PrivilegedCredentialSetupView,
@@ -412,36 +413,38 @@ export const WebRadarSnapshotSchema: z.ZodType<RadarSnapshot> = z
   })
   .strict();
 
-const CloudStatusItemSchema = z
-  .object({
-    id: z.string().max(512),
-    provider: CloudStatusProviderSchema,
-    title: z.string().max(2_000),
-    description: z.string().max(20_000),
-    pubDate: z.string().max(100),
-    link: z.string().max(2_048),
-    severity: z.enum(['info', 'warning', 'error', 'resolved']),
-  })
-  .strict();
+function cloudStatusItemSchema<const P extends CloudStatusProvider>(provider: P) {
+  return z
+    .object({
+      id: z.string().max(512),
+      provider: z.literal(provider),
+      title: z.string().max(2_000),
+      description: z.string().max(20_000),
+      pubDate: z.string().max(100),
+      link: z.string().max(2_048),
+      severity: z.enum(['info', 'warning', 'error', 'resolved']),
+    })
+    .strict();
+}
 
 export const WebCloudStatusDataSchema: z.ZodType<CloudStatusData> = z
   .object({
     providers: z
       .object({
-        aws: z.array(CloudStatusItemSchema),
-        azure: z.array(CloudStatusItemSchema),
-        m365: z.array(CloudStatusItemSchema),
-        jira: z.array(CloudStatusItemSchema),
-        github: z.array(CloudStatusItemSchema),
-        cloudflare: z.array(CloudStatusItemSchema),
-        mist_global: z.array(CloudStatusItemSchema),
-        mist_emea: z.array(CloudStatusItemSchema),
-        mist_apac: z.array(CloudStatusItemSchema),
-        mist_federal: z.array(CloudStatusItemSchema),
-        google: z.array(CloudStatusItemSchema),
-        anthropic: z.array(CloudStatusItemSchema),
-        openai: z.array(CloudStatusItemSchema),
-        salesforce: z.array(CloudStatusItemSchema),
+        aws: z.array(cloudStatusItemSchema('aws')),
+        azure: z.array(cloudStatusItemSchema('azure')),
+        m365: z.array(cloudStatusItemSchema('m365')),
+        jira: z.array(cloudStatusItemSchema('jira')),
+        github: z.array(cloudStatusItemSchema('github')),
+        cloudflare: z.array(cloudStatusItemSchema('cloudflare')),
+        mist_global: z.array(cloudStatusItemSchema('mist_global')),
+        mist_emea: z.array(cloudStatusItemSchema('mist_emea')),
+        mist_apac: z.array(cloudStatusItemSchema('mist_apac')),
+        mist_federal: z.array(cloudStatusItemSchema('mist_federal')),
+        google: z.array(cloudStatusItemSchema('google')),
+        anthropic: z.array(cloudStatusItemSchema('anthropic')),
+        openai: z.array(cloudStatusItemSchema('openai')),
+        salesforce: z.array(cloudStatusItemSchema('salesforce')),
       })
       .strict(),
     lastUpdated: z.number().nonnegative(),

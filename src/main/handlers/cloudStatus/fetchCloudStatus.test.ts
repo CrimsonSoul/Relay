@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyCloudStatusProviders, emptyMistCloudStatusProviders } from '@shared/cloudStatus';
-import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
+import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 
 const providerMocks = vi.hoisted(() => ({
   rss: vi.fn(),
@@ -36,7 +36,7 @@ vi.mock('./mistProvider', () => ({ fetchMistProviderGroup: providerMocks.mist })
 
 import { fetchCloudStatusData } from './fetchCloudStatus';
 
-function item(provider: CloudStatusItem['provider'], id: string): CloudStatusItem {
+function item<P extends CloudStatusProvider>(provider: P, id: string): CloudStatusItem<P> {
   return {
     id,
     provider,

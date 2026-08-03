@@ -6,8 +6,10 @@ import type {
   CloudStatusItem,
   CloudStatusSnapshotRecord,
   LegacyCloudStatusData,
+  LegacyCloudStatusProvider,
   LegacyCloudStatusSnapshotRecord,
   MistCloudStatusData,
+  MistCloudStatusProvider,
   MistCloudStatusSnapshotRecord,
 } from '@shared/ipc';
 import {
@@ -119,7 +121,9 @@ function legacyStatus(items: CloudStatusItem[] = []): LegacyCloudStatusData {
   const providers = emptyLegacyCloudStatusProviders();
   for (const current of items) {
     if (current.provider in providers) {
-      providers[current.provider as keyof typeof providers].push(current);
+      providers[current.provider as LegacyCloudStatusProvider].push(
+        current as CloudStatusItem<LegacyCloudStatusProvider>,
+      );
     }
   }
   return { providers, errors: [], lastUpdated: Date.now() };
@@ -129,7 +133,9 @@ function mistStatus(items: CloudStatusItem[] = []): MistCloudStatusData {
   const providers = emptyMistCloudStatusProviders();
   for (const current of items) {
     if (current.provider in providers) {
-      providers[current.provider as keyof typeof providers].push(current);
+      providers[current.provider as MistCloudStatusProvider].push(
+        current as CloudStatusItem<MistCloudStatusProvider>,
+      );
     }
   }
   return { providers, errors: [], lastUpdated: Date.now() };
@@ -515,6 +521,47 @@ describe('useAppCloudStatus', () => {
     const options = showToast.mock.calls[0]?.[2];
     options?.action?.onClick();
     expect(openProvider).toHaveBeenCalledWith('aws');
+  });
+
+  it('counts split collection events from one server poll as one degradation observation', async () => {
+    const baselineTimestamp = Date.now();
+    legacyState.data = [legacySnapshot({ ...legacyStatus(), lastUpdated: baselineTimestamp })];
+    mistState.data = [mistSnapshot({ ...mistStatus(), lastUpdated: baselineTimestamp })];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.hasLoadedSnapshot = true;
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const firstPollTimestamp = baselineTimestamp + 60_000;
+    mistState.data = [
+      mistSnapshot({
+        ...mistStatus([mistItem({ severity: 'warning', title: 'Elevated Mist latency' })]),
+        lastUpdated: firstPollTimestamp,
+      }),
+    ];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    legacyState.data = [
+      legacySnapshot({
+        ...legacyStatus([item({ severity: 'info' })]),
+        lastUpdated: firstPollTimestamp,
+      }),
+    ];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    mistState.data = [
+      mistSnapshot({
+        ...mistStatus([mistItem({ severity: 'warning', title: 'Elevated Mist latency' })]),
+        lastUpdated: firstPollTimestamp + 60_000,
+      }),
+    ];
+    rerender();
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
   });
 
   it('does not count the same provider poll twice', async () => {

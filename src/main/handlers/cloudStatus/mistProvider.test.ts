@@ -8,6 +8,12 @@ import {
   mistNoticeStateToSeverity,
 } from './mistProvider';
 
+const loggerMocks = vi.hoisted(() => ({ warn: vi.fn() }));
+
+vi.mock('../../logger', () => ({
+  loggers: { cloudStatus: { warn: loggerMocks.warn } },
+}));
+
 type TestComponent = {
   id: number;
   name: string;
@@ -96,6 +102,7 @@ function mockMistApi(input: {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
 describe('Mist SorryApp provider', () => {
@@ -266,6 +273,10 @@ describe('Mist SorryApp provider', () => {
         pubDate: '2026-08-03T10:03:00.000Z',
       });
     }
+    expect(loggerMocks.warn).toHaveBeenCalledWith('Mist notice detail unavailable', {
+      noticeId: '42',
+      error: 'Detail 42 failed',
+    });
   });
 
   it('falls back to the official page for an untrusted notice URL', async () => {
@@ -310,5 +321,25 @@ describe('Mist SorryApp provider', () => {
     );
 
     await expect(fetchMistProviderGroup()).rejects.toThrow('Invalid Mist notices response');
+  });
+
+  it('marks every region unavailable for a structurally invalid components response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (value: string | URL) =>
+        String(value) === MIST_NOTICES_URL
+          ? jsonResponse({ notices: [] })
+          : jsonResponse({ components: {} }),
+      ),
+    );
+
+    const result = await fetchMistProviderGroup();
+
+    expect(result.errors.map(({ provider }) => provider)).toEqual([
+      'mist_global',
+      'mist_emea',
+      'mist_apac',
+      'mist_federal',
+    ]);
   });
 });

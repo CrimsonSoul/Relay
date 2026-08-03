@@ -1,4 +1,19 @@
-import type { CloudStatusData, LegacyCloudStatusData, MistCloudStatusData } from './ipc';
+import type {
+  CloudStatusData,
+  CloudStatusItem,
+  CloudStatusProvider,
+  LegacyCloudStatusData,
+  MistCloudStatusData,
+} from './ipc';
+
+function matchingProviderItems<P extends CloudStatusProvider>(
+  data: CloudStatusData,
+  provider: P,
+): CloudStatusItem<P>[] {
+  return data.providers[provider].filter(
+    (item): item is CloudStatusItem<P> => item.provider === provider,
+  );
+}
 
 export function emptyLegacyCloudStatusProviders(): LegacyCloudStatusData['providers'] {
   return {
@@ -76,26 +91,26 @@ export function splitCloudStatusData(data: CloudStatusData): {
   return {
     legacy: {
       providers: {
-        aws: data.providers.aws,
-        azure: data.providers.azure,
-        m365: data.providers.m365,
-        jira: data.providers.jira,
-        github: data.providers.github,
-        cloudflare: data.providers.cloudflare,
-        google: data.providers.google,
-        anthropic: data.providers.anthropic,
-        openai: data.providers.openai,
-        salesforce: data.providers.salesforce,
+        aws: matchingProviderItems(data, 'aws'),
+        azure: matchingProviderItems(data, 'azure'),
+        m365: matchingProviderItems(data, 'm365'),
+        jira: matchingProviderItems(data, 'jira'),
+        github: matchingProviderItems(data, 'github'),
+        cloudflare: matchingProviderItems(data, 'cloudflare'),
+        google: matchingProviderItems(data, 'google'),
+        anthropic: matchingProviderItems(data, 'anthropic'),
+        openai: matchingProviderItems(data, 'openai'),
+        salesforce: matchingProviderItems(data, 'salesforce'),
       },
       errors: legacyErrors,
       lastUpdated: data.lastUpdated,
     },
     mist: {
       providers: {
-        mist_global: data.providers.mist_global,
-        mist_emea: data.providers.mist_emea,
-        mist_apac: data.providers.mist_apac,
-        mist_federal: data.providers.mist_federal,
+        mist_global: matchingProviderItems(data, 'mist_global'),
+        mist_emea: matchingProviderItems(data, 'mist_emea'),
+        mist_apac: matchingProviderItems(data, 'mist_apac'),
+        mist_federal: matchingProviderItems(data, 'mist_federal'),
       },
       errors: mistErrors,
       lastUpdated: data.lastUpdated,

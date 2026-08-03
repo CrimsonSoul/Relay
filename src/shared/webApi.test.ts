@@ -144,6 +144,27 @@ describe('Relay Web API operational schemas', () => {
         errors: [],
       }).success,
     ).toBe(false);
+
+    expect(
+      WebCloudStatusDataSchema.safeParse({
+        providers: {
+          ...providers,
+          mist_global: [
+            {
+              id: 'misrouted',
+              provider: 'aws',
+              title: 'Wrong bucket',
+              description: '',
+              pubDate: '2026-08-03T10:00:00.000Z',
+              link: 'https://status.mist.com/',
+              severity: 'error',
+            },
+          ],
+        },
+        lastUpdated: 1,
+        errors: [],
+      }).success,
+    ).toBe(false);
   });
 
   it('keeps dashboard, Problems, and asset inputs exact and bounded', () => {

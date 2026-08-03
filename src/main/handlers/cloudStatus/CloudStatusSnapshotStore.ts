@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
-import type { CloudStatusItem, CloudStatusPartition, CloudStatusProvider } from '@shared/ipc';
+import type { CloudStatusPartition, CloudStatusProvider } from '@shared/ipc';
 
 export const LEGACY_CLOUD_STATUS_COLLECTION = 'cloud_status_snapshot';
 export const MIST_CLOUD_STATUS_COLLECTION = 'cloud_status_mist_snapshot';
@@ -28,7 +28,7 @@ export class CloudStatusSnapshotStore<P extends CloudStatusProvider> {
   constructor(
     private readonly getPocketBase: () => PocketBase | null,
     private readonly collectionName: string,
-    private readonly emptyProviders: () => Record<P, CloudStatusItem[]>,
+    private readonly emptyProviders: () => CloudStatusPartition<P>['providers'],
   ) {}
 
   async hydrate(fallback?: CloudStatusPartition<P>): Promise<CloudStatusPartition<P>> {

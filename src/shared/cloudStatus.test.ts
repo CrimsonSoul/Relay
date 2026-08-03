@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   emptyLegacyCloudStatusProviders,
   emptyMistCloudStatusProviders,
@@ -6,7 +6,7 @@ import {
   splitCloudStatusData,
   unavailableMistCloudStatusData,
 } from './cloudStatus';
-import type { CloudStatusData, CloudStatusItem } from './ipc';
+import type { CloudStatusData, CloudStatusItem, LegacyCloudStatusData } from './ipc';
 
 describe('cloud status partitions', () => {
   it('keeps Mist outside the legacy snapshot partition', () => {
@@ -28,6 +28,9 @@ describe('cloud status partitions', () => {
       'mist_apac',
       'mist_federal',
     ]);
+    expectTypeOf<CloudStatusItem & { provider: 'mist_global' }>().not.toExtend<
+      LegacyCloudStatusData['providers']['aws'][number]
+    >();
   });
 
   it('marks every Mist region unavailable without inventing incidents', () => {
@@ -84,6 +87,20 @@ describe('cloud status partitions', () => {
       lastUpdated: 20,
     });
     expect(mergeCloudStatusData(split.legacy, split.mist)).toEqual(combined);
+  });
+
+  it('drops an item whose provider identity does not match its snapshot bucket', () => {
+    const malformed = {
+      providers: {
+        ...emptyLegacyCloudStatusProviders(),
+        ...emptyMistCloudStatusProviders(),
+        aws: [item('mist_global', 'misrouted')],
+      },
+      errors: [],
+      lastUpdated: 20,
+    } as unknown as CloudStatusData;
+
+    expect(splitCloudStatusData(malformed).legacy.providers.aws).toEqual([]);
   });
 
   it('uses the newest partition timestamp when merging', () => {

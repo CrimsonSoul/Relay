@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type PocketBase from 'pocketbase';
 import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
-import { emptyCloudStatusProviders } from '@shared/cloudStatus';
+import { emptyCloudStatusProviders, splitCloudStatusData } from '@shared/cloudStatus';
 import {
   CloudStatusManager,
   DEGRADED_CLOUD_STATUS_INTERVAL_MS,
@@ -168,5 +168,36 @@ describe('CloudStatusManager', () => {
       'mist_apac',
       'mist_federal',
     ]);
+  });
+
+  it('merges persisted legacy and Mist partitions before the first provider fetch', async () => {
+    const persisted = data([issue('error'), issue('warning', 'mist_emea')]);
+    const { legacy, mist } = splitCloudStatusData(persisted);
+    legacyGet.mockResolvedValue({
+      id: 'legacy-snapshot',
+      key: 'current',
+      contentHash: 'legacy-content',
+      ...legacy,
+    });
+    mistGet.mockResolvedValue({
+      id: 'mist-snapshot',
+      key: 'current',
+      contentHash: 'mist-content',
+      ...mist,
+    });
+    const fetchStatus = vi.fn(async (previous?: CloudStatusData | null) => previous ?? data());
+    const manager = new CloudStatusManager(() => pb, fetchStatus);
+
+    await manager.refresh();
+
+    expect(fetchStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: expect.objectContaining({
+          aws: [expect.objectContaining({ provider: 'aws' })],
+          mist_emea: [expect.objectContaining({ provider: 'mist_emea' })],
+        }),
+      }),
+    );
+    expect(manager.getSnapshot().providers.mist_emea).toHaveLength(1);
   });
 });

@@ -6,6 +6,7 @@ import {
   type MistCloudStatusProvider,
 } from '@shared/ipc';
 import { emptyMistCloudStatusProviders } from '@shared/cloudStatus';
+import { loggers } from '../../logger';
 import { truncateError } from '../ipcHelpers';
 import { fetchNoStore } from './fetchNoStore';
 import type {
@@ -88,6 +89,12 @@ async function appendActiveNotices(
   for (let index = 0; index < notices.length; index += 1) {
     const summary = notices[index]!;
     const detailResult = detailResults[index]!;
+    if (detailResult.status === 'rejected') {
+      loggers.cloudStatus.warn('Mist notice detail unavailable', {
+        noticeId: String(summary.id),
+        error: truncateError(detailResult.reason),
+      });
+    }
     const detail = detailResult.status === 'fulfilled' ? detailResult.value : null;
     const source = detail ?? summary;
     const severity = mistNoticeStateToSeverity(source.state);

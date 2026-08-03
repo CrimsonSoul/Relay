@@ -228,9 +228,9 @@ export type CloudStatusProvider = (typeof CLOUD_STATUS_PROVIDER_ORDER)[number];
 
 export type CloudStatusSeverity = 'info' | 'warning' | 'error' | 'resolved';
 
-export type CloudStatusItem = {
+export type CloudStatusItem<P extends CloudStatusProvider = CloudStatusProvider> = {
   id: string;
-  provider: CloudStatusProvider;
+  provider: P;
   title: string;
   description: string;
   pubDate: string;
@@ -239,7 +239,7 @@ export type CloudStatusItem = {
 };
 
 export type CloudStatusPartition<P extends CloudStatusProvider> = {
-  providers: Record<P, CloudStatusItem[]>;
+  providers: Record<P, CloudStatusItem<P>[]>;
   lastUpdated: number;
   errors: { provider: P; message: string }[];
 };
