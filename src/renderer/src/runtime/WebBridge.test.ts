@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import type { BridgeAPI, RadarSnapshot } from '@shared/ipc';
 import { RADAR_URL } from '@shared/radar';
 import { WEB_RUNTIME } from '@shared/runtime';
@@ -18,20 +19,7 @@ const SESSION: WebSessionBootstrap = {
 };
 
 const EMPTY_STATUS = {
-  providers: Object.fromEntries(
-    [
-      'aws',
-      'azure',
-      'm365',
-      'jira',
-      'github',
-      'cloudflare',
-      'google',
-      'anthropic',
-      'openai',
-      'salesforce',
-    ].map((provider) => [provider, []]),
-  ),
+  providers: emptyCloudStatusProviders(),
   lastUpdated: 0,
   errors: [],
 };
