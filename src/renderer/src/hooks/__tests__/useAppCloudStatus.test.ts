@@ -5,8 +5,17 @@ import type {
   CloudStatusData,
   CloudStatusItem,
   CloudStatusSnapshotRecord,
+  LegacyCloudStatusData,
+  LegacyCloudStatusSnapshotRecord,
+  MistCloudStatusData,
+  MistCloudStatusSnapshotRecord,
 } from '@shared/ipc';
-import { emptyCloudStatusProviders } from '@shared/cloudStatus';
+import {
+  emptyCloudStatusProviders,
+  emptyLegacyCloudStatusProviders,
+  emptyMistCloudStatusProviders,
+  splitCloudStatusData,
+} from '@shared/cloudStatus';
 
 const { secureStorageMock, resetStorage } = vi.hoisted(() => {
   const values = new Map<string, unknown>();
@@ -19,11 +28,20 @@ const { secureStorageMock, resetStorage } = vi.hoisted(() => {
   };
 });
 
-const { collectionState, mockUseCollection } = vi.hoisted(() => ({
-  collectionState: {
-    data: [] as CloudStatusSnapshotRecord[],
-    loading: false,
-    error: null as string | null,
+const { collectionStates, mockUseCollection } = vi.hoisted(() => ({
+  collectionStates: {
+    cloud_status_snapshot: {
+      data: [] as LegacyCloudStatusSnapshotRecord[],
+      loading: false,
+      error: null as string | null,
+      hasLoadedSnapshot: false,
+    },
+    cloud_status_mist_snapshot: {
+      data: [] as MistCloudStatusSnapshotRecord[],
+      loading: false,
+      error: null as string | null,
+      hasLoadedSnapshot: false,
+    },
   },
   mockUseCollection: vi.fn(),
 }));
@@ -33,14 +51,50 @@ vi.mock('../../utils/logger', () => ({
   loggers: { app: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } },
 }));
 vi.mock('../useCollection', () => ({
-  useCollection: (...args: unknown[]) => {
-    mockUseCollection(...args);
-    return { ...collectionState, refetch: vi.fn() };
+  useCollection: (name: keyof typeof collectionStates, options: unknown) => {
+    mockUseCollection(name, options);
+    return { ...collectionStates[name], refetch: vi.fn() };
   },
 }));
 
 import { loggers } from '../../utils/logger';
 import { useAppCloudStatus } from '../useAppCloudStatus';
+
+const legacyState = collectionStates.cloud_status_snapshot;
+const mistState = collectionStates.cloud_status_mist_snapshot;
+
+const collectionState = {
+  set data(records: CloudStatusSnapshotRecord[]) {
+    if (records.length === 0) {
+      legacyState.data = [];
+      mistState.data = [];
+      legacyState.hasLoadedSnapshot = false;
+      mistState.hasLoadedSnapshot = false;
+      return;
+    }
+    const record = records[0]!;
+    const { legacy, mist } = splitCloudStatusData(record);
+    const metadata = {
+      id: record.id,
+      key: record.key,
+      contentHash: record.contentHash,
+      created: record.created,
+      updated: record.updated,
+    };
+    legacyState.data = [{ ...metadata, ...legacy }];
+    mistState.data = [{ ...metadata, ...mist }];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.hasLoadedSnapshot = true;
+  },
+  set loading(value: boolean) {
+    legacyState.loading = value;
+    mistState.loading = value;
+  },
+  set error(value: string | null) {
+    legacyState.error = value;
+    mistState.error = value;
+  },
+};
 
 function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
   return {
@@ -61,6 +115,26 @@ function status(items: CloudStatusItem[] = []): CloudStatusData {
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 
+function legacyStatus(items: CloudStatusItem[] = []): LegacyCloudStatusData {
+  const providers = emptyLegacyCloudStatusProviders();
+  for (const current of items) {
+    if (current.provider in providers) {
+      providers[current.provider as keyof typeof providers].push(current);
+    }
+  }
+  return { providers, errors: [], lastUpdated: Date.now() };
+}
+
+function mistStatus(items: CloudStatusItem[] = []): MistCloudStatusData {
+  const providers = emptyMistCloudStatusProviders();
+  for (const current of items) {
+    if (current.provider in providers) {
+      providers[current.provider as keyof typeof providers].push(current);
+    }
+  }
+  return { providers, errors: [], lastUpdated: Date.now() };
+}
+
 function snapshot(data: CloudStatusData): CloudStatusSnapshotRecord {
   return {
     id: 'snapshot-1',
@@ -70,6 +144,38 @@ function snapshot(data: CloudStatusData): CloudStatusSnapshotRecord {
     updated: '2026-07-10T18:00:00.000Z',
     ...data,
   };
+}
+
+function legacySnapshot(data: LegacyCloudStatusData): LegacyCloudStatusSnapshotRecord {
+  return {
+    id: 'legacy-snapshot',
+    key: 'current',
+    contentHash: 'legacy-hash',
+    created: '2026-07-10T18:00:00.000Z',
+    updated: '2026-07-10T18:00:00.000Z',
+    ...data,
+  };
+}
+
+function mistSnapshot(data: MistCloudStatusData): MistCloudStatusSnapshotRecord {
+  return {
+    id: 'mist-snapshot',
+    key: 'current',
+    contentHash: 'mist-hash',
+    created: '2026-07-10T18:00:00.000Z',
+    updated: '2026-07-10T18:00:00.000Z',
+    ...data,
+  };
+}
+
+function mistItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
+  return item({
+    id: 'mist-incident-1',
+    provider: 'mist_global',
+    title: 'Mist login outage',
+    link: 'https://status.mist.com/notices/test-incident',
+    ...overrides,
+  });
 }
 
 function nextPoll(data: CloudStatusData): CloudStatusData {
@@ -89,6 +195,8 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [];
     collectionState.loading = false;
     collectionState.error = null;
+    legacyState.hasLoadedSnapshot = false;
+    mistState.hasLoadedSnapshot = false;
     getCloudStatus.mockResolvedValue(status());
     // The hook only reads `getCloudStatus`; `Partial<BridgeAPI>` keeps that stub
     // checked against the real bridge contract without asserting a whole bridge.
@@ -109,6 +217,124 @@ describe('useAppCloudStatus', () => {
     expect(mockUseCollection).toHaveBeenCalledWith('cloud_status_snapshot', {
       filter: 'key="current"',
     });
+    expect(mockUseCollection).toHaveBeenCalledWith('cloud_status_mist_snapshot', {
+      filter: 'key="current"',
+    });
+  });
+
+  it('waits for both snapshot partitions before establishing the baseline', async () => {
+    legacyState.data = [legacySnapshot(legacyStatus())];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.loading = true;
+
+    const { result, rerender } = renderHook(() => useAppCloudStatus(showToast));
+
+    expect(result.current.statusData).toBeNull();
+    mistState.loading = false;
+    mistState.hasLoadedSnapshot = true;
+    mistState.data = [mistSnapshot(mistStatus([mistItem()]))];
+    rerender();
+
+    await waitFor(() => expect(result.current.statusData?.providers.mist_global).toHaveLength(1));
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('marks Mist unknown without alerts when an older server lacks the collection', async () => {
+    legacyState.data = [legacySnapshot(legacyStatus())];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.loading = false;
+    mistState.error = 'Missing collection';
+    mistState.hasLoadedSnapshot = false;
+
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(4));
+    expect(result.current.statusData?.providers.mist_global).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not let manual refresh label Mist healthy when the server lacks Mist storage', async () => {
+    legacyState.data = [legacySnapshot(legacyStatus())];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.error = 'Missing collection';
+    getCloudStatus.mockResolvedValue(status([mistItem({ severity: 'info' })]));
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    await act(async () => {
+      const refresh = result.current.refetch();
+      await vi.advanceTimersByTimeAsync(500);
+      await refresh;
+    });
+
+    expect(result.current.statusData?.providers.mist_global).toEqual([]);
+    expect(result.current.statusData?.errors.map(({ provider }) => provider)).toEqual([
+      'mist_global',
+      'mist_emea',
+      'mist_apac',
+      'mist_federal',
+    ]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('batches one multi-region Mist incident into one toast and opens the first region', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([mistItem(), mistItem({ provider: 'mist_apac' })]))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'Juniper Mist Global Outage: Mist login outage (+1 more)',
+        'error',
+        expect.objectContaining({ delivery: 'cloud-outage' }),
+      ),
+    );
+    expect(showToast).toHaveBeenCalledOnce();
+    showToast.mock.calls[0]?.[2]?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('mist_global');
+  });
+
+  it('normalizes a pre-Mist secure-storage cache to four unavailable regions', async () => {
+    const oldProviders = emptyLegacyCloudStatusProviders();
+    secureStorageMock.setItemSync('cached_cloud_status', {
+      fetchedAt: Date.now(),
+      data: { providers: oldProviders, errors: [], lastUpdated: Date.now() },
+    });
+
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(4));
+    expect(result.current.statusData?.providers.mist_federal).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('retains a Mist outage identity while that regional feed reports an error', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    const outage = status([mistItem()]);
+    collectionState.data = [snapshot(outage)];
+    rerender();
+    await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+    showToast.mockClear();
+
+    collectionState.data = [
+      snapshot({
+        ...status(),
+        errors: [{ provider: 'mist_global', message: 'Mist feed unavailable' }],
+      }),
+    ];
+    rerender();
+    await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(outage))];
+    rerender();
+    await act(async () => Promise.resolve());
+
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('keeps the last snapshot as an offline fallback regardless of age', async () => {

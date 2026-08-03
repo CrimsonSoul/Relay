@@ -3,11 +3,22 @@ import type { RecordModel } from 'pocketbase';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
   CLOUD_STATUS_PROVIDERS,
+  MIST_CLOUD_STATUS_PROVIDER_ORDER,
   type CloudStatusData,
   type CloudStatusItem,
+  type CloudStatusPartition,
   type CloudStatusProvider,
-  type CloudStatusSnapshotRecord,
+  type LegacyCloudStatusData,
+  type LegacyCloudStatusSnapshotRecord,
+  type MistCloudStatusData,
+  type MistCloudStatusSnapshotRecord,
 } from '@shared/ipc';
+import {
+  emptyCloudStatusProviders,
+  mergeCloudStatusData,
+  splitCloudStatusData,
+  unavailableMistCloudStatusData,
+} from '@shared/cloudStatus';
 import { ErrorCategory } from '@shared/logging';
 import { getErrorMessage } from '@shared/types';
 import { secureStorage } from '../utils/secureStorage';
@@ -23,7 +34,8 @@ type CacheEntry = {
   data: CloudStatusData;
 };
 
-type CollectionCloudStatusSnapshot = CloudStatusSnapshotRecord & RecordModel;
+type CollectionLegacyCloudStatusSnapshot = LegacyCloudStatusSnapshotRecord & RecordModel;
+type CollectionMistCloudStatusSnapshot = MistCloudStatusSnapshotRecord & RecordModel;
 
 function providerLabel(provider: string): string {
   return CLOUD_STATUS_PROVIDERS[provider as keyof typeof CLOUD_STATUS_PROVIDERS]?.label ?? provider;
@@ -154,12 +166,36 @@ function retainOutageKeysDuringFeedErrors(
   return retainedIds;
 }
 
-function toStatusData(record: CloudStatusSnapshotRecord): CloudStatusData {
+function toStatusPartition<P extends CloudStatusProvider>(
+  record: CloudStatusPartition<P>,
+): CloudStatusPartition<P> {
   return {
     providers: record.providers,
-    errors: record.errors,
+    errors: Array.isArray(record.errors) ? record.errors : [],
     lastUpdated: record.lastUpdated,
   };
+}
+
+function normalizeCachedCloudStatus(data: CloudStatusData): CloudStatusData {
+  const source = data.providers;
+  const providers = emptyCloudStatusProviders();
+  for (const provider of CLOUD_STATUS_PROVIDER_ORDER) {
+    providers[provider] = Array.isArray(source[provider]) ? source[provider] : [];
+  }
+  const normalized: CloudStatusData = {
+    providers,
+    errors: Array.isArray(data.errors) ? data.errors : [],
+    lastUpdated: Number.isFinite(data.lastUpdated) ? data.lastUpdated : 0,
+  };
+  const hasMistCoverage = MIST_CLOUD_STATUS_PROVIDER_ORDER.every((provider) =>
+    Array.isArray(source[provider]),
+  );
+  if (hasMistCoverage) return normalized;
+
+  return mergeCloudStatusData(
+    splitCloudStatusData(normalized).legacy,
+    unavailableMistCloudStatusData(normalized.lastUpdated),
+  );
 }
 
 /** Consume the server-owned Cloud Status snapshot and issue local notifications. */
@@ -167,9 +203,14 @@ export function useAppCloudStatus(
   showToast: ShowToast,
   onOpenProvider?: (provider: CloudStatusProvider) => void,
 ) {
-  const sharedSnapshot = useCollection<CollectionCloudStatusSnapshot>('cloud_status_snapshot', {
-    filter: 'key="current"',
-  });
+  const legacySnapshot = useCollection<CollectionLegacyCloudStatusSnapshot>(
+    'cloud_status_snapshot',
+    { filter: 'key="current"' },
+  );
+  const mistSnapshot = useCollection<CollectionMistCloudStatusSnapshot>(
+    'cloud_status_mist_snapshot',
+    { filter: 'key="current"' },
+  );
   const [statusData, setStatusData] = useState<CloudStatusData | null>(null);
   const [manualLoading, setManualLoading] = useState(false);
   const activeOutageIdsRef = useRef(new Set<string>());
@@ -263,21 +304,36 @@ export function useAppCloudStatus(
   useEffect(() => {
     const cached = secureStorage.getItemSync<CacheEntry>(CACHE_KEY);
     if (!cached?.data?.providers) return;
+    const normalized = normalizeCachedCloudStatus(cached.data);
     cacheRestoredRef.current = true;
-    activeOutageIdsRef.current = new Set(getCurrentCloudOutages(cached.data).map(outageKey));
+    activeOutageIdsRef.current = new Set(getCurrentCloudOutages(normalized).map(outageKey));
     activeProblemProvidersRef.current = new Set(
-      getCurrentCloudIssues(cached.data).map((item) => item.provider),
+      getCurrentCloudIssues(normalized).map((item) => item.provider),
     );
-    lastNotificationSnapshotRef.current = notificationSnapshotIdentity(cached.data);
+    lastNotificationSnapshotRef.current = notificationSnapshotIdentity(normalized);
     baselineEstablishedRef.current = true;
-    setStatusData(cached.data);
+    setStatusData(normalized);
   }, []);
 
-  const currentRecord = sharedSnapshot.data[0];
+  const legacyRecord = legacySnapshot.data[0];
+  const mistRecord = mistSnapshot.data[0];
+  const legacyResolved =
+    Boolean(legacyRecord) ||
+    (!legacySnapshot.loading &&
+      (legacySnapshot.hasLoadedSnapshot || Boolean(legacySnapshot.error)));
+  const mistResolved =
+    Boolean(mistRecord) ||
+    (!mistSnapshot.loading && (mistSnapshot.hasLoadedSnapshot || Boolean(mistSnapshot.error)));
+  const mistUnsupported = mistResolved && !mistRecord;
+
   useEffect(() => {
-    if (!currentRecord) return;
-    commitStatus(toStatusData(currentRecord));
-  }, [commitStatus, currentRecord]);
+    if (!legacyRecord || !mistResolved) return;
+    const mist: MistCloudStatusData = mistRecord
+      ? toStatusPartition(mistRecord)
+      : unavailableMistCloudStatusData(legacyRecord.lastUpdated);
+    const legacy: LegacyCloudStatusData = toStatusPartition(legacyRecord);
+    commitStatus(mergeCloudStatusData(legacy, mist));
+  }, [commitStatus, legacyRecord, mistRecord, mistResolved]);
 
   const refetch = useCallback(async () => {
     setManualLoading(true);
@@ -291,7 +347,13 @@ export function useAppCloudStatus(
         api.getCloudStatus(),
         new Promise((resolve) => setTimeout(resolve, 500)),
       ]);
-      commitStatus(data);
+      const safeData = mistUnsupported
+        ? mergeCloudStatusData(
+            splitCloudStatusData(data).legacy,
+            unavailableMistCloudStatusData(data.lastUpdated),
+          )
+        : data;
+      commitStatus(safeData);
     } catch (error) {
       loggers.app.error('Cloud status fetch failed', {
         error: getErrorMessage(error),
@@ -300,11 +362,13 @@ export function useAppCloudStatus(
     } finally {
       setManualLoading(false);
     }
-  }, [commitStatus]);
+  }, [commitStatus, mistUnsupported]);
 
   return {
     statusData,
-    loading: manualLoading || (!cacheRestoredRef.current && !statusData && sharedSnapshot.loading),
+    loading:
+      manualLoading ||
+      (!cacheRestoredRef.current && !statusData && (!legacyResolved || !mistResolved)),
     refetch,
   };
 }
