@@ -306,6 +306,22 @@ describe('SettingsModal', () => {
     expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeInTheDocument();
   });
 
+  it('preserves revealed connection state across Settings page navigation without reloading config', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show passphrase' })).toBeVisible(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show passphrase' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+
+    expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeVisible();
+    expect(mockApi.getConfig).toHaveBeenCalledOnce();
+    expect(mockApi.getConnectionSecret).toHaveBeenCalledOnce();
+  });
+
   it('shows Reconfigure button', async () => {
     render(<SettingsModal {...defaultProps} />);
     await waitFor(() => {

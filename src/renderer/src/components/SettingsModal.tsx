@@ -1,8 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ConfirmModal } from './ConfirmModal';
-import { Modal } from './Modal';
-import { TactileButton } from './TactileButton';
-import type { PublicRelayConfig } from '@shared/ipc';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
@@ -14,31 +10,17 @@ import {
   type DynatraceDashboardState,
   type DynatraceRuntimeState,
 } from '@shared/dynatrace';
-import {
-  ACCENT_SCHEMES,
-  ACCENT_SCHEDULE_SLOTS,
-  customAccentScheduleChoice,
-  customHexFromScheduleChoice,
-  getStoredAccent,
-  getStoredAccentSchedule,
-  getStoredCustomAccent,
-  getStoredCustomAccents,
-  normalizeHexAccent,
-  removeCustomAccent,
-  setAccent as persistAccent,
-  setAccentScheduleEnabled,
-  setAccentScheduleSlot,
-  setCustomAccent,
-  setSavedCustomAccent,
-  type AccentScheduleChoice,
-  type AccentScheduleSlotId,
-  type AccentId,
-} from '../theme/accent';
-import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
-import { AdministrationSettings } from './settings/AdministrationSettings';
-import { RelayWebAccessSettings } from './settings/RelayWebAccessSettings';
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
-import { hasRelayCapability } from '../runtime/relayRuntime';
+import { Modal } from './Modal';
+import { TactileButton } from './TactileButton';
+import { AdministrationSettings } from './settings/AdministrationSettings';
+import { AppearanceSettings } from './settings/AppearanceSettings';
+import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
+import {
+  RelayConfigurationProvider,
+  useRelayConfiguration,
+} from './settings/RelayConfigurationContext';
+import { RelayConnectionSettings } from './settings/RelayConnectionSettings';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -58,9 +40,7 @@ type Props = {
   presentation?: 'modal' | 'page';
 };
 
-type PbConfig = PublicRelayConfig | null;
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
-const CUSTOM_ACCENT_EXAMPLE = '#2dd4bf';
 type DynatraceValidationError = {
   field: 'name' | 'url';
   message: string;
@@ -362,31 +342,6 @@ function DynatraceProblemsSettingsSection() {
   );
 }
 
-function getPocketBaseIp(config: PublicRelayConfig): string | null {
-  if (config.mode === 'server') {
-    if (config.bindHost === '127.0.0.1') return '127.0.0.1';
-    return config.lanIp ?? null;
-  }
-
-  try {
-    return new URL(config.serverUrl).hostname;
-  } catch {
-    return config.serverUrl || null;
-  }
-}
-
-function getPocketBaseUrl(config: PublicRelayConfig): string | null {
-  if (config.mode === 'client') return config.serverUrl;
-
-  const ip = getPocketBaseIp(config);
-  if (!ip) return null;
-  return `http://${ip}:${config.port ?? 8090}`;
-}
-
-function getMaskedSecret(secret: string): string {
-  return '•'.repeat(secret.length);
-}
-
 function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: DynatraceSettingsProps }>) {
   const lifecycleRef = useRef({ mounted: false, generation: 0 });
   const [dashboardName, setDashboardName] = useState('');
@@ -611,45 +566,7 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
   );
 }
 
-const RECONFIGURE_WARNING =
-  'Reconfiguring erases the saved Relay server URL and the shared connection passphrase from this workstation. You will need the passphrase again to reconnect.';
-
-function reconfigureWarning(pendingOfflineCount: number): string {
-  if (pendingOfflineCount <= 0) return RECONFIGURE_WARNING;
-  const plural = pendingOfflineCount === 1 ? '' : 's';
-  return `${RECONFIGURE_WARNING} ${pendingOfflineCount} offline change${plural} queued on this workstation will be discarded if you point Relay at a different server.`;
-}
-
-/** Best-effort — the queued count only enriches the reconfigure warning. */
-async function readPendingOfflineCount(): Promise<number> {
-  try {
-    return (await globalThis.api?.getPendingSyncStatus?.())?.pendingCount ?? 0;
-  } catch {
-    return 0;
-  }
-}
-
-function ConnectionManagement({
-  enabled,
-  onReconfigure,
-}: Readonly<{ enabled: boolean; onReconfigure: () => Promise<void> }>) {
-  if (!enabled) {
-    return (
-      <div className="settings-data-path">
-        Connection settings are managed by Relay Desktop on the server.
-      </div>
-    );
-  }
-  return (
-    <div className="settings-button-row">
-      <TactileButton onClick={() => void onReconfigure()} className="btn-flex-center">
-        Reconfigure...
-      </TactileButton>
-    </div>
-  );
-}
-
-export const SettingsModal: React.FC<Props> = ({
+const SettingsModalContent: React.FC<Props> = ({
   isOpen,
   onClose,
   onOpenDataManager,
@@ -658,23 +575,8 @@ export const SettingsModal: React.FC<Props> = ({
   presentation = 'modal',
 }) => {
   const { session: privilegedSession } = usePrivilegedAccess();
-  const canConfigureConnection = hasRelayCapability('connectionConfiguration');
+  const { relayMode, loading: relayConfigLoading } = useRelayConfiguration();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
-  const [pbConfig, setPbConfig] = useState<PbConfig>(null);
-  const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
-  const [pbConfigLoading, setPbConfigLoading] = useState(false);
-  const [showConnectionSecret, setShowConnectionSecret] = useState(false);
-  const [reconfigurePrompt, setReconfigurePrompt] = useState(false);
-  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
-  const [accent, setAccent] = useState<AccentId>(() => getStoredAccent());
-  const [savedCustomAccents, setSavedCustomAccents] = useState<string[]>(() =>
-    getStoredCustomAccents(),
-  );
-  const [activeCustomAccent, setActiveCustomAccent] = useState<string | null>(() =>
-    getStoredCustomAccent(),
-  );
-  const [customAccentInput, setCustomAccentInput] = useState(() => getStoredCustomAccent() ?? '');
-  const [accentSchedule, setAccentSchedule] = useState(() => getStoredAccentSchedule());
   const settingsSections = useMemo(
     () =>
       SETTINGS_SECTIONS.filter(
@@ -698,425 +600,12 @@ export const SettingsModal: React.FC<Props> = ({
     }
   }, [activeSection, privilegedSession.role, privilegedSession.state]);
 
-  const handleAccentSelect = (id: AccentId) => {
-    persistAccent(id);
-    setAccent(id);
-    if (id !== 'custom') setActiveCustomAccent(getStoredCustomAccent());
-  };
-
-  const normalizedCustomAccent = normalizeHexAccent(customAccentInput);
-  const customAccentHasInput = customAccentInput.trim().length > 0;
-  const customAccentInvalid = customAccentHasInput && !normalizedCustomAccent;
-  const customAccentPreview =
-    normalizedCustomAccent ??
-    activeCustomAccent ??
-    savedCustomAccents.at(-1) ??
-    CUSTOM_ACCENT_EXAMPLE;
-
-  const handleCustomAccentSave = () => {
-    const saved = setCustomAccent(customAccentInput);
-    if (!saved) return;
-    setSavedCustomAccents(getStoredCustomAccents());
-    setActiveCustomAccent(saved);
-    setCustomAccentInput(saved);
-    setAccent('custom');
-  };
-
-  const handleSavedCustomAccentSelect = (hex: string) => {
-    const selected = setSavedCustomAccent(hex);
-    if (!selected) return;
-    setActiveCustomAccent(selected);
-    setCustomAccentInput(selected);
-    setAccent('custom');
-  };
-
-  const handleCustomAccentRemove = (hex: string) => {
-    const remainingCustomAccents = removeCustomAccent(hex);
-    const nextActiveCustomAccent = getStoredCustomAccent();
-    setSavedCustomAccents(remainingCustomAccents);
-    setActiveCustomAccent(nextActiveCustomAccent);
-    setAccent(getStoredAccent());
-    if (nextActiveCustomAccent) setCustomAccentInput(nextActiveCustomAccent);
-  };
-
-  const scheduledCustomAccents = useMemo(
-    () =>
-      Object.values(accentSchedule.slots)
-        .map((choice) => customHexFromScheduleChoice(choice))
-        .filter((hex): hex is string => hex !== null),
-    [accentSchedule.slots],
-  );
-
-  const accentScheduleChoices = useMemo(() => {
-    const customChoices = [...savedCustomAccents, ...scheduledCustomAccents].filter(
-      (hex, index, values) => values.indexOf(hex) === index,
-    );
-
-    return [
-      ...ACCENT_SCHEMES.map((scheme) => ({
-        value: scheme.id as AccentScheduleChoice,
-        label: scheme.label,
-        swatch: scheme.swatch,
-      })),
-      ...customChoices.flatMap((hex, index) => {
-        const value = customAccentScheduleChoice(hex);
-        return value ? [{ value, label: `Custom ${index + 1} ${hex}`, swatch: hex }] : [];
-      }),
-    ];
-  }, [savedCustomAccents, scheduledCustomAccents]);
-
-  const getScheduleChoiceSwatch = (choice: AccentScheduleChoice) =>
-    accentScheduleChoices.find((option) => option.value === choice)?.swatch ?? '#ffffff';
-
-  const syncAccentStateFromStorage = () => {
-    setAccent(getStoredAccent());
-    setActiveCustomAccent(getStoredCustomAccent());
-  };
-
-  const handleAccentScheduleToggle = () => {
-    const nextSchedule = setAccentScheduleEnabled(!accentSchedule.enabled);
-    setAccentSchedule(nextSchedule);
-    syncAccentStateFromStorage();
-  };
-
-  const handleAccentScheduleSlotChange = (
-    slotId: AccentScheduleSlotId,
-    choice: AccentScheduleChoice,
-  ) => {
-    const nextSchedule = setAccentScheduleSlot(slotId, choice);
-    setAccentSchedule(nextSchedule);
-    syncAccentStateFromStorage();
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    let cancelled = false;
-    setPbConfigLoading(true);
-    setConnectionSecret(null);
-    setShowConnectionSecret(false);
-    globalThis.api
-      ?.getConfig()
-      .then((config) => {
-        if (!cancelled) setPbConfig(config);
-      })
-      .catch(() => {
-        if (!cancelled) setPbConfig(null);
-      })
-      .finally(() => {
-        if (!cancelled) setPbConfigLoading(false);
-      });
-    if (canConfigureConnection) {
-      globalThis.api
-        ?.getConnectionSecret?.()
-        .then((secret) => {
-          if (!cancelled) setConnectionSecret(secret);
-        })
-        .catch(() => {
-          if (!cancelled) setConnectionSecret(null);
-        });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [canConfigureConnection, isOpen]);
-
-  // Clearing the config erases the saved server URL and the shared passphrase,
-  // and the panel that displayed them goes with it — an operator who does not
-  // know the passphrase by heart is locked out. Confirm before doing it.
-  const handleReconfigureRequest = async () => {
-    setPendingOfflineCount(await readPendingOfflineCount());
-    setReconfigurePrompt(true);
-  };
-
-  const handleReconfigure = async () => {
-    // Delete config on disk so the app returns to the setup screen on restart.
-    try {
-      await globalThis.api?.clearConfig();
-    } catch {
-      // Best-effort — onReconfigure() transitions to setup regardless.
-    }
-    onClose();
-    onReconfigure?.();
-  };
-
-  const pbUrl = pbConfig ? getPocketBaseUrl(pbConfig) : null;
-  let displayedConnectionSecret: string | null = null;
-  if (connectionSecret) {
-    displayedConnectionSecret = showConnectionSecret
-      ? connectionSecret
-      : getMaskedSecret(connectionSecret);
-  }
-
-  const copyText = async (text: string) => {
-    await globalThis.api?.writeClipboard(text);
-  };
-
-  const appearanceSection = (
-    <div className="settings-section settings-section--appearance">
-      <div className="settings-section-heading">Appearance</div>
-      <div className="settings-appearance-accent">
-        <div className="settings-description">
-          Choose the signal color used for navigation, focus, and primary actions.
-        </div>
-        <div className="settings-subsection-label">Accent color</div>
-        <div className="accent-picker" role="radiogroup" aria-label="Accent color">
-          {ACCENT_SCHEMES.map((scheme) => (
-            <button
-              key={scheme.id}
-              type="button"
-              role="radio"
-              aria-checked={accent === scheme.id}
-              title={scheme.label}
-              className={`accent-picker-swatch${accent === scheme.id ? ' accent-picker-swatch--active' : ''}`}
-              style={{ ['--swatch' as string]: scheme.swatch }}
-              onClick={() => handleAccentSelect(scheme.id)}
-            >
-              <span className="accent-picker-swatch-label">{scheme.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="custom-accent-control">
-          <label className="custom-accent-label" htmlFor="custom-accent-input">
-            Custom
-          </label>
-          {savedCustomAccents.length > 0 && (
-            <div
-              className="custom-accent-saved"
-              role="radiogroup"
-              aria-label="Saved custom accent colors"
-            >
-              {savedCustomAccents.map((hex, index) => {
-                const isActive = accent === 'custom' && activeCustomAccent === hex;
-                return (
-                  <div className="custom-accent-saved-item" key={hex}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={isActive}
-                      aria-label={`Custom accent ${hex}`}
-                      title={`Custom ${hex}`}
-                      className={`accent-picker-swatch custom-accent-saved-swatch${isActive ? ' accent-picker-swatch--active' : ''}`}
-                      style={{ ['--swatch' as string]: hex }}
-                      onClick={() => handleSavedCustomAccentSelect(hex)}
-                    >
-                      <span className="accent-picker-swatch-label">Custom {index + 1}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="custom-accent-remove"
-                      aria-label={`Remove custom accent ${hex}`}
-                      title={`Remove ${hex}`}
-                      onClick={() => handleCustomAccentRemove(hex)}
-                    >
-                      x
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div className="custom-accent-row">
-            <input
-              type="color"
-              className="custom-accent-color-input"
-              value={customAccentPreview}
-              aria-label="Pick custom accent color"
-              onChange={(event) => setCustomAccentInput(event.target.value)}
-            />
-            <input
-              id="custom-accent-input"
-              type="text"
-              className="custom-accent-hex-input"
-              value={customAccentInput}
-              placeholder={CUSTOM_ACCENT_EXAMPLE}
-              aria-label="Custom accent hex code"
-              aria-invalid={customAccentInvalid}
-              aria-describedby={customAccentInvalid ? 'custom-accent-error' : undefined}
-              spellCheck={false}
-              onChange={(event) => setCustomAccentInput(event.target.value)}
-            />
-            <TactileButton
-              type="button"
-              size="sm"
-              variant="primary"
-              className="custom-accent-save-button"
-              aria-label="Save custom accent color"
-              disabled={!normalizedCustomAccent}
-              onClick={handleCustomAccentSave}
-            >
-              Save
-            </TactileButton>
-          </div>
-          {customAccentInvalid && (
-            <div id="custom-accent-error" className="settings-field-error">
-              Enter a 3 or 6 digit hex color.
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="accent-schedule-control">
-        <div className="accent-schedule-header">
-          <div className="accent-schedule-heading-group">
-            <div className="custom-accent-label">Accent Schedule</div>
-            <div className="accent-schedule-description">Fixed Central Time shift windows.</div>
-          </div>
-          <button
-            type="button"
-            className={`settings-inline-action accent-schedule-toggle${
-              accentSchedule.enabled ? ' accent-schedule-toggle--active' : ''
-            }`}
-            aria-label="Auto accent schedule"
-            aria-pressed={accentSchedule.enabled}
-            onClick={handleAccentScheduleToggle}
-          >
-            {accentSchedule.enabled ? 'On' : 'Off'}
-          </button>
-        </div>
-        <div className="accent-schedule-list">
-          {ACCENT_SCHEDULE_SLOTS.map((slot) => {
-            const selectedChoice = accentSchedule.slots[slot.id];
-            return (
-              <div className="accent-schedule-row" key={slot.id}>
-                <span
-                  className="accent-schedule-swatch"
-                  style={
-                    {
-                      '--schedule-swatch': getScheduleChoiceSwatch(selectedChoice),
-                    } as React.CSSProperties
-                  }
-                  aria-hidden="true"
-                />
-                <label className="accent-schedule-label" htmlFor={`accent-schedule-${slot.id}`}>
-                  <span className="accent-schedule-name">{slot.label}</span>
-                  <span className="accent-schedule-time">{slot.rangeLabel}</span>
-                </label>
-                <select
-                  id={`accent-schedule-${slot.id}`}
-                  className="accent-schedule-select"
-                  aria-label={`${slot.label} accent`}
-                  value={selectedChoice}
-                  onChange={(event) =>
-                    handleAccentScheduleSlotChange(
-                      slot.id,
-                      event.target.value as AccentScheduleChoice,
-                    )
-                  }
-                >
-                  {accentScheduleChoices.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-
-  const connectionSections = (
-    <>
-      {presentation === 'modal' && <div className="settings-divider" />}
-      {onOpenDataManager && (
-        <div className="settings-section">
-          <div className="settings-section-heading">Relay data</div>
-          <div className="settings-description">
-            Review, import, or maintain the shared operational records used by Relay.
-          </div>
-          <TactileButton
-            onClick={() => {
-              if (presentation === 'modal') onClose();
-              onOpenDataManager();
-            }}
-            variant="primary"
-            className="btn-center"
-          >
-            Open Data Manager...
-          </TactileButton>
-        </div>
-      )}
-
-      {presentation === 'modal' && onOpenDataManager && <div className="settings-divider" />}
-
-      <div className="settings-section">
-        <div className="settings-section-heading">Relay connection</div>
-        <div className="settings-description">
-          This workstation&apos;s role and the address other Relay stations use.
-        </div>
-        {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
-        {!pbConfigLoading && !pbConfig && <div className="settings-data-path">Not configured</div>}
-        {!pbConfigLoading && pbConfig && (
-          <>
-            <div className="settings-data-path">
-              Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
-            </div>
-            {pbUrl && (
-              <div className="settings-data-path settings-copy-row">
-                <span>URL: {pbUrl}</span>
-                <button
-                  type="button"
-                  className="settings-inline-action"
-                  onClick={() => void copyText(pbUrl)}
-                >
-                  Copy
-                </button>
-              </div>
-            )}
-            {canConfigureConnection && connectionSecret && displayedConnectionSecret && (
-              <div className="settings-data-path settings-copy-row">
-                <span>Passphrase: {displayedConnectionSecret}</span>
-                <span className="settings-inline-actions">
-                  <button
-                    type="button"
-                    className="settings-inline-action"
-                    aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
-                    onClick={() => setShowConnectionSecret((current) => !current)}
-                  >
-                    {showConnectionSecret ? 'Hide' : 'Show'}
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-inline-action"
-                    onClick={() => void copyText(connectionSecret)}
-                  >
-                    Copy
-                  </button>
-                </span>
-              </div>
-            )}
-            <ConnectionManagement
-              enabled={canConfigureConnection}
-              onReconfigure={handleReconfigureRequest}
-            />
-            <ConfirmModal
-              isOpen={reconfigurePrompt}
-              onClose={() => setReconfigurePrompt(false)}
-              onConfirm={handleReconfigure}
-              title="Reconfigure Relay connection?"
-              message={reconfigureWarning(pendingOfflineCount)}
-              confirmLabel="Erase and reconfigure"
-              isDanger
-            />
-          </>
-        )}
-      </div>
-
-      {canConfigureConnection && !pbConfigLoading && pbConfig?.mode === 'server' && (
-        <RelayWebAccessSettings pocketBasePort={pbConfig.port} />
-      )}
-    </>
-  );
-
   const dynatraceSections = (
     <>
       {presentation === 'modal' && <div className="settings-divider" />}
-      {!pbConfigLoading && pbConfig?.mode === 'server' && <DynatraceProblemsSettingsSection />}
+      {!relayConfigLoading && relayMode === 'server' && <DynatraceProblemsSettingsSection />}
 
-      {!pbConfigLoading && pbConfig?.mode === 'client' && (
+      {!relayConfigLoading && relayMode === 'client' && (
         <div className="settings-section">
           <div className="settings-section-heading">Dynatrace Problems</div>
           <div className="settings-data-path">
@@ -1134,19 +623,26 @@ export const SettingsModal: React.FC<Props> = ({
     </>
   );
 
-  const accessSection = <PrivilegedAccessPanel relayMode={pbConfig?.mode ?? null} />;
-  const administrationSection = <AdministrationSettings relayMode={pbConfig?.mode ?? null} />;
-
   const settingsContent = (
     <div
       className={`settings-body${
         presentation === 'page' ? ` settings-body--${activeSection}` : ''
       }`}
     >
-      {(presentation === 'modal' || activeSection === 'appearance') && appearanceSection}
-      {(presentation === 'modal' || activeSection === 'connection') && connectionSections}
-      {presentation === 'page' && activeSection === 'access' && accessSection}
-      {presentation === 'page' && activeSection === 'administration' && administrationSection}
+      <AppearanceSettings active={presentation === 'modal' || activeSection === 'appearance'} />
+      <RelayConnectionSettings
+        active={presentation === 'modal' || activeSection === 'connection'}
+        onClose={onClose}
+        onOpenDataManager={onOpenDataManager}
+        onReconfigure={onReconfigure}
+        presentation={presentation}
+      />
+      {presentation === 'page' && activeSection === 'access' && (
+        <PrivilegedAccessPanel relayMode={relayMode} />
+      )}
+      {presentation === 'page' && activeSection === 'administration' && (
+        <AdministrationSettings relayMode={relayMode} />
+      )}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
   );
@@ -1164,3 +660,9 @@ export const SettingsModal: React.FC<Props> = ({
     </SettingsShell>
   );
 };
+
+export const SettingsModal: React.FC<Props> = (props) => (
+  <RelayConfigurationProvider isOpen={props.isOpen}>
+    <SettingsModalContent {...props} />
+  </RelayConfigurationProvider>
+);

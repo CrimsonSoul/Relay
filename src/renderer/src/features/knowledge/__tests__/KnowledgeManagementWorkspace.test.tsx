@@ -440,6 +440,19 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(title).toHaveFocus();
   });
 
+  it('preserves an in-progress document edit across section navigation', () => {
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Display title'), {
+      target: { value: 'Operator-edited title' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Categories 2/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+
+    expect(screen.getByLabelText('Display title')).toHaveValue('Operator-edited title');
+  });
+
   it('keeps Return to library reachable when publisher capability expires', () => {
     const onExit = vi.fn();
     useKnowledgeManagementMock.mockReturnValue({
@@ -1137,6 +1150,51 @@ describe('KnowledgeManagementWorkspace', () => {
     await waitFor(() => expect(cancelUpload).toHaveBeenCalledWith('upload-1'));
   });
 
+  it('closes an upload discard confirmation when leaving the section', () => {
+    const current = useKnowledgeManagementMock();
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        uploads: {
+          items: [
+            {
+              id: 'upload-review',
+              requestId: 'request-review',
+              fileName: 'Review.pdf',
+              byteSize: 1_024,
+              checksum: 'a'.repeat(64),
+              state: 'ready',
+              progress: 100,
+              pageCount: 2,
+              outlineSource: 'native',
+              outlineCount: 1,
+              proposedTitle: 'Review',
+              proposedCategory: 'Operations',
+              proposedCategoryId: null,
+              proposedDocumentType: 'sop',
+              duplicateDocumentId: null,
+              safeError: null,
+              expiresAt: '2026-07-23T01:00:00.000Z',
+              revision: 1,
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Review.pdf' }));
+    expect(screen.getByRole('button', { name: 'Confirm discard Review.pdf' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: /Documents 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Uploads 1/ }));
+
+    expect(screen.queryByRole('button', { name: 'Confirm discard Review.pdf' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Discard Review.pdf' })).toBeVisible();
+  });
+
   it('shows replacement transfer state until the upload is ready for action', () => {
     const current = useKnowledgeManagementMock();
     useKnowledgeManagementMock.mockReturnValue({
@@ -1546,5 +1604,34 @@ describe('KnowledgeManagementWorkspace', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Delete permanently' })).toHaveFocus(),
     );
+  });
+
+  it('preserves permanent-delete password state across section navigation', () => {
+    const current = useKnowledgeManagementMock();
+    const trashedDocument = {
+      ...current.snapshot!.documents.items[0]!,
+      lifecycleState: 'trashed' as const,
+      trashedByName: 'Paris',
+      trashedAt: '2026-07-19T12:00:00.000Z',
+    };
+    useKnowledgeManagementMock.mockReturnValue({
+      ...current,
+      snapshot: {
+        ...current.snapshot!,
+        documents: { items: [], nextCursor: null },
+        trash: { items: [trashedDocument], nextCursor: null },
+      },
+    });
+    render(<KnowledgeManagementWorkspace onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Trash 1/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    fireEvent.change(screen.getByLabelText('Confirm your password'), {
+      target: { value: 'still-entered' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Documents 0/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Trash 1/ }));
+
+    expect(screen.getByLabelText('Confirm your password')).toHaveValue('still-entered');
   });
 });

@@ -219,6 +219,18 @@ describe('SettingsModal — accent color picker', () => {
     expect(localStorage.getItem('relay-accent')).toBeNull();
   });
 
+  it('preserves an unsaved custom accent draft across Settings page navigation', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.change(screen.getByLabelText('Custom accent hex code'), {
+      target: { value: '#123456' },
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    expect(screen.getByLabelText('Custom accent hex code')).toHaveValue('#123456');
+  });
+
   it('renders fixed Central Time accent schedule controls', () => {
     render(<SettingsModal {...defaultProps} />);
 

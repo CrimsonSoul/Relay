@@ -16,6 +16,7 @@ const cssSources = {
   knowledge: readCss('features/knowledge/knowledge.css'),
   modals: readCss('styles/modals.css'),
   oncall: readCss('components/oncall/oncall.css'),
+  settings: readCss('components/settings/settings.css'),
   toast: readCss('styles/toast.css'),
   utilities: readCss('styles/utilities.css'),
 };
@@ -288,7 +289,7 @@ describe('CSS zero-warning contracts', () => {
       [cssSources.directory, '.detail-panel-name'],
       [cssSources.alerts, '.alerts-email-subject'],
       [cssSources.alerts, '.alerts-email-body'],
-      [cssSources.components, '.settings-data-path'],
+      [cssSources.settings, '.settings-data-path'],
       [cssSources.components, '.tooltip-popup'],
       [cssSources.toast, '.toast-message'],
       [cssSources.utilities, '.break-word'],
