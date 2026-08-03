@@ -20,6 +20,7 @@ Primary responsibilities:
 - File system and shell operations
 - Security header enforcement
 - Credential and config secret handling
+- Credential-free status-feed aggregation, including the public Juniper Mist API
 
 Key files:
 
@@ -98,6 +99,8 @@ The general `OPEN_EXTERNAL` action also requires a trusted sender and a shared
 external-action rate-limit token. HTTPS navigation is limited to Relay's exact
 status, social, Teams, or boundary-safe Dynatrace hosts; credentials, custom
 ports, whitespace, control characters, and all other web hosts are rejected.
+Juniper Mist incident links are limited to HTTPS URLs whose hostname is exactly
+`status.mist.com`; lookalike and credential-bearing URLs are rejected.
 Teams desktop and web URLs are further confined to the meeting-draft path,
 exact `subject` and `attendees` fields, bounded decoded values, and validated
 attendee addresses. Relay has no general `mailto:` opener.
@@ -164,6 +167,12 @@ Checks include:
 - Collection name allowlist
 - Mutation action allowlist (`create`, `update`, `delete`)
 - Record shape validation for writes
+
+`cloud_status_snapshot` and `cloud_status_mist_snapshot` are authenticated-read,
+server-owned PocketBase collections. Desktop cache read, realtime, and snapshot
+paths may mirror both collections, but neither is included in the offline-mutation
+or user import/export allowlists. The Mist adapter fetches only the public
+credential-free `status.mist.com` API and sends no Relay or third-party secrets.
 
 ### Brand Image Validation
 

@@ -157,6 +157,12 @@ RadarManager
 
 `RadarManager` remains the polling, coalescing, stale-data, and CW-session authority on the Relay server PC. The Web gateway owns one Radar subscription and fans each validated snapshot out to active browser sessions. Gateway disposal releases that subscription along with the other operational-service subscriptions. Relay Web does not create a second dashboard session or receive CW cookies.
 
+### Cloud Status
+
+`CloudStatusManager` polls the ten legacy provider feeds plus one Juniper Mist SorryApp request group. The Mist adapter routes active unplanned notices and component degradation to Global, EMEA, APAC, and Federal buckets before the manager exposes one combined 14-provider in-memory snapshot.
+
+Persistence remains split for client compatibility. `cloud_status_snapshot` contains exactly the original ten providers, while `cloud_status_mist_snapshot` contains exactly the four Mist regions. Updated clients subscribe to both server-owned singletons and merge them before rendering or alerting. A client connected to an older server without the Mist collection keeps the four Mist regions visible as Unknown and does not alert from missing coverage.
+
 ### Offline Resilience
 
 Offline behavior is handled by:
@@ -338,6 +344,8 @@ Relay bootstraps the PocketBase collections it needs at runtime. The representat
 | `oncall_board_settings`               | Board-level settings                                |
 | `client_presence`                     | Active client heartbeat records                     |
 | `conflict_log`                        | Offline sync conflict records                       |
+| `cloud_status_snapshot`               | Server-owned legacy 10-provider status singleton    |
+| `cloud_status_mist_snapshot`          | Server-owned four-region Mist status singleton      |
 | `knowledge_documents`                 | Read-only PDF metadata and protected mirror         |
 | `knowledge_categories`                | Ordered Wiki category metadata                      |
 | `knowledge_search_chunks`             | Optional, server-owned derived PDF search passages  |
