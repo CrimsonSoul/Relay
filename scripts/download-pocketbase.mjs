@@ -9,7 +9,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PB_VERSION = '0.39.9';
+const VERSION_FILE = join(__dirname, '..', 'resources', 'pocketbase', 'version.json');
+const versionConfig = JSON.parse(readFileSync(VERSION_FILE, 'utf8'));
+if (
+  versionConfig === null ||
+  typeof versionConfig !== 'object' ||
+  Array.isArray(versionConfig) ||
+  !/^\d+\.\d+\.\d+$/u.test(versionConfig.version)
+) {
+  throw new Error('resources/pocketbase/version.json must define a semantic version.');
+}
+export const POCKETBASE_VERSION = versionConfig.version;
 const MAX_REDIRECTS = 5;
 const SOCKET_IDLE_TIMEOUT_MS = 120_000;
 const RESOURCES_DIR = join(__dirname, '..', 'resources', 'pocketbase');
@@ -187,13 +197,13 @@ export async function verifyChecksum(
   expectedFilename,
   downloadChecksumFile = downloadFile,
 ) {
-  const checksumUrl = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/checksums.txt`;
+  const checksumUrl = `https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/checksums.txt`;
   const checksumPath = `${zipPath}.checksums.txt`;
 
   try {
     await downloadChecksumFile(checksumUrl, checksumPath);
   } catch (err) {
-    throw new Error(`Checksums file not available for v${PB_VERSION}`, { cause: err });
+    throw new Error(`Checksums file not available for v${POCKETBASE_VERSION}`, { cause: err });
   }
 
   try {
@@ -257,11 +267,11 @@ export async function downloadPocketBase(options = {}) {
 
   mkdir(outputDir, { recursive: true });
 
-  const zipFilename = `pocketbase_${PB_VERSION}_${pbOs}_${pbArch}.zip`;
-  const url = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/${zipFilename}`;
+  const zipFilename = `pocketbase_${POCKETBASE_VERSION}_${pbOs}_${pbArch}.zip`;
+  const url = `https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/${zipFilename}`;
   const zipPath = join(outputDir, 'pb.zip');
 
-  log(`Downloading PocketBase ${PB_VERSION} for ${platform}/${arch}...`);
+  log(`Downloading PocketBase ${POCKETBASE_VERSION} for ${platform}/${arch}...`);
   log(`URL: ${url}`);
 
   try {
@@ -286,15 +296,16 @@ export async function downloadPocketBase(options = {}) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  if (process.env.RELAY_SKIP_POCKETBASE_DOWNLOAD === '1') {
+  if (process.argv.includes('--print-version')) {
+    console.log(POCKETBASE_VERSION);
+  } else if (process.env.RELAY_SKIP_POCKETBASE_DOWNLOAD === '1') {
     console.log('Skipping PocketBase download because RELAY_SKIP_POCKETBASE_DOWNLOAD=1');
-    process.exit(0);
-  }
-
-  try {
-    await downloadPocketBase();
-  } catch (err) {
-    console.error('Failed to download PocketBase:', err);
-    process.exit(1);
+  } else {
+    try {
+      await downloadPocketBase();
+    } catch (err) {
+      console.error('Failed to download PocketBase:', err);
+      process.exitCode = 1;
+    }
   }
 }

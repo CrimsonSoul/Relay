@@ -1,8 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { classifyHttpFailure, findingError, unavailableError } from './scanner-gate-policy.mjs';
-import { parseProjectKey, parseScopeArgs } from './sonar-open-findings.mjs';
+import { findingError, unavailableError } from './scanner-gate-policy.mjs';
+import {
+  normalizeSonarApiBase,
+  parseSonarProjectKey as parseProjectKey,
+  requestSonarJson,
+} from './sonar-api-client.mjs';
+import { parseScopeArgs } from './sonar-open-findings.mjs';
 
 const DEFAULT_SONAR_HOST_URL = 'https://sonarcloud.io';
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -26,20 +31,6 @@ function validateIdentifier(value, label, pattern = SAFE_IDENTIFIER_PATTERN) {
     throw new Error(`${label} is invalid.`);
   }
   return value;
-}
-
-function normalizeSonarHostUrl(value) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error('SONAR_HOST_URL must be a valid HTTPS URL.');
-  }
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
-    throw new Error('SONAR_HOST_URL must be a credential-free HTTPS base URL.');
-  }
-  if (!url.pathname.endsWith('/')) url.pathname += '/';
-  return url;
 }
 
 function parseKeyValueFile(contents, label) {
@@ -100,7 +91,7 @@ export function parseSonarGateArgs(argv) {
 }
 
 export function parseReportTask({ report, configuredHostUrl, expectedProjectKey }) {
-  const configuredBase = normalizeSonarHostUrl(configuredHostUrl);
+  const configuredBase = normalizeSonarApiBase(configuredHostUrl);
   const values = parseKeyValueFile(report, 'Sonar scanner report');
   const projectKey = validateIdentifier(
     requiredValue(values, 'projectKey', 'Sonar scanner report'),
@@ -110,7 +101,7 @@ export function parseReportTask({ report, configuredHostUrl, expectedProjectKey 
     throw new Error('Sonar scanner report project key does not match the configured project.');
   }
 
-  const reportBase = normalizeSonarHostUrl(
+  const reportBase = normalizeSonarApiBase(
     requiredValue(values, 'serverUrl', 'Sonar scanner report'),
   );
   if (reportBase.href !== configuredBase.href) {
@@ -143,30 +134,12 @@ export function parseReportTask({ report, configuredHostUrl, expectedProjectKey 
 }
 
 async function requestJson({ fetcher, url, token, timeoutMs }) {
-  let response;
-  try {
-    response = await fetcher(url, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      signal: AbortSignal.timeout(
-        Math.max(1, Math.floor(Math.min(timeoutMs, MAX_REQUEST_TIMEOUT_MS))),
-      ),
-    });
-  } catch (error) {
-    throw unavailableError('Sonar API request failed before receiving a response.', {
-      cause: error,
-    });
-  }
-  if (!response?.ok) {
-    throw classifyHttpFailure('Sonar API', response?.status);
-  }
-  try {
-    return await response.json();
-  } catch {
-    throw new Error('Sonar returned invalid JSON.');
-  }
+  return requestSonarJson({
+    fetcher,
+    url,
+    token,
+    timeoutMs: Math.max(1, Math.floor(Math.min(timeoutMs, MAX_REQUEST_TIMEOUT_MS))),
+  });
 }
 
 function validateComputeTask(payload, { taskId, projectKey, scope }) {
@@ -228,7 +201,7 @@ export async function waitForComputeTask({
   validateIdentifier(projectKey, 'Sonar project key');
   const validatedScope = validateScope(scope);
   validateTiming(timeoutMs, pollIntervalMs);
-  const base = normalizeSonarHostUrl(serverUrl);
+  const base = normalizeSonarApiBase(serverUrl);
   const taskUrl = new URL('api/ce/task', base);
   taskUrl.searchParams.set('id', taskId);
   const deadline = now() + timeoutMs;
@@ -424,7 +397,7 @@ export async function waitForQualityGate({
   validateIdentifier(analysisId, 'Sonar analysis identifier', SAFE_TASK_IDENTIFIER_PATTERN);
   const validatedScope = validateScope(scope);
   validateTiming(timeoutMs, pollIntervalMs);
-  const base = normalizeSonarHostUrl(serverUrl);
+  const base = normalizeSonarApiBase(serverUrl);
   const statusUrl = new URL('api/qualitygates/project_status', base);
   if ('pullRequest' in validatedScope) {
     statusUrl.searchParams.set('analysisId', analysisId);

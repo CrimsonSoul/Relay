@@ -1,20 +1,47 @@
 import { createHash } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __downloadTestHooks, downloadPocketBase, verifyChecksum } from './download-pocketbase.mjs';
+import {
+  POCKETBASE_VERSION,
+  __downloadTestHooks,
+  downloadPocketBase,
+  verifyChecksum,
+} from './download-pocketbase.mjs';
 
 const { findChecksumEntry, handleRedirect, maxRedirects } = __downloadTestHooks;
 
-const WINDOWS_ASSET = 'pocketbase_0.39.9_windows_amd64.zip';
-const LINUX_ASSET = 'pocketbase_0.39.9_linux_amd64.zip';
+const WINDOWS_ASSET = `pocketbase_${POCKETBASE_VERSION}_windows_amd64.zip`;
+const LINUX_ASSET = `pocketbase_${POCKETBASE_VERSION}_linux_amd64.zip`;
 const DIGEST = 'a'.repeat(64);
 
 const redirectResponse = (location) => ({
   headers: { location },
   resume: vi.fn(),
+});
+
+describe('PocketBase version contract', () => {
+  it('prints the machine-readable configured version without attempting a download', () => {
+    const config = JSON.parse(
+      readFileSync(new URL('../resources/pocketbase/version.json', import.meta.url), 'utf8'),
+    );
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./download-pocketbase.mjs', import.meta.url)), '--print-version'],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, RELAY_SKIP_POCKETBASE_DOWNLOAD: '1' },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(`${config.version}\n`);
+  });
 });
 
 describe('findChecksumEntry', () => {

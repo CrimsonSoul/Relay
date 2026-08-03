@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const read = (path) => readFileSync(path, 'utf8');
+const readWorkflow = (path) => parse(read(path));
+const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('Windows NSIS launcher contract', () => {
   it('keeps launcher state path-based and protocol-versioned', () => {
@@ -293,27 +296,35 @@ describe('Windows packaging integration contract', () => {
   });
 
   it('gives every Windows CI artifact a commit build ID and real smoke test', () => {
-    for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
-      const workflow = read(file);
-      const windowsJobAndFollowing = workflow.slice(workflow.indexOf('  package-windows:'));
-      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}release:\n/);
-      const windowsJob =
-        nextJobIndex === -1
-          ? windowsJobAndFollowing
-          : windowsJobAndFollowing.slice(0, nextJobIndex);
+    const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
+    const packageJob = reusable.jobs.package;
+    const smoke = findStep(packageJob, 'Smoke test persistent bootstrap');
+    const benchmark = findStep(packageJob, 'Benchmark packaged startup paths');
+    const boundary = findStep(
+      packageJob,
+      'Exercise isolated activation boundaries and stable fallback',
+    );
 
-      expect(windowsJob).toContain('RELAY_BUILD_ID: r1-${{ github.sha }}');
-      expect(windowsJob).toContain('steps.previous.outputs.build_id');
-      expect(windowsJob).toContain('scripts/windows-bootstrap-smoke.ps1');
-      expect(windowsJob).toContain('-PreviousArtifact');
-      expect(windowsJob).toContain('RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1');
-      expect(windowsJob).toContain('--scenario prepare');
-      expect(windowsJob).toContain('--scenario stable');
-      expect(windowsJob).toContain('--runs 5');
-      expect(windowsJob).toContain('RELAY_BOOTSTRAP_BENCHMARK_CONFIRM: 1');
-      expect(windowsJob).toContain('scripts/windows-bootstrap-boundary-smoke.ps1');
-      expect(windowsJob).toContain('RELAY_BOOTSTRAP_HARNESS_ROOT');
-      expect(windowsJob).toContain('RELAY_BOOTSTRAP_BOUNDARY_CONFIRM: 1');
+    expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ github.sha }}');
+    expect(smoke.run).toContain('steps.previous.outputs.build_id');
+    expect(smoke.run).toContain('scripts/windows-bootstrap-smoke.ps1');
+    expect(smoke.run).toContain('-PreviousArtifact');
+    expect(smoke.env.RELAY_BOOTSTRAP_SMOKE_CONFIRM).toBe(1);
+    expect(benchmark.run).toContain('--scenario prepare');
+    expect(benchmark.run).toContain('--scenario stable');
+    expect(benchmark.run).toContain('--runs 5');
+    expect(benchmark.env.RELAY_BOOTSTRAP_BENCHMARK_CONFIRM).toBe(1);
+    expect(boundary.run).toContain('scripts/windows-bootstrap-boundary-smoke.ps1');
+    expect(findStep(packageJob, 'Build previous isolated boundary fixture').env).toHaveProperty(
+      'RELAY_BOOTSTRAP_HARNESS_ROOT',
+    );
+    expect(boundary.env.RELAY_BOOTSTRAP_BOUNDARY_CONFIRM).toBe(1);
+
+    for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
+      const caller = readWorkflow(file);
+      expect(caller.jobs['package-windows'].uses).toBe(
+        './.github/workflows/reusable-windows-package.yml',
+      );
     }
   });
 
@@ -327,37 +338,39 @@ describe('Windows packaging integration contract', () => {
     expect(previousArtifact).toContain('GITHUB_OUTPUT');
     expect(previousArtifact).toContain("Write-StepOutput -Name 'found' -Value 'false'");
 
-    for (const file of ['.github/workflows/build.yml', '.github/workflows/release.yml']) {
-      const workflow = read(file);
-      const windowsJobAndFollowing = workflow.slice(workflow.indexOf('  package-windows:'));
-      const nextJobIndex = windowsJobAndFollowing.search(/\n {2}release:\n/);
-      const windowsJob =
-        nextJobIndex === -1
-          ? windowsJobAndFollowing
-          : windowsJobAndFollowing.slice(0, nextJobIndex);
+    const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
+    const packageJob = reusable.jobs.package;
+    const commands = packageJob.steps.map((step) => String(step.run ?? ''));
 
-      expect(workflow).toContain('actions: read');
-      expect(windowsJob).toContain('scripts/find-previous-windows-artifact.ps1');
-      expect(windowsJob.match(/npm run build/g)).toHaveLength(1);
-      expect(windowsJob).toContain('Cache rebuilt better-sqlite3');
-      expect(windowsJob).toContain('electron-builder install-app-deps');
-      expect(windowsJob).toContain('node scripts/package-windows.mjs --fixture');
-      expect(windowsJob).toContain('steps.previous.outputs.build_id');
-      expect(windowsJob).not.toContain('npm run package:win');
-    }
+    expect(reusable.permissions.actions).toBe('read');
+    expect(findStep(packageJob, 'Find previous successful Windows artifact').run).toContain(
+      'scripts/find-previous-windows-artifact.ps1',
+    );
+    expect(commands.filter((command) => command.includes('npm run build'))).toHaveLength(1);
+    expect(findStep(packageJob, 'Cache rebuilt better-sqlite3')).toBeDefined();
+    expect(findStep(packageJob, 'Install Electron native dependencies').run).toContain(
+      'electron-builder install-app-deps',
+    );
+    expect(
+      findStep(packageJob, 'Build lightweight previous fixture when no artifact exists').run,
+    ).toContain('node scripts/package-windows.mjs --fixture');
+    expect(findStep(packageJob, 'Smoke test persistent bootstrap').run).toContain(
+      'steps.previous.outputs.build_id',
+    );
+    expect(commands.join('\n')).not.toContain('npm run package:win');
   });
 
   it('provides an opt-in same-host compression and former-portable comparison', () => {
-    const workflow = read('.github/workflows/windows-startup-comparison.yml');
+    const workflow = readWorkflow('.github/workflows/windows-startup-comparison.yml');
     const comparison = read('scripts/windows-startup-comparison.ps1');
+    const commands = workflow.jobs.compare.steps.map((step) => String(step.run ?? '')).join('\n');
 
-    expect(workflow).toContain('workflow_dispatch:');
-    expect(workflow.split('\n').some((line) => line.trim() === 'push:')).toBe(false);
-    expect(workflow).toContain('--config.compression=store');
-    expect(workflow).toContain('--config.compression=normal');
-    expect(workflow).toContain('--config.compression=maximum');
-    expect(workflow).toContain('--win portable');
-    expect(workflow).toContain('windows-startup-comparison.json');
+    expect(workflow.on).toEqual({ workflow_dispatch: null });
+    expect(commands).toContain('--config.compression=store');
+    expect(commands).toContain('--config.compression=normal');
+    expect(commands).toContain('--config.compression=maximum');
+    expect(commands).toContain('--win portable');
+    expect(commands).toContain('windows-startup-comparison.json');
     expect(comparison).toContain("--scenario', 'prepare'");
     expect(comparison).toContain("--scenario', 'stable'");
     expect(comparison).toContain("--scenario', 'portable'");

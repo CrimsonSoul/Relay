@@ -1,0 +1,284 @@
+name: Reusable Windows Package
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Artifact name uploaded by the packaging job.
+        required: true
+        type: string
+      baseline-branch:
+        description: Branch used to find the previous successful Windows artifact.
+        required: true
+        type: string
+      compression:
+        description: electron-builder compression mode for the production artifact.
+        required: true
+        type: string
+      publish:
+        description: electron-builder publish policy.
+        required: true
+        type: string
+    secrets:
+      github-token:
+        description: Token used only to read previous workflow artifacts.
+        required: true
+    outputs:
+      artifact-name:
+        description: Artifact name uploaded by the packaging job.
+        value: ${{ jobs.package.outputs.artifact-name }}
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    outputs:
+      artifact-name: ${{ inputs.artifact-name }}
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      RELAY_BUILD_ID: r1-${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Get Electron version
+        id: electron-version
+        shell: bash
+        run: |
+          ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
+          echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron binary
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            .electron
+          key: electron-win-x64-${{ steps.electron-version.outputs.version }}
+
+      # electron-builder re-downloads NSIS/winCodeSign tooling every run otherwise.
+      - name: Cache electron-builder tooling
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/AppData/Local/electron-builder/Cache
+          key: electron-builder-win-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-win-
+
+      # Native-module rebuild (better-sqlite3) compiles against Electron headers.
+      - name: Cache Electron headers
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.electron-gyp
+          key: electron-gyp-win-${{ steps.electron-version.outputs.version }}
+
+      - name: Get PocketBase version
+        id: pocketbase-version
+        shell: bash
+        run: |
+          PB_VER=$(node scripts/download-pocketbase.mjs --print-version)
+          echo "version=$PB_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache PocketBase binary
+        id: pocketbase-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: resources/pocketbase/win32-x64
+          key: pocketbase-win32-x64-${{ steps.pocketbase-version.outputs.version }}
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Verify Windows private repair directory ACL
+        run: npx vitest run src/main/pocketbase/WindowsPrivateDirectory.windows.test.ts
+
+      - name: Cache rebuilt better-sqlite3
+        id: better-sqlite-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: node_modules/better-sqlite3/build/Release
+          key: better-sqlite3-electron-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Electron native dependencies
+        if: steps.better-sqlite-cache.outputs.cache-hit != 'true'
+        run: npx electron-builder install-app-deps --platform=win32 --arch=x64
+
+      - name: Build Relay once
+        run: npm run build
+
+      - name: Download PocketBase binary
+        if: steps.pocketbase-cache.outputs.cache-hit != 'true'
+        run: node scripts/download-pocketbase.mjs --platform=win32 --arch=x64
+
+      - name: Verify PocketBase binary exists
+        shell: bash
+        run: |
+          if [ -f "resources/pocketbase/win32-x64/pocketbase.exe" ]; then
+            echo "PocketBase binary found"
+            ls -la resources/pocketbase/win32-x64/
+          else
+            echo "ERROR: PocketBase binary not found!"
+            ls -la resources/pocketbase/ 2>/dev/null || echo "resources/pocketbase/ does not exist"
+            exit 1
+          fi
+
+      - name: Find previous successful Windows artifact
+        id: previous
+        shell: pwsh
+        env:
+          BASELINE_BRANCH: ${{ inputs.baseline-branch }}
+          GH_TOKEN: ${{ secrets['github-token'] }}
+        run: >-
+          ./scripts/find-previous-windows-artifact.ps1
+          -Workflow build.yml
+          -Branch "$env:BASELINE_BRANCH"
+          -CurrentSha "${{ github.sha }}"
+          -Destination "$env:RUNNER_TEMP\RelayPrevious.exe"
+
+      - name: Build lightweight previous fixture when no artifact exists
+        if: steps.previous.outputs.found != 'true'
+        env:
+          RELAY_BUILD_ID: ${{ steps.previous.outputs.build_id }}
+        run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
+
+      - name: Preserve lightweight previous fixture
+        if: steps.previous.outputs.found != 'true'
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayPrevious.exe"
+
+      - name: Build and package
+        env:
+          COMPRESSION: ${{ inputs.compression }}
+          PUBLISH_POLICY: ${{ inputs.publish }}
+        run: >-
+          node scripts/package-windows.mjs
+          --config.compression="$env:COMPRESSION"
+          --config.npmRebuild=false
+          --publish "$env:PUBLISH_POLICY"
+
+      - name: Smoke test persistent bootstrap
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
+        run: >-
+          ./scripts/windows-bootstrap-smoke.ps1
+          -Artifact ./release/Relay.exe
+          -PreviousArtifact "$env:RUNNER_TEMP\RelayPrevious.exe"
+          -ExpectedBuildId "r1-${{ github.sha }}"
+          -ExpectedPreviousBuildId "${{ steps.previous.outputs.build_id }}"
+
+      - name: Benchmark packaged startup paths
+        shell: pwsh
+        env:
+          COMPRESSION: ${{ inputs.compression }}
+          RELAY_BOOTSTRAP_BENCHMARK_CONFIRM: 1
+        run: |
+          node scripts/benchmark-startup.mjs --scenario prepare --artifact ./release/Relay.exe --compression "$env:COMPRESSION"
+          node scripts/benchmark-startup.mjs --scenario stable --launcher "$env:LOCALAPPDATA\Relay\Relay.exe" --compression "$env:COMPRESSION" --runs 5
+
+      - name: Capture packaged startup diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          $diagnostics = Join-Path $env:RUNNER_TEMP 'relay-startup-diagnostics'
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+          $logRoot = Join-Path $env:APPDATA 'Relay\logs'
+          if (Test-Path -LiteralPath $logRoot) {
+            Copy-Item -LiteralPath $logRoot -Destination $diagnostics -Recurse
+          }
+          $statePath = Join-Path $env:LOCALAPPDATA 'Relay\state.ini'
+          if (Test-Path -LiteralPath $statePath) {
+            Copy-Item -LiteralPath $statePath -Destination $diagnostics
+          }
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.Name -in @('Relay.exe', 'pocketbase.exe') } |
+            Select-Object Name, ProcessId, ParentProcessId, ExecutablePath, CreationDate |
+            ConvertTo-Json -Depth 3 |
+            Set-Content -LiteralPath (Join-Path $diagnostics 'processes.json')
+          $runtimeRoot = Join-Path $env:LOCALAPPDATA 'Relay'
+          $runtimeFiles = if (Test-Path -LiteralPath $runtimeRoot) {
+            @(Get-ChildItem -LiteralPath $runtimeRoot -Recurse -Force |
+              Select-Object FullName, Length, LastWriteTimeUtc)
+          } else {
+            @()
+          }
+          ConvertTo-Json -InputObject $runtimeFiles -Depth 3 |
+            Set-Content -LiteralPath (Join-Path $diagnostics 'runtime-files.json')
+          $markerRoot = Join-Path $env:TEMP 'Relay\startup-benchmark'
+          $benchmarkMarkers = if (Test-Path -LiteralPath $markerRoot) {
+            @(Get-ChildItem -LiteralPath $markerRoot -Force |
+              Select-Object FullName, Length, LastWriteTimeUtc)
+          } else {
+            @()
+          }
+          ConvertTo-Json -InputObject $benchmarkMarkers -Depth 3 |
+            Set-Content -LiteralPath (Join-Path $diagnostics 'benchmark-markers.json')
+
+      - name: Upload packaged startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-windows-startup-diagnostics
+          path: ${{ runner.temp }}/relay-startup-diagnostics
+
+      - name: Preserve production artifact for boundary harness
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayProduction.exe"
+
+      - name: Build previous isolated boundary fixture
+        env:
+          RELAY_BUILD_ID: h0-${{ github.sha }}
+          RELAY_BOOTSTRAP_HARNESS: 1
+          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
+
+      - name: Preserve previous isolated boundary fixture
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayBoundaryPrevious.exe"
+
+      - name: Build current isolated boundary fixture
+        env:
+          RELAY_BUILD_ID: h1-${{ github.sha }}
+          RELAY_BOOTSTRAP_HARNESS: 1
+          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
+
+      - name: Exercise isolated activation boundaries and stable fallback
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_BOUNDARY_CONFIRM: 1
+        run: >-
+          ./scripts/windows-bootstrap-boundary-smoke.ps1
+          -Artifact ./release/Relay.exe
+          -PreviousArtifact "$env:RUNNER_TEMP\RelayBoundaryPrevious.exe"
+          -Root "$env:RUNNER_TEMP\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}"
+          -ExpectedBuildId "h1-${{ github.sha }}"
+          -ExpectedPreviousBuildId "h0-${{ github.sha }}"
+
+      - name: Restore production artifact
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath ./release/Relay.exe -Force
+          Move-Item -LiteralPath "$env:RUNNER_TEMP\RelayProduction.exe" -Destination ./release/Relay.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: release/*.exe
