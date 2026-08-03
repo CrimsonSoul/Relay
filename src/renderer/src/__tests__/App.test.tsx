@@ -882,10 +882,10 @@ describe('MainApp', () => {
     renderApp();
     await vi.waitFor(() => expect(screen.getByTestId('cloud-status-tab')).toBeInTheDocument());
 
-    act(() => lastCloudStatusOpenProvider?.('azure'));
+    act(() => lastCloudStatusOpenProvider?.('mist_emea'));
 
     expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
-    expect(lastCloudStatusTabProps?.selectedProvider).toBe('azure');
+    expect(lastCloudStatusTabProps?.selectedProvider).toBe('mist_emea');
 
     act(() => lastCloudStatusTabProps?.onSelectedProviderChange?.(null));
     expect(lastCloudStatusTabProps?.selectedProvider).toBeNull();

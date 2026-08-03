@@ -136,6 +136,20 @@ describe('Relay Web operational routes', () => {
     expect(operational.cloudStatus.refresh).toHaveBeenCalledOnce();
   });
 
+  it('rejects an incomplete cloud status payload at the Web response boundary', async () => {
+    const { origin, headers, operational } = await fixture();
+    vi.mocked(operational.cloudStatus.refresh).mockResolvedValue({
+      providers: { aws: [] },
+      lastUpdated: 12,
+      errors: [],
+    } as never);
+
+    const response = await fetch(`${origin}/relay-api/v1/operations/cloud-status`, { headers });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ ok: false, error: 'unavailable' });
+  });
+
   it('serves the current Radar snapshot only to an authenticated session', async () => {
     const { origin, headers, operational } = await fixture();
     const unauthenticated = await fetch(`${origin}/relay-api/v1/operations/radar`);

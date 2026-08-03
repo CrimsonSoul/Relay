@@ -236,6 +236,21 @@ describe('windowHandlers', () => {
       expect(result).toBe(true);
     });
 
+    it('opens exact-host Mist notice URLs and blocks lookalike hosts', async () => {
+      await expect(
+        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'https://status.mist.com/notices/example'),
+      ).resolves.toBe(true);
+      await expect(
+        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+          {},
+          'https://status.mist.com.evil.example/notices/example',
+        ),
+      ).resolves.toBe(false);
+
+      expect(shell.openExternal).toHaveBeenCalledOnce();
+      expect(shell.openExternal).toHaveBeenCalledWith('https://status.mist.com/notices/example');
+    });
+
     it('opens the fixed Dispatcher Radar intranet URL and returns true', async () => {
       const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, RADAR_URL);
 

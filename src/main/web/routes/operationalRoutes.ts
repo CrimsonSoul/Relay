@@ -15,6 +15,7 @@ import {
   WebDynatraceDashboardUpdateSchema,
   WebDynatraceProblemProfileFilterSchema,
   WebDynatraceProblemsSettingsInputSchema,
+  WebCloudStatusDataSchema,
   WebRadarSnapshotSchema,
 } from '@shared/webApi';
 import type { WebSessionStore } from '../WebSessionStore';
@@ -81,7 +82,10 @@ export function registerOperationalRoutes(
     path: `${RELAY_WEB_API_PREFIX}/operations/cloud-status`,
     authenticated: true,
     rateLimit: { bucket: 'cloud-status', key: 'session', limit: 12, windowMs: 60_000 },
-    handler: async () => ({ status: 200, body: await services.cloudStatus.refresh() }),
+    handler: async () => ({
+      status: 200,
+      body: WebCloudStatusDataSchema.parse(await services.cloudStatus.refresh()),
+    }),
   });
 
   router.register({

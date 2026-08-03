@@ -2295,9 +2295,17 @@ test.describe('Vital Critical Path', () => {
     ).toBeVisible();
     const providerSummary = window.getByRole('status').filter({ hasText: 'monitored providers' });
     await expect(providerSummary).toHaveCount(1);
-    await expect(providerSummary).toContainText(/monitored providers/);
+    await expect(providerSummary).toContainText('14 monitored providers');
     const overview = window.getByRole('region', { name: 'Provider overview', exact: true });
     await expect(overview).toBeVisible();
+    for (const region of ['Global', 'EMEA', 'APAC', 'Federal']) {
+      await expect(
+        overview.getByRole('button', {
+          name: `View Juniper Mist ${region} status details`,
+          exact: true,
+        }),
+      ).toBeVisible();
+    }
     await overview
       .getByRole('button', { name: 'View Cloudflare status details', exact: true })
       .click();

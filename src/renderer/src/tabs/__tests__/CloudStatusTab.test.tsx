@@ -89,6 +89,55 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
+  it('renders four separately navigable Mist regions immediately after Cloudflare', () => {
+    const { container } = render(
+      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+    );
+
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      'AWS',
+      'Azure',
+      'Microsoft 365',
+      'Jira',
+      'GitHub',
+      'Cloudflare',
+      'Juniper Mist Global',
+      'Juniper Mist EMEA',
+      'Juniper Mist APAC',
+      'Juniper Mist Federal',
+      'Google Cloud',
+      'Claude',
+      'ChatGPT',
+      'Salesforce',
+    ]);
+    expect(screen.getByText('across 14 monitored providers')).toBeInTheDocument();
+    for (const region of ['Global', 'EMEA', 'APAC', 'Federal']) {
+      expect(
+        screen.getByRole('button', { name: `View Juniper Mist ${region} status details` }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('offers only the official status action for a Mist region', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View Juniper Mist Global status details' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open Juniper Mist Global official status page' }),
+    );
+
+    expect(openExternal).toHaveBeenCalledWith('https://status.mist.com/');
+    expect(
+      screen.queryByRole('button', { name: /Open Juniper Mist Global on (?:X|Downdetector)/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('does not claim full coverage when a provider feed is unavailable', () => {
     const data = makeStatusData({ errors: [{ provider: 'github', message: 'fetch failed' }] });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
