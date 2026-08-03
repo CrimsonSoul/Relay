@@ -14,7 +14,8 @@ import {
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
-import type { PendingMutationOverlay, OfflineWritableCollection } from '@shared/ipc';
+import type { PendingMutationOverlay } from '@shared/ipc';
+import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
 
 const VALID_COLLECTIONS = new Set([
@@ -91,33 +92,16 @@ function readableCacheRecords(
 function pendingOverlays(changes: ReturnType<PendingChanges['getAll']>): PendingMutationOverlay[] {
   return changes.flatMap((change) => {
     const id = change.data?.id;
-    if (typeof id !== 'string' || !WRITABLE_CACHE_COLLECTIONS.has(change.collection)) return [];
+    if (typeof id !== 'string' || !isOfflineWritableCollection(change.collection)) return [];
     return [
       {
-        collection: change.collection as OfflineWritableCollection,
+        collection: change.collection,
         action: change.action,
         record: { ...change.data, id },
       },
     ];
   });
 }
-
-// Only user-authored pending mutations may become optimistic renderer overlays.
-// Realtime cache ingestion is separately restricted by VALID_COLLECTIONS.
-const WRITABLE_CACHE_COLLECTIONS = new Set<string>([
-  'contacts',
-  'servers',
-  'oncall',
-  'bridge_groups',
-  'bridge_history',
-  'alert_history',
-  'alert_reminders',
-  'notes',
-  'oncall_dismissals',
-  'oncall_board_settings',
-  DYNATRACE_PROBLEM_STATES_COLLECTION,
-  DYNATRACE_PROBLEM_NOTES_COLLECTION,
-]);
 
 const NOT_SIGNED_IN_ERROR = 'Relay is not signed in';
 const REAUTH_FAILED_ERROR = 'Re-authentication failed';

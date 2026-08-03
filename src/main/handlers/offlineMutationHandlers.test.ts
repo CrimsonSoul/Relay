@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { OFFLINE_WRITABLE_COLLECTIONS } from '@shared/offlineCollections';
 import { setupOfflineMutationHandlers } from './offlineMutationHandlers';
 
 const send = vi.fn();
@@ -77,6 +78,17 @@ describe('offlineMutationHandlers', () => {
       IPC_CHANNELS.OFFLINE_MUTATION_APPLIED,
       expect.objectContaining({ collection: 'contacts', pendingCount: 1 }),
     );
+  });
+
+  it('accepts every offline-writable collection in the shared catalog', () => {
+    for (const collection of OFFLINE_WRITABLE_COLLECTIONS) {
+      const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+        {},
+        { collection, action: 'create', data: { name: collection } },
+      );
+
+      expect(result, collection).toMatchObject({ ok: true, collection });
+    }
   });
 
   it('meters accepted mutations against the data mutation rate limit', () => {

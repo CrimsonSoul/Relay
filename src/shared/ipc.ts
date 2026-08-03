@@ -22,7 +22,14 @@ import type {
   KnowledgeUploadSelectionResult,
 } from './knowledge';
 import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
+import type { OfflineWritableCollection } from './offlineCollections';
 import type { RelayRuntimeDescriptor } from './runtime';
+
+export {
+  OFFLINE_WRITABLE_COLLECTIONS,
+  isOfflineWritableCollection,
+  type OfflineWritableCollection,
+} from './offlineCollections';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -469,20 +476,6 @@ export function readSaveConfigResult(
   if (typeof result === 'boolean') return { ok: result, discardedPendingCount: 0 };
   return { ok: result.ok, discardedPendingCount: result.discardedPendingCount ?? 0 };
 }
-
-export type OfflineWritableCollection =
-  | 'contacts'
-  | 'servers'
-  | 'oncall'
-  | 'bridge_groups'
-  | 'bridge_history'
-  | 'alert_history'
-  | 'alert_reminders'
-  | 'notes'
-  | 'oncall_dismissals'
-  | 'oncall_board_settings'
-  | 'dynatrace_problem_states'
-  | 'dynatrace_problem_notes';
 
 export type OfflineMutationInput = {
   collection: OfflineWritableCollection;
