@@ -19,7 +19,6 @@
     "seed:dynatrace:clear": "node scripts/seed.mjs --clear-dynatrace",
     "test:pocketbase": "vitest run -c vitest.verify.config.ts",
     "typecheck": "node scripts/typecheck.mjs",
-    "typecheck:update": "node scripts/typecheck.mjs --update",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "build:renderer": "vite build --config vite.renderer.config.ts",
