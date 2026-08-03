@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 const { test } = process.env.VITEST ? await import('vitest') : await import('node:test');
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const rootNodeModules = path.join(repositoryRoot, 'node_modules');
+const requireFromTest = createRequire(import.meta.url);
 
 function markNodeModulesVisited(nodeModulesPath, visited) {
   try {
@@ -110,11 +111,20 @@ test('the dependency tree includes brace-expansion for compatibility verificatio
   assert.ok(braceExpansionInstalls.length > 0, 'expected at least one brace-expansion install');
 });
 
+test('PostCSS can load through the Snyk-safe nanoid release', async () => {
+  const nanoidPath = path.dirname(requireFromTest.resolve('nanoid/package.json'));
+  assert.equal(packageJson(nanoidPath).version, '5.1.16');
+
+  const postcss = requireFromTest('postcss');
+  const result = await postcss([]).process('a { color: red }', { from: undefined });
+  assert.equal(result.css, 'a { color: red }');
+});
+
 for (const packagePath of braceExpansionInstalls) {
   const relativePath = path.relative(repositoryRoot, packagePath);
 
   test(`${relativePath} uses the patched algorithm and compatible exports`, async () => {
-    assert.equal(packageJson(packagePath).version, '5.0.8', `${relativePath} must be patched`);
+    assert.equal(packageJson(packagePath).version, '5.0.9', `${relativePath} must be patched`);
 
     const commonJsExport = createRequire(import.meta.url)(
       conditionalExport(packagePath, 'require'),
