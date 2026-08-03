@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import {
   REVIEWED_ISSUES,
   fetchCurrentSonarIssues,
@@ -18,6 +18,46 @@ const { test } = process.env.VITEST ? await import('vitest') : await import('nod
 const TOKEN = 'sonar-reviewed-token-sentinel-never-print';
 const HOST_URL = 'https://sonarcloud.io';
 const PROJECT_KEY = 'CrimsonSoul_Relay';
+const PROJECT_COMPONENT_PREFIX = `${PROJECT_KEY}:`;
+const REPOSITORY_ROOT = new URL('../', import.meta.url);
+const MIGRATED_REVIEWED_ISSUES = [
+  {
+    key: 'AZ-alM3UTAUVQ8sYgoim',
+    rule: 'css:S7924',
+    component: `${PROJECT_COMPONENT_PREFIX}src/renderer/src/components/settings/settings.css`,
+    transition: 'falsepositive',
+  },
+  {
+    key: 'AZ-alM3UTAUVQ8sYgoin',
+    rule: 'css:S7924',
+    component: `${PROJECT_COMPONENT_PREFIX}src/renderer/src/components/settings/settings.css`,
+    transition: 'falsepositive',
+  },
+  {
+    key: 'AZ-alM3UTAUVQ8sYgoio',
+    rule: 'css:S7924',
+    component: `${PROJECT_COMPONENT_PREFIX}src/renderer/src/components/settings/settings.css`,
+    transition: 'falsepositive',
+  },
+  {
+    key: 'AZ-gb17s7Nsapz3kouHt',
+    rule: 'tssecurity:S5144',
+    component: `${PROJECT_COMPONENT_PREFIX}src/main/handlers/window/externalLinkHandlers.ts`,
+    transition: 'falsepositive',
+  },
+  {
+    key: 'AZ-alMXRTAUVQ8sYgohQ',
+    rule: 'typescript:S6819',
+    component: `${PROJECT_COMPONENT_PREFIX}src/renderer/src/features/knowledge/management/KnowledgeUploadsSection.tsx`,
+    transition: 'accept',
+  },
+  {
+    key: 'AZ-alMXRTAUVQ8sYgohV',
+    rule: 'typescript:S6819',
+    component: `${PROJECT_COMPONENT_PREFIX}src/renderer/src/features/knowledge/management/KnowledgeTrashSection.tsx`,
+    transition: 'accept',
+  },
+];
 
 function response(body, { ok = true, status = 200, jsonError } = {}) {
   return {
@@ -74,10 +114,16 @@ test('pins the exact reviewed inventory and intended dispositions', () => {
     ['AZ-alMl2TAUVQ8sYgoiA'],
   );
   assert.deepEqual(
-    REVIEWED_ISSUES.filter((issue) => issue.rule === 'tssecurity:S5144').map(
-      ({ key, transition }) => ({ key, transition }),
+    REVIEWED_ISSUES.filter((issue) =>
+      MIGRATED_REVIEWED_ISSUES.some((expected) => expected.key === issue.key),
     ),
-    [{ key: 'AZ-gb17s7Nsapz3kouHt', transition: 'falsepositive' }],
+    MIGRATED_REVIEWED_ISSUES,
+  );
+  assert.deepEqual(
+    REVIEWED_ISSUES.filter((issue) => issue.rule === 'tssecurity:S5144').map(
+      ({ key, rule, component, transition }) => ({ key, rule, component, transition }),
+    ),
+    [MIGRATED_REVIEWED_ISSUES[3]],
   );
   assert.deepEqual(
     REVIEWED_ISSUES.filter((issue) => issue.rule === 'typescript:S7785').map(
@@ -99,6 +145,22 @@ test('pins the exact reviewed inventory and intended dispositions', () => {
       ({ rule, transition }) => ({ rule, transition }),
     ),
     [{ rule: 'typescript:S6819', transition: 'accept' }],
+  );
+});
+
+test('every reviewed Relay component resolves to a repository file', async () => {
+  await Promise.all(
+    REVIEWED_ISSUES.map(async (issue) => {
+      assert.equal(
+        issue.component.startsWith(PROJECT_COMPONENT_PREFIX),
+        true,
+        `${issue.key} must use the Relay project prefix`,
+      );
+      const relativePath = issue.component.slice(PROJECT_COMPONENT_PREFIX.length);
+      assert.match(relativePath, /^src\//u, `${issue.key} must stay within Relay source`);
+      const componentStat = await stat(new URL(relativePath, REPOSITORY_ROOT));
+      assert.equal(componentStat.isFile(), true, `${issue.key} component must be a file`);
+    }),
   );
 });
 

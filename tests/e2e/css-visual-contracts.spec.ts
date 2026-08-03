@@ -13,6 +13,14 @@ const componentsCss = readFileSync(
   join(testDirectory, '../../src/renderer/src/styles/components.css'),
   'utf8',
 );
+const settingsCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/components/settings/settings.css'),
+  'utf8',
+);
+const componentsAfterSettingsCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/styles/components-after-settings.css'),
+  'utf8',
+);
 const sidebarCss = readFileSync(
   join(testDirectory, '../../src/renderer/src/components/sidebar/sidebar.css'),
   'utf8',
@@ -134,9 +142,11 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
 
   try {
     await window.setContent(`
+      <style>${themeCss}</style>
+      <style data-production-css="components.css">${componentsCss}</style>
+      <style data-production-css="settings.css">${settingsCss}</style>
+      <style data-production-css="components-after-settings.css">${componentsAfterSettingsCss}</style>
       <style>
-        ${themeCss}
-        ${componentsCss}
         html, body { margin: 0; }
         .contrast-host { padding: 8px; }
       </style>
@@ -149,6 +159,84 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
           .join('')}
       </div>
     `);
+
+    const ruleCoverage = await window.evaluate((states) => {
+      const styleRules = Array.from(globalThis.document.styleSheets)
+        .filter((styleSheet) => {
+          const owner = styleSheet.ownerNode;
+          return (
+            owner instanceof globalThis.HTMLStyleElement &&
+            owner.dataset.productionCss !== undefined
+          );
+        })
+        .flatMap((styleSheet) =>
+          Array.from(styleSheet.cssRules).flatMap((rule) =>
+            rule instanceof globalThis.CSSStyleRule
+              ? [
+                  {
+                    background: rule.style.getPropertyValue('background').trim(),
+                    color: rule.style.getPropertyValue('color').trim(),
+                    selectors: rule.selectorText.split(',').map((part) => part.trim()),
+                  },
+                ]
+              : [],
+          ),
+        );
+
+      return states.map(({ issueKey, selector, className }) => {
+        const chip = globalThis.document.querySelector(`[data-issue-key="${issueKey}"]`);
+        if (!(chip instanceof globalThis.HTMLElement)) {
+          throw new Error(`Missing chip for ${issueKey}`);
+        }
+        const rule = styleRules.find((candidate) => candidate.selectors.includes(selector));
+        const parent = chip.parentElement;
+        if (!(parent instanceof globalThis.HTMLElement)) {
+          throw new Error(`Missing chip parent for ${issueKey}`);
+        }
+        const styles = globalThis.getComputedStyle(chip);
+        const parentStyles = globalThis.getComputedStyle(parent);
+
+        return {
+          issueKey,
+          selector,
+          hasExpectedClass: className
+            .split(/\s+/u)
+            .every((classToken) => chip.classList.contains(classToken)),
+          matchesSelector: chip.matches(selector),
+          hasRule: rule !== undefined,
+          hasColorDeclaration: Boolean(rule?.color),
+          hasBackgroundDeclaration: Boolean(rule?.background),
+          usesOwnColor: styles.color !== parentStyles.color,
+          usesOwnBackground: styles.backgroundColor !== 'rgba(0, 0, 0, 0)',
+        };
+      });
+    }, contrastStates);
+
+    for (const coverage of ruleCoverage) {
+      expect(coverage.hasExpectedClass, `${coverage.issueKey} must use its intended classes`).toBe(
+        true,
+      );
+      expect(
+        coverage.matchesSelector,
+        `${coverage.issueKey} target must match ${coverage.selector}`,
+      ).toBe(true);
+      expect(coverage.hasRule, `${coverage.issueKey} must have a parsed production CSS rule`).toBe(
+        true,
+      );
+      expect(
+        coverage.hasColorDeclaration,
+        `${coverage.issueKey} rule must declare a foreground color`,
+      ).toBe(true);
+      expect(
+        coverage.hasBackgroundDeclaration,
+        `${coverage.issueKey} rule must declare a background`,
+      ).toBe(true);
+      expect(coverage.usesOwnColor, `${coverage.issueKey} color must not be inherited`).toBe(true);
+      expect(
+        coverage.usesOwnBackground,
+        `${coverage.issueKey} background must not be transparent`,
+      ).toBe(true);
+    }
 
     const rootColorScheme = await window.evaluate(
       () => globalThis.getComputedStyle(globalThis.document.documentElement).colorScheme,

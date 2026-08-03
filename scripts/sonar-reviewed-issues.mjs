@@ -75,19 +75,19 @@ export const REVIEWED_ISSUES = Object.freeze([
   reviewedIssue(
     'AZ-alM3UTAUVQ8sYgoim',
     'css:S7924',
-    'src/renderer/src/styles/components.css',
+    'src/renderer/src/components/settings/settings.css',
     'falsepositive',
   ),
   reviewedIssue(
     'AZ-alM3UTAUVQ8sYgoin',
     'css:S7924',
-    'src/renderer/src/styles/components.css',
+    'src/renderer/src/components/settings/settings.css',
     'falsepositive',
   ),
   reviewedIssue(
     'AZ-alM3UTAUVQ8sYgoio',
     'css:S7924',
-    'src/renderer/src/styles/components.css',
+    'src/renderer/src/components/settings/settings.css',
     'falsepositive',
   ),
 
@@ -95,7 +95,7 @@ export const REVIEWED_ISSUES = Object.freeze([
   reviewedIssue(
     'AZ-gb17s7Nsapz3kouHt',
     'tssecurity:S5144',
-    'src/main/handlers/windowHandlers.ts',
+    'src/main/handlers/window/externalLinkHandlers.ts',
     'falsepositive',
   ),
 
@@ -157,7 +157,7 @@ export const REVIEWED_ISSUES = Object.freeze([
   reviewedIssue(
     'AZ-alMXRTAUVQ8sYgohQ',
     'typescript:S6819',
-    'src/renderer/src/features/knowledge/KnowledgeManagementWorkspace.tsx',
+    'src/renderer/src/features/knowledge/management/KnowledgeUploadsSection.tsx',
     'accept',
   ),
   reviewedIssue(
@@ -271,7 +271,7 @@ export const REVIEWED_ISSUES = Object.freeze([
   reviewedIssue(
     'AZ-alMXRTAUVQ8sYgohV',
     'typescript:S6819',
-    'src/renderer/src/features/knowledge/KnowledgeManagementWorkspace.tsx',
+    'src/renderer/src/features/knowledge/management/KnowledgeTrashSection.tsx',
     'accept',
   ),
   reviewedIssue(

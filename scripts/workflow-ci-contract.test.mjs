@@ -5,12 +5,27 @@ import { parse } from 'yaml';
 const workflowsDirectory = new URL('../.github/workflows/', import.meta.url);
 const workflowPath = (name) => new URL(name, workflowsDirectory);
 const readWorkflow = async (name) => parse(await readFile(workflowPath(name), 'utf8'));
+const readWorkflowNames = async (readDirectory = readdir) =>
+  (await readDirectory(workflowsDirectory))
+    .filter((name) => /\.ya?ml$/u.test(name))
+    .sort((left, right) => left.localeCompare(right, 'en'));
 const expression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('CI workflow contracts', () => {
+  it('normalizes workflow enumeration before order-sensitive collection', async () => {
+    const names = await readWorkflowNames(async () => [
+      'windows-startup-comparison.yml',
+      'notes.txt',
+      'release.yml',
+      'build.yml',
+    ]);
+
+    expect(names).toEqual(['build.yml', 'release.yml', 'windows-startup-comparison.yml']);
+  });
+
   it('parses every workflow and takes every setup-node version from .node-version', async () => {
-    const names = (await readdir(workflowsDirectory)).filter((name) => /\.ya?ml$/u.test(name));
+    const names = await readWorkflowNames();
 
     for (const name of names) {
       const workflow = await readWorkflow(name);
@@ -90,7 +105,7 @@ describe('CI workflow contracts', () => {
   });
 
   it('keeps every explicit cache failure-tolerant with exact dependency identity', async () => {
-    const names = (await readdir(workflowsDirectory)).filter((name) => /\.ya?ml$/u.test(name));
+    const names = await readWorkflowNames();
     const caches = [];
 
     for (const name of names) {
