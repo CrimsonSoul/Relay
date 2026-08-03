@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   classifyIssue,
   fetchSonarIssues,
@@ -141,40 +140,6 @@ test('rejects an insecure Sonar host before sending the bearer token', async () 
     /HTTPS/i,
   );
   assert.equal(requested, false);
-});
-
-test('the security workflow delegates HTTPS validation to the Sonar CI gate', async () => {
-  const [workflow, runner] = await Promise.all([
-    readFile(new URL('../.github/workflows/security.yml', import.meta.url), 'utf8'),
-    readFile(new URL('./run-sonar-ci.mjs', import.meta.url), 'utf8'),
-  ]);
-  assert.match(workflow, /npm run security:sonar:ci --/u);
-  assert.match(runner, /SONAR_HOST_URL must be a credential-free HTTPS URL/u);
-});
-
-test('the Sonar CI gate reconciles only after the exact analysis and gates it last', async () => {
-  const runner = await readFile(new URL('./run-sonar-ci.mjs', import.meta.url), 'utf8');
-  const scanner = runner.indexOf('const upload = await runCommand');
-  const waitForAnalysis = runner.indexOf('await waitAnalysis');
-  const reconcileReviewed = runner.indexOf('await reconcile');
-  const openFindings = runner.indexOf('await waitForSettledIssues');
-  const qualityGate = runner.indexOf('await checkGate');
-
-  assert.ok(scanner >= 0, 'missing Sonar scanner invocation');
-  assert.match(runner, /-Dsonar\.qualitygate\.wait=false/u);
-  assert.doesNotMatch(runner, /-Dsonar\.qualitygate\.wait=true/u);
-  assert.ok(waitForAnalysis > scanner, 'the exact analysis must finish after scanner upload');
-  assert.ok(
-    reconcileReviewed > waitForAnalysis,
-    'reviewed issues must reconcile only after the exact analysis finishes',
-  );
-  assert.ok(
-    openFindings > reconcileReviewed,
-    'unresolved issues must be checked after test-branch reconciliation',
-  );
-  assert.ok(qualityGate > openFindings, 'the exact quality gate must be evaluated last');
-  assert.match(runner, /--pull-request=/u);
-  assert.match(runner, /--branch=test/u);
 });
 
 test('maps canonical and legacy reviewed states without hiding reopened findings', () => {

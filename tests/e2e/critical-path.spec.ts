@@ -1,4 +1,10 @@
-import { _electron as electron, test, expect, type Page, type Locator } from '@playwright/test';
+import {
+  _electron as electron,
+  test as base,
+  expect,
+  type Page,
+  type Locator,
+} from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,9 +16,17 @@ import {
   buildKnowledgePdfFixture,
   createKnowledgeLinkFixtures,
 } from '../fixtures/knowledgePdfFixtures';
+import {
+  criticalPathFixtureProfiles,
+  type CriticalPathFixtureProfile,
+} from './criticalPathFixtureProfile';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const test = base.extend<{ criticalPathFixtureProfile: CriticalPathFixtureProfile }>({
+  criticalPathFixtureProfile: [criticalPathFixtureProfiles.default, { option: true }],
+});
 
 const uniqueSuffix = () => crypto.randomUUID().slice(0, 8);
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -767,7 +781,7 @@ test.describe('Vital Critical Path', () => {
   let startupShellWasVisible = false;
 
   const launchServer = async (
-    options: { knowledgeChunkDelayMs?: string; startupDelayMs?: string } = {},
+    fixtureProfile: CriticalPathFixtureProfile = criticalPathFixtureProfiles.default,
   ) => {
     // PocketBase owns the limiter in memory, so every embedded-server process
     // starts with a fresh budget. Account conservatively for the bootstrap
@@ -778,10 +792,14 @@ test.describe('Vital Critical Path', () => {
       ...process.env,
       NODE_ENV: 'test',
       RELAY_E2E_PRIVILEGED_FIXTURES: '1',
-      ...(options.knowledgeChunkDelayMs
-        ? { RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS: options.knowledgeChunkDelayMs }
+      ...(fixtureProfile.knowledgeChunkDelayMs !== null
+        ? {
+            RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS: String(fixtureProfile.knowledgeChunkDelayMs),
+          }
         : {}),
-      ...(options.startupDelayMs ? { RELAY_E2E_STARTUP_DELAY_MS: options.startupDelayMs } : {}),
+      ...(fixtureProfile.startupDelayMs !== null
+        ? { RELAY_E2E_STARTUP_DELAY_MS: String(fixtureProfile.startupDelayMs) }
+        : {}),
     };
     delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
 
@@ -938,7 +956,7 @@ test.describe('Vital Critical Path', () => {
     }
   };
 
-  test.beforeEach(async ({ browserName: _browserName }, testInfo) => {
+  test.beforeEach(async ({ browserName: _browserName, criticalPathFixtureProfile }) => {
     resetAuthenticationFixtures();
     tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-critical-'));
     clientElectronApp = null;
@@ -946,20 +964,8 @@ test.describe('Vital Critical Path', () => {
     clientDataDir = '';
     pbPort = makePort();
     writeServerConfig(tempDataDir, pbPort);
-    await launchServer({
-      knowledgeChunkDelayMs: testInfo.title.includes('Knowledge management upload workflow')
-        ? '150'
-        : undefined,
-      startupDelayMs: testInfo.title.includes('startup shell appears before workspace readiness')
-        ? '1000'
-        : undefined,
-    });
-    if (
-      testInfo.title.includes('Knowledge PDF links') ||
-      testInfo.title.includes('continuous Wiki PDF') ||
-      testInfo.title.includes('role accounts preserve') ||
-      testInfo.title.includes('Knowledge management')
-    ) {
+    await launchServer(criticalPathFixtureProfile);
+    if (criticalPathFixtureProfile.seedKnowledgeLinks) {
       await seedKnowledgeLinkFixtures(pbPort);
     }
   });
@@ -1016,500 +1022,536 @@ test.describe('Vital Critical Path', () => {
     }
   });
 
-  test('startup shell appears before workspace readiness and healthy relaunch skips credential repair', async () => {
-    expect(startupShellWasVisible).toBe(true);
-    const logPath = path.join(tempDataDir, 'logs', 'relay.log');
-    const countMatches = (pattern: RegExp) => {
-      try {
-        return fs.readFileSync(logPath, 'utf8').match(pattern)?.length ?? 0;
-      } catch {
-        return 0;
-      }
-    };
+  test.describe('rename-safe fixture profile contract', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.renameContract });
 
-    await expect.poll(() => countMatches(/Superuser upserted via CLI/g)).toBeGreaterThan(0);
-    const credentialRepairCount = countMatches(/Superuser upserted via CLI/g);
-    const startupSummaryCount = countMatches(/Relay startup timing/g);
-
-    await electronApp?.close();
-    electronApp = null;
-    await launchServer();
-
-    await expect
-      .poll(() => countMatches(/Relay startup timing/g))
-      .toBeGreaterThan(startupSummaryCount);
-    expect(countMatches(/Superuser upserted via CLI/g)).toBe(credentialRepairCount);
-  });
-
-  test('Knowledge management responsive geometry preserves navigation and bottom gutters', async () => {
-    const { rail, root, search, workspace } = await openOwnerKnowledgeManagement();
-
-    const expectBottomGutter = async (expected: number) => {
-      await expect(root).toHaveCSS('padding-bottom', `${expected}px`);
-      await expect
-        .poll(async () => {
-          const [rootBox, workspaceBox] = await Promise.all([
-            root.boundingBox(),
-            workspace.boundingBox(),
-          ]);
-          if (!rootBox || !workspaceBox) return null;
-          return Math.round(rootBox.y + rootBox.height - workspaceBox.y - workspaceBox.height);
-        })
-        .toBe(expected);
-    };
-
-    await setServerWindowWidth(1600);
-    await expect(workspace).toBeVisible();
-    expect(
-      await workspace.evaluate((element) => {
-        const style = globalThis.getComputedStyle(element);
-        return {
-          border: style.borderTopWidth,
-          columns: style.gridTemplateColumns,
-          shadow: style.boxShadow,
-        };
-      }),
-    ).toEqual({ border: '1px', columns: expect.stringMatching(/^190px /), shadow: 'none' });
-    await expectBottomGutter(24);
-
-    await setServerWindowWidth(1100);
-    await expectBottomGutter(24);
-    await expect
-      .poll(() => rail.evaluate((element) => globalThis.getComputedStyle(element).flexDirection))
-      .toBe('row');
-
-    await setServerWindowWidth(800);
-    await expectBottomGutter(12);
-    const toolbar = window.locator('.knowledge-management__toolbar');
-    await expect
-      .poll(() => toolbar.evaluate((element) => globalThis.getComputedStyle(element).position))
-      .toBe('static');
-    expect(
-      await toolbar.evaluate((element) => globalThis.getComputedStyle(element).backgroundColor),
-    ).not.toBe('rgba(0, 0, 0, 0)');
-
-    await setServerWindowWidth(540);
-    await expectBottomGutter(12);
-    const railButtons = rail.getByRole('button');
-    await expect(railButtons).toHaveCount(4);
-    for (const section of ['Documents', 'Categories', 'Uploads', 'Trash']) {
-      const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
-      await expect(button.locator('span')).toHaveText(section.toLowerCase());
-      expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
-      expect(
-        await button.evaluate((element) => {
-          const buttonRect = element.getBoundingClientRect();
-          const children = [...element.querySelectorAll('span, strong')];
-          return children.every((child) => {
-            const childRect = child.getBoundingClientRect();
-            return (
-              childRect.left >= buttonRect.left &&
-              childRect.right <= buttonRect.right &&
-              child.scrollWidth <= child.clientWidth
-            );
-          });
-        }),
-      ).toBe(true);
-    }
-    await expect
-      .poll(() => rail.evaluate((element) => element.scrollWidth > element.clientWidth))
-      .toBe(true);
-    await rail.evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
-    await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-
-    await search.fill('Payment API Degradation');
-    const narrowRow = window.locator('.knowledge-management-row', {
-      hasText: 'Payment API Degradation Guide',
-    });
-    for (const action of ['Edit', 'Replace PDF', 'Trash']) {
-      await expect(narrowRow.getByRole('button', { name: action, exact: true })).toBeVisible();
-    }
-  });
-
-  test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
-    await seedKnowledgePaginationFixtures(107);
-    const { content, rail, search } = await openOwnerKnowledgeManagement();
-
-    const documentsScrollTop = await content.evaluate((element) => {
-      element.scrollTop = 180;
-      return element.scrollTop;
-    });
-    expect(documentsScrollTop).toBeGreaterThan(0);
-
-    await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
-    await expect(content).toHaveAttribute('aria-label', 'Categories management section');
-    await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBe(0);
-    const newCategory = window.getByLabel('New category name');
-    await expect(newCategory).toHaveClass(/tactile-input/);
-    expect(
-      await newCategory.evaluate((element) => {
-        const style = globalThis.getComputedStyle(element);
-        return {
-          background: style.backgroundColor,
-          borderRadius: style.borderRadius,
-          borderWidth: style.borderTopWidth,
-          height: style.height,
-        };
-      }),
-    ).toEqual({
-      background: 'rgba(0, 0, 0, 0)',
-      borderRadius: '2px',
-      borderWidth: '1px',
-      height: '44px',
-    });
-
-    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
-    await expect(content).toHaveAttribute('aria-label', 'Documents management section');
-    await expect
-      .poll(() => content.evaluate((element) => element.scrollTop))
-      .toBe(documentsScrollTop);
-
-    const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
-    await expect(loadMore).toBeVisible();
-    const initialRows = await content.locator('.knowledge-management-row').count();
-    await loadMore.click();
-    await expect
-      .poll(() => content.locator('.knowledge-management-row').count())
-      .toBeGreaterThan(initialRows);
-
-    await search.fill('Payment API Degradation');
-    const paymentRow = window.locator('.knowledge-management-row', {
-      hasText: 'Payment API Degradation Guide',
-    });
-    await expect(paymentRow).toHaveCount(1);
-    for (const action of ['Edit', 'Replace PDF', 'Trash']) {
-      await expect(paymentRow.getByRole('button', { name: action, exact: true })).toBeVisible();
-    }
-    await search.fill('');
-
-    await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
-    await window.getByLabel('Category name Reader validation').fill('Reader operations');
-    await window.getByRole('button', { name: 'Save Reader validation' }).click();
-    await expect(window.getByLabel('Category name Reader operations')).toHaveValue(
-      'Reader operations',
-    );
-    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
-    await expect(
-      window.locator('.knowledge-management-row', { hasText: CONTINUOUS_READER_TITLE }),
-    ).toContainText('Reader operations');
-
-    await search.fill('Payment API Degradation');
-    await paymentRow.getByRole('button', { name: 'Edit', exact: true }).click();
-    await paymentRow.getByLabel('Display title').fill('Payment API Degradation Guide Revised');
-    await paymentRow.getByRole('button', { name: 'Save changes', exact: true }).click();
-    await expect(
-      paymentRow.getByRole('heading', {
-        name: 'Payment API Degradation Guide Revised',
-        exact: true,
-      }),
-    ).toBeVisible();
-  });
-
-  test('Knowledge management upload workflow preserves transfer publish and replace controls', async () => {
-    test.setTimeout(120_000);
-    const { rail, search } = await openOwnerKnowledgeManagement();
-    const fixtureDir = path.join(tempDataDir, 'knowledge-management-uploads');
-    fs.mkdirSync(fixtureDir, { recursive: true });
-
-    await search.fill('Payment API Degradation');
-    const paymentRow = window.locator('.knowledge-management-row', {
-      hasText: 'Payment API Degradation Guide',
-    });
-    const pb = await makeSuperuserPbClient(pbPort);
-    const originalDocument = await pb.collection('knowledge_documents').getFirstListItem<{
-      id: string;
-      sourceKey: string;
-      category: string;
-      categoryId: string;
-      documentType: string;
-      title: string;
-      displayTitle: string;
-      fileName: string;
-      checksum: string;
-      revision: number;
-      publishedByAccountId: string;
-      publishedByName: string;
-      publishedAt: string;
-    }>('fileName = "Payment API Degradation Guide.pdf"', { requestKey: null });
-    const replacementPath = path.join(fixtureDir, 'Replacement flow evidence.pdf');
-    const replacementBytes = buildKnowledgePdfFixture({
-      title: 'Replacement flow evidence',
-      pageCount: 1,
-    });
-    fs.writeFileSync(replacementPath, replacementBytes, { mode: 0o600 });
-    await installServerKnowledgeDialogFixture([replacementPath]);
-    await paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }).click();
-    const replacementRow = window.locator('.knowledge-management-row--upload', {
-      hasText: 'Replacement flow evidence.pdf',
-    });
-    const replaceExisting = replacementRow.getByRole('button', {
-      name: 'Replace existing',
-      exact: true,
-    });
-    await expect(replaceExisting).toBeEnabled({ timeout: 30_000 });
-    await replaceExisting.click();
-    await expect(replacementRow).not.toBeVisible();
-    await expect
-      .poll(async () => {
-        const current = await pb
-          .collection('knowledge_documents')
-          .getOne<{ revision: number }>(originalDocument.id, { requestKey: null });
-        return current.revision;
-      })
-      .toBe(originalDocument.revision + 1);
-    const replacedDocument = await pb
-      .collection('knowledge_documents')
-      .getOne<typeof originalDocument>(originalDocument.id, { requestKey: null });
-    expect(replacedDocument).toMatchObject({
-      id: originalDocument.id,
-      sourceKey: originalDocument.sourceKey,
-      category: originalDocument.category,
-      categoryId: originalDocument.categoryId,
-      documentType: originalDocument.documentType,
-      title: originalDocument.title,
-      displayTitle: originalDocument.displayTitle,
-      fileName: originalDocument.fileName,
-      publishedByAccountId: originalDocument.publishedByAccountId,
-      publishedByName: originalDocument.publishedByName,
-      publishedAt: originalDocument.publishedAt,
-      revision: originalDocument.revision + 1,
-    });
-    expect(replacedDocument.checksum).toBe(
-      crypto.createHash('sha256').update(replacementBytes).digest('hex'),
-    );
-    expect(replacedDocument.checksum).not.toBe(originalDocument.checksum);
-    await expect(
-      pb.collection('knowledge_documents').getFullList({
-        filter: 'fileName = "Replacement flow evidence.pdf"',
-        requestKey: null,
-      }),
-    ).resolves.toHaveLength(0);
-
-    const secondReplacementPath = path.join(fixtureDir, 'Second replacement flow evidence.pdf');
-    const secondReplacementBytes = buildKnowledgePdfFixture({
-      title: 'Second replacement flow evidence',
-      pageCount: 2,
-    });
-    fs.writeFileSync(secondReplacementPath, secondReplacementBytes, { mode: 0o600 });
-    await installServerKnowledgeDialogFixture([secondReplacementPath]);
-    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
-    // Release the filter as soon as this test stops needing it. The workspace only re-reads
-    // documents from the server when the debounced query changes, so leaving "Payment API
-    // Degradation" applied narrows every later snapshot to that one document — including the ones
-    // taken after a publish — and the document published below would then exist only behind a
-    // single un-retried read that has to land inside the assertion timeout. Waiting for a document
-    // the filter excluded proves the unfiltered page has arrived before the test moves on.
-    await search.fill('');
-    await expect(
-      window.locator('.knowledge-management-row', { hasText: CONTINUOUS_READER_TITLE }),
-    ).toBeVisible();
-    await expect(
-      paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }),
-    ).toBeVisible();
-    await paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }).click();
-    const secondReplacementRow = window.locator('.knowledge-management-row--upload', {
-      hasText: 'Second replacement flow evidence.pdf',
-    });
-    const secondReplaceExisting = secondReplacementRow.getByRole('button', {
-      name: 'Replace existing',
-      exact: true,
-    });
-    await expect(secondReplaceExisting).toBeEnabled({ timeout: 30_000 });
-    await secondReplaceExisting.click();
-    await expect(secondReplacementRow).not.toBeVisible();
-    await expect
-      .poll(async () => {
-        const current = await pb
-          .collection('knowledge_documents')
-          .getOne<{ revision: number }>(originalDocument.id, { requestKey: null });
-        return current.revision;
-      })
-      .toBe(originalDocument.revision + 2);
-    const twiceReplacedDocument = await pb
-      .collection('knowledge_documents')
-      .getOne<typeof originalDocument>(originalDocument.id, { requestKey: null });
-    expect(twiceReplacedDocument).toMatchObject({
-      id: originalDocument.id,
-      sourceKey: originalDocument.sourceKey,
-      category: originalDocument.category,
-      categoryId: originalDocument.categoryId,
-      documentType: originalDocument.documentType,
-      title: originalDocument.title,
-      displayTitle: originalDocument.displayTitle,
-      fileName: originalDocument.fileName,
-      publishedByAccountId: originalDocument.publishedByAccountId,
-      publishedByName: originalDocument.publishedByName,
-      publishedAt: originalDocument.publishedAt,
-      revision: originalDocument.revision + 2,
-    });
-    expect(twiceReplacedDocument.checksum).toBe(
-      crypto.createHash('sha256').update(secondReplacementBytes).digest('hex'),
-    );
-    await expect(
-      pb.collection('knowledge_documents').getFullList({
-        filter: 'fileName = "Second replacement flow evidence.pdf"',
-        requestKey: null,
-      }),
-    ).resolves.toHaveLength(0);
-
-    const discardPath = path.join(fixtureDir, originalDocument.fileName);
-    fs.writeFileSync(
-      discardPath,
-      buildKnowledgePdfFixture({ title: 'Discard flow evidence', pageCount: 1 }),
-      { mode: 0o600 },
-    );
-    await installServerKnowledgeDialogFixture([discardPath]);
-    await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
-    const discardRow = window.locator('.knowledge-management-row--upload', {
-      hasText: originalDocument.fileName,
-    });
-    await expect(
-      discardRow.getByRole('button', { name: 'Replace existing', exact: true }),
-    ).toBeEnabled({ timeout: 30_000 });
-    await discardRow.getByRole('button', { name: `Discard ${originalDocument.fileName}` }).click();
-    await discardRow
-      .getByRole('button', { name: `Confirm discard ${originalDocument.fileName}` })
-      .click();
-    await expect(discardRow).not.toBeVisible();
-
-    const publishPath = path.join(fixtureDir, 'Operational publish evidence.pdf');
-    fs.writeFileSync(
-      publishPath,
-      buildKnowledgePdfFixture({ title: 'Operational publish evidence', pageCount: 1 }),
-      { mode: 0o600 },
-    );
-    await installServerKnowledgeDialogFixture([publishPath]);
-    await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
-    const publishRow = window.locator('.knowledge-management-row--upload', {
-      hasText: 'Operational publish evidence.pdf',
-    });
-    const publish = publishRow.getByRole('button', { name: 'Publish', exact: true });
-    await expect(publish).toBeEnabled({ timeout: 30_000 });
-    await publish.click();
-    await expect(publishRow).not.toBeVisible();
-    // The queue clearing only proves the upload reached "published"; confirm the publish actually
-    // produced the live document the closing assertion looks for.
-    await expect(
-      pb.collection('knowledge_documents').getFullList({
-        filter: 'fileName = "Operational publish evidence.pdf"',
-        requestKey: null,
-      }),
-    ).resolves.toHaveLength(1);
-
-    const largeUploadPath = path.join(fixtureDir, 'Operational upload controls.pdf');
-    writePaddedKnowledgePdfFixture(
-      largeUploadPath,
-      'Operational upload controls',
-      20 * 1024 * 1024 - 8_192,
-    );
-    await installServerKnowledgeDialogFixture([largeUploadPath]);
-    await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
-    await expect(window.getByRole('heading', { name: 'Upload queue', exact: true })).toBeVisible();
-    await expect(window.getByLabel('Batch upload progress')).toBeVisible();
-    const pauseAll = window.getByRole('button', { name: 'Pause all', exact: true });
-    await expect(pauseAll).toBeVisible();
-    await pauseAll.click();
-    const resumeAll = window.getByRole('button', { name: 'Resume all', exact: true });
-    await expect(resumeAll).toBeVisible();
-    await resumeAll.click();
-    await expect(window.getByRole('button', { name: 'Pause all', exact: true })).toBeVisible();
-    const cancelUpload = window.getByRole('button', {
-      name: 'Cancel Operational upload controls.pdf',
-      exact: true,
-    });
-    await expect(cancelUpload).toHaveClass(/knowledge-management__danger-outline/);
-    await cancelUpload.click();
-    await expect(cancelUpload).not.toBeVisible();
-
-    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
-    await search.fill('Operational publish evidence');
-    await expect(
-      window.locator('.knowledge-management-row', { hasText: 'Operational publish evidence' }),
-    ).toBeVisible();
-  });
-
-  test('Knowledge management trash workflow restores and permanently deletes live documents', async () => {
-    const { rail, search } = await openOwnerKnowledgeManagement();
-    const pb = await makeSuperuserPbClient(pbPort);
-    const documentToDelete = await pb
-      .collection('knowledge_documents')
-      .getFirstListItem<{ id: string }>('fileName = "Payment API Degradation Guide.pdf"', {
-        requestKey: null,
+    test('fixture configuration remains stable when this test title changes', async () => {
+      if (!electronApp) throw new Error('Server Electron app not launched');
+      const launchProfile = await electronApp.evaluate(() => ({
+        knowledgeChunkDelayMs: process.env.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS ?? null,
+        startupDelayMs: process.env.RELAY_E2E_STARTUP_DELAY_MS ?? null,
+      }));
+      expect(launchProfile).toEqual({
+        knowledgeChunkDelayMs: '150',
+        startupDelayMs: '1000',
       });
 
-    await search.fill('Checkout Service Incident Runbook');
-    const restoreSource = window.locator('.knowledge-management-row', {
-      hasText: 'Checkout Service Incident Runbook',
+      const documents = await (
+        await makeSuperuserPbClient(pbPort)
+      )
+        .collection('knowledge_documents')
+        .getFullList<{ title: string }>({ requestKey: null });
+      expect(documents.map(({ title }) => title)).toContain(CONTINUOUS_READER_TITLE);
     });
-    await restoreSource.getByRole('button', { name: 'Trash', exact: true }).click();
-    await rail.getByRole('button', { name: /^Trash 1$/ }).click();
-    const restoreRow = window.locator('.knowledge-management-row', {
-      hasText: 'Checkout Service Incident Runbook',
-    });
-    const initialRestoreDelete = restoreRow.getByRole('button', {
-      name: 'Delete permanently',
-      exact: true,
-    });
-    await expect(initialRestoreDelete).toHaveClass(/knowledge-management__danger-outline/);
-    await restoreRow.getByRole('button', { name: 'Restore', exact: true }).click();
-    await expect(restoreRow).not.toBeVisible();
-
-    await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
-    await search.fill('Payment API Degradation');
-    const deleteSource = window.locator('.knowledge-management-row', {
-      hasText: 'Payment API Degradation Guide',
-    });
-    await deleteSource.getByRole('button', { name: 'Trash', exact: true }).click();
-    await rail.getByRole('button', { name: /^Trash 1$/ }).click();
-    const permanentRow = window.locator('.knowledge-management-row', {
-      hasText: 'Payment API Degradation Guide',
-    });
-    const initialDelete = permanentRow.getByRole('button', {
-      name: 'Delete permanently',
-      exact: true,
-    });
-    await expect(initialDelete).toHaveClass(/knowledge-management__danger-outline/);
-    await initialDelete.click();
-    await permanentRow.getByLabel('Confirm your password').fill(PRIVILEGED_TEST_PASSWORD);
-    const confirmedDelete = permanentRow.getByRole('button', {
-      name: 'Delete permanently',
-      exact: true,
-    });
-    await expect(confirmedDelete).toHaveClass(/tactile-button--danger/);
-    await expect(confirmedDelete).not.toHaveClass(/knowledge-management__danger-outline/);
-    await confirmedDelete.click();
-    await expect
-      .poll(async () => {
-        try {
-          await pb.collection('knowledge_documents').getOne(documentToDelete.id, {
-            requestKey: null,
-          });
-          return true;
-        } catch (error) {
-          if ((error as { status?: unknown }).status === 404) return false;
-          throw error;
-        }
-      })
-      .toBe(false);
-    await expect(permanentRow).not.toBeVisible();
-    await expect(rail.getByRole('button', { name: /^Trash 0$/ })).toBeVisible();
   });
 
-  test('Knowledge management keeps retained audit records out of the retired navigation', async () => {
-    await seedKnowledgeAuditFixtures(27);
-    const { content, rail } = await openOwnerKnowledgeManagement();
+  test.describe('delayed startup fixture profile', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.delayedStartup });
+    test('startup shell appears before workspace readiness and healthy relaunch skips credential repair', async () => {
+      expect(startupShellWasVisible).toBe(true);
+      const logPath = path.join(tempDataDir, 'logs', 'relay.log');
+      const countMatches = (pattern: RegExp) => {
+        try {
+          return fs.readFileSync(logPath, 'utf8').match(pattern)?.length ?? 0;
+        } catch {
+          return 0;
+        }
+      };
 
-    const sectionNames = await rail.getByRole('button').evaluateAll((buttons) =>
-      buttons.map((button) => {
-        const label = button.getAttribute('aria-label');
-        return label?.slice(0, label.lastIndexOf(' '));
-      }),
-    );
-    expect(sectionNames).toEqual(['Documents', 'Categories', 'Uploads', 'Trash']);
-    await expect(rail.getByRole('button', { name: /^Audit \d+$/ })).toHaveCount(0);
-    await expect(content.locator('.knowledge-audit-row')).toHaveCount(0);
+      await expect.poll(() => countMatches(/Superuser upserted via CLI/g)).toBeGreaterThan(0);
+      const credentialRepairCount = countMatches(/Superuser upserted via CLI/g);
+      const startupSummaryCount = countMatches(/Relay startup timing/g);
+
+      await electronApp?.close();
+      electronApp = null;
+      await launchServer();
+
+      await expect
+        .poll(() => countMatches(/Relay startup timing/g))
+        .toBeGreaterThan(startupSummaryCount);
+      expect(countMatches(/Superuser upserted via CLI/g)).toBe(credentialRepairCount);
+    });
+  });
+
+  test.describe('seeded Knowledge management fixture profile', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.seededKnowledge });
+    test('Knowledge management responsive geometry preserves navigation and bottom gutters', async () => {
+      const { rail, root, search, workspace } = await openOwnerKnowledgeManagement();
+
+      const expectBottomGutter = async (expected: number) => {
+        await expect(root).toHaveCSS('padding-bottom', `${expected}px`);
+        await expect
+          .poll(async () => {
+            const [rootBox, workspaceBox] = await Promise.all([
+              root.boundingBox(),
+              workspace.boundingBox(),
+            ]);
+            if (!rootBox || !workspaceBox) return null;
+            return Math.round(rootBox.y + rootBox.height - workspaceBox.y - workspaceBox.height);
+          })
+          .toBe(expected);
+      };
+
+      await setServerWindowWidth(1600);
+      await expect(workspace).toBeVisible();
+      expect(
+        await workspace.evaluate((element) => {
+          const style = globalThis.getComputedStyle(element);
+          return {
+            border: style.borderTopWidth,
+            columns: style.gridTemplateColumns,
+            shadow: style.boxShadow,
+          };
+        }),
+      ).toEqual({ border: '1px', columns: expect.stringMatching(/^190px /), shadow: 'none' });
+      await expectBottomGutter(24);
+
+      await setServerWindowWidth(1100);
+      await expectBottomGutter(24);
+      await expect
+        .poll(() => rail.evaluate((element) => globalThis.getComputedStyle(element).flexDirection))
+        .toBe('row');
+
+      await setServerWindowWidth(800);
+      await expectBottomGutter(12);
+      const toolbar = window.locator('.knowledge-management__toolbar');
+      await expect
+        .poll(() => toolbar.evaluate((element) => globalThis.getComputedStyle(element).position))
+        .toBe('static');
+      expect(
+        await toolbar.evaluate((element) => globalThis.getComputedStyle(element).backgroundColor),
+      ).not.toBe('rgba(0, 0, 0, 0)');
+
+      await setServerWindowWidth(540);
+      await expectBottomGutter(12);
+      const railButtons = rail.getByRole('button');
+      await expect(railButtons).toHaveCount(4);
+      for (const section of ['Documents', 'Categories', 'Uploads', 'Trash']) {
+        const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
+        await expect(button.locator('span')).toHaveText(section.toLowerCase());
+        expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+        expect(
+          await button.evaluate((element) => {
+            const buttonRect = element.getBoundingClientRect();
+            const children = [...element.querySelectorAll('span, strong')];
+            return children.every((child) => {
+              const childRect = child.getBoundingClientRect();
+              return (
+                childRect.left >= buttonRect.left &&
+                childRect.right <= buttonRect.right &&
+                child.scrollWidth <= child.clientWidth
+              );
+            });
+          }),
+        ).toBe(true);
+      }
+      await expect
+        .poll(() => rail.evaluate((element) => element.scrollWidth > element.clientWidth))
+        .toBe(true);
+      await rail.evaluate((element) => {
+        element.scrollLeft = element.scrollWidth;
+      });
+      await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
+      await search.fill('Payment API Degradation');
+      const narrowRow = window.locator('.knowledge-management-row', {
+        hasText: 'Payment API Degradation Guide',
+      });
+      for (const action of ['Edit', 'Replace PDF', 'Trash']) {
+        await expect(narrowRow.getByRole('button', { name: action, exact: true })).toBeVisible();
+      }
+    });
+
+    test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
+      await seedKnowledgePaginationFixtures(107);
+      const { content, rail, search } = await openOwnerKnowledgeManagement();
+
+      const documentsScrollTop = await content.evaluate((element) => {
+        element.scrollTop = 180;
+        return element.scrollTop;
+      });
+      expect(documentsScrollTop).toBeGreaterThan(0);
+
+      await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
+      await expect(content).toHaveAttribute('aria-label', 'Categories management section');
+      await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBe(0);
+      const newCategory = window.getByLabel('New category name');
+      await expect(newCategory).toHaveClass(/tactile-input/);
+      expect(
+        await newCategory.evaluate((element) => {
+          const style = globalThis.getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            borderRadius: style.borderRadius,
+            borderWidth: style.borderTopWidth,
+            height: style.height,
+          };
+        }),
+      ).toEqual({
+        background: 'rgba(0, 0, 0, 0)',
+        borderRadius: '2px',
+        borderWidth: '1px',
+        height: '44px',
+      });
+
+      await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+      await expect(content).toHaveAttribute('aria-label', 'Documents management section');
+      await expect
+        .poll(() => content.evaluate((element) => element.scrollTop))
+        .toBe(documentsScrollTop);
+
+      const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
+      await expect(loadMore).toBeVisible();
+      const initialRows = await content.locator('.knowledge-management-row').count();
+      await loadMore.click();
+      await expect
+        .poll(() => content.locator('.knowledge-management-row').count())
+        .toBeGreaterThan(initialRows);
+
+      await search.fill('Payment API Degradation');
+      const paymentRow = window.locator('.knowledge-management-row', {
+        hasText: 'Payment API Degradation Guide',
+      });
+      await expect(paymentRow).toHaveCount(1);
+      for (const action of ['Edit', 'Replace PDF', 'Trash']) {
+        await expect(paymentRow.getByRole('button', { name: action, exact: true })).toBeVisible();
+      }
+      await search.fill('');
+
+      await rail.getByRole('button', { name: /^Categories \d+$/ }).click();
+      await window.getByLabel('Category name Reader validation').fill('Reader operations');
+      await window.getByRole('button', { name: 'Save Reader validation' }).click();
+      await expect(window.getByLabel('Category name Reader operations')).toHaveValue(
+        'Reader operations',
+      );
+      await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+      await expect(
+        window.locator('.knowledge-management-row', { hasText: CONTINUOUS_READER_TITLE }),
+      ).toContainText('Reader operations');
+
+      await search.fill('Payment API Degradation');
+      await paymentRow.getByRole('button', { name: 'Edit', exact: true }).click();
+      await paymentRow.getByLabel('Display title').fill('Payment API Degradation Guide Revised');
+      await paymentRow.getByRole('button', { name: 'Save changes', exact: true }).click();
+      await expect(
+        paymentRow.getByRole('heading', {
+          name: 'Payment API Degradation Guide Revised',
+          exact: true,
+        }),
+      ).toBeVisible();
+    });
+
+    test.describe('delayed Knowledge upload fixture profile', () => {
+      test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.delayedKnowledgeUpload });
+      test('Knowledge management upload workflow preserves transfer publish and replace controls', async () => {
+        test.setTimeout(120_000);
+        const { rail, search } = await openOwnerKnowledgeManagement();
+        const fixtureDir = path.join(tempDataDir, 'knowledge-management-uploads');
+        fs.mkdirSync(fixtureDir, { recursive: true });
+
+        await search.fill('Payment API Degradation');
+        const paymentRow = window.locator('.knowledge-management-row', {
+          hasText: 'Payment API Degradation Guide',
+        });
+        const pb = await makeSuperuserPbClient(pbPort);
+        const originalDocument = await pb.collection('knowledge_documents').getFirstListItem<{
+          id: string;
+          sourceKey: string;
+          category: string;
+          categoryId: string;
+          documentType: string;
+          title: string;
+          displayTitle: string;
+          fileName: string;
+          checksum: string;
+          revision: number;
+          publishedByAccountId: string;
+          publishedByName: string;
+          publishedAt: string;
+        }>('fileName = "Payment API Degradation Guide.pdf"', { requestKey: null });
+        const replacementPath = path.join(fixtureDir, 'Replacement flow evidence.pdf');
+        const replacementBytes = buildKnowledgePdfFixture({
+          title: 'Replacement flow evidence',
+          pageCount: 1,
+        });
+        fs.writeFileSync(replacementPath, replacementBytes, { mode: 0o600 });
+        await installServerKnowledgeDialogFixture([replacementPath]);
+        await paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }).click();
+        const replacementRow = window.locator('.knowledge-management-row--upload', {
+          hasText: 'Replacement flow evidence.pdf',
+        });
+        const replaceExisting = replacementRow.getByRole('button', {
+          name: 'Replace existing',
+          exact: true,
+        });
+        await expect(replaceExisting).toBeEnabled({ timeout: 30_000 });
+        await replaceExisting.click();
+        await expect(replacementRow).not.toBeVisible();
+        await expect
+          .poll(async () => {
+            const current = await pb
+              .collection('knowledge_documents')
+              .getOne<{ revision: number }>(originalDocument.id, { requestKey: null });
+            return current.revision;
+          })
+          .toBe(originalDocument.revision + 1);
+        const replacedDocument = await pb
+          .collection('knowledge_documents')
+          .getOne<typeof originalDocument>(originalDocument.id, { requestKey: null });
+        expect(replacedDocument).toMatchObject({
+          id: originalDocument.id,
+          sourceKey: originalDocument.sourceKey,
+          category: originalDocument.category,
+          categoryId: originalDocument.categoryId,
+          documentType: originalDocument.documentType,
+          title: originalDocument.title,
+          displayTitle: originalDocument.displayTitle,
+          fileName: originalDocument.fileName,
+          publishedByAccountId: originalDocument.publishedByAccountId,
+          publishedByName: originalDocument.publishedByName,
+          publishedAt: originalDocument.publishedAt,
+          revision: originalDocument.revision + 1,
+        });
+        expect(replacedDocument.checksum).toBe(
+          crypto.createHash('sha256').update(replacementBytes).digest('hex'),
+        );
+        expect(replacedDocument.checksum).not.toBe(originalDocument.checksum);
+        await expect(
+          pb.collection('knowledge_documents').getFullList({
+            filter: 'fileName = "Replacement flow evidence.pdf"',
+            requestKey: null,
+          }),
+        ).resolves.toHaveLength(0);
+
+        const secondReplacementPath = path.join(fixtureDir, 'Second replacement flow evidence.pdf');
+        const secondReplacementBytes = buildKnowledgePdfFixture({
+          title: 'Second replacement flow evidence',
+          pageCount: 2,
+        });
+        fs.writeFileSync(secondReplacementPath, secondReplacementBytes, { mode: 0o600 });
+        await installServerKnowledgeDialogFixture([secondReplacementPath]);
+        await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+        // Release the filter as soon as this test stops needing it. The workspace only re-reads
+        // documents from the server when the debounced query changes, so leaving "Payment API
+        // Degradation" applied narrows every later snapshot to that one document — including the ones
+        // taken after a publish — and the document published below would then exist only behind a
+        // single un-retried read that has to land inside the assertion timeout. Waiting for a document
+        // the filter excluded proves the unfiltered page has arrived before the test moves on.
+        await search.fill('');
+        await expect(
+          window.locator('.knowledge-management-row', { hasText: CONTINUOUS_READER_TITLE }),
+        ).toBeVisible();
+        await expect(
+          paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }),
+        ).toBeVisible();
+        await paymentRow.getByRole('button', { name: 'Replace PDF', exact: true }).click();
+        const secondReplacementRow = window.locator('.knowledge-management-row--upload', {
+          hasText: 'Second replacement flow evidence.pdf',
+        });
+        const secondReplaceExisting = secondReplacementRow.getByRole('button', {
+          name: 'Replace existing',
+          exact: true,
+        });
+        await expect(secondReplaceExisting).toBeEnabled({ timeout: 30_000 });
+        await secondReplaceExisting.click();
+        await expect(secondReplacementRow).not.toBeVisible();
+        await expect
+          .poll(async () => {
+            const current = await pb
+              .collection('knowledge_documents')
+              .getOne<{ revision: number }>(originalDocument.id, { requestKey: null });
+            return current.revision;
+          })
+          .toBe(originalDocument.revision + 2);
+        const twiceReplacedDocument = await pb
+          .collection('knowledge_documents')
+          .getOne<typeof originalDocument>(originalDocument.id, { requestKey: null });
+        expect(twiceReplacedDocument).toMatchObject({
+          id: originalDocument.id,
+          sourceKey: originalDocument.sourceKey,
+          category: originalDocument.category,
+          categoryId: originalDocument.categoryId,
+          documentType: originalDocument.documentType,
+          title: originalDocument.title,
+          displayTitle: originalDocument.displayTitle,
+          fileName: originalDocument.fileName,
+          publishedByAccountId: originalDocument.publishedByAccountId,
+          publishedByName: originalDocument.publishedByName,
+          publishedAt: originalDocument.publishedAt,
+          revision: originalDocument.revision + 2,
+        });
+        expect(twiceReplacedDocument.checksum).toBe(
+          crypto.createHash('sha256').update(secondReplacementBytes).digest('hex'),
+        );
+        await expect(
+          pb.collection('knowledge_documents').getFullList({
+            filter: 'fileName = "Second replacement flow evidence.pdf"',
+            requestKey: null,
+          }),
+        ).resolves.toHaveLength(0);
+
+        const discardPath = path.join(fixtureDir, originalDocument.fileName);
+        fs.writeFileSync(
+          discardPath,
+          buildKnowledgePdfFixture({ title: 'Discard flow evidence', pageCount: 1 }),
+          { mode: 0o600 },
+        );
+        await installServerKnowledgeDialogFixture([discardPath]);
+        await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+        const discardRow = window.locator('.knowledge-management-row--upload', {
+          hasText: originalDocument.fileName,
+        });
+        await expect(
+          discardRow.getByRole('button', { name: 'Replace existing', exact: true }),
+        ).toBeEnabled({ timeout: 30_000 });
+        await discardRow
+          .getByRole('button', { name: `Discard ${originalDocument.fileName}` })
+          .click();
+        await discardRow
+          .getByRole('button', { name: `Confirm discard ${originalDocument.fileName}` })
+          .click();
+        await expect(discardRow).not.toBeVisible();
+
+        const publishPath = path.join(fixtureDir, 'Operational publish evidence.pdf');
+        fs.writeFileSync(
+          publishPath,
+          buildKnowledgePdfFixture({ title: 'Operational publish evidence', pageCount: 1 }),
+          { mode: 0o600 },
+        );
+        await installServerKnowledgeDialogFixture([publishPath]);
+        await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+        const publishRow = window.locator('.knowledge-management-row--upload', {
+          hasText: 'Operational publish evidence.pdf',
+        });
+        const publish = publishRow.getByRole('button', { name: 'Publish', exact: true });
+        await expect(publish).toBeEnabled({ timeout: 30_000 });
+        await publish.click();
+        await expect(publishRow).not.toBeVisible();
+        // The queue clearing only proves the upload reached "published"; confirm the publish actually
+        // produced the live document the closing assertion looks for.
+        await expect(
+          pb.collection('knowledge_documents').getFullList({
+            filter: 'fileName = "Operational publish evidence.pdf"',
+            requestKey: null,
+          }),
+        ).resolves.toHaveLength(1);
+
+        const largeUploadPath = path.join(fixtureDir, 'Operational upload controls.pdf');
+        writePaddedKnowledgePdfFixture(
+          largeUploadPath,
+          'Operational upload controls',
+          20 * 1024 * 1024 - 8_192,
+        );
+        await installServerKnowledgeDialogFixture([largeUploadPath]);
+        await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+        await expect(
+          window.getByRole('heading', { name: 'Upload queue', exact: true }),
+        ).toBeVisible();
+        await expect(window.getByLabel('Batch upload progress')).toBeVisible();
+        const pauseAll = window.getByRole('button', { name: 'Pause all', exact: true });
+        await expect(pauseAll).toBeVisible();
+        await pauseAll.click();
+        const resumeAll = window.getByRole('button', { name: 'Resume all', exact: true });
+        await expect(resumeAll).toBeVisible();
+        await resumeAll.click();
+        await expect(window.getByRole('button', { name: 'Pause all', exact: true })).toBeVisible();
+        const cancelUpload = window.getByRole('button', {
+          name: 'Cancel Operational upload controls.pdf',
+          exact: true,
+        });
+        await expect(cancelUpload).toHaveClass(/knowledge-management__danger-outline/);
+        await cancelUpload.click();
+        await expect(cancelUpload).not.toBeVisible();
+
+        await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+        await search.fill('Operational publish evidence');
+        await expect(
+          window.locator('.knowledge-management-row', { hasText: 'Operational publish evidence' }),
+        ).toBeVisible();
+      });
+    });
+
+    test('Knowledge management trash workflow restores and permanently deletes live documents', async () => {
+      const { rail, search } = await openOwnerKnowledgeManagement();
+      const pb = await makeSuperuserPbClient(pbPort);
+      const documentToDelete = await pb
+        .collection('knowledge_documents')
+        .getFirstListItem<{ id: string }>('fileName = "Payment API Degradation Guide.pdf"', {
+          requestKey: null,
+        });
+
+      await search.fill('Checkout Service Incident Runbook');
+      const restoreSource = window.locator('.knowledge-management-row', {
+        hasText: 'Checkout Service Incident Runbook',
+      });
+      await restoreSource.getByRole('button', { name: 'Trash', exact: true }).click();
+      await rail.getByRole('button', { name: /^Trash 1$/ }).click();
+      const restoreRow = window.locator('.knowledge-management-row', {
+        hasText: 'Checkout Service Incident Runbook',
+      });
+      const initialRestoreDelete = restoreRow.getByRole('button', {
+        name: 'Delete permanently',
+        exact: true,
+      });
+      await expect(initialRestoreDelete).toHaveClass(/knowledge-management__danger-outline/);
+      await restoreRow.getByRole('button', { name: 'Restore', exact: true }).click();
+      await expect(restoreRow).not.toBeVisible();
+
+      await rail.getByRole('button', { name: /^Documents \d+$/ }).click();
+      await search.fill('Payment API Degradation');
+      const deleteSource = window.locator('.knowledge-management-row', {
+        hasText: 'Payment API Degradation Guide',
+      });
+      await deleteSource.getByRole('button', { name: 'Trash', exact: true }).click();
+      await rail.getByRole('button', { name: /^Trash 1$/ }).click();
+      const permanentRow = window.locator('.knowledge-management-row', {
+        hasText: 'Payment API Degradation Guide',
+      });
+      const initialDelete = permanentRow.getByRole('button', {
+        name: 'Delete permanently',
+        exact: true,
+      });
+      await expect(initialDelete).toHaveClass(/knowledge-management__danger-outline/);
+      await initialDelete.click();
+      await permanentRow.getByLabel('Confirm your password').fill(PRIVILEGED_TEST_PASSWORD);
+      const confirmedDelete = permanentRow.getByRole('button', {
+        name: 'Delete permanently',
+        exact: true,
+      });
+      await expect(confirmedDelete).toHaveClass(/tactile-button--danger/);
+      await expect(confirmedDelete).not.toHaveClass(/knowledge-management__danger-outline/);
+      await confirmedDelete.click();
+      await expect
+        .poll(async () => {
+          try {
+            await pb.collection('knowledge_documents').getOne(documentToDelete.id, {
+              requestKey: null,
+            });
+            return true;
+          } catch (error) {
+            if ((error as { status?: unknown }).status === 404) return false;
+            throw error;
+          }
+        })
+        .toBe(false);
+      await expect(permanentRow).not.toBeVisible();
+      await expect(rail.getByRole('button', { name: /^Trash 0$/ })).toBeVisible();
+    });
+
+    test('Knowledge management keeps retained audit records out of the retired navigation', async () => {
+      await seedKnowledgeAuditFixtures(27);
+      const { content, rail } = await openOwnerKnowledgeManagement();
+
+      const sectionNames = await rail.getByRole('button').evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const label = button.getAttribute('aria-label');
+          return label?.slice(0, label.lastIndexOf(' '));
+        }),
+      );
+      expect(sectionNames).toEqual(['Documents', 'Categories', 'Uploads', 'Trash']);
+      await expect(rail.getByRole('button', { name: /^Audit \d+$/ })).toHaveCount(0);
+      await expect(content.locator('.knowledge-audit-row')).toHaveCount(0);
+    });
   });
 
   test('Vital 1: App Launch & Compose Tab', async () => {
@@ -1597,336 +1639,341 @@ test.describe('Vital Critical Path', () => {
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Knowledge');
   });
 
-  test('continuous Wiki PDF scrolls, tracks pages, bounds canvases, and retains reader state', async () => {
-    test.setTimeout(120_000);
-    const connectedClient = await launchConnectedClient();
-    const consoleErrors: string[] = [];
-    const pageErrors: string[] = [];
-    connectedClient.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text());
+  test.describe('seeded Knowledge reader fixture profile', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.seededKnowledge });
+    test('continuous Wiki PDF scrolls, tracks pages, bounds canvases, and retains reader state', async () => {
+      test.setTimeout(120_000);
+      const connectedClient = await launchConnectedClient();
+      const consoleErrors: string[] = [];
+      const pageErrors: string[] = [];
+      connectedClient.on('console', (message) => {
+        if (message.type() === 'error') consoleErrors.push(message.text());
+      });
+      connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      const viewer = await openKnowledgeReaderDocument(
+        connectedClient,
+        'Reader validation',
+        CONTINUOUS_READER_TITLE,
+      );
+      await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+      const continuousMode = viewer.getByRole('button', { name: 'View options: Continuous' });
+      await expect(continuousMode).toHaveAttribute('aria-expanded', 'false');
+
+      const viewport = viewer.getByRole('region', { name: 'Continuous PDF pages' });
+      const pageShells = viewport.locator('.knowledge-page-shell');
+      await expect(pageShells).toHaveCount(CONTINUOUS_READER_PAGE_COUNT);
+      await expect
+        .poll(() => viewport.evaluate((element) => element.scrollHeight > element.clientHeight))
+        .toBe(true);
+      await expect.poll(() => viewport.locator('canvas').count()).toBeGreaterThan(0);
+      expect(await viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
+
+      const targetPageIndex = 7;
+      await viewport.evaluate((element, pageIndex) => {
+        const shell = element.querySelector(`[data-page-index="${pageIndex}"]`);
+        if (!shell) throw new Error(`Missing page shell ${pageIndex}`);
+        element.scrollTop +=
+          shell.getBoundingClientRect().top - element.getBoundingClientRect().top;
+      }, targetPageIndex);
+      await expect(viewer).toContainText(
+        `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
+      );
+      await expect.poll(() => viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
+
+      await continuousMode.click();
+      await viewer
+        .getByRole('dialog', { name: 'View options' })
+        .getByRole('button', { name: 'Single page' })
+        .click();
+      const singleMode = viewer.getByRole('button', { name: 'View options: Single page' });
+      await expect(singleMode).toHaveAttribute('aria-expanded', 'false');
+      await expect(viewer).toContainText(
+        `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
+      );
+
+      const destinationNavigation = connectedClient.getByRole('navigation', {
+        name: 'Knowledge destinations',
+      });
+      await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
+      await expect(
+        connectedClient.getByRole('region', { name: 'contacts workspace' }),
+      ).toBeVisible();
+      await destinationNavigation.getByRole('button', { name: 'Wiki', exact: true }).click();
+      await expect(singleMode).toBeVisible();
+      await expect(viewer).toContainText(
+        `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
+      );
+      await singleMode.click();
+      await viewer
+        .getByRole('dialog', { name: 'View options' })
+        .getByRole('button', { name: 'Continuous scrolling' })
+        .click();
+      await expect(
+        viewer.getByRole('button', { name: 'View options: Continuous' }),
+      ).toHaveAttribute('aria-expanded', 'false');
+      await expect(viewer.getByRole('region', { name: 'Continuous PDF pages' })).toBeVisible();
+
+      expect(consoleErrors, `Renderer console errors:\n${consoleErrors.join('\n')}`).toEqual([]);
+      expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
     });
-    connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    const viewer = await openKnowledgeReaderDocument(
-      connectedClient,
-      'Reader validation',
-      CONTINUOUS_READER_TITLE,
-    );
-    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
-    const continuousMode = viewer.getByRole('button', { name: 'View options: Continuous' });
-    await expect(continuousMode).toHaveAttribute('aria-expanded', 'false');
 
-    const viewport = viewer.getByRole('region', { name: 'Continuous PDF pages' });
-    const pageShells = viewport.locator('.knowledge-page-shell');
-    await expect(pageShells).toHaveCount(CONTINUOUS_READER_PAGE_COUNT);
-    await expect
-      .poll(() => viewport.evaluate((element) => element.scrollHeight > element.clientHeight))
-      .toBe(true);
-    await expect.poll(() => viewport.locator('canvas').count()).toBeGreaterThan(0);
-    expect(await viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
+    test('Knowledge PDF links survive repeated top-level tab leave and return cycles', async () => {
+      test.setTimeout(120_000);
+      const connectedClient = await launchConnectedClient();
+      const lifecycleErrors: string[] = [];
+      const captureLifecycleError = (message: string) => {
+        if (/sendWithPromise|KnowledgePdfPage|Wiki unavailable/i.test(message)) {
+          lifecycleErrors.push(message);
+        }
+      };
+      connectedClient.on('console', (message) => {
+        if (message.type() === 'error') captureLifecycleError(message.text());
+      });
+      connectedClient.on('pageerror', (error) => captureLifecycleError(error.message));
 
-    const targetPageIndex = 7;
-    await viewport.evaluate((element, pageIndex) => {
-      const shell = element.querySelector(`[data-page-index="${pageIndex}"]`);
-      if (!shell) throw new Error(`Missing page shell ${pageIndex}`);
-      element.scrollTop += shell.getBoundingClientRect().top - element.getBoundingClientRect().top;
-    }, targetPageIndex);
-    await expect(viewer).toContainText(
-      `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
-    );
-    await expect.poll(() => viewport.locator('canvas').count()).toBeLessThanOrEqual(5);
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      const viewer = await openKnowledgeReaderDocument(
+        connectedClient,
+        'Reader validation',
+        CONTINUOUS_READER_TITLE,
+      );
+      const wikiWorkspace = connectedClient.getByRole('region', { name: 'wiki workspace' });
+      await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
 
-    await continuousMode.click();
-    await viewer
-      .getByRole('dialog', { name: 'View options' })
-      .getByRole('button', { name: 'Single page' })
-      .click();
-    const singleMode = viewer.getByRole('button', { name: 'View options: Single page' });
-    await expect(singleMode).toHaveAttribute('aria-expanded', 'false');
-    await expect(viewer).toContainText(
-      `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
-    );
+      for (let cycle = 0; cycle < 5; cycle += 1) {
+        await goToTab(connectedClient, 'sidebar-compose', 'Compose');
+        await expect(wikiWorkspace).toBeHidden();
 
-    const destinationNavigation = connectedClient.getByRole('navigation', {
-      name: 'Knowledge destinations',
-    });
-    await destinationNavigation.getByRole('button', { name: 'Contacts', exact: true }).click();
-    await expect(connectedClient.getByRole('region', { name: 'contacts workspace' })).toBeVisible();
-    await destinationNavigation.getByRole('button', { name: 'Wiki', exact: true }).click();
-    await expect(singleMode).toBeVisible();
-    await expect(viewer).toContainText(
-      `Page ${targetPageIndex + 1} of ${CONTINUOUS_READER_PAGE_COUNT}`,
-    );
-    await singleMode.click();
-    await viewer
-      .getByRole('dialog', { name: 'View options' })
-      .getByRole('button', { name: 'Continuous scrolling' })
-      .click();
-    await expect(viewer.getByRole('button', { name: 'View options: Continuous' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    await expect(viewer.getByRole('region', { name: 'Continuous PDF pages' })).toBeVisible();
-
-    expect(consoleErrors, `Renderer console errors:\n${consoleErrors.join('\n')}`).toEqual([]);
-    expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
-  });
-
-  test('Knowledge PDF links survive repeated top-level tab leave and return cycles', async () => {
-    test.setTimeout(120_000);
-    const connectedClient = await launchConnectedClient();
-    const lifecycleErrors: string[] = [];
-    const captureLifecycleError = (message: string) => {
-      if (/sendWithPromise|KnowledgePdfPage|Wiki unavailable/i.test(message)) {
-        lifecycleErrors.push(message);
+        await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge');
+        await expect(wikiWorkspace).toBeVisible();
+        await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+        await expect(
+          connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
+        ).toHaveCount(0);
       }
-    };
-    connectedClient.on('console', (message) => {
-      if (message.type() === 'error') captureLifecycleError(message.text());
+
+      expect(lifecycleErrors).toEqual([]);
     });
-    connectedClient.on('pageerror', (error) => captureLifecycleError(error.message));
 
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    const viewer = await openKnowledgeReaderDocument(
-      connectedClient,
-      'Reader validation',
-      CONTINUOUS_READER_TITLE,
-    );
-    const wikiWorkspace = connectedClient.getByRole('region', { name: 'wiki workspace' });
-    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+    test('Knowledge PDF links use the compact Wiki Library drawer without losing reader state', async () => {
+      test.setTimeout(120_000);
+      const authenticatedDocuments = await (
+        await makePbClient(pbPort)
+      )
+        .collection('knowledge_documents')
+        .getFullList<{ title: string }>({ requestKey: null });
+      expect(authenticatedDocuments.map(({ title }) => title)).toContain(CONTINUOUS_READER_TITLE);
+      const connectedClient = await launchConnectedClient();
+      if (!clientElectronApp) throw new Error('Connected Electron app not launched');
+      await clientElectronApp.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(1200, 900);
+      });
+      await expect
+        .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
+        .toBeGreaterThan(900);
 
-    for (let cycle = 0; cycle < 5; cycle += 1) {
-      await goToTab(connectedClient, 'sidebar-compose', 'Compose');
-      await expect(wikiWorkspace).toBeHidden();
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      const viewer = await openKnowledgeReaderDocument(
+        connectedClient,
+        'Reader validation',
+        CONTINUOUS_READER_TITLE,
+      );
+      const workspace = connectedClient.getByRole('region', { name: 'Wiki reader workspace' });
+      const drawer = connectedClient.getByRole('complementary', { name: 'Wiki reader sidebar' });
+      const libraryToggle = connectedClient.getByRole('button', {
+        name: 'Wiki reader sidebar',
+        exact: true,
+      });
+      const desktopRestore = connectedClient.getByRole('button', {
+        name: 'Show Wiki reader sidebar',
+      });
+      const desktopCollapse = connectedClient.getByRole('button', {
+        name: 'Collapse Wiki reader sidebar',
+      });
+      await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
+      await expect(libraryToggle).toBeHidden();
+      await expect(desktopRestore).toBeHidden();
+      await expect(desktopCollapse).toBeVisible();
+      await expect(drawer).toBeVisible();
 
-      await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge');
-      await expect(wikiWorkspace).toBeVisible();
+      await expect(drawer).toBeVisible();
+      await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+      await desktopCollapse.click();
+      await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+      await expect(drawer).toBeHidden();
+      await expect(desktopRestore).toBeVisible();
+      await expect(desktopRestore).toBeFocused();
+      await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+      await clientElectronApp.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(900, 900);
+      });
+      await expect
+        .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
+        .toBeLessThanOrEqual(900);
+      await expect(desktopRestore).toBeHidden();
+      await expect(libraryToggle).toBeVisible();
+      await expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(drawer).toBeHidden();
+
+      await libraryToggle.click();
+      await expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+      await expect(drawer).toBeVisible();
+      await expect(connectedClient.getByRole('tab', { name: 'Contents' })).toBeFocused();
+      await connectedClient.getByRole('tab', { name: 'Library' }).click();
+      const readerCategory = connectedClient.getByRole('treeitem', {
+        name: 'Reader validation, 1 document',
+        exact: true,
+      });
+      if ((await readerCategory.getAttribute('aria-expanded')) === 'false') {
+        await readerCategory.click();
+      }
+      await connectedClient
+        .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
+        .click();
+      await expect(drawer).toBeHidden();
+      await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+
+      await libraryToggle.click();
+      await expect(drawer).toBeVisible();
+      await connectedClient.keyboard.press('Escape');
+      await expect(drawer).toBeHidden();
+      await expect(libraryToggle).toBeFocused();
+
+      await clientElectronApp.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(1200, 900);
+      });
+      await expect
+        .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
+        .toBeGreaterThan(900);
+      await expect(libraryToggle).toBeHidden();
+      await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+      await expect(desktopRestore).toBeVisible();
+      await expect(drawer).toBeHidden();
+      await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+      await desktopRestore.click();
+      await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
+      await expect(drawer).toBeVisible();
+      await expect(connectedClient.getByRole('tab', { name: 'Contents' })).toBeFocused();
       await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
       await expect(
         connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
       ).toHaveCount(0);
-    }
-
-    expect(lifecycleErrors).toEqual([]);
-  });
-
-  test('Knowledge PDF links use the compact Wiki Library drawer without losing reader state', async () => {
-    test.setTimeout(120_000);
-    const authenticatedDocuments = await (
-      await makePbClient(pbPort)
-    )
-      .collection('knowledge_documents')
-      .getFullList<{ title: string }>({ requestKey: null });
-    expect(authenticatedDocuments.map(({ title }) => title)).toContain(CONTINUOUS_READER_TITLE);
-    const connectedClient = await launchConnectedClient();
-    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
-    await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(1200, 900);
-    });
-    await expect
-      .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
-      .toBeGreaterThan(900);
-
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    const viewer = await openKnowledgeReaderDocument(
-      connectedClient,
-      'Reader validation',
-      CONTINUOUS_READER_TITLE,
-    );
-    const workspace = connectedClient.getByRole('region', { name: 'Wiki reader workspace' });
-    const drawer = connectedClient.getByRole('complementary', { name: 'Wiki reader sidebar' });
-    const libraryToggle = connectedClient.getByRole('button', {
-      name: 'Wiki reader sidebar',
-      exact: true,
-    });
-    const desktopRestore = connectedClient.getByRole('button', {
-      name: 'Show Wiki reader sidebar',
-    });
-    const desktopCollapse = connectedClient.getByRole('button', {
-      name: 'Collapse Wiki reader sidebar',
-    });
-    await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
-    await expect(libraryToggle).toBeHidden();
-    await expect(desktopRestore).toBeHidden();
-    await expect(desktopCollapse).toBeVisible();
-    await expect(drawer).toBeVisible();
-
-    await expect(drawer).toBeVisible();
-    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
-
-    await desktopCollapse.click();
-    await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
-    await expect(drawer).toBeHidden();
-    await expect(desktopRestore).toBeVisible();
-    await expect(desktopRestore).toBeFocused();
-    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
-
-    await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(900, 900);
-    });
-    await expect
-      .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
-      .toBeLessThanOrEqual(900);
-    await expect(desktopRestore).toBeHidden();
-    await expect(libraryToggle).toBeVisible();
-    await expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(drawer).toBeHidden();
-
-    await libraryToggle.click();
-    await expect(workspace).toHaveAttribute('data-library-drawer', 'open');
-    await expect(drawer).toBeVisible();
-    await expect(connectedClient.getByRole('tab', { name: 'Contents' })).toBeFocused();
-    await connectedClient.getByRole('tab', { name: 'Library' }).click();
-    const readerCategory = connectedClient.getByRole('treeitem', {
-      name: 'Reader validation, 1 document',
-      exact: true,
-    });
-    if ((await readerCategory.getAttribute('aria-expanded')) === 'false') {
-      await readerCategory.click();
-    }
-    await connectedClient
-      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
-      .click();
-    await expect(drawer).toBeHidden();
-    await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
-
-    await libraryToggle.click();
-    await expect(drawer).toBeVisible();
-    await connectedClient.keyboard.press('Escape');
-    await expect(drawer).toBeHidden();
-    await expect(libraryToggle).toBeFocused();
-
-    await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(1200, 900);
-    });
-    await expect
-      .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
-      .toBeGreaterThan(900);
-    await expect(libraryToggle).toBeHidden();
-    await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
-    await expect(desktopRestore).toBeVisible();
-    await expect(drawer).toBeHidden();
-    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
-
-    await desktopRestore.click();
-    await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
-    await expect(drawer).toBeVisible();
-    await expect(connectedClient.getByRole('tab', { name: 'Contents' })).toBeFocused();
-    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
-    await expect(
-      connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
-    ).toHaveCount(0);
-  });
-
-  test('role accounts preserve username sign-in, owner boundaries, passwordless use, and offline reading', async () => {
-    test.setTimeout(180_000);
-    await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);
-    await activateRoleAccountFixture(pbPort, 'charles', PRIVILEGED_TEST_PASSWORD);
-
-    let connectedClient = await launchConnectedClient();
-    let connectionStatus = connectedClient.locator('[data-connection-state]').first();
-
-    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
-    await goToTab(connectedClient, 'sidebar-compose', 'Compose');
-    await expect(connectedClient.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await expect(
-      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
-    ).toContainText('Page 1 of 2');
-
-    const serverAccess = await openPrivilegedAccess(window);
-    await serverAccess.getByLabel('Username').fill('ryan');
-    await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
-    await submitPrivilegedSignIn(serverAccess);
-    await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
-    await expect(serverAccess.getByText(RYAN_BLEDSOE, { exact: true })).toBeVisible();
-    await expect(serverAccess.getByText('@ryan', { exact: true })).toBeVisible();
-    await window.getByRole('tab', { name: 'Administration', exact: true }).click();
-    const ownerAdministration = window.getByRole('region', { name: 'Relay administration' });
-    await expect(ownerAdministration).toBeVisible();
-    const ownerRow = ownerAdministration.locator('.administration-row', {
-      hasText: RYAN_BLEDSOE,
-    });
-    await expect(ownerRow).toBeVisible();
-    const administratorRow = ownerAdministration.locator('.administration-row', {
-      hasText: CHARLES_GIBBS,
-    });
-    await expect(ownerRow).toContainText('@ryan');
-    await expect(ownerRow).toContainText('OWNER');
-    await expect(administratorRow).toContainText('@charles');
-    await expect(administratorRow).toContainText('ADMIN');
-    await expect(
-      ownerAdministration.getByRole('button', { name: 'Add Administrator' }),
-    ).toBeVisible();
-
-    await window.getByRole('tab', { name: 'Access', exact: true }).click();
-    await serverAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
-    await serverAccess.getByLabel('Username').fill('charles');
-    await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
-    await submitPrivilegedSignIn(serverAccess);
-    await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
-    await expect(serverAccess.getByText('Charles Gibbs', { exact: true })).toBeVisible();
-    await expect(serverAccess.getByText('@charles', { exact: true })).toBeVisible();
-
-    await window.getByRole('tab', { name: 'Administration', exact: true }).click();
-    const administratorWorkspace = window.getByRole('region', { name: 'Relay administration' });
-    await expect(administratorWorkspace).toBeVisible();
-    await expect(
-      administratorWorkspace.getByRole('button', { name: 'Add Administrator' }),
-    ).toHaveCount(0);
-    await expect(
-      administratorWorkspace.getByRole('button', { name: /Transfer ownership/ }),
-    ).toHaveCount(0);
-
-    await administratorWorkspace.getByRole('button', { name: 'Add Publisher' }).click();
-    await administratorWorkspace.getByLabel('Publisher username').fill('tristan');
-    await administratorWorkspace.getByLabel('Publisher display name').fill(TRISTAN_BOWLES);
-    await administratorWorkspace.getByRole('button', { name: 'Create Publisher' }).click();
-    await expect(administratorWorkspace.getByText(TRISTAN_BOWLES, { exact: true })).toBeVisible();
-    await expect(
-      administratorWorkspace.getByText('Publisher account created.', { exact: false }),
-    ).toBeVisible();
-    const publisherRow = administratorWorkspace.locator('.administration-row', {
-      hasText: TRISTAN_BOWLES,
-    });
-    await expect(publisherRow).toContainText('PUBLISHER');
-
-    const privilegedSnapshot = await readRoleAccountSnapshot(pbPort);
-    expect(privilegedSnapshot).toMatchObject({
-      ownerUsername: 'ryan',
-      ownerDisplayName: RYAN_BLEDSOE,
-      administratorUsername: 'charles',
-      administratorDisplayName: 'Charles Gibbs',
-      ownerCount: 1,
-      publisherCount: 1,
-      legacyRosterPresent: false,
     });
 
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await expect(
-      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
-    ).toContainText('Page 1 of 2');
+    test('role accounts preserve username sign-in, owner boundaries, passwordless use, and offline reading', async () => {
+      test.setTimeout(180_000);
+      await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);
+      await activateRoleAccountFixture(pbPort, 'charles', PRIVILEGED_TEST_PASSWORD);
 
-    await electronApp?.close();
-    electronApp = null;
-    await expect
-      .poll(async () =>
-        fetch(`http://127.0.0.1:${pbPort}/api/health`).then(
-          () => false,
-          () => true,
-        ),
-      )
-      .toBe(true);
-    await clientElectronApp?.close();
-    clientElectronApp = null;
-    clientWindow = null;
-    connectedClient = await launchClient();
-    connectionStatus = connectedClient.locator('[data-connection-state]').first();
-    await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    await expect(
-      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
-    ).toContainText('Page 1 of 2');
+      let connectedClient = await launchConnectedClient();
+      let connectionStatus = connectedClient.locator('[data-connection-state]').first();
+
+      await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
+      await goToTab(connectedClient, 'sidebar-compose', 'Compose');
+      await expect(connectedClient.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      await expect(
+        await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
+      ).toContainText('Page 1 of 2');
+
+      const serverAccess = await openPrivilegedAccess(window);
+      await serverAccess.getByLabel('Username').fill('ryan');
+      await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
+      await submitPrivilegedSignIn(serverAccess);
+      await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
+      await expect(serverAccess.getByText(RYAN_BLEDSOE, { exact: true })).toBeVisible();
+      await expect(serverAccess.getByText('@ryan', { exact: true })).toBeVisible();
+      await window.getByRole('tab', { name: 'Administration', exact: true }).click();
+      const ownerAdministration = window.getByRole('region', { name: 'Relay administration' });
+      await expect(ownerAdministration).toBeVisible();
+      const ownerRow = ownerAdministration.locator('.administration-row', {
+        hasText: RYAN_BLEDSOE,
+      });
+      await expect(ownerRow).toBeVisible();
+      const administratorRow = ownerAdministration.locator('.administration-row', {
+        hasText: CHARLES_GIBBS,
+      });
+      await expect(ownerRow).toContainText('@ryan');
+      await expect(ownerRow).toContainText('OWNER');
+      await expect(administratorRow).toContainText('@charles');
+      await expect(administratorRow).toContainText('ADMIN');
+      await expect(
+        ownerAdministration.getByRole('button', { name: 'Add Administrator' }),
+      ).toBeVisible();
+
+      await window.getByRole('tab', { name: 'Access', exact: true }).click();
+      await serverAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
+      await serverAccess.getByLabel('Username').fill('charles');
+      await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
+      await submitPrivilegedSignIn(serverAccess);
+      await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
+      await expect(serverAccess.getByText('Charles Gibbs', { exact: true })).toBeVisible();
+      await expect(serverAccess.getByText('@charles', { exact: true })).toBeVisible();
+
+      await window.getByRole('tab', { name: 'Administration', exact: true }).click();
+      const administratorWorkspace = window.getByRole('region', { name: 'Relay administration' });
+      await expect(administratorWorkspace).toBeVisible();
+      await expect(
+        administratorWorkspace.getByRole('button', { name: 'Add Administrator' }),
+      ).toHaveCount(0);
+      await expect(
+        administratorWorkspace.getByRole('button', { name: /Transfer ownership/ }),
+      ).toHaveCount(0);
+
+      await administratorWorkspace.getByRole('button', { name: 'Add Publisher' }).click();
+      await administratorWorkspace.getByLabel('Publisher username').fill('tristan');
+      await administratorWorkspace.getByLabel('Publisher display name').fill(TRISTAN_BOWLES);
+      await administratorWorkspace.getByRole('button', { name: 'Create Publisher' }).click();
+      await expect(administratorWorkspace.getByText(TRISTAN_BOWLES, { exact: true })).toBeVisible();
+      await expect(
+        administratorWorkspace.getByText('Publisher account created.', { exact: false }),
+      ).toBeVisible();
+      const publisherRow = administratorWorkspace.locator('.administration-row', {
+        hasText: TRISTAN_BOWLES,
+      });
+      await expect(publisherRow).toContainText('PUBLISHER');
+
+      const privilegedSnapshot = await readRoleAccountSnapshot(pbPort);
+      expect(privilegedSnapshot).toMatchObject({
+        ownerUsername: 'ryan',
+        ownerDisplayName: RYAN_BLEDSOE,
+        administratorUsername: 'charles',
+        administratorDisplayName: 'Charles Gibbs',
+        ownerCount: 1,
+        publisherCount: 1,
+        legacyRosterPresent: false,
+      });
+
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      await expect(
+        await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
+      ).toContainText('Page 1 of 2');
+
+      await electronApp?.close();
+      electronApp = null;
+      await expect
+        .poll(async () =>
+          fetch(`http://127.0.0.1:${pbPort}/api/health`).then(
+            () => false,
+            () => true,
+          ),
+        )
+        .toBe(true);
+      await clientElectronApp?.close();
+      clientElectronApp = null;
+      clientWindow = null;
+      connectedClient = await launchClient();
+      connectionStatus = connectedClient.locator('[data-connection-state]').first();
+      await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      await expect(
+        await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
+      ).toContainText('Page 1 of 2');
+    });
   });
 
   test('publisher resumes a Knowledge batch after interruption and publishes for passwordless readers', async () => {
@@ -2104,109 +2151,114 @@ test.describe('Vital Critical Path', () => {
     ).toContainText('Page 1 of 1');
   });
 
-  test('Knowledge PDF links navigate within Relay without escaping the E2E desktop boundary', async () => {
-    test.setTimeout(120_000);
-    const connectedClient = await launchConnectedClient();
-    const rendererLogs: string[] = [];
-    const rendererErrors: string[] = [];
-    const pageErrors: string[] = [];
-    connectedClient.on('console', (message) => {
-      rendererLogs.push(message.text());
-      if (message.type() === 'error') rendererErrors.push(message.text());
+  test.describe('seeded Knowledge link fixture profile', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.seededKnowledge });
+    test('Knowledge PDF links navigate within Relay without escaping the E2E desktop boundary', async () => {
+      test.setTimeout(120_000);
+      const connectedClient = await launchConnectedClient();
+      const rendererLogs: string[] = [];
+      const rendererErrors: string[] = [];
+      const pageErrors: string[] = [];
+      connectedClient.on('console', (message) => {
+        rendererLogs.push(message.text());
+        if (message.type() === 'error') rendererErrors.push(message.text());
+      });
+      connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
+
+      await enterKnowledgeDestination(connectedClient, 'Wiki');
+      const sourceViewer = await openKnowledgeReaderDocument(
+        connectedClient,
+        'General',
+        'Link navigation test',
+      );
+      const sourceDocument = connectedClient.getByRole('treeitem', {
+        name: 'Link navigation test',
+        exact: true,
+      });
+      await expect(sourceViewer).toContainText('Page 1 of 2');
+      await sourceViewer.getByRole('button', { name: 'View options: Continuous' }).click();
+      await sourceViewer
+        .getByRole('dialog', { name: 'View options' })
+        .getByRole('button', { name: 'Single page' })
+        .click();
+      await expect(
+        sourceViewer.getByRole('button', { name: 'View options: Single page' }),
+      ).toBeVisible();
+      await sourceViewer
+        .getByRole('button', { name: 'Open linked location in this guide' })
+        .click();
+      await expect(sourceViewer).toContainText('Page 2 of 2');
+      await connectedClient.getByRole('tab', { name: 'Library' }).click();
+      await expect(sourceDocument).toHaveAttribute('aria-current', 'page');
+
+      await sourceViewer.getByRole('button', { name: 'Previous page' }).click();
+      await expect(sourceViewer).toContainText('Page 1 of 2');
+      await sourceViewer
+        .getByRole('button', { name: 'Open Payment API Degradation Guide, page 2' })
+        .click();
+
+      const paymentViewer = connectedClient.getByRole('region', {
+        name: 'Payment API Degradation Guide PDF viewer',
+      });
+      await expect(paymentViewer).toContainText('Page 2 of 2');
+
+      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test');
+      await expect(sourceViewer).toContainText('Page 1 of 2');
+      const authorDirectory = 'C:/Users/Author/Documents';
+      const absoluteFileOverlay = sourceViewer.getByRole('button', {
+        name: 'Open Checkout Service Incident Runbook, page 1',
+        exact: true,
+      });
+      await expect(absoluteFileOverlay).toBeVisible();
+      await expect(sourceViewer).not.toContainText(authorDirectory);
+      await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
+      await absoluteFileOverlay.focus();
+      await expect(absoluteFileOverlay).toBeFocused();
+      await expect(absoluteFileOverlay).toHaveAccessibleName(
+        'Open Checkout Service Incident Runbook, page 1',
+      );
+      await expect(absoluteFileOverlay).not.toHaveAccessibleName(/C:\/Users\/Author\/Documents/);
+      await absoluteFileOverlay.click();
+
+      const checkoutViewer = connectedClient.getByRole('region', {
+        name: 'Checkout Service Incident Runbook PDF viewer',
+      });
+      await expect(checkoutViewer).toContainText('Page 1 of 1');
+      await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
+      expect(rendererLogs.join('\n')).not.toContain(authorDirectory);
+
+      await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test');
+      await expect(sourceViewer).toContainText('Page 1 of 2');
+
+      if (!clientElectronApp) throw new Error('Connected Electron app not launched');
+      await clientElectronApp.evaluate(({ shell }) => {
+        const scope = globalThis as typeof globalThis & {
+          __relayKnowledgeOriginalOpenExternal?: typeof shell.openExternal;
+          __relayKnowledgeOpenExternalUrls?: string[];
+        };
+        scope.__relayKnowledgeOriginalOpenExternal = shell.openExternal;
+        scope.__relayKnowledgeOpenExternalUrls = [];
+        shell.openExternal = async (url) => {
+          scope.__relayKnowledgeOpenExternalUrls?.push(url);
+        };
+      });
+
+      await sourceViewer.getByRole('button', { name: 'Open example.com in browser' }).click();
+      await expect
+        .poll(() =>
+          clientElectronApp?.evaluate(
+            () =>
+              (
+                globalThis as typeof globalThis & {
+                  __relayKnowledgeOpenExternalUrls?: string[];
+                }
+              ).__relayKnowledgeOpenExternalUrls ?? [],
+          ),
+        )
+        .toEqual([]);
+      expect(rendererErrors, `Renderer console errors:\n${rendererErrors.join('\n')}`).toEqual([]);
+      expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
     });
-    connectedClient.on('pageerror', (error) => pageErrors.push(error.message));
-
-    await enterKnowledgeDestination(connectedClient, 'Wiki');
-    const sourceViewer = await openKnowledgeReaderDocument(
-      connectedClient,
-      'General',
-      'Link navigation test',
-    );
-    const sourceDocument = connectedClient.getByRole('treeitem', {
-      name: 'Link navigation test',
-      exact: true,
-    });
-    await expect(sourceViewer).toContainText('Page 1 of 2');
-    await sourceViewer.getByRole('button', { name: 'View options: Continuous' }).click();
-    await sourceViewer
-      .getByRole('dialog', { name: 'View options' })
-      .getByRole('button', { name: 'Single page' })
-      .click();
-    await expect(
-      sourceViewer.getByRole('button', { name: 'View options: Single page' }),
-    ).toBeVisible();
-    await sourceViewer.getByRole('button', { name: 'Open linked location in this guide' }).click();
-    await expect(sourceViewer).toContainText('Page 2 of 2');
-    await connectedClient.getByRole('tab', { name: 'Library' }).click();
-    await expect(sourceDocument).toHaveAttribute('aria-current', 'page');
-
-    await sourceViewer.getByRole('button', { name: 'Previous page' }).click();
-    await expect(sourceViewer).toContainText('Page 1 of 2');
-    await sourceViewer
-      .getByRole('button', { name: 'Open Payment API Degradation Guide, page 2' })
-      .click();
-
-    const paymentViewer = connectedClient.getByRole('region', {
-      name: 'Payment API Degradation Guide PDF viewer',
-    });
-    await expect(paymentViewer).toContainText('Page 2 of 2');
-
-    await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test');
-    await expect(sourceViewer).toContainText('Page 1 of 2');
-    const authorDirectory = 'C:/Users/Author/Documents';
-    const absoluteFileOverlay = sourceViewer.getByRole('button', {
-      name: 'Open Checkout Service Incident Runbook, page 1',
-      exact: true,
-    });
-    await expect(absoluteFileOverlay).toBeVisible();
-    await expect(sourceViewer).not.toContainText(authorDirectory);
-    await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
-    await absoluteFileOverlay.focus();
-    await expect(absoluteFileOverlay).toBeFocused();
-    await expect(absoluteFileOverlay).toHaveAccessibleName(
-      'Open Checkout Service Incident Runbook, page 1',
-    );
-    await expect(absoluteFileOverlay).not.toHaveAccessibleName(/C:\/Users\/Author\/Documents/);
-    await absoluteFileOverlay.click();
-
-    const checkoutViewer = connectedClient.getByRole('region', {
-      name: 'Checkout Service Incident Runbook PDF viewer',
-    });
-    await expect(checkoutViewer).toContainText('Page 1 of 1');
-    await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
-    expect(rendererLogs.join('\n')).not.toContain(authorDirectory);
-
-    await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test');
-    await expect(sourceViewer).toContainText('Page 1 of 2');
-
-    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
-    await clientElectronApp.evaluate(({ shell }) => {
-      const scope = globalThis as typeof globalThis & {
-        __relayKnowledgeOriginalOpenExternal?: typeof shell.openExternal;
-        __relayKnowledgeOpenExternalUrls?: string[];
-      };
-      scope.__relayKnowledgeOriginalOpenExternal = shell.openExternal;
-      scope.__relayKnowledgeOpenExternalUrls = [];
-      shell.openExternal = async (url) => {
-        scope.__relayKnowledgeOpenExternalUrls?.push(url);
-      };
-    });
-
-    await sourceViewer.getByRole('button', { name: 'Open example.com in browser' }).click();
-    await expect
-      .poll(() =>
-        clientElectronApp?.evaluate(
-          () =>
-            (
-              globalThis as typeof globalThis & {
-                __relayKnowledgeOpenExternalUrls?: string[];
-              }
-            ).__relayKnowledgeOpenExternalUrls ?? [],
-        ),
-      )
-      .toEqual([]);
-    expect(rendererErrors, `Renderer console errors:\n${rendererErrors.join('\n')}`).toEqual([]);
-    expect(pageErrors, `Renderer page errors:\n${pageErrors.join('\n')}`).toEqual([]);
   });
 
   test('Dynatrace Problems tab opens without requiring a configured token', async () => {
