@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
+import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import {
   CURRENT_CLOUD_OUTAGE_WINDOW_MS,
   getCurrentCloudIssues,
@@ -24,20 +25,7 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
 }
 
 function data(items: CloudStatusItem[]): CloudStatusData {
-  // Spelled out rather than derived so adding a provider to the union fails to
-  // compile here instead of silently producing a bucket-less fixture.
-  const providers: Record<CloudStatusProvider, CloudStatusItem[]> = {
-    aws: [],
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
+  const providers = emptyCloudStatusProviders();
   for (const current of items) providers[current.provider].push(current);
   return { providers, errors: [], lastUpdated: NOW };
 }

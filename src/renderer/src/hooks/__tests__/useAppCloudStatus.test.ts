@@ -6,6 +6,7 @@ import type {
   CloudStatusItem,
   CloudStatusSnapshotRecord,
 } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 
 const { secureStorageMock, resetStorage } = vi.hoisted(() => {
   const values = new Map<string, unknown>();
@@ -41,21 +42,6 @@ vi.mock('../useCollection', () => ({
 import { loggers } from '../../utils/logger';
 import { useAppCloudStatus } from '../useAppCloudStatus';
 
-function emptyProviders(): CloudStatusData['providers'] {
-  return {
-    aws: [],
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
-}
-
 function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
   return {
     id: 'incident-1',
@@ -70,7 +56,7 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
 }
 
 function status(items: CloudStatusItem[] = []): CloudStatusData {
-  const providers = emptyProviders();
+  const providers = emptyCloudStatusProviders();
   for (const current of items) providers[current.provider].push(current);
   return { providers, errors: [], lastUpdated: Date.now() };
 }

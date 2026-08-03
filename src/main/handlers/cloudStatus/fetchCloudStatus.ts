@@ -5,6 +5,7 @@ import {
   type CloudStatusItem,
   type CloudStatusProvider,
 } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { ErrorCategory } from '@shared/logging';
 import { loggers } from '../../logger';
 import { truncateError } from '../ipcHelpers';
@@ -13,23 +14,7 @@ import { RSS_FEEDS, fetchRssProvider } from './rssProvider';
 import { fetchSalesforceProvider } from './salesforceProvider';
 import { STATUSPAGE_FEEDS, fetchStatuspageProvider } from './statuspageProvider';
 
-// Spelled out rather than derived from CLOUD_STATUS_PROVIDER_ORDER so the compiler
-// checks exhaustiveness: adding a provider to CloudStatusProvider breaks this build
-// instead of silently producing a record with a missing bucket.
-export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
-  return {
-    aws: [],
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
-}
+export { emptyCloudStatusProviders } from '@shared/cloudStatus';
 
 function fetchProvider(provider: CloudStatusProvider): Promise<CloudStatusItem[]> {
   const rssUrl = RSS_FEEDS[provider];

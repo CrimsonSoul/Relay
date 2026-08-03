@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CloudStatusData, RadarSnapshot } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { WebRequestSecurity } from '../WebRequestSecurity';
 import { WebRouter, WEB_SESSION_COOKIE_NAME } from '../WebRouter';
@@ -31,26 +32,11 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
-function emptyProviders(): CloudStatusData['providers'] {
-  return {
-    aws: [],
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
-}
-
 function services(): OperationalServices {
   return {
     cloudStatus: {
       refresh: vi.fn(async (): Promise<CloudStatusData> => ({
-        providers: emptyProviders(),
+        providers: emptyCloudStatusProviders(),
         lastUpdated: 12,
         errors: [],
       })),

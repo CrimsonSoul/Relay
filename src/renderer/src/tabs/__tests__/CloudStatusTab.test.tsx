@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
+import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS } from '../../utils/cloudStatus';
 
 vi.mock('../../components/icons/ProviderIcons', () => ({
@@ -23,22 +24,11 @@ vi.mock('../../components/StatusBar', () => ({
 
 import { CloudStatusTab } from '../CloudStatusTab';
 
-const emptyProviders: Record<CloudStatusProvider, CloudStatusItem[]> = {
-  aws: [],
-  azure: [],
-  m365: [],
-  jira: [],
-  github: [],
-  cloudflare: [],
-  google: [],
-  anthropic: [],
-  openai: [],
-  salesforce: [],
-};
+const emptyProviders = emptyCloudStatusProviders();
 
 function makeStatusData(overrides: Partial<CloudStatusData> = {}): CloudStatusData {
   return {
-    providers: { ...emptyProviders },
+    providers: emptyCloudStatusProviders(),
     lastUpdated: Date.now(),
     errors: [],
     ...overrides,
@@ -79,7 +69,7 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
     expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
-    expect(screen.getAllByText('Unknown')).toHaveLength(10);
+    expect(screen.getAllByText('Unknown')).toHaveLength(14);
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
     expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
@@ -92,7 +82,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByRole('heading', { name: 'External Status' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(10);
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(14);
     expect(
       screen.getByRole('button', { name: 'View AWS status details' }),
     ).toHaveAccessibleDescription('Operational No active issues');
@@ -482,7 +472,7 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '10 providers monitored · 1 active outage · 1 degraded issue',
+      '14 providers monitored · 1 active outage · 1 degraded issue',
     );
   });
 });
