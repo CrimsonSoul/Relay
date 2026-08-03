@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { findingError, unavailableError } from './scanner-gate-policy.mjs';
+import { classifyHttpFailure, findingError, unavailableError } from './scanner-gate-policy.mjs';
 import {
   normalizeSonarApiBase,
   parseSonarProjectKey as parseProjectKey,
   requestSonarJson,
+  SonarHttpError,
+  SonarTransportError,
 } from './sonar-api-client.mjs';
 import { parseScopeArgs } from './sonar-open-findings.mjs';
 
@@ -134,12 +136,20 @@ export function parseReportTask({ report, configuredHostUrl, expectedProjectKey 
 }
 
 async function requestJson({ fetcher, url, token, timeoutMs }) {
-  return requestSonarJson({
-    fetcher,
-    url,
-    token,
-    timeoutMs: Math.max(1, Math.floor(Math.min(timeoutMs, MAX_REQUEST_TIMEOUT_MS))),
-  });
+  try {
+    return await requestSonarJson({
+      fetcher,
+      url,
+      token,
+      timeoutMs: Math.max(1, Math.floor(Math.min(timeoutMs, MAX_REQUEST_TIMEOUT_MS))),
+    });
+  } catch (error) {
+    if (error instanceof SonarHttpError) throw classifyHttpFailure('Sonar API', error.status);
+    if (error instanceof SonarTransportError) {
+      throw unavailableError(error.message, { cause: error });
+    }
+    throw error;
+  }
 }
 
 function validateComputeTask(payload, { taskId, projectKey, scope }) {

@@ -6,6 +6,8 @@ import {
   normalizeSonarApiBase,
   paginateSonarIssues,
   parseSonarProjectKey as parseProjectKey,
+  SonarHttpError,
+  SonarTransportError,
 } from './sonar-api-client.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
@@ -505,22 +507,30 @@ export async function fetchCurrentSonarIssues({
     throw new Error('sonar.projectKey does not match the reviewed Sonar issue manifest.');
   }
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
-  return paginateSonarIssues({
-    fetcher,
-    baseUrl: hostUrl,
-    token,
-    searchParams: {
-      branch: EXPECTED_BRANCH,
-      componentKeys: projectKey,
-      issueStatuses: SEARCHED_STATUSES.join(','),
-    },
-    pageSize: PAGE_SIZE,
-    maxIssues: MAX_ISSUES,
-    requestTimeoutMs,
-    timeoutMs,
-    now,
-    validateIssue,
-  });
+  try {
+    return await paginateSonarIssues({
+      fetcher,
+      baseUrl: hostUrl,
+      token,
+      searchParams: {
+        branch: EXPECTED_BRANCH,
+        componentKeys: projectKey,
+        issueStatuses: SEARCHED_STATUSES.join(','),
+      },
+      pageSize: PAGE_SIZE,
+      maxIssues: MAX_ISSUES,
+      requestTimeoutMs,
+      timeoutMs,
+      now,
+      validateIssue,
+    });
+  } catch (error) {
+    if (error instanceof SonarHttpError) throw classifyHttpFailure('Sonar API', error.status);
+    if (error instanceof SonarTransportError) {
+      throw unavailableError(error.message, { cause: error });
+    }
+    throw error;
+  }
 }
 
 function assertIssueMetadata(issue, expected) {

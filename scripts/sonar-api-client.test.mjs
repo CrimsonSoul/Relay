@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { SCANNER_OUTCOME, ScannerGateError } from './scanner-gate-policy.mjs';
 
 const { test } = process.env.VITEST ? await import('vitest') : await import('node:test');
 const TOKEN = 'sonar-shared-client-token-never-print';
@@ -41,7 +40,7 @@ test('shared Sonar parsing rejects malformed project files and insecure API base
 });
 
 test('shared Sonar JSON requests reject malformed payloads and bound stalled requests', async () => {
-  const { requestSonarJson } = await import('./sonar-api-client.mjs');
+  const { requestSonarJson, SonarTransportError } = await import('./sonar-api-client.mjs');
   const url = new URL('https://sonar.example.test/api/issues/search');
 
   let insecureRequestSent = false;
@@ -84,9 +83,38 @@ test('shared Sonar JSON requests reject malformed payloads and bound stalled req
       token: TOKEN,
       timeoutMs: 10,
     }),
-    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+    (error) =>
+      error instanceof SonarTransportError &&
+      error.kind === 'timeout' &&
+      error.outcome === undefined,
   );
   assert.equal(receivedSignal, true);
+});
+
+test('shared Sonar JSON requests preserve a stalled response body as a neutral timeout', async () => {
+  const { requestSonarJson, SonarTransportError } = await import('./sonar-api-client.mjs');
+
+  await assert.rejects(
+    requestSonarJson({
+      fetcher: async (_requestUrl, options) => ({
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+      url: new URL('https://sonar.example.test/api/issues/search'),
+      token: TOKEN,
+      timeoutMs: 10,
+    }),
+    (error) =>
+      error instanceof SonarTransportError &&
+      error.kind === 'timeout' &&
+      error.outcome === undefined,
+  );
 });
 
 test('shared Sonar issue pagination applies caller parameters and rejects unstable totals', async () => {

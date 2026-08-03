@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
+import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
 import {
   paginateSonarIssues,
   parseSonarProjectKey as parseProjectKey,
+  SonarHttpError,
+  SonarTransportError,
 } from './sonar-api-client.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
@@ -102,6 +105,14 @@ function validateIssue(value) {
   };
 }
 
+function localSonarClientError(error) {
+  if (error instanceof SonarHttpError) return classifyHttpFailure('Sonar API', error.status);
+  if (error instanceof SonarTransportError) {
+    return unavailableError(error.message, { cause: error });
+  }
+  return error;
+}
+
 export async function fetchSonarIssues({
   fetcher = globalThis.fetch,
   hostUrl,
@@ -116,22 +127,26 @@ export async function fetchSonarIssues({
   if (!nonEmptyString(projectKey)) throw new Error('A Sonar project key is required.');
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
   if (typeof now !== 'function') throw new TypeError('Sonar timing function is required.');
-  return paginateSonarIssues({
-    fetcher,
-    baseUrl: hostUrl,
-    token,
-    searchParams: {
-      componentKeys: projectKey,
-      issueStatuses: CURRENT_ISSUE_STATUSES.join(','),
-      ...('branch' in scope ? { branch: scope.branch } : { pullRequest: scope.pullRequest }),
-    },
-    pageSize: PAGE_SIZE,
-    maxIssues: MAX_ISSUES,
-    requestTimeoutMs,
-    timeoutMs,
-    now,
-    validateIssue,
-  });
+  try {
+    return await paginateSonarIssues({
+      fetcher,
+      baseUrl: hostUrl,
+      token,
+      searchParams: {
+        componentKeys: projectKey,
+        issueStatuses: CURRENT_ISSUE_STATUSES.join(','),
+        ...('branch' in scope ? { branch: scope.branch } : { pullRequest: scope.pullRequest }),
+      },
+      pageSize: PAGE_SIZE,
+      maxIssues: MAX_ISSUES,
+      requestTimeoutMs,
+      timeoutMs,
+      now,
+      validateIssue,
+    });
+  } catch (error) {
+    throw localSonarClientError(error);
+  }
 }
 
 export function classifyIssue(issue) {

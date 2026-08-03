@@ -369,6 +369,29 @@ test('bounds each Sonar issue-search request with an abort signal', async () => 
   assert.equal(receivedSignal, true);
 });
 
+test('classifies a stalled Sonar response body as unavailable', async () => {
+  await assert.rejects(
+    fetchSonarIssues({
+      hostUrl: 'https://sonarcloud.io',
+      projectKey: 'CrimsonSoul_Relay',
+      scope: { branch: 'test' },
+      token: TOKEN,
+      requestTimeoutMs: 10,
+      fetcher: async (_url, options) => ({
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
+});
+
 test('uses one aggregate deadline across Sonar issue-search pages', async () => {
   let clock = 0;
   let requests = 0;

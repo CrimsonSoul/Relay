@@ -1,5 +1,4 @@
 import { performance } from 'node:perf_hooks';
-import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
 
 const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const MAX_PAGINATION_TIMEOUT_MS = 1_080_000;
@@ -9,6 +8,26 @@ const monotonicNow = () => performance.now();
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+export class SonarHttpError extends Error {
+  constructor(status) {
+    super(
+      Number.isInteger(status)
+        ? `Sonar API request failed with HTTP ${status}.`
+        : 'Sonar API returned an invalid HTTP status.',
+    );
+    this.name = 'SonarHttpError';
+    this.status = status;
+  }
+}
+
+export class SonarTransportError extends Error {
+  constructor(kind, message, options = {}) {
+    super(message, options);
+    this.name = 'SonarTransportError';
+    this.kind = kind;
+  }
 }
 
 export function parseSonarProjectKey(properties) {
@@ -78,6 +97,7 @@ export async function requestSonarJson({
     throw new TypeError('Sonar request options must be an object.');
   }
   const requestUrl = normalizeSonarRequestUrl(url);
+  const signal = AbortSignal.timeout(timeoutMs);
 
   let response;
   try {
@@ -88,19 +108,34 @@ export async function requestSonarJson({
         Accept: 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
     });
   } catch (error) {
-    throw unavailableError('Sonar API request failed before receiving a response.', {
-      cause: error,
-    });
+    if (signal.aborted) {
+      throw new SonarTransportError('timeout', 'Sonar API request timed out.', { cause: error });
+    }
+    throw new SonarTransportError(
+      'network',
+      'Sonar API request failed before receiving a response.',
+      { cause: error },
+    );
   }
-  if (!response?.ok) throw classifyHttpFailure('Sonar API', response?.status);
+  if (!response?.ok) throw new SonarHttpError(response?.status);
 
   try {
-    return await response.json();
-  } catch {
-    throw new Error('Sonar returned invalid JSON.');
+    const payload = await response.json();
+    if (signal.aborted) {
+      throw new SonarTransportError('timeout', 'Sonar API response body timed out.');
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof SonarTransportError) throw error;
+    if (signal.aborted) {
+      throw new SonarTransportError('timeout', 'Sonar API response body timed out.', {
+        cause: error,
+      });
+    }
+    throw new Error('Sonar returned invalid JSON.', { cause: error });
   }
 }
 
@@ -206,7 +241,9 @@ export async function paginateSonarIssues({
 
   do {
     const remaining = Math.floor(deadline - now());
-    if (remaining <= 0) throw unavailableError('Sonar issue search exceeded its deadline.');
+    if (remaining <= 0) {
+      throw new SonarTransportError('deadline', 'Sonar issue search exceeded its deadline.');
+    }
     const url = new URL('api/issues/search', base);
     for (const [name, value] of Object.entries(searchParams)) {
       if (!nonEmptyString(name) || !nonEmptyString(value)) {

@@ -89,6 +89,121 @@ describe('CI workflow contracts', () => {
     expect(findStep(packageJob, 'Upload artifact').with.name).toBe('${{ inputs.artifact-name }}');
   });
 
+  it('keeps every explicit cache failure-tolerant with exact dependency identity', async () => {
+    const names = (await readdir(workflowsDirectory)).filter((name) => /\.ya?ml$/u.test(name));
+    const caches = [];
+
+    for (const name of names) {
+      const workflow = await readWorkflow(name);
+      for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+        for (const step of job.steps ?? []) {
+          if (!String(step.uses ?? '').startsWith('actions/cache@')) continue;
+          caches.push({
+            continueOnError: step['continue-on-error'],
+            job: jobName,
+            key: step.with?.key,
+            name,
+            path: step.with?.path,
+            restoreKeys: step.with?.['restore-keys'],
+            step: step.name,
+          });
+        }
+      }
+    }
+
+    expect(caches).toEqual([
+      {
+        continueOnError: true,
+        job: 'quality',
+        key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
+        name: 'build.yml',
+        path: '~/.cache/electron',
+        restoreKeys: undefined,
+        step: 'Cache Electron binary',
+      },
+      {
+        continueOnError: true,
+        job: 'quality',
+        key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
+        name: 'release.yml',
+        path: '~/.cache/electron',
+        restoreKeys: undefined,
+        step: 'Cache Electron binary',
+      },
+      {
+        continueOnError: true,
+        job: 'package',
+        key: 'electron-win-x64-${{ steps.electron-version.outputs.version }}',
+        name: 'reusable-windows-package.yml',
+        path: '~/AppData/Local/electron/Cache\n.electron\n',
+        restoreKeys: undefined,
+        step: 'Cache Electron binary',
+      },
+      {
+        continueOnError: true,
+        job: 'package',
+        key: "electron-builder-win-${{ hashFiles('package-lock.json') }}",
+        name: 'reusable-windows-package.yml',
+        path: '~/AppData/Local/electron-builder/Cache',
+        restoreKeys: 'electron-builder-win-',
+        step: 'Cache electron-builder tooling',
+      },
+      {
+        continueOnError: true,
+        job: 'package',
+        key: 'electron-gyp-win-${{ steps.electron-version.outputs.version }}',
+        name: 'reusable-windows-package.yml',
+        path: '~/.electron-gyp',
+        restoreKeys: undefined,
+        step: 'Cache Electron headers',
+      },
+      {
+        continueOnError: true,
+        job: 'package',
+        key: 'pocketbase-win32-x64-${{ steps.pocketbase-version.outputs.version }}',
+        name: 'reusable-windows-package.yml',
+        path: 'resources/pocketbase/win32-x64',
+        restoreKeys: undefined,
+        step: 'Cache PocketBase binary',
+      },
+      {
+        continueOnError: true,
+        job: 'package',
+        key: "better-sqlite3-electron-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}",
+        name: 'reusable-windows-package.yml',
+        path: 'node_modules/better-sqlite3/build/Release',
+        restoreKeys: undefined,
+        step: 'Cache rebuilt better-sqlite3',
+      },
+      {
+        continueOnError: true,
+        job: 'compare',
+        key: "startup-comparison-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}",
+        name: 'windows-startup-comparison.yml',
+        path: '~/AppData/Local/electron/Cache\n~/AppData/Local/electron-builder/Cache\n~/.electron-gyp\n.electron\n',
+        restoreKeys: undefined,
+        step: 'Cache Electron and packaging tools',
+      },
+    ]);
+  });
+
+  it('passes the complete previous-artifact lookup contract', async () => {
+    const workflow = await readWorkflow('reusable-windows-package.yml');
+    const previous = findStep(workflow.jobs.package, 'Find previous successful Windows artifact');
+
+    expect(previous).toMatchObject({
+      env: {
+        BASELINE_BRANCH: '${{ inputs.baseline-branch }}',
+        GH_TOKEN: "${{ secrets['github-token'] }}",
+      },
+      id: 'previous',
+      shell: 'pwsh',
+    });
+    expect(previous.run).toBe(
+      './scripts/find-previous-windows-artifact.ps1 -Workflow build.yml -Branch "$env:BASELINE_BRANCH" -CurrentSha "${{ github.sha }}" -Destination "$env:RUNNER_TEMP\\RelayPrevious.exe"',
+    );
+  });
+
   it('keeps branch and release callers valid while preserving their legitimate differences', async () => {
     const [build, release] = await Promise.all([
       readWorkflow('build.yml'),
