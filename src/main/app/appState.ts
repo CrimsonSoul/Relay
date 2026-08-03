@@ -141,6 +141,9 @@ export function getKnowledgeCoverService() {
 export function getKnowledgeUploadService() {
   return state.knowledgeUploadService;
 }
+export function notifyKnowledgeUploadSessionChanged(view: PrivilegedSessionView): void {
+  state.knowledgeUploadService?.handleSessionChanged(view);
+}
 export function getKnowledgeSearchService() {
   return state.knowledgeSearchService;
 }

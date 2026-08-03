@@ -1,6 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  activeOldView: {
+    state: 'active' as const,
+    accountId: 'account-admin',
+    username: 'ryan',
+    displayName: 'Ryan Bledsoe',
+    role: 'admin' as const,
+    capabilities: ['knowledge.manage' as const],
+    deviceId: 'device-1',
+    expiresAt: '2026-08-03T18:00:00.000Z',
+  },
+  activeNewView: {
+    state: 'active' as const,
+    accountId: 'account-admin',
+    username: 'ryan',
+    displayName: 'Ryan Bledsoe',
+    role: 'admin' as const,
+    capabilities: ['knowledge.manage' as const],
+    deviceId: 'device-1',
+    expiresAt: '2026-08-03T19:00:00.000Z',
+  },
   appConfig: {
     load: vi.fn(),
   },
@@ -62,11 +82,15 @@ const mocks = vi.hoisted(() => ({
   SyncManager: vi.fn(),
   initializeKnowledgePdfService: vi.fn(),
   privilegedRuntime: { dispose: vi.fn() },
-  nextPrivilegedRuntime: { dispose: vi.fn() },
+  nextPrivilegedRuntime: { dispose: vi.fn(), getView: vi.fn() },
   getPrivilegedRuntime: vi.fn(),
   setPrivilegedRuntime: vi.fn(),
   getPrivilegedHost: vi.fn(),
   setPrivilegedHost: vi.fn(),
+  knowledgeUploadService: {
+    handleSessionChanged: vi.fn(),
+  },
+  notifyKnowledgeUploadSessionChanged: vi.fn(),
   createProductionPrivilegedRuntime: vi.fn(),
   createProductionPrivilegedHost: vi.fn(),
   nextPrivilegedHost: {
@@ -124,6 +148,7 @@ vi.mock('../appState', () => ({
   setPrivilegedRuntime: mocks.setPrivilegedRuntime,
   getPrivilegedHost: mocks.getPrivilegedHost,
   setPrivilegedHost: mocks.setPrivilegedHost,
+  notifyKnowledgeUploadSessionChanged: mocks.notifyKnowledgeUploadSessionChanged,
   getRelayWebServerManager: mocks.getRelayWebServerManager,
 }));
 
@@ -185,9 +210,19 @@ describe('reconfigureRuntime', () => {
     mocks.getDynatraceProblemsManager.mockReturnValue(mocks.dynatraceProblemsManager);
     mocks.getPrivilegedRuntime.mockReturnValue(mocks.privilegedRuntime);
     mocks.getPrivilegedHost.mockReturnValue(null);
+    mocks.setPrivilegedRuntime.mockImplementation((runtime) => {
+      mocks.getPrivilegedRuntime.mockReturnValue(runtime);
+    });
+    mocks.setPrivilegedHost.mockImplementation((host) => {
+      mocks.getPrivilegedHost.mockReturnValue(host);
+    });
+    mocks.notifyKnowledgeUploadSessionChanged.mockImplementation((view) =>
+      mocks.knowledgeUploadService.handleSessionChanged(view),
+    );
     mocks.getPbClient.mockReturnValue(mocks.serverPbClient);
     mocks.getRelayWebServerManager.mockReturnValue(mocks.relayWebServerManager);
     mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
+    mocks.nextPrivilegedRuntime.getView.mockReturnValue(mocks.activeNewView);
     mocks.nextPrivilegedHost.createElectronRuntime.mockReturnValue(mocks.nextPrivilegedRuntime);
     mocks.createProductionPrivilegedHost.mockResolvedValue(mocks.nextPrivilegedHost);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
@@ -259,6 +294,30 @@ describe('reconfigureRuntime', () => {
       dynatraceProblemsManager: mocks.dynatraceProblemsManager,
     });
     expect(mocks.setPrivilegedRuntime).toHaveBeenLastCalledWith(mocks.nextPrivilegedRuntime);
+  });
+
+  it('publishes a signed-out boundary before replacing the same privileged identity', async () => {
+    mocks.knowledgeUploadService.handleSessionChanged(mocks.activeOldView);
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await reconfigureRuntime('/Users/test/RelayData/data');
+
+    expect(
+      mocks.knowledgeUploadService.handleSessionChanged.mock.calls.map(([view]) => view),
+    ).toEqual([
+      mocks.activeOldView,
+      {
+        state: 'signed-out',
+        accountId: null,
+        username: null,
+        displayName: null,
+        role: null,
+        capabilities: [],
+        deviceId: null,
+        expiresAt: null,
+      },
+      mocks.activeNewView,
+    ]);
   });
 
   it('waits for privileged work to stop before replacing shared runtime state', async () => {
