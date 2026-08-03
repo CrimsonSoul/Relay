@@ -1,10 +1,28 @@
 import type {
   CloudStatusData,
   CloudStatusItem,
+  CloudStatusPartition,
   CloudStatusProvider,
   LegacyCloudStatusData,
   MistCloudStatusData,
 } from './ipc';
+
+export function appendCloudStatusItem<P extends CloudStatusProvider, Q extends P>(
+  providers: CloudStatusPartition<P>['providers'],
+  item: CloudStatusItem<Q>,
+): void {
+  const bucket = providers[item.provider] as CloudStatusItem<Q>[];
+  bucket.push(item);
+}
+
+export function setCloudStatusProviderItems<P extends CloudStatusProvider, Q extends P>(
+  providers: CloudStatusPartition<P>['providers'],
+  provider: Q,
+  items: CloudStatusItem<Q>[],
+): void {
+  const writable = providers as unknown as Record<Q, CloudStatusItem<Q>[]>;
+  writable[provider] = items;
+}
 
 function matchingProviderItems<P extends CloudStatusProvider>(
   data: CloudStatusData,

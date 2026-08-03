@@ -16,6 +16,7 @@ import {
 import {
   emptyCloudStatusProviders,
   mergeCloudStatusData,
+  setCloudStatusProviderItems,
   splitCloudStatusData,
   unavailableMistCloudStatusData,
 } from '@shared/cloudStatus';
@@ -211,11 +212,24 @@ function toStatusPartition<P extends CloudStatusProvider>(
   };
 }
 
+function matchingCachedProviderItems<P extends CloudStatusProvider>(
+  items: readonly CloudStatusItem[],
+  provider: P,
+): CloudStatusItem<P>[] {
+  return items.filter((item): item is CloudStatusItem<P> => item.provider === provider);
+}
+
 function normalizeCachedCloudStatus(data: CloudStatusData): CloudStatusData {
   const source = data.providers;
   const providers = emptyCloudStatusProviders();
   for (const provider of CLOUD_STATUS_PROVIDER_ORDER) {
-    providers[provider] = Array.isArray(source[provider]) ? source[provider] : [];
+    setCloudStatusProviderItems(
+      providers,
+      provider,
+      Array.isArray(source[provider])
+        ? matchingCachedProviderItems(source[provider], provider)
+        : [],
+    );
   }
   const normalized: CloudStatusData = {
     providers,

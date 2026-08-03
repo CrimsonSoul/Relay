@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { emptyCloudStatusProviders, emptyMistCloudStatusProviders } from '@shared/cloudStatus';
+import {
+  appendCloudStatusItem,
+  emptyCloudStatusProviders,
+  emptyMistCloudStatusProviders,
+} from '@shared/cloudStatus';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 
 const providerMocks = vi.hoisted(() => ({
@@ -50,7 +54,7 @@ function item<P extends CloudStatusProvider>(provider: P, id: string): CloudStat
 
 function previousStatus(items: CloudStatusItem[]): CloudStatusData {
   const providers = emptyCloudStatusProviders();
-  for (const current of items) providers[current.provider].push(current);
+  for (const current of items) appendCloudStatusItem(providers, current);
   return { providers, errors: [], lastUpdated: 100 };
 }
 

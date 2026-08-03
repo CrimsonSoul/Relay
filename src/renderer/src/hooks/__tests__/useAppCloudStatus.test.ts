@@ -13,6 +13,7 @@ import type {
   MistCloudStatusSnapshotRecord,
 } from '@shared/ipc';
 import {
+  appendCloudStatusItem,
   emptyCloudStatusProviders,
   emptyLegacyCloudStatusProviders,
   emptyMistCloudStatusProviders,
@@ -113,7 +114,7 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
 
 function status(items: CloudStatusItem[] = []): CloudStatusData {
   const providers = emptyCloudStatusProviders();
-  for (const current of items) providers[current.provider].push(current);
+  for (const current of items) appendCloudStatusItem(providers, current);
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 
@@ -121,9 +122,7 @@ function legacyStatus(items: CloudStatusItem[] = []): LegacyCloudStatusData {
   const providers = emptyLegacyCloudStatusProviders();
   for (const current of items) {
     if (current.provider in providers) {
-      providers[current.provider as LegacyCloudStatusProvider].push(
-        current as CloudStatusItem<LegacyCloudStatusProvider>,
-      );
+      appendCloudStatusItem(providers, current as CloudStatusItem<LegacyCloudStatusProvider>);
     }
   }
   return { providers, errors: [], lastUpdated: Date.now() };
@@ -133,9 +132,7 @@ function mistStatus(items: CloudStatusItem[] = []): MistCloudStatusData {
   const providers = emptyMistCloudStatusProviders();
   for (const current of items) {
     if (current.provider in providers) {
-      providers[current.provider as MistCloudStatusProvider].push(
-        current as CloudStatusItem<MistCloudStatusProvider>,
-      );
+      appendCloudStatusItem(providers, current as CloudStatusItem<MistCloudStatusProvider>);
     }
   }
   return { providers, errors: [], lastUpdated: Date.now() };

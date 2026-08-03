@@ -6,7 +6,7 @@ import {
   type CloudStatusItem,
   type LegacyCloudStatusProvider,
 } from '@shared/ipc';
-import { emptyCloudStatusProviders } from '@shared/cloudStatus';
+import { emptyCloudStatusProviders, setCloudStatusProviderItems } from '@shared/cloudStatus';
 import { ErrorCategory } from '@shared/logging';
 import { loggers } from '../../logger';
 import { truncateError } from '../ipcHelpers';
@@ -49,7 +49,7 @@ export async function fetchCloudStatusData(
     const provider = LEGACY_CLOUD_STATUS_PROVIDER_ORDER[index]!;
     const result = legacyResults[index]!;
     if (result.status === 'fulfilled') {
-      providers[provider] = result.value;
+      setCloudStatusProviderItems(providers, provider, result.value);
       continue;
     }
     const message = truncateError(result.reason);
@@ -62,7 +62,7 @@ export async function fetchCloudStatusData(
 
   if (mistResult.status === 'fulfilled') {
     for (const provider of MIST_CLOUD_STATUS_PROVIDER_ORDER) {
-      providers[provider] = mistResult.value.providers[provider];
+      setCloudStatusProviderItems(providers, provider, mistResult.value.providers[provider]);
     }
     errors.push(...mistResult.value.errors);
   } else {

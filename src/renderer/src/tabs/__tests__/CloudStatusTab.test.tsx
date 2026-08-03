@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
+import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS } from '../../utils/cloudStatus';
 
@@ -35,10 +35,12 @@ function makeStatusData(overrides: Partial<CloudStatusData> = {}): CloudStatusDa
   };
 }
 
-function makeItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
+function makeItem<P extends CloudStatusProvider = 'aws'>(
+  overrides: Partial<CloudStatusItem<P>> = {},
+): CloudStatusItem<P> {
   return {
     id: overrides.id ?? 'item-1',
-    provider: overrides.provider ?? 'aws',
+    provider: overrides.provider ?? ('aws' as P),
     title: overrides.title ?? 'Provider incident',
     description: overrides.description ?? 'Incident details',
     pubDate: overrides.pubDate ?? '2026-07-20T15:00:00.000Z',

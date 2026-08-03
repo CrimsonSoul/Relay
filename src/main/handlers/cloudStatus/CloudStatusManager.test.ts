@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type PocketBase from 'pocketbase';
 import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
-import { emptyCloudStatusProviders, splitCloudStatusData } from '@shared/cloudStatus';
+import {
+  appendCloudStatusItem,
+  emptyCloudStatusProviders,
+  splitCloudStatusData,
+} from '@shared/cloudStatus';
 import {
   CloudStatusManager,
   DEGRADED_CLOUD_STATUS_INTERVAL_MS,
@@ -23,7 +27,7 @@ const pb = { collection } as unknown as PocketBase;
 
 function data(items: CloudStatusItem[] = []): CloudStatusData {
   const providers = emptyCloudStatusProviders();
-  for (const item of items) providers[item.provider].push(item);
+  for (const item of items) appendCloudStatusItem(providers, item);
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 

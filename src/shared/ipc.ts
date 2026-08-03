@@ -239,7 +239,7 @@ export type CloudStatusItem<P extends CloudStatusProvider = CloudStatusProvider>
 };
 
 export type CloudStatusPartition<P extends CloudStatusProvider> = {
-  providers: Record<P, CloudStatusItem<P>[]>;
+  providers: { [K in P]: CloudStatusItem<K>[] };
   lastUpdated: number;
   errors: { provider: P; message: string }[];
 };

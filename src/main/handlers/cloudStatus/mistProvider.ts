@@ -5,7 +5,7 @@ import {
   type MistCloudStatusData,
   type MistCloudStatusProvider,
 } from '@shared/ipc';
-import { emptyMistCloudStatusProviders } from '@shared/cloudStatus';
+import { appendCloudStatusItem, emptyMistCloudStatusProviders } from '@shared/cloudStatus';
 import { loggers } from '../../logger';
 import { truncateError } from '../ipcHelpers';
 import { fetchNoStore } from './fetchNoStore';
@@ -114,7 +114,7 @@ async function appendActiveNotices(
     } satisfies Omit<CloudStatusItem, 'provider'>;
 
     for (const provider of affectedProviders) {
-      providers[provider].push({ ...baseItem, provider });
+      appendCloudStatusItem(providers, { ...baseItem, provider });
       providersWithNotices.add(provider);
     }
   }
@@ -146,7 +146,7 @@ function appendComponentWarnings(
     if (!provider || normalizeState(component.state) !== 'degraded') continue;
     if (providersWithNotices.has(provider)) continue;
 
-    providers[provider].push({
+    appendCloudStatusItem(providers, {
       id: `mist-component-${component.id}`,
       provider,
       title: `${component.name} is degraded`,

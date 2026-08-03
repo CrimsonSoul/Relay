@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
-import { emptyCloudStatusProviders } from '@shared/cloudStatus';
+import { appendCloudStatusItem, emptyCloudStatusProviders } from '@shared/cloudStatus';
 import {
   CURRENT_CLOUD_OUTAGE_WINDOW_MS,
   getCurrentCloudIssues,
@@ -26,7 +26,7 @@ function item(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
 
 function data(items: CloudStatusItem[]): CloudStatusData {
   const providers = emptyCloudStatusProviders();
-  for (const current of items) providers[current.provider].push(current);
+  for (const current of items) appendCloudStatusItem(providers, current);
   return { providers, errors: [], lastUpdated: NOW };
 }
 

@@ -6,7 +6,12 @@ import {
   splitCloudStatusData,
   unavailableMistCloudStatusData,
 } from './cloudStatus';
-import type { CloudStatusData, CloudStatusItem, LegacyCloudStatusData } from './ipc';
+import type {
+  CloudStatusData,
+  CloudStatusItem,
+  CloudStatusProvider,
+  LegacyCloudStatusData,
+} from './ipc';
 
 describe('cloud status partitions', () => {
   it('keeps Mist outside the legacy snapshot partition', () => {
@@ -29,6 +34,9 @@ describe('cloud status partitions', () => {
       'mist_federal',
     ]);
     expectTypeOf<CloudStatusItem & { provider: 'mist_global' }>().not.toExtend<
+      LegacyCloudStatusData['providers']['aws'][number]
+    >();
+    expectTypeOf<CloudStatusItem<'azure'>>().not.toExtend<
       LegacyCloudStatusData['providers']['aws'][number]
     >();
   });
@@ -113,7 +121,7 @@ describe('cloud status partitions', () => {
   });
 });
 
-function item(provider: CloudStatusItem['provider'], id: string): CloudStatusItem {
+function item<P extends CloudStatusProvider>(provider: P, id: string): CloudStatusItem<P> {
   return {
     id,
     provider,
