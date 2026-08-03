@@ -39,3 +39,32 @@ export type SalesforceIncident = {
   IncidentEvents?: { message: string; createdAt: string }[];
   timeline?: { content: string; createdAt?: string }[];
 };
+
+export type SorryAppNoticeUpdate = {
+  state: string;
+  content: string;
+  created_at: string;
+};
+
+export type SorryAppComponent = {
+  id: number | string;
+  name: string;
+  state: string;
+  updated_at: string;
+};
+
+export type SorryAppNoticeSummary = {
+  id: number | string;
+  type: string;
+  state: string;
+  timeline_state: string;
+  subject: string;
+  url: string;
+  began_at: string;
+  latest_update: SorryAppNoticeUpdate | null;
+};
+
+export type SorryAppNoticeDetail = SorryAppNoticeSummary & {
+  components: SorryAppComponent[];
+  updates: SorryAppNoticeUpdate[];
+};
