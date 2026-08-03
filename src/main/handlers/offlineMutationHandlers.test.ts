@@ -91,6 +91,22 @@ describe('offlineMutationHandlers', () => {
     }
   });
 
+  it('keeps the Mist cloud status singleton read-only while offline', () => {
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+      {},
+      {
+        collection: 'cloud_status_mist_snapshot',
+        action: 'update',
+        recordId: 'mist-snapshot',
+        data: { lastUpdated: 100 },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
+    expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
+  });
+
   it('meters accepted mutations against the data mutation rate limit', () => {
     getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
       {},

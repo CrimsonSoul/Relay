@@ -17,6 +17,7 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import type { PendingMutationOverlay } from '@shared/ipc';
 import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
+import { MIST_CLOUD_STATUS_COLLECTION } from './cloudStatus/CloudStatusSnapshotStore';
 
 const VALID_COLLECTIONS = new Set([
   'contacts',
@@ -31,6 +32,7 @@ const VALID_COLLECTIONS = new Set([
   'conflict_log',
   'oncall_board_settings',
   'cloud_status_snapshot',
+  MIST_CLOUD_STATUS_COLLECTION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_CATEGORIES_COLLECTION,
   DYNATRACE_PROBLEMS_COLLECTION,

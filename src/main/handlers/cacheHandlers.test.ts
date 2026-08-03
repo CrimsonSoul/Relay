@@ -99,6 +99,16 @@ describe('cacheHandlers', () => {
       expect(result).toEqual(snapshot);
     });
 
+    it('reads the separate Mist cloud status snapshot for offline clients', () => {
+      const snapshot = [{ id: 'mist-snapshot', key: 'current' }];
+      mockCache.readCollection.mockReturnValue(snapshot);
+
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'cloud_status_mist_snapshot');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_mist_snapshot');
+      expect(result).toEqual(snapshot);
+    });
+
     it('does not expose the retired roster cache', () => {
       const retiredCollection = ['relay', 'operators'].join('_');
 
@@ -229,6 +239,18 @@ describe('cacheHandlers', () => {
       );
     });
 
+    it('ingests realtime updates for the Mist server-owned collection', () => {
+      const record = { id: 'mist-snapshot', key: 'current', providers: [] };
+
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'cloud_status_mist_snapshot', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith(
+        'cloud_status_mist_snapshot',
+        'update',
+        record,
+      );
+    });
+
     it('does not ingest retired roster realtime updates', () => {
       const retiredCollection = ['relay', 'operators'].join('_');
 
@@ -353,6 +375,23 @@ describe('cacheHandlers', () => {
 
       expect(mockCache.writeCollection).toHaveBeenCalledWith(
         'cloud_status_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+    });
+
+    it('persists the separate Mist cloud status snapshot for offline clients', () => {
+      const records = [{ id: 'mist-snapshot', key: 'current' }];
+
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)(
+        {},
+        'cloud_status_mist_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+
+      expect(mockCache.writeCollection).toHaveBeenCalledWith(
+        'cloud_status_mist_snapshot',
         '1:0123456789abcdef',
         records,
       );
