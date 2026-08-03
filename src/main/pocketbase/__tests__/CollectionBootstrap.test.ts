@@ -574,6 +574,51 @@ describe('ensureCollections', () => {
     });
   });
 
+  it('creates managed collections in dependency order while preserving unknown collections', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'custom-archive-id', name: 'custom_archive' }]);
+    mockSuccessfulCollectionCreation();
+
+    await ensureCollections(mockPb);
+
+    expect(
+      mockCreate.mock.calls.map(([definition]) => (definition as { name: string }).name),
+    ).toEqual([
+      'contacts',
+      'servers',
+      'oncall',
+      'bridge_groups',
+      'bridge_history',
+      'alert_history',
+      'alert_reminders',
+      'notes',
+      'oncall_dismissals',
+      'conflict_log',
+      'oncall_board_settings',
+      'client_presence',
+      'cloud_status_snapshot',
+      'relay_privileged_accounts',
+      'relay_privileged_state',
+      'relay_privileged_devices',
+      'relay_privileged_commands',
+      'relay_privileged_pairing_challenges',
+      'relay_privileged_pairing_requests',
+      'knowledge_categories',
+      'knowledge_documents',
+      'knowledge_upload_batches',
+      'knowledge_uploads',
+      'knowledge_upload_chunks',
+      'knowledge_audit_events',
+      'knowledge_library_state',
+      'dynatrace_problems',
+      'dynatrace_problem_states',
+      'dynatrace_problem_notes',
+      'dynatrace_problem_sync',
+    ]);
+    expect(mockGetOne).not.toHaveBeenCalledWith('custom-archive-id');
+    expect(mockUpdate).not.toHaveBeenCalledWith('custom-archive-id', expect.anything());
+    expect(mockDelete).not.toHaveBeenCalledWith('custom-archive-id');
+  });
+
   it('leaves unknown collections untouched during startup bootstrap', async () => {
     mockGetFullList.mockResolvedValue([
       { id: 'col1', name: 'contacts' },
