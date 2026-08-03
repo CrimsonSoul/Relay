@@ -245,3 +245,23 @@ test('rejects missing configuration, insecure hosts, and non-test branch scope',
     );
   }
 });
+
+test('rejects a credential-bearing HTTPS host before invoking the Sonar upload', async () => {
+  let uploadCalls = 0;
+
+  await assert.rejects(
+    runSonarCi({
+      argv: ['--branch=test'],
+      env: {
+        ...configuredEnv,
+        SONAR_HOST_URL: 'https://user:password@sonar.example.test',
+      },
+      runCommand: async () => {
+        uploadCalls += 1;
+        return cleanCommand();
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
+  );
+  assert.equal(uploadCalls, 0);
+});

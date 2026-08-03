@@ -792,15 +792,17 @@ test.describe('Vital Critical Path', () => {
       ...process.env,
       NODE_ENV: 'test',
       RELAY_E2E_PRIVILEGED_FIXTURES: '1',
-      ...(fixtureProfile.knowledgeChunkDelayMs !== null
-        ? {
-            RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS: String(fixtureProfile.knowledgeChunkDelayMs),
-          }
-        : {}),
-      ...(fixtureProfile.startupDelayMs !== null
-        ? { RELAY_E2E_STARTUP_DELAY_MS: String(fixtureProfile.startupDelayMs) }
-        : {}),
     };
+    if (fixtureProfile.knowledgeChunkDelayMs === null) {
+      delete launchEnv.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS;
+    } else {
+      launchEnv.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS = String(fixtureProfile.knowledgeChunkDelayMs);
+    }
+    if (fixtureProfile.startupDelayMs === null) {
+      delete launchEnv.RELAY_E2E_STARTUP_DELAY_MS;
+    } else {
+      launchEnv.RELAY_E2E_STARTUP_DELAY_MS = String(fixtureProfile.startupDelayMs);
+    }
     delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
 
     electronApp = await electron.launch({
@@ -1020,6 +1022,22 @@ test.describe('Vital Critical Path', () => {
     if (clientDataDir) {
       fs.rmSync(clientDataDir, { recursive: true, force: true });
     }
+  });
+
+  test.describe('ambient delay isolation contract', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.default });
+
+    test('null delays clear ambient launch configuration', async () => {
+      if (!electronApp) throw new Error('Server Electron app not launched');
+      const launchProfile = await electronApp.evaluate(() => ({
+        knowledgeChunkDelayMs: process.env.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS ?? null,
+        startupDelayMs: process.env.RELAY_E2E_STARTUP_DELAY_MS ?? null,
+      }));
+      expect(launchProfile).toEqual({
+        knowledgeChunkDelayMs: null,
+        startupDelayMs: null,
+      });
+    });
   });
 
   test.describe('rename-safe fixture profile contract', () => {
