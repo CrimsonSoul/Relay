@@ -25,6 +25,12 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
   const invalid = props.recipients.filter((recipient) => !recipient.valid);
   const isBusy = props.isCopying || props.isOpeningTeams;
   const canHandoff = props.recipients.length > 0 && invalid.length === 0 && !isBusy;
+  const recipientNoun = props.recipients.length === 1 ? 'person' : 'people';
+  const duplicateNoun = props.duplicateCount === 1 ? 'duplicate' : 'duplicates';
+  const groupNoun = props.groupNames.length === 1 ? 'group' : 'groups';
+  let recipientCheck = 'No address issues found';
+  if (invalid.length === 1) recipientCheck = '1 address needs attention';
+  if (invalid.length > 1) recipientCheck = `${invalid.length} addresses need attention`;
 
   return (
     <Modal
@@ -74,13 +80,14 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
         <div>
           <dt>Recipients</dt>
           <dd>
-            {props.recipients.length} people · {props.duplicateCount} duplicates collapsed
+            {props.recipients.length} {recipientNoun} · {props.duplicateCount} {duplicateNoun}{' '}
+            collapsed
           </dd>
         </div>
         <div>
           <dt>Source</dt>
           <dd>
-            {props.groupNames.length} groups · {props.manualCount} manual
+            {props.groupNames.length} {groupNoun} · {props.manualCount} manual
           </dd>
         </div>
         <div>
@@ -89,16 +96,15 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
         </div>
         <div className={invalid.length ? 'is-warning' : 'is-valid'}>
           <dt>Recipient check</dt>
-          <dd>
-            {invalid.length
-              ? `${invalid.length} addresses need attention`
-              : 'No address issues found'}
-          </dd>
+          <dd>{recipientCheck}</dd>
         </div>
       </dl>
 
       <details className="bridge-handoff-recipients">
-        <summary>View all {props.recipients.length} recipients</summary>
+        <summary>
+          View all {props.recipients.length}{' '}
+          {props.recipients.length === 1 ? 'recipient' : 'recipients'}
+        </summary>
         <ul>
           {props.recipients.map((recipient) => {
             const contact = props.contactMap.get(recipient.normalizedEmail);
@@ -109,17 +115,18 @@ export const BridgeHandoffModal: React.FC<BridgeHandoffModalProps> = (props) => 
               >
                 <span>
                   <strong>{contact?.name || recipient.email}</strong>
-                  <small>{recipient.email}</small>
+                  {contact?.name && <small>{recipient.email}</small>}
                 </span>
                 {!recipient.valid && (
-                  <button
-                    type="button"
+                  <TactileButton
+                    size="sm"
+                    variant="danger"
                     aria-label={`Remove ${recipient.email}`}
                     onClick={() => props.onRemoveRecipient(recipient.email)}
                     disabled={isBusy}
                   >
                     Remove
-                  </button>
+                  </TactileButton>
                 )}
               </li>
             );

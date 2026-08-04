@@ -32,7 +32,7 @@ Relay releases are distributed for Windows. macOS remains supported as a local d
 
 ## Core Features
 
-- **Compose**: Build bridge communication lists from contacts and saved groups, then start or schedule the bridge
+- **Compose**: Build bridge recipient lists from contacts and saved groups, then copy recipients, prepare a Teams meeting draft, or create a calendar invite
 - **Alerts**: Compose styled incident cards, apply severity formatting, schedule reminders, and capture them to disk or clipboard
 - **On-Call Board**: Manage team and role coverage with drag-and-drop scheduling, lock control, export/copy tools, and popout support
 - **Knowledge**: Browse the shared Wiki, Contacts, and Servers from one workspace; search server-managed PDF guides and cache opened documents for desktop offline reading

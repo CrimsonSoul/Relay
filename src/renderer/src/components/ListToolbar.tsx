@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { TactileButton } from './TactileButton';
 
 type SortOption = { value: string; label: string };
@@ -9,6 +9,7 @@ type ListToolbarProps = {
   sortKey?: string;
   sortOptions?: SortOption[];
   onSortKeyChange?: (key: string) => void;
+  sortLabel?: string;
   disabled?: boolean;
   children?: React.ReactNode;
 };
@@ -19,16 +20,23 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
   sortKey,
   sortOptions,
   onSortKeyChange,
+  sortLabel = 'Sort by',
   disabled = false,
   children,
 }) => {
+  const sortId = useId();
+  const directionAction = sortDirection === 'asc' ? 'Sort descending' : 'Sort ascending';
+
   return (
     <div className="list-toolbar list-toolbar--sort-only">
       {children}
       {sortOptions && sortOptions.length > 0 && onSortKeyChange ? (
         <div className="list-toolbar-sort">
-          <span className="list-toolbar-sort-label">Sort By</span>
+          <label htmlFor={sortId} className="list-toolbar-sort-label">
+            {sortLabel}
+          </label>
           <select
+            id={sortId}
             className="list-toolbar-sort-select"
             value={sortKey}
             onChange={(e) => onSortKeyChange(e.target.value)}
@@ -42,7 +50,8 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
           </select>
           <TactileButton
             onClick={onToggleSortDirection}
-            title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+            aria-label={directionAction}
+            title={directionAction}
             className="list-toolbar-sort-dir"
             disabled={disabled}
             icon={
@@ -55,6 +64,7 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <polyline
@@ -67,7 +77,8 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
       ) : (
         <TactileButton
           onClick={onToggleSortDirection}
-          title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+          aria-label={directionAction}
+          title={directionAction}
           className="list-toolbar-sort-dir"
           disabled={disabled}
           icon={
@@ -80,6 +91,7 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <line x1="12" y1="5" x2="12" y2="19" />
               <polyline points={sortDirection === 'asc' ? '19 12 12 19 5 12' : '19 12 12 5 5 12'} />

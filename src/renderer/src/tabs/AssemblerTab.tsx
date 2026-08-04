@@ -177,7 +177,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           <h2 className="assembler-page-title">Bridge Recipient Assembly</h2>
         </div>
         <div className="assembler-page-meta" role="status" aria-live="polite">
-          <span>{asm.allRecipients.length} recipients</span>
+          <span>
+            {asm.allRecipients.length} {asm.allRecipients.length === 1 ? 'recipient' : 'recipients'}
+          </span>
         </div>
       </header>
 
@@ -325,29 +327,32 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               <span>Recipients</span>
               <span>{asm.allRecipients.length} selected</span>
             </div>
-            <ListToolbar
-              sortDirection={asm.sortConfig.direction}
-              onToggleSortDirection={() =>
-                asm.setSortConfig((prev) => ({
-                  ...prev,
-                  direction: prev.direction === 'asc' ? 'desc' : 'asc',
-                }))
-              }
-              sortKey={asm.sortConfig.key}
-              sortOptions={[
-                { value: 'name', label: 'Name' },
-                { value: 'email', label: 'Email' },
-                { value: 'title', label: 'Title' },
-                { value: 'phone', label: 'Phone' },
-              ]}
-              onSortKeyChange={(key) =>
-                asm.setSortConfig((prev) => ({
-                  ...prev,
-                  key: key as 'name' | 'email' | 'title' | 'phone',
-                }))
-              }
-              disabled={!hasRecipients}
-            />
+            <div className="assembler-pane-tools">
+              <ListToolbar
+                sortDirection={asm.sortConfig.direction}
+                onToggleSortDirection={() =>
+                  asm.setSortConfig((prev) => ({
+                    ...prev,
+                    direction: prev.direction === 'asc' ? 'desc' : 'asc',
+                  }))
+                }
+                sortKey={asm.sortConfig.key}
+                sortLabel="Sort recipients by"
+                sortOptions={[
+                  { value: 'name', label: 'Name' },
+                  { value: 'email', label: 'Email' },
+                  { value: 'title', label: 'Title' },
+                  { value: 'phone', label: 'Phone' },
+                ]}
+                onSortKeyChange={(key) =>
+                  asm.setSortConfig((prev) => ({
+                    ...prev,
+                    key: key as 'name' | 'email' | 'title' | 'phone',
+                  }))
+                }
+                disabled={!hasRecipients}
+              />
+            </div>
           </div>
           <div className="tab-list-container">
             <CompositionList

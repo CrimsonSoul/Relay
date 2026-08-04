@@ -483,7 +483,7 @@
 }
 
 .assembler-page-context,
-.assembler-pane-header > span:first-child {
+.assembler-pane-heading > span:first-child {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
@@ -505,13 +505,6 @@
   font-family: var(--font-family-mono);
   font-size: var(--text-2xs);
   white-space: nowrap;
-}
-
-.assembler-page-state-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
 }
 
 .assembler-command-bar .collapsible-header {
@@ -545,13 +538,6 @@
   letter-spacing: 0.02em;
 }
 
-.assembler-command-bar .list-toolbar {
-  width: auto;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
 .assembler-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -583,10 +569,33 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.assembler-pane-header > span:last-child {
+.assembler-pane-heading,
+.assembler-pane-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.assembler-pane-heading {
+  gap: var(--space-3);
+}
+
+.assembler-pane-heading > span:last-child {
   color: var(--color-text-tertiary);
   font-family: var(--font-family-mono);
   font-size: var(--text-2xs);
+}
+
+.assembler-pane-tools {
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.assembler-pane-tools .list-toolbar {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .assembler-bridge-actions {
@@ -595,6 +604,109 @@
   align-items: center;
   gap: var(--space-2);
   white-space: nowrap;
+}
+
+.bridge-handoff-body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.bridge-handoff-recording {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  border-left: 4px solid var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+.bridge-handoff-recording-icon {
+  flex: 0 0 auto;
+  color: var(--color-warning);
+  line-height: 1;
+}
+
+.bridge-handoff-recording h3,
+.bridge-handoff-recording p {
+  margin: 0;
+}
+
+.bridge-handoff-recording h3 {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+.bridge-handoff-recording p {
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.bridge-handoff-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--color-border);
+}
+
+.bridge-handoff-summary > div {
+  min-width: 0;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.bridge-handoff-summary dt {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.bridge-handoff-summary dd {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+.bridge-handoff-summary .is-warning dd,
+.bridge-handoff-recipients .is-invalid {
+  color: var(--color-warning);
+}
+
+.bridge-handoff-recipients summary {
+  color: var(--accent-bright);
+  cursor: pointer;
+  font-weight: var(--weight-semibold);
+}
+
+.bridge-handoff-recipients ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bridge-handoff-recipients li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.bridge-handoff-recipients small {
+  display: block;
+  color: var(--color-text-tertiary);
+}
+
+.bridge-handoff-recipients button:focus-visible,
+.bridge-handoff-recipients summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
 }
 
 /* ============================================================================
@@ -823,5 +935,19 @@
   .assembler-tab .assembler-page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .assembler-pane-header,
+  .assembler-pane-tools {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .bridge-handoff-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .bridge-handoff-dialog .modal-footer-generic {
+    flex-wrap: wrap;
   }
 }

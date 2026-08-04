@@ -447,6 +447,17 @@ describe('AssemblerTab', () => {
     expect(bridgeRule).toContain('gap: var(--space-2);');
   });
 
+  it('defines a prominent non-blocking recording notice and recipient-pane sort layout', () => {
+    const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
+    const recording = /\.bridge-handoff-recording\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+    const paneTools = /\.assembler-pane-tools\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+
+    expect(recording).toContain('border-left: 4px solid');
+    expect(recording).toContain('var(--color-warning');
+    expect(paneTools).toContain('display: flex');
+    expect(css).not.toContain('.assembler-page-state-dot');
+  });
+
   it('places sorting inside the Recipients region rather than the command toolbar', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
@@ -462,7 +473,7 @@ describe('AssemblerTab', () => {
 
     render(<AssemblerTab {...defaultProps} />);
 
-    expect(screen.getByText('1 recipients')).toBeInTheDocument();
+    expect(screen.getByText('1 recipient')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Recipients' })).toHaveTextContent('1 selected');
   });
 
@@ -470,7 +481,7 @@ describe('AssemblerTab', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
     expect(screen.getByText('Recipients')).toBeInTheDocument();
-    expect(screen.getByText('1 recipients')).toBeInTheDocument();
+    expect(screen.getByText('1 recipient')).toBeInTheDocument();
   });
 
   it('shows UNDO button when there are manual removes', () => {
