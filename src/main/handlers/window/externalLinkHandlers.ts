@@ -131,7 +131,7 @@ export function registerOpenExternalHandler(): void {
     try {
       const normalizedUrl = normalizeAllowedExternalUrl(url);
       if (normalizedUrl) {
-        await shell.openExternal(normalizedUrl);
+        await shell.openExternal(normalizedUrl); // NOSONAR - protocol, host, credentials, port, path, and query are allowlisted above.
         return true;
       }
       loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);

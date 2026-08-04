@@ -35,13 +35,11 @@ import {
   patchManagedCollection,
   reconcileManagedFields,
 } from './schema/collectionReconciler';
-import {
-  ensureKnowledgeBatchApi,
-  ensurePocketBaseAuthRateLimit,
-} from './schema/pocketBaseSettings';
+import { ensureKnowledgeBatchApi } from './schema/pocketBaseSettings';
 import type { CollectionBootstrapResult, ExistingCollection } from './schema/collectionTypes';
 
-export { ensureKnowledgeBatchApi, ensurePocketBaseAuthRateLimit };
+export { ensureKnowledgeBatchApi };
+export { ensurePocketBaseAuthRateLimit } from './schema/pocketBaseSettings';
 export type { CollectionBootstrapResult } from './schema/collectionTypes';
 
 const LEGACY_ROSTER_COLLECTION = 'relay_operators';

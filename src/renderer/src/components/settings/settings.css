@@ -226,7 +226,7 @@
 
 .relay-web-warning {
   padding: 10px 12px;
-  border-left: 3px solid var(--color-warning, #d8a23f);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
   background: color-mix(in srgb, var(--color-warning, #d8a23f) 10%, transparent);
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
@@ -459,7 +459,7 @@
 
 .privileged-access__role--publisher {
   color: #74b8ff;
-  background: color-mix(in srgb, #3b82f6 12%, transparent);
+  background: #142238;
 }
 
 .privileged-access__pairing-console {
@@ -812,7 +812,7 @@
 }
 
 .administration-chip--publisher {
-  background: color-mix(in srgb, #3b82f6 12%, transparent);
+  background: #142238;
   color: #74b8ff;
 }
 
@@ -822,7 +822,7 @@
 }
 
 .administration-chip--pending {
-  background: color-mix(in srgb, #f0ad4e 10%, transparent);
+  background: #2a2112;
   color: #f3bf70;
 }
 

@@ -411,7 +411,10 @@ export function KnowledgeUploadsSection({
                 {upload.outlineCount} headings
               </p>
               {requiresAction && (
-                <p className="knowledge-management-row__duplicate" role="status">
+                <p // NOSONAR - this is a live workflow announcement, not the result of a form calculation represented by output.
+                  className="knowledge-management-row__duplicate"
+                  role="status"
+                >
                   <span className="knowledge-management-row__duplicate-marker" aria-hidden="true" />
                   {duplicate
                     ? `This PDF will replace ${duplicate.displayTitle}.`

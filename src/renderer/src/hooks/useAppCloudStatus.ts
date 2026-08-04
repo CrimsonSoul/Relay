@@ -37,6 +37,17 @@ type CacheEntry = {
 
 type CollectionLegacyCloudStatusSnapshot = LegacyCloudStatusSnapshotRecord & RecordModel;
 type CollectionMistCloudStatusSnapshot = MistCloudStatusSnapshotRecord & RecordModel;
+type StatusObservationTimestamps = {
+  legacy: number;
+  mist: number;
+};
+
+function defaultStatusObservationTimestamps(data: CloudStatusData): StatusObservationTimestamps {
+  return {
+    legacy: data.lastUpdated,
+    mist: data.lastUpdated,
+  };
+}
 
 function providerLabel(provider: string): string {
   return CLOUD_STATUS_PROVIDERS[provider as keyof typeof CLOUD_STATUS_PROVIDERS]?.label ?? provider;
@@ -52,10 +63,7 @@ function isScheduledMaintenance(item: CloudStatusItem): boolean {
 
 function notificationSnapshotIdentity(
   data: CloudStatusData,
-  observations: StatusObservationTimestamps = {
-    legacy: data.lastUpdated,
-    mist: data.lastUpdated,
-  },
+  observations: StatusObservationTimestamps = defaultStatusObservationTimestamps(data),
 ): string {
   return JSON.stringify({
     lastUpdated: data.lastUpdated,
@@ -83,11 +91,6 @@ type CurrentStatusState = {
   outageProviders: Set<CloudStatusProvider>;
   feedErrorProviders: Set<CloudStatusProvider>;
   actionableWarnings: Map<CloudStatusProvider, CloudStatusItem>;
-};
-
-type StatusObservationTimestamps = {
-  legacy: number;
-  mist: number;
 };
 
 const MIST_PROVIDERS = new Set<CloudStatusProvider>(MIST_CLOUD_STATUS_PROVIDER_ORDER);
@@ -347,10 +350,7 @@ export function useAppCloudStatus(
   const commitStatus = useCallback(
     (
       data: CloudStatusData,
-      observations: StatusObservationTimestamps = {
-        legacy: data.lastUpdated,
-        mist: data.lastUpdated,
-      },
+      observations: StatusObservationTimestamps = defaultStatusObservationTimestamps(data),
     ) => {
       processNewEvents(data, observations);
       setStatusData(data);

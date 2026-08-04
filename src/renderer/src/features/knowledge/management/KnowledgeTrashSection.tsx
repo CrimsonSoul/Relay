@@ -109,7 +109,7 @@ export function KnowledgeTrashSection({
             <span>{formatDate(document.trashedAt)}</span>
           </div>
           {deleteId === document.id ? (
-            <form
+            <form // NOSONAR - this inline, non-modal confirmation must retain form submission semantics and must not enter the native dialog top layer.
               className="knowledge-management-row__delete"
               role="dialog"
               aria-modal="false"
