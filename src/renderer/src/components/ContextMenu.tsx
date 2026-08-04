@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+
+const VIEWPORT_MARGIN = 8;
 
 export type ContextMenuItem = {
   label: string;
@@ -25,6 +27,17 @@ function menuItemsOf(menu: HTMLDivElement | null): HTMLButtonElement[] {
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    const { width, height } = menu.getBoundingClientRect();
+    const maxLeft = Math.max(VIEWPORT_MARGIN, globalThis.innerWidth - width - VIEWPORT_MARGIN);
+    const maxTop = Math.max(VIEWPORT_MARGIN, globalThis.innerHeight - height - VIEWPORT_MARGIN);
+    menu.style.left = `${Math.min(Math.max(x, VIEWPORT_MARGIN), maxLeft)}px`;
+    menu.style.top = `${Math.min(Math.max(y, VIEWPORT_MARGIN), maxTop)}px`;
+  }, [items, x, y]);
 
   // Close on scroll/resize
   useEffect(() => {

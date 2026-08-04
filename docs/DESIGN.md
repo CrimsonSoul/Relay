@@ -9,6 +9,14 @@ typography-first hierarchy through IBM Plex Sans weight contrast, and a single s
 accent color as the only active-state signal. All tokens live in
 `src/renderer/src/styles/theme.css`.
 
+### Compose handoff
+
+Compose keeps saved groups and recipients visible together. Open Teams Draft is the primary action,
+Copy Recipients is the visible fallback, and Create Calendar Invite is in the More menu. The Teams
+review shows the generated subject, normalized recipient summary, selected groups, address issues,
+and a prominent reminder to enable recording. Relay describes only locally observable outcomes; it
+does not claim that Teams created, sent, or started a meeting.
+
 ## Source Of Truth
 
 | File                                                         | Purpose                                                               |

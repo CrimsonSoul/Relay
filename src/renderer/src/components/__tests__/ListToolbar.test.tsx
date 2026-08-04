@@ -12,8 +12,7 @@ describe('ListToolbar', () => {
   it('renders sort direction button', () => {
     const onToggleSortDirection = vi.fn();
     render(<ListToolbar {...defaultProps} onToggleSortDirection={onToggleSortDirection} />);
-    // The sort button has title "Ascending"
-    const btn = screen.getByTitle('Ascending');
+    const btn = screen.getByRole('button', { name: 'Sort descending' });
     expect(btn).toBeInTheDocument();
     fireEvent.click(btn);
     expect(onToggleSortDirection).toHaveBeenCalled();
@@ -32,7 +31,7 @@ describe('ListToolbar', () => {
         onSortKeyChange={vi.fn()}
       />,
     );
-    expect(screen.getByText('Sort By')).toBeInTheDocument();
+    expect(screen.getByText('Sort by')).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
@@ -63,31 +62,31 @@ describe('ListToolbar', () => {
     expect(screen.getByText('Extra Action')).toBeInTheDocument();
   });
 
-  it('shows Descending title when sortDirection is desc', () => {
+  it('names the descending-state action as Sort ascending', () => {
     render(<ListToolbar sortDirection="desc" onToggleSortDirection={vi.fn()} />);
-    expect(screen.getByTitle('Descending')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort ascending' })).toBeInTheDocument();
   });
 
   it('renders sort button without dropdown when no sortOptions provided', () => {
     render(<ListToolbar {...defaultProps} />);
     // Should render the simple sort direction button, not the dropdown
-    expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
-    expect(screen.getByTitle('Ascending')).toBeInTheDocument();
+    expect(screen.queryByText('Sort by')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort descending' })).toBeInTheDocument();
   });
 
   it('renders sort button without dropdown when sortOptions is empty', () => {
     render(<ListToolbar {...defaultProps} sortOptions={[]} onSortKeyChange={vi.fn()} />);
-    expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sort by')).not.toBeInTheDocument();
   });
 
   it('renders sort button without dropdown when onSortKeyChange is not provided', () => {
     const sortOptions = [{ value: 'name', label: 'Name' }];
     render(<ListToolbar {...defaultProps} sortOptions={sortOptions} />);
     // Even with sortOptions, without onSortKeyChange it falls back to simple button
-    expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sort by')).not.toBeInTheDocument();
   });
 
-  it('shows Descending title with sort options', () => {
+  it('shows the ascending action with descending sort options', () => {
     render(
       <ListToolbar
         sortDirection="desc"
@@ -97,7 +96,7 @@ describe('ListToolbar', () => {
         onSortKeyChange={vi.fn()}
       />,
     );
-    expect(screen.getByTitle('Descending')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort ascending' })).toBeInTheDocument();
   });
 
   it('disables sort controls when disabled', () => {
@@ -115,6 +114,21 @@ describe('ListToolbar', () => {
     );
 
     expect(screen.getByRole('combobox')).toBeDisabled();
-    expect(screen.getByTitle('Ascending')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sort descending' })).toBeDisabled();
+  });
+
+  it('programmatically labels the Compose sort field', () => {
+    render(
+      <ListToolbar
+        {...defaultProps}
+        sortLabel="Sort recipients by"
+        sortKey="name"
+        sortOptions={[{ value: 'name', label: 'Name' }]}
+        onSortKeyChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('combobox', { name: 'Sort recipients by' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort descending' })).toBeInTheDocument();
   });
 });
