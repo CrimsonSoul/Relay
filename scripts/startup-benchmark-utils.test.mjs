@@ -215,4 +215,57 @@ describe('startup benchmark utilities', () => {
     expect(source).toContain('processQuiescenceMs');
     expect(source).toContain('Get-CimInstance Win32_Process');
   });
+
+  it('replaces a transient packaged renderer milestone timeout with a successful sample', async () => {
+    const benchmark = await import('./benchmark-startup.mjs');
+    expect(benchmark.collectPackagedSamples).toBeTypeOf('function');
+
+    let attempt = 0;
+    const result = await benchmark.collectPackagedSamples?.(
+      { scenario: 'stable', runs: 2 },
+      async () => {
+        attempt += 1;
+        if (attempt === 1) {
+          const error = new Error('renderer milestone missing');
+          error.code = 'RELAY_STARTUP_MILESTONE_TIMEOUT';
+          throw error;
+        }
+        return { sample: attempt };
+      },
+    );
+
+    expect(result).toEqual({
+      samples: [{ sample: 2 }, { sample: 3 }],
+      attempts: 3,
+      transientFailures: [{ attempt: 1, message: 'renderer milestone missing' }],
+    });
+  });
+
+  it('fails after two transient packaged renderer milestone retries', async () => {
+    const { collectPackagedSamples } = await import('./benchmark-startup.mjs');
+    expect(collectPackagedSamples).toBeTypeOf('function');
+
+    let attempt = 0;
+    await expect(
+      collectPackagedSamples?.({ scenario: 'stable', runs: 1 }, async () => {
+        attempt += 1;
+        const error = new Error(`renderer milestone missing on attempt ${attempt}`);
+        error.code = 'RELAY_STARTUP_MILESTONE_TIMEOUT';
+        throw error;
+      }),
+    ).rejects.toThrow('renderer milestone missing on attempt 3');
+  });
+
+  it('does not retry non-transient packaged startup failures', async () => {
+    const { collectPackagedSamples } = await import('./benchmark-startup.mjs');
+    expect(collectPackagedSamples).toBeTypeOf('function');
+
+    let attempt = 0;
+    await expect(
+      collectPackagedSamples?.({ scenario: 'stable', runs: 5 }, async () => {
+        attempt += 1;
+        throw new Error(`runtime integrity failed on attempt ${attempt}`);
+      }),
+    ).rejects.toThrow('runtime integrity failed on attempt 1');
+  });
 });
