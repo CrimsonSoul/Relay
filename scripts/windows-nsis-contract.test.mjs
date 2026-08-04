@@ -336,6 +336,7 @@ describe('Windows packaging integration contract', () => {
     expect(previousArtifact).toContain("$_.name -eq 'relay-windows'");
     expect(previousArtifact).toContain('gh run download');
     expect(previousArtifact).toContain('GITHUB_OUTPUT');
+    expect(previousArtifact).toContain('[AllowEmptyString()]');
     expect(previousArtifact).toContain("Write-StepOutput -Name 'found' -Value 'false'");
 
     const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
