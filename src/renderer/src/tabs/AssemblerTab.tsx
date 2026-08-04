@@ -47,9 +47,10 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const scheduleBridgeModal = useModalState();
   const handoffModal = useModalState();
   const [historyContacts, setHistoryContacts] = useState<string[]>([]);
+  const [handoffSubject, setHandoffSubject] = useState('');
   const [groupSelectorEmail, setGroupSelectorEmail] = useState<string | null>(null);
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
-  const { saveSuccessfulHandoff } = useBridgeHandoffHistory(addHistory);
+  const { saveSuccessfulHandoff, forgetSuccessfulHandoff } = useBridgeHandoffHistory(addHistory);
 
   // Create a map of group ID to group for quick lookups
   const groupMap = useMemo(() => {
@@ -112,10 +113,33 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   }, [asm, saveAfterSuccess]);
 
   const handleTeamsWithHistory = useCallback(async () => {
-    if (!(await asm.executeDraftBridge())) return;
+    if (!(await asm.executeDraftBridge(handoffSubject))) return;
     handoffModal.close();
     await saveAfterSuccess('Teams draft requested');
-  }, [asm, handoffModal, saveAfterSuccess]);
+  }, [asm, handoffModal, handoffSubject, saveAfterSuccess]);
+
+  const handleOpenHandoffReview = useCallback(() => {
+    setHandoffSubject(asm.prepareDraftBridgeSubject());
+    handoffModal.open();
+  }, [asm, handoffModal]);
+
+  const handleDeleteHistory = useCallback(
+    async (id: string) => {
+      const entry = history.find((candidate) => candidate.id === id);
+      const deleted = await deleteHistory(id);
+      if (deleted && entry) {
+        forgetSuccessfulHandoff({ contacts: entry.contacts, groups: entry.groups });
+      }
+      return deleted;
+    },
+    [deleteHistory, forgetSuccessfulHandoff, history],
+  );
+
+  const handleClearHistory = useCallback(async () => {
+    const cleared = await clearHistory();
+    if (cleared) forgetSuccessfulHandoff();
+    return cleared;
+  }, [clearHistory, forgetSuccessfulHandoff]);
 
   // Handle loading from history
   const handleLoadFromHistory = useCallback(
@@ -274,9 +298,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 Copy Recipients
               </TactileButton>
               <TactileButton
-                onClick={handoffModal.open}
+                onClick={handleOpenHandoffReview}
                 variant="primary"
-                disabled={!asm.handoffSummary.isValid || asm.isCopying}
+                disabled={!hasRecipients || asm.isCopying}
               >
                 Open Teams Draft
               </TactileButton>
@@ -379,7 +403,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
       <BridgeHandoffModal
         isOpen={handoffModal.isOpen}
         onClose={handoffModal.close}
-        subject={asm.bridgeSubject}
+        subject={handoffSubject}
         recipients={asm.handoffSummary.recipients}
         duplicateCount={asm.handoffSummary.duplicateCount}
         manualCount={asm.handoffSummary.manualCount}
@@ -421,8 +445,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         onClose={historyModal.close}
         history={history}
         onLoad={handleLoadFromHistory}
-        onDelete={deleteHistory}
-        onClear={clearHistory}
+        onDelete={handleDeleteHistory}
+        onClear={handleClearHistory}
         onSaveAsGroup={handleHistoryEntryToGroup}
       />
       {asm.compositionContextMenu &&

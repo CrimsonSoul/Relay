@@ -51,7 +51,12 @@ export function useAssembler({
       }),
     [groups, selectedGroupIds, manualAdds, manualRemoves],
   );
-  const bridgeSubject = useMemo(() => buildBridgeSubject(), []);
+  const [bridgeSubject, setBridgeSubject] = useState(() => buildBridgeSubject());
+  const prepareDraftBridgeSubject = useCallback(() => {
+    const subject = buildBridgeSubject();
+    setBridgeSubject(subject);
+    return subject;
+  }, []);
 
   // Build all lookup maps in a single pass to reduce dependency chains
   const { contactMap, emailToGroupsMap, groupStringMap } = useMemo(() => {
@@ -138,47 +143,54 @@ export function useAssembler({
     }
   }, [handoffSummary, showToast]);
 
-  const executeDraftBridge = useCallback(async (): Promise<boolean> => {
-    if (teamsPendingRef.current || !handoffSummary.isValid) return false;
+  const executeDraftBridge = useCallback(
+    async (preparedSubject?: string): Promise<boolean> => {
+      if (teamsPendingRef.current || !handoffSummary.isValid) return false;
 
-    const api = globalThis.api;
-    if (!api) {
-      showToast('Could not open Teams draft', 'error');
-      return false;
-    }
-
-    teamsPendingRef.current = true;
-    setIsOpeningTeams(true);
-    const params = new URLSearchParams({
-      subject: bridgeSubject,
-      attendees: handoffSummary.recipients.map((recipient) => recipient.normalizedEmail).join(','),
-    });
-    const query = params.toString();
-    try {
-      // Try the desktop client deep link first; fall back to the web URL if it is refused
-      const openedDeepLink = await api.openExternal(
-        `msteams://teams.microsoft.com/l/meeting/new?${query}`,
-      );
-      if (!openedDeepLink) {
-        const openedWeb = await api.openExternal(
-          `https://teams.microsoft.com/l/meeting/new?${query}`,
-        );
-        if (!openedWeb) {
-          showToast('Could not open Teams draft', 'error');
-          return false;
-        }
+      const api = globalThis.api;
+      if (!api) {
+        showToast('Could not open Teams draft', 'error');
+        return false;
       }
-      showToast('Teams draft requested', 'success');
-      return true;
-    } catch (error) {
-      loggers.app.error('[useAssembler] Failed to open Teams draft', { error });
-      showToast('Could not open Teams draft', 'error');
-      return false;
-    } finally {
-      teamsPendingRef.current = false;
-      setIsOpeningTeams(false);
-    }
-  }, [bridgeSubject, handoffSummary, showToast]);
+
+      teamsPendingRef.current = true;
+      setIsOpeningTeams(true);
+      const subject = preparedSubject ?? buildBridgeSubject();
+      setBridgeSubject(subject);
+      const params = new URLSearchParams({
+        subject,
+        attendees: handoffSummary.recipients
+          .map((recipient) => recipient.normalizedEmail)
+          .join(','),
+      });
+      const query = params.toString();
+      try {
+        // Try the desktop client deep link first; fall back to the web URL if it is refused
+        const openedDeepLink = await api.openExternal(
+          `msteams://teams.microsoft.com/l/meeting/new?${query}`,
+        );
+        if (!openedDeepLink) {
+          const openedWeb = await api.openExternal(
+            `https://teams.microsoft.com/l/meeting/new?${query}`,
+          );
+          if (!openedWeb) {
+            showToast('Could not open Teams draft', 'error');
+            return false;
+          }
+        }
+        showToast('Teams draft requested', 'success');
+        return true;
+      } catch (error) {
+        loggers.app.error('[useAssembler] Failed to open Teams draft', { error });
+        showToast('Could not open Teams draft', 'error');
+        return false;
+      } finally {
+        teamsPendingRef.current = false;
+        setIsOpeningTeams(false);
+      }
+    },
+    [handoffSummary, showToast],
+  );
   const handleQuickAdd = useCallback(
     (email: string) => {
       onAddManual(email);
@@ -258,6 +270,7 @@ export function useAssembler({
     groupMap: emailToGroupsMap,
     handoffSummary,
     bridgeSubject,
+    prepareDraftBridgeSubject,
     allRecipients,
     log,
     itemData,

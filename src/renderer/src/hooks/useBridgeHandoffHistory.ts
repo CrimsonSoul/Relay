@@ -42,5 +42,17 @@ export function useBridgeHandoffHistory(addHistory: AddHistory) {
     [addHistory],
   );
 
-  return { saveSuccessfulHandoff };
+  const forgetSuccessfulHandoff = useCallback((snapshot?: HandoffSnapshot) => {
+    if (!snapshot) {
+      lastSavedFingerprintRef.current = null;
+      return;
+    }
+
+    const fingerprint = createBridgeHistoryFingerprint(snapshot.contacts, snapshot.groups);
+    if (lastSavedFingerprintRef.current === fingerprint) {
+      lastSavedFingerprintRef.current = null;
+    }
+  }, []);
+
+  return { saveSuccessfulHandoff, forgetSuccessfulHandoff };
 }

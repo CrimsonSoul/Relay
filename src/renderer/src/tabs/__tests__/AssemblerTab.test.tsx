@@ -1,10 +1,13 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssemblerTab } from '../AssemblerTab';
 import type { useAssembler } from '../../hooks/useAssembler';
 import type { BridgeGroup, Contact, BridgeHistoryEntry } from '@shared/ipc';
+
+const assemblerCssPath = resolve(__dirname, '../assembler/assembler.css');
 
 // ── mock sub-components ─────────────────────────────────────────────────────
 vi.mock('../assembler', () => ({
@@ -14,14 +17,17 @@ vi.mock('../assembler', () => ({
     onClose,
     onCopy,
     onOpenTeams,
+    subject,
   }: {
     isOpen: boolean;
     onClose: () => void;
     onCopy: () => void;
     onOpenTeams: () => void;
+    subject: string;
   }) =>
     isOpen ? (
       <div data-testid="bridge-handoff-modal">
+        <span>{subject}</span>
         <button onClick={onClose}>close-handoff</button>
         <button onClick={onCopy}>copy-from-handoff</button>
         <button data-testid="confirm-teams-handoff" onClick={onOpenTeams}>
@@ -51,7 +57,10 @@ vi.mock('../assembler', () => ({
     isOpen,
     onClose,
     onLoad,
+    onDelete,
+    onClear,
     onSaveAsGroup,
+    history,
   }: {
     isOpen: boolean;
     onClose: () => void;
@@ -64,6 +73,8 @@ vi.mock('../assembler', () => ({
     isOpen ? (
       <div data-testid="bridge-history-modal">
         <button onClick={onClose}>close-history</button>
+        <button onClick={() => onDelete(history[0]?.id ?? 'missing')}>delete-history</button>
+        <button onClick={() => onClear()}>clear-history</button>
         <button
           onClick={() =>
             onLoad({
@@ -239,11 +250,12 @@ vi.mock('../../hooks/useGroups', () => ({
 }));
 
 const mockAddHistory = vi.fn().mockResolvedValue(undefined);
-const mockDeleteHistory = vi.fn();
-const mockClearHistory = vi.fn();
+const mockDeleteHistory = vi.fn().mockResolvedValue(true);
+const mockClearHistory = vi.fn().mockResolvedValue(true);
+let mockHistoryEntries: BridgeHistoryEntry[] = [];
 vi.mock('../../hooks/useBridgeHistory', () => ({
   useBridgeHistory: () => ({
-    history: [],
+    history: mockHistoryEntries,
     addHistory: mockAddHistory,
     deleteHistory: mockDeleteHistory,
     clearHistory: mockClearHistory,
@@ -258,6 +270,7 @@ const mockSetSearch = vi.fn();
 const mockSetSortConfig = vi.fn();
 const mockHandleCopy = vi.fn().mockResolvedValue(true);
 const mockExecuteDraftBridge = vi.fn().mockResolvedValue(true);
+const mockPrepareDraftBridgeSubject = vi.fn(() => '8/5 -');
 const mockHandleAddToContacts = vi.fn();
 
 type AssemblerHookState = ReturnType<typeof useAssembler>;
@@ -292,6 +305,7 @@ type MockAssemblerState = Pick<
 > & {
   search: string;
   setSearch: (value: string) => void;
+  prepareDraftBridgeSubject: () => string;
 };
 
 const baseAsm: MockAssemblerState = {
@@ -315,6 +329,7 @@ const baseAsm: MockAssemblerState = {
     isValid: false,
   },
   bridgeSubject: '8/4 -',
+  prepareDraftBridgeSubject: mockPrepareDraftBridgeSubject,
   allRecipients: [],
   log: [],
   contactMap: new Map(),
@@ -392,6 +407,9 @@ describe('AssemblerTab', () => {
     mockHandleCopy.mockResolvedValue(true);
     mockExecuteDraftBridge.mockResolvedValue(true);
     mockAddHistory.mockResolvedValue({ id: 'history-1' });
+    mockDeleteHistory.mockResolvedValue(true);
+    mockClearHistory.mockResolvedValue(true);
+    mockHistoryEntries = [];
     asmState = { ...baseAsm };
   });
 
@@ -431,7 +449,7 @@ describe('AssemblerTab', () => {
   });
 
   it('matches the operational toolbar spacing and control geometry', () => {
-    const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
+    const css = readFileSync(assemblerCssPath, 'utf8');
     const commandBarRule =
       /\.assembler-command-bar \.collapsible-header\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
     const utilityRule =
@@ -448,7 +466,7 @@ describe('AssemblerTab', () => {
   });
 
   it('defines a prominent non-blocking recording notice and recipient-pane sort layout', () => {
-    const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
+    const css = readFileSync(assemblerCssPath, 'utf8');
     const recording = /\.bridge-handoff-recording\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
     const paneTools = /\.assembler-pane-tools\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
 
@@ -518,6 +536,41 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('button', { name: 'More Compose actions' })).not.toBeDisabled();
   });
 
+  it('opens review for invalid recipients so they can be removed', () => {
+    asmState = {
+      ...withRecipientState(),
+      handoffSummary: {
+        recipients: [
+          {
+            email: 'broken-address',
+            normalizedEmail: 'broken-address',
+            source: 'manual',
+            valid: false,
+          },
+        ],
+        invalidRecipients: [
+          {
+            email: 'broken-address',
+            normalizedEmail: 'broken-address',
+            source: 'manual',
+            valid: false,
+          },
+        ],
+        duplicateCount: 0,
+        manualCount: 1,
+        groupNames: [],
+        isValid: false,
+      },
+    };
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
+    const teams = screen.getByRole('button', { name: 'Open Teams Draft' });
+    expect(teams).not.toBeDisabled();
+    fireEvent.click(teams);
+    expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
+  });
+
   it('opens Create Calendar Invite from the accessible More menu', () => {
     asmState = {
       ...withRecipientState(),
@@ -568,6 +621,16 @@ describe('AssemblerTab', () => {
     expect(mockExecuteDraftBridge).not.toHaveBeenCalled();
   });
 
+  it('prepares a current subject when the Teams review opens', () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+
+    expect(mockPrepareDraftBridgeSubject).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('8/5 -')).toBeInTheDocument();
+  });
+
   it('calls handleCopy when Copy Recipients is clicked', () => {
     asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
@@ -615,6 +678,42 @@ describe('AssemblerTab', () => {
     fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
     await waitFor(() => expect(mockExecuteDraftBridge).toHaveBeenCalledTimes(1));
     expect(mockAddHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves the same composition again after its history entry is deleted', async () => {
+    mockHistoryEntries = [
+      {
+        id: 'history-1',
+        note: '',
+        groups: ['Alpha'],
+        contacts: ['a@example.com'],
+        recipientCount: 1,
+        timestamp: Date.now(),
+      },
+    ];
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    fireEvent.click(screen.getByText('delete-history'));
+    await waitFor(() => expect(mockDeleteHistory).toHaveBeenCalledWith('history-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(2));
+  });
+
+  it('saves the same composition again after history is cleared', async () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    fireEvent.click(screen.getByText('clear-history'));
+    await waitFor(() => expect(mockClearHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(2));
   });
 
   it('opens SaveGroupModal when "save-as-group" is triggered from history', () => {

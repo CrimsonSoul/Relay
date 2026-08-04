@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contact } from '@shared/ipc';
 import { BridgeHandoffModal } from '../BridgeHandoffModal';
 import type { BridgeHandoffRecipient } from '../bridgeHandoff';
@@ -74,6 +74,10 @@ const defaultProps = {
 };
 
 describe('BridgeHandoffModal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('shows the prominent recording reminder and truthful handoff copy', () => {
     render(<BridgeHandoffModal {...defaultProps} />);
 

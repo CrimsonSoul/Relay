@@ -389,6 +389,29 @@ describe('useAssembler', () => {
     expect(mockShowToast).toHaveBeenCalledWith('Teams draft requested', 'success');
   });
 
+  it('uses the current date when a Teams handoff runs after midnight', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 7, 4, 23, 59));
+      const mockOpenExternal = vi.fn<BridgeAPI['openExternal']>().mockResolvedValue(true);
+      stubBridgeApi({ openExternal: mockOpenExternal });
+      const { result } = renderHook(
+        () => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }),
+        { wrapper },
+      );
+
+      vi.setSystemTime(new Date(2026, 7, 5, 0, 1));
+      await act(async () => {
+        await result.current.executeDraftBridge();
+      });
+
+      const openedUrl = new URL(mockOpenExternal.mock.calls[0]![0]);
+      expect(openedUrl.searchParams.get('subject')).toBe('8/5 -');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('executeDraftBridge falls back to the https Teams URL when the deep link is refused', async () => {
     const mockOpenExternal = vi
       .fn<BridgeAPI['openExternal']>()
