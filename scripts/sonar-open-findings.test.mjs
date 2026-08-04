@@ -170,6 +170,24 @@ test('maps canonical and legacy reviewed states without hiding reopened findings
     'falsePositive',
   );
   assert.equal(classifyIssue({ key: 'h', status: 'FIXED', resolution: 'FIXED' }), 'resolved');
+  assert.equal(
+    classifyIssue({
+      key: 'i',
+      status: 'CLOSED',
+      resolution: 'FIXED',
+      issueStatus: 'FIXED',
+    }),
+    'resolved',
+  );
+  assert.equal(
+    classifyIssue({
+      key: 'j',
+      status: 'CLOSED',
+      resolution: 'REMOVED',
+      issueStatus: 'FIXED',
+    }),
+    'resolved',
+  );
 });
 
 test('fails closed when canonical and legacy Sonar issue states conflict', () => {

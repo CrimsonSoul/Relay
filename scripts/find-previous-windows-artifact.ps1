@@ -32,7 +32,7 @@ $downloadRoot = Join-Path $env:RUNNER_TEMP 'relay-previous-artifact'
 function Write-StepOutput {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
-    [Parameter(Mandatory = $true)][string]$Value
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value
   )
   Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "$Name=$Value"
 }
