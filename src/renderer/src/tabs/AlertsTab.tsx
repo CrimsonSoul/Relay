@@ -1,4 +1,4 @@
-import React, { useState, useReducer, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 // html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
@@ -14,11 +14,15 @@ import { AlertReminderModal } from './AlertReminderModal';
 import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
-import { isAlertMessageComplete, sanitizeHtml } from './alertUtils';
+import { isAlertMessageComplete } from './alertUtils';
 import type { Severity } from './alertUtils';
 import { buildAlertOutlookEml, sanitizeAlertClickUrl } from './alertLinks';
 import { localToIso } from './alertTimeUtils';
-import type { AlertFormHandle } from './AlertForm';
+import {
+  AlertDraftProvider,
+  initialAlertDraftState,
+  useAlertDraft,
+} from './alerts/AlertDraftContext';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import {
   getReminderAlarmLabel,
@@ -35,57 +39,6 @@ const ALERT_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_FALLBACK_SCALE = 1;
 const ALERT_SEVERITIES = new Set<Severity>(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']);
-
-interface AlertFormState {
-  severity: Severity;
-  subject: string;
-  bodyHtml: string;
-  sender: string;
-  recipient: string;
-  clickThroughUrl: string;
-  updateNumber: number;
-  eventTimeStart: string;
-  eventTimeEnd: string;
-  eventTimeSourceTz: string;
-}
-
-type AlertFormAction =
-  | { type: 'SET_FIELD'; field: keyof AlertFormState; value: AlertFormState[keyof AlertFormState] }
-  | { type: 'RESET' }
-  | { type: 'LOAD_HISTORY'; entry: AlertHistoryEntry };
-
-const initialFormState: AlertFormState = {
-  severity: 'INFO',
-  subject: '',
-  bodyHtml: '',
-  sender: '',
-  recipient: '',
-  clickThroughUrl: '',
-  updateNumber: 0,
-  eventTimeStart: '',
-  eventTimeEnd: '',
-  eventTimeSourceTz: 'America/Chicago',
-};
-
-function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormState {
-  switch (action.type) {
-    case 'SET_FIELD':
-      return { ...state, [action.field]: action.value };
-    case 'RESET':
-      return initialFormState;
-    case 'LOAD_HISTORY':
-      return {
-        ...initialFormState,
-        severity: action.entry.severity,
-        subject: action.entry.subject,
-        bodyHtml: sanitizeHtml(action.entry.bodyHtml),
-        sender: action.entry.sender,
-        recipient: action.entry.recipient ?? '',
-      };
-    default:
-      return state;
-  }
-}
 
 function readCssValue(element: HTMLElement, property: string): string {
   return (
@@ -178,7 +131,7 @@ function normalizeLoadedSeverity(severity: ReminderAlertLoadDetail['severity']):
   return ALERT_SEVERITIES.has(severity as Severity) ? (severity as Severity) : 'INFO';
 }
 
-export const AlertsTab: React.FC<AlertsTabProps> = ({
+const AlertsTabContent: React.FC<AlertsTabProps> = ({
   loadedReminderAlert = null,
   onLoadedReminderAlertConsumed,
 }) => {
@@ -186,9 +139,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const canCustomizeReminderSound = hasRelayCapability('customReminderSound');
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
-  const formRef = useRef<AlertFormHandle>(null);
 
-  const [form, dispatch] = useReducer(formReducer, initialFormState);
+  const { state: form, load, reset } = useAlertDraft();
   const {
     severity,
     subject,
@@ -203,46 +155,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   } = form;
   const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
 
-  const setSeverity = useCallback(
-    (v: Severity) => dispatch({ type: 'SET_FIELD', field: 'severity', value: v }),
-    [],
-  );
-  const setSubject = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'subject', value: v }),
-    [],
-  );
-  const setBodyHtml = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: v }),
-    [],
-  );
-  const setSender = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'sender', value: v }),
-    [],
-  );
-  const setRecipient = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'recipient', value: v }),
-    [],
-  );
-  const setClickThroughUrl = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'clickThroughUrl', value: v }),
-    [],
-  );
-  const setUpdateNumber = useCallback(
-    (v: number) => dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: v }),
-    [],
-  );
-  const setEventTimeStart = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeStart', value: v }),
-    [],
-  );
-  const setEventTimeEnd = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeEnd', value: v }),
-    [],
-  );
-  const setEventTimeSourceTz = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeSourceTz', value: v }),
-    [],
-  );
   const [isCapturing, setIsCapturing] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
@@ -285,8 +197,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   // an alert off an alarm — have to ask before discarding it.
   const hasComposition = useMemo(
     () =>
-      (Object.keys(initialFormState) as Array<keyof AlertFormState>).some(
-        (field) => form[field] !== initialFormState[field],
+      (Object.keys(initialAlertDraftState) as Array<keyof typeof initialAlertDraftState>).some(
+        (field) => form[field] !== initialAlertDraftState[field],
       ),
     [form],
   );
@@ -301,29 +213,25 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   );
 
   const clearComposition = useCallback(() => {
-    dispatch({ type: 'RESET' });
-    formRef.current?.setEditorContent('');
+    reset();
     // logoDataUrl is intentionally NOT cleared — it's a persistent setting
-  }, []);
+  }, [reset]);
 
   const applyReminderAlert = useCallback(
     (detail: ReminderAlertLoadDetail) => {
-      const nextBodyHtml = sanitizeHtml(detail.bodyHtml);
-      dispatch({
-        type: 'SET_FIELD',
-        field: 'severity',
-        value: normalizeLoadedSeverity(detail.severity),
-      });
-      dispatch({ type: 'SET_FIELD', field: 'subject', value: detail.subject.trim() });
-      dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: nextBodyHtml });
-      dispatch({ type: 'SET_FIELD', field: 'sender', value: detail.sender.trim() });
-      dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
-      dispatch({ type: 'SET_FIELD', field: 'clickThroughUrl', value: '' });
-      dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
-      formRef.current?.setEditorContent(nextBodyHtml);
+      load((currentState) => ({
+        ...currentState,
+        severity: normalizeLoadedSeverity(detail.severity),
+        subject: detail.subject.trim(),
+        bodyHtml: detail.bodyHtml,
+        sender: detail.sender.trim(),
+        recipient: '',
+        clickThroughUrl: '',
+        updateNumber: 0,
+      }));
       showToast('Alert loaded from alarm', 'success');
     },
-    [showToast],
+    [load, showToast],
   );
 
   useEffect(() => {
@@ -455,10 +363,19 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [withCapture, showToast, subject, addHistory, severity, bodyHtml, sender, recipient],
   );
 
-  const handleLoadFromHistory = useCallback((entry: AlertHistoryEntry) => {
-    dispatch({ type: 'LOAD_HISTORY', entry });
-    formRef.current?.setEditorContent(sanitizeHtml(entry.bodyHtml));
-  }, []);
+  const handleLoadFromHistory = useCallback(
+    (entry: AlertHistoryEntry) => {
+      load({
+        ...initialAlertDraftState,
+        severity: entry.severity,
+        subject: entry.subject,
+        bodyHtml: entry.bodyHtml,
+        sender: entry.sender,
+        recipient: entry.recipient ?? '',
+      });
+    },
+    [load],
+  );
 
   const handleClear = useCallback(() => {
     // RESET sits right next to HISTORY and there is no undo, so an unexported
@@ -909,27 +826,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
             <span>{requiredStepsReady} of 2 required ready</span>
           </div>
           <AlertForm
-            ref={formRef}
-            severity={severity}
-            setSeverity={setSeverity}
-            subject={subject}
-            setSubject={setSubject}
-            bodyHtml={bodyHtml}
-            setBodyHtml={setBodyHtml}
-            sender={sender}
-            setSender={setSender}
-            recipient={recipient}
-            setRecipient={setRecipient}
-            clickThroughUrl={clickThroughUrl}
-            setClickThroughUrl={setClickThroughUrl}
-            updateNumber={updateNumber}
-            setUpdateNumber={setUpdateNumber}
-            eventTimeStart={eventTimeStart}
-            setEventTimeStart={setEventTimeStart}
-            eventTimeEnd={eventTimeEnd}
-            setEventTimeEnd={setEventTimeEnd}
-            eventTimeSourceTz={eventTimeSourceTz}
-            setEventTimeSourceTz={setEventTimeSourceTz}
             logoDataUrl={logoDataUrl}
             onSetLogo={handleSetLogo}
             onRemoveLogo={handleRemoveLogo}
@@ -1059,3 +955,9 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     </div>
   );
 };
+
+export const AlertsTab: React.FC<AlertsTabProps> = (props) => (
+  <AlertDraftProvider>
+    <AlertsTabContent {...props} />
+  </AlertDraftProvider>
+);

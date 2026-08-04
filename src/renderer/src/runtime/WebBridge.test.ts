@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import type { BridgeAPI, RadarSnapshot } from '@shared/ipc';
 import { RADAR_URL } from '@shared/radar';
 import { WEB_RUNTIME } from '@shared/runtime';
@@ -18,20 +19,7 @@ const SESSION: WebSessionBootstrap = {
 };
 
 const EMPTY_STATUS = {
-  providers: Object.fromEntries(
-    [
-      'aws',
-      'azure',
-      'm365',
-      'jira',
-      'github',
-      'cloudflare',
-      'google',
-      'anthropic',
-      'openai',
-      'salesforce',
-    ].map((provider) => [provider, []]),
-  ),
+  providers: emptyCloudStatusProviders(),
   lastUpdated: 0,
   errors: [],
 };
@@ -104,6 +92,123 @@ describe('WebBridge', () => {
     await expect(bridge.createBackup()).resolves.toMatchObject({ success: false });
     await expect(bridge.getPrivilegedSession()).resolves.toMatchObject({ state: 'signed-out' });
     expect((bridge as unknown as Record<string, unknown>).openPath).toBeUndefined();
+  });
+
+  it('composes every non-startup BridgeAPI method without exposing desktop startup controls', () => {
+    const { request } = stubWebRequest(() => EMPTY_STATUS);
+    const bridge = createWebBridge(SESSION, { request });
+
+    expect(Object.keys(bridge).sort((left, right) => left.localeCompare(right))).toEqual([
+      'addDynatraceDashboard',
+      'cacheRead',
+      'cacheSnapshot',
+      'cacheWrite',
+      'cancelAuth',
+      'cancelKnowledgeSearch',
+      'cancelKnowledgeUpload',
+      'cancelKnowledgeUploadBatch',
+      'cancelWebApprovalRequest',
+      'clearConfig',
+      'clearDynatraceProblemsSettings',
+      'clearDynatraceSession',
+      'completePrivilegedPairing',
+      'createBackup',
+      'createPrivilegedPairingChallenge',
+      'discoverServers',
+      'generateWebApprovalCode',
+      'getClientHostname',
+      'getCloudStatus',
+      'getCompanyLogo',
+      'getConfig',
+      'getConnectionSecret',
+      'getDynatraceProblemsSettings',
+      'getFooterLogo',
+      'getKnowledgeCover',
+      'getKnowledgeIndexStatus',
+      'getKnowledgePdf',
+      'getKnowledgeUploadQueue',
+      'getPbConnection',
+      'getPendingSyncStatus',
+      'getPrivilegedSession',
+      'getRadarSnapshot',
+      'getWebServerState',
+      'isConfigured',
+      'isMaximized',
+      'listBackups',
+      'listDynatraceDashboards',
+      'listWebApprovalRequests',
+      'logBridge',
+      'loginPrivileged',
+      'logoutPrivileged',
+      'logToMain',
+      'mutateOffline',
+      'notifyAlertDismissed',
+      'notifyDragStart',
+      'notifyDragStop',
+      'onAlertDismissed',
+      'onAuthRequested',
+      'onDragStateChange',
+      'onDynatraceDashboardsChanged',
+      'onErrorNotification',
+      'onKnowledgeIndexStatusChanged',
+      'onKnowledgeUploadQueueChanged',
+      'onMaximizeChange',
+      'onOfflineMutationApplied',
+      'onPbCrashed',
+      'onPendingSyncStatusChanged',
+      'onPrivilegedSessionChanged',
+      'onRadarSnapshot',
+      'onWebApprovalRequestsChanged',
+      'openDynatraceDashboard',
+      'openExternal',
+      'openKnowledgeWebLink',
+      'openRadarSignIn',
+      'optimizeAlertImage',
+      'pauseKnowledgeUploadBatch',
+      'platform',
+      'playAlertSound',
+      'reauthenticatePrivileged',
+      'refreshPbConnection',
+      'refreshRadar',
+      'relaunchApp',
+      'removeCompanyLogo',
+      'removeDynatraceDashboard',
+      'removeFooterLogo',
+      'reselectKnowledgeUploadSource',
+      'restoreBackup',
+      'resumeKnowledgeUploadBatch',
+      'retryKnowledgeUpload',
+      'retryWebServer',
+      'runtime',
+      'saveAlertImage',
+      'saveAndOpenAlertDraft',
+      'saveAndOpenIcs',
+      'saveCompanyLogo',
+      'saveConfig',
+      'saveDynatraceProblemProfileFilter',
+      'saveDynatraceProblemsSettings',
+      'saveFooterLogo',
+      'saveWebServerConfig',
+      'searchKnowledge',
+      'selectAlertBodyImage',
+      'selectAndQueueKnowledgePdfs',
+      'selectReminderSound',
+      'setupInitialAdministratorCredential',
+      'setupPrivilegedCredential',
+      'startPocketBase',
+      'submitAuth',
+      'submitPrivilegedCommand',
+      'syncDynatraceProblems',
+      'syncPending',
+      'testConnection',
+      'testDynatraceProblemsSettings',
+      'updateDynatraceDashboard',
+      'useCachedAuth',
+      'windowClose',
+      'windowMaximize',
+      'windowMinimize',
+      'writeClipboard',
+    ]);
   });
 
   it('keeps device-only capabilities excluded while shared operations use bounded Web paths', async () => {

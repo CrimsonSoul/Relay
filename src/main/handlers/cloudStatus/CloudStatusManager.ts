@@ -1,11 +1,26 @@
-import { createHash } from 'node:crypto';
 import type PocketBase from 'pocketbase';
-import type { CloudStatusData, CloudStatusSnapshotRecord } from '@shared/ipc';
+import type {
+  CloudStatusData,
+  CloudStatusItem,
+  CloudStatusProvider,
+  LegacyCloudStatusProvider,
+  MistCloudStatusProvider,
+} from '@shared/ipc';
+import {
+  emptyCloudStatusProviders,
+  emptyLegacyCloudStatusProviders,
+  emptyMistCloudStatusProviders,
+  mergeCloudStatusData,
+  splitCloudStatusData,
+} from '@shared/cloudStatus';
 import { loggers } from '../../logger';
-import { emptyCloudStatusProviders, fetchCloudStatusData } from './fetchCloudStatus';
+import { fetchCloudStatusData } from './fetchCloudStatus';
+import {
+  CloudStatusSnapshotStore,
+  LEGACY_CLOUD_STATUS_COLLECTION,
+  MIST_CLOUD_STATUS_COLLECTION,
+} from './CloudStatusSnapshotStore';
 
-const COLLECTION = 'cloud_status_snapshot';
-const SNAPSHOT_KEY = 'current';
 export const HEALTHY_CLOUD_STATUS_INTERVAL_MS = 5 * 60_000;
 export const DEGRADED_CLOUD_STATUS_INTERVAL_MS = 60_000;
 
@@ -15,17 +30,14 @@ function emptySnapshot(): CloudStatusData {
   return { providers: emptyCloudStatusProviders(), errors: [], lastUpdated: 0 };
 }
 
-function snapshotHash(data: CloudStatusData): string {
-  return createHash('sha256')
-    .update(JSON.stringify({ providers: data.providers, errors: data.errors }))
-    .digest('hex');
-}
-
-function isDegraded(data: CloudStatusData): boolean {
+function isDegraded(data: {
+  errors: readonly unknown[];
+  providers: Partial<Record<CloudStatusProvider, CloudStatusItem[]>>;
+}): boolean {
   if (data.errors.length > 0) return true;
-  return Object.values(data.providers)
-    .flat()
-    .some((item) => item.severity === 'warning' || item.severity === 'error');
+  return Object.values(data.providers).some((items) =>
+    items?.some((item) => item.severity === 'warning' || item.severity === 'error'),
+  );
 }
 
 export class CloudStatusManager {
@@ -33,14 +45,25 @@ export class CloudStatusManager {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<CloudStatusData> | null = null;
   private snapshot: CloudStatusData = emptySnapshot();
-  private contentHash = '';
-  private recordId: string | null = null;
   private hydrated = false;
+  private readonly legacyStore: CloudStatusSnapshotStore<LegacyCloudStatusProvider>;
+  private readonly mistStore: CloudStatusSnapshotStore<MistCloudStatusProvider>;
 
   constructor(
     private readonly getPocketBase: () => PocketBase | null,
     private readonly fetchStatus: FetchStatus = fetchCloudStatusData,
-  ) {}
+  ) {
+    this.legacyStore = new CloudStatusSnapshotStore(
+      getPocketBase,
+      LEGACY_CLOUD_STATUS_COLLECTION,
+      emptyLegacyCloudStatusProviders,
+    );
+    this.mistStore = new CloudStatusSnapshotStore(
+      getPocketBase,
+      MIST_CLOUD_STATUS_COLLECTION,
+      emptyMistCloudStatusProviders,
+    );
+  }
 
   start(): void {
     if (this.active) return;
@@ -71,12 +94,12 @@ export class CloudStatusManager {
     try {
       await this.hydratePersistedSnapshot();
       const next = await this.fetchStatus(this.snapshot);
-      const nextHash = snapshotHash(next);
+      const { legacy, mist } = splitCloudStatusData(next);
+      await Promise.all([
+        this.legacyStore.persist(legacy, isDegraded(legacy)),
+        this.mistStore.persist(mist, isDegraded(mist)),
+      ]);
       this.snapshot = next;
-      if (nextHash !== this.contentHash || isDegraded(next)) {
-        await this.persistSnapshot(next, nextHash);
-        this.contentHash = nextHash;
-      }
       return next;
     } catch (error) {
       loggers.cloudStatus.error('Failed to refresh shared cloud status', { error });
@@ -89,22 +112,12 @@ export class CloudStatusManager {
     const pb = this.getPocketBase();
     if (!pb) return;
     this.hydrated = true;
-    try {
-      const existing = await pb
-        .collection(COLLECTION)
-        .getFirstListItem<CloudStatusSnapshotRecord>(`key="${SNAPSHOT_KEY}"`, {
-          requestKey: null,
-        });
-      this.recordId = existing.id;
-      this.contentHash = existing.contentHash;
-      this.snapshot = {
-        providers: existing.providers,
-        errors: existing.errors,
-        lastUpdated: existing.lastUpdated,
-      };
-    } catch {
-      // First startup has no persisted singleton yet.
-    }
+    const current = splitCloudStatusData(this.snapshot);
+    const [legacy, mist] = await Promise.all([
+      this.legacyStore.hydrate(current.legacy),
+      this.mistStore.hydrate(current.mist),
+    ]);
+    this.snapshot = mergeCloudStatusData(legacy, mist);
   }
 
   private scheduleNext(): void {
@@ -113,41 +126,5 @@ export class CloudStatusManager {
       ? DEGRADED_CLOUD_STATUS_INTERVAL_MS
       : HEALTHY_CLOUD_STATUS_INTERVAL_MS;
     this.timer = setTimeout(() => void this.refresh(), delay);
-  }
-
-  private async persistSnapshot(data: CloudStatusData, contentHash: string): Promise<void> {
-    const pb = this.getPocketBase();
-    if (!pb) return;
-    const payload = {
-      key: SNAPSHOT_KEY,
-      providers: data.providers,
-      errors: data.errors,
-      lastUpdated: data.lastUpdated,
-      contentHash,
-    };
-
-    if (!this.recordId) {
-      try {
-        const existing = await pb
-          .collection(COLLECTION)
-          .getFirstListItem<CloudStatusSnapshotRecord>(`key="${SNAPSHOT_KEY}"`, {
-            requestKey: null,
-          });
-        this.recordId = existing.id;
-        this.contentHash = existing.contentHash;
-        if (existing.contentHash === contentHash) return;
-      } catch {
-        // The singleton does not exist on first server startup.
-      }
-    }
-
-    if (this.recordId) {
-      await pb.collection(COLLECTION).update(this.recordId, payload, { requestKey: null });
-      return;
-    }
-    const created = await pb.collection(COLLECTION).create<CloudStatusSnapshotRecord>(payload, {
-      requestKey: null,
-    });
-    this.recordId = created.id;
   }
 }

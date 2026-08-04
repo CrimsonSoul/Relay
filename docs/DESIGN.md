@@ -381,7 +381,13 @@ a retry action rather than replacing the entire document.
 
 ---
 
-## 12. Styling Rules
+## 12. Service Status
+
+Juniper Mist appears as four separate provider rows labeled **Juniper Mist Global**, **Juniper Mist EMEA**, **Juniper Mist APAC**, and **Juniper Mist Federal** immediately after Cloudflare. All four rows use the same monochrome Juniper Networks mark and the standard provider-row/detail interaction; region is conveyed by text, not by color or icon variants.
+
+Mist rows offer only the official status-page action. They do not invent X or Downdetector destinations. Operational, degraded, outage, and Unknown states continue to use Relay's fixed semantic palette and paired text labels.
+
+## 13. Styling Rules
 
 ### Do
 
@@ -416,7 +422,7 @@ Static design values must stay in CSS.
 
 ---
 
-## 13. Accessibility Baseline
+## 14. Accessibility Baseline
 
 - **Focus ring:** `box-shadow: 0 0 0 2px var(--color-accent-dim)` + accent border on
   all interactive elements via `:focus-visible`

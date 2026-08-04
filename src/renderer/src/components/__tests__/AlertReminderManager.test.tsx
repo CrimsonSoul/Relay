@@ -91,7 +91,7 @@ vi.mock('../TactileButton', () => ({
 }));
 
 const componentStyles = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), '../../styles/components.css'),
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../styles/components-after-settings.css'),
   'utf8',
 );
 

@@ -34,6 +34,7 @@ import {
   setKnowledgePdfService,
   setKnowledgeCoverService,
   getKnowledgeUploadService,
+  notifyKnowledgeUploadSessionChanged,
   getKnowledgePdfService,
   getKnowledgeCoverService,
   getKnowledgeSearchService,
@@ -67,6 +68,7 @@ import {
 } from './app/pocketbaseBootstrap';
 import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
+import { replacePrivilegedRuntime, stopPrivilegedRuntime } from './app/privilegedRuntimeLifecycle';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 import { assertTrustedIpcSender } from './utils/trustedSender';
@@ -431,8 +433,8 @@ if (gotLock) {
         },
       });
       setKnowledgeUploadService(knowledgeUploadService);
-      stopKnowledgeUploadSession = subscribePrivilegedSessionChanged((view) =>
-        knowledgeUploadService.handleSessionChanged(view),
+      stopKnowledgeUploadSession = subscribePrivilegedSessionChanged(
+        notifyKnowledgeUploadSessionChanged,
       );
       await knowledgeUploadService.start();
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
@@ -458,43 +460,26 @@ if (gotLock) {
         startPocketBaseServices: startDeferredPocketBaseServices,
       });
 
-      const stopPrivilegedAccess = async () => {
-        const runtime = getPrivilegedRuntime();
-        const host = getPrivilegedHost();
-        setPrivilegedRuntime(null);
-        setPrivilegedHost(null);
-        getKnowledgeUploadService()?.handleSessionChanged({
-          state: 'signed-out',
-          accountId: null,
-          username: null,
-          displayName: null,
-          role: null,
-          capabilities: [],
-          deviceId: null,
-          expiresAt: null,
-        });
-        await (host?.dispose() ?? runtime?.dispose());
-      };
+      const stopPrivilegedAccess = stopPrivilegedRuntime;
 
       const startPrivilegedAccess = async (config: NonNullable<ReturnType<AppConfig['load']>>) => {
-        await stopPrivilegedAccess();
         try {
-          const productionOptions = {
-            config,
-            dataDir: configDataDir,
-            serverClient: config.mode === 'server' ? getPbClient() : null,
-            dynatraceProblemsManager: getDynatraceProblemsManager(),
-          };
-          const host =
-            config.mode === 'server'
-              ? await createProductionPrivilegedHost(productionOptions)
-              : null;
-          const runtime = host
-            ? host.createElectronRuntime()
-            : await createProductionPrivilegedRuntime(productionOptions);
-          setPrivilegedHost(host);
-          setPrivilegedRuntime(runtime);
-          getKnowledgeUploadService()?.handleSessionChanged(runtime.getView());
+          await replacePrivilegedRuntime(async () => {
+            const productionOptions = {
+              config,
+              dataDir: configDataDir,
+              serverClient: config.mode === 'server' ? getPbClient() : null,
+              dynatraceProblemsManager: getDynatraceProblemsManager(),
+            };
+            const host =
+              config.mode === 'server'
+                ? await createProductionPrivilegedHost(productionOptions)
+                : null;
+            const runtime = host
+              ? host.createElectronRuntime()
+              : await createProductionPrivilegedRuntime(productionOptions);
+            return { host, runtime };
+          });
         } catch (error) {
           loggers.security.warn('Could not initialize privileged access', { error });
         }

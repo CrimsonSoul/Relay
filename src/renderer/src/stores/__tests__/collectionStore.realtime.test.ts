@@ -49,6 +49,23 @@ beforeEach(() => {
 });
 
 describe('CollectionStore realtime events', () => {
+  it('surfaces a missing Mist collection without fabricating a loaded snapshot', async () => {
+    mocked.getFullList.mockRejectedValue(new Error('Missing collection'));
+    const store = new CollectionStore<RecordModel>('cloud_status_mist_snapshot', {
+      filter: 'key="current"',
+    });
+    const unsubscribeListener = store.subscribe(() => undefined);
+
+    try {
+      await vi.waitFor(() => expect(store.getSnapshot().error).toBe('Missing collection'));
+      expect(store.getSnapshot().data).toEqual([]);
+      expect(store.getSnapshot().hasLoadedSnapshot).toBe(false);
+    } finally {
+      unsubscribeListener();
+      store.dispose();
+    }
+  });
+
   it('rejects a created record that the store filter excludes', async () => {
     const store = new CollectionStore<RecordModel>('cloud_status_snapshot', {
       filter: 'key="current"',

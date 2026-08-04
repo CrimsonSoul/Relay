@@ -25,6 +25,7 @@ vi.mock('../rateLimiter', () => ({
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { MIST_COMPONENTS_URL, MIST_NOTICES_URL } from './cloudStatus/mistProvider';
 
 const mockHandle = vi.mocked(ipcMain.handle);
 
@@ -541,6 +542,76 @@ describe('cloudStatusHandlers', () => {
     // Empty timeline → falls to IncidentEvents[0].createdAt
     expect(providerItems(result.providers, 'salesforce')[0]?.pubDate).toBe('2026-02-28T14:00:00Z');
     expect(providerItems(result.providers, 'salesforce')[0]?.description).toBe('Event msg');
+  });
+
+  it('fetches one Mist group and returns four regional buckets', async () => {
+    const rssEmpty = rssXml([]);
+    const fetchMock = vi.fn().mockImplementation((value: string | URL) => {
+      const url = String(value);
+      if (url === MIST_NOTICES_URL) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ notices: [] }) });
+      }
+      if (url === MIST_COMPONENTS_URL) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              components: [
+                {
+                  id: 24585,
+                  name: 'MIST GLOBAL CLOUD',
+                  state: 'operational',
+                  updated_at: '2026-08-03T10:00:00.000Z',
+                },
+                {
+                  id: 24592,
+                  name: 'MIST EMEA CLOUD',
+                  state: 'degraded',
+                  updated_at: '2026-08-03T10:00:00.000Z',
+                },
+                {
+                  id: 84051,
+                  name: 'MIST APAC CLOUD',
+                  state: 'operational',
+                  updated_at: '2026-08-03T10:00:00.000Z',
+                },
+                {
+                  id: 84052,
+                  name: 'MIST FEDERAL CLOUD',
+                  state: 'operational',
+                  updated_at: '2026-08-03T10:00:00.000Z',
+                },
+              ],
+            }),
+        });
+      }
+      if (url.includes('status.cloud.google') || url.includes('salesforce')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        text: () => Promise.resolve(rssEmpty),
+        json: () => Promise.resolve({ incidents: [] }),
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    const result = (await handler()) as {
+      providers: Record<string, { provider: string; severity: string }[]>;
+    };
+
+    expect(providerItems(result.providers, 'mist_global')).toEqual([]);
+    expect(providerItems(result.providers, 'mist_emea')).toEqual([
+      expect.objectContaining({ provider: 'mist_emea', severity: 'warning' }),
+    ]);
+    expect(providerItems(result.providers, 'mist_apac')).toEqual([]);
+    expect(providerItems(result.providers, 'mist_federal')).toEqual([]);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url) === MIST_NOTICES_URL)).toHaveLength(
+      1,
+    );
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === MIST_COMPONENTS_URL),
+    ).toHaveLength(1);
   });
 
   // --- Error handling ---

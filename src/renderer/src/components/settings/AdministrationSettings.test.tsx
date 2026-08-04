@@ -19,8 +19,8 @@ vi.mock('../../contexts/PrivilegedAccessContext', () => ({
 
 import { AdministrationSettings } from './AdministrationSettings';
 
-const componentsCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
+const settingsCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/components/settings/settings.css'),
   'utf8',
 );
 
@@ -268,10 +268,10 @@ describe('AdministrationSettings', () => {
   });
 
   it('defines a compact selector and stacked rows below half-screen widths', () => {
-    expect(componentsCss).toMatch(
+    expect(settingsCss).toMatch(
       /@media \(max-width:\s*980px\)[\s\S]*\.administration-settings__rail\s*{[^}]*display:\s*none/,
     );
-    expect(componentsCss).toMatch(
+    expect(settingsCss).toMatch(
       /@media \(max-width:\s*680px\)[\s\S]*\.administration-row\s*{[^}]*grid-template-columns:\s*1fr/,
     );
   });

@@ -102,7 +102,7 @@ describe('Relay Web API operational schemas', () => {
     expect(schema.safeParse({ ...snapshot, cookie: 'must-not-cross' }).success).toBe(false);
   });
 
-  it('accepts bounded cloud status data and rejects incomplete provider maps', () => {
+  it('accepts the complete cloud status provider map and rejects incomplete or unknown maps', () => {
     const providers = Object.fromEntries(
       [
         'aws',
@@ -111,6 +111,10 @@ describe('Relay Web API operational schemas', () => {
         'jira',
         'github',
         'cloudflare',
+        'mist_global',
+        'mist_emea',
+        'mist_apac',
+        'mist_federal',
         'google',
         'anthropic',
         'openai',
@@ -122,6 +126,44 @@ describe('Relay Web API operational schemas', () => {
     ).toBe(true);
     expect(
       WebCloudStatusDataSchema.safeParse({ providers: {}, lastUpdated: 1, errors: [] }).success,
+    ).toBe(false);
+    const withoutMistGlobal = Object.fromEntries(
+      Object.entries(providers).filter(([provider]) => provider !== 'mist_global'),
+    );
+    expect(
+      WebCloudStatusDataSchema.safeParse({
+        providers: withoutMistGlobal,
+        lastUpdated: 1,
+        errors: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      WebCloudStatusDataSchema.safeParse({
+        providers: { ...providers, unknown: [] },
+        lastUpdated: 1,
+        errors: [],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      WebCloudStatusDataSchema.safeParse({
+        providers: {
+          ...providers,
+          mist_global: [
+            {
+              id: 'misrouted',
+              provider: 'aws',
+              title: 'Wrong bucket',
+              description: '',
+              pubDate: '2026-08-03T10:00:00.000Z',
+              link: 'https://status.mist.com/',
+              severity: 'error',
+            },
+          ],
+        },
+        lastUpdated: 1,
+        errors: [],
+      }).success,
     ).toBe(false);
   });
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { OFFLINE_WRITABLE_COLLECTIONS } from '@shared/offlineCollections';
 import { setupCacheHandlers } from './cacheHandlers';
 import { loggers } from '../logger';
 
@@ -95,6 +96,16 @@ describe('cacheHandlers', () => {
       const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'cloud_status_snapshot');
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_snapshot');
+      expect(result).toEqual(snapshot);
+    });
+
+    it('reads the separate Mist cloud status snapshot for offline clients', () => {
+      const snapshot = [{ id: 'mist-snapshot', key: 'current' }];
+      mockCache.readCollection.mockReturnValue(snapshot);
+
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'cloud_status_mist_snapshot');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_mist_snapshot');
       expect(result).toEqual(snapshot);
     });
 
@@ -223,6 +234,18 @@ describe('cacheHandlers', () => {
 
       expect(mockCache.updateRecord).toHaveBeenCalledWith(
         'cloud_status_snapshot',
+        'update',
+        record,
+      );
+    });
+
+    it('ingests realtime updates for the Mist server-owned collection', () => {
+      const record = { id: 'mist-snapshot', key: 'current', providers: [] };
+
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'cloud_status_mist_snapshot', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith(
+        'cloud_status_mist_snapshot',
         'update',
         record,
       );
@@ -357,6 +380,23 @@ describe('cacheHandlers', () => {
       );
     });
 
+    it('persists the separate Mist cloud status snapshot for offline clients', () => {
+      const records = [{ id: 'mist-snapshot', key: 'current' }];
+
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)(
+        {},
+        'cloud_status_mist_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+
+      expect(mockCache.writeCollection).toHaveBeenCalledWith(
+        'cloud_status_mist_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+    });
+
     it('persists knowledge metadata snapshots for offline clients', () => {
       const records = [
         { id: 'document123', title: 'Runbook', lifecycleState: 'active' },
@@ -471,6 +511,27 @@ describe('cacheHandlers', () => {
   });
 
   describe('SYNC_PENDING', () => {
+    it('keeps an optimistic overlay for every offline-writable collection in the shared catalog', async () => {
+      const changes = OFFLINE_WRITABLE_COLLECTIONS.map((collection, index) => ({
+        id: index + 1,
+        collection,
+        action: 'create' as const,
+        data: { id: `record-${index}` },
+        timestamp: index,
+      }));
+      mockPending.getAll.mockReturnValue(changes);
+      mockSync.isAuthenticated.mockReturnValue(false);
+      mockAppConfig.load.mockReturnValue({});
+
+      const result = (await getHandler(IPC_CHANNELS.SYNC_PENDING)()) as {
+        remainingChanges: Array<{ collection: string }>;
+      };
+
+      expect(result.remainingChanges.map(({ collection }) => collection)).toEqual(
+        OFFLINE_WRITABLE_COLLECTIONS,
+      );
+    });
+
     it('returns zero counts when pendingChanges is null', async () => {
       getPendingChanges.mockReturnValueOnce(null as never);
       const result = await getHandler(IPC_CHANNELS.SYNC_PENDING)();

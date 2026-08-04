@@ -13,8 +13,6 @@ import {
   getDynatraceProblemsManager,
   getCloudStatusManager,
   getPbClient,
-  getPrivilegedRuntime,
-  getPrivilegedHost,
   getRelayWebServerManager,
   setBackupManager,
   setOfflineCache,
@@ -23,8 +21,6 @@ import {
   setPendingChanges,
   setRetentionManager,
   setSyncManager,
-  setPrivilegedRuntime,
-  setPrivilegedHost,
 } from './appState';
 import {
   cancelDeferredPocketBaseServices,
@@ -36,6 +32,7 @@ import { initializeKnowledgePdfService } from '../knowledge/knowledgeRuntime';
 import { restartKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 import { clearRelayAppUserAuthCoordinator } from '../pocketbase/RelayAppUserAuthCoordinator';
 import type { StartupStateController } from './startupState';
+import { replacePrivilegedRuntime, stopPrivilegedRuntime } from './privilegedRuntimeLifecycle';
 
 function tryClose(db: { close(): void } | null, label: string): void {
   if (!db) return;
@@ -46,33 +43,26 @@ function tryClose(db: { close(): void } | null, label: string): void {
   }
 }
 
-async function disposePrivilegedRuntime(): Promise<void> {
-  const runtime = getPrivilegedRuntime();
-  const host = getPrivilegedHost();
-  setPrivilegedRuntime(null);
-  setPrivilegedHost(null);
-  await (host?.dispose() ?? runtime?.dispose());
-}
-
 async function rebuildPrivilegedRuntime(
   config: NonNullable<ReturnType<NonNullable<ReturnType<typeof getAppConfig>>['load']>>,
   configDataDir: string,
 ): Promise<void> {
   try {
-    // Same on-demand load as the startup path in src/main/index.ts.
-    const productionOptions = {
-      config,
-      dataDir: configDataDir,
-      serverClient: config.mode === 'server' ? getPbClient() : null,
-      dynatraceProblemsManager: getDynatraceProblemsManager(),
-    };
-    const host =
-      config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
-    const privilegedRuntime = host
-      ? host.createElectronRuntime()
-      : await createProductionPrivilegedRuntime(productionOptions);
-    setPrivilegedHost(host);
-    setPrivilegedRuntime(privilegedRuntime);
+    await replacePrivilegedRuntime(async () => {
+      // Same on-demand load as the startup path in src/main/index.ts.
+      const productionOptions = {
+        config,
+        dataDir: configDataDir,
+        serverClient: config.mode === 'server' ? getPbClient() : null,
+        dynatraceProblemsManager: getDynatraceProblemsManager(),
+      };
+      const host =
+        config.mode === 'server' ? await createProductionPrivilegedHost(productionOptions) : null;
+      const runtime = host
+        ? host.createElectronRuntime()
+        : await createProductionPrivilegedRuntime(productionOptions);
+      return { host, runtime };
+    });
   } catch (error) {
     loggers.security.warn('Could not initialize privileged access after reconfigure', { error });
   }
@@ -83,7 +73,7 @@ async function reconfigureRuntimeInternal(configDataDir: string): Promise<void> 
   cancelDeferredPocketBaseServices();
   const config = getAppConfig()?.load();
   await getRelayWebServerManager()?.stop();
-  await disposePrivilegedRuntime();
+  await stopPrivilegedRuntime();
   const dynatraceProblemsManager = getDynatraceProblemsManager();
   dynatraceProblemsManager?.stop();
   const cloudStatusManager = getCloudStatusManager();

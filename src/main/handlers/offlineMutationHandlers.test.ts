@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { OFFLINE_WRITABLE_COLLECTIONS } from '@shared/offlineCollections';
 import { setupOfflineMutationHandlers } from './offlineMutationHandlers';
 
 const send = vi.fn();
@@ -77,6 +78,33 @@ describe('offlineMutationHandlers', () => {
       IPC_CHANNELS.OFFLINE_MUTATION_APPLIED,
       expect.objectContaining({ collection: 'contacts', pendingCount: 1 }),
     );
+  });
+
+  it('accepts every offline-writable collection in the shared catalog', () => {
+    for (const collection of OFFLINE_WRITABLE_COLLECTIONS) {
+      const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+        {},
+        { collection, action: 'create', data: { name: collection } },
+      );
+
+      expect(result, collection).toMatchObject({ ok: true, collection });
+    }
+  });
+
+  it('keeps the Mist cloud status singleton read-only while offline', () => {
+    const result = getHandler(IPC_CHANNELS.OFFLINE_MUTATE)(
+      {},
+      {
+        collection: 'cloud_status_mist_snapshot',
+        action: 'update',
+        recordId: 'mist-snapshot',
+        data: { lastUpdated: 100 },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
+    expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
   });
 
   it('meters accepted mutations against the data mutation rate limit', () => {

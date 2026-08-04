@@ -2,13 +2,18 @@ import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import { classifyHttpFailure, unavailableError } from './scanner-gate-policy.mjs';
+import {
+  paginateSonarIssues,
+  parseSonarProjectKey as parseProjectKey,
+  SonarHttpError,
+  SonarTransportError,
+} from './sonar-api-client.mjs';
 import { normalizeSonarIssueStatus } from './sonar-issue-status.mjs';
 
 const PAGE_SIZE = 500;
+const MAX_ISSUES = 10_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 300_000;
-const MAX_TIMEOUT_MS = 1_080_000;
 const CURRENT_ISSUE_STATUSES = ['OPEN', 'CONFIRMED', 'ACCEPTED', 'FALSE_POSITIVE'];
 const OPEN_STATUSES = new Set(['OPEN', 'CONFIRMED']);
 const monotonicNow = () => performance.now();
@@ -17,25 +22,7 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-export function parseProjectKey(properties) {
-  if (typeof properties !== 'string') {
-    throw new TypeError('sonar-project.properties must be readable text.');
-  }
-  const matches = properties
-    .split(/\r?\n/u)
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return '';
-      const separator = trimmed.indexOf('=');
-      if (separator < 0 || trimmed.slice(0, separator).trim() !== 'sonar.projectKey') return '';
-      return trimmed.slice(separator + 1).trim();
-    })
-    .filter(Boolean);
-  if (matches.length !== 1) {
-    throw new Error('sonar-project.properties must define exactly one sonar.projectKey.');
-  }
-  return matches[0];
-}
+export { parseProjectKey };
 
 function argumentValue(argv, index, name) {
   const argument = argv[index];
@@ -95,20 +82,6 @@ export function parseScopeArgs(argv) {
   return { pullRequest };
 }
 
-function sonarApiBase(hostUrl) {
-  let base;
-  try {
-    base = new URL(hostUrl);
-  } catch {
-    throw new Error('SONAR_HOST_URL must be a valid HTTPS URL.');
-  }
-  if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) {
-    throw new Error('SONAR_HOST_URL must be a credential-free HTTPS base URL.');
-  }
-  if (!base.pathname.endsWith('/')) base.pathname += '/';
-  return base;
-}
-
 function validateIssue(value) {
   if (
     value === null ||
@@ -132,83 +105,12 @@ function validateIssue(value) {
   };
 }
 
-function validatePage(value, expectedPage) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Sonar returned an invalid issue response.');
+function localSonarClientError(error) {
+  if (error instanceof SonarHttpError) return classifyHttpFailure('Sonar API', error.status);
+  if (error instanceof SonarTransportError) {
+    return unavailableError(error.message, { cause: error });
   }
-  const paging =
-    value.paging && typeof value.paging === 'object' && !Array.isArray(value.paging)
-      ? value.paging
-      : {
-          pageIndex: value.p,
-          pageSize: value.ps,
-          total: value.total,
-        };
-  if (
-    !Array.isArray(value.issues) ||
-    !Number.isSafeInteger(paging.pageIndex) ||
-    paging.pageIndex !== expectedPage ||
-    !Number.isSafeInteger(paging.pageSize) ||
-    paging.pageSize < 1 ||
-    paging.pageSize > PAGE_SIZE ||
-    !Number.isSafeInteger(paging.total) ||
-    paging.total < 0
-  ) {
-    throw new Error('Sonar returned an invalid issue response.');
-  }
-  return {
-    issues: value.issues.map(validateIssue),
-    total: paging.total,
-  };
-}
-
-function issueSearchUrl(base, projectKey, scope, page) {
-  const url = new URL('api/issues/search', base);
-  url.searchParams.set('componentKeys', projectKey);
-  url.searchParams.set('issueStatuses', CURRENT_ISSUE_STATUSES.join(','));
-  url.searchParams.set('p', String(page));
-  url.searchParams.set('ps', String(PAGE_SIZE));
-  if ('branch' in scope) url.searchParams.set('branch', scope.branch);
-  if ('pullRequest' in scope) url.searchParams.set('pullRequest', scope.pullRequest);
-  return url;
-}
-
-async function fetchIssuePage(fetcher, url, token, page, requestTimeoutMs) {
-  let response;
-  try {
-    response = await fetcher(url, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-  } catch (error) {
-    throw unavailableError('Sonar API request failed before receiving a response.', {
-      cause: error,
-    });
-  }
-  if (!response?.ok) {
-    throw classifyHttpFailure('Sonar API', response?.status);
-  }
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error('Sonar returned invalid JSON.');
-  }
-  return validatePage(payload, page);
-}
-
-function appendUniqueIssues(target, seen, additions) {
-  for (const issue of additions) {
-    if (seen.has(issue.key)) {
-      throw new Error(`Sonar returned duplicate issue key: ${issue.key}`);
-    }
-    seen.add(issue.key);
-    target.push(issue);
-  }
+  return error;
 }
 
 export async function fetchSonarIssues({
@@ -225,50 +127,26 @@ export async function fetchSonarIssues({
   if (!nonEmptyString(projectKey)) throw new Error('A Sonar project key is required.');
   if (!nonEmptyString(token)) throw new Error('SONAR_TOKEN is required.');
   if (typeof now !== 'function') throw new TypeError('Sonar timing function is required.');
-  if (
-    !Number.isSafeInteger(requestTimeoutMs) ||
-    requestTimeoutMs < 1 ||
-    requestTimeoutMs > MAX_REQUEST_TIMEOUT_MS
-  ) {
-    throw new Error('Sonar request timeout must be between 1 and 60000 milliseconds.');
-  }
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
-    throw new Error('Sonar issue-search timeout must be between 1 and 1080000 milliseconds.');
-  }
-  const base = sonarApiBase(hostUrl);
-  const issues = [];
-  const seen = new Set();
-  let page = 1;
-  let expectedTotal;
-  const deadline = now() + timeoutMs;
-
-  do {
-    const remaining = Math.floor(deadline - now());
-    if (remaining <= 0) throw unavailableError('Sonar issue search exceeded its deadline.');
-    const validated = await fetchIssuePage(
+  try {
+    return await paginateSonarIssues({
       fetcher,
-      issueSearchUrl(base, projectKey, scope, page),
+      baseUrl: hostUrl,
       token,
-      page,
-      Math.min(requestTimeoutMs, remaining),
-    );
-    expectedTotal ??= validated.total;
-    if (validated.total !== expectedTotal) {
-      throw new Error('Sonar pagination total changed while issues were being read.');
-    }
-    appendUniqueIssues(issues, seen, validated.issues);
-    if (validated.issues.length === 0 && issues.length < expectedTotal) {
-      throw new Error('Sonar pagination ended before all issues were returned.');
-    }
-    page += 1;
-  } while (issues.length < expectedTotal);
-
-  if (issues.length !== expectedTotal) {
-    throw new Error(
-      `Sonar pagination returned ${issues.length} issues for a total of ${expectedTotal}.`,
-    );
+      searchParams: {
+        componentKeys: projectKey,
+        issueStatuses: CURRENT_ISSUE_STATUSES.join(','),
+        ...('branch' in scope ? { branch: scope.branch } : { pullRequest: scope.pullRequest }),
+      },
+      pageSize: PAGE_SIZE,
+      maxIssues: MAX_ISSUES,
+      requestTimeoutMs,
+      timeoutMs,
+      now,
+      validateIssue,
+    });
+  } catch (error) {
+    throw localSonarClientError(error);
   }
-  return issues;
 }
 
 export function classifyIssue(issue) {

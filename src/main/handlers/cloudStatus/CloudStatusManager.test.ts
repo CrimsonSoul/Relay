@@ -2,37 +2,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type PocketBase from 'pocketbase';
 import type { CloudStatusData, CloudStatusItem } from '@shared/ipc';
 import {
+  appendCloudStatusItem,
+  emptyCloudStatusProviders,
+  splitCloudStatusData,
+} from '@shared/cloudStatus';
+import {
   CloudStatusManager,
   DEGRADED_CLOUD_STATUS_INTERVAL_MS,
   HEALTHY_CLOUD_STATUS_INTERVAL_MS,
 } from './CloudStatusManager';
 
-const create = vi.fn().mockResolvedValue({ id: 'snapshot-1' });
-const update = vi.fn().mockResolvedValue({ id: 'snapshot-1' });
-const getFirstListItem = vi.fn().mockRejectedValue(new Error('missing'));
-const collection = vi.fn(() => ({ create, update, getFirstListItem }));
+const legacyCreate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
+const legacyUpdate = vi.fn().mockResolvedValue({ id: 'legacy-snapshot' });
+const legacyGet = vi.fn().mockRejectedValue(new Error('missing'));
+const mistCreate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
+const mistUpdate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
+const mistGet = vi.fn().mockRejectedValue(new Error('missing'));
+const collection = vi.fn((name: string) =>
+  name === 'cloud_status_mist_snapshot'
+    ? { create: mistCreate, update: mistUpdate, getFirstListItem: mistGet }
+    : { create: legacyCreate, update: legacyUpdate, getFirstListItem: legacyGet },
+);
 const pb = { collection } as unknown as PocketBase;
 
 function data(items: CloudStatusItem[] = []): CloudStatusData {
-  const providers: CloudStatusData['providers'] = {
-    aws: items,
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
+  const providers = emptyCloudStatusProviders();
+  for (const item of items) appendCloudStatusItem(providers, item);
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 
-function issue(severity: CloudStatusItem['severity']): CloudStatusItem {
+function issue(
+  severity: CloudStatusItem['severity'],
+  provider: CloudStatusItem['provider'] = 'aws',
+): CloudStatusItem {
   return {
     id: 'issue-1',
-    provider: 'aws',
+    provider,
     title: 'Service event',
     description: '',
     pubDate: '2026-07-10T18:00:00.000Z',
@@ -51,8 +56,10 @@ describe('CloudStatusManager', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    create.mockResolvedValue({ id: 'snapshot-1' });
-    getFirstListItem.mockRejectedValue(new Error('missing'));
+    legacyCreate.mockResolvedValue({ id: 'legacy-snapshot' });
+    mistCreate.mockResolvedValue({ id: 'mist-snapshot' });
+    legacyGet.mockRejectedValue(new Error('missing'));
+    mistGet.mockRejectedValue(new Error('missing'));
   });
 
   afterEach(() => vi.useRealTimers());
@@ -96,8 +103,7 @@ describe('CloudStatusManager', () => {
 
     const first = manager.refresh({ force: true });
     const second = manager.refresh({ force: true });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushRefresh();
     expect(fetchStatus).toHaveBeenCalledTimes(1);
     resolveFetch?.(data());
 
@@ -115,12 +121,14 @@ describe('CloudStatusManager', () => {
     await manager.refresh();
     await manager.refresh();
 
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(update).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(mistCreate).toHaveBeenCalledTimes(1);
+    expect(legacyUpdate).not.toHaveBeenCalled();
+    expect(mistUpdate).not.toHaveBeenCalled();
   });
 
-  it('publishes unchanged degraded polls so clients can confirm consecutive snapshots', async () => {
-    const first = data([issue('warning')]);
+  it('publishes unchanged degraded Mist polls without rewriting the healthy legacy partition', async () => {
+    const first = data([issue('warning', 'mist_emea')]);
     const fetchStatus = vi
       .fn()
       .mockResolvedValueOnce(first)
@@ -130,7 +138,70 @@ describe('CloudStatusManager', () => {
     await manager.refresh();
     await manager.refresh();
 
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledTimes(1);
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(mistCreate).toHaveBeenCalledTimes(1);
+    expect(legacyUpdate).not.toHaveBeenCalled();
+    expect(mistUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes exact legacy and Mist singleton payloads on one refresh', async () => {
+    const manager = new CloudStatusManager(
+      () => pb,
+      vi.fn().mockResolvedValue(data([issue('error'), issue('error', 'mist_global')])),
+    );
+
+    await manager.refresh();
+
+    const legacyPayload = legacyCreate.mock.calls[0]?.[0] as { providers: object };
+    const mistPayload = mistCreate.mock.calls[0]?.[0] as { providers: object };
+    expect(Object.keys(legacyPayload.providers)).toEqual([
+      'aws',
+      'azure',
+      'm365',
+      'jira',
+      'github',
+      'cloudflare',
+      'google',
+      'anthropic',
+      'openai',
+      'salesforce',
+    ]);
+    expect(Object.keys(mistPayload.providers)).toEqual([
+      'mist_global',
+      'mist_emea',
+      'mist_apac',
+      'mist_federal',
+    ]);
+  });
+
+  it('merges persisted legacy and Mist partitions before the first provider fetch', async () => {
+    const persisted = data([issue('error'), issue('warning', 'mist_emea')]);
+    const { legacy, mist } = splitCloudStatusData(persisted);
+    legacyGet.mockResolvedValue({
+      id: 'legacy-snapshot',
+      key: 'current',
+      contentHash: 'legacy-content',
+      ...legacy,
+    });
+    mistGet.mockResolvedValue({
+      id: 'mist-snapshot',
+      key: 'current',
+      contentHash: 'mist-content',
+      ...mist,
+    });
+    const fetchStatus = vi.fn(async (previous?: CloudStatusData | null) => previous ?? data());
+    const manager = new CloudStatusManager(() => pb, fetchStatus);
+
+    await manager.refresh();
+
+    expect(fetchStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: expect.objectContaining({
+          aws: [expect.objectContaining({ provider: 'aws' })],
+          mist_emea: [expect.objectContaining({ provider: 'mist_emea' })],
+        }),
+      }),
+    );
+    expect(manager.getSnapshot().providers.mist_emea).toHaveLength(1);
   });
 });

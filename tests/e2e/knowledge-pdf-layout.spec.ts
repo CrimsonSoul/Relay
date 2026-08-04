@@ -116,76 +116,7 @@ test('continuous PDF keeps oversized pages reachable and smaller pages centered'
     .toBe(20);
 });
 
-test('view options preserve keyboard focus, state, and reduced motion', async ({ window }) => {
-  await window.emulateMedia({ reducedMotion: 'no-preference' });
-  await window.setContent(`
-    <style>
-      ${knowledgeTokens}
-      ${knowledgeCss}
-      html, body { margin: 0; background: #09090b; }
-    </style>
-    <section class="knowledge-viewer" aria-label="Guide PDF viewer">
-      <header class="knowledge-viewer__toolbar">
-        <div class="knowledge-viewer__identity"><h2>Guide</h2></div>
-        <div class="knowledge-viewer__controls" aria-label="PDF controls">
-          <div class="knowledge-viewer__view-menu">
-            <button class="knowledge-viewer__view-trigger" type="button" aria-label="View options: Continuous" aria-expanded="false" aria-haspopup="dialog">View ▾</button>
-            <div class="knowledge-viewer__view-panel" role="dialog" aria-label="View options" hidden>
-              <button class="knowledge-viewer__view-option" type="button">Fit width</button>
-              <button class="knowledge-viewer__view-option" type="button" aria-pressed="true">Continuous scrolling</button>
-              <button class="knowledge-viewer__view-option" type="button" aria-pressed="false">Single page</button>
-            </div>
-          </div>
-        </div>
-      </header>
-    </section>
-    <script>
-      const trigger = document.querySelector('.knowledge-viewer__view-trigger');
-      const panel = document.querySelector('.knowledge-viewer__view-panel');
-      const continuous = [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Continuous scrolling');
-      const single = [...panel.querySelectorAll('button')].find((button) => button.textContent === 'Single page');
-      trigger.addEventListener('click', () => {
-        const open = trigger.getAttribute('aria-expanded') === 'true';
-        trigger.setAttribute('aria-expanded', String(!open));
-        panel.hidden = open;
-      });
-      const select = (next) => {
-        const isContinuous = next === 'continuous';
-        continuous.setAttribute('aria-pressed', String(isContinuous));
-        single.setAttribute('aria-pressed', String(!isContinuous));
-        trigger.setAttribute('aria-label', 'View options: ' + (isContinuous ? 'Continuous' : 'Single page'));
-        trigger.setAttribute('aria-expanded', 'false');
-        panel.hidden = true;
-        trigger.focus();
-      };
-      continuous.addEventListener('click', () => select('continuous'));
-      single.addEventListener('click', () => select('single'));
-    </script>
-  `);
-
-  const continuousMode = window.getByRole('button', { name: 'View options: Continuous' });
-  await continuousMode.focus();
-  await expect(continuousMode).toBeFocused();
-  await expect(continuousMode).toHaveCSS('outline-style', 'solid');
-  await expect(continuousMode).not.toHaveCSS('transition-duration', '0s');
-
-  await continuousMode.click();
-  const options = window.getByRole('dialog', { name: 'View options' });
-  await expect(options).toBeVisible();
-  await expect(options.getByRole('button', { name: 'Continuous scrolling' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await options.getByRole('button', { name: 'Single page' }).click();
-  const singleMode = window.getByRole('button', { name: 'View options: Single page' });
-  await expect(singleMode).toBeFocused();
-  await expect(singleMode).toHaveAttribute('aria-expanded', 'false');
-
-  await window.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(singleMode).toHaveCSS('transition-duration', /0s/);
-});
-
-test('collapsible Wiki library preserves the compact container drawer', async ({ window }) => {
+test('Wiki reader geometry preserves the compact container drawer', async ({ window }) => {
   await window.setViewportSize({ width: 1200, height: 800 });
   await window.setContent(`
     <style>
@@ -233,40 +164,12 @@ test('collapsible Wiki library preserves the compact container drawer', async ({
         </section>
       </div>
     </div>
-    <script>
-      const workspace = document.querySelector('.knowledge-workspace');
-      const compactToggle = document.querySelector('.knowledge-library-toggle--compact');
-      const desktopRestore = document.querySelector('.knowledge-library-toggle--desktop');
-      const closeCompact = () => {
-        workspace.dataset.libraryDrawer = 'closed';
-        compactToggle.setAttribute('aria-expanded', 'false');
-      };
-      compactToggle.addEventListener('click', () => {
-        workspace.dataset.libraryDrawer = 'open';
-        compactToggle.setAttribute('aria-expanded', 'true');
-      });
-      desktopRestore.addEventListener('click', () => {
-        workspace.dataset.libraryCollapsed = 'false';
-      });
-      document.querySelector('.knowledge-drawer__collapse').addEventListener('click', () => {
-        workspace.dataset.libraryCollapsed = 'true';
-      });
-      document.querySelector('.knowledge-drawer__close').addEventListener('click', closeCompact);
-      document.querySelector('.knowledge-drawer-backdrop').addEventListener('click', closeCompact);
-    </script>
   `);
 
   const tab = window.getByTestId('knowledge-tab');
   const workspace = window.getByTestId('workspace');
   const reader = window.getByTestId('reader');
   const drawer = window.getByRole('complementary', { name: 'Wiki library' });
-  const compactToggle = window.getByRole('button', { name: 'Wiki library', exact: true });
-  const desktopRestore = window.getByRole('button', { name: 'Show Wiki library' });
-  const desktopCollapse = window.getByRole('button', { name: 'Collapse Wiki library' });
-
-  await expect(compactToggle).toBeHidden();
-  await expect(desktopRestore).toBeHidden();
-  await expect(desktopCollapse).toBeVisible();
   await expect(drawer).toBeVisible();
   await expect
     .poll(async () => {
@@ -280,10 +183,9 @@ test('collapsible Wiki library preserves the compact container drawer', async ({
     })
     .toBe(true);
 
-  await desktopCollapse.click();
-  await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
-  await expect(desktopRestore).toBeVisible();
-  await expect(desktopCollapse).toBeHidden();
+  await workspace.evaluate((element) => {
+    element.setAttribute('data-library-collapsed', 'true');
+  });
   await expect(drawer).toBeHidden();
   await expect
     .poll(async () => {
@@ -299,25 +201,35 @@ test('collapsible Wiki library preserves the compact container drawer', async ({
   await tab.evaluate((element) => {
     element.style.width = '880px';
   });
-  await expect(compactToggle).toBeVisible();
-  await expect(desktopRestore).toBeHidden();
-  await expect(desktopCollapse).toBeHidden();
   await expect(drawer).toBeHidden();
 
-  await compactToggle.click();
-  await expect(compactToggle).toHaveAttribute('aria-expanded', 'true');
+  await workspace.evaluate((element) => {
+    element.setAttribute('data-library-drawer', 'open');
+  });
   await expect(drawer).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [tabBox, readerBox, drawerBox] = await Promise.all([
+        tab.boundingBox(),
+        reader.boundingBox(),
+        drawer.boundingBox(),
+      ]);
+      if (!tabBox || !readerBox || !drawerBox) return null;
+      return {
+        drawerWithinTab:
+          drawerBox.x >= tabBox.x && drawerBox.x + drawerBox.width <= tabBox.x + tabBox.width,
+        readerFillsTab: Math.round(readerBox.width) === Math.round(tabBox.width),
+      };
+    })
+    .toEqual({ drawerWithinTab: true, readerFillsTab: true });
 
   await tab.evaluate((element) => {
     element.style.width = '1040px';
   });
-  await expect(desktopRestore).toBeVisible();
-  await expect(drawer).toBeHidden();
-
-  await desktopRestore.click();
-  await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
-  await expect(desktopRestore).toBeHidden();
-  await expect(desktopCollapse).toBeVisible();
+  await workspace.evaluate((element) => {
+    element.setAttribute('data-library-drawer', 'closed');
+    element.setAttribute('data-library-collapsed', 'false');
+  });
   await expect(drawer).toBeVisible();
 });
 

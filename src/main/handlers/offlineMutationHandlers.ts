@@ -5,8 +5,8 @@ import {
   type OfflineMutationApplied,
   type OfflineMutationInput,
   type OfflineMutationResult,
-  type OfflineWritableCollection,
 } from '@shared/ipc';
+import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import type { AppConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
@@ -16,21 +16,6 @@ import { checkMutationRateLimit } from './ipcHelpers';
 
 const MAX_MUTATION_BYTES = 256 * 1024;
 const RECORD_ID_PATTERN = /^[a-z0-9]{15}$/;
-const WRITABLE_COLLECTIONS = new Set<OfflineWritableCollection>([
-  'contacts',
-  'servers',
-  'oncall',
-  'bridge_groups',
-  'bridge_history',
-  'alert_history',
-  'alert_reminders',
-  'notes',
-  'oncall_dismissals',
-  'oncall_board_settings',
-  'dynatrace_problem_states',
-  'dynatrace_problem_notes',
-]);
-
 function newRecordId(): string {
   return randomBytes(8).toString('hex').slice(0, 15);
 }
@@ -38,7 +23,7 @@ function newRecordId(): string {
 function invalidInput(input: unknown): string | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return 'Invalid mutation';
   const candidate = input as Partial<OfflineMutationInput>;
-  if (!candidate.collection || !WRITABLE_COLLECTIONS.has(candidate.collection)) {
+  if (!isOfflineWritableCollection(candidate.collection)) {
     return 'Collection is not available offline';
   }
   if (!candidate.action || !['create', 'update', 'delete'].includes(candidate.action)) {

@@ -22,7 +22,14 @@ import type {
   KnowledgeUploadSelectionResult,
 } from './knowledge';
 import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
+import type { OfflineWritableCollection } from './offlineCollections';
 import type { RelayRuntimeDescriptor } from './runtime';
+
+export {
+  OFFLINE_WRITABLE_COLLECTIONS,
+  isOfflineWritableCollection,
+  type OfflineWritableCollection,
+} from './offlineCollections';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -181,23 +188,49 @@ export const TAB_NAMES = [
 export type TabName = (typeof TAB_NAMES)[number];
 
 // Cloud Status Types
-export type CloudStatusProvider =
-  | 'aws'
-  | 'azure'
-  | 'm365'
-  | 'jira'
-  | 'github'
-  | 'cloudflare'
-  | 'google'
-  | 'anthropic'
-  | 'openai'
-  | 'salesforce';
+export const LEGACY_CLOUD_STATUS_PROVIDER_ORDER = [
+  'aws',
+  'azure',
+  'm365',
+  'jira',
+  'github',
+  'cloudflare',
+  'google',
+  'anthropic',
+  'openai',
+  'salesforce',
+] as const;
+
+export const MIST_CLOUD_STATUS_PROVIDER_ORDER = [
+  'mist_global',
+  'mist_emea',
+  'mist_apac',
+  'mist_federal',
+] as const;
+
+export const CLOUD_STATUS_PROVIDER_ORDER = [
+  'aws',
+  'azure',
+  'm365',
+  'jira',
+  'github',
+  'cloudflare',
+  ...MIST_CLOUD_STATUS_PROVIDER_ORDER,
+  'google',
+  'anthropic',
+  'openai',
+  'salesforce',
+] as const;
+
+export type LegacyCloudStatusProvider = (typeof LEGACY_CLOUD_STATUS_PROVIDER_ORDER)[number];
+export type MistCloudStatusProvider = (typeof MIST_CLOUD_STATUS_PROVIDER_ORDER)[number];
+export type CloudStatusProvider = (typeof CLOUD_STATUS_PROVIDER_ORDER)[number];
 
 export type CloudStatusSeverity = 'info' | 'warning' | 'error' | 'resolved';
 
-export type CloudStatusItem = {
+export type CloudStatusItem<P extends CloudStatusProvider = CloudStatusProvider> = {
   id: string;
-  provider: CloudStatusProvider;
+  provider: P;
   title: string;
   description: string;
   pubDate: string;
@@ -205,19 +238,28 @@ export type CloudStatusItem = {
   severity: CloudStatusSeverity;
 };
 
-export type CloudStatusData = {
-  providers: Record<CloudStatusProvider, CloudStatusItem[]>;
+export type CloudStatusPartition<P extends CloudStatusProvider> = {
+  providers: { [K in P]: CloudStatusItem<K>[] };
   lastUpdated: number;
-  errors: { provider: CloudStatusProvider; message: string }[];
+  errors: { provider: P; message: string }[];
 };
 
-export type CloudStatusSnapshotRecord = CloudStatusData & {
+export type LegacyCloudStatusData = CloudStatusPartition<LegacyCloudStatusProvider>;
+export type MistCloudStatusData = CloudStatusPartition<MistCloudStatusProvider>;
+export type CloudStatusData = CloudStatusPartition<CloudStatusProvider>;
+
+type CloudStatusSnapshotMetadata = {
   id: string;
   key: 'current';
   contentHash: string;
   created: string;
   updated: string;
 };
+
+export type LegacyCloudStatusSnapshotRecord = LegacyCloudStatusData & CloudStatusSnapshotMetadata;
+export type MistCloudStatusSnapshotRecord = MistCloudStatusData & CloudStatusSnapshotMetadata;
+
+export type CloudStatusSnapshotRecord = CloudStatusData & CloudStatusSnapshotMetadata;
 
 // Dispatcher Radar Types
 
@@ -293,20 +335,6 @@ export type RadarSnapshot = RadarBoard & {
   error: string | null;
 };
 
-/** Display order for provider cards and filters. */
-export const CLOUD_STATUS_PROVIDER_ORDER: CloudStatusProvider[] = [
-  'aws',
-  'azure',
-  'm365',
-  'jira',
-  'github',
-  'cloudflare',
-  'google',
-  'anthropic',
-  'openai',
-  'salesforce',
-];
-
 export const CLOUD_STATUS_PROVIDERS: Record<
   CloudStatusProvider,
   {
@@ -353,6 +381,22 @@ export const CLOUD_STATUS_PROVIDERS: Record<
     statusUrl: 'https://www.cloudflarestatus.com/',
     twitterHandle: 'CloudflareHelp',
     downdetectorSlug: 'cloudflare',
+  },
+  mist_global: {
+    label: 'Juniper Mist Global',
+    statusUrl: 'https://status.mist.com/',
+  },
+  mist_emea: {
+    label: 'Juniper Mist EMEA',
+    statusUrl: 'https://status.mist.com/',
+  },
+  mist_apac: {
+    label: 'Juniper Mist APAC',
+    statusUrl: 'https://status.mist.com/',
+  },
+  mist_federal: {
+    label: 'Juniper Mist Federal',
+    statusUrl: 'https://status.mist.com/',
   },
   google: {
     label: 'Google Cloud',
@@ -469,20 +513,6 @@ export function readSaveConfigResult(
   if (typeof result === 'boolean') return { ok: result, discardedPendingCount: 0 };
   return { ok: result.ok, discardedPendingCount: result.discardedPendingCount ?? 0 };
 }
-
-export type OfflineWritableCollection =
-  | 'contacts'
-  | 'servers'
-  | 'oncall'
-  | 'bridge_groups'
-  | 'bridge_history'
-  | 'alert_history'
-  | 'alert_reminders'
-  | 'notes'
-  | 'oncall_dismissals'
-  | 'oncall_board_settings'
-  | 'dynatrace_problem_states'
-  | 'dynatrace_problem_notes';
 
 export type OfflineMutationInput = {
   collection: OfflineWritableCollection;

@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -48,10 +48,16 @@ jobs:
       - name: Download PocketBase binary
         run: node scripts/download-pocketbase.mjs --platform=win32 --arch=x64
 
+      - name: Install Electron native dependencies
+        run: npx electron-builder install-app-deps --platform=win32 --arch=x64
+
+      - name: Build Relay once
+        run: npm run build
+
       - name: Build store candidate
         env:
           RELAY_BUILD_ID: cmp-store-${{ github.run_id }}
-        run: npm run package:win -- --config.compression=store
+        run: node scripts/package-windows.mjs --config.compression=store --config.npmRebuild=false
 
       - name: Preserve store candidate
         shell: pwsh
@@ -60,7 +66,7 @@ jobs:
       - name: Build normal candidate
         env:
           RELAY_BUILD_ID: cmp-normal-${{ github.run_id }}
-        run: npm run package:win -- --config.compression=normal --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --config.compression=normal --config.npmRebuild=false
 
       - name: Preserve normal candidate
         shell: pwsh
@@ -69,7 +75,7 @@ jobs:
       - name: Build maximum candidate
         env:
           RELAY_BUILD_ID: cmp-maximum-${{ github.run_id }}
-        run: npm run package:win -- --config.compression=maximum --config.npmRebuild=false
+        run: node scripts/package-windows.mjs --config.compression=maximum --config.npmRebuild=false
 
       - name: Preserve maximum candidate
         shell: pwsh

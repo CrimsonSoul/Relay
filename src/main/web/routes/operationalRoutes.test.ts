@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CloudStatusData, RadarSnapshot } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { WebRequestSecurity } from '../WebRequestSecurity';
 import { WebRouter, WEB_SESSION_COOKIE_NAME } from '../WebRouter';
@@ -31,26 +32,11 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
-function emptyProviders(): CloudStatusData['providers'] {
-  return {
-    aws: [],
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
-}
-
 function services(): OperationalServices {
   return {
     cloudStatus: {
       refresh: vi.fn(async (): Promise<CloudStatusData> => ({
-        providers: emptyProviders(),
+        providers: emptyCloudStatusProviders(),
         lastUpdated: 12,
         errors: [],
       })),
@@ -148,6 +134,20 @@ describe('Relay Web operational routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ lastUpdated: 12 });
     expect(operational.cloudStatus.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an incomplete cloud status payload at the Web response boundary', async () => {
+    const { origin, headers, operational } = await fixture();
+    vi.mocked(operational.cloudStatus.refresh).mockResolvedValue({
+      providers: { aws: [] },
+      lastUpdated: 12,
+      errors: [],
+    } as never);
+
+    const response = await fetch(`${origin}/relay-api/v1/operations/cloud-status`, { headers });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ ok: false, error: 'unavailable' });
   });
 
   it('serves the current Radar snapshot only to an authenticated session', async () => {

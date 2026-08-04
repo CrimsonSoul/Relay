@@ -1,6 +1,7 @@
 import { createServer as createNetServer } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import type { CloudStatusData, RadarSnapshot } from '@shared/ipc';
+import type { RadarSnapshot } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import { WEB_RUNTIME } from '@shared/runtime';
 import { RelayWebGateway } from './RelayWebGateway';
 import { RelayWebServer } from './RelayWebServer';
@@ -23,28 +24,17 @@ const RADAR_SNAPSHOT: RadarSnapshot = {
   error: null,
 };
 
-function emptyProviders(): CloudStatusData['providers'] {
-  return {
-    aws: [],
-    azure: [],
-    m365: [],
-    jira: [],
-    github: [],
-    cloudflare: [],
-    google: [],
-    anthropic: [],
-    openai: [],
-    salesforce: [],
-  };
-}
-
 function operationalEventsFixture() {
   let radarListener: ((snapshot: RadarSnapshot) => void) | undefined;
   const stopRadar = vi.fn();
   const stopDashboards = vi.fn();
   const services: OperationalServices = {
     cloudStatus: {
-      refresh: async () => ({ providers: emptyProviders(), lastUpdated: 0, errors: [] }),
+      refresh: async () => ({
+        providers: emptyCloudStatusProviders(),
+        lastUpdated: 0,
+        errors: [],
+      }),
     },
     radar: {
       snapshot: () => RADAR_SNAPSHOT,
