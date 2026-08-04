@@ -1,9 +1,10 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { BridgeGroup, Contact } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
 import type { SortConfig } from '../tabs/assembler/types';
 import { addContact as pbAddContact } from '../services/contactService';
+import { buildBridgeHandoffSummary, buildBridgeSubject } from '../tabs/assembler/bridgeHandoff';
 
 interface AssemblerState {
   groups: BridgeGroup[];
@@ -36,6 +37,22 @@ export function useAssembler({
     isUnknown: boolean;
   } | null>(null);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
+  const [isOpeningTeams, setIsOpeningTeams] = useState(false);
+  const copyPendingRef = useRef(false);
+  const teamsPendingRef = useRef(false);
+
+  const handoffSummary = useMemo(
+    () =>
+      buildBridgeHandoffSummary({
+        groups,
+        selectedGroupIds,
+        manualAdds,
+        manualRemoves,
+      }),
+    [groups, selectedGroupIds, manualAdds, manualRemoves],
+  );
+  const bridgeSubject = useMemo(() => buildBridgeSubject(), []);
 
   // Build all lookup maps in a single pass to reduce dependency chains
   const { contactMap, emailToGroupsMap, groupStringMap } = useMemo(() => {
@@ -62,30 +79,14 @@ export function useAssembler({
   }, [contacts, groups]);
 
   const allRecipients = useMemo(() => {
-    // Get all emails from selected groups
-    const fromGroups = selectedGroupIds.flatMap((id) => {
-      const group = groups.find((g) => g.id === id);
-      return group ? group.contacts : [];
-    });
-    // Convert to Sets for O(1) lookups inside the filter/map loop
-    const removeSet = new Set(manualRemoves);
-    const addSet = new Set(manualAdds);
-    // Create union without mutating in useMemo
-    const unionSet = new Set([...fromGroups, ...manualAdds]);
-    const filtered = Array.from(unionSet).filter((email) => !removeSet.has(email));
-    const result = filtered.map((email) => ({
-      email,
-      source: addSet.has(email) ? 'manual' : 'group',
-    }));
-
-    return result.sort((a, b) => {
-      const contactA = contactMap.get(a.email.toLowerCase());
-      const contactB = contactMap.get(b.email.toLowerCase());
+    const sortedRecipients = [...handoffSummary.recipients].sort((a, b) => {
+      const contactA = contactMap.get(a.normalizedEmail);
+      const contactB = contactMap.get(b.normalizedEmail);
       const dir = sortConfig.direction === 'asc' ? 1 : -1;
       if (sortConfig.key === 'groups')
         return (
-          (groupStringMap.get(a.email.toLowerCase()) || '').localeCompare(
-            groupStringMap.get(b.email.toLowerCase()) || '',
+          (groupStringMap.get(a.normalizedEmail) || '').localeCompare(
+            groupStringMap.get(b.normalizedEmail) || '',
           ) * dir
         );
       let valA = '',
@@ -107,43 +108,78 @@ export function useAssembler({
       }
       return valA.localeCompare(valB) * dir;
     });
-  }, [groups, selectedGroupIds, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
+
+    return sortedRecipients.map(({ email, source }) => ({ email, source }));
+  }, [handoffSummary.recipients, contactMap, sortConfig, groupStringMap]);
 
   const log = allRecipients;
 
-  const handleCopy = useCallback(async () => {
-    const success = await globalThis.api?.writeClipboard(log.map((m) => m.email).join('; '));
-    if (success) {
-      showToast('Copied to clipboard', 'success');
-    } else {
-      showToast('Failed to copy to clipboard', 'error');
-    }
-  }, [log, showToast]);
+  const handleCopy = useCallback(async (): Promise<boolean> => {
+    if (copyPendingRef.current || !handoffSummary.isValid) return false;
 
-  const executeDraftBridge = useCallback(async () => {
+    copyPendingRef.current = true;
+    setIsCopying(true);
+    try {
+      const success = await globalThis.api?.writeClipboard(
+        handoffSummary.recipients.map((recipient) => recipient.normalizedEmail).join('; '),
+      );
+      if (success) {
+        showToast('Recipients copied', 'success');
+        return true;
+      }
+      showToast('Could not copy recipients', 'error');
+      return false;
+    } catch (error) {
+      loggers.app.error('[useAssembler] Failed to copy recipients', { error });
+      showToast('Could not copy recipients', 'error');
+      return false;
+    } finally {
+      copyPendingRef.current = false;
+      setIsCopying(false);
+    }
+  }, [handoffSummary, showToast]);
+
+  const executeDraftBridge = useCallback(async (): Promise<boolean> => {
+    if (teamsPendingRef.current || !handoffSummary.isValid) return false;
+
     const api = globalThis.api;
-    if (!api) return;
-    const date = new Date();
+    if (!api) {
+      showToast('Could not open Teams draft', 'error');
+      return false;
+    }
+
+    teamsPendingRef.current = true;
+    setIsOpeningTeams(true);
     const params = new URLSearchParams({
-      subject: `${date.getMonth() + 1}/${date.getDate()} -`,
-      attendees: log.map((m) => m.email).join(','),
+      subject: bridgeSubject,
+      attendees: handoffSummary.recipients.map((recipient) => recipient.normalizedEmail).join(','),
     });
     const query = params.toString();
-    // Try the desktop client deep link first; fall back to the web URL if it is refused
-    const openedDeepLink = await api.openExternal(
-      `msteams://teams.microsoft.com/l/meeting/new?${query}`,
-    );
-    if (!openedDeepLink) {
-      const openedWeb = await api.openExternal(
-        `https://teams.microsoft.com/l/meeting/new?${query}`,
+    try {
+      // Try the desktop client deep link first; fall back to the web URL if it is refused
+      const openedDeepLink = await api.openExternal(
+        `msteams://teams.microsoft.com/l/meeting/new?${query}`,
       );
-      if (!openedWeb) {
-        showToast('Failed to open Teams draft', 'error');
-        return;
+      if (!openedDeepLink) {
+        const openedWeb = await api.openExternal(
+          `https://teams.microsoft.com/l/meeting/new?${query}`,
+        );
+        if (!openedWeb) {
+          showToast('Could not open Teams draft', 'error');
+          return false;
+        }
       }
+      showToast('Teams draft requested', 'success');
+      return true;
+    } catch (error) {
+      loggers.app.error('[useAssembler] Failed to open Teams draft', { error });
+      showToast('Could not open Teams draft', 'error');
+      return false;
+    } finally {
+      teamsPendingRef.current = false;
+      setIsOpeningTeams(false);
     }
-    showToast('Bridge drafted', 'success');
-  }, [log, showToast]);
+  }, [bridgeSubject, handoffSummary, showToast]);
   const handleQuickAdd = useCallback(
     (email: string) => {
       onAddManual(email);
@@ -223,9 +259,13 @@ export function useAssembler({
     setIsHeaderCollapsed,
     contactMap,
     groupMap: emailToGroupsMap,
+    handoffSummary,
+    bridgeSubject,
     allRecipients,
     log,
     itemData,
+    isCopying,
+    isOpeningTeams,
     handleCopy,
     executeDraftBridge,
     handleQuickAdd,
