@@ -746,7 +746,10 @@ export async function collectPackagedSamples(options, runSample = runPackagedBen
         transientFailures.length < packagedMilestoneRetryLimit;
       if (!retryable) throw error;
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Relay renderer milestone timed out without an Error message.';
       transientFailures.push({ attempt: attempts, message });
       process.stderr.write(
         `Transient packaged startup milestone timeout; retrying sample (${transientFailures.length}/${packagedMilestoneRetryLimit}).\n`,

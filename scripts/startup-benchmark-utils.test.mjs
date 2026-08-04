@@ -268,4 +268,21 @@ describe('startup benchmark utilities', () => {
       }),
     ).rejects.toThrow('runtime integrity failed on attempt 1');
   });
+
+  it('records an explicit diagnostic for a non-Error milestone timeout', async () => {
+    const { collectPackagedSamples } = await import('./benchmark-startup.mjs');
+    let attempt = 0;
+
+    const result = await collectPackagedSamples?.({ scenario: 'stable', runs: 1 }, async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw { code: 'RELAY_STARTUP_MILESTONE_TIMEOUT' };
+      }
+      return { sample: attempt };
+    });
+
+    expect(result?.transientFailures).toEqual([
+      { attempt: 1, message: 'Relay renderer milestone timed out without an Error message.' },
+    ]);
+  });
 });
