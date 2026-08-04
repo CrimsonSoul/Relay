@@ -2,7 +2,6 @@ export * from './types';
 export * from './bridgeHandoff';
 export * from './VirtualRow';
 export * from './AssemblerSidebar';
-export * from './BridgeReminderModal';
 export * from './BridgeHandoffModal';
 export * from './SaveGroupModal';
 export * from './BridgeHistoryModal';

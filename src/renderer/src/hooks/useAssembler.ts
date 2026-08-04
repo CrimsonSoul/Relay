@@ -27,7 +27,6 @@ export function useAssembler({
 }: AssemblerState) {
   const { showToast } = useToast();
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
-  const [isBridgeReminderOpen, setIsBridgeReminderOpen] = useState(false);
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
   const [pendingEmail, setPendingEmail] = useState('');
   const [compositionContextMenu, setCompositionContextMenu] = useState<{
@@ -248,8 +247,6 @@ export function useAssembler({
   return {
     sortConfig,
     setSortConfig,
-    isBridgeReminderOpen,
-    setIsBridgeReminderOpen,
     isAddContactModalOpen,
     setIsAddContactModalOpen,
     pendingEmail,

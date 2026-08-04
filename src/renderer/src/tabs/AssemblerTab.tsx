@@ -10,7 +10,7 @@ import { ListToolbar } from '../components/ListToolbar';
 import {
   AssemblerTabProps,
   AssemblerSidebar,
-  BridgeReminderModal,
+  BridgeHandoffModal,
   SaveGroupModal,
   BridgeHistoryModal,
   CompositionList,
@@ -19,6 +19,7 @@ import {
 import { useAssembler } from '../hooks/useAssembler';
 import { useGroups } from '../hooks/useGroups';
 import { useBridgeHistory } from '../hooks/useBridgeHistory';
+import { useBridgeHandoffHistory } from '../hooks/useBridgeHandoffHistory';
 import { useToast } from '../components/Toast';
 import { useModalState } from '../hooks/useModalState';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
@@ -44,8 +45,11 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   // SaveGroupModal is only opened from bridge history "Save as Group" action
   const saveGroupModal = useModalState();
   const scheduleBridgeModal = useModalState();
+  const handoffModal = useModalState();
   const [historyContacts, setHistoryContacts] = useState<string[]>([]);
   const [groupSelectorEmail, setGroupSelectorEmail] = useState<string | null>(null);
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
+  const { saveSuccessfulHandoff } = useBridgeHandoffHistory(addHistory);
 
   // Create a map of group ID to group for quick lookups
   const groupMap = useMemo(() => {
@@ -63,18 +67,28 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
       .filter((name): name is string => !!name);
   }, [selectedGroupIds, groupMap]);
 
-  // Auto-save to bridge history (no prompt)
-  const saveToHistory = useCallback(
-    async (emails: string[], groupNames: string[]) => {
-      if (emails.length === 0) return;
-      await addHistory({
-        note: '',
-        groups: groupNames,
-        contacts: emails,
-        recipientCount: emails.length,
-      });
+  const currentSnapshot = useMemo(
+    () => ({
+      contacts: asm.handoffSummary.recipients.map((recipient) => recipient.email),
+      groups: selectedGroupNames,
+    }),
+    [asm.handoffSummary.recipients, selectedGroupNames],
+  );
+
+  const saveAfterSuccess = useCallback(
+    async (successMessage: string) => {
+      try {
+        await saveSuccessfulHandoff(currentSnapshot);
+      } catch (error_) {
+        showToast(
+          `${successMessage}, but history could not be saved: ${
+            error_ instanceof Error ? error_.message : 'unknown error'
+          }`,
+          'error',
+        );
+      }
     },
-    [addHistory],
+    [currentSnapshot, saveSuccessfulHandoff, showToast],
   );
 
   // Handle saving a history entry as a group
@@ -93,38 +107,15 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     [saveGroup, historyContacts, showToast],
   );
 
-  // Handle copy with auto-save to history (always copies all recipients, not filtered)
-  const handleCopyWithHistory = useCallback(() => {
-    asm.handleCopy().catch((error_) => {
-      showToast(
-        `Copy failed: ${error_ instanceof Error ? error_.message : 'unknown error'}`,
-        'error',
-      );
-    });
-    saveToHistory(
-      asm.allRecipients.map((l) => l.email),
-      selectedGroupNames,
-    ).catch((error_) => {
-      showToast(
-        `Could not save bridge history: ${error_ instanceof Error ? error_.message : 'unknown error'}`,
-        'error',
-      );
-    });
-  }, [asm, selectedGroupNames, saveToHistory, showToast]);
+  const handleCopyWithHistory = useCallback(async () => {
+    if (await asm.handleCopy()) await saveAfterSuccess('Recipients copied');
+  }, [asm, saveAfterSuccess]);
 
-  // Handle draft bridge with auto-save to history
-  const handleDraftBridgeWithHistory = useCallback(() => {
-    void asm.executeDraftBridge();
-    saveToHistory(
-      asm.allRecipients.map((l) => l.email),
-      selectedGroupNames,
-    ).catch((error_) => {
-      showToast(
-        `Could not save bridge history: ${error_ instanceof Error ? error_.message : 'unknown error'}`,
-        'error',
-      );
-    });
-  }, [asm, selectedGroupNames, saveToHistory, showToast]);
+  const handleTeamsWithHistory = useCallback(async () => {
+    if (!(await asm.executeDraftBridge())) return;
+    handoffModal.close();
+    await saveAfterSuccess('Teams draft requested');
+  }, [asm, handoffModal, saveAfterSuccess]);
 
   // Handle loading from history
   const handleLoadFromHistory = useCallback(
@@ -186,8 +177,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           <h2 className="assembler-page-title">Bridge Recipient Assembly</h2>
         </div>
         <div className="assembler-page-meta" role="status" aria-live="polite">
-          <span className="assembler-page-state-dot" aria-hidden="true" />
-          <span>Ready · {asm.allRecipients.length} selected</span>
+          <span>{asm.allRecipients.length} recipients</span>
         </div>
       </header>
 
@@ -271,32 +261,70 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             >
               History
             </TactileButton>
-            <TactileButton
-              variant="secondary"
-              className="assembler-utility-action"
-              onClick={handleCopyWithHistory}
-              disabled={!hasRecipients}
-              tooltip="Copy all recipients"
-              icon={
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              }
-            >
-              Copy All
-            </TactileButton>
           </div>
           <div className="assembler-command-group assembler-command-group--workflow">
+            <div className="assembler-bridge-actions">
+              <TactileButton
+                onClick={() => void handleCopyWithHistory()}
+                disabled={!asm.handoffSummary.isValid || asm.isOpeningTeams}
+                loading={asm.isCopying}
+              >
+                Copy Recipients
+              </TactileButton>
+              <TactileButton
+                onClick={handoffModal.open}
+                variant="primary"
+                disabled={!asm.handoffSummary.isValid || asm.isCopying}
+              >
+                Open Teams Draft
+              </TactileButton>
+              <TactileButton
+                aria-label="More Compose actions"
+                tooltip="More Compose actions"
+                disabled={!hasRecipients}
+                onClick={(event) => {
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  setMoreMenu({ x: bounds.left, y: bounds.bottom });
+                }}
+                icon={
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="5" cy="12" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="19" cy="12" r="1.5" />
+                  </svg>
+                }
+              />
+            </div>
+          </div>
+        </CollapsibleHeader>
+      </div>
+
+      <div className="assembler-layout assembler-workspace">
+        <section className="assembler-groups-pane" aria-label="Contact groups">
+          <AssemblerSidebar
+            groups={groups}
+            selectedGroupIds={selectedGroupIds}
+            actions={{
+              onToggleGroup,
+              onSaveGroup: saveGroup,
+              onUpdateGroup: updateGroup,
+              onDeleteGroup: deleteGroup,
+            }}
+            currentEmails={currentEmails}
+          />
+        </section>
+        <section className="tab-main-content assembler-recipients-pane" aria-label="Recipients">
+          <div className="assembler-pane-header">
+            <div className="assembler-pane-heading">
+              <span>Recipients</span>
+              <span>{asm.allRecipients.length} selected</span>
+            </div>
             <ListToolbar
               sortDirection={asm.sortConfig.direction}
               onToggleSortDirection={() =>
@@ -320,80 +348,6 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               }
               disabled={!hasRecipients}
             />
-            <div className="assembler-bridge-actions">
-              <TactileButton
-                onClick={scheduleBridgeModal.open}
-                variant="secondary"
-                className="btn-collapsible"
-                disabled={!hasRecipients}
-                tooltip="Schedule a bridge calendar invite"
-                icon={
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                }
-              >
-                Schedule
-              </TactileButton>
-              <TactileButton
-                onClick={() => asm.setIsBridgeReminderOpen(true)}
-                variant="primary"
-                className="btn-collapsible"
-                disabled={!hasRecipients}
-                tooltip="Start bridge reminder"
-                icon={
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polygon points="23 7 16 12 23 17 23 7" />
-                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                  </svg>
-                }
-              >
-                Start Bridge
-              </TactileButton>
-            </div>
-          </div>
-        </CollapsibleHeader>
-      </div>
-
-      <div className="assembler-layout assembler-workspace">
-        <section className="assembler-groups-pane" aria-label="Contact groups">
-          <AssemblerSidebar
-            groups={groups}
-            selectedGroupIds={selectedGroupIds}
-            actions={{
-              onToggleGroup,
-              onSaveGroup: saveGroup,
-              onUpdateGroup: updateGroup,
-              onDeleteGroup: deleteGroup,
-            }}
-            currentEmails={currentEmails}
-          />
-        </section>
-        <section className="tab-main-content assembler-recipients-pane" aria-label="Recipients">
-          <div className="assembler-pane-header">
-            <span>Recipients</span>
-            <span>{asm.allRecipients.length} selected</span>
           </div>
           <div className="tab-list-container">
             <CompositionList
@@ -417,16 +371,34 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         initialEmail={asm.pendingEmail}
         onSave={asm.handleContactSaved}
       />
-      <BridgeReminderModal
-        isOpen={asm.isBridgeReminderOpen}
-        onClose={() => asm.setIsBridgeReminderOpen(false)}
-        onConfirm={handleDraftBridgeWithHistory}
+      <BridgeHandoffModal
+        isOpen={handoffModal.isOpen}
+        onClose={handoffModal.close}
+        subject={asm.bridgeSubject}
+        recipients={asm.handoffSummary.recipients}
+        duplicateCount={asm.handoffSummary.duplicateCount}
+        manualCount={asm.handoffSummary.manualCount}
+        groupNames={selectedGroupNames}
+        contactMap={asm.contactMap}
+        isCopying={asm.isCopying}
+        isOpeningTeams={asm.isOpeningTeams}
+        onCopy={() => void handleCopyWithHistory()}
+        onOpenTeams={() => void handleTeamsWithHistory()}
+        onRemoveRecipient={onRemoveManual}
       />
       <ScheduleBridgeModal
         isOpen={scheduleBridgeModal.isOpen}
         onClose={scheduleBridgeModal.close}
         attendees={scheduleAttendees}
       />
+      {moreMenu && (
+        <ContextMenu
+          x={moreMenu.x}
+          y={moreMenu.y}
+          onClose={() => setMoreMenu(null)}
+          items={[{ label: 'Create Calendar Invite', onClick: scheduleBridgeModal.open }]}
+        />
+      )}
       <SaveGroupModal
         isOpen={saveGroupModal.isOpen}
         onClose={() => {
