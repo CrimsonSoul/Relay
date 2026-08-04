@@ -21,6 +21,8 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const mainEntry = path.join(root, 'dist/main/index.js');
 const warmRunCount = 5;
 const launchTimeoutMs = 60_000;
+const packagedMilestoneRetryLimit = 2;
+const startupMilestoneTimeoutCode = 'RELAY_STARTUP_MILESTONE_TIMEOUT';
 const terminateOwnedWindowsBenchmarkScript = `
 $ErrorActionPreference = 'Stop'
 $targetPid = [int]$env:RELAY_BENCHMARK_TARGET_PID
@@ -316,9 +318,11 @@ async function waitForPackagedTimeline(logPath, baseline, startedAt, signal) {
     }
     await delay(25);
   }
-  throw new Error(
+  const error = new Error(
     `Relay did not write a new renderer startup milestone within ${launchTimeoutMs}ms.`,
   );
+  error.code = startupMilestoneTimeoutCode;
+  throw error;
 }
 
 function listCompleteRuntimeBuilds(runtimeRoot) {
@@ -525,6 +529,34 @@ function resolveRuntimeExecutablePath(runtimeRoot, scenario, activeBuildId) {
   return path.join(runtimeRoot, activeBuildId, 'Relay.exe');
 }
 
+async function resetFailedBenchmarkProcess({
+  benchmarkPid,
+  pidMarkerPath,
+  exitMarkerPath,
+  benchmarkRunId,
+  launchEnv,
+  statePath,
+  runtimeRoot,
+  scenario,
+}) {
+  const resolvedPid = benchmarkPid ?? readBenchmarkPid(pidMarkerPath);
+  if (resolvedPid) {
+    terminateOwnedBenchmarkProcess({
+      pid: resolvedPid,
+      runId: benchmarkRunId,
+      exitMarkerPath,
+      environment: launchEnv,
+    });
+  }
+
+  const activeBuildId = readCurrentBuildId(statePath);
+  const runtimeExecutablePath = resolveRuntimeExecutablePath(runtimeRoot, scenario, activeBuildId);
+  if (runtimeExecutablePath) {
+    await waitForRuntimeProcessQuiescence(runtimeExecutablePath, launchEnv);
+  }
+  return resolvedPid;
+}
+
 async function runPackagedBenchmark(options) {
   if (process.platform !== 'win32') {
     throw new Error('Packaged Relay startup benchmarks must run on Windows.');
@@ -645,14 +677,22 @@ async function runPackagedBenchmark(options) {
     };
   } catch (error) {
     controller.abort(error);
-    benchmarkPid ??= readBenchmarkPid(pidMarkerPath);
-    if (benchmarkPid) {
-      terminateOwnedBenchmarkProcess({
-        pid: benchmarkPid,
-        runId: benchmarkRunId,
+    try {
+      benchmarkPid = await resetFailedBenchmarkProcess({
+        benchmarkPid,
+        pidMarkerPath,
         exitMarkerPath,
-        environment: launchEnv,
+        benchmarkRunId,
+        launchEnv,
+        statePath,
+        runtimeRoot,
+        scenario: resolvedOptions.scenario,
       });
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Relay could not cleanly reset the Windows startup benchmark after a failed sample.',
+      );
     }
     throw error;
   } finally {
@@ -661,13 +701,18 @@ async function runPackagedBenchmark(options) {
   }
 }
 
-function summarizePackagedSamples(options, samples) {
-  if (samples.length === 1) return samples[0];
+function summarizePackagedSamples(options, collection) {
+  const { samples, attempts, transientFailures } = collection;
+  if (samples.length === 1) {
+    return { ...samples[0], attempts, transientFailures };
+  }
 
   return {
     scenario: options.scenario,
     compression: options.compression,
     runs: samples.length,
+    attempts,
+    transientFailures,
     runtimeReused:
       options.scenario === 'portable'
         ? null
@@ -685,17 +730,44 @@ function summarizePackagedSamples(options, samples) {
   };
 }
 
+export async function collectPackagedSamples(options, runSample = runPackagedBenchmark) {
+  const samples = [];
+  const transientFailures = [];
+  let attempts = 0;
+
+  while (samples.length < options.runs) {
+    attempts += 1;
+    try {
+      samples.push(await runSample(options));
+    } catch (error) {
+      const retryable =
+        options.scenario === 'stable' &&
+        error?.code === startupMilestoneTimeoutCode &&
+        transientFailures.length < packagedMilestoneRetryLimit;
+      if (!retryable) throw error;
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Relay renderer milestone timed out without an Error message.';
+      transientFailures.push({ attempt: attempts, message });
+      process.stderr.write(
+        `Transient packaged startup milestone timeout; retrying sample (${transientFailures.length}/${packagedMilestoneRetryLimit}).\n`,
+      );
+    }
+  }
+
+  return { samples, attempts, transientFailures };
+}
+
 export async function runStartupBenchmark(argv = process.argv.slice(2)) {
   const options = parseStartupBenchmarkArgs(argv);
   let report;
   if (options.scenario === 'development') {
     report = await runDevelopmentBenchmark();
   } else {
-    const samples = [];
-    for (let index = 0; index < options.runs; index += 1) {
-      samples.push(await runPackagedBenchmark(options));
-    }
-    report = summarizePackagedSamples(options, samples);
+    const collection = await collectPackagedSamples(options);
+    report = summarizePackagedSamples(options, collection);
   }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   return report;
