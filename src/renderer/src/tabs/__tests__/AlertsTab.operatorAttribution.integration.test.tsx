@@ -125,7 +125,8 @@ describe('AlertsTab ordinary reminder integration', () => {
   it('opens and creates an alarm without an operator provider', async () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'SCHEDULE ALARM' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Schedule Alarm' }));
     expect(screen.getByRole('dialog', { name: 'Schedule Alarm' })).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Create provider-backed alarm' }));
