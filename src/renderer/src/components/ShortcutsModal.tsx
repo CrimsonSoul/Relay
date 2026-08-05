@@ -19,6 +19,15 @@ const shortcuts = [
       { keys: `${modKey} + 4`, description: 'Go to Knowledge' },
       { keys: `${modKey} + 5`, description: 'Go to Service Status' },
       { keys: `${modKey} + 6`, description: 'Go to Dynatrace Problems' },
+      { keys: `${modKey} + 7`, description: 'Go to Dispatcher Radar' },
+    ],
+  },
+  {
+    category: 'Dynatrace Problems',
+    items: [
+      { keys: 'Alt + ↓', description: 'Next unaddressed problem' },
+      { keys: 'Alt + ↑', description: 'Previous unaddressed problem' },
+      { keys: 'Alt + N', description: 'Focus selected problem note' },
     ],
   },
   {

@@ -51,6 +51,10 @@ describe('ShortcutsModal', () => {
     expect(screen.getByText('Go to Knowledge')).toBeInTheDocument();
     expect(screen.getByText('Go to Service Status')).toBeInTheDocument();
     expect(screen.getByText('Go to Dynatrace Problems')).toBeInTheDocument();
+    expect(screen.getByText('Go to Dispatcher Radar')).toBeInTheDocument();
+    expect(screen.getByText('Next unaddressed problem')).toBeInTheDocument();
+    expect(screen.getByText('Previous unaddressed problem')).toBeInTheDocument();
+    expect(screen.getByText('Focus selected problem note')).toBeInTheDocument();
     expect(screen.queryByText('Go to People')).not.toBeInTheDocument();
     expect(screen.queryByText('Go to Servers')).not.toBeInTheDocument();
     expect(screen.queryByText('Go to Notes')).not.toBeInTheDocument();

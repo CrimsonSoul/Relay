@@ -14,6 +14,7 @@ describe('useKeyboardShortcuts', () => {
     ['4', 'Knowledge'],
     ['5', 'Status'],
     ['6', 'Problems'],
+    ['7', 'Radar'],
   ] as const)('maps Cmd+%s to %s', (key, tab) => {
     const setActiveTab = vi.fn();
     renderHook(() =>
@@ -55,7 +56,7 @@ describe('useKeyboardShortcuts', () => {
     expect(setActiveTab).toHaveBeenCalledWith('Compose');
   });
 
-  it.each(['7', '8', '9'])('leaves Cmd+%s unassigned', (key) => {
+  it.each(['8', '9'])('leaves Cmd+%s unassigned', (key) => {
     const setActiveTab = vi.fn();
     renderHook(() =>
       useKeyboardShortcuts({
