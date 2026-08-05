@@ -358,4 +358,11 @@ describe('Sidebar', () => {
     expect(container.querySelector('.sidebar-footer')).toBeInTheDocument();
     expect(container.querySelector('.sidebar-divider')).toBeInTheDocument();
   });
+
+  it('renders a fixed-width shell around the navigation surface', () => {
+    const { container } = render(<Sidebar {...defaultProps} />);
+
+    expect(container.querySelector('.sidebar-shell > .sidebar')).not.toBeNull();
+    expect(container.querySelector('.sidebar')).toHaveAttribute('aria-label', 'Relay navigation');
+  });
 });
