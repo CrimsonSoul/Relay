@@ -261,6 +261,8 @@ vi.mock('../AlertReminderManagerModal', () => ({
     ) : null,
 }));
 
+let lastAlertFormProps: Record<string, unknown> | null = null;
+
 // Mock AlertForm — use the real draft contract and expose controls for tab-level tests
 vi.mock('../AlertForm', async () => {
   const { useAlertDraft } = await vi.importActual<typeof import('../alerts/AlertDraftContext')>(
@@ -268,6 +270,7 @@ vi.mock('../AlertForm', async () => {
   );
   return {
     AlertForm: function MockAlertForm(props: Record<string, unknown>) {
+      lastAlertFormProps = props;
       const { state, setField } = useAlertDraft();
       const hasRetiredTransformProps = [
         'isCompact',
@@ -492,6 +495,7 @@ vi.mock('../alertUtils', async () => ({
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
+  lastAlertFormProps = null;
   mockReminderSubmitResult.current = null;
   mockPendingReminders.current = [];
   mockCompletedReminders.current = [];
@@ -869,6 +873,22 @@ describe('AlertsTab', () => {
     });
     expect(mockCapture.html2canvas).not.toHaveBeenCalled();
     expect(globalThis.api?.saveAndOpenAlertDraft).not.toHaveBeenCalled();
+  });
+
+  it('requests click-through attention before an invalid Outlook export', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
+    mockCapture.html2canvas.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /OPEN IN OUTLOOK/i }));
+
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'clickThroughUrl' });
+    });
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Enter a valid HTTP or HTTPS click-through URL',
+      'error',
+    );
   });
 
   it('resolves banner colors in the shared capture clone before rendering', async () => {

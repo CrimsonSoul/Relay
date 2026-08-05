@@ -11,7 +11,11 @@ import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertReminderModal } from './AlertReminderModal';
 import { AlertReminderManagerModal } from './AlertReminderManagerModal';
-import { AlertForm } from './AlertForm';
+import {
+  AlertForm,
+  type AlertOptionalAttentionRequest,
+  type AlertOptionalField,
+} from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { AlertActionsMenu } from './alerts/AlertActionsMenu';
 import { isAlertMessageComplete } from './alertUtils';
@@ -156,6 +160,9 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
 
   const [isCapturing, setIsCapturing] = useState(false);
+  const optionalAttentionSequenceRef = useRef(0);
+  const [optionalAttentionRequest, setOptionalAttentionRequest] =
+    useState<AlertOptionalAttentionRequest | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
@@ -189,6 +196,13 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     () => sanitizeAlertClickUrl(clickThroughUrl) ?? undefined,
     [clickThroughUrl],
   );
+  const requestOptionalFieldAttention = useCallback((field: AlertOptionalField) => {
+    optionalAttentionSequenceRef.current += 1;
+    setOptionalAttentionRequest({
+      requestId: optionalAttentionSequenceRef.current,
+      field,
+    });
+  }, []);
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
 
@@ -485,6 +499,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
 
   const handleOpenOutlookDraft = useCallback(async () => {
     if (clickThroughUrl.trim() && !alertClickHref) {
+      requestOptionalFieldAttention('clickThroughUrl');
       showToast('Enter a valid HTTP or HTTPS click-through URL', 'error');
       return false;
     }
@@ -529,6 +544,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     sender,
     recipient,
     isWebRuntime,
+    requestOptionalFieldAttention,
   ]);
 
   const reminderDraft = useMemo(
@@ -713,6 +729,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             footerLogoDataUrl={footerLogoDataUrl}
             onSetFooterLogo={handleSetFooterLogo}
             onRemoveFooterLogo={handleRemoveFooterLogo}
+            attentionRequest={optionalAttentionRequest}
           />
         </section>
         <section className="alerts-pane alerts-preview-pane" aria-label="Live email preview">
