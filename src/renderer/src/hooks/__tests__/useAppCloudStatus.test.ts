@@ -593,6 +593,16 @@ describe('useAppCloudStatus', () => {
       }),
     ];
     rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    mistState.data = [
+      mistSnapshot({
+        ...mistStatus([mistItem({ severity: 'warning', title: 'Elevated Mist latency' })]),
+        lastUpdated: firstPollTimestamp + 120_000,
+      }),
+    ];
+    rerender();
 
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
   });
@@ -612,6 +622,11 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
 
     collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    collectionState.data = [snapshot(nextPoll(nextPoll(degraded)))];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
   });
@@ -640,7 +655,11 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(degraded)];
     rerender();
     await act(async () => Promise.resolve());
-    const confirmedDegradation = nextPoll(degraded);
+    const secondObservation = nextPoll(degraded);
+    collectionState.data = [snapshot(secondObservation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(secondObservation);
     collectionState.data = [snapshot(confirmedDegradation)];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
@@ -670,7 +689,11 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(degraded)];
     rerender();
     await act(async () => Promise.resolve());
-    const confirmedDegradation = nextPoll(degraded);
+    const secondObservation = nextPoll(degraded);
+    collectionState.data = [snapshot(secondObservation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(secondObservation);
     collectionState.data = [snapshot(confirmedDegradation)];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
@@ -694,6 +717,10 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
     collectionState.data = [snapshot(nextPoll(reopenedDegradation))];
     rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(nextPoll(reopenedDegradation)))];
+    rerender();
 
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
   });
@@ -707,7 +734,11 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(degraded)];
     rerender();
     await act(async () => Promise.resolve());
-    const confirmedDegradation = nextPoll(degraded);
+    const secondObservation = nextPoll(degraded);
+    collectionState.data = [snapshot(secondObservation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(secondObservation);
     collectionState.data = [snapshot(confirmedDegradation)];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
@@ -732,6 +763,9 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(nextPoll(returnedDegradation))];
     rerender();
     await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(nextPoll(returnedDegradation)))];
+    rerender();
+    await act(async () => Promise.resolve());
 
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -750,6 +784,9 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(nextPoll(maintenance))];
     rerender();
     await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(nextPoll(maintenance)))];
+    rerender();
+    await act(async () => Promise.resolve());
 
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -766,6 +803,10 @@ describe('useAppCloudStatus', () => {
     rerender();
     await act(async () => Promise.resolve());
     collectionState.data = [snapshot(nextPoll(emergency))];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(nextPoll(emergency)))];
     rerender();
 
     await waitFor(() =>
@@ -795,6 +836,10 @@ describe('useAppCloudStatus', () => {
     rerender();
     await act(async () => Promise.resolve());
     collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(nextPoll(degraded)))];
     rerender();
 
     await waitFor(() =>

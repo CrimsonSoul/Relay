@@ -30,6 +30,9 @@ import { useCollection } from './useCollection';
 
 const CACHE_KEY = 'cached_cloud_status';
 
+export const DEGRADATION_REQUIRED_OBSERVATIONS = 3;
+export const DEGRADATION_MIN_DURATION_MS = 120_000;
+
 type CacheEntry = {
   fetchedAt: number;
   data: CloudStatusData;
@@ -125,48 +128,90 @@ function currentStatusState(data: CloudStatusData): CurrentStatusState {
   };
 }
 
+function clearDegradationCandidate(
+  provider: CloudStatusProvider,
+  candidateCounts: Map<CloudStatusProvider, number>,
+  candidateObservations: Map<CloudStatusProvider, number>,
+  candidateFirstObservations: Map<CloudStatusProvider, number>,
+): void {
+  candidateCounts.delete(provider);
+  candidateObservations.delete(provider);
+  candidateFirstObservations.delete(provider);
+}
+
 function advanceProviderDegradation(
   provider: CloudStatusProvider,
   state: CurrentStatusState,
   activeProblemProviders: Set<CloudStatusProvider>,
   candidateCounts: Map<CloudStatusProvider, number>,
   candidateObservations: Map<CloudStatusProvider, number>,
+  candidateFirstObservations: Map<CloudStatusProvider, number>,
   observationTimestamp: number,
 ): CloudStatusItem | null {
   if (state.feedErrorProviders.has(provider)) {
-    candidateCounts.delete(provider);
-    candidateObservations.delete(provider);
+    clearDegradationCandidate(
+      provider,
+      candidateCounts,
+      candidateObservations,
+      candidateFirstObservations,
+    );
     return null;
   }
   if (!state.issueProviders.has(provider)) {
     activeProblemProviders.delete(provider);
-    candidateCounts.delete(provider);
-    candidateObservations.delete(provider);
+    clearDegradationCandidate(
+      provider,
+      candidateCounts,
+      candidateObservations,
+      candidateFirstObservations,
+    );
     return null;
   }
   if (state.outageProviders.has(provider) || activeProblemProviders.has(provider)) {
-    candidateCounts.delete(provider);
-    candidateObservations.delete(provider);
+    clearDegradationCandidate(
+      provider,
+      candidateCounts,
+      candidateObservations,
+      candidateFirstObservations,
+    );
     return null;
   }
 
   const warning = state.actionableWarnings.get(provider);
   if (!warning) {
-    candidateCounts.delete(provider);
-    candidateObservations.delete(provider);
+    clearDegradationCandidate(
+      provider,
+      candidateCounts,
+      candidateObservations,
+      candidateFirstObservations,
+    );
     return null;
   }
 
-  if (candidateObservations.get(provider) === observationTimestamp) return null;
+  const previousObservation = candidateObservations.get(provider);
+  if (previousObservation !== undefined && observationTimestamp <= previousObservation) return null;
   candidateObservations.set(provider, observationTimestamp);
+  if (!candidateFirstObservations.has(provider)) {
+    candidateFirstObservations.set(provider, observationTimestamp);
+  }
 
-  const consecutiveCount = (candidateCounts.get(provider) ?? 0) + 1;
-  candidateCounts.set(provider, consecutiveCount);
-  if (consecutiveCount < 2) return null;
+  const count = (candidateCounts.get(provider) ?? 0) + 1;
+  candidateCounts.set(provider, count);
+  const firstObservation = candidateFirstObservations.get(provider) ?? observationTimestamp;
+  if (
+    count < DEGRADATION_REQUIRED_OBSERVATIONS ||
+    observationTimestamp - firstObservation < DEGRADATION_MIN_DURATION_MS
+  ) {
+    return null;
+  }
 
   activeProblemProviders.add(provider);
-  candidateCounts.delete(provider);
-  candidateObservations.delete(provider);
+  clearDegradationCandidate(
+    provider,
+    candidateCounts,
+    candidateObservations,
+    candidateFirstObservations,
+  );
   return warning;
 }
 
@@ -175,6 +220,7 @@ function collectNewDegradations(
   activeProblemProviders: Set<CloudStatusProvider>,
   candidateCounts: Map<CloudStatusProvider, number>,
   candidateObservations: Map<CloudStatusProvider, number>,
+  candidateFirstObservations: Map<CloudStatusProvider, number>,
   observations: StatusObservationTimestamps,
 ): CloudStatusItem[] {
   const newDegradations: CloudStatusItem[] = [];
@@ -185,6 +231,7 @@ function collectNewDegradations(
       activeProblemProviders,
       candidateCounts,
       candidateObservations,
+      candidateFirstObservations,
       observationTimestampFor(provider, observations),
     );
     if (degradation) newDegradations.push(degradation);
@@ -269,6 +316,7 @@ export function useAppCloudStatus(
   const activeProblemProvidersRef = useRef(new Set<CloudStatusProvider>());
   const degradationCandidateCountsRef = useRef(new Map<CloudStatusProvider, number>());
   const degradationCandidateObservationsRef = useRef(new Map<CloudStatusProvider, number>());
+  const degradationCandidateFirstObservationsRef = useRef(new Map<CloudStatusProvider, number>());
   const baselineEstablishedRef = useRef(false);
   const cacheRestoredRef = useRef(false);
   const lastNotificationSnapshotRef = useRef<string | null>(null);
@@ -309,7 +357,12 @@ export function useAppCloudStatus(
 
       for (const provider of current.outageProviders) {
         activeProblemProvidersRef.current.add(provider);
-        degradationCandidateCountsRef.current.delete(provider);
+        clearDegradationCandidate(
+          provider,
+          degradationCandidateCountsRef.current,
+          degradationCandidateObservationsRef.current,
+          degradationCandidateFirstObservationsRef.current,
+        );
       }
 
       const newDegradations = collectNewDegradations(
@@ -317,6 +370,7 @@ export function useAppCloudStatus(
         activeProblemProvidersRef.current,
         degradationCandidateCountsRef.current,
         degradationCandidateObservationsRef.current,
+        degradationCandidateFirstObservationsRef.current,
         observations,
       );
 
