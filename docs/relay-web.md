@@ -44,7 +44,10 @@ The following device-specific operations stay on the desktop app:
 
 Relay Web shows in-app toasts while its workspace is mounted. Built-in alarm audio plays while the tab is open when permitted by the browser's autoplay policy; visual alarms remain available if audio is blocked. Relay Web does not request browser notification permission, install a service worker, or send operating-system push notifications.
 
-Dynatrace Problems always take priority when a toast could show both a Problem and a provider event. Provider status considers current errors and warnings from the last seven days. Relay notifies on newly observed outages and on confirmed degradations after two consecutive observations; planned or scheduled maintenance is excluded.
+Dynatrace Problems always take priority when a toast could show both a Problem and a provider event.
+Provider status considers current errors and warnings from the last seven days. Relay notifies on
+newly observed outages and on confirmed degradations after three distinct server observations
+spanning at least two minutes; planned or scheduled maintenance is excluded.
 
 Service Status consumes the server-combined, schema-validated 14-provider response. Juniper Mist is shown as separate Global, EMEA, APAC, and Federal rows. A multi-region incident is batched into one provider toast, and Mist offers only its official status link. Other providers retain their configured official status, X, and Downdetector actions.
 
