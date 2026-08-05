@@ -157,6 +157,54 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
   });
 
+  it('switches to the unaddressed queue and selects the next problem with Alt+Down', async () => {
+    const nextProblem = {
+      ...openProblem,
+      id: 'pb-2',
+      problemId: 'problem-2',
+      displayId: 'P-240792',
+      title: 'Checkout service response time degradation',
+      startTime: openProblem.startTime - 1,
+    };
+    mocks.hookValue = { ...mocks.hookValue, problems: [openProblem, nextProblem] };
+    render(<DynatraceProblemsTab relayMode="client" active />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.click(screen.getByRole('tab', { name: /Addressed locally/ }));
+    fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true });
+
+    expect(screen.getByRole('tab', { name: /Unaddressed/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Checkout service response time degradation',
+      }),
+    ).toBeVisible();
+  });
+
+  it('focuses the selected note editor with Alt+N without changing draft or disposition', async () => {
+    render(<DynatraceProblemsTab relayMode="client" active />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.keyDown(window, { key: 'n', altKey: true });
+
+    expect(screen.getByLabelText('Add a note')).toHaveFocus();
+    expect(mocks.setAddressed).not.toHaveBeenCalled();
+    expect(mocks.addNote).not.toHaveBeenCalled();
+  });
+
+  it('reports an empty unaddressed queue once per triage key activation', () => {
+    mocks.hookValue = { ...mocks.hookValue, problems: [] };
+    render(<DynatraceProblemsTab relayMode="client" active />);
+
+    fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true });
+
+    expect(mocks.showToast).toHaveBeenCalledOnce();
+    expect(mocks.showToast).toHaveBeenCalledWith('No unaddressed Dynatrace problems.', 'info');
+  });
+
   it('keeps a drafted NOC note when the search box narrows the queue', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });

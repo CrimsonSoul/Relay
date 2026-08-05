@@ -82,6 +82,10 @@ let lastCloudStatusTabProps: {
   selectedProvider?: CloudStatusProvider | null;
   onSelectedProviderChange?: (provider: CloudStatusProvider | null) => void;
 } | null = null;
+let lastDynatraceProblemsProps: {
+  relayMode?: string;
+  active?: boolean;
+} | null = null;
 let lastCloudStatusOpenProvider: ((provider: CloudStatusProvider) => void) | undefined;
 const mockDynatraceDashboards: DynatraceDashboardState[] = [
   {
@@ -363,6 +367,13 @@ vi.mock('../tabs/CloudStatusTab', () => ({
   },
 }));
 
+vi.mock('../tabs/DynatraceProblemsTab', () => ({
+  DynatraceProblemsTab: (props: NonNullable<typeof lastDynatraceProblemsProps>) => {
+    lastDynatraceProblemsProps = props;
+    return <div data-testid="dynatrace-problems-tab" data-active={props.active} />;
+  },
+}));
+
 vi.mock('../tabs/AlertsTab', () => ({
   AlertsTab: () => <div data-testid="alerts-tab" />,
 }));
@@ -514,6 +525,7 @@ describe('MainApp', () => {
     lastDataManagerModalProps = null;
     lastKnowledgeWorkspaceProps = null;
     lastCloudStatusTabProps = null;
+    lastDynatraceProblemsProps = null;
     lastCloudStatusOpenProvider = undefined;
     lastPersonnelTabProps = null;
     localStorage.removeItem('relay-oncall-display-size');
@@ -536,6 +548,7 @@ describe('MainApp', () => {
     lastSettingsModalProps = null;
     lastDataManagerModalProps = null;
     lastCloudStatusTabProps = null;
+    lastDynatraceProblemsProps = null;
     lastCloudStatusOpenProvider = undefined;
     acknowledgeKnowledgeDestinationOpen('wiki');
     acknowledgeKnowledgeDestinationOpen('contacts');
@@ -601,6 +614,21 @@ describe('MainApp', () => {
     const breadcrumb = screen.getByText(/Relay \//);
     expect(breadcrumb).toBeInTheDocument();
     expect(breadcrumb.closest('.header-breadcrumb')).toBeInTheDocument();
+  });
+
+  it('marks the retained Problems tab active only while it is selected', async () => {
+    mockActiveTab = 'Problems';
+    const { rerender } = renderApp();
+
+    await vi.waitFor(() => expect(lastDynatraceProblemsProps?.active).toBe(true));
+
+    mockActiveTab = 'Compose';
+    rerender(<MainApp />);
+    expect(lastDynatraceProblemsProps?.active).toBe(false);
+
+    mockActiveTab = 'Problems';
+    rerender(<MainApp />);
+    expect(lastDynatraceProblemsProps?.active).toBe(true);
   });
 
   it('renders AssemblerTab by default (Compose is mounted)', async () => {
@@ -808,7 +836,7 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith(destination);
   });
 
-  it.each(['7', '8', '9'])('does not assign Cmd+%s', (key) => {
+  it.each(['8', '9'])('does not assign Cmd+%s', (key) => {
     renderApp();
     fireEvent.keyDown(window, { key, metaKey: true });
     expect(mockSetActiveTab).not.toHaveBeenCalled();

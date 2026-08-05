@@ -517,7 +517,10 @@ export function MainApp({
               <RetainedTabPanel active={activeTab === 'Problems'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <DynatraceProblemsTab relayMode={relayConfig?.mode} />
+                    <DynatraceProblemsTab
+                      relayMode={relayConfig?.mode}
+                      active={activeTab === 'Problems'}
+                    />
                   </Suspense>
                 </ErrorBoundary>
               </RetainedTabPanel>
