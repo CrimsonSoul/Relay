@@ -21,6 +21,11 @@ import {
   isKnowledgeContentDestination,
   type KnowledgeContentDestination,
 } from '../features/knowledge/knowledgeWorkspaceNavigation';
+import {
+  contactRecordKey,
+  serverRecordKey,
+  type KnowledgeRecordTarget,
+} from '../features/knowledge/knowledgeRecordNavigation';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
@@ -38,6 +43,7 @@ export type HeaderSearchActions = {
   onToggleGroup: (groupId: string) => void;
   onNavigateToTab: (tab: string) => void;
   onOpenKnowledgeDestination: (destination: KnowledgeContentDestination) => void;
+  onOpenKnowledgeRecord: (target: KnowledgeRecordTarget) => void;
   onOpenAddContact: (email?: string) => void;
   onOpenKnowledgeDocument: (request: KnowledgeOpenRequest) => void;
 };
@@ -121,14 +127,31 @@ type SearchResultItemProps = {
   index: number;
   selectedIndex: number;
   onSelect: (result: SearchResult) => void;
+  onSecondarySelect?: (result: SearchResult) => void;
   onHover: (index: number) => void;
 };
+
+function primaryVerb(result: SearchResult): string {
+  if (result.source === 'wiki-passage' || result.type === 'knowledge') return 'Open document';
+  if (result.type === 'contact') return 'Open contact';
+  if (result.type === 'server') return 'Open server';
+  if (result.type === 'group') return 'Add group to bridge';
+  if (result.type === 'action') {
+    const action = (result.data as { action?: string }).action;
+    if (action === 'navigate') return 'Open tab';
+    if (action === 'open-knowledge') return 'Open workspace';
+    if (action === 'create-contact') return 'Create contact';
+    if (action === 'add-manual') return 'Add to bridge';
+  }
+  return 'Select';
+}
 
 const SearchResultItem: React.FC<SearchResultItemProps> = ({
   result,
   index,
   selectedIndex,
   onSelect,
+  onSecondarySelect,
   onHover,
 }) => {
   const passage = result.source === 'wiki-passage' ? (result.data as KnowledgeSearchResult) : null;
@@ -138,42 +161,57 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
       role="option"
       aria-selected={index === selectedIndex}
     >
-      <button
-        type="button"
-        data-index={index}
-        id={`search-result-${index}`}
-        className="search-dropdown-hitbox"
-        onMouseDown={(event) => {
-          event.preventDefault();
-          onSelect(result);
-        }}
-        onMouseEnter={() => onHover(index)}
-      >
-        <div className="search-dropdown-result-icon">
-          <RenderIcon result={result} />
-        </div>
-        <div className="search-dropdown-result-info">
-          <div className="search-dropdown-result-title">{result.title}</div>
-          {passage ? (
-            <>
-              <div className="search-dropdown-result-meta">
-                <span>Page {passage.pageIndex + 1}</span>
-                <span>{passage.category}</span>
-                {passage.heading && <span>{passage.heading}</span>}
-                {passage.matchKind === 'fuzzy' && (
-                  <span className="search-dropdown-close-match">Close match</span>
-                )}
-              </div>
-              <div className="search-dropdown-result-subtitle">{passage.excerpt}</div>
-            </>
-          ) : (
-            result.subtitle && (
-              <div className="search-dropdown-result-subtitle">{result.subtitle}</div>
-            )
-          )}
-        </div>
-        <div className="search-dropdown-result-type">{passage ? 'Wiki' : result.type}</div>
-      </button>
+      <div className="search-dropdown-result-row">
+        <button
+          type="button"
+          data-index={index}
+          id={`search-result-${index}`}
+          className="search-dropdown-hitbox"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onSelect(result);
+          }}
+          onMouseEnter={() => onHover(index)}
+        >
+          <div className="search-dropdown-result-icon">
+            <RenderIcon result={result} />
+          </div>
+          <div className="search-dropdown-result-info">
+            <div className="search-dropdown-result-title">{result.title}</div>
+            {passage ? (
+              <>
+                <div className="search-dropdown-result-meta">
+                  <span>Page {passage.pageIndex + 1}</span>
+                  <span>{passage.category}</span>
+                  {passage.heading && <span>{passage.heading}</span>}
+                  {passage.matchKind === 'fuzzy' && (
+                    <span className="search-dropdown-close-match">Close match</span>
+                  )}
+                </div>
+                <div className="search-dropdown-result-subtitle">{passage.excerpt}</div>
+              </>
+            ) : (
+              result.subtitle && (
+                <div className="search-dropdown-result-subtitle">{result.subtitle}</div>
+              )
+            )}
+          </div>
+          <span className="search-dropdown-result-verb">{primaryVerb(result)}</span>
+        </button>
+        {result.type === 'contact' && onSecondarySelect && (
+          <button
+            type="button"
+            className="search-dropdown-secondary-action"
+            aria-label={`Add ${result.title} to bridge`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSecondarySelect(result);
+            }}
+          >
+            Add to bridge
+          </button>
+        )}
+      </div>
     </li>
   );
 };
@@ -235,6 +273,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     onToggleGroup,
     onNavigateToTab,
     onOpenKnowledgeDestination,
+    onOpenKnowledgeRecord,
     onOpenAddContact,
     onOpenKnowledgeDocument,
   } = actions;
@@ -354,8 +393,9 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       switch (result.type) {
         case 'contact': {
           const contact = result.data as Contact;
-          onAddContactToBridge(contact.email);
-          break;
+          onOpenKnowledgeRecord({ destination: 'contacts', recordKey: contactRecordKey(contact) });
+          searchInputRef.current?.blur();
+          return;
         }
         case 'group': {
           const group = result.data as BridgeGroup;
@@ -363,8 +403,10 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           break;
         }
         case 'server': {
-          onOpenKnowledgeDestination('servers');
-          break;
+          const server = result.data as Server;
+          onOpenKnowledgeRecord({ destination: 'servers', recordKey: serverRecordKey(server) });
+          searchInputRef.current?.blur();
+          return;
         }
         case 'knowledge': {
           const selection = result.data as {
@@ -407,11 +449,23 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       onToggleGroup,
       onNavigateToTab,
       onOpenKnowledgeDestination,
+      onOpenKnowledgeRecord,
       onOpenAddContact,
       onOpenKnowledgeDocument,
       clearSearch,
       searchInputRef,
     ],
+  );
+
+  const handleSecondarySelect = useCallback(
+    (result: SearchResult) => {
+      if (result.type !== 'contact') return;
+      const contact = result.data as Contact;
+      onAddContactToBridge(contact.email);
+      clearSearch();
+      searchInputRef.current?.blur();
+    },
+    [clearSearch, onAddContactToBridge, searchInputRef],
   );
 
   const handleKeyDown = useCallback(
@@ -586,6 +640,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
                   index={index}
                   selectedIndex={activeIndex}
                   onSelect={handleSelect}
+                  onSecondarySelect={handleSecondarySelect}
                   onHover={setSelectedIndex}
                 />
               ))}

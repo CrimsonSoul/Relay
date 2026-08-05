@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type MockedFunction } from 'vitest';
-import type { BridgeAPI } from '@shared/ipc';
+import type { BridgeAPI, Contact, Server } from '@shared/ipc';
 import type {
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
@@ -69,9 +69,33 @@ const defaultActions: HeaderSearchActions = {
   onToggleGroup: vi.fn(),
   onNavigateToTab: vi.fn(),
   onOpenKnowledgeDestination: vi.fn(),
+  onOpenKnowledgeRecord: vi.fn(),
   onOpenAddContact: vi.fn(),
   onOpenKnowledgeDocument: vi.fn(),
 };
+
+const makeContact = (overrides: Partial<Contact> = {}): Contact => ({
+  name: 'John Doe',
+  email: 'john@test.com',
+  phone: '',
+  title: '',
+  _searchString: 'john doe john@test.com',
+  raw: {},
+  ...overrides,
+});
+
+const makeServer = (overrides: Partial<Server> = {}): Server => ({
+  name: 'web-server',
+  businessArea: '',
+  lob: '',
+  comment: '',
+  owner: '',
+  contact: '',
+  os: '',
+  _searchString: 'web-server',
+  raw: {},
+  ...overrides,
+});
 
 const defaultProps = {
   activeTab: 'Compose',
@@ -308,10 +332,15 @@ describe('HeaderSearch', () => {
           title: 'John Doe',
           subtitle: 'john@test.com',
           type: 'contact',
-          data: { email: 'john@test.com' },
+          data: makeContact({ raw: { id: 'contact_1' } }),
         },
         { id: 'g1', title: 'Engineering', type: 'group', data: { id: 'grp-1' } },
-        { id: 's1', title: 'web-server', type: 'server', data: { name: 'web-server' } },
+        {
+          id: 's1',
+          title: 'web-server',
+          type: 'server',
+          data: makeServer({ raw: { id: 'server_1' } }),
+        },
         {
           id: 'a1',
           title: 'Go to Servers',
@@ -395,13 +424,13 @@ describe('HeaderSearch', () => {
       expect(screen.getByText('john@test.com')).toBeInTheDocument();
     });
 
-    it('renders type badges', () => {
+    it('renders explicit activation verbs', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
         vi.advanceTimersByTime(250);
       });
-      expect(screen.getByText('contact')).toBeInTheDocument();
-      expect(screen.getByText('group')).toBeInTheDocument();
+      expect(screen.getByText('Open contact')).toBeInTheDocument();
+      expect(screen.getByText('Add group to bridge')).toBeInTheDocument();
     });
 
     it('renders icons for each visible result type', () => {
@@ -439,15 +468,19 @@ describe('HeaderSearch', () => {
       expect(options[0]).toHaveAttribute('aria-selected', 'true');
     });
 
-    it('selects contact on Enter and calls onAddContactToBridge', () => {
+    it('opens a contact on Enter without mutating Compose or clearing lookup context', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
         vi.advanceTimersByTime(250);
       });
       const input = screen.getByRole('combobox');
       fireEvent.keyDown(input, { key: 'Enter' });
-      expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
-      expect(mockSearchContext.clearSearch).toHaveBeenCalled();
+      expect(defaultActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
+        destination: 'contacts',
+        recordKey: 'id:contact_1',
+      });
+      expect(defaultActions.onAddContactToBridge).not.toHaveBeenCalled();
+      expect(mockSearchContext.clearSearch).not.toHaveBeenCalled();
     });
 
     it('selects group on Enter after ArrowDown and calls onToggleGroup', () => {
@@ -474,15 +507,15 @@ describe('HeaderSearch', () => {
       expect(defaultActions.onNavigateToTab).toHaveBeenCalledWith('Servers');
     });
 
-    it('selects result on mouseDown click', () => {
+    it('adds a contact only from its separate inline bridge action', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
         vi.advanceTimersByTime(250);
       });
-      const hitboxes = document.querySelectorAll('.search-dropdown-hitbox');
-      expect(hitboxes[0]).toBeDefined();
-      fireEvent.mouseDown(hitboxes[0]!);
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Add John Doe to bridge' }));
       expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
+      expect(defaultActions.onOpenKnowledgeRecord).not.toHaveBeenCalled();
+      expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
     });
 
     it('updates selectedIndex on mouseEnter', () => {
@@ -722,7 +755,7 @@ describe('HeaderSearch', () => {
         id: 's1',
         title: 'web-server',
         type: 'server',
-        data: { name: 'web-server' },
+        data: makeServer({ raw: { id: 'server_1' } }),
       });
       // 'Alerts' is not in FILTERABLE_TABS, so no types are hidden
       render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
@@ -730,7 +763,12 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-      expect(defaultActions.onOpenKnowledgeDestination).toHaveBeenCalledWith('servers');
+      expect(screen.getByText('Open server')).toBeVisible();
+      expect(defaultActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
+        destination: 'servers',
+        recordKey: 'id:server_1',
+      });
+      expect(mockSearchContext.clearSearch).not.toHaveBeenCalled();
     });
 
     it('renders server icon for server results on non-filterable tab', () => {
@@ -1015,7 +1053,11 @@ describe('HeaderSearch', () => {
       expect(input).toHaveAttribute('aria-activedescendant', 'search-result-0');
       fireEvent.keyDown(input, { key: 'Enter' });
 
-      expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('operator@example.com');
+      expect(defaultActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
+        destination: 'contacts',
+        recordKey: 'email:operator@example.com',
+      });
+      expect(defaultActions.onAddContactToBridge).not.toHaveBeenCalled();
       expect(defaultActions.onOpenKnowledgeDocument).not.toHaveBeenCalled();
       expect(mockKnowledgeBoundaryError).toHaveBeenCalledWith(
         'Enhanced Wiki search rendering failed',
