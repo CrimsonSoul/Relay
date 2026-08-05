@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { isAlertMessageComplete } from './alertUtils';
+import { sanitizeAlertClickUrl } from './alertLinks';
 import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
-import { AlertLogoUpload } from './alerts/AlertLogoUpload';
+import { AlertDeliveryFields } from './alerts/AlertDeliveryFields';
 import { useAlertDraft } from './alerts/AlertDraftContext';
-import { ALERT_CLICK_URL_MAX_LENGTH, sanitizeAlertClickUrl } from './alertLinks';
+
+export type AlertOptionalField = 'clickThroughUrl';
+
+export type AlertOptionalAttentionRequest = {
+  requestId: number;
+  field: AlertOptionalField;
+};
 
 export interface AlertFormProps {
   logoDataUrl: string | null;
@@ -13,6 +20,7 @@ export interface AlertFormProps {
   footerLogoDataUrl: string | null;
   onSetFooterLogo: () => void;
   onRemoveFooterLogo: () => void;
+  attentionRequest?: AlertOptionalAttentionRequest | null;
 }
 
 export const AlertForm: React.FC<AlertFormProps> = ({
@@ -22,6 +30,7 @@ export const AlertForm: React.FC<AlertFormProps> = ({
   footerLogoDataUrl,
   onSetFooterLogo,
   onRemoveFooterLogo,
+  attentionRequest = null,
 }) => {
   const { state, setField } = useAlertDraft();
   const {
@@ -34,12 +43,32 @@ export const AlertForm: React.FC<AlertFormProps> = ({
     updateNumber,
     eventTimeStart,
     eventTimeEnd,
-    eventTimeSourceTz,
   } = state;
+  const [deliveryExpanded, setDeliveryExpanded] = useState(false);
+  const lastAttentionRequestIdRef = useRef<number | null>(null);
   const messageComplete = isAlertMessageComplete(subject, bodyHtml);
   const normalizedClickThroughUrl = sanitizeAlertClickUrl(clickThroughUrl);
-  const hasClickThroughUrl = clickThroughUrl.trim().length > 0;
-  const clickThroughUrlInvalid = hasClickThroughUrl && !normalizedClickThroughUrl;
+  const summaryTokens = [
+    (sender.trim() || recipient.trim()) && 'Routing configured',
+    normalizedClickThroughUrl && 'Link ready',
+    (updateNumber > 0 || eventTimeStart || eventTimeEnd) && 'Timing configured',
+    (logoDataUrl || footerLogoDataUrl) && 'Branding customized',
+  ].filter((token): token is string => Boolean(token));
+
+  useEffect(() => {
+    if (!attentionRequest || lastAttentionRequestIdRef.current === attentionRequest.requestId) {
+      return;
+    }
+
+    lastAttentionRequestIdRef.current = attentionRequest.requestId;
+    if (attentionRequest.field !== 'clickThroughUrl') return;
+
+    setDeliveryExpanded(true);
+    const focusFrame = requestAnimationFrame(() => {
+      document.getElementById('alerts-click-through-url')?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [attentionRequest]);
 
   return (
     <div className="alerts-composer">
@@ -83,7 +112,6 @@ export const AlertForm: React.FC<AlertFormProps> = ({
             </span>
           </div>
           <div className="alerts-step-content">
-            {/* Subject */}
             <div className="alerts-field">
               <label className="alerts-field-label" htmlFor="alerts-subject">
                 Subject{' '}
@@ -99,7 +127,7 @@ export const AlertForm: React.FC<AlertFormProps> = ({
                 spellCheck
                 maxLength={10000}
                 value={subject}
-                onChange={(e) => setField('subject', e.target.value)}
+                onChange={(event) => setField('subject', event.target.value)}
               />
             </div>
 
@@ -107,8 +135,13 @@ export const AlertForm: React.FC<AlertFormProps> = ({
           </div>
         </section>
 
-        <section className="alerts-step-section" aria-labelledby="alerts-step-delivery-title">
-          <div className="alerts-step-header">
+        <details
+          className="alerts-step-section alerts-optional-delivery"
+          aria-label="Optional delivery details"
+          open={deliveryExpanded}
+          onToggle={(event) => setDeliveryExpanded(event.currentTarget.open)}
+        >
+          <summary className="alerts-step-header alerts-optional-delivery-summary">
             <span className="alerts-step-index" aria-hidden="true">
               3
             </span>
@@ -118,237 +151,24 @@ export const AlertForm: React.FC<AlertFormProps> = ({
               </h2>
               <p className="alerts-step-description">Routing, timing, and updates.</p>
             </div>
+            <span className="alerts-optional-summary-state">
+              {summaryTokens.map((token) => (
+                <span key={token}>{token}</span>
+              ))}
+            </span>
             <span className="alerts-step-status">OPTIONAL</span>
-          </div>
-
+          </summary>
           <div className="alerts-step-content">
-            <div className="alerts-delivery-group">
-              <span className="alerts-delivery-group-title">Routing</span>
-              <div className="alerts-delivery-grid">
-                {/* Sender */}
-                <div className="alerts-field">
-                  <label className="alerts-field-label" htmlFor="alerts-sender">
-                    Sender / From Name
-                  </label>
-                  <input
-                    id="alerts-sender"
-                    type="text"
-                    className="alerts-input"
-                    placeholder="e.g. IT"
-                    maxLength={10000}
-                    value={sender}
-                    onChange={(e) => setField('sender', e.target.value)}
-                  />
-                </div>
-
-                {/* Recipient */}
-                <div className="alerts-field">
-                  <label className="alerts-field-label" htmlFor="alerts-recipient">
-                    To / Recipient
-                  </label>
-                  <input
-                    id="alerts-recipient"
-                    type="text"
-                    className="alerts-input"
-                    placeholder="e.g. All Employees"
-                    maxLength={10000}
-                    value={recipient}
-                    onChange={(e) => setField('recipient', e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="alerts-delivery-group alerts-click-through-group">
-              <div className="alerts-click-through-heading">
-                <span className="alerts-delivery-group-title">Outlook action</span>
-                {normalizedClickThroughUrl && (
-                  <span className="alerts-click-through-state">LINK READY</span>
-                )}
-              </div>
-              <p className="alerts-click-through-copy">
-                Optional. Make the entire alert image open one URL in the Outlook draft. Copied PNGs
-                remain image-only.
-              </p>
-              <div className="alerts-field">
-                <label className="alerts-field-label" htmlFor="alerts-click-through-url">
-                  Clickable image URL
-                </label>
-                <input
-                  id="alerts-click-through-url"
-                  type="url"
-                  className={`alerts-input${clickThroughUrlInvalid ? ' alerts-input-invalid' : ''}`}
-                  placeholder="https://status.example.com/incident"
-                  maxLength={ALERT_CLICK_URL_MAX_LENGTH}
-                  value={clickThroughUrl}
-                  aria-invalid={clickThroughUrlInvalid}
-                  aria-describedby="alerts-click-through-help"
-                  onChange={(event) => setField('clickThroughUrl', event.target.value)}
-                  onBlur={() => {
-                    if (normalizedClickThroughUrl) {
-                      setField('clickThroughUrl', normalizedClickThroughUrl);
-                    }
-                  }}
-                />
-                <span
-                  id="alerts-click-through-help"
-                  className={`alerts-click-through-help${clickThroughUrlInvalid ? ' alerts-click-through-help-error' : ''}`}
-                >
-                  {clickThroughUrlInvalid
-                    ? 'Enter a valid HTTP or HTTPS address.'
-                    : 'For LAN destinations without a certificate, include http:// explicitly.'}
-                </span>
-              </div>
-            </div>
-
-            <div className="alerts-delivery-group">
-              <span className="alerts-delivery-group-title">Timing</span>
-              {/* Update Number */}
-              <div className="alerts-field">
-                <span className="alerts-field-label">Update Prefix</span>
-                <div className="alerts-update-controls">
-                  <button
-                    type="button"
-                    className={`alerts-update-toggle${updateNumber > 0 ? ' active' : ''}`}
-                    onClick={() => setField('updateNumber', updateNumber > 0 ? 0 : 1)}
-                  >
-                    {updateNumber > 0 ? 'ON' : 'OFF'}
-                  </button>
-                  {updateNumber > 0 && (
-                    <div className="alerts-update-stepper">
-                      <button
-                        type="button"
-                        className="alerts-stepper-btn"
-                        onClick={() => setField('updateNumber', Math.max(1, updateNumber - 1))}
-                      >
-                        −
-                      </button>
-                      <span className="alerts-stepper-value">#{updateNumber}</span>
-                      <button
-                        type="button"
-                        className="alerts-stepper-btn"
-                        onClick={() => setField('updateNumber', updateNumber + 1)}
-                      >
-                        +
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Event Time — replaces old timestamp override */}
-              <div className="alerts-field">
-                <span className="alerts-field-label">Event Time</span>
-                <div className="alerts-event-time-inputs">
-                  <div className="alerts-event-time-input-group">
-                    <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-start">
-                      Start
-                    </label>
-                    <input
-                      id="alerts-event-time-start"
-                      type="datetime-local"
-                      className="alerts-input alerts-input-datetime"
-                      value={eventTimeStart}
-                      onChange={(e) => setField('eventTimeStart', e.target.value)}
-                    />
-                  </div>
-                  <div className="alerts-event-time-input-group">
-                    <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-end">
-                      End
-                    </label>
-                    <input
-                      id="alerts-event-time-end"
-                      type="datetime-local"
-                      className="alerts-input alerts-input-datetime"
-                      value={eventTimeEnd}
-                      onChange={(e) => setField('eventTimeEnd', e.target.value)}
-                    />
-                  </div>
-                  <div className="alerts-event-time-input-group">
-                    <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-tz">
-                      Source TZ
-                    </label>
-                    <select
-                      id="alerts-event-time-tz"
-                      className="alerts-input alerts-event-time-tz"
-                      value={eventTimeSourceTz}
-                      onChange={(e) => setField('eventTimeSourceTz', e.target.value)}
-                    >
-                      <option value="America/Chicago">CT (CST/CDT)</option>
-                      <option value="America/New_York">ET (EST/EDT)</option>
-                      <option value="America/Denver">MT (MST/MDT)</option>
-                      <option value="America/Los_Angeles">PT (PST/PDT)</option>
-                      <option value="UTC">UTC</option>
-                      <option value="Europe/London">GMT/BST</option>
-                      <option value="Europe/Berlin">CET/CEST</option>
-                      <option value="Asia/Tokyo">JST</option>
-                      <option value="Asia/Kolkata">IST</option>
-                      <option value="Australia/Sydney">AEST/AEDT</option>
-                    </select>
-                  </div>
-                  {(eventTimeStart || eventTimeEnd) && (
-                    <button
-                      type="button"
-                      className="alerts-event-time-clear"
-                      onClick={() => {
-                        setField('eventTimeStart', '');
-                        setField('eventTimeEnd', '');
-                      }}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <span className="alerts-event-time-hint">Displays as Central Time on card</span>
-              </div>
-            </div>
-
-            <details className="alerts-delivery-group alerts-branding-details">
-              <summary className="alerts-branding-summary">
-                <span className="alerts-delivery-group-title">Branding options</span>
-                <span className="alerts-branding-summary-hint">Header/footer logos</span>
-              </summary>
-              <div className="alerts-branding-grid">
-                <AlertLogoUpload
-                  logoDataUrl={logoDataUrl}
-                  onSetLogo={onSetLogo}
-                  onRemoveLogo={onRemoveLogo}
-                />
-
-                {/* Footer Logo — separate upload, shown at original colors */}
-                <div className="alerts-field">
-                  <span className="alerts-field-label">Footer Logo</span>
-                  <div className="alerts-logo-controls">
-                    {footerLogoDataUrl ? (
-                      <>
-                        <img
-                          src={footerLogoDataUrl}
-                          alt="Footer logo"
-                          className="alerts-logo-thumbnail"
-                        />
-                        <button
-                          type="button"
-                          className="alerts-logo-action"
-                          onClick={onRemoveFooterLogo}
-                        >
-                          REMOVE
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="alerts-logo-action"
-                        onClick={onSetFooterLogo}
-                      >
-                        UPLOAD
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </details>
+            <AlertDeliveryFields
+              logoDataUrl={logoDataUrl}
+              onSetLogo={onSetLogo}
+              onRemoveLogo={onRemoveLogo}
+              footerLogoDataUrl={footerLogoDataUrl}
+              onSetFooterLogo={onSetFooterLogo}
+              onRemoveFooterLogo={onRemoveFooterLogo}
+            />
           </div>
-        </section>
+        </details>
       </div>
     </div>
   );
