@@ -14,6 +14,10 @@ import {
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
   type KnowledgeOpenRequest,
 } from '../features/knowledge/knowledgeNavigation';
+import type {
+  KnowledgeRecordOpenRequest,
+  KnowledgeRecordTarget,
+} from '../features/knowledge/knowledgeRecordNavigation';
 import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import type { BridgeAPI, CloudStatusProvider } from '@shared/ipc';
 
@@ -71,6 +75,8 @@ let lastKnowledgeWorkspaceProps: {
   groups: unknown[];
   servers: unknown[];
   onAddToAssembler: (contact: never) => void;
+  recordOpenRequest?: KnowledgeRecordOpenRequest | null;
+  onRecordUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
 } | null = null;
 let lastCloudStatusTabProps: {
   selectedProvider?: CloudStatusProvider | null;
@@ -190,6 +196,7 @@ vi.mock('../components/HeaderSearch', () => ({
       onToggleGroup: (id: string) => void;
       onNavigateToTab: (tab: string) => void;
       onOpenKnowledgeDestination: (destination: 'wiki' | 'contacts' | 'servers') => void;
+      onOpenKnowledgeRecord: (target: KnowledgeRecordTarget) => void;
       onOpenAddContact: (email?: string) => void;
       onOpenKnowledgeDocument: (request: KnowledgeOpenRequest) => void;
     };
@@ -216,6 +223,20 @@ vi.mock('../components/HeaderSearch', () => ({
       </button>
       <button onClick={() => actions.onOpenKnowledgeDestination('contacts')}>go-contacts</button>
       <button onClick={() => actions.onOpenKnowledgeDestination('servers')}>go-servers</button>
+      <button
+        onClick={() =>
+          actions.onOpenKnowledgeRecord({ destination: 'contacts', recordKey: 'id:contact_1' })
+        }
+      >
+        open-contact-record
+      </button>
+      <button
+        onClick={() =>
+          actions.onOpenKnowledgeRecord({ destination: 'servers', recordKey: 'id:server_1' })
+        }
+      >
+        open-server-record
+      </button>
     </div>
   ),
 }));
@@ -811,6 +832,44 @@ describe('MainApp', () => {
     fireEvent.click(screen.getByText('add-to-bridge'));
     expect(mockHandleAddManual).toHaveBeenCalledWith('test@example.com');
     expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
+  });
+
+  it('routes a contact result to an exact one-shot Knowledge request without changing Compose', () => {
+    mockActiveTab = 'Knowledge';
+    renderApp();
+
+    fireEvent.click(screen.getByText('open-contact-record'));
+
+    expect(lastKnowledgeWorkspaceProps?.recordOpenRequest).toMatchObject({
+      destination: 'contacts',
+      recordKey: 'id:contact_1',
+    });
+    expect(mockHandleAddManual).not.toHaveBeenCalled();
+  });
+
+  it('keeps the exact-record request identity stable across unrelated App rerenders', () => {
+    mockActiveTab = 'Knowledge';
+    const { rerender } = renderApp();
+    fireEvent.click(screen.getByText('open-server-record'));
+    const request = lastKnowledgeWorkspaceProps?.recordOpenRequest;
+
+    rerender(<MainApp />);
+
+    expect(lastKnowledgeWorkspaceProps?.recordOpenRequest).toBe(request);
+  });
+
+  it('reports a missing exact record without changing Compose', () => {
+    mockActiveTab = 'Knowledge';
+    renderApp();
+    fireEvent.click(screen.getByText('open-contact-record'));
+    const request = lastKnowledgeWorkspaceProps?.recordOpenRequest;
+    expect(request).toBeDefined();
+    if (!request) throw new Error('Expected a Knowledge record-open request');
+
+    act(() => lastKnowledgeWorkspaceProps?.onRecordUnavailable?.(request));
+
+    expect(mockShowToast).toHaveBeenCalledWith('That contact is no longer available.', 'info');
+    expect(mockHandleAddManual).not.toHaveBeenCalled();
   });
 
   it('opens AddContactModal when HeaderSearch open-add-contact is used', () => {

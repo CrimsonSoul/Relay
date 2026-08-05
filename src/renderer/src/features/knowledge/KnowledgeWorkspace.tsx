@@ -17,6 +17,7 @@ import {
   getPendingKnowledgeDocumentOpen,
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
 } from './knowledgeNavigation';
+import type { KnowledgeRecordOpenRequest } from './knowledgeRecordNavigation';
 import './knowledgeWorkspace.css';
 
 const WikiSurface = lazy(() =>
@@ -37,6 +38,8 @@ export type KnowledgeWorkspaceProps = Readonly<{
   relayMode?: PublicRelayConfig['mode'];
   onAddToAssembler: (contact: Contact) => void;
   onDestinationChange?: (destination: KnowledgeDestination) => void;
+  recordOpenRequest?: KnowledgeRecordOpenRequest | null;
+  onRecordUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
 }>;
 
 type ContentDestination = Exclude<KnowledgeDestination, 'home'>;
@@ -186,6 +189,8 @@ export function KnowledgeWorkspace({
   relayMode,
   onAddToAssembler,
   onDestinationChange,
+  recordOpenRequest,
+  onRecordUnavailable,
 }: KnowledgeWorkspaceProps) {
   const initialDestination: KnowledgeDestination =
     (getPendingKnowledgeDocumentOpen() && 'wiki') ||
@@ -279,6 +284,10 @@ export function KnowledgeWorkspace({
                   groups={groups}
                   servers={servers}
                   onAddToAssembler={onAddToAssembler}
+                  selectionRequest={
+                    recordOpenRequest?.destination === 'contacts' ? recordOpenRequest : null
+                  }
+                  onSelectionUnavailable={onRecordUnavailable}
                 />
               </Suspense>
             </DestinationBoundary>
@@ -289,7 +298,14 @@ export function KnowledgeWorkspace({
           <WorkspacePanel destination="servers" activeDestination={destination}>
             <DestinationBoundary label="Servers" onHome={openHome}>
               <Suspense fallback={<TabFallback />}>
-                <ServersSurface servers={servers} contacts={contacts} />
+                <ServersSurface
+                  servers={servers}
+                  contacts={contacts}
+                  selectionRequest={
+                    recordOpenRequest?.destination === 'servers' ? recordOpenRequest : null
+                  }
+                  onSelectionUnavailable={onRecordUnavailable}
+                />
               </Suspense>
             </DestinationBoundary>
           </WorkspacePanel>

@@ -13,6 +13,7 @@ import {
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
   requestKnowledgeDocumentOpen,
 } from '../knowledgeNavigation';
+import type { KnowledgeRecordOpenRequest } from '../knowledgeRecordNavigation';
 
 vi.mock('../KnowledgeHome', () => ({
   KnowledgeHome: ({
@@ -86,11 +87,15 @@ vi.mock('../../../tabs/DirectoryTab', async () => {
       groups,
       servers,
       onAddToAssembler,
+      selectionRequest,
+      onSelectionUnavailable,
     }: {
       contacts: Array<{ name: string }>;
       groups: unknown[];
       servers: unknown[];
       onAddToAssembler: (contact: never) => void;
+      selectionRequest?: KnowledgeRecordOpenRequest | null;
+      onSelectionUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
     }) => {
       const [selected, setSelected] = useState<string | null>(null);
       return (
@@ -98,6 +103,9 @@ vi.mock('../../../tabs/DirectoryTab', async () => {
           <span>{contacts.length} contact props</span>
           <span>{groups.length} group props</span>
           <span>{servers.length} related server props</span>
+          <span data-testid="contacts-selection-request">
+            {selectionRequest?.recordKey ?? 'no contact request'}
+          </span>
           {contacts.map((contact) => (
             <div
               key={contact.name}
@@ -113,6 +121,11 @@ vi.mock('../../../tabs/DirectoryTab', async () => {
             </div>
           ))}
           <button onClick={() => onAddToAssembler(contacts[0] as never)}>Add first contact</button>
+          {selectionRequest && (
+            <button onClick={() => onSelectionUnavailable?.(selectionRequest)}>
+              Report missing contact
+            </button>
+          )}
         </div>
       );
     },
@@ -123,16 +136,28 @@ vi.mock('../../../tabs/ServersTab', () => ({
   ServersTab: ({
     servers,
     contacts,
+    selectionRequest,
+    onSelectionUnavailable,
   }: {
     servers: Array<{ name: string }>;
     contacts: unknown[];
+    selectionRequest?: KnowledgeRecordOpenRequest | null;
+    onSelectionUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
   }) => (
     <div data-testid="servers-surface">
       <span>{servers.length} server props</span>
       <span>{contacts.length} related contact props</span>
+      <span data-testid="servers-selection-request">
+        {selectionRequest?.recordKey ?? 'no server request'}
+      </span>
       {servers.map((server) => (
         <span key={server.name}>{server.name}</span>
       ))}
+      {selectionRequest && (
+        <button onClick={() => onSelectionUnavailable?.(selectionRequest)}>
+          Report missing server
+        </button>
+      )}
     </div>
   ),
 }));
@@ -416,5 +441,38 @@ describe('KnowledgeWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Servers' }));
     expect(screen.getByText('1 server props')).toBeInTheDocument();
     expect(screen.getByText('1 related contact props')).toBeInTheDocument();
+  });
+
+  it('forwards only the matching exact-record request and missing-record callback', async () => {
+    const request: KnowledgeRecordOpenRequest = {
+      requestId: 9,
+      destination: 'contacts',
+      recordKey: 'id:contact_1',
+    };
+    const onRecordUnavailable = vi.fn();
+    render(
+      <KnowledgeWorkspace
+        active
+        contacts={contacts}
+        groups={groups}
+        servers={servers}
+        relayMode="server"
+        onAddToAssembler={vi.fn()}
+        recordOpenRequest={request}
+        onRecordUnavailable={onRecordUnavailable}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Contacts' }));
+    expect(await screen.findByTestId('contacts-selection-request')).toHaveTextContent(
+      'id:contact_1',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Report missing contact' }));
+    expect(onRecordUnavailable).toHaveBeenCalledWith(request);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Servers' }));
+    expect(await screen.findByTestId('servers-selection-request')).toHaveTextContent(
+      'no server request',
+    );
   });
 });
