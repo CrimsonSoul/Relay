@@ -140,15 +140,17 @@ const resizeMainWindow = async (electronApp: ElectronApp, width: number, height:
 };
 
 const expectCompactComposeActionsAligned = async (window: Page) => {
-  const startBridge = window.getByRole('button', { name: 'START BRIDGE' });
-  const scheduleBridge = window.getByRole('button', { name: 'Schedule Bridge' });
-  const [startBox, scheduleBox] = await Promise.all([
-    startBridge.boundingBox(),
-    scheduleBridge.boundingBox(),
+  const copyRecipients = window.getByRole('button', { name: 'Copy Recipients' });
+  const openTeamsDraft = window.getByRole('button', { name: 'Open Teams Draft' });
+  const moreActions = window.getByRole('button', { name: 'More Compose actions' });
+  const boxes = await Promise.all([
+    copyRecipients.boundingBox(),
+    openTeamsDraft.boundingBox(),
+    moreActions.boundingBox(),
   ]);
-  expect(startBox).not.toBeNull();
-  expect(scheduleBox).not.toBeNull();
-  expect(Math.abs((startBox?.y ?? 0) - (scheduleBox?.y ?? 0))).toBeLessThan(2);
+  expect(boxes.every(Boolean)).toBe(true);
+  const yPositions = boxes.map((box) => box?.y ?? 0);
+  expect(Math.max(...yPositions) - Math.min(...yPositions)).toBeLessThan(2);
 };
 
 const expectSettingsBottomGutter = async (window: Page) => {
@@ -443,7 +445,7 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Compose ---
       await goToTab(window, 'sidebar-compose', 'Compose');
-      await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+      await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
       await shoot(window, 'compose.png');
 
       if (CAPTURE_ON_CALL) {
@@ -504,7 +506,8 @@ test.describe('Redesign screenshot harness', () => {
       await shoot(window, 'alerts.png');
 
       // --- Alert history modal (seeded with one ISSUE entry) ---
-      await window.getByRole('button', { name: 'HISTORY' }).click();
+      await window.getByRole('button', { name: 'More alert actions' }).click();
+      await window.getByRole('menuitem', { name: 'History' }).click();
       await expect(window.locator('.alert-history-content')).toBeVisible();
       await expect(window.locator('.alert-history-entry').first()).toBeVisible();
       await shoot(window, 'alert-history.png');
