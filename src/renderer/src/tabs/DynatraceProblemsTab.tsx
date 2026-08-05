@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
@@ -21,6 +21,7 @@ import { TactileButton } from '../components/TactileButton';
 import { useToast } from '../components/Toast';
 import { SearchInput } from '../components/SearchInput';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
+import { useDynatraceProblemShortcuts } from '../hooks/useDynatraceProblemShortcuts';
 import {
   MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
   formatDynatraceTicketReferenceNote,
@@ -806,6 +807,7 @@ type ProblemDetailProps = {
   noteDraft: string;
   connectionState: ConnectionState;
   savingAction: ProblemSavingAction;
+  noteInputRef: RefObject<HTMLTextAreaElement | null>;
   onTicketDraftChange: (value: string) => void;
   onNoteDraftChange: (value: string) => void;
   onResolverDraftChange: (value: DynatraceProblemResolver | '') => void;
@@ -861,6 +863,7 @@ function ProblemDetail({
   noteDraft,
   connectionState,
   savingAction,
+  noteInputRef,
   onTicketDraftChange,
   onNoteDraftChange,
   onResolverDraftChange,
@@ -1021,6 +1024,7 @@ function ProblemDetail({
               <label className="dt-problem-note-composer">
                 <span>Add a note</span>
                 <textarea
+                  ref={noteInputRef}
                   name="dynatrace-problem-note"
                   autoComplete="off"
                   value={noteDraft}
@@ -1107,7 +1111,8 @@ function ProblemDetail({
 
 export const DynatraceProblemsTab: React.FC<{
   relayMode?: PublicRelayConfig['mode'];
-}> = ({ relayMode }) => {
+  active?: boolean;
+}> = ({ relayMode, active = true }) => {
   const { showToast } = useToast();
   const {
     problems,
@@ -1128,6 +1133,8 @@ export const DynatraceProblemsTab: React.FC<{
   const [profileDraft, setProfileDraft] = useState<string[]>([]);
   const [profileDraftDirty, setProfileDraftDirty] = useState(false);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const lastSelectedProblemIdRef = useRef<string | null>(null);
   // Drafts are keyed by problem so an in-progress NOC note survives anything that moves
   // the selection — a keystroke in the search box, or a background sync flipping the
   // problem to CLOSED and pushing it out of the open queues. Losing that text mid-incident
@@ -1140,6 +1147,10 @@ export const DynatraceProblemsTab: React.FC<{
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
   useEffect(() => onConnectionStateChange(setConnectionState), []);
+
+  useEffect(() => {
+    if (selectedProblemId) lastSelectedProblemIdRef.current = selectedProblemId;
+  }, [selectedProblemId]);
 
   useEffect(() => {
     writeHistoryPreferences(historyPreferences);
@@ -1164,6 +1175,38 @@ export const DynatraceProblemsTab: React.FC<{
     }
     return { unaddressed, addressed, resolved };
   }, [problems, stateByProblemId]);
+
+  const unaddressedProblemIds = useMemo(
+    () =>
+      problems
+        .filter(
+          (problem) =>
+            problem.status !== 'CLOSED' && !isAddressed(stateByProblemId.get(problem.problemId)),
+        )
+        .sort(problemSort)
+        .map((problem) => problem.problemId),
+    [problems, stateByProblemId],
+  );
+
+  const selectUnaddressedProblem = useCallback((problemId: string) => {
+    setFilter('unaddressed');
+    setQuery('');
+    setSelectedProblemId(problemId);
+  }, []);
+  const focusSelectedProblemNote = useCallback(() => noteInputRef.current?.focus(), []);
+  const reportNoUnaddressedProblems = useCallback(
+    () => showToast('No unaddressed Dynatrace problems.', 'info'),
+    [showToast],
+  );
+
+  useDynatraceProblemShortcuts({
+    active,
+    unaddressedProblemIds,
+    selectedProblemId: selectedProblemId ?? lastSelectedProblemIdRef.current,
+    onSelectProblem: selectUnaddressedProblem,
+    onFocusNote: focusSelectedProblemNote,
+    onNoUnaddressedProblems: reportNoUnaddressedProblems,
+  });
 
   const alertingProfiles = useMemo(() => {
     const profiles = [
@@ -1598,6 +1641,7 @@ export const DynatraceProblemsTab: React.FC<{
           noteDraft={noteDraft}
           connectionState={connectionState}
           savingAction={savingAction}
+          noteInputRef={noteInputRef}
           onTicketDraftChange={setTicketDraft}
           onNoteDraftChange={setNoteDraft}
           onResolverDraftChange={setResolverDraft}

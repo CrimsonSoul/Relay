@@ -161,8 +161,10 @@ describe('useAppData', () => {
 
     expect(result.current.data.contacts).toHaveLength(1);
     expect(result.current.data.contacts[0]?.name).toBe('Alice');
+    expect(result.current.data.contacts[0]?.raw.id).toBe('c1');
     expect(result.current.data.servers).toHaveLength(1);
     expect(result.current.data.servers[0]?.name).toBe('web-01');
+    expect(result.current.data.servers[0]?.raw.id).toBe('s1');
   });
 
   it('shows loading when collections are loading', () => {

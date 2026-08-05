@@ -62,6 +62,10 @@ import {
   type KnowledgeContentDestination,
   type KnowledgeDestination,
 } from './features/knowledge/knowledgeWorkspaceNavigation';
+import type {
+  KnowledgeRecordOpenRequest,
+  KnowledgeRecordTarget,
+} from './features/knowledge/knowledgeRecordNavigation';
 import { getRelayRuntime } from './runtime/relayRuntime';
 import { WebRuntimeBanner } from './components/WebRuntimeBanner';
 import { UnsupportedViewport } from './components/UnsupportedViewport';
@@ -221,6 +225,9 @@ export function MainApp({
     refetch: cloudStatusRefetch,
   } = useAppCloudStatus(showToast, handleOpenCloudStatusProvider);
   const [knowledgeDestination, setKnowledgeDestination] = useState<KnowledgeDestination>('home');
+  const nextKnowledgeRecordRequestId = useRef(0);
+  const [knowledgeRecordOpenRequest, setKnowledgeRecordOpenRequest] =
+    useState<KnowledgeRecordOpenRequest | null>(null);
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenRadar = useCallback(() => setActiveTab('Radar'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
@@ -251,6 +258,24 @@ export function MainApp({
       setActiveTab('Knowledge');
     },
     [setActiveTab],
+  );
+  const handleOpenKnowledgeRecord = useCallback(
+    (target: KnowledgeRecordTarget) => {
+      nextKnowledgeRecordRequestId.current += 1;
+      setKnowledgeRecordOpenRequest({
+        ...target,
+        requestId: nextKnowledgeRecordRequestId.current,
+      });
+      handleOpenKnowledgeDestination(target.destination);
+    },
+    [handleOpenKnowledgeDestination],
+  );
+  const handleKnowledgeRecordUnavailable = useCallback(
+    (request: KnowledgeRecordOpenRequest) => {
+      const label = request.destination === 'contacts' ? 'contact' : 'server';
+      showToast(`That ${label} is no longer available.`, 'info');
+    },
+    [showToast],
   );
 
   // Track which tabs have been mounted at least once
@@ -402,6 +427,7 @@ export function MainApp({
                   onToggleGroup: handleLoadGroupFromPalette,
                   onNavigateToTab: handleTabRequest,
                   onOpenKnowledgeDestination: handleOpenKnowledgeDestination,
+                  onOpenKnowledgeRecord: handleOpenKnowledgeRecord,
                   onOpenAddContact: (email) => {
                     setInitialContactEmail(email || '');
                     addContactModal.open();
@@ -465,6 +491,8 @@ export function MainApp({
                       relayMode={relayConfig?.mode}
                       onAddToAssembler={handleAddToAssembler}
                       onDestinationChange={setKnowledgeDestination}
+                      recordOpenRequest={knowledgeRecordOpenRequest}
+                      onRecordUnavailable={handleKnowledgeRecordUnavailable}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -489,7 +517,10 @@ export function MainApp({
               <RetainedTabPanel active={activeTab === 'Problems'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <DynatraceProblemsTab relayMode={relayConfig?.mode} />
+                    <DynatraceProblemsTab
+                      relayMode={relayConfig?.mode}
+                      active={activeTab === 'Problems'}
+                    />
                   </Suspense>
                 </ErrorBoundary>
               </RetainedTabPanel>

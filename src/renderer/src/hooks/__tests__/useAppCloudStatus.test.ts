@@ -185,6 +185,12 @@ function nextPoll(data: CloudStatusData): CloudStatusData {
   return { ...data, lastUpdated: data.lastUpdated + 60_000 };
 }
 
+async function publishStatus(rerender: () => void, data: CloudStatusData): Promise<void> {
+  collectionState.data = [snapshot(data)];
+  rerender();
+  await act(async () => Promise.resolve());
+}
+
 describe('useAppCloudStatus', () => {
   const showToast = vi.fn();
   const openProvider = vi.fn();
@@ -488,36 +494,66 @@ describe('useAppCloudStatus', () => {
     },
   );
 
-  it('requires two consecutive snapshots before notifying for a degradation', async () => {
-    collectionState.data = [snapshot(status())];
+  it('requires three distinct observations spanning two minutes before notifying for degradation', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
     const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
     await act(async () => Promise.resolve());
+    const warning = item({
+      id: 'degraded-1',
+      severity: 'warning',
+      title: 'Elevated API latency',
+    });
 
-    const degraded = status([
-      item({ id: 'degraded-1', severity: 'warning', title: 'Elevated API latency' }),
-    ]);
-    collectionState.data = [snapshot(degraded)];
-    rerender();
-    await act(async () => Promise.resolve());
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 60_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 120_000 });
     expect(showToast).not.toHaveBeenCalled();
 
-    collectionState.data = [snapshot(nextPoll(degraded))];
-    rerender();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 179_999 });
+    expect(showToast).not.toHaveBeenCalled();
 
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith(
-        'AWS Degraded: Elevated API latency',
-        'warning',
-        expect.objectContaining({
-          title: 'Cloud degradation',
-          delivery: 'cloud-degradation',
-          action: expect.objectContaining({ label: 'View provider' }),
-        }),
-      ),
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 180_000 });
+    expect(showToast).toHaveBeenCalledWith(
+      'AWS Degraded: Elevated API latency',
+      'warning',
+      expect.objectContaining({
+        title: 'Cloud degradation',
+        delivery: 'cloud-degradation',
+        action: expect.objectContaining({ label: 'View provider' }),
+      }),
     );
     const options = showToast.mock.calls[0]?.[2];
     options?.action?.onClick();
     expect(openProvider).toHaveBeenCalledWith('aws');
+  });
+
+  it('qualifies on the third observation when the first-to-third span is at least two minutes', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = item({ severity: 'warning', title: 'Elevated API latency' });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 70_000 });
+    expect(showToast).not.toHaveBeenCalled();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let duplicate or older reconnect snapshots advance degradation', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = item({ severity: 'warning', title: 'Elevated API latency' });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 9_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
+    expect(showToast).not.toHaveBeenCalled();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 131_000 });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
   });
 
   it('counts split collection events from one server poll as one degradation observation', async () => {
@@ -557,6 +593,16 @@ describe('useAppCloudStatus', () => {
       }),
     ];
     rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    mistState.data = [
+      mistSnapshot({
+        ...mistStatus([mistItem({ severity: 'warning', title: 'Elevated Mist latency' })]),
+        lastUpdated: firstPollTimestamp + 120_000,
+      }),
+    ];
+    rerender();
 
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
   });
@@ -577,7 +623,99 @@ describe('useAppCloudStatus', () => {
 
     collectionState.data = [snapshot(nextPoll(degraded))];
     rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+
+    collectionState.data = [snapshot(nextPoll(nextPoll(degraded)))];
+    rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
+  });
+
+  it('restarts count and duration after a pending degradation recovers', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = item({ severity: 'warning', title: 'Elevated API latency' });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 70_000 });
+    await publishStatus(rerender, { ...status(), lastUpdated: 80_000 });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 190_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 249_999 });
+    expect(showToast).not.toHaveBeenCalled();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 250_000 });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts a pending degradation timing window after a provider feed error', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = item({ severity: 'warning', title: 'Elevated API latency' });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 70_000 });
+    await publishStatus(rerender, {
+      ...status([warning]),
+      errors: [{ provider: 'aws', message: 'Feed unavailable' }],
+      lastUpdated: 80_000,
+    });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 190_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 249_999 });
+    expect(showToast).not.toHaveBeenCalled();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 250_000 });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts a pending degradation after the actionable warning disappears', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = item({ severity: 'warning', title: 'Elevated API latency' });
+    const scheduled = item({ severity: 'warning', title: 'Scheduled database maintenance' });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 70_000 });
+    await publishStatus(rerender, { ...status([scheduled]), lastUpdated: 80_000 });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 190_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 249_999 });
+    expect(showToast).not.toHaveBeenCalled();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 250_000 });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies an outage immediately and requires a fresh degradation episode after recovery', async () => {
+    collectionState.data = [snapshot({ ...status(), lastUpdated: 1_000 })];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = item({ severity: 'warning', title: 'Elevated API latency' });
+    const outage = item({ severity: 'error', title: 'API unavailable' });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([outage]), lastUpdated: 20_000 });
+    expect(showToast).toHaveBeenCalledWith(
+      expect.stringContaining('Outage:'),
+      'error',
+      expect.objectContaining({ delivery: 'cloud-outage' }),
+    );
+
+    await publishStatus(rerender, { ...status(), lastUpdated: 30_000 });
+    showToast.mockClear();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 40_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 100_000 });
+    expect(showToast).not.toHaveBeenCalled();
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 160_000 });
+
+    expect(showToast).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a degradation already present at startup as a silent baseline', async () => {
@@ -604,7 +742,11 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(degraded)];
     rerender();
     await act(async () => Promise.resolve());
-    const confirmedDegradation = nextPoll(degraded);
+    const secondObservation = nextPoll(degraded);
+    collectionState.data = [snapshot(secondObservation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(secondObservation);
     collectionState.data = [snapshot(confirmedDegradation)];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
@@ -634,7 +776,11 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(degraded)];
     rerender();
     await act(async () => Promise.resolve());
-    const confirmedDegradation = nextPoll(degraded);
+    const secondObservation = nextPoll(degraded);
+    collectionState.data = [snapshot(secondObservation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(secondObservation);
     collectionState.data = [snapshot(confirmedDegradation)];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
@@ -658,6 +804,10 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
     collectionState.data = [snapshot(nextPoll(reopenedDegradation))];
     rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(nextPoll(reopenedDegradation)))];
+    rerender();
 
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
   });
@@ -671,7 +821,11 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(degraded)];
     rerender();
     await act(async () => Promise.resolve());
-    const confirmedDegradation = nextPoll(degraded);
+    const secondObservation = nextPoll(degraded);
+    collectionState.data = [snapshot(secondObservation)];
+    rerender();
+    await act(async () => Promise.resolve());
+    const confirmedDegradation = nextPoll(secondObservation);
     collectionState.data = [snapshot(confirmedDegradation)];
     rerender();
     await waitFor(() => expect(showToast).toHaveBeenCalledOnce());
@@ -696,6 +850,9 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(nextPoll(returnedDegradation))];
     rerender();
     await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(nextPoll(returnedDegradation)))];
+    rerender();
+    await act(async () => Promise.resolve());
 
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -714,6 +871,9 @@ describe('useAppCloudStatus', () => {
     collectionState.data = [snapshot(nextPoll(maintenance))];
     rerender();
     await act(async () => Promise.resolve());
+    collectionState.data = [snapshot(nextPoll(nextPoll(maintenance)))];
+    rerender();
+    await act(async () => Promise.resolve());
 
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -730,6 +890,10 @@ describe('useAppCloudStatus', () => {
     rerender();
     await act(async () => Promise.resolve());
     collectionState.data = [snapshot(nextPoll(emergency))];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(nextPoll(emergency)))];
     rerender();
 
     await waitFor(() =>
@@ -759,6 +923,10 @@ describe('useAppCloudStatus', () => {
     rerender();
     await act(async () => Promise.resolve());
     collectionState.data = [snapshot(nextPoll(degraded))];
+    rerender();
+    await act(async () => Promise.resolve());
+    expect(showToast).not.toHaveBeenCalled();
+    collectionState.data = [snapshot(nextPoll(nextPoll(degraded)))];
     rerender();
 
     await waitFor(() =>

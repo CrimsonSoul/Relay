@@ -1577,7 +1577,7 @@ test.describe('Vital Critical Path', () => {
     expect(title).toMatch(/Relay/i);
 
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
-    await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
   });
 
   test('Knowledge launches Wiki, Contacts, and Servers in order and retains contextual state', async () => {
@@ -1892,7 +1892,7 @@ test.describe('Vital Critical Path', () => {
 
       await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
       await goToTab(connectedClient, 'sidebar-compose', 'Compose');
-      await expect(connectedClient.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+      await expect(connectedClient.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
       await enterKnowledgeDestination(connectedClient, 'Wiki');
       await expect(
         await openKnowledgeReaderDocument(connectedClient, 'General', 'Link navigation test'),
@@ -2584,21 +2584,27 @@ test.describe('Vital Critical Path', () => {
 
     const readGeometry = () =>
       window.evaluate(() => {
+        const sidebarShell = globalThis.document.querySelector('.sidebar-shell');
         const sidebar = globalThis.document.querySelector('.sidebar');
+        const main = globalThis.document.querySelector('.main-content');
         const label = globalThis.document.querySelector('.sidebar-button-label');
         const clock = globalThis.document.querySelector('.world-clock-container');
         const queue = globalThis.document.querySelector('.dt-problems__queue');
         const detail = globalThis.document.querySelector('.dt-problems__detail');
-        if (!sidebar || !label || !clock || !queue || !detail) {
+        if (!sidebarShell || !sidebar || !main || !label || !clock || !queue || !detail) {
           throw new Error('Responsive shell geometry target is missing.');
         }
+        const sidebarShellRect = sidebarShell.getBoundingClientRect();
         const sidebarRect = sidebar.getBoundingClientRect();
+        const mainRect = main.getBoundingClientRect();
         const queueRect = queue.getBoundingClientRect();
         const detailRect = detail.getBoundingClientRect();
         return {
           viewportWidth: globalThis.innerWidth,
           documentWidth: globalThis.document.documentElement.scrollWidth,
+          sidebarShellWidth: Math.round(sidebarShellRect.width),
           sidebarWidth: Math.round(sidebarRect.width),
+          mainLeft: Math.round(mainRect.left),
           labelDisplay: globalThis.getComputedStyle(label).display,
           clockDisplay: globalThis.getComputedStyle(clock).display,
           queue: { right: queueRect.right, bottom: queueRect.bottom },
@@ -2609,8 +2615,22 @@ test.describe('Vital Critical Path', () => {
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]?.setSize(960, 1000);
     });
+    // The tab button remains focused after keyboard or pointer navigation, so
+    // the compact rail expands as an overlay while focus is inside it.
+    await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(136);
+    const focusedRail = await readGeometry();
+    expect(focusedRail.sidebarShellWidth).toBe(64);
+    expect(focusedRail.mainLeft).toBe(64);
+    expect(focusedRail.labelDisplay).toBe('block');
+
+    // Moving both pointer and focus into the workspace restores the resting
+    // rail without reflowing the application content.
+    await window.getByLabel('Search problems').focus();
+    await window.mouse.move(700, 400);
     await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(64);
     const halfScreen = await readGeometry();
+    expect(halfScreen.sidebarShellWidth).toBe(64);
+    expect(halfScreen.mainLeft).toBe(focusedRail.mainLeft);
     expect(halfScreen.labelDisplay).toBe('none');
     expect(halfScreen.clockDisplay).toBe('none');
     expect(halfScreen.queue.right).toBeLessThanOrEqual(halfScreen.detail.left + 1);
@@ -2659,35 +2679,37 @@ test.describe('Vital Critical Path', () => {
           );
 
         const actions = globalThis.document.querySelector('.collapsible-header-actions');
-        const start = buttonByText('Start Bridge');
-        const schedule = buttonByText('Schedule');
-        if (!actions || !start || !schedule) return null;
+        const copy = buttonByText('Copy Recipients');
+        const openTeams = buttonByText('Open Teams Draft');
+        const more = globalThis.document.querySelector('button[aria-label="More Compose actions"]');
+        if (!actions || !copy || !openTeams || !more) return null;
 
         const actionsRect = toRect(actions);
-        const startRect = toRect(start);
-        const scheduleRect = toRect(schedule);
-        const overlapWidth = Math.max(
-          0,
-          Math.min(startRect.right, scheduleRect.right) -
-            Math.max(startRect.left, scheduleRect.left),
-        );
-        const overlapHeight = Math.max(
-          0,
-          Math.min(startRect.bottom, scheduleRect.bottom) -
-            Math.max(startRect.top, scheduleRect.top),
+        const actionRects = [toRect(copy), toRect(openTeams), toRect(more)];
+        const overlapAreas = actionRects.flatMap((first, index) =>
+          actionRects.slice(index + 1).map((second) => {
+            const overlapWidth = Math.max(
+              0,
+              Math.min(first.right, second.right) - Math.max(first.left, second.left),
+            );
+            const overlapHeight = Math.max(
+              0,
+              Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top),
+            );
+            return overlapWidth * overlapHeight;
+          }),
         );
 
         return {
           actionsRect,
-          startRect,
-          scheduleRect,
-          overlapArea: overlapWidth * overlapHeight,
+          actionRects,
+          overlapArea: Math.max(...overlapAreas),
         };
       });
 
       expect(geometry, `geometry at ${width}px`).not.toBeNull();
       expect(geometry!.overlapArea, `button overlap at ${width}px`).toBe(0);
-      for (const rect of [geometry!.startRect, geometry!.scheduleRect]) {
+      for (const rect of geometry!.actionRects) {
         expect(rect.left, `left bound at ${width}px`).toBeGreaterThanOrEqual(
           geometry!.actionsRect.left - 1,
         );
@@ -2803,11 +2825,19 @@ test.describe('Vital Critical Path', () => {
       .first();
     await expect(groupItem).toBeVisible();
 
-    await window.getByRole('button', { name: 'START BRIDGE' }).click();
-    const reminderModal = window.getByRole('dialog', { name: /Meeting Recording/i });
-    await expect(reminderModal).toBeVisible();
-    await reminderModal.getByRole('button', { name: 'I Understand' }).click();
-    await expect(reminderModal).not.toBeVisible();
+    await window.getByRole('button', { name: 'Open Teams Draft' }).click();
+    const handoffModal = window.getByRole('dialog', { name: /Open Teams meeting draft/i });
+    await expect(handoffModal).toBeVisible();
+    await expect(
+      handoffModal.getByRole('heading', { name: 'Enable recording in Teams' }),
+    ).toBeVisible();
+    const handoffSummary = handoffModal.getByLabel('Teams handoff summary');
+    await expect(handoffSummary).toContainText('0 groups · 1 manual');
+    await expect(handoffSummary).toContainText('Manual recipients only');
+    await handoffModal.getByText('View all 1 recipient', { exact: true }).click();
+    await expect(handoffModal.getByText(email, { exact: true })).toBeVisible();
+    await handoffModal.getByRole('button', { name: 'Open Teams Draft' }).click();
+    await expect(handoffModal).not.toBeVisible();
 
     await rightClick(groupItem);
     const deleteSavedGroup = window.getByRole('menuitem', { name: 'Delete Group' });

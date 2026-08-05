@@ -47,6 +47,15 @@ describe('ContactCard Component', () => {
     expect(cardElement).toHaveClass('contact-entry--selected');
   });
 
+  test('exposes its stable record key for exact navigation focus', () => {
+    render(<ContactCard {...mockContact} recordKey="id:contact_1" />);
+
+    expect(screen.getByRole('button', { name: /john doe/i })).toHaveAttribute(
+      'data-record-key',
+      'id:contact_1',
+    );
+  });
+
   test('shows contact details in a tooltip on hover', () => {
     render(<ContactCard {...mockContact} />);
 

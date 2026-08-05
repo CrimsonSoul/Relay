@@ -35,6 +35,18 @@ describe('compact Relay shell', () => {
     expect(compactBlock).toMatch(/\.sidebar-app-icon-label::before[\s\S]*?content:\s*'r'/);
   });
 
+  it('expands compact labels over content on hover or focus without changing shell width', () => {
+    const compactBlock = mediaBlock(responsiveCss, 'max-width: 1200px') ?? '';
+
+    expect(compactBlock).toContain('.sidebar-shell');
+    expect(compactBlock).toContain('flex: 0 0 var(--sidebar-width-collapsed)');
+    expect(compactBlock).toMatch(/\.sidebar-shell:is\(:hover,\s*:focus-within\)\s+\.sidebar/);
+    expect(compactBlock).toMatch(/width:\s*136px/);
+    expect(compactBlock).toMatch(
+      /\.sidebar-shell:is\(:hover,\s*:focus-within\)[\s\S]*?\.sidebar-button-label[\s\S]*?display:\s*block/,
+    );
+  });
+
   it('switches the Dynatrace queue and detail to one column before half-screen width', () => {
     expect(dynatraceCss).toContain('@media (max-width: 900px)');
     expect(dynatraceCss).toMatch(

@@ -74,55 +74,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <div className="sidebar">
-      {/* App Icon / Branding Block */}
-      <button
-        type="button"
-        onClick={() => onTabChange('Compose')}
-        id="app-icon-container"
-        className="sidebar-app-icon interactive"
-        aria-label="Go to Compose tab"
-      >
-        <span className="sidebar-app-icon-label">Relay</span>
-      </button>
+    <div className="sidebar-shell">
+      <aside className="sidebar" aria-label="Relay navigation">
+        {/* App Icon / Branding Block */}
+        <button
+          type="button"
+          onClick={() => onTabChange('Compose')}
+          id="app-icon-container"
+          className="sidebar-app-icon interactive"
+          aria-label="Go to Compose tab"
+        >
+          <span className="sidebar-app-icon-label">Relay</span>
+        </button>
 
-      <div className="sidebar-divider" />
+        <div className="sidebar-divider" />
 
-      <nav className="sidebar-nav">
-        {navItems.map((item) => (
-          <SidebarButton
-            key={item.tab}
-            label={item.label}
-            isActive={activeTab === item.tab}
-            onClick={() => onTabChange(item.tab)}
-            icon={item.icon}
-            status={item.tab === 'Radar' ? radarStatus : null}
-          />
-        ))}
-      </nav>
-
-      <div className="sidebar-footer">
-        {clientPresence ? (
-          showClientPresence && (
-            <SidebarClientStatus
-              count={clientPresence.count}
-              hostnames={clientPresence.hostnames}
+        <nav className="sidebar-nav">
+          {navItems.map((item) => (
+            <SidebarButton
+              key={item.tab}
+              label={item.label}
+              isActive={activeTab === item.tab}
+              onClick={() => onTabChange(item.tab)}
+              icon={item.icon}
+              status={item.tab === 'Radar' ? radarStatus : null}
             />
-          )
-        ) : (
-          <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
-        )}
-        <SidebarDashboards
-          dashboards={dynatraceDashboards}
-          onOpenDashboard={onOpenDynatraceDashboard}
-        />
-        <SidebarButton
-          label="Settings"
-          isActive={activeTab === 'Settings'}
-          onClick={onOpenSettings}
-          icon={<SettingsIcon />}
-        />
-      </div>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          {clientPresence ? (
+            showClientPresence && (
+              <SidebarClientStatus
+                count={clientPresence.count}
+                hostnames={clientPresence.hostnames}
+              />
+            )
+          ) : (
+            <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
+          )}
+          <SidebarDashboards
+            dashboards={dynatraceDashboards}
+            onOpenDashboard={onOpenDynatraceDashboard}
+          />
+          <SidebarButton
+            label="Settings"
+            isActive={activeTab === 'Settings'}
+            onClick={onOpenSettings}
+            icon={<SettingsIcon />}
+          />
+        </div>
+      </aside>
     </div>
   );
 };

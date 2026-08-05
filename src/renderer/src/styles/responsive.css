@@ -15,6 +15,15 @@
     --sidebar-width-collapsed: 64px;
   }
 
+  .sidebar-shell {
+    flex: 0 0 var(--sidebar-width-collapsed);
+    min-width: var(--sidebar-width-collapsed);
+  }
+
+  .sidebar {
+    transition: width var(--motion-duration-state) var(--motion-ease-out);
+  }
+
   .sidebar-app-icon {
     align-items: center;
     padding-inline: 0;
@@ -59,6 +68,39 @@
     right: 5px;
   }
 
+  .sidebar-shell:is(:hover, :focus-within) .sidebar {
+    width: 136px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon {
+    align-items: flex-start;
+    padding-inline: 22px 0;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon-label {
+    font-size: var(--text-lg);
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon-label::before {
+    content: none;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-button {
+    --sidebar-button-width: 120px;
+
+    align-items: flex-start;
+    padding: 8px 10px;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-button-label {
+    display: block;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-button-status-dot {
+    right: 10px;
+  }
+
   .sidebar-footer {
     width: 100%;
     padding: 8px 4px;
@@ -85,6 +127,12 @@
   .header-search-container {
     min-width: 180px;
     padding-inline: 16px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
   }
 }
 

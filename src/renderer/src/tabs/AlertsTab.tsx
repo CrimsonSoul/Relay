@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 // html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
-import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -12,8 +11,13 @@ import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertReminderModal } from './AlertReminderModal';
 import { AlertReminderManagerModal } from './AlertReminderManagerModal';
-import { AlertForm } from './AlertForm';
+import {
+  AlertForm,
+  type AlertOptionalAttentionRequest,
+  type AlertOptionalField,
+} from './AlertForm';
 import { AlertCard } from './AlertCard';
+import { AlertActionsMenu } from './alerts/AlertActionsMenu';
 import { isAlertMessageComplete } from './alertUtils';
 import type { Severity } from './alertUtils';
 import { buildAlertOutlookEml, sanitizeAlertClickUrl } from './alertLinks';
@@ -156,6 +160,9 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
 
   const [isCapturing, setIsCapturing] = useState(false);
+  const optionalAttentionSequenceRef = useRef(0);
+  const [optionalAttentionRequest, setOptionalAttentionRequest] =
+    useState<AlertOptionalAttentionRequest | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
@@ -189,6 +196,13 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     () => sanitizeAlertClickUrl(clickThroughUrl) ?? undefined,
     [clickThroughUrl],
   );
+  const requestOptionalFieldAttention = useCallback((field: AlertOptionalField) => {
+    optionalAttentionSequenceRef.current += 1;
+    setOptionalAttentionRequest({
+      requestId: optionalAttentionSequenceRef.current,
+      field,
+    });
+  }, []);
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
 
@@ -485,6 +499,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
 
   const handleOpenOutlookDraft = useCallback(async () => {
     if (clickThroughUrl.trim() && !alertClickHref) {
+      requestOptionalFieldAttention('clickThroughUrl');
       showToast('Enter a valid HTTP or HTTPS click-through URL', 'error');
       return false;
     }
@@ -529,6 +544,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     sender,
     recipient,
     isWebRuntime,
+    requestOptionalFieldAttention,
   ]);
 
   const reminderDraft = useMemo(
@@ -613,187 +629,68 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
       </header>
 
       <div className="alerts-command-bar" role="toolbar" aria-label="Alert actions">
-        <CollapsibleHeader>
-          <div className="alerts-command-group alerts-command-group--utility">
-            <TactileButton
-              variant="secondary"
-              className="alerts-utility-action"
-              onClick={handleClear}
-              tooltip="Reset alert utility"
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M23 4v6h-6" />
-                  <path d="M1 20v-6h6" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-              }
-            >
-              RESET
-            </TactileButton>
-            <TactileButton
-              variant="secondary"
-              className="alerts-utility-action"
-              onClick={historyModal.open}
-              tooltip="Open alert history"
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-              }
-            >
-              HISTORY
-            </TactileButton>
-            <TactileButton
-              variant="secondary"
-              className="alerts-utility-action"
-              onClick={reminderManagerModal.open}
-              tooltip="View and manage alarms"
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="13" r="7" />
-                  <path d="M12 10v3l2 2" />
-                  <path d="M5 3 2.5 5.5" />
-                  <path d="m19 3 2.5 2.5" />
-                  <path d="m6.5 19.5-1.5 2" />
-                  <path d="m17.5 19.5 1.5 2" />
-                </svg>
-              }
-            >
-              ALARMS
-            </TactileButton>
-            <TactileButton
-              variant="secondary"
-              className="alerts-utility-action"
-              onClick={handlePinTemplate}
-              tooltip="Pin current alert as a template"
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 17v5" />
-                  <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1z" />
-                </svg>
-              }
-            >
-              PIN TEMPLATE
-            </TactileButton>
-            <TactileButton
-              variant="secondary"
-              className="alerts-utility-action"
-              onClick={handleSaveImage}
-              loading={isCapturing}
-              tooltip="Save a high-resolution PNG image"
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              }
-            >
-              SAVE IMAGE
-            </TactileButton>
-          </div>
-          <div className="alerts-command-group alerts-command-group--primary">
-            <TactileButton
-              variant="secondary"
-              onClick={openNewReminderModal}
-              tooltip="Schedule an alarm for this alert"
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="5" width="18" height="16" rx="2" />
-                  <path d="M8 3v4" />
-                  <path d="M16 3v4" />
-                  <path d="M3 10h18" />
-                  <path d="M12 13v5" />
-                  <path d="M9.5 15.5h5" />
-                </svg>
-              }
-            >
-              SCHEDULE ALARM
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              onClick={() => void handleOpenOutlookDraft()}
-              loading={isCapturing}
-              tooltip={
-                isWebRuntime
-                  ? 'Download an editable EML draft with a crisp inline alert'
-                  : 'Open an editable Outlook draft with a crisp inline alert'
-              }
-              icon={
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="5" width="18" height="14" rx="1" />
-                  <path d="m3 7 9 6 9-6" />
-                </svg>
-              }
-            >
-              {isWebRuntime ? 'DOWNLOAD DRAFT' : 'OPEN IN OUTLOOK'}
-            </TactileButton>
-          </div>
-        </CollapsibleHeader>
+        <div className="alerts-command-actions">
+          <TactileButton
+            variant="primary"
+            onClick={() => void handleOpenOutlookDraft()}
+            loading={isCapturing}
+            tooltip={
+              isWebRuntime
+                ? 'Download an editable EML draft with a crisp inline alert'
+                : 'Open an editable Outlook draft with a crisp inline alert'
+            }
+            icon={
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="1" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+            }
+          >
+            {isWebRuntime ? 'DOWNLOAD DRAFT' : 'OPEN IN OUTLOOK'}
+          </TactileButton>
+          <TactileButton
+            variant="secondary"
+            className="alerts-save-image-action"
+            onClick={handleSaveImage}
+            loading={isCapturing}
+            tooltip="Save a high-resolution PNG image"
+            icon={
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            }
+          >
+            SAVE IMAGE
+          </TactileButton>
+          <AlertActionsMenu
+            captureBusy={isCapturing}
+            onScheduleAlarm={openNewReminderModal}
+            onOpenAlarms={reminderManagerModal.open}
+            onOpenHistory={historyModal.open}
+            onPinTemplate={handlePinTemplate}
+            onReset={handleClear}
+          />
+        </div>
       </div>
 
       {nextReminder && (
@@ -832,6 +729,7 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
             footerLogoDataUrl={footerLogoDataUrl}
             onSetFooterLogo={handleSetFooterLogo}
             onRemoveFooterLogo={handleRemoveFooterLogo}
+            attentionRequest={optionalAttentionRequest}
           />
         </section>
         <section className="alerts-pane alerts-preview-pane" aria-label="Live email preview">

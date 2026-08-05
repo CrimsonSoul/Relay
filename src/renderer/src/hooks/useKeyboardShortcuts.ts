@@ -23,6 +23,7 @@ export function useKeyboardShortcuts({
       '4': 'Knowledge',
       '5': 'Status',
       '6': 'Problems',
+      '7': 'Radar',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -49,7 +50,7 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // Cmd/Ctrl+1-6 for top-level navigation
+      // Cmd/Ctrl+1-7 for top-level navigation
       const destination = tabMap[e.key];
       if (mod && !e.shiftKey && destination) {
         e.preventDefault();

@@ -27,6 +27,7 @@ type ContactRowProps = {
     owned: number;
     supported: number;
   };
+  recordKey?: string;
 };
 
 export const ContactCard = memo(
@@ -47,6 +48,7 @@ export const ContactCard = memo(
     tags,
     onNotesClick,
     relationshipCounts,
+    recordKey,
   }: ContactRowProps) => {
     const displayPhone = phone ? formatPhoneNumber(phone) : '';
     const tooltipContent = [name || email, email, title, displayPhone].filter(Boolean).join('\n');
@@ -55,6 +57,7 @@ export const ContactCard = memo(
     return (
       <button
         type="button"
+        data-record-key={recordKey}
         className={`contact-entry ${selected ? 'contact-entry--selected' : ''} ${className || ''}`}
         style={style}
         onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}

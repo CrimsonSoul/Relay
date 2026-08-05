@@ -1,6 +1,6 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertForm as BaseAlertForm, type AlertFormProps } from '../AlertForm';
 import {
@@ -89,6 +89,7 @@ const AlertForm: React.FC<AlertFormHarnessProps> = ({
   footerLogoDataUrl,
   onSetFooterLogo,
   onRemoveFooterLogo,
+  attentionRequest,
 }) => {
   const draftState = {
     ...initialAlertDraftState,
@@ -113,6 +114,7 @@ const AlertForm: React.FC<AlertFormHarnessProps> = ({
         footerLogoDataUrl={footerLogoDataUrl}
         onSetFooterLogo={onSetFooterLogo}
         onRemoveFooterLogo={onRemoveFooterLogo}
+        attentionRequest={attentionRequest}
       />
     </AlertDraftProvider>
   );
@@ -204,8 +206,67 @@ describe('AlertForm', () => {
   it('uses one optional marker for the delivery section', () => {
     render(<AlertForm {...defaultProps} />);
 
-    const deliveryStep = screen.getByRole('region', { name: 'Add delivery details' });
+    const deliveryStep = screen.getByRole('group', { name: 'Optional delivery details' });
     expect(within(deliveryStep).getAllByText('OPTIONAL')).toHaveLength(1);
+  });
+
+  it('collapses optional delivery details by default and omits unconfigured categories', () => {
+    render(<AlertForm {...defaultProps} />);
+    const disclosure = screen.getByRole('group', { name: 'Optional delivery details' });
+
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(screen.queryByText('Routing configured')).toBeNull();
+    expect(screen.queryByText('Link ready')).toBeNull();
+    expect(screen.queryByText('Timing configured')).toBeNull();
+    expect(screen.queryByText('Branding customized')).toBeNull();
+  });
+
+  it('summarizes only configured optional categories without opening the section', () => {
+    render(
+      <AlertForm
+        {...defaultProps}
+        sender="IT"
+        clickThroughUrl="https://status.example.com"
+        updateNumber={2}
+        logoDataUrl="data:image/png;base64,logo"
+      />,
+    );
+
+    expect(screen.getByText('Routing configured')).toBeVisible();
+    expect(screen.getByText('Link ready')).toBeVisible();
+    expect(screen.getByText('Timing configured')).toBeVisible();
+    expect(screen.getByText('Branding customized')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
+      'open',
+    );
+  });
+
+  it('updates configured-state summary on a loaded draft without forcing disclosure open', () => {
+    const { rerender } = render(<AlertForm {...defaultProps} />);
+
+    rerender(<AlertForm {...defaultProps} sender="NOC" eventTimeStart="2026-08-05T14:00" />);
+
+    expect(screen.getByText('Routing configured')).toBeVisible();
+    expect(screen.getByText('Timing configured')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
+      'open',
+    );
+  });
+
+  it('expands and focuses the requested optional field exactly once', async () => {
+    const request = { requestId: 3, field: 'clickThroughUrl' as const };
+    const { rerender } = render(<AlertForm {...defaultProps} attentionRequest={request} />);
+
+    await waitFor(() => expect(screen.getByLabelText('Clickable image URL')).toHaveFocus());
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).toHaveAttribute(
+      'open',
+    );
+
+    fireEvent.click(screen.getByText('Add delivery details'));
+    rerender(<AlertForm {...defaultProps} attentionRequest={request} />);
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
+      'open',
+    );
   });
 
   it('marks the message step done when subject and body both have content', () => {

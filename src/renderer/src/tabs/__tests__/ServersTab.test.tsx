@@ -77,8 +77,27 @@ vi.mock('../../components/TactileButton', () => ({
 }));
 
 vi.mock('../../components/ServerCard', () => ({
-  ServerCard: ({ selected, onRowClick }: { selected: boolean; onRowClick: () => void }) => (
-    <button type="button" data-testid="server-card" data-selected={selected} onClick={onRowClick} />
+  ServerCard: ({
+    server,
+    recordKey,
+    selected,
+    onRowClick,
+  }: {
+    server: Server;
+    recordKey: string;
+    selected: boolean;
+    onRowClick: () => void;
+  }) => (
+    <button
+      type="button"
+      aria-label={server.name}
+      data-testid="server-card"
+      data-record-key={recordKey}
+      data-selected={selected}
+      onClick={onRowClick}
+    >
+      {server.name}
+    </button>
   ),
 }));
 
@@ -108,7 +127,7 @@ vi.mock('../../components/ServerDetailPanel', () => ({
     onDelete: () => void;
     onEditNotes: () => void;
   }) => (
-    <div data-testid="server-detail">
+    <div data-testid="server-detail" data-record-id={server.raw?.id}>
       {server.name}
       <button type="button" data-testid="server-detail-delete" onClick={onDelete} />
       <button type="button" data-testid="server-detail-notes" onClick={onEditNotes} />
@@ -155,6 +174,11 @@ vi.mock('react-virtualized-auto-sizer', () => ({
   }) => renderProp({ height: 600, width: 800 }),
 }));
 
+const { mockScrollToRow, mockListRef } = vi.hoisted(() => {
+  const scrollToRow = vi.fn();
+  return { mockScrollToRow: scrollToRow, mockListRef: { current: { scrollToRow } } };
+});
+
 // Mock react-window — rows are rendered so row selection can be exercised
 vi.mock('react-window', () => ({
   List: ({
@@ -174,7 +198,7 @@ vi.mock('react-window', () => ({
       ))}
     </div>
   ),
-  useListRef: () => ({ current: null }),
+  useListRef: () => mockListRef,
 }));
 
 function makeDefaultServersReturn() {
@@ -205,6 +229,7 @@ beforeEach(() => {
   mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn());
   noteSaveOutcomes.length = 0;
   mockSetServerNote.mockReset();
+  mockScrollToRow.mockReset();
 });
 
 import { ServersTab } from '../ServersTab';
@@ -277,7 +302,60 @@ describe('ServersTab', () => {
 
     render(<ServersTab servers={servers} contacts={[]} />);
     expect(screen.getByTestId('server-detail')).toBeInTheDocument();
-    expect(screen.getByText('db-server-01')).toBeInTheDocument();
+    expect(screen.getByTestId('server-detail')).toHaveTextContent('db-server-01');
+  });
+
+  it('reports a deleted requested server without selecting another record', async () => {
+    const different = makeServer({ name: 'Different Server', raw: { id: 'server_1' } });
+    mockUseServers.mockReturnValue({
+      ...makeDefaultServersReturn(),
+      filteredServers: [different],
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [different] }),
+    );
+    const onSelectionUnavailable = vi.fn();
+
+    render(
+      <ServersTab
+        servers={[different]}
+        contacts={[]}
+        selectionRequest={{
+          requestId: 8,
+          destination: 'servers',
+          recordKey: 'id:deleted',
+        }}
+        onSelectionUnavailable={onSelectionUnavailable}
+      />,
+    );
+
+    await waitFor(() => expect(onSelectionUnavailable).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('server-detail')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a server')).toBeVisible();
+  });
+
+  it('keeps the requested server exact when another record shares its name', async () => {
+    const first = makeServer({ name: 'shared-server', raw: { id: 'server_1' } });
+    const second = makeServer({ name: 'shared-server', raw: { id: 'server_2' } });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [first, second] }),
+    );
+
+    render(
+      <ServersTab
+        servers={[first, second]}
+        contacts={[]}
+        selectionRequest={{
+          requestId: 10,
+          destination: 'servers',
+          recordKey: 'id:server_2',
+        }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('server-detail')).toHaveAttribute('data-record-id', 'server_2'),
+    );
   });
 
   it('keeps the detail panel on the selected server when filtering reorders the list', () => {

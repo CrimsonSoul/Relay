@@ -476,6 +476,9 @@ describe('AlertHistoryModal', () => {
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
       });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Close modal backdrop' })).toBeInTheDocument();
+      });
 
       fireEvent.keyDown(document, { key: 'Escape' });
 

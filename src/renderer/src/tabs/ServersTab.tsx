@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { List } from 'react-window';
+import { List, useListRef } from 'react-window';
 import type { RowComponentProps } from 'react-window';
 import { Server, Contact } from '@shared/ipc';
 import { ContextMenu } from '../components/ContextMenu';
@@ -18,10 +18,16 @@ import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { SearchInput } from '../components/SearchInput';
+import {
+  serverRecordKey,
+  type KnowledgeRecordOpenRequest,
+} from '../features/knowledge/knowledgeRecordNavigation';
 
 interface ServersTabProps {
   servers: Server[];
   contacts: Contact[];
+  selectionRequest?: KnowledgeRecordOpenRequest | null;
+  onSelectionUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
 }
 
 /** Minimal mouse-event shape shared by native MouseEvent and React.MouseEvent */
@@ -50,6 +56,13 @@ const getContactDisplayName = (email: string, contactLookup: Map<string, Contact
   return contactLookup.get(normalized)?.name || email;
 };
 
+function focusRenderedRecord(container: HTMLElement | null, recordKey: string): void {
+  const row = Array.from(container?.querySelectorAll<HTMLElement>('[data-record-key]') ?? []).find(
+    (node) => node.dataset.recordKey === recordKey,
+  );
+  row?.focus();
+}
+
 const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string) => boolean }> = [
   {
     key: 'linux',
@@ -76,6 +89,7 @@ function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRo
       server={server}
       ownerName={getContactDisplayName(server.owner, contactLookup)}
       supportName={getContactDisplayName(server.contact, contactLookup)}
+      recordKey={serverRecordKey(server)}
       onContextMenu={onContextMenu}
       selected={index === selectedIndex}
       onRowClick={() => onRowClick(index)}
@@ -83,15 +97,23 @@ function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRo
   );
 }
 
-export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
+export const ServersTab: React.FC<ServersTabProps> = ({
+  servers,
+  contacts,
+  selectionRequest,
+  onSelectionUnavailable,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const h = useServers(servers, contacts, searchQuery);
+  const listRef = useListRef(null);
+  const listContainerRef = useRef<HTMLElement>(null);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
-  // The detail panel is bound to a server by name, never by row position: filters reorder
-  // and shorten the list, and a positional index would silently repoint the panel — and
-  // its Delete button — at a machine the operator is not looking at.
-  const [selectedServerName, setSelectedServerName] = useState<string | null>(null);
+  // The detail panel is bound to the stable navigation key, never a row position or name:
+  // filters reorder the list, and duplicate names must not redirect edit or delete actions.
+  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
+  const lastConsumedRequestIdRef = useRef<number | null>(null);
+  const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
   const [serverPendingDeletion, setServerPendingDeletion] = useState<Server | null>(null);
 
   const serverExtraFilters = useMemo<FilterDef<Server>[]>(() => {
@@ -194,14 +216,57 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   });
 
   const displayedServers = filters.filteredItems;
+  const clearAllFilters = filters.clearAll;
+
+  useEffect(() => {
+    if (
+      selectionRequest?.destination !== 'servers' ||
+      lastConsumedRequestIdRef.current === selectionRequest.requestId
+    ) {
+      return;
+    }
+
+    lastConsumedRequestIdRef.current = selectionRequest.requestId;
+    const hasRequestedServer = servers.some(
+      (server) => serverRecordKey(server) === selectionRequest.recordKey,
+    );
+    if (!hasRequestedServer) {
+      setPendingSelectionKey(null);
+      setSelectedRecordKey('');
+      onSelectionUnavailable?.(selectionRequest);
+      return;
+    }
+
+    setSearchQuery('');
+    clearAllFilters();
+    setPendingSelectionKey(selectionRequest.recordKey);
+  }, [clearAllFilters, onSelectionUnavailable, selectionRequest, servers]);
+
+  useEffect(() => {
+    if (!pendingSelectionKey) return;
+    const requestedIndex = displayedServers.findIndex(
+      (server) => serverRecordKey(server) === pendingSelectionKey,
+    );
+    if (requestedIndex < 0) return;
+
+    const requestedServer = displayedServers[requestedIndex];
+    if (!requestedServer) return;
+    setSelectedRecordKey(serverRecordKey(requestedServer));
+    listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
+
+    const frame = requestAnimationFrame(() => {
+      focusRenderedRecord(listContainerRef.current, pendingSelectionKey);
+      setPendingSelectionKey(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [displayedServers, listRef, pendingSelectionKey]);
 
   const selectedServer = useMemo(() => {
     // Before anything is picked we land on the first record, matching the previous
-    // index-0 default. Once a server is chosen we resolve it by name, so re-filtering
-    // can only clear the panel — never swap it for a different machine.
-    if (selectedServerName === null) return displayedServers[0] ?? null;
-    return displayedServers.find((server) => server.name === selectedServerName) ?? null;
-  }, [displayedServers, selectedServerName]);
+    // index-0 default. Once chosen, stable-key resolution keeps duplicate names exact.
+    if (selectedRecordKey === null) return displayedServers[0] ?? null;
+    return displayedServers.find((server) => serverRecordKey(server) === selectedRecordKey) ?? null;
+  }, [displayedServers, selectedRecordKey]);
   const selectedIndex = selectedServer ? displayedServers.indexOf(selectedServer) : -1;
   const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
 
@@ -211,7 +276,10 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
       selectedIndex,
-      onRowClick: (i: number) => setSelectedServerName(displayedServers[i]?.name ?? null),
+      onRowClick: (i: number) => {
+        const server = displayedServers[i];
+        setSelectedRecordKey(server ? serverRecordKey(server) : null);
+      },
     }),
     [displayedServers, h.contactLookup, h.handleContextMenu, selectedIndex],
   );
@@ -303,10 +371,11 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             />
           )}
 
-          <section className="tab-list-container" aria-label="Servers list">
+          <section ref={listContainerRef} className="tab-list-container" aria-label="Servers list">
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List
+                  listRef={listRef}
                   style={{ height: height ?? 0, width: width ?? 0 }}
                   rowCount={displayedServers.length}
                   rowHeight={ROW_HEIGHT}
