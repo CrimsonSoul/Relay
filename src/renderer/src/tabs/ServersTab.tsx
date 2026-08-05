@@ -221,18 +221,17 @@ export const ServersTab: React.FC<ServersTabProps> = ({
 
   useEffect(() => {
     if (
-      !selectionRequest ||
-      selectionRequest.destination !== 'servers' ||
+      selectionRequest?.destination !== 'servers' ||
       lastConsumedRequestIdRef.current === selectionRequest.requestId
     ) {
       return;
     }
 
     lastConsumedRequestIdRef.current = selectionRequest.requestId;
-    const requestedServer = servers.find(
+    const hasRequestedServer = servers.some(
       (server) => serverRecordKey(server) === selectionRequest.recordKey,
     );
-    if (!requestedServer) {
+    if (!hasRequestedServer) {
       setPendingSelectionKey(null);
       setSelectedServerName('');
       onSelectionUnavailable?.(selectionRequest);

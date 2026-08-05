@@ -261,18 +261,17 @@ export const DirectoryTab: React.FC<Props> = ({
 
   useEffect(() => {
     if (
-      !selectionRequest ||
-      selectionRequest.destination !== 'contacts' ||
+      selectionRequest?.destination !== 'contacts' ||
       lastConsumedRequestIdRef.current === selectionRequest.requestId
     ) {
       return;
     }
 
     lastConsumedRequestIdRef.current = selectionRequest.requestId;
-    const requestedContact = contacts.find(
+    const hasRequestedContact = contacts.some(
       (contact) => contactRecordKey(contact) === selectionRequest.recordKey,
     );
-    if (!requestedContact) {
+    if (!hasRequestedContact) {
       setPendingSelectionKey(null);
       setSelectedEmail('');
       setFocusedIndex(-1);
