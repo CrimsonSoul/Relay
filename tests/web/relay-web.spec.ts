@@ -281,7 +281,8 @@ test('runs the shared Relay shell with browser-safe behavior @critical', async (
   await expect(page.getByRole('button', { name: /^Parity Server 20 / })).toBeVisible();
 
   await page.getByRole('button', { name: 'Alerts', exact: true }).click();
-  await page.getByRole('button', { name: 'ALARMS', exact: true }).click();
+  await page.getByRole('button', { name: 'More alert actions' }).click();
+  await page.getByRole('menuitem', { name: 'Alarms', exact: true }).click();
   const reminderManager = page.getByRole('dialog', { name: 'Alarms' });
   await expect(reminderManager).toBeVisible();
   await expect(reminderManager.getByRole('button', { name: 'Choose MP3' })).toHaveCount(0);
