@@ -483,6 +483,23 @@ describe('HeaderSearch', () => {
       expect(mockSearchContext.clearSearch).not.toHaveBeenCalled();
     });
 
+    it('opens a contact from a keyboard-generated primary button click', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const primaryAction = document.querySelector('.search-dropdown-hitbox');
+      expect(primaryAction).toBeInstanceOf(HTMLButtonElement);
+      fireEvent.click(primaryAction as HTMLButtonElement, { detail: 0 });
+
+      expect(defaultActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
+        destination: 'contacts',
+        recordKey: 'id:contact_1',
+      });
+      expect(defaultActions.onAddContactToBridge).not.toHaveBeenCalled();
+    });
+
     it('selects group on Enter after ArrowDown and calls onToggleGroup', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
@@ -507,12 +524,14 @@ describe('HeaderSearch', () => {
       expect(defaultActions.onNavigateToTab).toHaveBeenCalledWith('Servers');
     });
 
-    it('adds a contact only from its separate inline bridge action', () => {
+    it('adds a contact from a keyboard-generated secondary button click', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
         vi.advanceTimersByTime(250);
       });
-      fireEvent.mouseDown(screen.getByRole('button', { name: 'Add John Doe to bridge' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add John Doe to bridge' }), {
+        detail: 0,
+      });
       expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
       expect(defaultActions.onOpenKnowledgeRecord).not.toHaveBeenCalled();
       expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
@@ -951,7 +970,7 @@ describe('HeaderSearch', () => {
       });
 
       vi.mocked(defaultActions.onOpenKnowledgeDocument).mockClear();
-      fireEvent.mouseDown(screen.getByText('Failover procedure').closest('button')!);
+      fireEvent.click(screen.getByText('Failover procedure').closest('button')!);
       expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenCalledWith({
         documentId: passage.documentId,
         headingId: passage.headingId,

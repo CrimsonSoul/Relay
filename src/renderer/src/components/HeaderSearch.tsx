@@ -169,8 +169,8 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
           className="search-dropdown-hitbox"
           onMouseDown={(event) => {
             event.preventDefault();
-            onSelect(result);
           }}
+          onClick={() => onSelect(result)}
           onMouseEnter={() => onHover(index)}
         >
           <div className="search-dropdown-result-icon">
@@ -205,8 +205,8 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
             aria-label={`Add ${result.title} to bridge`}
             onMouseDown={(event) => {
               event.preventDefault();
-              onSecondarySelect(result);
             }}
+            onClick={() => onSecondarySelect(result)}
           >
             Add to bridge
           </button>

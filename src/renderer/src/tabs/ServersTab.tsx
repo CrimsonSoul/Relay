@@ -109,10 +109,9 @@ export const ServersTab: React.FC<ServersTabProps> = ({
   const listContainerRef = useRef<HTMLElement>(null);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
-  // The detail panel is bound to a server by name, never by row position: filters reorder
-  // and shorten the list, and a positional index would silently repoint the panel — and
-  // its Delete button — at a machine the operator is not looking at.
-  const [selectedServerName, setSelectedServerName] = useState<string | null>(null);
+  // The detail panel is bound to the stable navigation key, never a row position or name:
+  // filters reorder the list, and duplicate names must not redirect edit or delete actions.
+  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
   const lastConsumedRequestIdRef = useRef<number | null>(null);
   const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
   const [serverPendingDeletion, setServerPendingDeletion] = useState<Server | null>(null);
@@ -233,7 +232,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
     );
     if (!hasRequestedServer) {
       setPendingSelectionKey(null);
-      setSelectedServerName('');
+      setSelectedRecordKey('');
       onSelectionUnavailable?.(selectionRequest);
       return;
     }
@@ -252,7 +251,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({
 
     const requestedServer = displayedServers[requestedIndex];
     if (!requestedServer) return;
-    setSelectedServerName(requestedServer.name);
+    setSelectedRecordKey(serverRecordKey(requestedServer));
     listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
 
     const frame = requestAnimationFrame(() => {
@@ -264,11 +263,10 @@ export const ServersTab: React.FC<ServersTabProps> = ({
 
   const selectedServer = useMemo(() => {
     // Before anything is picked we land on the first record, matching the previous
-    // index-0 default. Once a server is chosen we resolve it by name, so re-filtering
-    // can only clear the panel — never swap it for a different machine.
-    if (selectedServerName === null) return displayedServers[0] ?? null;
-    return displayedServers.find((server) => server.name === selectedServerName) ?? null;
-  }, [displayedServers, selectedServerName]);
+    // index-0 default. Once chosen, stable-key resolution keeps duplicate names exact.
+    if (selectedRecordKey === null) return displayedServers[0] ?? null;
+    return displayedServers.find((server) => serverRecordKey(server) === selectedRecordKey) ?? null;
+  }, [displayedServers, selectedRecordKey]);
   const selectedIndex = selectedServer ? displayedServers.indexOf(selectedServer) : -1;
   const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
 
@@ -278,7 +276,10 @@ export const ServersTab: React.FC<ServersTabProps> = ({
       contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
       selectedIndex,
-      onRowClick: (i: number) => setSelectedServerName(displayedServers[i]?.name ?? null),
+      onRowClick: (i: number) => {
+        const server = displayedServers[i];
+        setSelectedRecordKey(server ? serverRecordKey(server) : null);
+      },
     }),
     [displayedServers, h.contactLookup, h.handleContextMenu, selectedIndex],
   );

@@ -207,7 +207,7 @@ vi.mock('../../components/ContactDetailPanel', () => ({
     relatedServers?: { owned: Server[]; supported: Server[] };
     onEditNotes: () => void;
   }) => (
-    <div data-testid="contact-detail">
+    <div data-testid="contact-detail" data-record-id={contact.raw?.id}>
       {contact.name}
       <button type="button" data-testid="contact-detail-notes" onClick={onEditNotes} />
       {relatedServers?.owned.map((server) => (
@@ -454,6 +454,48 @@ describe('DirectoryTab', () => {
     mockScrollToRow.mockClear();
     rerender(<DirectoryTab {...props} />);
     expect(mockScrollToRow).not.toHaveBeenCalled();
+  });
+
+  it('keeps the requested contact exact when another record shares its email', async () => {
+    const first = makeContact({
+      name: 'First Duplicate',
+      email: 'shared@example.com',
+      raw: { id: 'contact_1' },
+    });
+    const second = makeContact({
+      name: 'Second Duplicate',
+      email: 'shared@example.com',
+      raw: { id: 'contact_2' },
+    });
+    mockUseDirectory.mockImplementation(() => {
+      const [focusedIndex, setFocusedIndex] = React.useState(0);
+      return {
+        ...makeDefaultDirectoryReturn(),
+        filtered: [first, second],
+        focusedIndex,
+        setFocusedIndex,
+      };
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [first, second] }),
+    );
+
+    render(
+      <DirectoryTab
+        contacts={[first, second]}
+        groups={[]}
+        onAddToAssembler={vi.fn()}
+        selectionRequest={{
+          requestId: 9,
+          destination: 'contacts',
+          recordKey: 'id:contact_2',
+        }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('contact-detail')).toHaveAttribute('data-record-id', 'contact_2'),
+    );
   });
 
   // Regression: setContactNote resolves an IpcResult, and the tab handed that object straight back

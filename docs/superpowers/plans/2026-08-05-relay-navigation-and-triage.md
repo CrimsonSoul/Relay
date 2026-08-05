@@ -90,7 +90,7 @@ const tabMap: Partial<Record<string, TabName>> = {
 };
 ```
 
-Add `{ keys: `${modKey} + 7`, description: 'Go to Dispatcher Radar' }` immediately after Problems in `ShortcutsModal` and update the comment from `Cmd/Ctrl+1-6` to `Cmd/Ctrl+1-7`. Add a `Dynatrace Problems` shortcut section with these exact items:
+Add ``{ keys: `${modKey} + 7`, description: 'Go to Dispatcher Radar' }`` immediately after Problems in `ShortcutsModal` and update the comment from `Cmd/Ctrl+1-6` to `Cmd/Ctrl+1-7`. Add a `Dynatrace Problems` shortcut section with these exact items:
 
 ```ts
 {

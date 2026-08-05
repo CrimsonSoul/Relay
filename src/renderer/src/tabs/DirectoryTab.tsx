@@ -246,17 +246,18 @@ export const DirectoryTab: React.FC<Props> = ({
 
   const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
 
-  // The detail panel follows a contact's email, not a row position. focusedIndex only
-  // moves on a real click or keystroke, so re-filtering can clear the panel but can never
-  // silently rebind it — and its Delete button — to whatever record slid into that slot.
-  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  // The detail panel follows the stable navigation key, not its row or display identity.
+  // Re-filtering can clear the panel but cannot rebind edit or delete actions to another
+  // record that happens to share the same email address.
+  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
   const lastConsumedRequestIdRef = useRef<number | null>(null);
   const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
   const lastFocusedIndex = useRef<number | null>(null);
   useEffect(() => {
     if (lastFocusedIndex.current === focusedIndex) return;
     lastFocusedIndex.current = focusedIndex;
-    setSelectedEmail(filtered[focusedIndex]?.email.toLowerCase() ?? null);
+    const focusedContact = filtered[focusedIndex];
+    setSelectedRecordKey(focusedContact ? contactRecordKey(focusedContact) : null);
   }, [filtered, focusedIndex]);
 
   useEffect(() => {
@@ -273,7 +274,7 @@ export const DirectoryTab: React.FC<Props> = ({
     );
     if (!hasRequestedContact) {
       setPendingSelectionKey(null);
-      setSelectedEmail('');
+      setSelectedRecordKey('');
       setFocusedIndex(-1);
       onSelectionUnavailable?.(selectionRequest);
       return;
@@ -293,7 +294,7 @@ export const DirectoryTab: React.FC<Props> = ({
 
     const requestedContact = filtered[requestedIndex];
     if (!requestedContact) return;
-    setSelectedEmail(requestedContact.email.toLowerCase());
+    setSelectedRecordKey(contactRecordKey(requestedContact));
     setFocusedIndex(requestedIndex);
     listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
 
@@ -307,9 +308,9 @@ export const DirectoryTab: React.FC<Props> = ({
   const selectedContact = useMemo(() => {
     // Nothing has been picked yet (the list was still empty when focus first landed),
     // so keep the old behaviour of showing whatever row is focused.
-    if (selectedEmail === null) return filtered[focusedIndex] ?? null;
-    return filtered.find((contact) => contact.email.toLowerCase() === selectedEmail) ?? null;
-  }, [filtered, focusedIndex, selectedEmail]);
+    if (selectedRecordKey === null) return filtered[focusedIndex] ?? null;
+    return filtered.find((contact) => contactRecordKey(contact) === selectedRecordKey) ?? null;
+  }, [filtered, focusedIndex, selectedRecordKey]);
   const selectedGroups = selectedContact
     ? groupMap.get(selectedContact.email.toLowerCase()) || []
     : [];

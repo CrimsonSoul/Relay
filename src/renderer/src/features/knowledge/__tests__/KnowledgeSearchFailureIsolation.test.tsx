@@ -578,7 +578,7 @@ async function assertCoreProductionSurfaces(
     await settleSearches();
     const headerDropdown = screen.getByRole('listbox', { name: '' });
     expect(within(headerDropdown).getByText(label)).toBeVisible();
-    fireEvent.mouseDown(within(headerDropdown).getByText(label).closest('button')!);
+    fireEvent.click(within(headerDropdown).getByText(label).closest('button')!);
     await settleSearches();
     expect(headerInput).toHaveValue('failover');
     expect(headerInput).not.toHaveFocus();
@@ -590,7 +590,7 @@ async function assertCoreProductionSurfaces(
   fireEvent.change(headerInput, { target: { value: 'failover' } });
   await settleSearches();
   const headerDropdown = screen.getByRole('listbox', { name: '' });
-  fireEvent.mouseDown(within(headerDropdown).getByText('Open alerts').closest('button')!);
+  fireEvent.click(within(headerDropdown).getByText('Open alerts').closest('button')!);
   await settleSearches();
   expect(headerInput).toHaveValue('');
   expect(headerInput).not.toHaveFocus();

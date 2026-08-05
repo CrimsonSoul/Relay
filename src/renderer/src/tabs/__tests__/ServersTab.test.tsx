@@ -127,7 +127,7 @@ vi.mock('../../components/ServerDetailPanel', () => ({
     onDelete: () => void;
     onEditNotes: () => void;
   }) => (
-    <div data-testid="server-detail">
+    <div data-testid="server-detail" data-record-id={server.raw?.id}>
       {server.name}
       <button type="button" data-testid="server-detail-delete" onClick={onDelete} />
       <button type="button" data-testid="server-detail-notes" onClick={onEditNotes} />
@@ -332,6 +332,30 @@ describe('ServersTab', () => {
     await waitFor(() => expect(onSelectionUnavailable).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('server-detail')).not.toBeInTheDocument();
     expect(screen.getByText('Select a server')).toBeVisible();
+  });
+
+  it('keeps the requested server exact when another record shares its name', async () => {
+    const first = makeServer({ name: 'shared-server', raw: { id: 'server_1' } });
+    const second = makeServer({ name: 'shared-server', raw: { id: 'server_2' } });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [first, second] }),
+    );
+
+    render(
+      <ServersTab
+        servers={[first, second]}
+        contacts={[]}
+        selectionRequest={{
+          requestId: 10,
+          destination: 'servers',
+          recordKey: 'id:server_2',
+        }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('server-detail')).toHaveAttribute('data-record-id', 'server_2'),
+    );
   });
 
   it('keeps the detail panel on the selected server when filtering reorders the list', () => {
