@@ -410,6 +410,15 @@ Mist rows offer only the official status-page action. They do not invent X or Do
 
 ## 13. Styling Rules
 
+### Compact navigation
+
+At widths at or below 1200 px, the sidebar rests at 64 px and expands labeled navigation above the
+content on hover or keyboard focus; the active tab never reflows. The overlay remains open while
+either pointer or focus is inside the rail, and reduced-motion mode removes its width animation.
+Top-level shortcuts follow sidebar order through Cmd/Ctrl+7 for Radar. While Problems is active,
+Alt+Down and Alt+Up move through unaddressed problems and Alt+N focuses the selected response note;
+editable controls and modals suppress these triage shortcuts.
+
 ### Do
 
 - Use tokens from `theme.css` instead of hardcoded shared values
@@ -478,9 +487,10 @@ Static design values must stay in CSS.
 ### Compact workstation windows
 
 At viewport widths of 1200 px and below, Relay keeps every navigation destination available but
-reduces the main sidebar to a 64 px icon rail, changes the brand to `r.`, and hides the world clock.
-Labels remain available through accessible names and hover tooltips. This returns horizontal space
-to the active workflow without creating a second navigation mode.
+rests the main sidebar at a 64 px icon rail, changes the brand to `r.`, and hides the world clock.
+Hovering the rail or moving keyboard focus into it expands the full labels over the active workflow
+without changing the content width; accessible names and hover tooltips remain available as
+fallbacks.
 
 The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
 900 px and below. Its Service Desk ticket control and primary local-disposition action also become
