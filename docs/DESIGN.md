@@ -340,6 +340,14 @@ The card's base font rides `--font-family-base` and therefore uses IBM Plex Sans
 redesign; this is intentional. The fenced rules themselves are unchanged from the
 pre-redesign baseline.
 
+### Operator action hierarchy
+
+Alerts exposes Open in Outlook on Desktop or Download Draft on Relay Web as the primary command.
+Save Image is the visible secondary command. Schedule Alarm, Alarms, History, Pin Template, and
+Reset remain available in the keyboard-accessible overflow, with existing confirmations and modal
+behavior unchanged. Optional delivery details stay collapsed until requested and summarize only
+configured routing, link, timing, and branding state.
+
 ---
 
 ## 11. Knowledge Workspace
