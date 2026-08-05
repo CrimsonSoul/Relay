@@ -14,6 +14,7 @@ interface ServerCardProps {
   onRowClick?: () => void;
   ownerName?: string;
   supportName?: string;
+  recordKey?: string;
 }
 
 export const ServerCard = memo(
@@ -25,6 +26,7 @@ export const ServerCard = memo(
     onRowClick,
     ownerName,
     supportName,
+    recordKey,
   }: ServerCardProps) => {
     const osInfo = getPlatformColor(server.os);
     const staticCardRef = useRef<HTMLDivElement>(null);
@@ -97,6 +99,7 @@ export const ServerCard = memo(
       return (
         <button
           type="button"
+          data-record-key={recordKey}
           onContextMenu={(e) => onContextMenu(e, server)}
           onClick={onRowClick}
           className="server-card server-card--interactive"
@@ -108,7 +111,7 @@ export const ServerCard = memo(
     }
 
     return (
-      <div ref={staticCardRef} className="server-card" style={style}>
+      <div ref={staticCardRef} data-record-key={recordKey} className="server-card" style={style}>
         {cardContent}
       </div>
     );

@@ -461,6 +461,7 @@ function makeHeaderActions(): HeaderSearchActions {
     onToggleGroup: vi.fn(),
     onNavigateToTab: vi.fn(),
     onOpenKnowledgeDestination: vi.fn(),
+    onOpenKnowledgeRecord: vi.fn(),
     onOpenAddContact: vi.fn(),
     onOpenKnowledgeDocument: vi.fn(),
   };
@@ -570,7 +571,7 @@ async function assertCoreProductionSurfaces(
   onOpenDocument: MockedFunction<(request: KnowledgeOpenRequest) => void>,
 ): Promise<void> {
   const headerInput = screen.getByRole('combobox', { name: 'Search Relay' });
-  for (const label of ['Failover Operator', 'Failover Server', 'Open alerts']) {
+  for (const label of ['Failover Operator', 'Failover Server']) {
     act(() => headerInput.focus());
     expect(headerInput).toHaveFocus();
     fireEvent.change(headerInput, { target: { value: 'failover' } });
@@ -579,12 +580,30 @@ async function assertCoreProductionSurfaces(
     expect(within(headerDropdown).getByText(label)).toBeVisible();
     fireEvent.mouseDown(within(headerDropdown).getByText(label).closest('button')!);
     await settleSearches();
-    expect(headerInput).toHaveValue('');
+    expect(headerInput).toHaveValue('failover');
     expect(headerInput).not.toHaveFocus();
     expect(screen.queryByRole('listbox', { name: '' })).not.toBeInTheDocument();
+    fireEvent.change(headerInput, { target: { value: '' } });
   }
-  expect(headerActions.onAddContactToBridge).toHaveBeenCalledWith('operator@example.com');
-  expect(headerActions.onOpenKnowledgeDestination).toHaveBeenCalledWith('servers');
+
+  act(() => headerInput.focus());
+  fireEvent.change(headerInput, { target: { value: 'failover' } });
+  await settleSearches();
+  const headerDropdown = screen.getByRole('listbox', { name: '' });
+  fireEvent.mouseDown(within(headerDropdown).getByText('Open alerts').closest('button')!);
+  await settleSearches();
+  expect(headerInput).toHaveValue('');
+  expect(headerInput).not.toHaveFocus();
+
+  expect(headerActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
+    destination: 'contacts',
+    recordKey: 'email:operator@example.com',
+  });
+  expect(headerActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
+    destination: 'servers',
+    recordKey: 'name:failover server',
+  });
+  expect(headerActions.onAddContactToBridge).not.toHaveBeenCalled();
   expect(headerActions.onNavigateToTab).toHaveBeenCalledWith('Alerts');
 
   const localCatalogResult = screen.getByRole('button', {

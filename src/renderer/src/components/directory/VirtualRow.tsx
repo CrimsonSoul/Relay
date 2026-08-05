@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import type { RowComponentProps } from 'react-window';
 import { Contact } from '@shared/ipc';
 import { ContactCard } from '../ContactCard';
+import { contactRecordKey } from '../../features/knowledge/knowledgeRecordNavigation';
 
 export interface DirectoryVirtualRowData {
   filtered: Contact[];
@@ -32,6 +33,7 @@ export const VirtualRow = memo(
         phone={contact.phone}
         groups={membership}
         relationshipCounts={relationshipCounts}
+        recordKey={contactRecordKey(contact)}
         selected={isFocused}
         onContextMenu={(e) => onContextMenu(e, contact)}
         onRowClick={() => onRowClick(index)}

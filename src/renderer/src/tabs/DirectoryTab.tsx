@@ -22,12 +22,18 @@ import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { SearchInput } from '../components/SearchInput';
+import {
+  contactRecordKey,
+  type KnowledgeRecordOpenRequest,
+} from '../features/knowledge/knowledgeRecordNavigation';
 
 type Props = {
   contacts: Contact[];
   groups: BridgeGroup[];
   servers?: Server[];
   onAddToAssembler: (contact: Contact) => void;
+  selectionRequest?: KnowledgeRecordOpenRequest | null;
+  onSelectionUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
 };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
@@ -45,6 +51,13 @@ const normalizeRelationshipEmail = (value: string | undefined) => {
   if (!trimmed || trimmed === '-' || trimmed === '0') return '';
   return trimmed;
 };
+
+function focusRenderedRecord(container: HTMLElement | null, recordKey: string): void {
+  const row = Array.from(container?.querySelectorAll<HTMLElement>('[data-record-key]') ?? []).find(
+    (node) => node.dataset.recordKey === recordKey,
+  );
+  row?.focus();
+}
 
 const ScrollController = ({
   listRef,
@@ -68,6 +81,8 @@ export const DirectoryTab: React.FC<Props> = ({
   groups,
   servers = [],
   onAddToAssembler,
+  selectionRequest,
+  onSelectionUnavailable,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const dir = useDirectory(contacts, groups, onAddToAssembler, searchQuery);
@@ -207,6 +222,7 @@ export const DirectoryTab: React.FC<Props> = ({
   });
 
   const filtered = filters.filteredItems;
+  const clearAllFilters = filters.clearAll;
 
   useDirectoryKeyboard({
     listRef,
@@ -234,12 +250,60 @@ export const DirectoryTab: React.FC<Props> = ({
   // moves on a real click or keystroke, so re-filtering can clear the panel but can never
   // silently rebind it — and its Delete button — to whatever record slid into that slot.
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  const lastConsumedRequestIdRef = useRef<number | null>(null);
+  const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
   const lastFocusedIndex = useRef<number | null>(null);
   useEffect(() => {
     if (lastFocusedIndex.current === focusedIndex) return;
     lastFocusedIndex.current = focusedIndex;
     setSelectedEmail(filtered[focusedIndex]?.email.toLowerCase() ?? null);
   }, [filtered, focusedIndex]);
+
+  useEffect(() => {
+    if (
+      !selectionRequest ||
+      selectionRequest.destination !== 'contacts' ||
+      lastConsumedRequestIdRef.current === selectionRequest.requestId
+    ) {
+      return;
+    }
+
+    lastConsumedRequestIdRef.current = selectionRequest.requestId;
+    const requestedContact = contacts.find(
+      (contact) => contactRecordKey(contact) === selectionRequest.recordKey,
+    );
+    if (!requestedContact) {
+      setPendingSelectionKey(null);
+      setSelectedEmail('');
+      setFocusedIndex(-1);
+      onSelectionUnavailable?.(selectionRequest);
+      return;
+    }
+
+    setSearchQuery('');
+    clearAllFilters();
+    setPendingSelectionKey(selectionRequest.recordKey);
+  }, [clearAllFilters, contacts, onSelectionUnavailable, selectionRequest, setFocusedIndex]);
+
+  useEffect(() => {
+    if (!pendingSelectionKey) return;
+    const requestedIndex = filtered.findIndex(
+      (contact) => contactRecordKey(contact) === pendingSelectionKey,
+    );
+    if (requestedIndex < 0) return;
+
+    const requestedContact = filtered[requestedIndex];
+    if (!requestedContact) return;
+    setSelectedEmail(requestedContact.email.toLowerCase());
+    setFocusedIndex(requestedIndex);
+    listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
+
+    const frame = requestAnimationFrame(() => {
+      focusRenderedRecord(listContainerRef.current, pendingSelectionKey);
+      setPendingSelectionKey(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [filtered, listRef, pendingSelectionKey, setFocusedIndex]);
 
   const selectedContact = useMemo(() => {
     // Nothing has been picked yet (the list was still empty when focus first landed),

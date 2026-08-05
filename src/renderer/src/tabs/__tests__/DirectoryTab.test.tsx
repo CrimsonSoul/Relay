@@ -106,7 +106,32 @@ vi.mock('../../components/directory/GroupSelector', () => ({
 }));
 
 vi.mock('../../components/directory/VirtualRow', () => ({
-  VirtualRow: () => <div data-testid="virtual-row" />,
+  VirtualRow: ({
+    index,
+    filtered,
+    focusedIndex,
+    onRowClick,
+  }: {
+    index: number;
+    filtered: Contact[];
+    focusedIndex: number;
+    onRowClick: (index: number) => void;
+  }) => {
+    const contact = filtered[index];
+    if (!contact) return null;
+    const id = contact.raw?.id;
+    return (
+      <button
+        type="button"
+        aria-label={contact.name}
+        data-record-key={id ? `id:${id}` : `email:${contact.email.toLowerCase()}`}
+        data-selected={index === focusedIndex}
+        onClick={() => onRowClick(index)}
+      >
+        {contact.name}
+      </button>
+    );
+  },
 }));
 
 vi.mock('../../components/directory/DeleteConfirmationModal', () => ({
@@ -234,12 +259,31 @@ vi.mock('react-virtualized-auto-sizer', () => ({
   }) => renderProp({ height: 600, width: 800 }),
 }));
 
-// Mock react-window
+const { mockScrollToRow, mockListRef } = vi.hoisted(() => {
+  const scrollToRow = vi.fn();
+  return { mockScrollToRow: scrollToRow, mockListRef: { current: { scrollToRow } } };
+});
+
+// Mock react-window — rows are rendered so exact-record focus can be exercised.
 vi.mock('react-window', () => ({
-  List: ({ rowCount, rowHeight }: { rowCount: number; rowHeight: number }) => (
-    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight} />
+  List: ({
+    rowCount,
+    rowHeight,
+    rowComponent: RowComponent,
+    rowProps,
+  }: {
+    rowCount: number;
+    rowHeight: number;
+    rowComponent: React.ComponentType<Record<string, unknown>>;
+    rowProps: Record<string, unknown>;
+  }) => (
+    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight}>
+      {Array.from({ length: rowCount }, (_unused, index) => (
+        <RowComponent key={index} index={index} style={{}} {...rowProps} />
+      ))}
+    </div>
   ),
-  useListRef: () => ({ current: null }),
+  useListRef: () => mockListRef,
 }));
 
 function makeDefaultDirectoryReturn() {
@@ -275,6 +319,7 @@ beforeEach(() => {
   mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn());
   noteSaveOutcomes.length = 0;
   mockSetContactNote.mockReset();
+  mockScrollToRow.mockReset();
 });
 
 import { DirectoryTab } from '../DirectoryTab';
@@ -359,7 +404,56 @@ describe('DirectoryTab', () => {
 
     render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('contact-detail')).toBeInTheDocument();
-    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
+  });
+
+  it('clears local filters, reveals, selects, scrolls to, and focuses a requested contact once', async () => {
+    const first = makeContact({
+      name: 'First Contact',
+      email: 'first@example.com',
+      raw: { id: 'contact_1' },
+    });
+    const second = makeContact({
+      name: 'Second Contact',
+      email: 'second@example.com',
+      raw: { id: 'contact_2' },
+    });
+    const clearAll = vi.fn();
+    mockUseDirectory.mockImplementation(() => {
+      const [focusedIndex, setFocusedIndex] = React.useState(0);
+      return {
+        ...makeDefaultDirectoryReturn(),
+        filtered: [first, second],
+        focusedIndex,
+        setFocusedIndex,
+      };
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [first, second], clearAll }),
+    );
+    const request = {
+      requestId: 7,
+      destination: 'contacts' as const,
+      recordKey: 'id:contact_2',
+    };
+    const props = {
+      contacts: [first, second],
+      groups: [],
+      onAddToAssembler: vi.fn(),
+      selectionRequest: request,
+    };
+    const { rerender } = render(<DirectoryTab {...props} />);
+
+    await waitFor(() => expect(mockScrollToRow).toHaveBeenCalledWith({ index: 1, align: 'smart' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Second Contact' })).toHaveFocus(),
+    );
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Second Contact');
+    expect(clearAll).toHaveBeenCalledOnce();
+
+    mockScrollToRow.mockClear();
+    rerender(<DirectoryTab {...props} />);
+    expect(mockScrollToRow).not.toHaveBeenCalled();
   });
 
   // Regression: setContactNote resolves an IpcResult, and the tab handed that object straight back
