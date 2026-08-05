@@ -369,6 +369,11 @@ destination preserves its selected document or record, filters, detail panel, an
 state. The internal navigation provides a clear Knowledge-home action plus direct destination
 buttons; all controls use real button semantics and visible focus states.
 
+Header search labels the action each result will perform. Contact and server primary actions open
+and focus the exact record in the retained Knowledge destination while preserving the lookup query;
+adding a contact to Compose is a separate explicit action. An exact lookup may clear that
+destination's local filters to reveal the requested record, but it never changes bridge recipients.
+
 Notes are contextual only. Contact and server detail panels may display and edit their attached
 notes and tags. There is no standalone Notes tab, masonry surface, or freeform-note design pattern.
 Dynatrace problem notes remain part of the Problems workflow and do not appear in Knowledge.
