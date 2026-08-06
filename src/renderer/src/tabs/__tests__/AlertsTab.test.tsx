@@ -417,38 +417,6 @@ vi.mock('../AlertHistoryModal', () => ({
     ) : null,
 }));
 
-vi.mock('../../components/TactileButton', () => ({
-  TactileButton: ({
-    children,
-    onClick,
-    loading,
-    variant,
-    className,
-    icon,
-    tooltip,
-  }: {
-    children: React.ReactNode;
-    onClick?: () => void;
-    loading?: boolean;
-    variant?: string;
-    className?: string;
-    icon?: React.ReactNode;
-    tooltip?: React.ReactNode;
-  }) => (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className={[`tactile-button--${variant ?? 'secondary'}`, className].filter(Boolean).join(' ')}
-      data-variant={variant}
-      data-has-icon={icon ? 'true' : 'false'}
-      data-tooltip={typeof tooltip === 'string' ? tooltip : undefined}
-    >
-      {icon && <span data-testid={`button-icon-${String(children).trim()}`}>{icon}</span>}
-      {children}
-    </button>
-  ),
-}));
-
 vi.mock('../../components/CollapsibleHeader', () => ({
   CollapsibleHeader: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="collapsible-header">{children}</div>
@@ -536,8 +504,8 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
 
-    expect(within(toolbar).getByRole('button', { name: /OPEN IN OUTLOOK/i })).toBeVisible();
-    expect(within(toolbar).getByRole('button', { name: /SAVE IMAGE/i })).toBeVisible();
+    expect(within(toolbar).getByRole('button', { name: 'Open in Outlook' })).toBeVisible();
+    expect(within(toolbar).getByRole('button', { name: 'Save Image' })).toBeVisible();
     expect(within(toolbar).getByRole('button', { name: 'More alert actions' })).toBeVisible();
     expect(within(toolbar).queryByRole('button', { name: /^RESET$/i })).toBeNull();
     expect(within(toolbar).queryByRole('button', { name: /^HISTORY$/i })).toBeNull();
@@ -549,9 +517,9 @@ describe('AlertsTab', () => {
     mockCapture.html2canvas.mockReturnValueOnce(capture.promise);
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByRole('button', { name: /SAVE IMAGE/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Image' }));
 
-    expect(screen.getByRole('button', { name: /SAVE IMAGE/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save Image' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'More alert actions' })).toBeDisabled();
 
     await act(async () => {
@@ -559,7 +527,7 @@ describe('AlertsTab', () => {
       await capture.promise;
     });
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /SAVE IMAGE/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Save Image' })).toBeEnabled();
     });
   });
 
@@ -574,41 +542,31 @@ describe('AlertsTab', () => {
     expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
   });
 
-  it('keeps draft delivery primary and Save Image as the sole visible secondary action', () => {
-    render(<AlertsTab />);
+  it('keeps Save image in utilities and draft delivery plus overflow in workflow actions', () => {
+    const { container } = render(<AlertsTab />);
 
-    expect(screen.getByRole('button', { name: 'OPEN IN OUTLOOK' })).toHaveClass(
+    const heading = screen.getByRole('heading', { name: 'Operational Alert Utility' });
+    const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    const workflow = container.querySelector<HTMLElement>('.tab-command-group--workflow');
+
+    expect(heading).toHaveClass('tab-page-header__title');
+    expect(toolbar).toContainElement(utility);
+    expect(toolbar).toContainElement(workflow);
+    expect(screen.getByRole('button', { name: 'Open in Outlook' })).toHaveClass(
       'tactile-button--primary',
     );
-    expect(screen.getByRole('button', { name: 'SAVE IMAGE' })).toHaveClass(
+    expect(screen.getByRole('button', { name: 'Save Image' })).toHaveClass(
       'alerts-save-image-action',
       'tactile-button--secondary',
     );
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'Save Image' }));
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'Open in Outlook' }));
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'More alert actions' }));
     expect(screen.getByRole('button', { name: 'More alert actions' })).toHaveClass(
-      'alerts-overflow-trigger',
+      'tactile-button',
+      'tactile-button--icon-only',
     );
-  });
-
-  it('matches the operational toolbar spacing and control geometry', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
-    const commandActionsCss = css.slice(css.indexOf('.alerts-command-actions {'));
-    const commandActions = declarations(
-      cssBlock(commandActionsCss, '.alerts-command-actions') ?? '',
-    );
-    const saveImageAction = declarations(
-      cssBlock(css, '.alerts-save-image-action.tactile-button') ?? '',
-    );
-    const overflowShared = declarations(cssBlock(css, '.alerts-overflow-trigger') ?? '');
-    const overflowGeometryCss = css.slice(css.lastIndexOf('.alerts-overflow-trigger {'));
-    const overflowGeometry = declarations(
-      cssBlock(overflowGeometryCss, '.alerts-overflow-trigger') ?? '',
-    );
-
-    expect(commandActions.get('width')).toBe('100%');
-    expect(commandActions.get('justify-content')).toBe('flex-end');
-    expect(saveImageAction.get('min-height')).toBe('36px');
-    expect(overflowShared.get('min-height')).toBe('36px');
-    expect(overflowGeometry.get('min-width')).toBe('44px');
   });
 
   it('renders one divider between the Alert definition header and its first step', () => {
@@ -682,14 +640,14 @@ describe('AlertsTab', () => {
     expect(screen.getByText('2 of 2 required ready')).toBeInTheDocument();
   });
 
-  it('orders the visible actions as delivery, image export, then overflow', () => {
+  it('orders utility actions before workflow actions without changing focus order', () => {
     render(<AlertsTab />);
     const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
     expect(
       within(toolbar)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['OPEN IN OUTLOOK', 'SAVE IMAGE', 'More alert actions']);
+    ).toEqual(['Save Image', 'Open in Outlook', 'More alert actions']);
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -785,7 +743,7 @@ describe('AlertsTab', () => {
 
   it('clicking SAVE IMAGE saves the high-resolution PNG capture', async () => {
     render(<AlertsTab />);
-    const saveBtn = screen.getByText('SAVE IMAGE');
+    const saveBtn = screen.getByText('Save Image');
     fireEvent.click(saveBtn);
     await waitFor(() => {
       expect(globalThis.api?.saveAlertImage).toHaveBeenCalledWith(
@@ -806,7 +764,7 @@ describe('AlertsTab', () => {
 
   it('opens a 2x inline-image Outlook draft at an explicit 640px display size', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
@@ -834,7 +792,7 @@ describe('AlertsTab', () => {
     (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByText('DOWNLOAD DRAFT'));
+    fireEvent.click(screen.getByText('Download Draft'));
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Alert draft downloaded', 'success');
     });
@@ -844,7 +802,7 @@ describe('AlertsTab', () => {
   it('wraps the whole Outlook draft image in the one sanitized click-through URL', async () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-click-through-url'));
-    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
@@ -863,7 +821,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
     mockCapture.html2canvas.mockClear();
-    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
@@ -879,7 +837,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
     mockCapture.html2canvas.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /OPEN IN OUTLOOK/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Outlook' }));
 
     await waitFor(() => {
       expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'clickThroughUrl' });
@@ -895,7 +853,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-severity-issue'));
 
-    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -919,7 +877,7 @@ describe('AlertsTab', () => {
       render(<AlertsTab />);
       fireEvent.click(screen.getByTestId(testId));
 
-      fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+      fireEvent.click(screen.getByText('Open in Outlook'));
 
       await waitFor(() => {
         expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -937,7 +895,7 @@ describe('AlertsTab', () => {
   it('paints alert capture surfaces so Teams and Discord do not show grey transparency', async () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();

@@ -122,25 +122,29 @@ describe('PersonnelTab — page header and command toolbar', () => {
     );
 
     const heading = screen.getByRole('heading', { name: 'On-Call Coverage' });
-    expect(heading.closest('.oncall-page-header')).not.toBeNull();
+    expect(heading).toHaveClass('tab-page-header__title');
     expect(
-      screen.getByText('March 30 - April 5, 2026').closest('.oncall-page-meta'),
+      screen.getByText('March 30 - April 5, 2026').closest('.tab-page-header__meta'),
     ).not.toBeNull();
 
     const toolbar = screen.getByRole('toolbar', { name: 'On-call actions' });
-    const utilityGroup = container.querySelector<HTMLElement>('.oncall-command-group--utility');
-    const workflowGroup = container.querySelector<HTMLElement>('.oncall-command-group--workflow');
+    const utilityGroup = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    const workflowGroup = container.querySelector<HTMLElement>('.tab-command-group--workflow');
     expect(toolbar).toContainElement(utilityGroup);
     expect(toolbar).toContainElement(workflowGroup);
     expect(toolbar).toContainElement(
       screen.getByRole('group', { name: 'On-call board font scale' }),
     );
 
-    for (const name of ['Copy All On-Call Info', 'Export to CSV', 'Lock Board']) {
+    for (const name of ['Copy All On-Call Info', 'Export to CSV']) {
       const button = screen.getByRole('button', { name });
       expect(toolbar).toContainElement(button);
       expect(button).toHaveClass('tactile-button--secondary', 'oncall-command-action');
     }
+
+    expect(utilityGroup).toContainElement(screen.getByRole('button', { name: 'Export to CSV' }));
+    expect(workflowGroup).toContainElement(screen.getByRole('button', { name: 'Lock Board' }));
+    expect(screen.getByRole('button', { name: 'Lock Board' })).toHaveTextContent('Unlocked');
 
     const addCard = screen.getByRole('button', { name: 'Add Card' });
     expect(toolbar).toContainElement(addCard);
@@ -159,7 +163,7 @@ describe('PersonnelTab — board lock button', () => {
 
     const btn = screen.getByRole('button', { name: 'Lock Board' });
     expect(btn).toBeDefined();
-    expect(btn.textContent).toContain('UNLOCKED');
+    expect(btn.textContent).toContain('Unlocked');
   });
 
   it('renders a locked lock button when board is locked', () => {
@@ -168,7 +172,7 @@ describe('PersonnelTab — board lock button', () => {
 
     const btn = screen.getByRole('button', { name: 'Unlock Board' });
     expect(btn).toBeDefined();
-    expect(btn.textContent).toContain('LOCKED');
+    expect(btn.textContent).toContain('Locked');
   });
 
   it('calls toggleBoardLock when clicked', async () => {

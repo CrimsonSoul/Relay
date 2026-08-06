@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ContextMenu, type ContextMenuItem } from '../../components/ContextMenu';
+import { TactileButton } from '../../components/TactileButton';
 
 export type AlertActionsMenuProps = {
   captureBusy: boolean;
@@ -22,20 +23,24 @@ export function AlertActionsMenu(props: Readonly<AlertActionsMenuProps>) {
 
   return (
     <>
-      <button
-        type="button"
+      <TactileButton
         className="alerts-overflow-trigger"
         aria-label="More alert actions"
         aria-haspopup="menu"
         aria-expanded={position !== null}
         disabled={props.captureBusy}
+        icon={
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="19" cy="12" r="1.5" />
+          </svg>
+        }
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           setPosition({ x: rect.right, y: rect.bottom + 4 });
         }}
-      >
-        <span aria-hidden="true">•••</span>
-      </button>
+      />
       {position && (
         <ContextMenu
           x={position.x}

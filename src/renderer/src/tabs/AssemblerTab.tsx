@@ -23,6 +23,7 @@ import { useBridgeHandoffHistory } from '../hooks/useBridgeHandoffHistory';
 import { useToast } from '../components/Toast';
 import { useModalState } from '../hooks/useModalState';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 
 export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const {
@@ -195,21 +196,19 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   return (
     <div className="tab-layout assembler-tab">
-      <header className="assembler-page-header">
-        <div>
-          <div className="assembler-page-context">Compose</div>
-          <h2 className="assembler-page-title">Bridge Recipient Assembly</h2>
-        </div>
-        <div className="assembler-page-meta" role="status" aria-live="polite">
-          <span>
+      <TabPageHeader
+        context="Compose"
+        title="Bridge Recipient Assembly"
+        metadata={
+          <span role="status" aria-live="polite">
             {asm.allRecipients.length} {asm.allRecipients.length === 1 ? 'recipient' : 'recipients'}
           </span>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="assembler-command-bar" role="toolbar" aria-label="Compose actions">
+      <TabCommandBar ariaLabel="Compose actions" className="assembler-command-bar">
         <CollapsibleHeader isCollapsed={asm.isHeaderCollapsed}>
-          <div className="assembler-command-group assembler-command-group--utility">
+          <TabCommandGroup kind="utility">
             {manualRemoves.length > 0 && (
               <TactileButton
                 variant="secondary"
@@ -287,8 +286,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             >
               History
             </TactileButton>
-          </div>
-          <div className="assembler-command-group assembler-command-group--workflow">
+          </TabCommandGroup>
+          <TabCommandGroup kind="workflow">
             <div className="assembler-bridge-actions">
               <TactileButton
                 onClick={() => void handleCopyWithHistory()}
@@ -327,9 +326,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 }
               />
             </div>
-          </div>
+          </TabCommandGroup>
         </CollapsibleHeader>
-      </div>
+      </TabCommandBar>
 
       <div className="assembler-layout assembler-workspace">
         <section className="assembler-groups-pane" aria-label="Contact groups">
