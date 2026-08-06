@@ -468,10 +468,10 @@
 .assembler-pane-header {
   display: flex;
   align-items: center;
-}
-
-.assembler-pane-header {
   justify-content: space-between;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .assembler-pane-heading > span:first-child {
@@ -505,12 +505,6 @@
 
 .assembler-groups-pane .assembler-sidebar-panel {
   border-right: 0;
-}
-
-.assembler-pane-header {
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .assembler-pane-heading,

@@ -20,6 +20,11 @@
 
 .cloud-status__section-heading {
   justify-content: space-between;
+  min-height: 44px;
+  flex: 0 0 auto;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .cloud-status__section-heading > span:first-child {
@@ -115,14 +120,6 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-}
-
-.cloud-status__section-heading {
-  min-height: 44px;
-  flex: 0 0 auto;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .cloud-status__section-heading > span:last-child {

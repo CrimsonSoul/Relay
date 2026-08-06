@@ -147,7 +147,7 @@ export function KnowledgeHome({
         title="Knowledge"
         headingId="knowledge-home-title"
         headingLevel={1}
-        metadata={<span role="status">{countSummary}</span>}
+        metadata={<output>{countSummary}</output>}
       />
 
       <div className="knowledge-home__destinations">

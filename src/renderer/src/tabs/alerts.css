@@ -360,10 +360,10 @@
 .alerts-pane-header {
   display: flex;
   align-items: center;
-}
-
-.alerts-pane-header {
   justify-content: space-between;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .alerts-pane-header > span:first-child {
@@ -459,12 +459,6 @@
 
 .alerts-pane + .alerts-pane {
   border-left: 1px solid var(--color-border);
-}
-
-.alerts-pane-header {
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .alerts-pane-header > span:last-child {

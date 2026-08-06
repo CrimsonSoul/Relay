@@ -47,6 +47,12 @@ describe('KnowledgeHome', () => {
     expect(buttons[0]).toHaveFocus();
   });
 
+  it('uses native output semantics for the header count summary', () => {
+    render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
+
+    expect(screen.getByRole('status')).toHaveProperty('tagName', 'OUTPUT');
+  });
+
   it('keeps full destination interfaces out of the splash launchers', () => {
     render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
 

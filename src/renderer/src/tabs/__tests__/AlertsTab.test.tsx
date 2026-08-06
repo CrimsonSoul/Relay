@@ -578,8 +578,7 @@ describe('AlertsTab', () => {
 
   it('renders one divider between the Alert definition header and its first step', () => {
     const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
-    const paneLayoutCss = css.slice(css.indexOf('.alerts-layout'));
-    const paneHeader = declarations(cssBlock(paneLayoutCss, '.alerts-pane-header') ?? '');
+    const paneHeader = declarations(cssBlock(css, '.alerts-pane-header') ?? '');
     const step = declarations(cssBlock(css, '.alerts-step-section') ?? '');
     const firstStep = declarations(
       cssBlock(css, '.alerts-form-section > .alerts-step-section:first-child') ?? '',
