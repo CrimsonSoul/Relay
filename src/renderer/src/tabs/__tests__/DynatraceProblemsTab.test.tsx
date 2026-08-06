@@ -129,9 +129,27 @@ describe('DynatraceProblemsTab', () => {
   });
 
   it('uses the shared scoped search control for the local problem queue', async () => {
-    render(<DynatraceProblemsTab relayMode="client" />);
+    const { container } = render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
+    expect(screen.getByRole('heading', { name: 'Local Response Queue' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    expect(
+      container.querySelector('.tab-page-header__meta .dt-problems__sync-state'),
+    ).toHaveTextContent('Synced just now');
+    const toolbar = screen.getByRole('toolbar', { name: 'Problem queue actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    expect(toolbar).toContainElement(utility);
+    expect(utility).toContainElement(
+      screen.getByRole('tablist', { name: 'Problem queue filters' }),
+    );
+    expect(utility).toContainElement(screen.getByRole('button', { name: /Alerting profiles/i }));
+    expect(utility).toContainElement(screen.getByRole('searchbox', { name: 'Search problems' }));
+    expect(utility).toContainElement(
+      screen.getByRole('button', { name: 'Refresh Dynatrace Problems' }),
+    );
+    expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('searchbox', { name: 'Search problems' })).toHaveClass(
       'scoped-search-input',
     );

@@ -156,31 +156,6 @@ describe('CSS zero-warning contracts', () => {
   it('keeps each formerly duplicated selector in its original cascade position and order', () => {
     const contracts = [
       {
-        source: cssSources.cloudStatus,
-        selector: '.cloud-status__refresh',
-        location: {
-          previousSibling: '.cloud-status__meta > span',
-          nextSibling: '.cloud-status__refresh:hover:not(:disabled)',
-        },
-        declarations: [
-          ['display', 'inline-flex'],
-          ['width', '40px'],
-          ['height', '40px'],
-          ['align-items', 'center'],
-          ['justify-content', 'center'],
-          ['padding', '0'],
-          ['border', '1px solid transparent'],
-          ['border-radius', '2px'],
-          ['background', 'transparent'],
-          ['color', 'var(--color-text-secondary)'],
-          ['cursor', 'pointer'],
-          [
-            'transition',
-            'border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast)',
-          ],
-        ],
-      },
-      {
         source: cssSources.knowledge,
         selector: '.knowledge-page__text-layer',
         location: {

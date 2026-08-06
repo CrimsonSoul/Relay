@@ -78,9 +78,20 @@ afterEach(() => {
 
 describe('RadarTab', () => {
   it('shows the status and both XCenter counts from the snapshot', async () => {
-    render(<RadarTab />);
+    const { container } = render(<RadarTab />);
 
     expect(await screen.findByText('Healthy')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dispatcher Radar' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Radar actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    expect(toolbar).toContainElement(utility);
+    expect(utility).toContainElement(
+      screen.getByRole('button', { name: 'Open original Dispatcher Radar page' }),
+    );
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'Refresh Radar now' }));
+    expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByText('2,000')).toBeInTheDocument();
     expect(screen.getByText('1,807')).toBeInTheDocument();
   });
@@ -170,9 +181,9 @@ describe('RadarTab', () => {
     const button = await screen.findByRole('button', {
       name: 'Open original Dispatcher Radar page',
     });
-    expect(button).toHaveTextContent(/^ORIGINAL$/);
+    expect(button).toHaveTextContent(/^Original$/);
     expect(button).toHaveAttribute('title', 'Open original Dispatcher Radar page');
-    expect(button).toHaveClass('tactile-button--secondary', 'radar-header-action');
+    expect(button).toHaveClass('tactile-button--secondary');
 
     fireEvent.click(button);
 
@@ -185,8 +196,7 @@ describe('RadarTab', () => {
     await screen.findByText('Healthy');
 
     const refreshButton = screen.getByRole('button', { name: 'Refresh Radar now' });
-    expect(refreshButton).toHaveClass('radar-refresh');
-    expect(refreshButton).not.toHaveClass('tactile-button');
+    expect(refreshButton).toHaveClass('tactile-button', 'tactile-button--icon-only');
     expect(refreshButton.querySelector('svg')).not.toBeNull();
     fireEvent.click(refreshButton);
 

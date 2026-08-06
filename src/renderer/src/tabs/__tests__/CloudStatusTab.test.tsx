@@ -79,9 +79,18 @@ describe('CloudStatusTab', () => {
   });
 
   it('keeps a two-column provider overview without a global active-issues pane', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    const { container } = render(
+      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+    );
 
-    expect(screen.getByRole('heading', { name: 'External Status' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'External Status' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Status actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    expect(toolbar).toContainElement(utility);
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'Refresh cloud status' }));
+    expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(14);

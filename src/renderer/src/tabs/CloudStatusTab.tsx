@@ -10,7 +10,8 @@ import {
 import { ProviderIcon } from '../components/icons/ProviderIcons';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
-import { Tooltip } from '../components/Tooltip';
+import { TactileButton } from '../components/TactileButton';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS, getCurrentCloudIssues } from '../utils/cloudStatus';
 
 type ProviderPosture = 'outage' | 'degraded' | 'unknown' | 'clear';
@@ -588,21 +589,27 @@ export const CloudStatusTab: React.FC<{
 
   return (
     <div className="cloud-status">
-      <header className="cloud-status__header">
-        <div>
-          <div className="cloud-status__context">Service status</div>
-          <h2 className="cloud-status__title">External Status</h2>
-        </div>
-        <div className="cloud-status__meta">
-          <span>{updatedLabel}</span>
-          <Tooltip content={loading ? 'Refreshing cloud status' : 'Refresh cloud status'}>
-            <button
-              type="button"
-              className="cloud-status__refresh"
-              onClick={refetch}
-              disabled={loading}
-              aria-label="Refresh cloud status"
-            >
+      <TabPageHeader
+        context="Service status"
+        title="External Status"
+        metadata={
+          <span className="cloud-status__meta" role="status" aria-live="polite">
+            <span>{CLOUD_STATUS_PROVIDER_ORDER.length} providers</span>
+            <span aria-hidden="true">·</span>
+            <span>{updatedLabel}</span>
+          </span>
+        }
+      />
+      <TabCommandBar ariaLabel="Status actions">
+        <TabCommandGroup kind="utility">
+          <TactileButton
+            variant="secondary"
+            className="cloud-status__refresh"
+            onClick={refetch}
+            disabled={loading}
+            aria-label="Refresh cloud status"
+            tooltip={loading ? 'Refreshing cloud status' : 'Refresh cloud status'}
+            icon={
               <svg
                 className={loading ? 'cloud-status__refresh-icon--spinning' : ''}
                 width="20"
@@ -619,10 +626,10 @@ export const CloudStatusTab: React.FC<{
                 <polyline points="1 20 1 14 7 14" />
                 <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
               </svg>
-            </button>
-          </Tooltip>
-        </div>
-      </header>
+            }
+          />
+        </TabCommandGroup>
+      </TabCommandBar>
 
       <div className={`cloud-status__summary cloud-status__summary--${summary.tone}`} role="status">
         <span className="cloud-status__summary-signal" aria-hidden="true" />

@@ -3,12 +3,11 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   padding: var(--space-4) var(--space-5) 0;
   overflow: hidden;
 }
 
-.cloud-status__header,
 .cloud-status__meta,
 .cloud-status__summary,
 .cloud-status__notice,
@@ -19,16 +18,10 @@
   align-items: center;
 }
 
-.cloud-status__header,
 .cloud-status__section-heading {
   justify-content: space-between;
 }
 
-.cloud-status__header {
-  gap: var(--space-4);
-}
-
-.cloud-status__context,
 .cloud-status__section-heading > span:first-child {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
@@ -37,54 +30,9 @@
   text-transform: uppercase;
 }
 
-.cloud-status__title {
-  margin: var(--space-1) 0 0;
-  color: var(--color-text-primary);
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0;
-  line-height: var(--leading-tight);
-}
-
 .cloud-status__meta {
-  gap: var(--space-3);
-}
-
-.cloud-status__meta > span {
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
+  gap: var(--space-2);
   white-space: nowrap;
-}
-
-.cloud-status__refresh {
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.cloud-status__refresh:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-card-hover);
-  color: var(--accent-bright);
-}
-
-.cloud-status__refresh:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 
 .cloud-status__refresh-icon--spinning {
@@ -574,14 +522,9 @@
     padding-inline: var(--space-4);
   }
 
-  .cloud-status__header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .cloud-status__meta {
-    width: 100%;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    white-space: normal;
   }
 
   .cloud-status__summary,
@@ -620,7 +563,6 @@
     animation: none;
   }
 
-  .cloud-status__refresh,
   .cloud-status-provider,
   .cloud-status-provider__actions button,
   .cloud-status-outage > button {

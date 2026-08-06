@@ -20,6 +20,7 @@ import { TabFallback } from '../components/TabFallback';
 import { TactileButton } from '../components/TactileButton';
 import { useToast } from '../components/Toast';
 import { SearchInput } from '../components/SearchInput';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
 import { useDynatraceProblemShortcuts } from '../hooks/useDynatraceProblemShortcuts';
 import {
@@ -1523,83 +1524,93 @@ export const DynatraceProblemsTab: React.FC<{
 
   return (
     <div className="dt-problems">
-      <div className="dt-problems__header">
-        <div>
-          <div className="dt-problems__context">Dynatrace Problems</div>
-          <h2 className="dt-problems__title">Local Response Queue</h2>
-        </div>
-        <div className="dt-problems__sync-meta">
+      <TabPageHeader
+        context="Dynatrace Problems"
+        title="Local Response Queue"
+        metadata={
           <span
             className={`dt-problems__sync-state dt-problems__sync-state--${sync?.state ?? 'disabled'}`}
+            role="status"
+            aria-live="polite"
           >
             {lastSyncLabel}
           </span>
-          <button
-            type="button"
-            className="dt-problems__refresh"
-            onClick={() => void handleRefresh()}
-            disabled={savingAction === 'refresh'}
-            aria-label="Refresh Dynatrace Problems"
-          >
-            <svg
-              className={savingAction === 'refresh' ? 'dt-problems__refresh-icon--spinning' : ''}
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
-            </svg>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
-      <div className="dt-problems__toolbar">
-        <div className="dt-problems__filters" role="tablist" aria-label="Problem queue filters">
-          {FILTERS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={filter === item.id}
-              className={`dt-problems__filter${filter === item.id ? ' dt-problems__filter--active' : ''}`}
-              onClick={() => setFilter(item.id)}
-            >
-              <span>{item.label}</span>
-              <span className="dt-problems__filter-count">{counts[item.id]}</span>
-            </button>
-          ))}
-        </div>
-        <div className="dt-problems__tools">
-          <AlertingProfilePicker
-            profiles={alertingProfiles}
-            selectedProfiles={profileDraft}
-            filterConfigured={profileFilterConfigured}
-            canSave={relayMode === 'server'}
-            saving={savingAction === 'profile'}
-            onChange={handleProfileDraftChange}
-            onCancel={handleProfileDraftCancel}
-            onSave={handleSaveProfileFilter}
-          />
-          <div className="dt-problems__search scoped-search-control">
-            <SearchInput
-              type="search"
-              aria-label="Search problems"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search title, ID, entity, profile, or zone"
-              className="scoped-search-input"
+      <TabCommandBar ariaLabel="Problem queue actions">
+        <TabCommandGroup kind="utility" className="dt-problems__toolbar">
+          <div className="dt-problems__filters" role="tablist" aria-label="Problem queue filters">
+            {FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={filter === item.id}
+                className={`dt-problems__filter${filter === item.id ? ' dt-problems__filter--active' : ''}`}
+                onClick={() => setFilter(item.id)}
+              >
+                <span>{item.label}</span>
+                <span className="dt-problems__filter-count">{counts[item.id]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="dt-problems__tools">
+            <AlertingProfilePicker
+              profiles={alertingProfiles}
+              selectedProfiles={profileDraft}
+              filterConfigured={profileFilterConfigured}
+              canSave={relayMode === 'server'}
+              saving={savingAction === 'profile'}
+              onChange={handleProfileDraftChange}
+              onCancel={handleProfileDraftCancel}
+              onSave={handleSaveProfileFilter}
+            />
+            <div className="dt-problems__search scoped-search-control">
+              <SearchInput
+                type="search"
+                aria-label="Search problems"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search title, ID, entity, profile, or zone"
+                className="scoped-search-input"
+              />
+            </div>
+            <TactileButton
+              variant="secondary"
+              className="dt-problems__refresh"
+              onClick={() => void handleRefresh()}
+              disabled={savingAction === 'refresh'}
+              aria-label="Refresh Dynatrace Problems"
+              tooltip={
+                savingAction === 'refresh'
+                  ? 'Refreshing Dynatrace Problems'
+                  : 'Refresh Dynatrace Problems'
+              }
+              icon={
+                <svg
+                  className={
+                    savingAction === 'refresh' ? 'dt-problems__refresh-icon--spinning' : ''
+                  }
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+                </svg>
+              }
             />
           </div>
-        </div>
-      </div>
+        </TabCommandGroup>
+      </TabCommandBar>
 
       {sync?.state === 'error' && (
         <div className="dt-problems__notice dt-problems__notice--error" role="alert">
