@@ -76,7 +76,7 @@
     "eventsource": "4.1.0",
     "html2canvas": "^1.4.1",
     "papaparse": "5.5.4",
-    "pdfjs-dist": "6.1.200",
+    "pdfjs-dist": "6.2.108",
     "pocketbase": "0.27.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
