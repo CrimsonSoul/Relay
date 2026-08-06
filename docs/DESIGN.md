@@ -23,6 +23,7 @@ does not claim that Teams created, sent, or started a meeting.
 | ------------------------------------------------------------ | --------------------------------------------------------------------- |
 | `src/renderer/src/styles/theme.css`                          | Global color, spacing, typography, radius, z-index, and motion tokens |
 | `src/renderer/src/styles/components.css`                     | Shared button, input, shell, and layout styles                        |
+| `src/renderer/src/styles/tab-chrome.css`                     | Shared top-level page headers and command rows                        |
 | `src/renderer/src/styles/utilities.css`                      | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
 | `src/renderer/src/styles/modals.css`                         | Modal layout and overlay styling                                      |
 | `src/renderer/src/styles/responsive.css`                     | Breakpoints and responsive behavior                                   |
@@ -64,6 +65,24 @@ wordmark and is not the default for tabs or panes. `.display-heading` and
 `.collapsible-header-title` retain that older styling for compatibility, but new
 surfaces should use the breadcrumb and eyebrow hierarchy unless a design explicitly
 calls for a standalone display title.
+
+### Top-level tab chrome
+
+Compose is the visual reference for the seven top-level operational destinations. Each uses a
+three-band frame: `.tab-page-header`, an optional named `.tab-command-bar`, and the working canvas.
+`TabPageHeader`, `TabCommandBar`, and `TabCommandGroup` own this shared structure; tab styles remain
+responsible for their domain content.
+
+- Page metadata uses the UI font, tabular numerals, and a text label whenever color communicates
+  status. It may wrap below the title at constrained widths but must never overlap it.
+- Utility commands belong in the left group and use a 36 px control height. Workflow commands
+  belong in the right group and use a 40 px control height. Responsive layouts preserve this DOM
+  and keyboard order when the groups stack.
+- Command labels use Title Case. A command row has at most one filled primary action; supporting
+  and reversible actions remain secondary or icon-only with an accessible name.
+- Knowledge has no top-level commands, so it renders no empty command row.
+- This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
+  other domain-specific toolbars retain their own interaction and density rules.
 
 ---
 
@@ -274,6 +293,13 @@ Focus: `border-color: --accent` + `box-shadow: 0 0 0 2px --color-accent-dim`.
 
 Underline-only input: `border-bottom: 2px solid --color-border-strong`, no box.
 On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
+
+Search results preserve context: clicking the full primary row or pressing Enter opens or selects
+that exact result without changing Compose. Each row uses a stable icon, information, and action
+rail. Contact rows add a compact `+ Bridge` sibling button with the accessible name
+`Add <contact name> to bridge`; group rows use the concise primary verb `Add group` and do not add a
+redundant secondary control. Footer hints explain Enter for the primary action and show Tab guidance
+only when a contact bridge action is present.
 
 ---
 
