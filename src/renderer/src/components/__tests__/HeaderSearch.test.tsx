@@ -598,6 +598,21 @@ describe('HeaderSearch', () => {
       expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
     });
 
+    it('bridges the active contact on Tab instead of following normal focus traversal', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const input = screen.getByRole('combobox');
+      const dispatched = fireEvent.keyDown(input, { key: 'Tab', cancelable: true });
+
+      expect(dispatched).toBe(false);
+      expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('john@test.com');
+      expect(defaultActions.onOpenKnowledgeRecord).not.toHaveBeenCalled();
+      expect(mockSearchContext.clearSearch).toHaveBeenCalledOnce();
+    });
+
     it('updates selectedIndex on mouseEnter', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
@@ -665,6 +680,22 @@ describe('HeaderSearch', () => {
       expect(screen.getByText('Primary action')).toBeInTheDocument();
       expect(screen.getByText('Bridge contact')).toBeInTheDocument();
       expect(screen.getByText('Close')).toBeInTheDocument();
+    });
+
+    it('advertises the bridge shortcut only while a contact result is active', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const input = screen.getByRole('combobox');
+      expect(screen.getByText('Bridge contact')).toBeInTheDocument();
+
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(screen.queryByText('Bridge contact')).not.toBeInTheDocument();
+
+      fireEvent.keyDown(input, { key: 'ArrowUp' });
+      expect(screen.getByText('Bridge contact')).toBeInTheDocument();
     });
 
     it('does not advertise a secondary keyboard action without contact results', () => {

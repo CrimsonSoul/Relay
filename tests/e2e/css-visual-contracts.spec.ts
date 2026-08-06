@@ -1271,8 +1271,29 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       expect(geometry.groupsShareRow, `${tab.name} toolbar stacked despite available room`).toBe(
         true,
       );
+      expect(geometry.utilityHeights, `${tab.name} utility button count`).toHaveLength(
+        tab.utility.length,
+      );
       expect(geometry.utilityHeights.every((height) => height === 36)).toBe(true);
+      const expectedWorkflowCount = tab.workflow.length + (tab.name === 'Compose' ? 1 : 0);
+      expect(geometry.workflowHeights, `${tab.name} workflow button count`).toHaveLength(
+        expectedWorkflowCount,
+      );
       expect(geometry.workflowHeights.every((height) => height === 40)).toBe(true);
+    }
+
+    const composeToolbar = window.getByRole('toolbar', { name: 'Compose actions' });
+    const composeGroups = composeToolbar.locator('.tab-command-group');
+    await expect(composeGroups).toHaveCount(2);
+    await expect(composeToolbar).toHaveCSS('flex-wrap', 'nowrap');
+    for (const group of await composeGroups.all()) {
+      await expect(group).toHaveCSS('flex-wrap', 'nowrap');
+    }
+
+    await window.setViewportSize({ width: 700, height: 900 });
+    await expect(composeToolbar).toHaveCSS('flex-wrap', 'wrap');
+    for (const group of await composeGroups.all()) {
+      await expect(group).toHaveCSS('flex-wrap', 'wrap');
     }
 
     const overflow = window.getByRole('button', { name: 'More Compose actions' });

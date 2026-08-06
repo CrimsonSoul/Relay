@@ -376,7 +376,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   }, [activeIndex]);
 
   const showDropdown = isSearchFocused && dropdownResults.length > 0;
-  const hasContactSecondaryAction = immediateResults.some((result) => result.type === 'contact');
+  const hasContactSecondaryAction = dropdownResults[activeIndex]?.type === 'contact';
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -487,6 +487,12 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       if (!showDropdown) return;
 
       switch (e.key) {
+        case 'Tab':
+          if (dropdownResults[activeIndex]?.type === 'contact') {
+            e.preventDefault();
+            handleSecondarySelect(dropdownResults[activeIndex]);
+          }
+          break;
         case 'ArrowDown':
           e.preventDefault();
           setSelectedIndex((prev) => Math.min(prev + 1, dropdownResults.length - 1));
@@ -503,7 +509,16 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           break;
       }
     },
-    [query, showDropdown, dropdownResults, activeIndex, handleSelect, clearSearch, searchInputRef],
+    [
+      query,
+      showDropdown,
+      dropdownResults,
+      activeIndex,
+      handleSelect,
+      handleSecondarySelect,
+      clearSearch,
+      searchInputRef,
+    ],
   );
 
   const handleFocus = useCallback(() => {

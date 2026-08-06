@@ -298,11 +298,12 @@ Underline-only input: `border-bottom: 2px solid --color-border-strong`, no box.
 On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 
 Search results preserve context: clicking the full primary row or pressing Enter opens or selects
-that exact result without changing Compose. Each row uses a stable icon, information, and action
-rail. Contact rows add a compact `+ Bridge` sibling button with the accessible name
-`Add <contact name> to bridge`; group rows use the concise primary verb `Add group` and do not add a
-redundant secondary control. Footer hints explain Enter for the primary action and show Tab guidance
-only when a contact bridge action is present.
+the exact contact, server, document, workspace, or tab result without changing Compose. Group rows
+are the intentional exception: their concise primary action, `Add group`, adds the group to Compose
+without a redundant secondary control. Each row uses a stable icon, information, and action rail.
+Contact rows add a compact `+ Bridge` sibling button with the accessible name
+`Add <contact name> to bridge`. Footer hints explain Enter for the primary action and show Tab
+guidance only while a contact result is active.
 
 ---
 
@@ -372,8 +373,9 @@ pre-redesign baseline.
 ### Operator action hierarchy
 
 Alerts exposes Open in Outlook on Desktop or Download Draft on Relay Web as the primary command.
-History is the far-left utility action. Save Image sits immediately before delivery as its visible
-secondary command in the right-aligned workflow group. Schedule Alarm, Alarms, Pin Template, and
+History is the sole far-left utility action. Save Image is the first visible secondary command in
+the right-aligned workflow group, immediately before delivery. This preserves the approved visual
+order without moving Save Image into the utility group. Schedule Alarm, Alarms, Pin Template, and
 Reset remain available in the keyboard-accessible overflow, with existing confirmations and modal
 behavior unchanged. Optional delivery details stay collapsed until requested and summarize only
 configured routing, link, timing, and branding state.
