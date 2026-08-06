@@ -406,6 +406,33 @@ describe('HeaderSearch', () => {
       }
     });
 
+    it('allows the dropdown to widen to 540px when viewport space permits', () => {
+      const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        top: 40,
+        bottom: 76,
+        left: 24,
+        right: 724,
+        width: 700,
+        height: 36,
+        x: 24,
+        y: 40,
+        toJSON: () => ({}),
+      } as DOMRect);
+      const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1200);
+
+      try {
+        render(<HeaderSearch {...defaultProps} />);
+        act(() => {
+          vi.advanceTimersByTime(250);
+        });
+
+        expect(document.querySelector<HTMLElement>('.search-dropdown')?.style.width).toBe('540px');
+      } finally {
+        rectSpy.mockRestore();
+        widthSpy.mockRestore();
+      }
+    });
+
     it('shows result titles in dropdown', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
@@ -424,13 +451,47 @@ describe('HeaderSearch', () => {
       expect(screen.getByText('john@test.com')).toBeInTheDocument();
     });
 
-    it('renders explicit activation verbs', () => {
+    it('renders concise primary verbs in a stable action rail', () => {
       render(<HeaderSearch {...defaultProps} />);
       act(() => {
         vi.advanceTimersByTime(250);
       });
-      expect(screen.getByText('Open contact')).toBeInTheDocument();
-      expect(screen.getByText('Add group to bridge')).toBeInTheDocument();
+
+      const options = screen.getAllByRole('option');
+      for (const option of options) {
+        expect(option.querySelector('.search-dropdown-action-rail')).not.toBeNull();
+      }
+      expect(options[0]).toHaveTextContent('Open');
+      expect(options[1]).toHaveTextContent('Add group');
+      expect(options[2]).toHaveTextContent('Select');
+      expect(options[0]!.querySelector('.search-dropdown-result-verb')).toHaveTextContent('Open');
+      expect(options[1]!.querySelector('.search-dropdown-result-verb')).toHaveTextContent(
+        'Add group',
+      );
+    });
+
+    it('keeps the contact bridge action separate from the full-row primary target', () => {
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const contactOption = screen.getAllByRole('option')[0]!;
+      const primaryAction = contactOption.querySelector('.search-dropdown-hitbox');
+      const bridgeAction = screen.getByRole('button', { name: 'Add John Doe to bridge' });
+
+      expect(contactOption.querySelector('.search-dropdown-result-row')).toHaveClass(
+        'has-secondary-action',
+      );
+      expect(contactOption.querySelector('.search-dropdown-result-icon')).not.toBeNull();
+      expect(contactOption.querySelector('.search-dropdown-result-info')).not.toBeNull();
+      expect(contactOption.querySelector('.search-dropdown-action-rail')).not.toBeNull();
+      expect(bridgeAction).toHaveTextContent('+ Bridge');
+      expect(primaryAction?.contains(bridgeAction)).toBe(false);
+      expect(contactOption.querySelectorAll('button')).toHaveLength(2);
+
+      const groupOption = screen.getAllByRole('option')[1]!;
+      expect(groupOption.querySelectorAll('.search-dropdown-secondary-action')).toHaveLength(0);
     });
 
     it('renders icons for each visible result type', () => {
@@ -601,8 +662,25 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       expect(screen.getByText('Navigate')).toBeInTheDocument();
-      expect(screen.getByText('Select')).toBeInTheDocument();
+      expect(screen.getByText('Primary action')).toBeInTheDocument();
+      expect(screen.getByText('Bridge contact')).toBeInTheDocument();
       expect(screen.getByText('Close')).toBeInTheDocument();
+    });
+
+    it('does not advertise a secondary keyboard action without contact results', () => {
+      mockSearchResults.splice(0, mockSearchResults.length, {
+        id: 'g1',
+        title: 'Engineering',
+        type: 'group',
+        data: { id: 'grp-1' },
+      });
+
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      expect(screen.queryByText('Bridge contact')).not.toBeInTheDocument();
     });
 
     it('has aria-expanded true when dropdown is shown', () => {
@@ -637,6 +715,7 @@ describe('HeaderSearch', () => {
       act(() => {
         vi.advanceTimersByTime(250);
       });
+      expect(screen.getByText('Create')).toBeVisible();
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(defaultActions.onOpenAddContact).toHaveBeenCalledWith('new@test.com');
     });
@@ -653,6 +732,7 @@ describe('HeaderSearch', () => {
       act(() => {
         vi.advanceTimersByTime(250);
       });
+      expect(screen.getByText('Add')).toBeVisible();
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(defaultActions.onAddContactToBridge).toHaveBeenCalledWith('manual@test.com');
     });
@@ -782,7 +862,7 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-      expect(screen.getByText('Open server')).toBeVisible();
+      expect(screen.getByText('Open')).toBeVisible();
       expect(defaultActions.onOpenKnowledgeRecord).toHaveBeenCalledWith({
         destination: 'servers',
         recordKey: 'id:server_1',

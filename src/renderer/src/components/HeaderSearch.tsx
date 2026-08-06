@@ -132,17 +132,14 @@ type SearchResultItemProps = {
 };
 
 function primaryVerb(result: SearchResult): string {
-  if (result.source === 'wiki-passage' || result.type === 'knowledge') return 'Open document';
-  if (result.type === 'contact') return 'Open contact';
-  if (result.type === 'server') return 'Open server';
-  if (result.type === 'group') return 'Add group to bridge';
+  if (result.type === 'group') return 'Add group';
   if (result.type === 'action') {
     const action = (result.data as { action?: string }).action;
-    if (action === 'navigate') return 'Open tab';
-    if (action === 'open-knowledge') return 'Open workspace';
-    if (action === 'create-contact') return 'Create contact';
-    if (action === 'add-manual') return 'Add to bridge';
+    if (action === 'create-contact') return 'Create';
+    if (action === 'add-manual') return 'Add';
   }
+  if (result.source === 'wiki-passage' || result.type === 'knowledge') return 'Open';
+  if (result.type === 'contact' || result.type === 'server') return 'Open';
   return 'Select';
 }
 
@@ -161,7 +158,11 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
       role="option"
       aria-selected={index === selectedIndex}
     >
-      <div className="search-dropdown-result-row">
+      <div
+        className={`search-dropdown-result-row${
+          result.type === 'contact' && onSecondarySelect ? ' has-secondary-action' : ''
+        }`}
+      >
         <button
           type="button"
           data-index={index}
@@ -196,7 +197,9 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
               )
             )}
           </div>
-          <span className="search-dropdown-result-verb">{primaryVerb(result)}</span>
+          <span className="search-dropdown-action-rail" aria-hidden="true">
+            <span className="search-dropdown-result-verb">{primaryVerb(result)}</span>
+          </span>
         </button>
         {result.type === 'contact' && onSecondarySelect && (
           <button
@@ -208,7 +211,7 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
             }}
             onClick={() => onSecondarySelect(result)}
           >
-            Add to bridge
+            + Bridge
           </button>
         )}
       </div>
@@ -373,6 +376,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   }, [activeIndex]);
 
   const showDropdown = isSearchFocused && dropdownResults.length > 0;
+  const hasContactSecondaryAction = immediateResults.some((result) => result.type === 'contact');
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -539,7 +543,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
         position: 'fixed',
         top: rect.bottom + 8,
         left: rect.left,
-        width: Math.min(480, Math.max(rect.width, 360), window.innerWidth - rect.left - 20),
+        width: Math.min(540, Math.max(rect.width, 360), window.innerWidth - rect.left - 20),
         zIndex: 10002,
       });
     };
@@ -667,8 +671,13 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
                 <kbd className="kbd-key">&uarr;&darr;</kbd> Navigate
               </span>
               <span>
-                <kbd className="kbd-key">&crarr;</kbd> Select
+                <kbd className="kbd-key">enter</kbd> Primary action
               </span>
+              {hasContactSecondaryAction && (
+                <span>
+                  <kbd className="kbd-key">tab</kbd> Bridge contact
+                </span>
+              )}
               <span>
                 <kbd className="kbd-key">esc</kbd> Close
               </span>

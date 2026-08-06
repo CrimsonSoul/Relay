@@ -256,6 +256,20 @@ describe('CSS zero-warning contracts', () => {
     }
   });
 
+  it('keeps Header Search actions aligned and the clear target usable', () => {
+    const resultRow = exactRule(cssSources.modals, '.search-dropdown-result-row');
+    const hitbox = exactRule(cssSources.modals, '.search-dropdown-hitbox');
+    const secondaryAction = exactRule(cssSources.modals, '.search-dropdown-secondary-action');
+    const clearButton = exactRule(cssSources.components, '.header-search-bar-clear');
+
+    expect(declarationValue(resultRow, 'position')).toBe('relative');
+    expect(declarationValue(hitbox, 'display')).toBe('grid');
+    expect(declarationValue(hitbox, 'grid-template-columns')).toContain('minmax(0, 1fr)');
+    expect(declarationValue(secondaryAction, 'position')).toBe('absolute');
+    expect(declarationValue(clearButton, 'width')).toBe('32px');
+    expect(declarationValue(clearButton, 'height')).toBe('32px');
+  });
+
   it('preserves emergency wrapping with standards-based overflow-wrap declarations', () => {
     for (const [name, source] of Object.entries(cssSources)) {
       expect(matchingDeclarations(source, 'word-break', 'break-word'), name).toEqual([]);
