@@ -6,7 +6,6 @@ export type AlertActionsMenuProps = {
   captureBusy: boolean;
   onScheduleAlarm: () => void;
   onOpenAlarms: () => void;
-  onOpenHistory: () => void;
   onPinTemplate: () => void;
   onReset: () => void;
 };
@@ -16,7 +15,6 @@ export function AlertActionsMenu(props: Readonly<AlertActionsMenuProps>) {
   const items: ContextMenuItem[] = [
     { label: 'Schedule Alarm', onClick: props.onScheduleAlarm },
     { label: 'Alarms', onClick: props.onOpenAlarms },
-    { label: 'History', onClick: props.onOpenHistory },
     { label: 'Pin Template', onClick: props.onPinTemplate },
     { label: 'Reset', onClick: props.onReset, danger: true },
   ];

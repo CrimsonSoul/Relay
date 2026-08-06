@@ -564,8 +564,7 @@ test.describe('Redesign screenshot harness', () => {
       await shoot(window, 'alerts.png');
 
       // --- Alert history modal (seeded with one ISSUE entry) ---
-      await window.getByRole('button', { name: 'More alert actions' }).click();
-      await window.getByRole('menuitem', { name: 'History' }).click();
+      await window.getByRole('button', { name: 'History' }).click();
       await expect(window.locator('.alert-history-content')).toBeVisible();
       await expect(window.locator('.alert-history-entry').first()).toBeVisible();
       await shoot(window, 'alert-history.png');

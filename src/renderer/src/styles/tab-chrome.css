@@ -40,10 +40,26 @@
   text-align: right;
 }
 
+.tab-page-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.tab-page-status__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--color-text-quaternary);
+}
+
 .tab-command-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-4);
   width: 100%;
 }
@@ -63,6 +79,7 @@
 .tab-command-group--workflow {
   --tab-command-control-height: 40px;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 .tab-command-group .tactile-button {
@@ -107,18 +124,6 @@
   gap: var(--space-4);
 }
 
-@media (max-width: 1320px) {
-  .tab-command-bar,
-  .tab-command-bar .collapsible-header-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .tab-command-group--workflow {
-    justify-content: flex-start;
-  }
-}
-
 @media (max-width: 720px) {
   .tab-page-header {
     align-items: flex-start;
@@ -133,5 +138,10 @@
 
   .tab-command-group {
     width: 100%;
+  }
+
+  .tab-command-group--workflow {
+    justify-content: flex-start;
+    margin-left: 0;
   }
 }

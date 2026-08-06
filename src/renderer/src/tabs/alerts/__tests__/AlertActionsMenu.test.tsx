@@ -5,13 +5,12 @@ import { AlertActionsMenu } from '../AlertActionsMenu';
 const handlers = {
   onScheduleAlarm: vi.fn(),
   onOpenAlarms: vi.fn(),
-  onOpenHistory: vi.fn(),
   onPinTemplate: vi.fn(),
   onReset: vi.fn(),
 };
 
 describe('AlertActionsMenu', () => {
-  it('opens the five approved utilities in order', () => {
+  it('keeps History out of the overflow and opens the remaining utilities in order', () => {
     render(<AlertActionsMenu {...handlers} captureBusy={false} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
@@ -19,7 +18,6 @@ describe('AlertActionsMenu', () => {
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Schedule Alarm',
       'Alarms',
-      'History',
       'Pin Template',
       'Reset',
     ]);

@@ -74,10 +74,13 @@ three-band frame: `.tab-page-header`, an optional named `.tab-command-bar`, and 
 responsible for their domain content.
 
 - Page metadata uses the UI font, tabular numerals, and a text label whenever color communicates
-  status. It may wrap below the title at constrained widths but must never overlap it.
+  status. Live state uses the shared unboxed `.tab-page-status` treatment: an 8 px semantic dot
+  beside the text label. Metadata may wrap below the title at constrained widths but must never
+  overlap it.
 - Utility commands belong in the left group and use a 36 px control height. Workflow commands
-  belong in the right group and use a 40 px control height. Responsive layouts preserve this DOM
-  and keyboard order when the groups stack.
+  belong in the right group and use a 40 px control height. Toolbars keep both groups on one row
+  while their content fits, then wrap without changing DOM or keyboard order. The compact layout
+  makes each group full width only at 720 px and below.
 - Command labels use Title Case. A command row has at most one filled primary action; supporting
   and reversible actions remain secondary or icon-only with an accessible name.
 - Knowledge has no top-level commands, so it renders no empty command row.
@@ -369,7 +372,8 @@ pre-redesign baseline.
 ### Operator action hierarchy
 
 Alerts exposes Open in Outlook on Desktop or Download Draft on Relay Web as the primary command.
-Save Image is the visible secondary command. Schedule Alarm, Alarms, History, Pin Template, and
+History is the far-left utility action. Save Image sits immediately before delivery as its visible
+secondary command in the right-aligned workflow group. Schedule Alarm, Alarms, Pin Template, and
 Reset remain available in the keyboard-accessible overflow, with existing confirmations and modal
 behavior unchanged. Optional delivery details stay collapsed until requested and summarize only
 configured routing, link, timing, and branding state.

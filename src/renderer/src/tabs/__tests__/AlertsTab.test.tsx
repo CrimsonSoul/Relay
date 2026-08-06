@@ -486,11 +486,15 @@ beforeEach(() => {
 // --- Import after mocks ---
 import { AlertsTab } from '../AlertsTab';
 
-type AlertOverflowAction = 'Schedule Alarm' | 'Alarms' | 'History' | 'Pin Template' | 'Reset';
+type AlertOverflowAction = 'Schedule Alarm' | 'Alarms' | 'Pin Template' | 'Reset';
 
 function chooseAlertAction(name: AlertOverflowAction): void {
   fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
   fireEvent.click(screen.getByRole('menuitem', { name }));
+}
+
+function openAlertHistory(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'History' }));
 }
 
 describe('AlertsTab', () => {
@@ -500,15 +504,15 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('alert-card')).toBeInTheDocument();
   });
 
-  it('shows only draft delivery and Save Image outside the overflow', () => {
+  it('places History at the far-left utility position while keeping Save Image beside delivery', () => {
     render(<AlertsTab />);
     const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
+    const actions = within(toolbar).getAllByRole('button');
 
-    expect(within(toolbar).getByRole('button', { name: 'Open in Outlook' })).toBeVisible();
-    expect(within(toolbar).getByRole('button', { name: 'Save Image' })).toBeVisible();
-    expect(within(toolbar).getByRole('button', { name: 'More alert actions' })).toBeVisible();
+    expect(
+      actions.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
+    ).toEqual(['History', 'Save Image', 'Open in Outlook', 'More alert actions']);
     expect(within(toolbar).queryByRole('button', { name: /^RESET$/i })).toBeNull();
-    expect(within(toolbar).queryByRole('button', { name: /^HISTORY$/i })).toBeNull();
     expect(within(toolbar).queryByRole('button', { name: /^SCHEDULE ALARM$/i })).toBeNull();
   });
 
@@ -538,11 +542,12 @@ describe('AlertsTab', () => {
     expect(screen.getByRole('toolbar', { name: 'Alert actions' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Alert definition' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveClass('tab-page-status');
     expect(screen.getByText('Draft · INFO')).toBeInTheDocument();
     expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
   });
 
-  it('keeps Save image in utilities and draft delivery plus overflow in workflow actions', () => {
+  it('separates far-left History from the right-aligned delivery workflow', () => {
     const { container } = render(<AlertsTab />);
 
     const heading = screen.getByRole('heading', { name: 'Operational Alert Utility' });
@@ -560,9 +565,11 @@ describe('AlertsTab', () => {
       'alerts-save-image-action',
       'tactile-button--secondary',
     );
-    expect(utility).toContainElement(screen.getByRole('button', { name: 'Save Image' }));
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'Save Image' }));
     expect(workflow).toContainElement(screen.getByRole('button', { name: 'Open in Outlook' }));
     expect(workflow).toContainElement(screen.getByRole('button', { name: 'More alert actions' }));
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'History' }));
+    expect(workflow).not.toContainElement(screen.getByRole('button', { name: 'History' }));
     expect(screen.getByRole('button', { name: 'More alert actions' })).toHaveClass(
       'tactile-button',
       'tactile-button--icon-only',
@@ -640,14 +647,14 @@ describe('AlertsTab', () => {
     expect(screen.getByText('2 of 2 required ready')).toBeInTheDocument();
   });
 
-  it('orders utility actions before workflow actions without changing focus order', () => {
+  it('keeps the visible Alert action order aligned with keyboard focus order', () => {
     render(<AlertsTab />);
     const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
     expect(
       within(toolbar)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
-    ).toEqual(['Save Image', 'Open in Outlook', 'More alert actions']);
+    ).toEqual(['History', 'Save Image', 'Open in Outlook', 'More alert actions']);
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -955,7 +962,7 @@ describe('AlertsTab', () => {
 
   it('clicking HISTORY button calls open on the modal state', () => {
     render(<AlertsTab />);
-    chooseAlertAction('History');
+    openAlertHistory();
     expect(screen.getByTestId('history-modal')).toBeInTheDocument();
   });
 
@@ -1180,13 +1187,13 @@ describe('AlertsTab', () => {
 
   it('opens history modal when HISTORY button is clicked', () => {
     render(<AlertsTab />);
-    chooseAlertAction('History');
+    openAlertHistory();
     expect(screen.getByTestId('history-modal')).toBeInTheDocument();
   });
 
   it('loads from history and updates form state', () => {
     render(<AlertsTab />);
-    chooseAlertAction('History');
+    openAlertHistory();
     fireEvent.click(screen.getByTestId('history-load'));
     expect(screen.getByTestId('card-severity')).toHaveTextContent('MAINTENANCE');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
@@ -1198,14 +1205,14 @@ describe('AlertsTab', () => {
 
   it('calls deleteHistory when delete is triggered from history modal', () => {
     render(<AlertsTab />);
-    chooseAlertAction('History');
+    openAlertHistory();
     fireEvent.click(screen.getByTestId('history-delete'));
     expect(mockDeleteHistory).toHaveBeenCalledWith('del-1');
   });
 
   it('calls clearHistory when clear is triggered from history modal', () => {
     render(<AlertsTab />);
-    chooseAlertAction('History');
+    openAlertHistory();
     fireEvent.click(screen.getByTestId('history-clear'));
     expect(mockClearHistory).toHaveBeenCalled();
   });

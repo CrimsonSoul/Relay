@@ -80,12 +80,12 @@ export const RadarTab: React.FC = () => {
         title="Dispatcher Radar"
         metadata={
           <span
-            className="radar-overall"
+            className="tab-page-status radar-overall"
             data-radar-tone={overallTone}
             role="status"
             aria-live="polite"
           >
-            <span className="radar-overall-dot" aria-hidden="true" />
+            <span className="tab-page-status__dot radar-overall-dot" aria-hidden="true" />
             {overallLabel}
           </span>
         }
@@ -95,10 +95,10 @@ export const RadarTab: React.FC = () => {
           <TactileButton
             variant="secondary"
             onClick={() => void globalThis.api?.openExternal(RADAR_URL)}
-            title="Open original Dispatcher Radar page"
-            aria-label="Open original Dispatcher Radar page"
+            title="Open Radar"
+            aria-label="Open Radar"
           >
-            Original
+            Open Radar
           </TactileButton>
           <TactileButton
             variant="secondary"

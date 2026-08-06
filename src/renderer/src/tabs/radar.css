@@ -27,19 +27,6 @@
 
 /* Every tone is mirrored by a text label in the markup, so the colour is
    reinforcement rather than the sole carrier of the state. */
-.radar-overall {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.radar-overall-dot,
 .radar-panel-dot {
   width: 9px;
   height: 9px;

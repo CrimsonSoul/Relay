@@ -1097,12 +1097,16 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
         utility: ['Reset', 'History'],
         workflow: ['Copy Recipients', 'Open Teams Draft'],
       },
-      { name: 'Alerts', utility: ['Save Image'], workflow: ['Open in Outlook'] },
+      {
+        name: 'Alerts',
+        utility: ['History'],
+        workflow: ['Save Image', 'Open in Outlook', 'More alert actions'],
+      },
       { name: 'On-Call', utility: ['Copy All', 'Export'], workflow: ['Unlocked', 'Add Card'] },
       { name: 'Knowledge', utility: [], workflow: [] },
       { name: 'Status', utility: ['Refresh'], workflow: [] },
       { name: 'Problems', utility: ['Open', 'Acknowledged', 'Refresh'], workflow: [] },
-      { name: 'Radar', utility: ['Original', 'Refresh'], workflow: [] },
+      { name: 'Radar', utility: ['Open Radar', 'Refresh'], workflow: [] },
     ] as const;
     const button = (label: string, iconOnly = false) =>
       `<button class="tactile-button tactile-button--secondary${
@@ -1112,19 +1116,43 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       const overflowMarkup = name === 'Compose' ? button('More Compose actions', true) : '';
       const workflowMarkup = workflow.length
         ? `<div class="tab-command-group tab-command-group--workflow">
-            ${workflow.map((label) => button(label)).join('')}
+            ${workflow.map((label) => button(label, label.startsWith('More '))).join('')}
             ${overflowMarkup}
           </div>`
         : '';
+      const utilityMarkup = utility.length
+        ? `<div class="tab-command-group tab-command-group--utility">
+            ${utility.map((label) => button(label, label === 'Refresh')).join('')}
+          </div>`
+        : '';
+      const groupsMarkup = `${utilityMarkup}${workflowMarkup}`;
+      const toolbarContent = ['Compose', 'On-Call'].includes(name)
+        ? `<div class="collapsible-header collapsible-header--expanded">
+            <div class="collapsible-header-right collapsible-header-right--expanded">
+              <div class="collapsible-header-actions collapsible-header-actions--expanded">
+                ${groupsMarkup}
+              </div>
+            </div>
+          </div>`
+        : groupsMarkup;
       const commandBarMarkup =
         utility.length || workflow.length
           ? `<div class="tab-command-bar" role="toolbar" aria-label="${name} actions">
-              <div class="tab-command-group tab-command-group--utility">
-                ${utility.map((label) => button(label, label === 'Refresh')).join('')}
-              </div>
-              ${workflowMarkup}
+              ${toolbarContent}
             </div>`
           : '';
+      let metadataMarkup = '12 records · Updated August 6, 2026 at 10:09 AM';
+      if (name === 'Alerts') {
+        metadataMarkup = `<span class="tab-page-status">
+          <span class="tab-page-status__dot"></span>
+          Draft · INFO
+        </span>`;
+      } else if (name === 'Radar') {
+        metadataMarkup = `<span class="tab-page-status">
+          <span class="tab-page-status__dot"></span>
+          Healthy
+        </span>`;
+      }
 
       return `<section class="tab-contract" data-tab="${name}">
         <header class="tab-page-header">
@@ -1132,13 +1160,16 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
             <div class="tab-page-header__context">${name}</div>
             <h2 class="tab-page-header__title">${name} Operational Workspace</h2>
           </div>
-          <div class="tab-page-header__meta">12 records · Updated August 6, 2026 at 10:09 AM</div>
+          <div class="tab-page-header__meta">
+            ${metadataMarkup}
+          </div>
         </header>
         ${commandBarMarkup}
         <div class="tab-contract-canvas"></div>
       </section>`;
     };
 
+    await window.setViewportSize({ width: 960, height: 900 });
     await window.setContent(`
       <style>
         ${themeCss}
@@ -1212,6 +1243,19 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       const geometry = await toolbar.evaluate((element) => ({
         clientWidth: element.clientWidth,
         scrollWidth: element.scrollWidth,
+        groupsShareRow: (() => {
+          const utility = element
+            .querySelector('.tab-command-group--utility')
+            ?.getBoundingClientRect();
+          const workflow = element
+            .querySelector('.tab-command-group--workflow')
+            ?.getBoundingClientRect();
+          return (
+            !utility ||
+            !workflow ||
+            Math.abs(utility.top + utility.height / 2 - (workflow.top + workflow.height / 2)) <= 1
+          );
+        })(),
         utilityHeights: Array.from(
           element.querySelectorAll('.tab-command-group--utility .tactile-button'),
           (button) => button.getBoundingClientRect().height,
@@ -1224,6 +1268,9 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
       expect(geometry.scrollWidth, `${tab.name} toolbar overflow`).toBeLessThanOrEqual(
         geometry.clientWidth,
       );
+      expect(geometry.groupsShareRow, `${tab.name} toolbar stacked despite available room`).toBe(
+        true,
+      );
       expect(geometry.utilityHeights.every((height) => height === 36)).toBe(true);
       expect(geometry.workflowHeights.every((height) => height === 40)).toBe(true);
     }
@@ -1231,6 +1278,58 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
     const overflow = window.getByRole('button', { name: 'More Compose actions' });
     const overflowBox = await overflow.boundingBox();
     expect([overflowBox?.width, overflowBox?.height]).toEqual([40, 40]);
+
+    const alertToolbar = window.locator('[data-tab="Alerts"] .tab-command-bar');
+    const alertUtility = alertToolbar.locator('.tab-command-group--utility');
+    const alertButtonLabels = await alertToolbar
+      .getByRole('button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
+      );
+    expect(alertButtonLabels).toEqual([
+      'History',
+      'Save Image',
+      'Open in Outlook',
+      'More alert actions',
+    ]);
+    const alertAlignment = await alertToolbar.evaluate((element) => {
+      const toolbar = element.getBoundingClientRect();
+      const utility = element.querySelector('.tab-command-group--utility')?.getBoundingClientRect();
+      const workflow = element
+        .querySelector('.tab-command-group--workflow')
+        ?.getBoundingClientRect();
+      if (!utility) throw new Error('Missing Alert utility geometry');
+      if (!workflow) throw new Error('Missing Alert workflow geometry');
+      return {
+        utilityLeft: Math.abs(toolbar.left - utility.left),
+        workflowRight: Math.abs(toolbar.right - workflow.right),
+      };
+    });
+    expect(alertAlignment.utilityLeft).toBeLessThanOrEqual(1);
+    expect(alertAlignment.workflowRight).toBeLessThanOrEqual(1);
+    await expect(alertUtility.getByRole('button', { name: 'History' })).toBeVisible();
+
+    for (const name of ['Alerts', 'Radar']) {
+      const status = window.locator(`[data-tab="${name}"] .tab-page-status`);
+      const statusGeometry = await status.evaluate((element) => {
+        const style = globalThis.getComputedStyle(element);
+        const dot = element.querySelector('.tab-page-status__dot')?.getBoundingClientRect();
+        return {
+          display: style.display,
+          padding: style.padding,
+          borderWidth: style.borderWidth,
+          dotWidth: dot?.width,
+          dotHeight: dot?.height,
+        };
+      });
+      expect(statusGeometry).toEqual({
+        display: 'flex',
+        padding: '0px',
+        borderWidth: '0px',
+        dotWidth: 8,
+        dotHeight: 8,
+      });
+    }
 
     const searchBounds = await window.locator('.search-dropdown').evaluate((dropdown) => {
       const bounds = dropdown.getBoundingClientRect();
@@ -1263,6 +1362,7 @@ test('tab chrome toolbar geometry and Header Search actions stay aligned', async
           clientWidth: element.clientWidth,
           scrollWidth: element.scrollWidth,
           utilityPrecedesWorkflow:
+            !utility ||
             !workflow ||
             Boolean(
               utility?.compareDocumentPosition(workflow) &
