@@ -107,7 +107,7 @@
   gap: var(--space-4);
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1320px) {
   .tab-command-bar,
   .tab-command-bar .collapsible-header-actions {
     align-items: stretch;

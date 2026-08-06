@@ -120,6 +120,7 @@ type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
 const COMPACT_TABS = [
   { id: 'sidebar-compose', breadcrumb: 'Compose', shot: 'compose-compact.png' },
   { id: 'sidebar-alerts', breadcrumb: 'Alerts', shot: 'alerts-compact.png' },
+  { id: 'sidebar-on-call', breadcrumb: 'On-Call', shot: 'oncall-compact.png' },
   { id: 'sidebar-status', breadcrumb: 'Service Status', shot: 'cloud-status-compact.png' },
   {
     id: 'sidebar-problems',
@@ -127,6 +128,7 @@ const COMPACT_TABS = [
     shot: 'dynatrace-problems-compact.png',
   },
   { id: 'sidebar-knowledge', breadcrumb: 'Knowledge', shot: 'knowledge-compact.png' },
+  { id: 'sidebar-radar', breadcrumb: 'Dispatcher Radar', shot: 'radar-compact.png' },
   { id: 'sidebar-settings', breadcrumb: 'Settings', shot: 'settings-compact.png' },
 ] as const;
 
@@ -137,6 +139,49 @@ const resizeMainWindow = async (electronApp: ElectronApp, width: number, height:
     },
     { width, height },
   );
+};
+
+const setApplicationZoom = async (electronApp: ElectronApp, factor: number) => {
+  await electronApp.evaluate(({ BrowserWindow }, nextFactor) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.setZoomFactor(nextFactor);
+  }, factor);
+  await expect
+    .poll(() =>
+      electronApp.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor(),
+      ),
+    )
+    .toBe(factor);
+};
+
+const expectTopLevelChrome = async (window: Page, hasToolbar: boolean) => {
+  const activePanel = window.locator('.tab-panel--active');
+  await expect(activePanel.locator('.tab-page-header')).toBeVisible();
+  const toolbar = activePanel.locator('.tab-command-bar');
+  if (!hasToolbar) {
+    await expect(toolbar).toHaveCount(0);
+    return;
+  }
+
+  await expect(toolbar).toHaveCount(1);
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar).toHaveAttribute('aria-label', /\S/u);
+  await expect
+    .poll(() => toolbar.evaluate((element) => element.scrollWidth - element.clientWidth))
+    .toBeLessThanOrEqual(1);
+  await expect
+    .poll(() =>
+      activePanel.evaluate((panel) => {
+        const toolbar = panel.querySelector('.tab-command-bar');
+        if (!(toolbar instanceof globalThis.HTMLElement)) return false;
+        const panelBounds = panel.getBoundingClientRect();
+        return Array.from(toolbar.querySelectorAll('button')).every((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.left >= panelBounds.left - 1 && rect.right <= panelBounds.right + 1;
+        });
+      }),
+    )
+    .toBe(true);
 };
 
 const expectCompactComposeActionsAligned = async (window: Page) => {
@@ -445,13 +490,15 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Compose ---
       await goToTab(window, 'sidebar-compose', 'Compose');
+      await expectTopLevelChrome(window, true);
       await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
       await shoot(window, 'compose.png');
 
       if (CAPTURE_ON_CALL) {
         // --- On-Call ---
         await goToTab(window, 'sidebar-on-call', 'On-Call');
-        await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
+        await expectTopLevelChrome(window, true);
+        await expect(window.getByRole('button', { name: 'Add Card' })).toBeVisible();
         await expect(
           window.locator('.team-card-body', { hasText: 'Database Reliability' }),
         ).toBeVisible();
@@ -468,8 +515,17 @@ test.describe('Redesign screenshot harness', () => {
         await setOnCallFontScaleViaStorage(window, 100);
         await expect(window.locator('.oncall-font-scale-value')).toContainText('100%');
 
+        // Browser zoom contract: the busiest command row must stack without clipping.
+        try {
+          await setApplicationZoom(electronApp, 1.5);
+          await expectTopLevelChrome(window, true);
+          await shoot(window, 'oncall-browser-zoom-150.png');
+        } finally {
+          await setApplicationZoom(electronApp, 1);
+        }
+
         // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
-        await window.getByRole('button', { name: 'COPY ALL' }).click();
+        await window.getByRole('button', { name: 'Copy All' }).click();
         await expect(window.locator('.toast')).toBeVisible();
         await window.waitForTimeout(400);
         await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
@@ -477,6 +533,7 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Knowledge workspace ---
       await goToTab(window, 'sidebar-knowledge', 'Knowledge');
+      await expectTopLevelChrome(window, false);
       await expect(window.getByRole('button', { name: /Open Wiki/ })).toBeVisible();
       await expect(window.getByRole('button', { name: /Open Contacts/ })).toBeVisible();
       await expect(window.getByRole('button', { name: /Open Servers/ })).toBeVisible();
@@ -503,6 +560,7 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Alerts ---
       await goToTab(window, 'sidebar-alerts', 'Alerts');
+      await expectTopLevelChrome(window, true);
       await shoot(window, 'alerts.png');
 
       // --- Alert history modal (seeded with one ISSUE entry) ---
@@ -516,14 +574,22 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Cloud / Service Status ---
       await goToTab(window, 'sidebar-status', 'Service Status');
+      await expectTopLevelChrome(window, true);
       await shoot(window, 'cloud-status.png');
 
       // --- Dynatrace Problems ---
       await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+      await expectTopLevelChrome(window, true);
       await expect(window.locator('.tab-panel--active')).toContainText(
         'Checkout service availability below SLO',
       );
       await shoot(window, 'dynatrace-problems.png');
+
+      // --- Dispatcher Radar ---
+      await goToTab(window, 'sidebar-radar', 'Dispatcher Radar');
+      await expectTopLevelChrome(window, true);
+      await expect(window.getByRole('heading', { name: 'Dispatcher Radar' })).toBeVisible();
+      await shoot(window, 'radar.png');
 
       // --- Settings tab ---
       await goToTab(window, 'sidebar-settings', 'Settings');
