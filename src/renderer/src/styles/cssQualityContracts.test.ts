@@ -156,31 +156,6 @@ describe('CSS zero-warning contracts', () => {
   it('keeps each formerly duplicated selector in its original cascade position and order', () => {
     const contracts = [
       {
-        source: cssSources.cloudStatus,
-        selector: '.cloud-status__refresh',
-        location: {
-          previousSibling: '.cloud-status__meta > span',
-          nextSibling: '.cloud-status__refresh:hover:not(:disabled)',
-        },
-        declarations: [
-          ['display', 'inline-flex'],
-          ['width', '40px'],
-          ['height', '40px'],
-          ['align-items', 'center'],
-          ['justify-content', 'center'],
-          ['padding', '0'],
-          ['border', '1px solid transparent'],
-          ['border-radius', '2px'],
-          ['background', 'transparent'],
-          ['color', 'var(--color-text-secondary)'],
-          ['cursor', 'pointer'],
-          [
-            'transition',
-            'border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast)',
-          ],
-        ],
-      },
-      {
         source: cssSources.knowledge,
         selector: '.knowledge-page__text-layer',
         location: {
@@ -279,6 +254,20 @@ describe('CSS zero-warning contracts', () => {
         'stable',
       );
     }
+  });
+
+  it('keeps Header Search actions aligned and the clear target usable', () => {
+    const resultRow = exactRule(cssSources.modals, '.search-dropdown-result-row');
+    const hitbox = exactRule(cssSources.modals, '.search-dropdown-hitbox');
+    const secondaryAction = exactRule(cssSources.modals, '.search-dropdown-secondary-action');
+    const clearButton = exactRule(cssSources.components, '.header-search-bar-clear');
+
+    expect(declarationValue(resultRow, 'position')).toBe('relative');
+    expect(declarationValue(hitbox, 'display')).toBe('grid');
+    expect(declarationValue(hitbox, 'grid-template-columns')).toContain('minmax(0, 1fr)');
+    expect(declarationValue(secondaryAction, 'position')).toBe('absolute');
+    expect(declarationValue(clearButton, 'width')).toBe('32px');
+    expect(declarationValue(clearButton, 'height')).toBe('32px');
   });
 
   it('preserves emergency wrapping with standards-based overflow-wrap declarations', () => {

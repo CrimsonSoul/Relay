@@ -1664,22 +1664,30 @@ body.modal-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  background: var(--color-border-strong);
-  border: none;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 2px;
   color: var(--color-text-tertiary);
   cursor: pointer;
   padding: 0;
   transition:
     background 0.1s ease,
+    border-color 0.1s ease,
     color 0.1s ease;
 }
 
 .header-search-bar-clear:hover {
-  background: var(--color-text-tertiary);
-  color: var(--color-bg-app);
+  background: var(--color-hover-overlay);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.header-search-bar-clear:focus-visible {
+  border-color: var(--accent-bright);
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 1px;
 }
 
 .header-search-bar-shortcut {

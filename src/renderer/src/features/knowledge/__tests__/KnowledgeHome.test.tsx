@@ -27,17 +27,13 @@ describe('KnowledgeHome', () => {
     render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={onOpen} />);
 
     expect(screen.getAllByRole('heading')).toHaveLength(1);
-    expect(
-      screen.getByRole('heading', {
-        name: 'Get connected to the people, systems, and guidance you need — all in one place.',
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Knowledge workspace')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Open a directory below. Each workspace stays focused while sharing one dependable place in Relay.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Knowledge' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '24 Wiki documents · 6 contacts · 3 servers',
+    );
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
 
     const buttons = screen.getAllByRole('button');
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -49,6 +45,12 @@ describe('KnowledgeHome', () => {
     buttons.forEach((button) => expect(button).toHaveClass('knowledge-home__destination'));
     buttons[0]?.focus();
     expect(buttons[0]).toHaveFocus();
+  });
+
+  it('uses native output semantics for the header count summary', () => {
+    render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
+
+    expect(screen.getByRole('status')).toHaveProperty('tagName', 'OUTPUT');
   });
 
   it('keeps full destination interfaces out of the splash launchers', () => {

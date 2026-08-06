@@ -465,77 +465,21 @@
   gap: var(--space-4);
 }
 
-.assembler-page-header,
-.assembler-page-meta,
-.assembler-command-group,
 .assembler-pane-header {
   display: flex;
   align-items: center;
-}
-
-.assembler-page-header,
-.assembler-pane-header {
   justify-content: space-between;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.assembler-page-header {
-  gap: var(--space-4);
-}
-
-.assembler-page-context,
 .assembler-pane-heading > span:first-child {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-widest);
   text-transform: uppercase;
-}
-
-.assembler-page-title {
-  margin: var(--space-1) 0 0;
-  color: var(--color-text-primary);
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-}
-
-.assembler-page-meta {
-  gap: var(--space-2);
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
-  font-size: var(--text-2xs);
-  white-space: nowrap;
-}
-
-.assembler-command-bar .collapsible-header {
-  padding: 0;
-  border-bottom: 0;
-}
-
-.assembler-command-bar .collapsible-header-actions {
-  width: 100%;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.assembler-command-group {
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.assembler-command-group--workflow {
-  justify-content: flex-end;
-  gap: var(--space-4);
-}
-
-.assembler-utility-action.tactile-button {
-  height: 36px;
-  padding: 0 var(--space-3);
-  gap: var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.02em;
 }
 
 .assembler-layout {
@@ -561,12 +505,6 @@
 
 .assembler-groups-pane .assembler-sidebar-panel {
   border-right: 0;
-}
-
-.assembler-pane-header {
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .assembler-pane-heading,
@@ -828,15 +766,6 @@
 }
 
 @media (max-width: 1120px) {
-  .assembler-command-bar .collapsible-header-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .assembler-command-group--workflow {
-    justify-content: flex-start;
-  }
-
   /* Keep the Compose workspace intact after the legacy responsive rules load. */
   .assembler-tab .assembler-layout {
     grid-template-columns: 280px minmax(0, 1fr);
@@ -932,11 +861,6 @@
 }
 
 @media (max-width: 620px) {
-  .assembler-tab .assembler-page-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .assembler-pane-header,
   .assembler-pane-tools {
     align-items: flex-start;

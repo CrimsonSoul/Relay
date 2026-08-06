@@ -32,10 +32,7 @@ function expectFont(source: string, selector: string, token: string): void {
 }
 
 describe('Knowledge and directory semantic typography', () => {
-  it('uses the dual-distance scale on the splash and navigation', () => {
-    expectFont(workspaceCss, '.knowledge-home__kicker', '2xs');
-    expectFont(workspaceCss, '.knowledge-home__header h1', 'display');
-    expectFont(workspaceCss, '.knowledge-home__header p', 'base');
+  it('uses the dual-distance scale on the destination launchers and navigation', () => {
     expectFont(workspaceCss, '.knowledge-home__destination-title', 'lg');
     expectFont(workspaceCss, '.knowledge-home__destination-description', 'sm');
     expectFont(workspaceCss, '.knowledge-home__destination-meta', '2xs');

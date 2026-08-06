@@ -37,6 +37,7 @@ import {
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
 import { getRelayRuntime, hasRelayCapability } from '../runtime/relayRuntime';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 
 const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
@@ -617,19 +618,70 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
 
   return (
     <div className="alerts-tab">
-      <header className="alerts-page-header">
-        <div>
-          <div className="alerts-page-context">Alerts</div>
-          <h2 className="alerts-page-title">Operational Alert Utility</h2>
-        </div>
-        <div className="alerts-page-meta" role="status" aria-live="polite">
-          <span className="alerts-page-state-dot" aria-hidden="true" />
-          <span>Draft · {severity}</span>
-        </div>
-      </header>
+      <TabPageHeader
+        context="Alerts"
+        title="Operational Alert Utility"
+        metadata={
+          <span className="tab-page-status" role="status" aria-live="polite">
+            <span className="tab-page-status__dot alerts-page-state-dot" aria-hidden="true" />
+            <span>Draft · {severity}</span>
+          </span>
+        }
+      />
 
-      <div className="alerts-command-bar" role="toolbar" aria-label="Alert actions">
-        <div className="alerts-command-actions">
+      <TabCommandBar ariaLabel="Alert actions">
+        <TabCommandGroup kind="utility">
+          <TactileButton
+            variant="secondary"
+            onClick={historyModal.open}
+            disabled={isCapturing}
+            tooltip="Open alert history"
+            icon={
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            }
+          >
+            History
+          </TactileButton>
+        </TabCommandGroup>
+        <TabCommandGroup kind="workflow">
+          <TactileButton
+            variant="secondary"
+            className="alerts-save-image-action"
+            onClick={handleSaveImage}
+            loading={isCapturing}
+            tooltip="Save a high-resolution PNG image"
+            icon={
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            }
+          >
+            Save Image
+          </TactileButton>
           <TactileButton
             variant="primary"
             onClick={() => void handleOpenOutlookDraft()}
@@ -655,43 +707,17 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
               </svg>
             }
           >
-            {isWebRuntime ? 'DOWNLOAD DRAFT' : 'OPEN IN OUTLOOK'}
-          </TactileButton>
-          <TactileButton
-            variant="secondary"
-            className="alerts-save-image-action"
-            onClick={handleSaveImage}
-            loading={isCapturing}
-            tooltip="Save a high-resolution PNG image"
-            icon={
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-            }
-          >
-            SAVE IMAGE
+            {isWebRuntime ? 'Download Draft' : 'Open in Outlook'}
           </TactileButton>
           <AlertActionsMenu
             captureBusy={isCapturing}
             onScheduleAlarm={openNewReminderModal}
             onOpenAlarms={reminderManagerModal.open}
-            onOpenHistory={historyModal.open}
             onPinTemplate={handlePinTemplate}
             onReset={handleClear}
           />
-        </div>
-      </div>
+        </TabCommandGroup>
+      </TabCommandBar>
 
       {nextReminder && (
         <button

@@ -31,6 +31,7 @@ import { useOnCallBoardLayout } from '../hooks/useOnCallBoardLayout';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import type { BoardSettingsState } from '../hooks/useAppData';
 import { DEFAULT_ON_CALL_FONT_SCALE } from '../theme/onCallDisplay';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
@@ -252,22 +253,22 @@ export const PersonnelTab: React.FC<{
 
   return (
     <div ref={scrollContainerRef} className="personnel-tab-root" style={boardStyle}>
-      <header className="oncall-page-header">
-        <div>
-          <div className="oncall-page-context">On-Call</div>
-          <h2 className="oncall-page-title">On-Call Coverage</h2>
-        </div>
-        <div className="oncall-page-meta" role="status" aria-live="polite">
-          <span className="oncall-page-state-dot" aria-hidden="true" />
-          <span>{weekRange}</span>
-          <span aria-hidden="true">·</span>
-          <span>Last updated {lastUpdatedLabel}</span>
-        </div>
-      </header>
+      <TabPageHeader
+        context="On-Call"
+        title="On-Call Coverage"
+        metadata={
+          <span className="oncall-page-meta" role="status" aria-live="polite">
+            <span className="oncall-page-state-dot" aria-hidden="true" />
+            <span>{weekRange}</span>
+            <span aria-hidden="true">·</span>
+            <span>Last updated {lastUpdatedLabel}</span>
+          </span>
+        }
+      />
 
-      <div className="oncall-command-bar" role="toolbar" aria-label="On-call actions">
+      <TabCommandBar ariaLabel="On-call actions" className="oncall-command-bar">
         <CollapsibleHeader isCollapsed={isCollapsed}>
-          <div className="oncall-command-group oncall-command-group--utility">
+          <TabCommandGroup kind="utility">
             {renderAlerts()}
             <OnCallDisplayControl
               value={effectiveOnCallFontScale}
@@ -296,7 +297,7 @@ export const PersonnelTab: React.FC<{
                 </svg>
               }
             >
-              COPY ALL
+              Copy All
             </TactileButton>
             <TactileButton
               variant="secondary"
@@ -322,10 +323,10 @@ export const PersonnelTab: React.FC<{
                 </svg>
               }
             >
-              EXPORT
+              Export
             </TactileButton>
-          </div>
-          <div className="oncall-command-group oncall-command-group--workflow">
+          </TabCommandGroup>
+          <TabCommandGroup kind="workflow">
             <TactileButton
               variant="secondary"
               onClick={toggleBoardLock}
@@ -374,7 +375,7 @@ export const PersonnelTab: React.FC<{
                 )
               }
             >
-              {bs.effectiveLocked ? 'LOCKED' : 'UNLOCKED'}
+              {bs.effectiveLocked ? 'Locked' : 'Unlocked'}
             </TactileButton>
             <TactileButton
               variant="primary"
@@ -398,11 +399,11 @@ export const PersonnelTab: React.FC<{
                 </svg>
               }
             >
-              ADD CARD
+              Add Card
             </TactileButton>
-          </div>
+          </TabCommandGroup>
         </CollapsibleHeader>
-      </div>
+      </TabCommandBar>
 
       <DndContext
         id="personnel-board-dnd"

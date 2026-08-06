@@ -113,9 +113,6 @@ describe('AssemblerSidebar', () => {
     expect(css).toMatch(
       /@media \(max-width: 900px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-layout\s*\{[\s\S]*?grid-template-columns: 1fr;/,
     );
-    expect(css).toMatch(
-      /@media \(max-width: 620px\)\s*\{[\s\S]*?\.assembler-tab \.assembler-page-header\s*\{[\s\S]*?flex-direction: column;/,
-    );
   });
 
   it('sorts groups alphabetically', () => {

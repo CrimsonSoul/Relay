@@ -4,6 +4,7 @@ import { RADAR_URL } from '@shared/radar';
 import { TactileButton } from '../components/TactileButton';
 import { useRadarSnapshot } from '../hooks/useRadarSnapshot';
 import { getRelayRuntime } from '../runtime/relayRuntime';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 import './radar.css';
 
 /**
@@ -74,51 +75,58 @@ export const RadarTab: React.FC = () => {
 
   return (
     <div className="radar-tab">
-      <header className="radar-tab-header">
-        <div>
-          <div className="radar-tab-context">RADAR</div>
-          <h2 className="radar-tab-title">Dispatcher Radar</h2>
-        </div>
-        <div className="radar-tab-actions">
-          <span className="radar-overall" data-radar-tone={overallTone}>
-            <span className="radar-overall-dot" aria-hidden="true" />
+      <TabPageHeader
+        context="Radar"
+        title="Dispatcher Radar"
+        metadata={
+          <span
+            className="tab-page-status radar-overall"
+            data-radar-tone={overallTone}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="tab-page-status__dot radar-overall-dot" aria-hidden="true" />
             {overallLabel}
           </span>
+        }
+      />
+      <TabCommandBar ariaLabel="Radar actions">
+        <TabCommandGroup kind="utility">
           <TactileButton
             variant="secondary"
-            className="radar-header-action"
             onClick={() => void globalThis.api?.openExternal(RADAR_URL)}
-            title="Open original Dispatcher Radar page"
-            aria-label="Open original Dispatcher Radar page"
+            title="Open Radar"
+            aria-label="Open Radar"
           >
-            ORIGINAL
+            Open Radar
           </TactileButton>
-          <button
-            type="button"
+          <TactileButton
+            variant="secondary"
             className="radar-refresh"
             onClick={refresh}
             disabled={refreshing}
             aria-label="Refresh Radar now"
-          >
-            <svg
-              className={refreshing ? 'radar-refresh-icon--spinning' : ''}
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
-            </svg>
-          </button>
-        </div>
-      </header>
+            icon={
+              <svg
+                className={refreshing ? 'radar-refresh-icon--spinning' : ''}
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+              </svg>
+            }
+          />
+        </TabCommandGroup>
+      </TabCommandBar>
 
       {/*
         <output> carries an implicit status role and is a live region, so a

@@ -1,4 +1,5 @@
 import { useCallback, type MouseEvent } from 'react';
+import { TabPageHeader } from '../../components/tab-chrome/TabChrome';
 import './knowledgeWorkspace.css';
 
 export type KnowledgeHomeDestination = 'wiki' | 'contacts' | 'servers';
@@ -64,6 +65,15 @@ function formatCount(count: number | null, noun: string): string {
   return `${count} ${countNoun}`;
 }
 
+function formatHeaderCount(count: number | null, noun: string, qualifier = ''): string {
+  if (count === null) {
+    const label = (qualifier || noun).trim();
+    return `${label.charAt(0).toUpperCase()}${label.slice(1)} count unavailable`;
+  }
+  const countNoun = count === 1 ? noun : `${noun}s`;
+  return `${count} ${qualifier}${countNoun}`;
+}
+
 function countForDestination(
   destination: KnowledgeHomeDestination,
   wikiCount: number | null,
@@ -124,19 +134,21 @@ export function KnowledgeHome({
     },
     [onOpen],
   );
+  const countSummary = [
+    formatHeaderCount(wikiCount, 'document', 'Wiki '),
+    formatHeaderCount(contactCount, 'contact'),
+    formatHeaderCount(serverCount, 'server'),
+  ].join(' · ');
 
   return (
     <section className="knowledge-home" aria-labelledby="knowledge-home-title">
-      <header className="knowledge-home__header">
-        <span className="knowledge-home__kicker">Knowledge workspace</span>
-        <h1 id="knowledge-home-title">
-          Get connected to the people, systems, and guidance you need — all in one place.
-        </h1>
-        <p>
-          Open a directory below. Each workspace stays focused while sharing one dependable place in
-          Relay.
-        </p>
-      </header>
+      <TabPageHeader
+        context="Knowledge"
+        title="Knowledge"
+        headingId="knowledge-home-title"
+        headingLevel={1}
+        metadata={<output>{countSummary}</output>}
+      />
 
       <div className="knowledge-home__destinations">
         {DESTINATIONS.map((destination) => {

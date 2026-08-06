@@ -19,76 +19,6 @@
   container-type: inline-size;
 }
 
-.radar-tab-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.radar-tab-context {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--color-text-quaternary);
-}
-
-.radar-tab-title {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.radar-tab-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.radar-header-action.tactile-button {
-  height: 40px;
-  padding: 0 var(--space-3);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
-.radar-refresh {
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    border-color var(--transition-fast),
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.radar-refresh:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-card-hover);
-  color: var(--accent-bright);
-}
-
-.radar-refresh:focus-visible {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-}
-
-.radar-refresh:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
 .radar-refresh-icon--spinning {
   animation: cloud-status-spin 1s linear infinite;
 }
@@ -97,19 +27,6 @@
 
 /* Every tone is mirrored by a text label in the markup, so the colour is
    reinforcement rather than the sole carrier of the state. */
-.radar-overall {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.radar-overall-dot,
 .radar-panel-dot {
   width: 9px;
   height: 9px;
@@ -424,14 +341,14 @@
 }
 
 @container radar (max-width: 460px) {
-  .radar-tab-header,
-  .radar-tab-actions {
+  .radar-tab .tab-page-header,
+  .radar-tab .tab-command-bar {
     align-items: flex-start;
+    flex-direction: column;
   }
 
-  .radar-tab-actions {
+  .radar-tab .tab-command-group {
     width: 100%;
-    justify-content: space-between;
   }
 
   .radar-health-rail {

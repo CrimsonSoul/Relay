@@ -29,11 +29,15 @@ const responsiveCss = readFileSync(
   join(testDirectory, '../../src/renderer/src/styles/responsive.css'),
   'utf8',
 );
-const radarCss = readFileSync(join(testDirectory, '../../src/renderer/src/tabs/radar.css'), 'utf8');
-const dynatraceProblemsCss = readFileSync(
-  join(testDirectory, '../../src/renderer/src/tabs/dynatrace-problems.css'),
+const tabChromeCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/styles/tab-chrome.css'),
   'utf8',
 );
+const modalsCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/styles/modals.css'),
+  'utf8',
+);
+const radarCss = readFileSync(join(testDirectory, '../../src/renderer/src/tabs/radar.css'), 'utf8');
 const scrollCss = [
   'components/directory/directory.css',
   'components/oncall/oncall.css',
@@ -1082,86 +1086,317 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
   }
 });
 
-test('Radar refresh matches the Problems header control and source action stays compact', async () => {
+test('tab chrome toolbar geometry and Header Search actions stay aligned', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
   try {
+    const tabs = [
+      {
+        name: 'Compose',
+        utility: ['Reset', 'History'],
+        workflow: ['Copy Recipients', 'Open Teams Draft'],
+      },
+      {
+        name: 'Alerts',
+        utility: ['History'],
+        workflow: ['Save Image', 'Open in Outlook', 'More alert actions'],
+      },
+      { name: 'On-Call', utility: ['Copy All', 'Export'], workflow: ['Unlocked', 'Add Card'] },
+      { name: 'Knowledge', utility: [], workflow: [] },
+      { name: 'Status', utility: ['Refresh'], workflow: [] },
+      { name: 'Problems', utility: ['Open', 'Acknowledged', 'Refresh'], workflow: [] },
+      { name: 'Radar', utility: ['Open Radar', 'Refresh'], workflow: [] },
+    ] as const;
+    const button = (label: string, iconOnly = false) =>
+      `<button class="tactile-button tactile-button--secondary${
+        iconOnly ? ' tactile-button--icon-only' : ''
+      }" type="button" aria-label="${label}">${iconOnly ? '<svg></svg>' : label}</button>`;
+    const tabMarkup = ({ name, utility, workflow }: (typeof tabs)[number]): string => {
+      const overflowMarkup = name === 'Compose' ? button('More Compose actions', true) : '';
+      const workflowMarkup = workflow.length
+        ? `<div class="tab-command-group tab-command-group--workflow">
+            ${workflow.map((label) => button(label, label.startsWith('More '))).join('')}
+            ${overflowMarkup}
+          </div>`
+        : '';
+      const utilityMarkup = utility.length
+        ? `<div class="tab-command-group tab-command-group--utility">
+            ${utility.map((label) => button(label, label === 'Refresh')).join('')}
+          </div>`
+        : '';
+      const groupsMarkup = `${utilityMarkup}${workflowMarkup}`;
+      const toolbarContent = ['Compose', 'On-Call'].includes(name)
+        ? `<div class="collapsible-header collapsible-header--expanded">
+            <div class="collapsible-header-right collapsible-header-right--expanded">
+              <div class="collapsible-header-actions collapsible-header-actions--expanded">
+                ${groupsMarkup}
+              </div>
+            </div>
+          </div>`
+        : groupsMarkup;
+      const commandBarMarkup =
+        utility.length || workflow.length
+          ? `<div class="tab-command-bar" role="toolbar" aria-label="${name} actions">
+              ${toolbarContent}
+            </div>`
+          : '';
+      let metadataMarkup = '12 records · Updated August 6, 2026 at 10:09 AM';
+      if (name === 'Alerts') {
+        metadataMarkup = `<span class="tab-page-status">
+          <span class="tab-page-status__dot"></span>
+          Draft · INFO
+        </span>`;
+      } else if (name === 'Radar') {
+        metadataMarkup = `<span class="tab-page-status">
+          <span class="tab-page-status__dot"></span>
+          Healthy
+        </span>`;
+      }
+
+      return `<section class="tab-contract" data-tab="${name}">
+        <header class="tab-page-header">
+          <div class="tab-page-header__identity">
+            <div class="tab-page-header__context">${name}</div>
+            <h2 class="tab-page-header__title">${name} Operational Workspace</h2>
+          </div>
+          <div class="tab-page-header__meta">
+            ${metadataMarkup}
+          </div>
+        </header>
+        ${commandBarMarkup}
+        <div class="tab-contract-canvas"></div>
+      </section>`;
+    };
+
+    await window.setViewportSize({ width: 960, height: 900 });
     await window.setContent(`
       <style>
         ${themeCss}
         ${componentsCss}
-        ${radarCss}
-        ${dynatraceProblemsCss}
-        html, body { margin: 0; }
+        ${tabChromeCss}
+        ${modalsCss}
+        html, body { margin: 0; background: var(--color-bg-app); color: var(--color-text-primary); }
+        .tab-contract-host { display: grid; gap: 24px; padding: 24px; }
+        .tab-contract { display: grid; width: min(920px, calc(100vw - 48px)); gap: 16px; }
+        .tab-contract-canvas { min-height: 20px; border-top: 1px solid var(--color-border); }
+        .search-contract { width: min(540px, calc(100vw - 48px)); }
+        .search-dropdown { position: relative; width: 100%; }
       </style>
-      <div class="radar-tab">
-        <header class="radar-tab-header">
-          <div>
-            <div class="radar-tab-context">RADAR</div>
-            <h2 class="radar-tab-title">Dispatcher Radar</h2>
+      <main class="tab-contract-host">
+        ${tabs.map(tabMarkup).join('')}
+
+        <section class="search-contract">
+          <div class="search-dropdown">
+            <ul class="search-dropdown-results" role="listbox">
+              <li class="search-dropdown-item is-selected" role="option" aria-selected="true">
+                <div class="search-dropdown-result-row has-secondary-action">
+                  <button class="search-dropdown-hitbox" type="button">
+                    <span class="search-dropdown-result-icon">A</span>
+                    <span class="search-dropdown-result-info">
+                      <span class="search-dropdown-result-title">Andrew Park With A Long Dispatcher Name</span>
+                      <span class="search-dropdown-result-subtitle">andrew.park@example.com</span>
+                    </span>
+                    <span class="search-dropdown-action-rail" aria-hidden="true">
+                      <span class="search-dropdown-result-verb">Open</span>
+                    </span>
+                  </button>
+                  <button class="search-dropdown-secondary-action" type="button" aria-label="Add Andrew Park to bridge">
+                    + Bridge
+                  </button>
+                </div>
+              </li>
+            </ul>
           </div>
-          <div class="radar-tab-actions">
-            <button
-              class="tactile-button tactile-button--secondary tactile-button--md radar-header-action"
-              type="button"
-            >
-              ORIGINAL
-            </button>
-            <button
-              class="radar-refresh"
-              type="button"
-              aria-label="Refresh Radar now"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24"></svg>
-            </button>
-          </div>
-        </header>
-      </div>
-      <div class="dt-problems__sync-meta">
-        <button class="dt-problems__refresh" type="button" aria-label="Reference refresh">
-          <svg width="20" height="20" viewBox="0 0 24 24"></svg>
-        </button>
-      </div>
+        </section>
+      </main>
     `);
 
-    const openOriginal = window.locator('.radar-header-action');
-    const radarRefresh = window.locator('.radar-refresh');
-    const problemsRefresh = window.locator('.dt-problems__refresh');
-    await expect(openOriginal).toHaveCount(1);
-    await expect(radarRefresh).toHaveCount(1);
-    const [openBox, refreshBox] = await Promise.all([
-      openOriginal.boundingBox(),
-      radarRefresh.boundingBox(),
-    ]);
-    expect([openBox?.height, refreshBox?.width, refreshBox?.height]).toEqual([40, 40, 40]);
-    expect(openBox?.width).toBeLessThanOrEqual(96);
+    for (const tab of tabs) {
+      const section = window.locator(`[data-tab="${tab.name}"]`);
+      const header = section.locator('.tab-page-header');
+      await expect(header).toBeVisible();
 
-    const comparableStyle = (locator: typeof radarRefresh) =>
-      locator.evaluate((element) => {
-        const style = globalThis.getComputedStyle(element);
+      const headerGeometry = await header.evaluate((element) => {
+        const title = element.querySelector('.tab-page-header__title')?.getBoundingClientRect();
+        const meta = element.querySelector('.tab-page-header__meta')?.getBoundingClientRect();
+        if (!title || !meta) throw new Error('Missing shared header geometry');
         return {
-          alignItems: style.alignItems,
-          backgroundColor: style.backgroundColor,
-          borderRadius: style.borderRadius,
-          borderTopColor: style.borderTopColor,
-          display: style.display,
-          justifyContent: style.justifyContent,
-          padding: style.padding,
+          overlaps: !(
+            title.right <= meta.left ||
+            meta.right <= title.left ||
+            title.bottom <= meta.top ||
+            meta.bottom <= title.top
+          ),
         };
       });
-    const [radarStyle, problemsStyle] = await Promise.all([
-      comparableStyle(radarRefresh),
-      comparableStyle(problemsRefresh),
-    ]);
-    expect(radarStyle).toEqual(problemsStyle);
+      expect(headerGeometry.overlaps, `${tab.name} title and metadata must not overlap`).toBe(
+        false,
+      );
 
-    expect(
-      await radarRefresh.locator('svg').evaluate((icon) => ({
-        height: icon.getBoundingClientRect().height,
-        width: icon.getBoundingClientRect().width,
-      })),
-    ).toEqual({ height: 20, width: 20 });
+      const toolbar = section.getByRole('toolbar', { name: `${tab.name} actions` });
+      if (tab.name === 'Knowledge') {
+        await expect(toolbar).toHaveCount(0);
+        continue;
+      }
+      await expect(toolbar).toBeVisible();
+      const geometry = await toolbar.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        groupsShareRow: (() => {
+          const utility = element
+            .querySelector('.tab-command-group--utility')
+            ?.getBoundingClientRect();
+          const workflow = element
+            .querySelector('.tab-command-group--workflow')
+            ?.getBoundingClientRect();
+          return (
+            !utility ||
+            !workflow ||
+            Math.abs(utility.top + utility.height / 2 - (workflow.top + workflow.height / 2)) <= 1
+          );
+        })(),
+        utilityHeights: Array.from(
+          element.querySelectorAll('.tab-command-group--utility .tactile-button'),
+          (button) => button.getBoundingClientRect().height,
+        ),
+        workflowHeights: Array.from(
+          element.querySelectorAll('.tab-command-group--workflow .tactile-button'),
+          (button) => button.getBoundingClientRect().height,
+        ),
+      }));
+      expect(geometry.scrollWidth, `${tab.name} toolbar overflow`).toBeLessThanOrEqual(
+        geometry.clientWidth,
+      );
+      expect(geometry.groupsShareRow, `${tab.name} toolbar stacked despite available room`).toBe(
+        true,
+      );
+      expect(geometry.utilityHeights, `${tab.name} utility button count`).toHaveLength(
+        tab.utility.length,
+      );
+      expect(geometry.utilityHeights.every((height) => height === 36)).toBe(true);
+      const expectedWorkflowCount = tab.workflow.length + (tab.name === 'Compose' ? 1 : 0);
+      expect(geometry.workflowHeights, `${tab.name} workflow button count`).toHaveLength(
+        expectedWorkflowCount,
+      );
+      expect(geometry.workflowHeights.every((height) => height === 40)).toBe(true);
+    }
+
+    const composeToolbar = window.getByRole('toolbar', { name: 'Compose actions' });
+    const composeGroups = composeToolbar.locator('.tab-command-group');
+    await expect(composeGroups).toHaveCount(2);
+    await expect(composeToolbar).toHaveCSS('flex-wrap', 'nowrap');
+    for (const group of await composeGroups.all()) {
+      await expect(group).toHaveCSS('flex-wrap', 'nowrap');
+    }
+
+    await window.setViewportSize({ width: 700, height: 900 });
+    await expect(composeToolbar).toHaveCSS('flex-wrap', 'wrap');
+    for (const group of await composeGroups.all()) {
+      await expect(group).toHaveCSS('flex-wrap', 'wrap');
+    }
+
+    const overflow = window.getByRole('button', { name: 'More Compose actions' });
+    const overflowBox = await overflow.boundingBox();
+    expect([overflowBox?.width, overflowBox?.height]).toEqual([40, 40]);
+
+    const alertToolbar = window.locator('[data-tab="Alerts"] .tab-command-bar');
+    const alertUtility = alertToolbar.locator('.tab-command-group--utility');
+    const alertButtonLabels = await alertToolbar
+      .getByRole('button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
+      );
+    expect(alertButtonLabels).toEqual([
+      'History',
+      'Save Image',
+      'Open in Outlook',
+      'More alert actions',
+    ]);
+    const alertAlignment = await alertToolbar.evaluate((element) => {
+      const toolbar = element.getBoundingClientRect();
+      const utility = element.querySelector('.tab-command-group--utility')?.getBoundingClientRect();
+      const workflow = element
+        .querySelector('.tab-command-group--workflow')
+        ?.getBoundingClientRect();
+      if (!utility) throw new Error('Missing Alert utility geometry');
+      if (!workflow) throw new Error('Missing Alert workflow geometry');
+      return {
+        utilityLeft: Math.abs(toolbar.left - utility.left),
+        workflowRight: Math.abs(toolbar.right - workflow.right),
+      };
+    });
+    expect(alertAlignment.utilityLeft).toBeLessThanOrEqual(1);
+    expect(alertAlignment.workflowRight).toBeLessThanOrEqual(1);
+    await expect(alertUtility.getByRole('button', { name: 'History' })).toBeVisible();
+
+    for (const name of ['Alerts', 'Radar']) {
+      const status = window.locator(`[data-tab="${name}"] .tab-page-status`);
+      const statusGeometry = await status.evaluate((element) => {
+        const style = globalThis.getComputedStyle(element);
+        const dot = element.querySelector('.tab-page-status__dot')?.getBoundingClientRect();
+        return {
+          display: style.display,
+          padding: style.padding,
+          borderWidth: style.borderWidth,
+          dotWidth: dot?.width,
+          dotHeight: dot?.height,
+        };
+      });
+      expect(statusGeometry).toEqual({
+        display: 'flex',
+        padding: '0px',
+        borderWidth: '0px',
+        dotWidth: 8,
+        dotHeight: 8,
+      });
+    }
+
+    const searchBounds = await window.locator('.search-dropdown').evaluate((dropdown) => {
+      const bounds = dropdown.getBoundingClientRect();
+      const selectors = [
+        '.search-dropdown-result-info',
+        '.search-dropdown-result-title',
+        '.search-dropdown-result-subtitle',
+        '.search-dropdown-action-rail',
+        '.search-dropdown-secondary-action',
+      ];
+      return selectors.map((selector) => {
+        const element = dropdown.querySelector(selector);
+        if (!(element instanceof globalThis.HTMLElement)) throw new Error(`Missing ${selector}`);
+        const rect = element.getBoundingClientRect();
+        return {
+          selector,
+          inside: rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1,
+        };
+      });
+    });
+    expect(searchBounds).toEqual(searchBounds.map(({ selector }) => ({ selector, inside: true })));
+
+    await window.setViewportSize({ width: 680, height: 900 });
+    for (const tab of tabs.filter(({ name }) => name !== 'Knowledge')) {
+      const toolbar = window.getByRole('toolbar', { name: `${tab.name} actions` });
+      const constrained = await toolbar.evaluate((element) => {
+        const utility = element.querySelector('.tab-command-group--utility');
+        const workflow = element.querySelector('.tab-command-group--workflow');
+        return {
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          utilityPrecedesWorkflow:
+            !utility ||
+            !workflow ||
+            Boolean(
+              utility?.compareDocumentPosition(workflow) &
+              globalThis.Node.DOCUMENT_POSITION_FOLLOWING,
+            ),
+        };
+      });
+      expect(
+        constrained.scrollWidth,
+        `${tab.name} constrained toolbar overflow`,
+      ).toBeLessThanOrEqual(constrained.clientWidth);
+      expect(constrained.utilityPrecedesWorkflow, `${tab.name} command order`).toBe(true);
+    }
   } finally {
     await app.close();
   }

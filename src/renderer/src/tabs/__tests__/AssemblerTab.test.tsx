@@ -421,10 +421,27 @@ describe('AssemblerTab', () => {
   });
 
   it('renders the approved Compose operational hierarchy', () => {
-    render(<AssemblerTab {...defaultProps} />);
+    const { container } = render(<AssemblerTab {...defaultProps} />);
 
-    expect(screen.getByRole('heading', { name: 'Bridge Recipient Assembly' })).toBeInTheDocument();
-    expect(screen.getByRole('toolbar', { name: 'Compose actions' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Bridge Recipient Assembly' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Compose actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    const workflow = container.querySelector<HTMLElement>('.tab-command-group--workflow');
+    expect(toolbar).toContainElement(utility);
+    expect(toolbar).toContainElement(workflow);
+    expect(within(utility as HTMLElement).getByRole('button', { name: 'Reset' })).toBeVisible();
+    expect(within(utility as HTMLElement).getByRole('button', { name: 'History' })).toBeVisible();
+    expect(
+      within(workflow as HTMLElement).getByRole('button', { name: 'Copy Recipients' }),
+    ).toBeVisible();
+    expect(
+      within(workflow as HTMLElement).getByRole('button', { name: 'Open Teams Draft' }),
+    ).toBeVisible();
+    expect(
+      within(workflow as HTMLElement).getByRole('button', { name: 'More Compose actions' }),
+    ).toBeVisible();
     expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
     expect(screen.getByText('0 recipients')).toBeInTheDocument();
@@ -446,23 +463,6 @@ describe('AssemblerTab', () => {
     expect(copy.compareDocumentPosition(teams)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.queryByRole('button', { name: /^Schedule$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Ready ·/)).not.toBeInTheDocument();
-  });
-
-  it('matches the operational toolbar spacing and control geometry', () => {
-    const css = readFileSync(assemblerCssPath, 'utf8');
-    const commandBarRule =
-      /\.assembler-command-bar \.collapsible-header\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
-    const utilityRule =
-      /\.assembler-utility-action\.tactile-button\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
-    const workflowRule = /\.assembler-command-group--workflow\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
-    const bridgeRule = /\.assembler-bridge-actions\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
-
-    expect(commandBarRule).toContain('padding: 0;');
-    expect(commandBarRule).toContain('border-bottom: 0;');
-    expect(utilityRule).toContain('height: 36px;');
-    expect(utilityRule).toContain('padding: 0 var(--space-3);');
-    expect(workflowRule).toContain('gap: var(--space-4);');
-    expect(bridgeRule).toContain('gap: var(--space-2);');
   });
 
   it('defines a prominent non-blocking recording notice and recipient-pane sort layout', () => {

@@ -23,6 +23,7 @@ does not claim that Teams created, sent, or started a meeting.
 | ------------------------------------------------------------ | --------------------------------------------------------------------- |
 | `src/renderer/src/styles/theme.css`                          | Global color, spacing, typography, radius, z-index, and motion tokens |
 | `src/renderer/src/styles/components.css`                     | Shared button, input, shell, and layout styles                        |
+| `src/renderer/src/styles/tab-chrome.css`                     | Shared top-level page headers and command rows                        |
 | `src/renderer/src/styles/utilities.css`                      | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
 | `src/renderer/src/styles/modals.css`                         | Modal layout and overlay styling                                      |
 | `src/renderer/src/styles/responsive.css`                     | Breakpoints and responsive behavior                                   |
@@ -64,6 +65,27 @@ wordmark and is not the default for tabs or panes. `.display-heading` and
 `.collapsible-header-title` retain that older styling for compatibility, but new
 surfaces should use the breadcrumb and eyebrow hierarchy unless a design explicitly
 calls for a standalone display title.
+
+### Top-level tab chrome
+
+Compose is the visual reference for the seven top-level operational destinations. Each uses a
+three-band frame: `.tab-page-header`, an optional named `.tab-command-bar`, and the working canvas.
+`TabPageHeader`, `TabCommandBar`, and `TabCommandGroup` own this shared structure; tab styles remain
+responsible for their domain content.
+
+- Page metadata uses the UI font, tabular numerals, and a text label whenever color communicates
+  status. Live state uses the shared unboxed `.tab-page-status` treatment: an 8 px semantic dot
+  beside the text label. Metadata may wrap below the title at constrained widths but must never
+  overlap it.
+- Utility commands belong in the left group and use a 36 px control height. Workflow commands
+  belong in the right group and use a 40 px control height. Toolbars keep both groups on one row
+  while their content fits, then wrap without changing DOM or keyboard order. The compact layout
+  makes each group full width only at 720 px and below.
+- Command labels use Title Case. A command row has at most one filled primary action; supporting
+  and reversible actions remain secondary or icon-only with an accessible name.
+- Knowledge has no top-level commands, so it renders no empty command row.
+- This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
+  other domain-specific toolbars retain their own interaction and density rules.
 
 ---
 
@@ -275,6 +297,14 @@ Focus: `border-color: --accent` + `box-shadow: 0 0 0 2px --color-accent-dim`.
 Underline-only input: `border-bottom: 2px solid --color-border-strong`, no box.
 On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 
+Search results preserve context: clicking the full primary row or pressing Enter opens or selects
+the exact contact, server, document, workspace, or tab result without changing Compose. Group rows
+are the intentional exception: their concise primary action, `Add group`, adds the group to Compose
+without a redundant secondary control. Each row uses a stable icon, information, and action rail.
+Contact rows add a compact `+ Bridge` sibling button with the accessible name
+`Add <contact name> to bridge`. Footer hints explain Enter for the primary action and show Tab
+guidance only while a contact result is active.
+
 ---
 
 ## 9. Typography
@@ -343,7 +373,9 @@ pre-redesign baseline.
 ### Operator action hierarchy
 
 Alerts exposes Open in Outlook on Desktop or Download Draft on Relay Web as the primary command.
-Save Image is the visible secondary command. Schedule Alarm, Alarms, History, Pin Template, and
+History is the sole far-left utility action. Save Image is the first visible secondary command in
+the right-aligned workflow group, immediately before delivery. This preserves the approved visual
+order without moving Save Image into the utility group. Schedule Alarm, Alarms, Pin Template, and
 Reset remain available in the keyboard-accessible overflow, with existing confirmations and modal
 behavior unchanged. Optional delivery details stay collapsed until requested and summarize only
 configured routing, link, timing, and branding state.
