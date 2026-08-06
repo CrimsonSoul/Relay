@@ -5,6 +5,7 @@
 @import './styles/components.css';
 @import './components/settings/settings.css';
 @import './styles/components-after-settings.css';
+@import './styles/tab-chrome.css';
 @import './tabs/alerts.css';
 @import './tabs/cloud-status.css';
 @import './features/knowledge/knowledge.css';
