@@ -16,7 +16,7 @@ The assigned account receives access to **Manage Wiki**. Changing the assignment
 ## Publish documents
 
 1. Open **Knowledge → Wiki → Manage Wiki**.
-2. Select up to 100 PDF files from the current computer.
+2. Select up to 100 PDF files from the current computer. Each file must be no larger than 50 MiB or 1,000 pages.
 3. Leave Relay open while the upload queue transfers, validates, and indexes the files.
 4. Review the display title, category, and document type (**SOP Manual** or **Quick Guide**), then publish each ready file.
 
@@ -32,13 +32,13 @@ Relay requires every active Wiki document to have a unique authored filename. Pu
 
 ## Upload queue and retention
 
-Relay accepts PDFs no larger than 50 MiB or 1,000 pages. Upload batches are transferred in 4 MiB chunks with at most two chunks in flight at once. Relay retries temporary VPN or server failures up to eight times with bounded backoff, then leaves the batch in **Waiting for network** so the Publisher can resume it. Already acknowledged chunks are not sent again.
+Relay resumes acknowledged upload work after temporary network or server failures instead of restarting the batch. **Pause all** preserves progress until **Resume all** is selected. **Discard upload** and **Cancel batch** remove incomplete server data once Relay can reconnect.
 
-On Relay Desktop, the queue survives an app restart when the operating system's encrypted storage is available. Relay encrypts the selected source path, revalidates the file before reading every chunk, and never exposes the path or PDF bytes to the renderer. Work interrupted by sign-out or shutdown resumes when the same Publisher session returns; a batch paused with **Pause all** stays paused until **Resume all** is selected. A discarded upload remains visible as **Cancelling** until the server confirms it. If Relay is offline or closes first, that cancellation resumes before the upload can transfer again. If the file moved or changed, choose **Reselect PDF** and select the same unchanged file. When encrypted storage is unavailable, Relay keeps the queue only in memory rather than writing a plaintext path.
+On Relay Desktop, the queue survives an app restart when operating-system encrypted storage is available. Work interrupted by sign-out or shutdown resumes when the same Publisher returns. If a source file moved, choose **Reselect PDF** and select the same unchanged file. When encrypted storage is unavailable, Relay keeps the queue only in memory.
 
 In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry or a Relay server restart. The browser cannot reselect a lost source file; start a new batch if its source becomes unavailable.
 
-An unpublished server upload expires after seven days. Validation failures remain unpublished with a safe reason for the publisher. Publishing copies the validated PDF into the managed document record and immediately clears the temporary staged PDF; cleanup later removes the expired upload record.
+Unpublished server uploads expire after seven days. Validation failures remain unpublished with a safe reason for the Publisher. Publishing moves the validated PDF into the managed library and clears its temporary staging data.
 
 ## Replace, recover, and delete
 
@@ -50,7 +50,7 @@ An unpublished server upload expires after seven days. Validation failures remai
 - **Restore** returns a trashed document to the library.
 - **Delete permanently** requires the signed-in Owner, Administrator, or Publisher to re-enter their password. This cannot be undone through the management workspace.
 
-Relay does not automatically purge the trash. Management audit events are retained for 365 days. Server backups include the managed Wiki records and protected PDF files; a restored server restart reconciles the managed library before clients reconnect.
+Relay does not automatically purge the trash. Server backups include managed Wiki records and protected PDFs; local document caches and upload queues are disposable and are not restore sources.
 
 ## Link from one PDF to another
 
