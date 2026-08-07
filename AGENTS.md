@@ -28,6 +28,17 @@ routing here.
   tests. Update the applicable canonical document when behavior changes; do not
   preserve stale architecture descriptions.
 
+## Documentation lifecycle
+
+- Keep the tracked Markdown set limited to the ten canonical documents listed
+  in `docs/README.md`, and update the applicable document in place.
+- Do not add standalone plans, specifications, implementation notes, audit or
+  status reports, mockups, or historical summaries to the repository. Use pull
+  requests, issues, and Git history for temporary work and historical context.
+- Add another persistent Markdown document only with explicit user approval.
+  Update `docs/README.md` and `scripts/documentation-contract.test.mjs` in the
+  same change so the exception remains deliberate and visible.
+
 ## Client, server, and data safety
 
 - Prefer the smallest correct change and add focused regression coverage for
