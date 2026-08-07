@@ -378,7 +378,8 @@ Renderer coverage is run through the renderer test wrapper:
 npm run test:renderer -- --coverage
 ```
 
-Security scanners are not tied to public tokens in the repo. For local checks, pass credentials through the environment or your OS secret store:
+Security scanners require credentials and repository context. Pass credentials through the
+environment or an OS secret store, never command arguments:
 
 ```bash
 npm run test:coverage:sonar
@@ -387,84 +388,31 @@ npm run security:sonar:ci -- --branch=test
 npm run security:snyk:ci
 ```
 
-The CI entrypoints require real credentials and repository context. Sonar reads `SONAR_TOKEN`,
-`SONAR_ORGANIZATION`, optional `SONAR_HOST_URL`, and `GITHUB_SHA`. Snyk reads `SNYK_TOKEN`,
-`SNYK_ORG`, `GITHUB_EVENT_NAME`, `GITHUB_REF`, `GITHUB_REPOSITORY`, `GITHUB_SERVER_URL`, and
-`GITHUB_SHA`. Do not place tokens in command arguments. When `$GITHUB_STEP_SUMMARY` is set, an
-Unavailable result writes a warning summary stating that no security decision was produced.
-
-Use the lower-level commands for diagnosis when you need to inspect one phase:
+Sonar reads `SONAR_TOKEN`, `SONAR_ORGANIZATION`, optional `SONAR_HOST_URL`, and `GITHUB_SHA`.
+Snyk reads `SNYK_TOKEN`, optional `SNYK_ORG`, and the standard GitHub repository/ref variables.
+Use lower-level commands only when diagnosing one phase:
 
 ```bash
 npm run security:sonar -- -Dsonar.organization=<organization>
 npm run security:sonar:quality-gate -- wait-analysis --branch=test
-npm run security:sonar:reviewed -- --branch=test --apply
 npm run security:sonar:issues -- --branch=test
 npm run security:sonar:quality-gate -- check-quality-gate --branch=test
 npm run security:snyk
 ```
 
-The CI wrappers use four explicit outcomes. Clean and Unavailable exit successfully; Finding and
-Configuration fail. Unavailable is limited to documented HTTP 429/5xx responses, bounded network
-timeouts, transient network evidence, and Snyk exits 69 or 75. Missing credentials, HTTP 401/403,
-invalid scope or identity, malformed responses, and unknown errors fail closed. A successful job
-with an Unavailable warning is not a clean scan, so retry it before release.
+The CI wrappers classify runs as Clean, Finding, Unavailable, or Configuration. Finding and
+Configuration block. Unavailable is limited to documented transient scanner/network failures; it
+produces no security decision and must be retried before release. Missing credentials, invalid
+scope, authorization failures, malformed responses, and unknown failures are Configuration errors.
 
-Snyk exit 2 is a generic command failure and remains a blocking Configuration result unless the
-captured output contains positive evidence of a documented transient outage. Exit 3 means no
-supported project was detected, and exit 77 means permission was denied; both always block as
-Configuration failures. Missing Snyk credentials fail preflight before a scanner command starts.
+`test:coverage:sonar` generates the LCOV inputs used by Sonar without enforcing the repository's
+aggregate local thresholds. Use `npm run test:coverage` when you need the local aggregate-threshold
+decision.
 
-The wrappers use an 18-minute aggregate scanner budget inside the 25-minute job. Each child process
-and Sonar network request also has a shorter deadline, so a stalled descendant, pagination request,
-or review transition can be terminated and reported before GitHub applies its hard job timeout.
-
-`security:sonar` uses the pinned SonarScanner for NPM and reads `SONAR_TOKEN` plus the optional HTTPS-only `SONAR_HOST_URL` from the environment. `security:snyk` runs the pinned Snyk Open Source and Snyk Code gates and reads `SNYK_TOKEN`; pass `--org=<organization>` to either underlying Snyk command when the account default is not the intended organization. The Open Source gate includes development dependencies because Relay's build and packaging toolchain is part of its supply-chain surface. `security:snyk:ci` invokes monitor only after both finding gates pass on a merged `test` push; pull requests never publish a snapshot. `security:snyk:monitor` remains available as the lower-level command.
-
-`security:sonar:issues` queries every page of the branch or pull-request issue
-set after analysis finishes. It fails when any Open, Confirmed, or legacy
-Reopened issue remains and reports Accepted/legacy Won't Fix and False Positive
-issues separately. Pass exactly one `--branch=<name>` or
-`--pull-request=<number>` selector. The command reads the project key from
-`sonar-project.properties`, defaults to SonarQube Cloud when
-`SONAR_HOST_URL` is unset, and reads authentication only from `SONAR_TOKEN`.
-
-`security:sonar:quality-gate` reads the scanner's
-`.scannerwork/report-task.txt`, validates its HTTPS host, project, and exact
-compute-task identity, and requires one `--branch` or `--pull-request` scope.
-The `wait-analysis` phase blocks until that task succeeds. After the
-test-branch reconciler and zero-open check, `check-quality-gate` proves that
-analysis is still the latest branch analysis, polls the recalculated live branch
-gate for a bounded period, and rechecks freshness before accepting green. Pull
-requests never mutate issue state, so they use the immutable analysis ID and
-fail a non-passing gate immediately.
-
-`security:sonar:reviewed` is a write operation restricted to `test` and requires
-the explicit `--apply` latch. It contains an exact manifest of the 49 findings
-that were individually reviewed during the zero-warning cleanup: 43
-behavior-preserving Accepted decisions and six evidence-backed False
-Positives. Before changing anything, it verifies every observed key, rule, and
-component, and it refuses to proceed if any other Open or Confirmed finding
-exists. Each transition adds a short audit rationale. The `test`-branch push
-workflow runs this exact reconciliation after fresh analysis; later pushes are
-idempotent once those decisions exist. Avoid running it locally unless an
-administrator token is intentionally available.
-
-`test:coverage:sonar` generates both LCOV reports without applying the repository's historical aggregate thresholds. The remote SonarQube quality gate enforces coverage on new code, while `npm run test:coverage` remains the explicit local aggregate-threshold check.
-
-The `Security and Code Quality` GitHub Actions workflow is intentionally anchored to Relay's authoritative `test` branch. Internal pull requests targeting `test` run the pinned SonarQube, Snyk Open Source, Snyk Code, and build quality gates. Pull-request scans never change Sonar issue state or the canonical Snyk monitored snapshot. After merge, the `test` push repeats the scanners, reconciles only the pinned Sonar review manifest, and updates the Snyk snapshot identified by target reference `test`. The Sonar scanner uploads unit and renderer LCOV reports without waiting on a gate that may still contain a pending reviewed decision. Relay then waits for the exact compute task, enforces zero open issues, and verifies the remote quality gate for that same analysis. The reconciler is idempotent and fails before its first write if any unknown Open or Confirmed issue appears or reviewed metadata drifts. Scanner credentials are scoped only to their scanner steps and remain in GitHub Actions secrets, while organization and host identifiers are stored as repository variables.
-
-For rapid pull-request updates, keep the pull request in draft while pushing intermediate commits.
-Build, Sonar, and Snyk still validate each current revision, while CodeRabbit skips drafts. Once the
-revision is stable, mark the pull request ready so CodeRabbit can review it. Its incremental review
-automatically pauses after two already-reviewed commits; make additional rapid pushes in draft and
-request a final review only for the intended merge revision. If a fix is pushed after CodeRabbit has
-paused, comment `@coderabbitai review` on the pull request and wait for the refreshed review to clear
-the Request Changes state. Before merging, require clean Build, Sonar, and Snyk decisions, no
-CodeRabbit Request Changes, and no unresolved review conversations. Windows packaging remains
-independent and runs on the newest nonsuperseded merged `test` revision. Do not enable usage
-add-ons, paid scanner tiers, larger paid runners, or other paid-overage options to make this
-workflow pass.
+`.github/workflows/security.yml` owns the exact pull-request and `test`-branch gate sequence.
+Publishing requires successful Build, SonarQube, and Snyk checks plus resolved review findings.
+See `docs/SECURITY.md` for security policy and gate interpretation. The reviewed-finding reconciler
+is a restricted `test`-branch write operation and is not part of normal local development.
 
 ### Screenshot Refresh
 
@@ -475,7 +423,17 @@ npm run build
 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
 ```
 
-Generated images land in `tmp/redesign-shots/`. Copy the selected captures into `docs/screenshots/` before committing documentation updates.
+Generated images land in `tmp/redesign-shots/`. Inspect them for demo-only content and accidental
+overlays before copying the current README set:
+
+```bash
+cp tmp/redesign-shots/compose.png docs/screenshots/compose.png
+cp tmp/redesign-shots/alerts.png docs/screenshots/alerts.png
+cp tmp/redesign-shots/oncall.png docs/screenshots/oncall.png
+cp tmp/redesign-shots/knowledge.png docs/screenshots/knowledge.png
+cp tmp/redesign-shots/cloud-status.png docs/screenshots/cloud-status.png
+cp tmp/redesign-shots/radar.png docs/screenshots/radar.png
+```
 
 ### Renderer Test Setup
 
