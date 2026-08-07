@@ -9,14 +9,6 @@ typography-first hierarchy through IBM Plex Sans weight contrast, and a single s
 accent color as the only active-state signal. All tokens live in
 `src/renderer/src/styles/theme.css`.
 
-### Compose handoff
-
-Compose keeps saved groups and recipients visible together. Open Teams Draft is the primary action,
-Copy Recipients is the visible fallback, and Create Calendar Invite is in the More menu. The Teams
-review shows the generated subject, normalized recipient summary, selected groups, address issues,
-and a prominent reminder to enable recording. Relay describes only locally observable outcomes; it
-does not claim that Teams created, sent, or started a meeting.
-
 ## Source Of Truth
 
 | File                                                         | Purpose                                                               |
@@ -86,6 +78,11 @@ responsible for their domain content.
 - Knowledge has no top-level commands, so it renders no empty command row.
 - This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
   other domain-specific toolbars retain their own interaction and density rules.
+
+Workflow actions state only outcomes Relay can observe. Compose may say it opened a Teams draft or
+copied recipients, but not that Teams created or sent a meeting. Alerts follows the same rule for
+Outlook and downloaded drafts. Destructive and externally consequential actions retain confirmation
+or review steps owned by their feature.
 
 ---
 
@@ -297,13 +294,10 @@ Focus: `border-color: --accent` + `box-shadow: 0 0 0 2px --color-accent-dim`.
 Underline-only input: `border-bottom: 2px solid --color-border-strong`, no box.
 On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 
-Search results preserve context: clicking the full primary row or pressing Enter opens or selects
-the exact contact, server, document, workspace, or tab result without changing Compose. Group rows
-are the intentional exception: their concise primary action, `Add group`, adds the group to Compose
-without a redundant secondary control. Each row uses a stable icon, information, and action rail.
-Contact rows add a compact `+ Bridge` sibling button with the accessible name
-`Add <contact name> to bridge`. Footer hints explain Enter for the primary action and show Tab
-guidance only while a contact result is active.
+Search results label the action they perform. A primary row or Enter opens the exact record,
+document, workspace, or tab without changing unrelated Compose state. Actions that do change the
+bridge, such as Add group or a contact's `+ Bridge` control, remain separate and have explicit
+accessible names. Keyboard hints describe only actions available for the active result.
 
 ---
 
@@ -366,19 +360,15 @@ preview card that matches the actual sent alert email. Its hardcoded colors (whi
 background, dark text, literal severity colors) are correct and intentional. Never
 apply ink tokens, accent variables, or theme changes inside these fences.
 
-The card's base font rides `--font-family-base` and therefore uses IBM Plex Sans with the
-redesign; this is intentional. The fenced rules themselves are unchanged from the
-pre-redesign baseline.
+The card's base font rides `--font-family-base` and therefore uses IBM Plex Sans. The fenced rules
+remain part of the exported-content contract.
 
 ### Operator action hierarchy
 
-Alerts exposes Open in Outlook on Desktop or Download Draft on Relay Web as the primary command.
-History is the sole far-left utility action. Save Image is the first visible secondary command in
-the right-aligned workflow group, immediately before delivery. This preserves the approved visual
-order without moving Save Image into the utility group. Schedule Alarm, Alarms, Pin Template, and
-Reset remain available in the keyboard-accessible overflow, with existing confirmations and modal
-behavior unchanged. Optional delivery details stay collapsed until requested and summarize only
-configured routing, link, timing, and branding state.
+Alerts keeps History in the utility group and exposes one delivery primary action: Open in Outlook
+on Desktop or Download Draft in Relay Web. Save Image remains a visible secondary action; lower
+frequency actions stay in the keyboard-accessible overflow. Optional delivery details remain
+collapsed until requested.
 
 ---
 
@@ -388,59 +378,23 @@ Knowledge is the single sidebar destination for the Wiki, Contacts, and Servers 
 header always identifies the outer route as `Relay / Knowledge`; the workspace's own navigation
 identifies the active inner destination.
 
-### Launcher
-
-- Launcher order and keyboard order are exactly **Wiki, Contacts, Servers**.
-- Each destination is a full-size real button with a Relay-native preview of its production
-  surface: library/reader for Wiki, directory/detail context for Contacts, and infrastructure/detail
-  context for Servers.
-- The three previews use the black canvas, sharp dividers, dense type, and one restrained accent
-  signal. They are not floating SaaS cards: no decorative shadow, gradient, glow, or excessive
-  rounding.
-- Counts are live when available and expose useful singular/plural accessible names. Unknown
-  counts remain explicit rather than displaying a misleading zero.
-- At desktop width the launcher uses three columns, then collapses to two and one without changing
-  DOM or focus order.
-
-### Retained destinations and contextual notes
-
-Wiki, Contacts, and Servers mount on first entry and remain retained when hidden. Returning to a
-destination preserves its selected document or record, filters, detail panel, and local scroll
-state. The internal navigation provides a clear Knowledge-home action plus direct destination
-buttons; all controls use real button semantics and visible focus states.
-
-Header search labels the action each result will perform. Contact and server primary actions open
-and focus the exact record in the retained Knowledge destination while preserving the lookup query;
-adding a contact to Compose is a separate explicit action. An exact lookup may clear that
-destination's local filters to reveal the requested record, but it never changes bridge recipients.
-
-Notes are contextual only. Contact and server detail panels may display and edit their attached
-notes and tags. There is no standalone Notes tab, masonry surface, or freeform-note design pattern.
-Dynatrace problem notes remain part of the Problems workflow and do not appear in Knowledge.
-
-### Wiki PDF reader
-
-The reader defaults to **Continuous** and exposes a toolbar toggle to **Single page**. Continuous
-mode reserves a stable shell for every page so the scrollbar represents the whole PDF, while only
-the current page and a bounded overscan window mount canvases. The page indicator follows the most
-visible page. Single mode renders one page and keeps the same navigation, zoom, link, retry, and
-focus behavior.
-
-The view-mode preference is local to the workstation. Switching mode or visiting another
-Knowledge destination must retain the current document and page without a second download or PDF
-parse. Internal PDF links stay inside the reader; approved HTTP(S) links use the system browser.
-Reader motion honors `prefers-reduced-motion`, and page-local failures use a polite live status with
-a retry action rather than replacing the entire document.
+- Launcher and keyboard order is exactly **Wiki, Contacts, Servers**. Each destination is a real
+  button with a production-shaped preview, an explicit unknown-count state, and responsive
+  three/two/one-column layout that preserves DOM order.
+- Destinations mount on first use and remain retained. Navigation preserves selected records,
+  filters, reader position, and local scroll state; opening an exact search result may reveal that
+  record but does not change bridge recipients.
+- Notes remain contextual to Contacts, Servers, or Problems. Relay has no standalone Notes
+  workspace.
+- The Wiki reader defaults to Continuous and offers Single page. Mode changes preserve the open
+  document, page, and PDF lifetime; bounded rendering, reduced-motion behavior, and page-local retry
+  states keep long documents usable without replacing the whole reader.
+- Internal PDF destinations stay in Relay. Approved HTTP(S) links require an explicit action and
+  open through the validated system-browser boundary.
 
 ---
 
-## 12. Service Status
-
-Juniper Mist appears as four separate provider rows labeled **Juniper Mist Global**, **Juniper Mist EMEA**, **Juniper Mist APAC**, and **Juniper Mist Federal** immediately after Cloudflare. All four rows use the same monochrome Juniper Networks mark and the standard provider-row/detail interaction; region is conveyed by text, not by color or icon variants.
-
-Mist rows offer only the official status-page action. They do not invent X or Downdetector destinations. Operational, degraded, outage, and Unknown states continue to use Relay's fixed semantic palette and paired text labels.
-
-## 13. Styling Rules
+## 12. Styling Rules
 
 ### Compact navigation
 
@@ -484,7 +438,7 @@ Static design values must stay in CSS.
 
 ---
 
-## 14. Accessibility Baseline
+## 13. Accessibility Baseline
 
 - **Focus ring:** `box-shadow: 0 0 0 2px var(--color-accent-dim)` + accent border on
   all interactive elements via `:focus-visible`

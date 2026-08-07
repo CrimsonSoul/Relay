@@ -56,4 +56,3 @@ resources/pocketbase/*
 !resources/pocketbase/hooks/**
 dev-data/
 .superpowers/
-docs/superpowers/

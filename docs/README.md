@@ -9,8 +9,5 @@
 - [Relay Web](relay-web.md): browser setup, supported experience, notifications, and network safety
 - [Security](SECURITY.md): security posture, hardening, validation, and secret handling
 
-The [screenshots](screenshots/) directory contains supporting README assets.
-
-## Historical and exploratory material
-
-The [design specs](superpowers/specs/), [implementation plans](superpowers/plans/), and [full-redesign UI mockup](ui-mockups/full-redesign/) record earlier decisions or exploration. They are useful context, but they are not current operator or contributor instructions. When they conflict with live documentation or the current implementation and tests, use the live sources.
+The [screenshots](screenshots/) directory contains the current README preview assets. Git history is
+the archive for completed designs, implementation plans, and retired exploratory material.
