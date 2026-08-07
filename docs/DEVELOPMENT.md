@@ -411,6 +411,8 @@ decision.
 
 `.github/workflows/security.yml` owns the exact pull-request and `test`-branch gate sequence.
 Publishing requires successful Build, SonarQube, and Snyk checks plus resolved review findings.
+If a fixed CodeRabbit review has not resumed, comment `@coderabbitai review` on the pull request and
+wait for its Request Changes state and review conversations to clear.
 See `docs/SECURITY.md` for security policy and gate interpretation. The reviewed-finding reconciler
 is a restricted `test`-branch write operation and is not part of normal local development.
 
