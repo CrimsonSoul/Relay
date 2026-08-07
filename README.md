@@ -10,7 +10,7 @@ Relay releases are distributed for Windows. macOS remains supported as a local d
 
 - Embedded PocketBase server/client mode with local-first storage and realtime sync
 - Typed preload bridge with Zod-validated IPC contracts
-- Seven top-level workspaces: Compose, Alerts, On-Call, Knowledge, Status, Dynatrace Problems, and Dispatcher Radar
+- Seven top-level workspaces: Compose, Alerts, On-Call, Knowledge, Service Status, Dynatrace Problems, and Dispatcher Radar
 - Wiki, Contacts, and Servers grouped as retained destinations inside Knowledge
 - Sidebar client presence, connect toasts, and a unified connected/cached/offline indicator
 - LAN/VPN-only browser backup for desktop Chrome, Edge, and Safari
