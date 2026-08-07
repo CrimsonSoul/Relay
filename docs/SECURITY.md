@@ -197,10 +197,11 @@ Currently enforced limits include:
 
 ## Automated Security And Quality Gates
 
-Relay's `Security and Code Quality` workflow provides two complementary required gates:
+Relay's pull-request and `test`-branch controls are defined by the checked-in workflows. The required jobs are:
 
-- SonarQube analyzes source quality and first-party security findings, imports unit and renderer LCOV coverage, waits for the exact uploaded analysis, reconciles only pinned `test`-branch review decisions, blocks if the analyzed branch or pull request retains any Open, Confirmed, or legacy Reopened issue, and then verifies the configured remote quality gate for that same analysis.
-- The pinned Snyk CLI blocks any current high- or critical-severity Open Source or Snyk Code finding, including findings in development dependencies, for internal pull requests and `test` pushes. The merged `test` push then publishes the canonical dependency snapshot identified as `test`.
+- **Build quality gate**: formatting, linting, type checking, tests, and the production build.
+- **SonarQube quality gate**: first-party quality and security analysis, imported unit and renderer coverage, unresolved-issue enforcement, and validation of the exact uploaded analysis.
+- **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `test` push publishes the canonical monitored snapshot for `test`.
 
 The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
 
@@ -211,54 +212,13 @@ The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
 | Unavailable   | The scanner produced no decision because a documented outage occurred.   | Required job warns and succeeds. |
 | Configuration | Credentials, scope, identity, response, or an unknown failure is unsafe. | Required job fails closed.       |
 
-A completed Sonar or Snyk finding remains a release blocker. The CI wrappers classify documented
-HTTP 429/5xx responses, bounded network timeouts, and documented temporary Snyk exit codes 69 and
-75 as Unavailable: the required job emits a GitHub warning and summary but succeeds because no
-negative security decision was produced. Missing credentials, HTTP 401/403 authorization failures,
-malformed responses, identity drift, and unknown errors remain blocking configuration failures. A
-green Unavailable job is not evidence that the revision is clean; retry the job and require a real
-scanner decision before a release.
+A completed finding is a release blocker. A documented scanner outage may be classified as **Unavailable** so CI can distinguish missing evidence from a negative decision, but an Unavailable result is not a clean scan. Retry it and require a real scanner decision before release. Missing credentials, authorization failures, malformed responses, identity drift, and unknown errors fail closed as Configuration failures.
 
-Snyk exit 2 is a generic failure and blocks as Configuration unless the output contains positive
-evidence of a documented transient outage. Exit 3 (no supported projects), exit 77 (no permission),
-and missing Snyk credentials are always blocking Configuration failures.
+Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `test` push may apply the pinned Sonar review manifest and update the `test` Snyk snapshot. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
 
-Each scanner wrapper has an 18-minute aggregate deadline inside its 25-minute GitHub job. Individual
-commands, paginated Sonar reads, and Sonar review transitions use shorter child or request deadlines,
-leaving time for checkout, installation, warning evidence, and orderly process-tree termination.
+CodeRabbit findings remain blocking through its review state and unresolved review conversations even though CodeRabbit availability is not a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
 
-CodeRabbit skips drafts and uses Request Changes for findings. Its availability status is not a
-required check; findings remain blocking through the review state and required resolution of review
-conversations. Automatic incremental review pauses after two already-reviewed commits so rapid
-pushes cannot consume the free allowance indefinitely. Relay does not enable CodeRabbit
-usage-based add-ons, paid scanner tiers, larger paid runners, or other paid-overage settings. After
-fixing a blocking review when automatic review is paused, comment `@coderabbitai review` and wait
-for CodeRabbit to clear the Request Changes state before merging.
-
-Windows packaging is independent of Sonar, Snyk, and CodeRabbit availability. It starts from every
-merged `test` push without depending on an external-scanner job. Branch concurrency cancels
-superseded runs, so the retained successful artifact represents the newest nonsuperseded merged
-revision rather than an older queued build.
-
-The workflow is intentionally anchored to Relay's authoritative `test` branch. Internal pull requests targeting `test` run the pinned SonarQube, Snyk Open Source, Snyk Code, and build quality gates. Pull-request scans never change Sonar issue state or the canonical Snyk monitored snapshot. After merge, the `test` push repeats the scanners, reconciles only the pinned Sonar review manifest, and updates the Snyk snapshot identified by target reference `test`. The SonarQube Cloud project's main analysis branch is also named `test`. The scanner uploads without making a premature quality-gate decision, and `security:sonar:quality-gate` validates the scanner report and waits for its exact compute task. After reconciliation, it proves that analysis is still the latest `test` analysis before and after reading the recalculated live branch gate; pull requests use their immutable analysis ID directly. After analysis, `security:sonar:issues` paginates the exact branch or pull-request issue set, fails on unresolved Open/Confirmed/Reopened issues, and reports Accepted/Won't Fix and False Positive decisions separately so reviewed exceptions remain visible. Scanner output is bounded and secret values are redacted. Scanner tokens are exposed only to their scanner steps and stored as GitHub Actions secrets. Repository variables hold non-secret organization and SonarQube host identifiers.
-
-Pull-request scans never change issue state. A `test`-branch push invokes an
-exact 49-item reconciliation manifest only after fresh analysis and before the
-zero-open gate. The reconciler requires an internal `--apply` latch, validates
-each issue key, rule, and component before the first write, refuses to run when
-an unknown Open or Confirmed issue is present, and records a bounded rationale
-with every transition. The manifest contains 43 behavior-preserving Accepted
-decisions for intentional ARIA, test-structure, Electron startup, and render
-callback patterns, plus six False Positives backed by persisted-hash
-compatibility, browser-computed contrast, or constrained OS browser-dispatch
-evidence. Missing or fixed items are not changed, already-reviewed decisions
-are idempotent, and metadata drift fails closed. The final quality-gate check
-remains fail-closed; reviewed issue transitions can no longer prevent the
-reconciler from running before that check.
-
-GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled for the repository. Snyk is the scanner and pull-request security gate; GitHub remains the source of secret-blocking and dependency-fix automation so duplicate Snyk dependency upgrade pull requests are unnecessary.
-
-Treat a failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
+Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 
 ## Secrets And Local Data
 
@@ -399,39 +359,25 @@ Privileged requests reuse the configured PocketBase endpoint, authentication, an
 
 ### Operator-Roster Migration, Preflight, And Rollback
 
-The legacy `relay_operators` roster is a migration input, not a runtime identity source. Startup first plans the complete conversion and defers privileged runtime if Ryan, Charles, authority pointers, usernames, roles, or referenced historical names are ambiguous. The conversion keeps existing protected-account IDs, writes normalized account identity and account-ID authority pointers, fills only empty historical name snapshots, and re-reads and validates the converted state. Legacy ordinary `role=operator` auth rows are retired because ordinary use no longer authenticates; a row that still owns a paired device causes migration to defer rather than break that binding. The known `relay_login_roster` view must match its exact legacy query, is removed before `relay_operators`, and both collections remain until post-conversion validation succeeds. Existing non-empty `author`, `addressedBy`, `createdBy`, and `displayNameSnapshot` values are never overwritten. Paired-device `accountId` values are not remapped.
+The legacy `relay_operators` roster is migration input, not a runtime identity source. `RoleAccountMigration` plans and validates the whole conversion before privileged runtime can start. It preserves protected-account IDs, paired-device bindings, account-ID authority pointers, and every non-empty historical attribution field. The known `relay_login_roster` view must match its exact legacy query; ambiguous identities, roles, references, or schema defer the migration instead of guessing.
 
-Before upgrading an existing installation, create a consistent copy with the PocketBase backup API or SQLite's online backup operation. Do not copy a live `data.db` alone while WAL activity is possible. Run the new build only against the copy and verify: `ryan` / Ryan Bledsoe is the one Owner; `charles` / Charles Gibbs is an Administrator; Publisher count is zero or one; `relay_login_roster` and `relay_operators` are absent only after success; every paired-device account ID matches the preflight baseline; and every pre-existing non-empty historical name snapshot is byte-for-byte unchanged.
+Before upgrading an existing installation, make a consistent PocketBase or SQLite online backup; never copy a live `data.db` alone while WAL activity is possible. Exercise the upgrade against a disposable copy first. Verify the single Owner, Administrator and optional Publisher roles, authority pointers, paired-device account IDs, historical attribution, and removal of the two legacy collections only after successful conversion.
 
-Keep the consistent pre-migration backup until the upgraded installation has passed the same checks. If planning defers, do not touch the live installation. If a commit or post-commit check fails, stop Relay and restore the whole pre-migration PocketBase backup before starting the previous build; do not hand-edit collections or run an older build against a partially converted database. A retry with the new build is safe only after the copied database has been inspected and the migration's converted-state validation succeeds.
+Keep the full pre-migration backup until those invariants pass on the upgraded installation. If planning defers or a post-conversion check fails, stop Relay and restore the entire backup before starting the previous build. Do not hand-edit collections or run an older build against a partially converted database. The implementation and regression cases live in `src/main/privileged/RoleAccountMigration.ts` and `src/main/privileged/__tests__/RoleAccountMigration.test.ts`; see `docs/DEVELOPMENT.md` for disposable-data testing rules.
 
 ### Managed Wiki Documents
 
-The Wiki is read-only during ordinary use. `knowledge_documents` has authenticated list/view rules and no direct client create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only allowlisted, capability-checked server commands publish or mutate managed documents.
+Managed Wiki metadata is read-only to ordinary clients. `knowledge_documents` and `knowledge_categories` permit authenticated reads but no direct client mutation. Publishing, category management, and deletion use allowlisted server commands that rederive the caller's Owner, Administrator, or Publisher capability and enforce revision, uniqueness, membership, and reassignment rules. Wiki mutations never enter the ordinary offline replay queue.
 
-`knowledge_categories` is also renderer-read-only and remains outside `WRITABLE_CACHE_COLLECTIONS`. Owner, Administrator, and Publisher category/document changes use strict signed payloads under `knowledge.manage`; the server rechecks the account capability, expected revisions, case-insensitive category uniqueness, document membership, and mandatory reassignment before mutation. The system fallback category cannot be deleted. No category operation enters the ordinary offline-write replay path.
+Uploads are account- and device-bound, size-limited, chunked, and resumable. The server binds every chunk to its batch and upload, verifies chunk and whole-file checksums, validates the PDF signature and size, performs bounded extraction, and removes expired, cancelled, or successfully published staging data. The main-process queue never exposes source paths or PDF bytes to the renderer. Persisted paths use Electron `safeStorage` in an owner-only file; without OS encryption the queue remains memory-only.
 
-Publisher uploads use account- and device-bound `knowledge_upload_batches`, `knowledge_uploads`, and `knowledge_upload_chunks` records. A batch contains at most 100 files; files are split into fixed 4 MiB chunks and limited to two concurrent transfers. Every chunk is bound to its batch, upload, account, device, index, size, and SHA-256. The server reassembles chunks in order, verifies each checksum and the declared whole-file checksum, validates the PDF signature and size, then performs bounded extraction. Temporary upload records expire after seven days. Cancelling removes chunks and staged bytes; successful publication copies the protected PDF into `knowledge_documents` and clears the staged upload file immediately.
+PDF and cover reads cross narrow, trusted-sender-validated preload methods. Requests carry only bounded document IDs and checksums; the main process obtains short-lived file authority internally, streams through hard size limits, validates signatures, sizes, and checksums, and promotes cache files atomically. Tokens, server URLs, paths, and credentials never enter renderer responses.
 
-The resumable queue lives in the main process. The renderer receives only bounded filenames, sizes, state, and progress—never source paths or PDF bytes. Persisted source paths are Electron `safeStorage` ciphertext in an owner-only file. If encryption is unavailable Relay keeps the queue in memory only. On restart or resume, Relay asks the server which chunk indexes are missing and sends only those indexes after revalidating the unchanged source file. Automatic sign-out and shutdown suspension remains queued for recovery, while an explicit Publisher pause remains paused until resumed. Before status lookup, source access, transfer, acknowledgment, and finalization, the scheduler rechecks that the active account and local source still own the queued item so work from one Publisher session cannot continue through another.
+PDF parsing and cover generation run through bounded workers. Relay uses the bundled PDF.js runtime with automatic fetching and streaming disabled, and it does not enable forms, attachments, arbitrary annotation actions, printing, downloads, cloud OCR, telemetry, or browser PDF plugins. PDF.js link and action data is inert until Relay's resolver reclassifies it. Native destinations remain in-document; unsupported schemes and local paths do not gain filesystem or execution authority. Only an explicit operator click on a resolved HTTP(S) link can reach the rate-limited, trusted-sender-validated external-link handler.
 
-The preload bridge exposes the bounded PDF/status reads `getKnowledgePdf({ documentId, checksum })` and `getKnowledgeIndexStatus()`, plus a dedicated `openKnowledgeWebLink(url)` action. The PDF request schema accepts a bounded PocketBase-style ID and lowercase SHA-256 checksum; it does not accept paths, URLs, tokens, or credentials. Each handler validates the sender as a trusted Relay main frame before invoking the main-process service.
+Full-text search is optional derived data. The server owns `knowledge_search_chunks`; authenticated clients may read it but cannot mutate it directly. Indexing and search are bounded and failure-isolated so a search outage does not weaken publication or PDF access controls. Extracted passages are duplicated operational content in PocketBase, desktop snapshots, and backups, and Relay does not encrypt those stores itself.
 
-On clients, the main process checks the configured Relay server's PocketBase health endpoint, then authenticates with Relay's existing app account and configured connection secret before requesting the protected file. This distinguishes Relay reachability from generic internet connectivity. It uses the configured, policy-validated LAN server URL and does not add certificate bypasses, external fetches, or permissive CORS headers. Response bodies are streamed through a hard bound before allocation; cached files are size-checked before reading. Downloaded bytes must match the PDF signature, collection byte count, 50 MiB limit, and requested SHA-256 before an atomic cache write.
-
-PDF parsing runs in a single-concurrency worker with a 30-second job timeout, a 1,000-page limit, and a 500-heading output limit. Page-one cover rendering runs in the same isolated extraction path, clamps the canvas to 480 by 620 pixels, and accepts only PNG output no larger than 2 MiB. PDF.js evaluation is disabled. The renderer loads the bundled PDF.js worker locally with automatic fetch/streaming disabled and exposes canvas/text rendering plus a narrow Relay-owned overlay for link annotations on the active page. It does not enable PDF.js forms, attachments, arbitrary annotation UI, print, or download controls. CSP retains `object-src 'none'`; the feature does not embed a browser PDF plugin or use cloud OCR, telemetry, or CDN assets.
-
-The preload bridge exposes `getKnowledgeCover({ documentId, checksum })` as a separate bounded read. Trusted-sender validation runs before the service is invoked, and the request cannot carry a path, URL, token, or credential. The main process obtains short-lived PocketBase file authority internally, confines it to the document record's protected cover field, streams the response through a 2 MiB hard bound even when `Content-Length` is absent, validates the PNG signature, and never returns the token or server URL to the renderer.
-
-PDF.js can flatten URI, Launch/GoToR, and recoverable JavaScript actions into the same URL fields. Relay therefore treats every retained PDF.js URL value as origin-agnostic inert text and reclassifies it through its own resolver; it never executes the originating PDF action. Native destinations stay inside the current PDF.js document. PDF-like paths resolve only against indexed Knowledge metadata, and an absolute or `file:` path contributes only its filename, never local filesystem authority. Unsupported protocols and action fields PDF.js retains explicitly do not produce a focusable overlay.
-
-Only an explicit operator click on a resolved HTTP(S) overlay can invoke `openKnowledgeWebLink`. The dedicated main-process handler requires a trusted sender, shares Relay's existing external-action rate limiter, parses a bounded URL, permits only HTTP(S) with a hostname, and rejects credentials, control characters, oversized values, and malformed URLs before calling `shell.openExternal`. This narrow action does not broaden or replace the provider allowlist on the general `OPEN_EXTERNAL` channel.
-
-Full-text search is an optional derived-data boundary. A server worker extracts bounded PDF passages into `knowledge_search_chunks`, which stores both original and normalized passage text. The collection is server-owned: authenticated clients may list/view it for search, but direct client create/update/delete rules are disabled. The main-process search service validates and bounds snapshots, reconciles realtime events, and may copy document metadata and chunks into the desktop offline search snapshot. Search requests are schema-validated and cancellable through trusted IPC; Relay Web adds authenticated same-origin routing and a per-session route limit.
-
-Each stored passage field is capped at 1,600 characters. The search service accepts at most 100,000 chunks and 128 MiB of passage text in a snapshot; queries are limited to 120 Unicode code points and results/excerpts are bounded before reaching the renderer. Bootstrap and indexing are best-effort, so failure disables search without weakening PDF publication or read controls. The extracted text is duplicated operational content in PocketBase, local search snapshots, and backups; Relay does not encrypt those stores itself. Continue to rely on managed-device access controls and full-disk encryption for confidential runbooks.
-
-Knowledge metadata uses the normal authenticated PocketBase/realtime path and may be stored in the read-only offline snapshot. PDF caches are content-addressed, checksum-validated, bounded to 2 GiB, and pruned through Relay's existing daily maintenance cycle. Cover files use the PDF checksum as their cache key, are PNG-signature and size validated before atomic promotion, permit only two concurrent generation/download jobs, and are confined to a separate 100 MiB cache of referenced checksums. These controls protect integrity and limit disk use, but they are not encryption: continue to rely on managed-device access controls and full-disk encryption for confidential runbooks. HTTP remains appropriate only on the trusted LAN deployment described above; use HTTPS if traffic crosses that boundary.
+Knowledge metadata may use the normal read-only offline snapshot. PDF and cover caches are content-addressed, checksum-validated, bounded, and disposable; they are never authority for the managed library. Server backups include authoritative managed documents and derived search data, but local caches and resumable upload queues require no restore. These controls provide integrity and resource limits, not encryption. Use managed-device controls and full-disk encryption for confidential runbooks, and HTTPS whenever traffic leaves the trusted LAN boundary. See `docs/knowledge-base.md` for operator behavior and `docs/architecture.md` for the complete data flow.
 
 ## Backups, Sync, And Resilience
 
