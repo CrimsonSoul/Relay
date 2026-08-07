@@ -59,6 +59,10 @@ export type DynatraceProblemRecord = {
   impactedEntities: DynatraceEntityRef[];
   managementZones: DynatraceManagementZone[];
   alertingProfiles: string[];
+  /** Preserved locally but hidden from the active scope after an administrative scope change. */
+  scopeExcluded?: boolean;
+  /** Transition time used for the one-year grace period on excluded records. */
+  scopeExcludedAt?: string;
   environmentUrl: string;
   syncedAt: string;
   created?: string;
@@ -99,6 +103,16 @@ export type DynatraceProblemSyncRecord = {
   availableAlertingProfiles?: string[];
   selectedAlertingProfiles?: string[];
   profileFilterConfigured?: boolean;
+  scopeSource?: 'alerting-profile';
+  profileFieldHealthy?: boolean;
+  profileCatalogCount?: number;
+  matchedProfileCount?: number;
+  consecutiveFailures?: number;
+  nextRetryAt?: string;
+  staleSince?: string;
+  resultTruncated?: boolean;
+  /** A full scope reconciliation failed and must be retried before incremental polling resumes. */
+  reconciliationPending?: boolean;
   created?: string;
   updated?: string;
 };

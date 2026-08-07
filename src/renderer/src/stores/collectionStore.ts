@@ -1,4 +1,4 @@
-import type { PendingMutationOverlay } from '@shared/ipc';
+import type { CachedQueryMembership, PendingMutationOverlay } from '@shared/ipc';
 import {
   getPb,
   handleApiError,
@@ -22,6 +22,18 @@ export interface CollectionRecord {
 export interface CollectionQueryOptions {
   sort?: string;
   filter?: string;
+  /** Load an initial bounded page and allow consumers to expand it incrementally. */
+  pageSize?: number;
+  /**
+   * Fetch a changing equality set in request-line-safe batches while keeping a
+   * stable store identity. Intended for related records keyed by loaded IDs.
+   */
+  batchedFilter?: {
+    key: string;
+    field: string;
+    values: readonly string[];
+    batchSize?: number;
+  };
   /** Retained for API compatibility with the original collection hook. */
   offlineCacheChannel?: string;
 }
@@ -31,10 +43,20 @@ export interface CollectionSnapshot<T extends CollectionRecord> {
   loading: boolean;
   error: string | null;
   hasLoadedSnapshot: boolean;
+  totalItems?: number;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  cachedPartial?: boolean;
 }
 
 interface ExtendedApi {
   cacheRead?: (collection: string) => Promise<CollectionRecord[] | null>;
+  cacheQueryRead?: (collection: string, queryKey: string) => Promise<CachedQueryMembership | null>;
+  cacheQuerySnapshot?: (
+    collection: string,
+    queryKey: string,
+    membership: CachedQueryMembership,
+  ) => void;
   cacheWrite?: (collection: string, action: string, record: CollectionRecord) => void;
   cacheSnapshot?: (collection: string, signature: string, records: CollectionRecord[]) => void;
   syncPending?: () => Promise<{
@@ -81,6 +103,25 @@ export function collectionRevisionSignature(records: readonly CollectionRecord[]
   return `${records.length}:${hash.toString(16).padStart(16, '0')}`;
 }
 
+export function collectionQueryCacheKey(
+  collectionName: string,
+  options: CollectionQueryOptions,
+): string {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  const mask = 0xffffffffffffffffn;
+  const identity = `${collectionName}\u0000${options.sort ?? ''}\u0000${options.filter ?? ''}\u0000${
+    options.pageSize ? Math.max(1, Math.floor(options.pageSize)) : ''
+  }\u0000${options.batchedFilter?.key ?? ''}\u0000${options.batchedFilter?.field ?? ''}\u0000${
+    options.batchedFilter?.batchSize ?? ''
+  }`;
+  for (let index = 0; index < identity.length; index += 1) {
+    hash ^= BigInt(identity.charCodeAt(index));
+    hash = (hash * prime) & mask;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
 function compareField(aValue: unknown, bValue: unknown, descending: boolean): number {
   if (aValue === bValue) return 0;
   if (aValue == null) return descending ? -1 : 1;
@@ -91,22 +132,33 @@ function compareField(aValue: unknown, bValue: unknown, descending: boolean): nu
 
 /**
  * Parse the `field="value"` equality subset of PocketBase filter syntax
- * (optionally `&&`-joined) into a membership predicate. Returns null for
- * anything richer — quoted `&&`, `||`, comparison operators — because the
- * caller must not guess at membership it cannot prove.
+ * (optionally joined with `&&` and `||`) into a membership predicate. Returns
+ * null for anything richer — quoted logical operators, grouping, comparison
+ * operators — because the caller must not guess at membership it cannot prove.
  */
 const FILTER_EQUALITY = /^\s*([\w.]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s&|]+))\s*$/;
 
 function buildFilterPredicate(filter: string): ((record: CollectionRecord) => boolean) | null {
-  const clauses: { field: string; value: string }[] = [];
-  for (const clause of filter.split('&&')) {
-    const match = FILTER_EQUALITY.exec(clause);
-    if (!match) return null;
-    const [, field, doubleQuoted, singleQuoted, bare] = match;
-    clauses.push({ field: field ?? '', value: doubleQuoted ?? singleQuoted ?? bare ?? '' });
+  const groups: { field: string; value: string }[][] = [];
+  for (const disjunction of filter.split('||')) {
+    const clauses: { field: string; value: string }[] = [];
+    for (const clause of disjunction.split('&&')) {
+      const match = FILTER_EQUALITY.exec(clause);
+      if (!match) return null;
+      const [, field, doubleQuoted, singleQuoted, bare] = match;
+      clauses.push({ field: field ?? '', value: doubleQuoted ?? singleQuoted ?? bare ?? '' });
+    }
+    groups.push(clauses);
   }
   return (record) =>
-    clauses.every(({ field, value }) => String(Reflect.get(record, field) ?? '') === value);
+    groups.some((clauses) =>
+      clauses.every(({ field, value }) => {
+        const fieldValue = Reflect.get(record, field);
+        const normalizedValue =
+          field === 'scopeExcluded' && fieldValue === undefined ? false : fieldValue;
+        return String(normalizedValue ?? '') === value;
+      }),
+    );
 }
 
 /**
@@ -150,6 +202,7 @@ function applyRealtimeEvent<T extends CollectionRecord>(
   record: CollectionRecord,
   comparator: ((a: T, b: T) => number) | null,
   acceptsCreate: (record: CollectionRecord) => boolean,
+  filtered: boolean,
 ): T[] {
   let next: T[];
   switch (action) {
@@ -163,7 +216,13 @@ function applyRealtimeEvent<T extends CollectionRecord>(
       // snapshot identity stable — every allocation here re-renders every
       // subscriber of the collection, matched record or not.
       const index = previous.findIndex((item) => item.id === record.id);
-      if (index === -1) return previous;
+      const accepted = acceptsCreate(record);
+      if (index === -1) {
+        if (!filtered || !accepted) return previous;
+        next = [...previous, record as T];
+        break;
+      }
+      if (!accepted) return previous.filter((_, itemIndex) => itemIndex !== index);
       next = [...previous];
       next[index] = record as T;
       break;
@@ -182,10 +241,18 @@ function replayBufferedEvents<T extends CollectionRecord>(
   events: { action: string; record: CollectionRecord }[] | null,
   comparator: ((a: T, b: T) => number) | null,
   acceptsCreate: (record: CollectionRecord) => boolean,
+  filtered: boolean,
 ): T[] {
   let next = records;
   for (const event of events ?? []) {
-    next = applyRealtimeEvent(next, event.action, event.record, comparator, acceptsCreate);
+    next = applyRealtimeEvent(
+      next,
+      event.action,
+      event.record,
+      comparator,
+      acceptsCreate,
+      filtered,
+    );
   }
   return next;
 }
@@ -196,6 +263,17 @@ async function readOfflineCache<T extends CollectionRecord>(
   try {
     const records = await getApi()?.cacheRead?.(collectionName);
     return records ? (records as T[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readOfflineQueryMembership(
+  collectionName: string,
+  queryKey: string,
+): Promise<CachedQueryMembership | null> {
+  try {
+    return (await getApi()?.cacheQueryRead?.(collectionName, queryKey)) ?? null;
   } catch {
     return null;
   }
@@ -216,6 +294,58 @@ function sortCachedRecords<T extends CollectionRecord>(
   return cached && comparator ? cached.toSorted(comparator) : cached;
 }
 
+function adjustedRealtimeTotal(
+  currentTotal: number | undefined,
+  currentLength: number,
+  action: string,
+  wasHeld: boolean,
+  accepted: boolean,
+): number | undefined {
+  const baseline = currentTotal ?? currentLength;
+  if (action === 'create' && accepted && !wasHeld) return baseline + 1;
+  const leftFilter = action === 'update' && wasHeld && !accepted;
+  if ((action === 'delete' && wasHeld) || leftFilter) return Math.max(0, baseline - 1);
+  return currentTotal;
+}
+
+function realtimeMayChangePageBoundary(
+  action: string,
+  wasHeld: boolean,
+  accepted: boolean,
+): boolean {
+  if (action === 'create') return accepted;
+  if (action === 'delete') return wasHeld || accepted;
+  return action === 'update' && wasHeld !== accepted;
+}
+
+function escapeFilterValue(value: string): string {
+  return value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
+}
+
+function batchedEqualityFilters(
+  baseFilter: string | undefined,
+  field: string,
+  values: readonly string[],
+  batchSize: number,
+): string[] {
+  const filters: string[] = [];
+  let clauses: string[] = [];
+  const flush = () => {
+    if (clauses.length === 0) return;
+    const membership = clauses.join(' || ');
+    filters.push(baseFilter ? `(${baseFilter}) && (${membership})` : membership);
+    clauses = [];
+  };
+  for (const value of values) {
+    const clause = `${field}="${escapeFilterValue(value)}"`;
+    const nextLength = clauses.join(' || ').length + clause.length + 4;
+    if (clauses.length >= batchSize || nextLength > 3_000) flush();
+    clauses.push(clause);
+  }
+  flush();
+  return filters;
+}
+
 export class CollectionStore<T extends CollectionRecord> {
   private snapshot: CollectionSnapshot<T> = {
     data: [],
@@ -225,7 +355,12 @@ export class CollectionStore<T extends CollectionRecord> {
   };
   private readonly listeners = new Set<Listener>();
   private readonly comparator: ((a: T, b: T) => number) | null;
+  private readonly acceptsBaseFilter: (record: CollectionRecord) => boolean;
   private readonly acceptsCreate: (record: CollectionRecord) => boolean;
+  private readonly filtered: boolean;
+  private readonly queryCacheKey: string | null;
+  private readonly batchedFilterField: string | null;
+  private dynamicFilterValues: Set<string>;
   private active = false;
   private connected = false;
   private connectionGeneration = 0;
@@ -237,6 +372,9 @@ export class CollectionStore<T extends CollectionRecord> {
   private inFlightEvents: { action: string; record: CollectionRecord }[] | null = null;
   private lastSnapshotSignature: string | null = null;
   private webGate: WebCollectionGate | null = null;
+  private loadedLimit: number;
+  private pageBoundaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private loadMoreInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly collectionName: string,
@@ -244,7 +382,18 @@ export class CollectionStore<T extends CollectionRecord> {
     private readonly onSubscriberCountChange: SubscriberCountListener = () => undefined,
   ) {
     this.comparator = buildComparator<T>(options.sort);
-    this.acceptsCreate = buildCreateGate(options.filter);
+    this.acceptsBaseFilter = buildCreateGate(options.filter);
+    this.batchedFilterField = options.batchedFilter?.field ?? null;
+    this.dynamicFilterValues = new Set(options.batchedFilter?.values ?? []);
+    this.acceptsCreate = (record) => {
+      if (!this.acceptsBaseFilter(record)) return false;
+      if (!this.batchedFilterField) return true;
+      return this.dynamicFilterValues.has(String(Reflect.get(record, this.batchedFilterField)));
+    };
+    this.filtered = Boolean(options.filter || options.batchedFilter);
+    this.queryCacheKey =
+      this.filtered || options.pageSize ? collectionQueryCacheKey(collectionName, options) : null;
+    this.loadedLimit = Math.max(1, Math.floor(options.pageSize ?? 1));
   }
 
   readonly getSnapshot = (): CollectionSnapshot<T> => this.snapshot;
@@ -268,6 +417,54 @@ export class CollectionStore<T extends CollectionRecord> {
     await this.fetchData();
   };
 
+  readonly loadMore = (): Promise<void> => {
+    if (this.loadMoreInFlight) return this.loadMoreInFlight;
+    this.loadMoreInFlight = this.performLoadMore().finally(() => {
+      this.loadMoreInFlight = null;
+    });
+    return this.loadMoreInFlight;
+  };
+
+  updateBatchedFilterValues(values: readonly string[]): void {
+    if (!this.batchedFilterField) return;
+    const nextValues = new Set(values);
+    if (
+      nextValues.size === this.dynamicFilterValues.size &&
+      [...nextValues].every((value) => this.dynamicFilterValues.has(value))
+    ) {
+      return;
+    }
+    this.dynamicFilterValues = nextValues;
+    const data = this.snapshot.data.filter(this.acceptsCreate);
+    if (data.length !== this.snapshot.data.length) this.updateSnapshot({ data });
+    if (this.active) void this.fetchData();
+  }
+
+  private async performLoadMore(): Promise<void> {
+    const pageSize = this.options.pageSize;
+    if (!pageSize || this.snapshot.hasMore !== true) return;
+    const boundedPageSize = Math.max(1, Math.floor(pageSize));
+    const previousLimit = this.loadedLimit;
+    this.updateSnapshot({ loadingMore: true, error: null });
+    try {
+      this.loadedLimit = previousLimit + boundedPageSize;
+      const succeeded = await this.fetchData();
+      if (!succeeded && this.active) {
+        this.loadedLimit = previousLimit;
+        const data = this.snapshot.data.slice(0, previousLimit);
+        this.updateSnapshot({
+          data,
+          hasMore:
+            this.snapshot.totalItems === undefined
+              ? this.snapshot.hasMore
+              : data.length < this.snapshot.totalItems,
+        });
+      }
+    } finally {
+      if (this.active) this.updateSnapshot({ loadingMore: false });
+    }
+  }
+
   applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: CollectionRecord): void {
     const next = applyRealtimeEvent(
       this.snapshot.data,
@@ -275,8 +472,12 @@ export class CollectionStore<T extends CollectionRecord> {
       record,
       this.comparator,
       this.acceptsCreate,
+      this.filtered,
     );
-    if (next !== this.snapshot.data) this.updateSnapshot({ data: next });
+    if (next !== this.snapshot.data) {
+      this.updateSnapshot({ data: next });
+      this.writeQueryMembership(next);
+    }
   }
 
   /** Stop background work while retaining the last immutable snapshot for fast revival. */
@@ -291,6 +492,9 @@ export class CollectionStore<T extends CollectionRecord> {
     this.clientUnsubscribe?.();
     this.clientUnsubscribe = null;
     this.inFlightEvents = null;
+    if (this.pageBoundaryRefreshTimer) clearTimeout(this.pageBoundaryRefreshTimer);
+    this.pageBoundaryRefreshTimer = null;
+    this.loadMoreInFlight = null;
     this.webGate?.unregister();
     this.webGate = null;
   }
@@ -372,15 +576,37 @@ export class CollectionStore<T extends CollectionRecord> {
   }
 
   private handleRealtimeEvent(action: string, record: CollectionRecord): void {
-    const next = applyRealtimeEvent(
+    const wasHeld = this.snapshot.data.some((item) => item.id === record.id);
+    const accepted = this.acceptsCreate(record);
+    let next = applyRealtimeEvent(
       this.snapshot.data,
       action,
       record,
       this.comparator,
       this.acceptsCreate,
+      this.filtered,
     );
+    if (this.options.pageSize && next.length > this.loadedLimit) {
+      next = next.slice(0, this.loadedLimit);
+    }
     if (next !== this.snapshot.data) {
-      this.updateSnapshot({ data: next });
+      const adjustedTotal = adjustedRealtimeTotal(
+        this.snapshot.totalItems,
+        this.snapshot.data.length,
+        action,
+        wasHeld,
+        accepted,
+      );
+      this.updateSnapshot({
+        data: next,
+        totalItems: adjustedTotal,
+        hasMore: adjustedTotal === undefined ? this.snapshot.hasMore : next.length < adjustedTotal,
+      });
+      this.writeQueryMembership(next);
+    }
+    const mayChangePageBoundary = realtimeMayChangePageBoundary(action, wasHeld, accepted);
+    if (this.options.pageSize && mayChangePageBoundary) {
+      this.schedulePageBoundaryRefresh();
     }
     if (!this.webGate) getApi()?.cacheWrite?.(this.collectionName, action, record);
     if (this.inFlightEvents && this.inFlightEvents.length < 1000) {
@@ -388,18 +614,27 @@ export class CollectionStore<T extends CollectionRecord> {
     }
   }
 
+  private schedulePageBoundaryRefresh(): void {
+    if (this.pageBoundaryRefreshTimer) return;
+    this.pageBoundaryRefreshTimer = setTimeout(() => {
+      this.pageBoundaryRefreshTimer = null;
+      if (this.active) void this.fetchData();
+    }, 100);
+  }
+
   private async fetchData(
     preserveBufferedEvents = false,
     pendingOverlays: PendingMutationOverlay[] = [],
     connectionGeneration = this.connectionGeneration,
-  ): Promise<void> {
-    if (!this.active) return;
+  ): Promise<boolean> {
+    if (!this.active) return true;
     const generation = ++this.fetchGeneration;
     const isCurrent = () =>
       this.active &&
       generation === this.fetchGeneration &&
       connectionGeneration === this.connectionGeneration;
 
+    let failed = false;
     try {
       if (!preserveBufferedEvents) this.inFlightEvents = [];
       if (isOnline()) {
@@ -408,6 +643,7 @@ export class CollectionStore<T extends CollectionRecord> {
         await this.fetchOfflineSnapshot(isCurrent);
       }
     } catch (error) {
+      failed = isCurrent() && !isAutocancelledError(error);
       await this.recoverFromFetchError(error, isCurrent);
     } finally {
       if (isCurrent()) {
@@ -415,25 +651,37 @@ export class CollectionStore<T extends CollectionRecord> {
         this.updateSnapshot({ loading: false });
       }
     }
+    return !failed;
   }
 
   private async fetchOnlineSnapshot(
     isCurrent: () => boolean,
     pendingOverlays: PendingMutationOverlay[],
   ): Promise<void> {
-    const records = await getPb()
-      .collection(this.collectionName)
-      .getFullList<T>({
-        sort: this.options.sort || '-created',
-        filter: this.options.filter || '',
-        requestKey: null,
-      });
+    const query = this.queryOptions();
+    const collection = getPb().collection(this.collectionName);
+    const pageSize = this.options.pageSize ? Math.max(1, Math.floor(this.options.pageSize)) : null;
+    const pages = pageSize
+      ? await Promise.all(
+          Array.from({ length: Math.ceil(this.loadedLimit / pageSize) }, (_, index) =>
+            collection.getList<T>(index + 1, pageSize, query),
+          ),
+        )
+      : null;
+    const records = pages
+      ? [
+          ...new Map(
+            pages.flatMap((page) => page.items).map((record) => [record.id, record]),
+          ).values(),
+        ]
+      : await this.fetchFullOnlineRecords();
     if (!isCurrent()) return;
     let next = replayBufferedEvents(
       records,
       this.inFlightEvents,
       this.comparator,
       this.acceptsCreate,
+      this.filtered,
     );
     for (const overlay of pendingOverlays) {
       if (overlay.collection === this.collectionName) {
@@ -443,21 +691,43 @@ export class CollectionStore<T extends CollectionRecord> {
           overlay.record,
           this.comparator,
           this.acceptsCreate,
+          this.filtered,
         );
       }
     }
-    this.updateSnapshot({ data: next, error: null, hasLoadedSnapshot: true });
+    if (pageSize && next.length > this.loadedLimit) next = next.slice(0, this.loadedLimit);
+    const totalItems = pages?.[0]?.totalItems ?? next.length;
+    this.updateSnapshot({
+      data: next,
+      error: null,
+      hasLoadedSnapshot: true,
+      totalItems,
+      hasMore: next.length < totalItems,
+      cachedPartial: false,
+    });
     this.webGate?.markReady();
-    this.writeCacheSnapshot(next);
+    this.writeCacheRecords(records);
+    this.writeQueryMembership(next);
   }
 
   private async fetchOfflineSnapshot(isCurrent: () => boolean): Promise<void> {
-    const cached = sortCachedRecords(
-      await readOfflineCache<T>(this.collectionName),
-      this.comparator,
-    );
+    const cachedQuery = await this.readCachedQueryRecords();
+    const allCached = sortCachedRecords(cachedQuery.records, this.comparator);
+    const filtered = allCached?.filter(this.acceptsCreate) ?? null;
+    const cached =
+      filtered && this.options.pageSize ? filtered.slice(0, this.loadedLimit) : filtered;
     if (isCurrent() && cached) {
-      this.updateSnapshot({ data: cached, hasLoadedSnapshot: true });
+      const totalItems = cachedQuery.membership?.totalItems ?? filtered?.length ?? cached.length;
+      this.updateSnapshot({
+        data: cached,
+        hasLoadedSnapshot: true,
+        totalItems,
+        hasMore: Boolean(filtered && cached.length < filtered.length),
+        cachedPartial:
+          cachedQuery.membership !== null &&
+          (!cachedQuery.membership.complete ||
+            cached.length < cachedQuery.membership.recordIds.length),
+      });
     }
   }
 
@@ -468,19 +738,88 @@ export class CollectionStore<T extends CollectionRecord> {
       this.updateSnapshot({ error: errorMessage(error) });
       return;
     }
-    const cached = sortCachedRecords(
-      await readOfflineCache<T>(this.collectionName),
-      this.comparator,
-    );
+    const cachedQuery = await this.readCachedQueryRecords();
+    const cached = sortCachedRecords(cachedQuery.records, this.comparator);
     if (!isCurrent()) return;
+    const filtered = cached?.filter(this.acceptsCreate) ?? null;
+    const visible =
+      filtered && this.options.pageSize ? filtered.slice(0, this.loadedLimit) : filtered;
+    const totalItems = cachedQuery.membership?.totalItems ?? filtered?.length ?? visible?.length;
     this.updateSnapshot({
-      ...(cached ? { data: cached, hasLoadedSnapshot: true } : {}),
+      ...(visible
+        ? {
+            data: visible,
+            hasLoadedSnapshot: true,
+            totalItems,
+            hasMore: Boolean(filtered && visible.length < filtered.length),
+            cachedPartial:
+              cachedQuery.membership !== null &&
+              (!cachedQuery.membership.complete ||
+                visible.length < cachedQuery.membership.recordIds.length),
+          }
+        : {}),
       error: errorMessage(error),
     });
   }
 
-  private writeCacheSnapshot(records: T[]): void {
+  private async fetchFullOnlineRecords(): Promise<T[]> {
+    const batchedFilter = this.options.batchedFilter;
+    if (!batchedFilter) {
+      return getPb().collection(this.collectionName).getFullList<T>(this.queryOptions());
+    }
+    const values = [...this.dynamicFilterValues];
+    if (values.length === 0) return [];
+    const batchSize = Math.max(1, Math.min(50, Math.floor(batchedFilter.batchSize ?? 40)));
+    const filters = batchedEqualityFilters(
+      this.options.filter,
+      batchedFilter.field,
+      values,
+      batchSize,
+    );
+    const records = new Map<string, T>();
+    for (let offset = 0; offset < filters.length; offset += 4) {
+      const group = filters.slice(offset, offset + 4);
+      const results = await Promise.all(
+        group.map((filter) =>
+          getPb().collection(this.collectionName).getFullList<T>(this.queryOptions(filter)),
+        ),
+      );
+      for (const record of results.flat()) records.set(record.id, record);
+    }
+    return [...records.values()];
+  }
+
+  private queryOptions(filter = this.options.filter || ''): {
+    sort: string;
+    filter: string;
+    requestKey: null;
+  } {
+    return {
+      sort: this.options.sort || '-created',
+      filter,
+      requestKey: null,
+    };
+  }
+
+  private async readCachedQueryRecords(): Promise<{
+    records: T[] | null;
+    membership: CachedQueryMembership | null;
+  }> {
+    const cached = await readOfflineCache<T>(this.collectionName);
+    if (!cached || !this.queryCacheKey) return { records: cached, membership: null };
+    const membership = await readOfflineQueryMembership(this.collectionName, this.queryCacheKey);
+    if (membership === null) return { records: cached, membership: null };
+    const memberIds = new Set(membership.recordIds);
+    return { records: cached.filter((record) => memberIds.has(record.id)), membership };
+  }
+
+  private writeCacheRecords(records: T[]): void {
     if (this.webGate) return;
+    if (this.filtered || this.options.pageSize) {
+      const cacheWrite = getApi()?.cacheWrite;
+      for (const record of records) cacheWrite?.(this.collectionName, 'update', record);
+      return;
+    }
     const cacheSnapshot = getApi()?.cacheSnapshot;
     if (!cacheSnapshot) return;
     const signature = collectionRevisionSignature(records);
@@ -489,13 +828,28 @@ export class CollectionStore<T extends CollectionRecord> {
     cacheSnapshot(this.collectionName, signature, records);
   }
 
+  private writeQueryMembership(records: T[]): void {
+    if (this.webGate || !this.queryCacheKey) return;
+    const recordIds = records.map((record) => record.id);
+    const totalItems = Math.max(recordIds.length, this.snapshot.totalItems ?? recordIds.length);
+    getApi()?.cacheQuerySnapshot?.(this.collectionName, this.queryCacheKey, {
+      recordIds,
+      totalItems,
+      complete: recordIds.length >= totalItems,
+    });
+  }
+
   private updateSnapshot(patch: Partial<CollectionSnapshot<T>>): void {
     const next = { ...this.snapshot, ...patch };
     if (
       next.data === this.snapshot.data &&
       next.loading === this.snapshot.loading &&
       next.error === this.snapshot.error &&
-      next.hasLoadedSnapshot === this.snapshot.hasLoadedSnapshot
+      next.hasLoadedSnapshot === this.snapshot.hasLoadedSnapshot &&
+      next.totalItems === this.snapshot.totalItems &&
+      next.hasMore === this.snapshot.hasMore &&
+      next.loadingMore === this.snapshot.loadingMore &&
+      next.cachedPartial === this.snapshot.cachedPartial
     ) {
       return;
     }

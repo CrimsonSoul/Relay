@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -230,6 +230,68 @@ describe('OfflineCache', () => {
     cache.clear();
 
     expect(cache.getUsableCacheMarker()).toBeNull();
+  });
+
+  it('stores and replaces membership for a cached collection query', () => {
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toBeNull();
+
+    expect(
+      cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
+        recordIds: ['first', 'second'],
+        totalItems: 10,
+        complete: false,
+      }),
+    ).toBe(true);
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toEqual({
+      recordIds: ['first', 'second'],
+      totalItems: 10,
+      complete: false,
+    });
+
+    expect(
+      cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
+        recordIds: ['second'],
+        totalItems: 1,
+        complete: true,
+      }),
+    ).toBe(true);
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toEqual({
+      recordIds: ['second'],
+      totalItems: 1,
+      complete: true,
+    });
+  });
+
+  it('clears cached query membership with cached data', () => {
+    cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
+      recordIds: ['problem'],
+      totalItems: 1,
+      complete: true,
+    });
+
+    cache.clear();
+
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toBeNull();
+  });
+
+  it('bounds obsolete cached query memberships per collection', () => {
+    const now = vi.spyOn(Date, 'now');
+    for (let index = 0; index < 65; index += 1) {
+      now.mockReturnValue(index);
+      cache.writeQueryMembership('dynatrace_problems', index.toString(16).padStart(16, '0'), {
+        recordIds: [`problem-${index}`],
+        totalItems: 1,
+        complete: true,
+      });
+    }
+    now.mockRestore();
+
+    expect(cache.readQueryMembership('dynatrace_problems', '0000000000000000')).toBeNull();
+    expect(cache.readQueryMembership('dynatrace_problems', '0000000000000040')).toEqual({
+      recordIds: ['problem-64'],
+      totalItems: 1,
+      complete: true,
+    });
   });
 
   it('tracks Wiki search snapshot trust independently by normalized server identity', () => {

@@ -1,8 +1,10 @@
 import Database from 'better-sqlite3';
+import type { CachedQueryMembership } from '@shared/ipc';
 import { loggers } from '../logger';
 
 const logger = loggers.sync;
 const KNOWLEDGE_SEARCH_SNAPSHOT_MARKER_KEY = 'knowledge-search-snapshot';
+const MAX_QUERY_MEMBERSHIPS_PER_COLLECTION = 64;
 type CacheMutationAction = 'create' | 'update' | 'delete';
 
 export interface UsableCacheMarker {
@@ -60,6 +62,13 @@ export class OfflineCache {
         CREATE TABLE IF NOT EXISTS offline_meta (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS offline_query_membership (
+          collection TEXT NOT NULL,
+          query_key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (collection, query_key)
         );
         CREATE TABLE IF NOT EXISTS pending_changes (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -357,9 +366,73 @@ export class OfflineCache {
     }
   }
 
+  writeQueryMembership(
+    collection: string,
+    queryKey: string,
+    membership: CachedQueryMembership,
+  ): boolean {
+    try {
+      const transaction = this.db.transaction(() => {
+        this.db
+          .prepare(
+            `INSERT OR REPLACE INTO offline_query_membership
+              (collection, query_key, value, updated_at) VALUES (?, ?, ?, ?)`,
+          )
+          .run(collection, queryKey, JSON.stringify(membership), Date.now());
+        this.db
+          .prepare(
+            `DELETE FROM offline_query_membership
+             WHERE collection = ? AND query_key <> ? AND query_key NOT IN (
+               SELECT query_key FROM offline_query_membership
+               WHERE collection = ? AND query_key <> ?
+               ORDER BY updated_at DESC, query_key DESC
+               LIMIT ?
+             )`,
+          )
+          .run(
+            collection,
+            queryKey,
+            collection,
+            queryKey,
+            MAX_QUERY_MEMBERSHIPS_PER_COLLECTION - 1,
+          );
+      });
+      transaction();
+      return true;
+    } catch (error) {
+      logger.error('Failed to write cached query membership', { collection, error });
+      return false;
+    }
+  }
+
+  readQueryMembership(collection: string, queryKey: string): CachedQueryMembership | null {
+    try {
+      const row = this.db
+        .prepare(
+          'SELECT value FROM offline_query_membership WHERE collection = ? AND query_key = ?',
+        )
+        .get(collection, queryKey) as { value: string } | undefined;
+      if (!row) return null;
+      const membership = JSON.parse(row.value) as Partial<CachedQueryMembership>;
+      return Array.isArray(membership.recordIds) &&
+        membership.recordIds.every((id) => typeof id === 'string') &&
+        typeof membership.totalItems === 'number' &&
+        Number.isSafeInteger(membership.totalItems) &&
+        membership.totalItems >= membership.recordIds.length &&
+        typeof membership.complete === 'boolean'
+        ? (membership as CachedQueryMembership)
+        : null;
+    } catch (error) {
+      logger.warn('Failed to read cached query membership', { collection, error });
+      return null;
+    }
+  }
+
   clear(): void {
     try {
-      this.db.exec('DELETE FROM cache; DELETE FROM cache_meta; DELETE FROM offline_meta');
+      this.db.exec(
+        'DELETE FROM cache; DELETE FROM cache_meta; DELETE FROM offline_meta; DELETE FROM offline_query_membership',
+      );
     } catch (err) {
       logger.error('Failed to clear offline cache', { error: err });
     }

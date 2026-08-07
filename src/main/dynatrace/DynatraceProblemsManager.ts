@@ -16,6 +16,7 @@ import { getErrorMessage } from '@shared/types';
 import { loggers } from '../logger';
 import {
   DynatraceProblemsClient,
+  getDynatraceRetryAfterMs,
   type DynatraceProblemsQueryScope,
 } from './DynatraceProblemsClient';
 import {
@@ -34,8 +35,14 @@ const HISTORY_RETENTION_MS = DYNATRACE_PROBLEM_HISTORY_RETENTION_DAYS * 24 * 60 
 
 type IncomingProblem = Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
 type ExistingProblem = DynatraceProblemRecord;
-type ExpiredProblem = Pick<DynatraceProblemRecord, 'id' | 'problemId' | 'status' | 'endTime'>;
-type FilterableProblem = Pick<DynatraceProblemRecord, 'id' | 'problemId' | 'alertingProfiles'>;
+type ExpiredProblem = Pick<
+  DynatraceProblemRecord,
+  'id' | 'problemId' | 'status' | 'endTime' | 'scopeExcluded' | 'scopeExcludedAt'
+>;
+type FilterableProblem = Pick<
+  DynatraceProblemRecord,
+  'id' | 'problemId' | 'alertingProfiles' | 'scopeExcluded' | 'scopeExcludedAt'
+>;
 type RelatedRecord = { id: string; problemId: string };
 type SyncRecord = {
   id: string;
@@ -43,8 +50,25 @@ type SyncRecord = {
   lastSuccessAt?: string;
   lastReconciledAt?: string;
   availableAlertingProfiles?: string[];
+  profileFieldHealthy?: boolean;
+  profileCatalogCount?: number;
+  matchedProfileCount?: number;
+  consecutiveFailures?: number;
+  nextRetryAt?: string;
+  staleSince?: string;
+  resultTruncated?: boolean;
+  reconciliationPending?: boolean;
 };
 type UpsertStats = { created: number; updated: number; unchanged: number };
+type ProfileScopeState = {
+  catalog: string[];
+  selectedProfiles: string[] | null;
+  selectedProfileSet: Set<string> | null;
+  profileFieldHealthy: boolean;
+  profileCatalogCount: number;
+  matchedProfileCount: number;
+  validationError: string | null;
+};
 
 /**
  * Local stand-in for `Map.groupBy`, which is ES2024 and therefore outside the `lib`
@@ -75,6 +99,8 @@ const PROBLEM_COMPARISON_FIELDS = [
   'impactedEntities',
   'managementZones',
   'alertingProfiles',
+  'scopeExcluded',
+  'scopeExcludedAt',
   'environmentUrl',
 ].join(',');
 
@@ -133,6 +159,8 @@ function problemFingerprint(problem: IncomingProblem | ExistingProblem): string 
     impactedEntities: entities(problem.impactedEntities),
     managementZones: zones,
     alertingProfiles: [...(problem.alertingProfiles ?? [])].sort((a, b) => a.localeCompare(b)),
+    scopeExcluded: problem.scopeExcluded === true,
+    scopeExcludedAt: problem.scopeExcludedAt ?? '',
     environmentUrl: problem.environmentUrl,
   });
 }
@@ -143,6 +171,7 @@ export class DynatraceProblemsManager {
   private reconciliationRequested = false;
   private availableAlertingProfiles: string[] = [];
   private profileCatalogRefreshedAt = 0;
+  private scheduledRetryAt = 0;
 
   constructor(
     private readonly store: DynatraceProblemsConfigStore,
@@ -188,6 +217,15 @@ export class DynatraceProblemsManager {
         availableAlertingProfiles: [],
         selectedAlertingProfiles: [],
         profileFilterConfigured: false,
+        scopeSource: 'alerting-profile',
+        profileFieldHealthy: true,
+        profileCatalogCount: 0,
+        matchedProfileCount: 0,
+        consecutiveFailures: 0,
+        nextRetryAt: '',
+        staleSince: '',
+        resultTruncated: false,
+        reconciliationPending: false,
       });
     }
     return cleared;
@@ -204,6 +242,7 @@ export class DynatraceProblemsManager {
       loggers.main.warn('Initial Dynatrace Problems sync failed', { error });
     });
     this.pollTimer = setInterval(() => {
+      if (Date.now() < this.scheduledRetryAt) return;
       void this.syncNow().catch((error) => {
         loggers.main.warn('Scheduled Dynatrace Problems sync failed', { error });
       });
@@ -245,39 +284,58 @@ export class DynatraceProblemsManager {
     const now = Date.now();
     const attemptedAt = new Date(now).toISOString();
     const previousSync = await this.readSyncRecord(pb);
-    const reconciliation = shouldReconcile(previousSync, now, forceReconciliation);
+    const persistedRetryAt = parsedTimestamp(previousSync?.nextRetryAt);
+    if (!forceReconciliation && persistedRetryAt !== null && persistedRetryAt > Date.now()) {
+      this.scheduledRetryAt = persistedRetryAt;
+      return 0;
+    }
+    const reconciliation = shouldReconcile(
+      previousSync,
+      now,
+      forceReconciliation || previousSync?.reconciliationPending === true,
+    );
     const queryScope: DynatraceProblemsQueryScope = reconciliation
       ? { mode: 'reconcile' }
       : { mode: 'incremental', lookbackMinutes: incrementalLookbackMinutes(previousSync, now) };
     await this.writeSyncState('syncing', { lastAttemptAt: attemptedAt, error: '' });
 
+    let profileFieldHealthy = previousSync?.profileFieldHealthy ?? true;
+    let profileCatalogCount = previousSync?.profileCatalogCount ?? 0;
+    let matchedProfileCount = previousSync?.matchedProfileCount ?? 0;
+
     try {
-      if (this.availableAlertingProfiles.length === 0) {
-        this.availableAlertingProfiles = previousSync?.availableAlertingProfiles ?? [];
-        this.profileCatalogRefreshedAt = parsedTimestamp(previousSync?.lastReconciledAt) ?? 0;
-      }
-      const catalog = reconciliation
-        ? await this.getAvailableAlertingProfiles(config, forceReconciliation)
-        : this.availableAlertingProfiles;
+      const profileScope = await this.prepareProfileScope(
+        config,
+        previousSync,
+        reconciliation,
+        forceReconciliation,
+      );
+      const { catalog, selectedProfiles, selectedProfileSet } = profileScope;
+      ({ profileFieldHealthy, profileCatalogCount, matchedProfileCount } = profileScope);
+      if (profileScope.validationError) throw new Error(profileScope.validationError);
       const result = await this.client.fetchProblems(config, queryScope);
-      const selectedProfiles = config.alertingProfiles;
-      const selectedProfileSet = new Set(selectedProfiles ?? []);
-      const problems = selectedProfiles
+      const scopedProblems = selectedProfileSet
         ? result.problems.filter((problem) =>
             problem.alertingProfiles.some((profile) => selectedProfileSet.has(profile)),
           )
         : result.problems;
+      const problems = scopedProblems.map((problem) => ({
+        ...problem,
+        scopeExcluded: false,
+        scopeExcludedAt: '',
+      }));
       const observedProfiles = problems.flatMap((problem) => problem.alertingProfiles);
       this.availableAlertingProfiles = [...new Set([...catalog, ...observedProfiles])].sort(
         (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }),
       );
 
       const upsertStats = await this.upsertProblems(pb, problems, reconciliation);
-      const profilePrunedCount =
-        reconciliation && selectedProfiles
-          ? await this.pruneProblemsOutsideProfiles(pb, selectedProfileSet)
-          : 0;
-      const retentionPrunedCount = reconciliation ? await this.pruneExpiredHistory(pb) : 0;
+      let scopeExcludedCount = 0;
+      let retentionPrunedCount = 0;
+      if (reconciliation) {
+        scopeExcludedCount = await this.reconcileProblemScope(pb, selectedProfileSet);
+        retentionPrunedCount = await this.pruneExpiredHistory(pb);
+      }
       const successAt = new Date().toISOString();
       await this.writeSyncState('ok', {
         lastAttemptAt: attemptedAt,
@@ -287,28 +345,100 @@ export class DynatraceProblemsManager {
         availableAlertingProfiles: this.availableAlertingProfiles,
         selectedAlertingProfiles: selectedProfiles ?? [],
         profileFilterConfigured: selectedProfiles !== null,
+        scopeSource: 'alerting-profile',
+        profileFieldHealthy,
+        profileCatalogCount,
+        matchedProfileCount,
+        consecutiveFailures: 0,
+        nextRetryAt: '',
+        staleSince: '',
+        resultTruncated:
+          result.resultTruncated === true ||
+          (!reconciliation && previousSync?.resultTruncated === true),
+        reconciliationPending: false,
       });
+      this.scheduledRetryAt = 0;
       loggers.main.info('Dynatrace Problems synchronized', {
         mode: queryScope.mode,
         fetchedCount: problems.length,
         ...upsertStats,
-        profilePrunedCount,
+        scopeExcludedCount,
         retentionPrunedCount,
       });
       return problems.length;
     } catch (error) {
       const message = getErrorMessage(error);
-      await this.writeSyncState('error', { lastAttemptAt: attemptedAt, error: message });
+      const retryDelay = Math.max(POLL_INTERVAL_MS, getDynatraceRetryAfterMs(error) ?? 0);
+      this.scheduledRetryAt = Date.now() + retryDelay;
+      await this.writeSyncState('error', {
+        lastAttemptAt: attemptedAt,
+        error: message,
+        scopeSource: 'alerting-profile',
+        profileFieldHealthy,
+        profileCatalogCount,
+        matchedProfileCount,
+        consecutiveFailures: (previousSync?.consecutiveFailures ?? 0) + 1,
+        nextRetryAt: new Date(this.scheduledRetryAt).toISOString(),
+        staleSince: previousSync?.staleSince || attemptedAt,
+        reconciliationPending: reconciliation || previousSync?.reconciliationPending === true,
+      });
       throw error;
     }
+  }
+
+  private async prepareProfileScope(
+    config: DynatraceProblemsConfig,
+    previousSync: SyncRecord | null,
+    reconciliation: boolean,
+    forceReconciliation: boolean,
+  ): Promise<ProfileScopeState> {
+    if (this.availableAlertingProfiles.length === 0) {
+      this.availableAlertingProfiles = previousSync?.availableAlertingProfiles ?? [];
+      this.profileCatalogRefreshedAt = parsedTimestamp(previousSync?.lastReconciledAt) ?? 0;
+    }
+    const selectedProfiles = config.alertingProfiles;
+    const catalog = reconciliation
+      ? await this.getAvailableAlertingProfiles(
+          config,
+          forceReconciliation,
+          selectedProfiles !== null,
+        )
+      : this.availableAlertingProfiles;
+    let profileFieldHealthy = previousSync?.profileFieldHealthy ?? true;
+    if (reconciliation && selectedProfiles) {
+      profileFieldHealthy = (await this.client.inspectAlertingProfileField(config)).healthy;
+    }
+    const catalogSet = new Set(catalog);
+    const matchedProfileCount = selectedProfiles
+      ? selectedProfiles.filter((profile) => catalogSet.has(profile)).length
+      : catalog.length;
+    let validationError: string | null = null;
+    if (reconciliation && selectedProfiles && !profileFieldHealthy) {
+      validationError =
+        'Dynatrace did not return alerting-profile metadata. Existing Relay data was preserved.';
+    } else if (reconciliation && selectedProfiles && matchedProfileCount === 0) {
+      validationError =
+        'Configured Dynatrace alerting profiles were not found. Existing Relay data was preserved.';
+    }
+    return {
+      catalog,
+      selectedProfiles,
+      selectedProfileSet: selectedProfiles ? new Set(selectedProfiles) : null,
+      profileFieldHealthy,
+      profileCatalogCount: catalog.length,
+      matchedProfileCount,
+      validationError,
+    };
   }
 
   private async getAvailableAlertingProfiles(
     config: DynatraceProblemsConfig,
     forceRefresh = false,
+    requireFresh = false,
   ): Promise<string[]> {
     if (
       !forceRefresh &&
+      !requireFresh &&
       this.availableAlertingProfiles.length > 0 &&
       Date.now() - this.profileCatalogRefreshedAt < PROFILE_CATALOG_REFRESH_MS
     ) {
@@ -320,6 +450,7 @@ export class DynatraceProblemsManager {
       this.profileCatalogRefreshedAt = Date.now();
     } catch (error) {
       loggers.main.warn('Could not refresh the Dynatrace alerting profile catalog', { error });
+      if (requireFresh) throw error;
     }
     return this.availableAlertingProfiles;
   }
@@ -399,31 +530,66 @@ export class DynatraceProblemsManager {
 
   private async pruneExpiredHistory(pb: PocketBase): Promise<number> {
     const cutoff = Date.now() - HISTORY_RETENTION_MS;
-    const expired = await pb.collection(DYNATRACE_PROBLEMS_COLLECTION).getFullList<ExpiredProblem>({
-      filter: `status="CLOSED" && endTime>0 && endTime<${cutoff}`,
-      fields: 'id,problemId,status,endTime',
-      requestKey: null,
-    });
+    const cutoffIso = new Date(cutoff).toISOString();
+    const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
+    const [expired, abandoned] = await Promise.all([
+      collection.getFullList<ExpiredProblem>({
+        filter: `status="CLOSED" && endTime>0 && endTime<${cutoff}`,
+        fields: 'id,problemId,status,endTime,scopeExcluded,scopeExcludedAt',
+        requestKey: null,
+      }),
+      collection.getFullList<ExpiredProblem>({
+        filter: `scopeExcluded=true && scopeExcludedAt<"${escapeFilter(cutoffIso)}"`,
+        fields: 'id,problemId,status,endTime,scopeExcluded,scopeExcludedAt',
+        requestKey: null,
+      }),
+    ]);
     const confirmedExpired = expired.filter(
       (problem) => problem.status === 'CLOSED' && problem.endTime > 0 && problem.endTime < cutoff,
     );
-    return this.deleteProblemsWithRelatedRecords(pb, confirmedExpired);
+    const confirmedAbandoned = abandoned.filter(
+      (problem) =>
+        problem.scopeExcluded === true &&
+        (parsedTimestamp(problem.scopeExcludedAt) ?? Number.POSITIVE_INFINITY) < cutoff,
+    );
+    const unique = new Map(
+      [...confirmedExpired, ...confirmedAbandoned].map((problem) => [problem.id, problem]),
+    );
+    return this.deleteProblemsWithRelatedRecords(pb, [...unique.values()]);
   }
 
-  private async pruneProblemsOutsideProfiles(
+  private async reconcileProblemScope(
     pb: PocketBase,
-    selectedProfiles: Set<string>,
+    selectedProfiles: Set<string> | null,
   ): Promise<number> {
     const problems = await pb
       .collection(DYNATRACE_PROBLEMS_COLLECTION)
       .getFullList<FilterableProblem>({
-        fields: 'id,problemId,alertingProfiles',
+        fields: 'id,problemId,alertingProfiles,scopeExcluded,scopeExcludedAt',
         requestKey: null,
       });
-    const excluded = problems.filter(
-      (problem) => !problem.alertingProfiles?.some((profile) => selectedProfiles.has(profile)),
-    );
-    return this.deleteProblemsWithRelatedRecords(pb, excluded);
+    const excludedAt = new Date().toISOString();
+    let excludedCount = 0;
+    for (const problem of problems) {
+      const shouldExclude = Boolean(
+        selectedProfiles &&
+        !problem.alertingProfiles?.some((profile) => selectedProfiles.has(profile)),
+      );
+      if (shouldExclude) excludedCount += 1;
+      const missingExcludedAt = shouldExclude && parsedTimestamp(problem.scopeExcludedAt) === null;
+      const staleIncludedAt = !shouldExclude && Boolean(problem.scopeExcludedAt);
+      if (problem.scopeExcluded === shouldExclude && !missingExcludedAt && !staleIncludedAt)
+        continue;
+      await pb.collection(DYNATRACE_PROBLEMS_COLLECTION).update(
+        problem.id,
+        {
+          scopeExcluded: shouldExclude,
+          scopeExcludedAt: shouldExclude ? excludedAt : '',
+        },
+        { requestKey: null },
+      );
+    }
+    return excludedCount;
   }
 
   private async deleteProblemsWithRelatedRecords(
@@ -485,6 +651,15 @@ export class DynatraceProblemsManager {
       availableAlertingProfiles?: string[];
       selectedAlertingProfiles?: string[];
       profileFilterConfigured?: boolean;
+      scopeSource?: 'alerting-profile';
+      profileFieldHealthy?: boolean;
+      profileCatalogCount?: number;
+      matchedProfileCount?: number;
+      consecutiveFailures?: number;
+      nextRetryAt?: string;
+      staleSince?: string;
+      resultTruncated?: boolean;
+      reconciliationPending?: boolean;
     },
   ): Promise<void> {
     const pb = this.getPocketBase();

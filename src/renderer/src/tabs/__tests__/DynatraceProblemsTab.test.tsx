@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     id: 'new-response-note',
   })),
   refetch: vi.fn(async () => undefined),
+  loadMoreHistory: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
   connectionState: 'online',
   hookValue: {} as Record<string, unknown>,
@@ -105,6 +106,10 @@ describe('DynatraceProblemsTab', () => {
       problems: [openProblem],
       stateByProblemId: new Map(),
       notesByProblemId: new Map(),
+      totalHistoryCount: 0,
+      hasMoreHistory: false,
+      historyCachedPartial: false,
+      loadMoreHistory: mocks.loadMoreHistory,
       sync: {
         id: 'sync-1',
         key: 'primary',
@@ -123,6 +128,8 @@ describe('DynatraceProblemsTab', () => {
     globalThis.api = {
       getClientHostname: vi.fn(async () => 'noc-laptop-07'),
       openExternal: vi.fn(async () => true),
+      openServiceDeskUrl: vi.fn(async () => true),
+      writeClipboard: vi.fn(async () => true),
       syncDynatraceProblems: vi.fn(async () => ({ success: true, data: { count: 1 } })),
       saveDynatraceProblemProfileFilter: mocks.saveProfileFilter,
     } as never;
@@ -141,27 +148,47 @@ describe('DynatraceProblemsTab', () => {
     const toolbar = screen.getByRole('toolbar', { name: 'Problem queue actions' });
     const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
     expect(toolbar).toContainElement(utility);
-    expect(utility).toContainElement(
-      screen.getByRole('tablist', { name: 'Problem queue filters' }),
-    );
-    expect(utility).toContainElement(screen.getByRole('button', { name: /Alerting profiles/i }));
+    expect(utility).toContainElement(screen.getByRole('group', { name: 'Problem queue filters' }));
+    expect(screen.queryByRole('button', { name: /Alerting profiles/i })).not.toBeInTheDocument();
     expect(utility).toContainElement(screen.getByRole('searchbox', { name: 'Search problems' }));
     expect(utility).toContainElement(
-      screen.getByRole('button', { name: 'Refresh Dynatrace Problems' }),
+      screen.getByRole('button', { name: 'Reload Relay problem data' }),
     );
+    expect(screen.getByText(/Alt\+↑\/↓/)).toBeVisible();
+    expect(screen.getByText(/Alt\+N/)).toBeVisible();
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('searchbox', { name: 'Search problems' })).toHaveClass(
       'scoped-search-input',
     );
   });
 
+  it('syncs Dynatrace before refreshing Relay data on the desktop server', async () => {
+    render(<DynatraceProblemsTab relayMode="server" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sync Dynatrace problems now' }));
+
+    await waitFor(() => expect(globalThis.api?.syncDynatraceProblems).toHaveBeenCalledOnce());
+    expect(mocks.refetch).toHaveBeenCalledOnce();
+  });
+
+  it('reloads Relay data without requesting a privileged sync in Relay Web', async () => {
+    if (!globalThis.api) throw new Error('Expected bridge fixture');
+    (globalThis.api as unknown as { runtime: { kind: 'web' } }).runtime = { kind: 'web' };
+
+    render(<DynatraceProblemsTab relayMode="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Reload Relay problem data' }));
+
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalledOnce());
+    expect(globalThis.api.syncDynatraceProblems).not.toHaveBeenCalled();
+  });
+
   it('shows the unaddressed queue and selected problem context', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
 
     expect(screen.getByRole('heading', { name: 'Local Response Queue' })).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: /^All/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Unaddressed\s*1/i })).toHaveAttribute(
-      'aria-selected',
+    expect(screen.queryByRole('button', { name: /^All/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Unaddressed\s*1/i })).toHaveAttribute(
+      'aria-pressed',
       'true',
     );
     await waitFor(() => {
@@ -173,6 +200,77 @@ describe('DynatraceProblemsTab', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
+  });
+
+  it('prioritizes active sync state and exposes the exact last successful timestamp', () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      sync: {
+        ...(mocks.hookValue.sync as object),
+        state: 'syncing',
+        lastSuccessAt: '2026-08-07T17:45:00.000Z',
+      },
+    };
+
+    render(<DynatraceProblemsTab relayMode="server" />);
+
+    const [status] = screen.getAllByText('Syncing now');
+    expect(status).toHaveAttribute('title', expect.stringContaining('Aug'));
+  });
+
+  it('warns when Dynatrace reports a truncated result set', () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      sync: {
+        ...(mocks.hookValue.sync as object),
+        resultTruncated: true,
+      },
+    };
+
+    render(<DynatraceProblemsTab relayMode="server" />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/result limit/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/history may be incomplete/i);
+  });
+
+  it('loads more resolved history without loading the full year up front', async () => {
+    const historical = makeHistoryProblem(
+      'history-page-1',
+      'Resolved payment latency',
+      Date.now() - 60_000,
+    );
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [historical],
+      totalHistoryCount: 250,
+      hasMoreHistory: true,
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('button', { name: /History\s*250/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load 100 more' }));
+
+    await waitFor(() => expect(mocks.loadMoreHistory).toHaveBeenCalledOnce());
+    expect(screen.getByText(/1 of 250 loaded/i)).toBeVisible();
+  });
+
+  it('labels partial offline history as cached while preserving the authoritative total', () => {
+    const historical = makeHistoryProblem(
+      'history-cached',
+      'Cached payment latency',
+      Date.now() - 60_000,
+    );
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [historical],
+      totalHistoryCount: 250,
+      historyCachedPartial: true,
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('button', { name: /History\s*250/i }));
+
+    expect(screen.getByText(/1 of 250 cached/i)).toBeVisible();
   });
 
   it('switches to the unaddressed queue and selects the next problem with Alt+Down', async () => {
@@ -188,11 +286,11 @@ describe('DynatraceProblemsTab', () => {
     render(<DynatraceProblemsTab relayMode="client" active />);
     await screen.findByRole('heading', { name: openProblem.title });
 
-    fireEvent.click(screen.getByRole('tab', { name: /Addressed locally/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Addressed locally/ }));
     fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true });
 
-    expect(screen.getByRole('tab', { name: /Unaddressed/ })).toHaveAttribute(
-      'aria-selected',
+    expect(screen.getByRole('button', { name: /Unaddressed/ })).toHaveAttribute(
+      'aria-pressed',
       'true',
     );
     expect(
@@ -271,6 +369,7 @@ describe('DynatraceProblemsTab', () => {
       problemId: 'problem-2',
       displayId: 'P-240792',
       title: 'Checkout latency spike',
+      startTime: openProblem.startTime - 1,
     };
     mocks.hookValue = { ...mocks.hookValue, problems: [openProblem, second] };
 
@@ -409,6 +508,29 @@ describe('DynatraceProblemsTab', () => {
     expect(rows[1]).toHaveTextContent('Older availability problem');
   });
 
+  it('uses the record ID as a stable tie-breaker for equal problem timestamps', () => {
+    const lowerId = {
+      ...openProblem,
+      id: 'pb-a',
+      problemId: 'problem-a',
+      title: 'Lower ID problem',
+    };
+    const higherId = {
+      ...openProblem,
+      id: 'pb-z',
+      problemId: 'problem-z',
+      title: 'Higher ID problem',
+    };
+    mocks.hookValue = { ...mocks.hookValue, problems: [lowerId, higherId] };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+
+    const queue = screen.getByRole('region', { name: 'Dynatrace problem queue' });
+    const rows = within(queue).getAllByRole('button');
+    expect(rows[0]).toHaveTextContent('Higher ID problem');
+    expect(rows[1]).toHaveTextContent('Lower ID problem');
+  });
+
   it('sorts history by local disposition or response while keeping each group newest first', () => {
     const newestWithoutResponse = makeHistoryProblem(
       'no-response',
@@ -449,7 +571,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*3/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*3/i }));
 
     const queue = screen.getByRole('region', { name: 'Dynatrace problem history' });
     const rowTitles = () =>
@@ -556,11 +678,11 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*4/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*4/i }));
 
     const queue = screen.getByRole('region', { name: 'Dynatrace problem history' });
     const resultStatus = within(queue).getByRole('status');
-    expect(resultStatus).toHaveTextContent('4 shown');
+    expect(resultStatus).toHaveTextContent('4 of 4 loaded');
     expect(
       within(queue).getByRole('button', { name: /Addressed with a ticket/i }),
     ).toHaveTextContent('Ryan · INC0012345');
@@ -625,7 +747,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
 
     const row = screen.getByRole('button', { name: /Multiple linked tickets/i });
     expect(row).toHaveTextContent('CHG0099999');
@@ -662,7 +784,7 @@ describe('DynatraceProblemsTab', () => {
     );
 
     const { unmount } = render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
 
     const sort = screen.getByRole('combobox', { name: 'Sort history' });
     const responseFilter = screen.getByRole('combobox', { name: 'Filter history by response' });
@@ -678,7 +800,7 @@ describe('DynatraceProblemsTab', () => {
 
     unmount();
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     expect(screen.getByRole('combobox', { name: 'Sort history' })).toHaveValue('no-response-first');
     expect(screen.getByRole('combobox', { name: 'Filter history by response' })).toHaveValue(
       'none',
@@ -707,7 +829,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter history by response' }), {
       target: { value: 'notes' },
     });
@@ -738,7 +860,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter history by response' }), {
       target: { value: 'tickets' },
     });
@@ -777,7 +899,7 @@ describe('DynatraceProblemsTab', () => {
     expect(within(queue).getByRole('listitem')).toHaveStyle({ height: '124px' });
   });
 
-  it('exposes the primary entity in the queue and filters by alerting profile', async () => {
+  it('shows impacted entities in detail and leaves storage scope in Administration', async () => {
     const hostProblem: DynatraceProblemRecord = {
       ...openProblem,
       id: 'pb-2',
@@ -793,28 +915,10 @@ describe('DynatraceProblemsTab', () => {
 
     render(<DynatraceProblemsTab relayMode="server" />);
 
-    expect(screen.getByText('pos62term3.freedomroads.local')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Alerting profiles/i }));
-    expect(screen.getByRole('dialog', { name: 'Alerting profile filter' })).toHaveAttribute(
-      'data-variant',
-      'standard',
-    );
-    const paymentsProfile = await screen.findByRole('checkbox', {
-      name: 'Payments Production',
-    });
-    expect(paymentsProfile).toBeChecked();
-    fireEvent.click(paymentsProfile);
-
-    await waitFor(() => {
-      expect(
-        screen.queryByRole('button', { name: /Payment service response time degradation/i }),
-      ).not.toBeInTheDocument();
-    });
-    expect(screen.getByRole('button', { name: /Host or monitoring unavailable/i })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Save retention filter' }));
-    await waitFor(() => {
-      expect(mocks.saveProfileFilter).toHaveBeenCalledWith(['Retail Stores']);
-    });
+    expect(screen.getAllByText('pos62term3.freedomroads.local')).not.toHaveLength(0);
+    expect(screen.getByText('Impacted entities')).toBeVisible();
+    expect(screen.queryByText('Management zones')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Alerting profiles/i })).not.toBeInTheDocument();
   });
 
   it('awaits an attributed drafted note before marking addressed', async () => {
@@ -903,7 +1007,7 @@ describe('DynatraceProblemsTab', () => {
     mocks.hookValue = { ...mocks.hookValue, problems: [historyProblem] };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     await screen.findByRole('heading', { name: historyProblem.title });
 
     fireEvent.change(screen.getByLabelText('Service Desk ticket number'), {
@@ -931,7 +1035,7 @@ describe('DynatraceProblemsTab', () => {
     mocks.hookValue = { ...mocks.hookValue, problems: [] };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*0/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*0/i }));
 
     expect(screen.getByText('Select a problem')).toBeVisible();
     expect(screen.queryByRole('combobox', { name: 'Response by' })).not.toBeInTheDocument();
@@ -1084,7 +1188,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /Addressed locally\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Addressed locally\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
     expect(screen.getByRole('button', { name: 'Return to queue' })).toBeVisible();
@@ -1234,6 +1338,41 @@ describe('DynatraceProblemsTab', () => {
     expect(ticketEntry).not.toBeNull();
     expect(within(ticketEntry!).getByText('Service Desk ticket')).toBeVisible();
     expect(within(ticketEntry!).getByText('Ryan Bell')).toBeVisible();
+    fireEvent.click(within(ticketEntry!).getByRole('button', { name: 'Copy INC0012345' }));
+    await waitFor(() => {
+      expect(globalThis.api?.writeClipboard).toHaveBeenCalledWith('INC0012345');
+    });
+  });
+
+  it('opens an HTTPS Service Desk reference when the stored reference is a URL', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      notesByProblemId: new Map([
+        [
+          'problem-1',
+          [
+            {
+              id: 'ticket-url',
+              problemId: 'problem-1',
+              note: 'Ticket: https://servicedesk.example.com/INC0012345',
+              author: 'Ryan',
+              created: '2026-07-15T12:30:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Open https://servicedesk.example.com/INC0012345',
+      }),
+    );
+
+    expect(globalThis.api?.openServiceDeskUrl).toHaveBeenCalledWith(
+      'https://servicedesk.example.com/INC0012345',
+    );
   });
 
   it('explains that a resolver and response are required', async () => {
@@ -1276,7 +1415,7 @@ describe('DynatraceProblemsTab', () => {
       ]),
     };
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /History\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
     expect(screen.getByText('Resolved problems are retained for one year.')).toBeInTheDocument();
@@ -1320,7 +1459,7 @@ describe('DynatraceProblemsTab', () => {
     };
 
     render(<DynatraceProblemsTab relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: /Addressed locally\s*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Addressed locally\s*1/i }));
     await screen.findByRole('heading', { name: openProblem.title });
 
     expect(screen.getAllByText(/Unattributed/).length).toBeGreaterThanOrEqual(2);

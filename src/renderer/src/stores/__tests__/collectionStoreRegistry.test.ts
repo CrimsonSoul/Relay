@@ -27,4 +27,25 @@ describe('collectionStoreRegistry', () => {
 
     expect(first).not.toBe(second);
   });
+
+  it('keeps a stable identity when only batched filter values change', () => {
+    const first = getCollectionStore('dynatrace_problem_notes', {
+      batchedFilter: {
+        key: 'loaded-problems',
+        field: 'problemId',
+        values: ['problem-1'],
+        batchSize: 40,
+      },
+    });
+    const second = getCollectionStore('dynatrace_problem_notes', {
+      batchedFilter: {
+        key: 'loaded-problems',
+        field: 'problemId',
+        values: ['problem-1', 'problem-2'],
+        batchSize: 40,
+      },
+    });
+
+    expect(first).toBe(second);
+  });
 });

@@ -37,8 +37,10 @@ describe('cacheHandlers', () => {
 
   const mockCache = {
     readCollection: vi.fn(),
+    readQueryMembership: vi.fn(),
     updateRecord: vi.fn(),
     writeCollection: vi.fn(),
+    writeQueryMembership: vi.fn(),
     getUsableCacheMarker: vi.fn(),
     setUsableCacheMarker: vi.fn(),
     clear: vi.fn(),
@@ -197,6 +199,66 @@ describe('cacheHandlers', () => {
         getHandler(IPC_CHANNELS.CACHE_READ)({}, collection);
         expect(mockCache.readCollection).toHaveBeenCalledWith(collection);
       }
+    });
+  });
+
+  describe('query cache membership', () => {
+    it('reads membership for a valid cached query', () => {
+      const membership = {
+        recordIds: ['first', 'second'],
+        totalItems: 10,
+        complete: false,
+      };
+      mockCache.readQueryMembership.mockReturnValue(membership);
+
+      const result = getHandler(IPC_CHANNELS.CACHE_QUERY_READ)(
+        {},
+        'dynatrace_problems',
+        '0123456789abcdef',
+      );
+
+      expect(result).toEqual(membership);
+      expect(mockCache.readQueryMembership).toHaveBeenCalledWith(
+        'dynatrace_problems',
+        '0123456789abcdef',
+      );
+    });
+
+    it('writes membership for a valid cached query', () => {
+      const membership = {
+        recordIds: ['first', 'second'],
+        totalItems: 10,
+        complete: false,
+      };
+      getHandler(IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)(
+        {},
+        'dynatrace_problems',
+        '0123456789abcdef',
+        membership,
+      );
+
+      expect(mockCache.writeQueryMembership).toHaveBeenCalledWith(
+        'dynatrace_problems',
+        '0123456789abcdef',
+        membership,
+      );
+    });
+
+    it('rejects invalid query identities and memberships', () => {
+      getHandler(IPC_CHANNELS.CACHE_QUERY_READ)({}, 'contacts', 'not-a-query-key');
+      getHandler(IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)({}, 'invalid', '0123456789abcdef', {
+        recordIds: ['first'],
+        totalItems: 1,
+        complete: true,
+      });
+      getHandler(IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)({}, 'contacts', '0123456789abcdef', {
+        recordIds: ['', 'second'],
+        totalItems: 2,
+        complete: true,
+      });
+
+      expect(mockCache.readQueryMembership).not.toHaveBeenCalled();
+      expect(mockCache.writeQueryMembership).not.toHaveBeenCalled();
     });
   });
 

@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
 } from '@shared/dynatraceProblems';
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   addNote: vi.fn(),
   setAddressed: vi.fn(),
   refetch: vi.fn(async () => undefined),
+  collectionCalls: [] as Array<{ collection: string; options: Record<string, unknown> }>,
 }));
 
 const state = {
@@ -27,7 +29,8 @@ const historicalNote = {
 };
 
 vi.mock('../useCollection', () => ({
-  useCollection: (collection: string) => {
+  useCollection: (collection: string, options: Record<string, unknown> = {}) => {
+    mocks.collectionCalls.push({ collection, options });
     let data: object[] = [];
     if (collection === DYNATRACE_PROBLEM_STATES_COLLECTION) data = [state];
     if (collection === DYNATRACE_PROBLEM_NOTES_COLLECTION) data = [historicalNote];
@@ -35,7 +38,12 @@ vi.mock('../useCollection', () => ({
       data,
       loading: false,
       error: null,
+      totalItems: data.length,
+      hasMore: false,
+      loadingMore: false,
+      cachedPartial: false,
       refetch: mocks.refetch,
+      loadMore: vi.fn(async () => undefined),
     };
   },
 }));
@@ -48,6 +56,7 @@ vi.mock('../../services/dynatraceProblemsService', () => ({
 describe('useDynatraceProblems', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.collectionCalls.length = 0;
   });
 
   it('passes ordinary writes without attribution and retains the existing state ID', async () => {
@@ -72,5 +81,61 @@ describe('useDynatraceProblems', () => {
 
     expect(result.current.stateByProblemId.get('problem-1')).toEqual(state);
     expect(result.current.notesByProblemId.get('problem-1')).toEqual([historicalNote]);
+  });
+
+  it('loads only in-scope open problems plus a bounded history page', () => {
+    renderHook(() => useDynatraceProblems());
+
+    const problemCalls = mocks.collectionCalls.filter(
+      ({ collection }) => collection === DYNATRACE_PROBLEMS_COLLECTION,
+    );
+    expect(problemCalls).toEqual([
+      {
+        collection: DYNATRACE_PROBLEMS_COLLECTION,
+        options: { sort: '-startTime,-id', filter: 'scopeExcluded=false && status="OPEN"' },
+      },
+      {
+        collection: DYNATRACE_PROBLEMS_COLLECTION,
+        options: {
+          sort: '-startTime,-id',
+          filter: 'scopeExcluded=false && status="CLOSED"',
+          pageSize: 100,
+        },
+      },
+    ]);
+
+    const relatedCalls = mocks.collectionCalls.filter(
+      ({ collection }) =>
+        collection === DYNATRACE_PROBLEM_STATES_COLLECTION ||
+        collection === DYNATRACE_PROBLEM_NOTES_COLLECTION,
+    );
+    expect(relatedCalls).toEqual([
+      {
+        collection: DYNATRACE_PROBLEM_STATES_COLLECTION,
+        options: {
+          sort: '-updated',
+          batchedFilter: {
+            key: 'dynatrace-loaded-problems',
+            field: 'problemId',
+            values: [],
+            batchSize: 40,
+          },
+          enabled: false,
+        },
+      },
+      {
+        collection: DYNATRACE_PROBLEM_NOTES_COLLECTION,
+        options: {
+          sort: 'created',
+          batchedFilter: {
+            key: 'dynatrace-loaded-problems',
+            field: 'problemId',
+            values: [],
+            batchSize: 40,
+          },
+          enabled: false,
+        },
+      },
+    ]);
   });
 });

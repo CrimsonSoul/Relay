@@ -20,10 +20,29 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const [profileText, setProfileText] = useState(
     Array.isArray(profiles?.valueSummary) ? profiles.valueSummary.join('\n') : '',
   );
+  const [profileConfirming, setProfileConfirming] = useState(false);
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const tokenFormId = useId();
+  const selectedProfileNames = useMemo(
+    () =>
+      profileText
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    [profileText],
+  );
+  const storedProfileNames = useMemo(
+    () => (Array.isArray(profiles?.valueSummary) ? profiles.valueSummary : []),
+    [profiles?.valueSummary],
+  );
+  const addedProfileNames = selectedProfileNames.filter(
+    (profile) => !storedProfileNames.includes(profile),
+  );
+  const removedProfileNames = storedProfileNames.filter(
+    (profile) => !selectedProfileNames.includes(profile),
+  );
 
   useEffect(
     () => () => {
@@ -51,23 +70,21 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
     }
   };
 
-  const replaceProfiles = async (event: FormSubmitEvent) => {
-    event.preventDefault();
+  const replaceProfiles = async () => {
     if (!profiles) return;
-    const selectedProfiles = profileText
-      .split(/\r?\n/)
-      .map((value) => value.trim())
-      .filter(Boolean);
     const result = await execute({
       command: 'administration.setting.replace',
       payload: {
         setting: 'dynatrace.alerting-profiles',
-        value: { profiles: selectedProfiles },
+        value: { profiles: selectedProfileNames },
         expectedRevision: profiles.revision,
       },
       expectedRevision: null,
     });
-    if (result.ok) setFeedback('Dynatrace alerting profile filter updated.');
+    if (result.ok) {
+      setProfileConfirming(false);
+      setFeedback('Stored Dynatrace problem scope updated.');
+    }
   };
 
   const replaceToken = async (event: FormSubmitEvent) => {
@@ -170,18 +187,26 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
 
         <form
           className="administration-setting administration-setting--wide"
-          onSubmit={(event) => void replaceProfiles(event)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            setProfileConfirming(true);
+          }}
         >
           <div className="administration-setting__heading">
-            <strong>Alerting profiles</strong>
+            <strong>Stored problem scope</strong>
             <span
               className={`administration-chip administration-chip--${profiles?.configured ? 'ok' : 'pending'}`}
             >
               {profiles?.summary ?? 'Unavailable'}
             </span>
           </div>
+          <p>
+            Relay continues to use Dynatrace alerting profiles for feed scope. Problems outside the
+            selected profiles are hidden, while their notes and local dispositions remain stored
+            until normal one-year history expiry.
+          </p>
           <label className="administration-field">
-            <span>Selected profile names · one per line</span>
+            <span>Selected alerting profiles · one per line</span>
             <textarea
               className="tactile-input"
               value={profileText}
@@ -189,8 +214,12 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
               rows={5}
             />
           </label>
-          <TactileButton type="submit" disabled={!profiles} variant="primary">
-            Save profile filter
+          <TactileButton
+            type="submit"
+            disabled={!profiles || selectedProfileNames.length === 0}
+            variant="primary"
+          >
+            Review scope change
           </TactileButton>
         </form>
       </div>
@@ -206,6 +235,43 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
           {feedback}
         </div>
       )}
+
+      <Modal
+        isOpen={profileConfirming}
+        onClose={() => setProfileConfirming(false)}
+        title="Review stored problem scope"
+        subtitle={`${selectedProfileNames.length} alerting profile${selectedProfileNames.length === 1 ? '' : 's'} selected`}
+        variant="standard"
+        footer={
+          <>
+            <TactileButton
+              type="button"
+              variant="secondary"
+              onClick={() => setProfileConfirming(false)}
+            >
+              Cancel
+            </TactileButton>
+            <TactileButton type="button" variant="primary" onClick={() => void replaceProfiles()}>
+              Apply stored scope
+            </TactileButton>
+          </>
+        }
+      >
+        <div className="administration-dialog-form">
+          <p>
+            This changes which problems appear in Relay. Existing problem records, notes and local
+            dispositions are preserved; only normal one-year history expiry removes them.
+          </p>
+          <div className="administration-callout">
+            <strong>Added ({addedProfileNames.length})</strong>
+            <span>{addedProfileNames.join(', ') || 'None'}</span>
+          </div>
+          <div className="administration-callout">
+            <strong>Removed ({removedProfileNames.length})</strong>
+            <span>{removedProfileNames.join(', ') || 'None'}</span>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={tokenConfirming}

@@ -5,16 +5,16 @@ import { DynatraceProblemNotificationManager } from '../DynatraceProblemNotifica
 
 const mocks = vi.hoisted(() => ({
   collection: { data: [] as DynatraceProblemRecord[], loading: false },
+  useCollection: vi.fn(),
   showToast: vi.fn(),
   playAlertSound: vi.fn(async () => true),
 }));
 
 vi.mock('../../hooks/useCollection', () => ({
-  useCollection: () => ({
-    ...mocks.collection,
-    error: null,
-    refetch: vi.fn(),
-  }),
+  useCollection: (...args: unknown[]) => {
+    mocks.useCollection(...args);
+    return { ...mocks.collection, error: null, refetch: vi.fn() };
+  },
 }));
 
 vi.mock('../Toast', () => ({
@@ -54,6 +54,10 @@ describe('DynatraceProblemNotificationManager', () => {
 
     expect(mocks.showToast).not.toHaveBeenCalled();
     expect(mocks.playAlertSound).not.toHaveBeenCalled();
+    expect(mocks.useCollection).toHaveBeenCalledWith('dynatrace_problems', {
+      sort: '-startTime',
+      filter: 'scopeExcluded=false && status="OPEN"',
+    });
   });
 
   it('toasts, sounds once, and exposes an action for a newly arriving open problem', async () => {

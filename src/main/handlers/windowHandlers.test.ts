@@ -452,6 +452,26 @@ describe('windowHandlers', () => {
     });
   });
 
+  describe('OPEN_SERVICE_DESK_URL', () => {
+    it('opens a credential-free HTTPS ticket URL through the dedicated capability', async () => {
+      const url = 'https://servicedesk.example.com/incidents/INC0012345';
+
+      await expect(getHandler(IPC_CHANNELS.OPEN_SERVICE_DESK_URL)({}, url)).resolves.toBe(true);
+      expect(shell.openExternal).toHaveBeenCalledWith(url);
+    });
+
+    it.each([
+      'http://servicedesk.example.com/INC0012345',
+      'https://user:secret@servicedesk.example.com/INC0012345',
+      'https://servicedesk.example.com:8443/INC0012345',
+      ' https://servicedesk.example.com/INC0012345',
+      'https://servicedesk.example.com/INC0012345\nignored',
+    ])('blocks unsafe Service Desk URL %s', async (url) => {
+      await expect(getHandler(IPC_CHANNELS.OPEN_SERVICE_DESK_URL)({}, url)).resolves.toBe(false);
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ICS_SAVE_AND_OPEN', () => {
     it('writes the ICS to a private temp directory, opens it, and returns true', async () => {
       const { writeFile } = await import('node:fs/promises');

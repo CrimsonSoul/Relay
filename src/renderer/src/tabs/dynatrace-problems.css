@@ -56,16 +56,15 @@
 }
 
 .dt-problems__filter:focus-visible,
-.dt-problems__profile-trigger:focus-visible,
 .dt-problems__search:focus-within,
-.dt-profile-picker button:focus-visible,
-.dt-profile-picker input:focus-visible,
 .dt-problem-row:focus-visible,
 .dt-problems__primary-action:focus-visible,
 .dt-problem-resolver select:focus-visible,
 .dt-problem-ticket-composer input:focus-visible,
 .dt-problem-ticket-composer button:focus-visible,
 .dt-problem-note-composer__actions button:focus-visible,
+.dt-problem-note__ticket-actions button:focus-visible,
+.dt-problems__history-pagination button:focus-visible,
 .dt-problem-detail__footer button:focus-visible {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
@@ -144,184 +143,6 @@
   color: var(--on-accent);
 }
 
-.dt-problems__profile-trigger {
-  display: grid;
-  width: min(240px, 25vw);
-  min-width: 190px;
-  height: var(--tab-command-control-height, 36px);
-  flex: 0 1 auto;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: 1fr;
-  align-items: center;
-  column-gap: var(--space-2);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  background: var(--color-bg-surface);
-  color: var(--color-text-primary);
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-  transition:
-    border-color var(--transition-fast),
-    background var(--transition-fast);
-}
-
-.dt-problems__profile-trigger:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-card-hover);
-}
-
-.dt-problems__profile-trigger--configured {
-  border-color: var(--color-border-accent);
-}
-
-.dt-problems__profile-trigger > span,
-.dt-problems__profile-trigger > strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dt-problems__profile-trigger > span {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-}
-
-.dt-problems__profile-trigger > strong {
-  align-self: center;
-  color: var(--color-text-primary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  text-align: right;
-}
-
-.dt-problems__profile-trigger > svg {
-  grid-column: 3;
-  grid-row: 1;
-}
-
-.dt-problems__profile-trigger:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
-.dt-profile-picker {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.dt-profile-picker__bulk-actions span {
-  margin-left: auto;
-  color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
-  font-size: var(--text-2xs);
-}
-
-.dt-profile-picker__search {
-  padding: 0;
-}
-
-.dt-profile-picker__search input {
-  width: 100%;
-  height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  outline: 0;
-  background: var(--color-bg-app);
-  color: var(--color-text-primary);
-  font-family: inherit;
-  font-size: var(--text-sm);
-}
-
-.dt-profile-picker__search input::placeholder {
-  color: var(--color-text-tertiary);
-  opacity: 1;
-}
-
-.dt-profile-picker__bulk-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0;
-}
-
-.dt-profile-picker__bulk-actions button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.dt-profile-picker__bulk-actions button:hover:not(:disabled) {
-  color: var(--accent-bright);
-}
-
-.dt-profile-picker__list {
-  min-height: 112px;
-  max-height: 320px;
-  overflow-y: auto;
-  border-block: 1px solid var(--color-border);
-}
-
-.dt-profile-picker__option {
-  display: flex;
-  min-height: 38px;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-border-subtle);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: var(--text-xs);
-}
-
-.dt-profile-picker__option:hover {
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-primary);
-}
-
-.dt-profile-picker__option input {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  accent-color: var(--accent);
-}
-
-.dt-profile-picker__option input:disabled,
-.dt-profile-picker__option:has(input:disabled) {
-  cursor: default;
-  opacity: 0.72;
-}
-
-.dt-profile-picker__empty,
-.dt-profile-picker__retention-note {
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.dt-profile-picker__empty {
-  padding: var(--space-5) var(--space-4);
-  text-align: center;
-}
-
-.dt-profile-picker__retention-note {
-  padding: 0;
-  line-height: 1.45;
-}
-
-.dt-profile-picker button:disabled {
-  cursor: default;
-  opacity: 0.48;
-}
-
 .dt-problems__search {
   width: min(340px, 34vw);
   min-width: 220px;
@@ -352,6 +173,12 @@
   border-color: color-mix(in srgb, var(--alarm) 45%, var(--color-border));
   background: var(--alarm-dim);
   color: var(--alarm-bright);
+}
+
+.dt-problems__notice--warning {
+  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
 }
 
 .dt-problems__notice span {
@@ -403,6 +230,16 @@
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dt-problems__section-heading-copy kbd {
+  padding: 1px 3px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-bg-app);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: inherit;
 }
 
 .dt-problems__section-heading > span:last-child {
@@ -471,6 +308,32 @@
   font-family: var(--font-family-base);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
+}
+
+.dt-problems__history-pagination {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.dt-problems__history-pagination button {
+  min-height: 34px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-bg-app);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.dt-problems__history-pagination button:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
 }
 
 .dt-problems__queue-list {
@@ -783,7 +646,7 @@
 
 .dt-problem-detail__facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-block: 1px solid var(--color-border);
 }
 
@@ -1186,6 +1049,31 @@
   font-size: var(--text-sm);
 }
 
+.dt-problem-note__ticket-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.dt-problem-note__ticket-actions button {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-bg-app);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.dt-problem-note__ticket-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
 .dt-problem-detail__footer {
   flex: 0 0 auto;
   flex-wrap: wrap;
@@ -1256,11 +1144,6 @@
     flex: 1 1 320px;
   }
 
-  .dt-problems__profile-trigger {
-    width: auto;
-    flex: 0 1 260px;
-  }
-
   .dt-problems__workspace {
     grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
   }
@@ -1290,7 +1173,6 @@
     flex-direction: column;
   }
 
-  .dt-problems__profile-trigger,
   .dt-problems__search {
     width: 100%;
     flex: 0 0 40px;
@@ -1348,7 +1230,9 @@
 @media (pointer: coarse) {
   .dt-problems__filter,
   .dt-problems__history-control,
+  .dt-problems__history-pagination button,
   .dt-problem-ticket-composer button,
+  .dt-problem-note__ticket-actions button,
   .dt-problem-note-composer__actions button,
   .dt-problem-detail__footer button,
   .dt-problems__primary-action {

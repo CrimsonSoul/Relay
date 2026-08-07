@@ -105,6 +105,13 @@ Teams desktop and web URLs are further confined to the meeting-draft path,
 exact `subject` and `attendees` fields, bounded decoded values, and validated
 attendee addresses. Relay has no general `mailto:` opener.
 
+Service Desk links use a separate, explicit-click capability so they do not
+broaden the general external-link allowlist. That handler accepts only bounded,
+credential-free HTTPS URLs without custom ports, validates the IPC sender, uses
+the shared external-action rate limit, and logs only an origin-safe URL
+description when it blocks or cannot open a link. Relay Web applies the same URL
+shape checks in its browser action before opening a new tab.
+
 ### External Dashboard Popouts
 
 Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.

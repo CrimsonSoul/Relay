@@ -31,6 +31,12 @@ export {
   type OfflineWritableCollection,
 } from './offlineCollections';
 
+export type CachedQueryMembership = {
+  recordIds: string[];
+  totalItems: number;
+  complete: boolean;
+};
+
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
   id?: string;
@@ -562,6 +568,8 @@ export type BridgeAPI = {
   markStartupRendererMounted?: () => void;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
   openExternal: (url: string) => Promise<boolean>;
+  /** Opens an operator-selected HTTPS ticket link through the narrower Service Desk capability. */
+  openServiceDeskUrl: (url: string) => Promise<boolean>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => () => void;
   submitAuth: (
     nonce: string,
@@ -694,6 +702,12 @@ export type BridgeAPI = {
   retryWebServer: () => Promise<IpcResult<RelayWebServerPublicState>>;
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
+  cacheQueryRead: (collection: string, queryKey: string) => Promise<CachedQueryMembership | null>;
+  cacheQuerySnapshot: (
+    collection: string,
+    queryKey: string,
+    membership: CachedQueryMembership,
+  ) => Promise<void>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
   cacheSnapshot: (collection: string, signature: string, records: unknown[]) => Promise<void>;
   mutateOffline: (input: OfflineMutationInput) => Promise<OfflineMutationResult>;
@@ -772,6 +786,7 @@ export const IPC_CHANNELS = {
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_MAXIMIZE_CHANGE: 'window:maximizeChange',
   OPEN_EXTERNAL: 'shell:openExternal',
+  OPEN_SERVICE_DESK_URL: 'shell:openServiceDeskUrl',
   AUTH_REQUESTED: 'auth:requested',
   AUTH_SUBMIT: 'auth:submit',
   AUTH_CANCEL: 'auth:cancel',
@@ -850,6 +865,8 @@ export const IPC_CHANNELS = {
   WEB_SERVER_RETRY: 'webServer:retry',
   // Cache (offline mode)
   CACHE_READ: 'cache:read',
+  CACHE_QUERY_READ: 'cache:queryRead',
+  CACHE_QUERY_SNAPSHOT: 'cache:querySnapshot',
   CACHE_WRITE: 'cache:write',
   CACHE_SNAPSHOT: 'cache:snapshot',
   OFFLINE_MUTATE: 'offline:mutate',
