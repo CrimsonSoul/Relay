@@ -102,6 +102,7 @@ import { runStartupSequence } from './app/startupSequence';
 import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
 import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
+import { configureE2EDesktopIsolation } from './app/e2eSafety';
 
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
@@ -165,6 +166,10 @@ async function waitForStartupTestDelay(): Promise<void> {
   if (!Number.isFinite(requestedDelay) || requestedDelay <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, Math.min(requestedDelay, 5_000)));
 }
+
+// Keep automated Electron runs off the interactive macOS desktop before the
+// application reaches its ready state or creates a BrowserWindow.
+configureE2EDesktopIsolation(app);
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations

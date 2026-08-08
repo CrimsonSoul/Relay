@@ -580,16 +580,17 @@ describe('windowFactory', () => {
       expect(mocks.mockFocus).toHaveBeenCalledOnce();
     });
 
-    it('shows E2E windows without activating the desktop', async () => {
+    it('keeps E2E windows hidden without activating the desktop', async () => {
       process.env.NODE_ENV = 'test';
       process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
       const { showAndFocusWindow } = await import('../windowFactory');
       const window = mockState.mainWindow ?? mocks.MockBrowserWindow({});
 
       expect(showAndFocusWindow(window as never, 'renderer-loaded')).toBe(true);
-      expect(mocks.mockShowInactive).toHaveBeenCalledOnce();
+      expect(mocks.mockShowInactive).not.toHaveBeenCalled();
       expect(mocks.mockShow).not.toHaveBeenCalled();
       expect(mocks.mockFocus).not.toHaveBeenCalled();
+      expect(mocks.mockRestore).not.toHaveBeenCalled();
     });
 
     it('does nothing when the existing window has already been destroyed', async () => {

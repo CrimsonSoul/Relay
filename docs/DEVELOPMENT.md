@@ -368,6 +368,11 @@ npm run test:knowledge-upload-soak
 
 `npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
 
+`npm run test:electron` builds the current source before launching Playwright so it cannot test a
+stale `dist` tree. Test-mode Electron windows remain native-hidden and unfocused; on macOS the test
+process also uses accessory activation policy so the suite does not take over the interactive
+desktop. Run the command through npm so its native-module ABI restoration always executes.
+
 `npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
 Coverage thresholds are currently 80% for lines, functions, branches, and statements in the main/shared and renderer configs. The cache config has no independent coverage threshold.

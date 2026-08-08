@@ -1040,6 +1040,27 @@ test.describe('Vital Critical Path', () => {
     });
   });
 
+  test.describe('desktop isolation contract', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.default });
+
+    test('keeps the native Electron test window hidden', async () => {
+      if (!electronApp) throw new Error('Server Electron app not launched');
+      const nativeWindowState = await electronApp.evaluate(({ BrowserWindow }) => ({
+        e2eIsolationEnabled:
+          process.env.NODE_ENV === 'test' &&
+          process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS === '1',
+        visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
+        focused: BrowserWindow.getAllWindows()[0]?.isFocused() ?? null,
+      }));
+
+      expect(nativeWindowState).toEqual({
+        e2eIsolationEnabled: true,
+        visible: false,
+        focused: false,
+      });
+    });
+  });
+
   test.describe('rename-safe fixture profile contract', () => {
     test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.renameContract });
 

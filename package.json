@@ -26,7 +26,7 @@
     "benchmark:runtime": "npm run build && node scripts/benchmark-runtime.mjs",
     "dev:test": "vite --config vite.renderer.config.ts --port 4173",
     "test": "npm run test:unit && npm run test:cache && npm run test:renderer",
-    "test:electron": "node scripts/run-electron-tests.mjs",
+    "test:electron": "npm run build && node scripts/run-electron-tests.mjs",
     "test:web": "npm run build && node scripts/run-web-tests.mjs",
     "test:cache": "vitest run --config vitest.cache.config.ts",
     "test:unit": "vitest run",

@@ -27,7 +27,9 @@ describe('Relay distribution platform contract', () => {
     const development = read('docs/DEVELOPMENT.md');
 
     expect(packageJson.scripts.dev).toBe('ELECTRON_RUN_AS_NODE= electron-vite dev');
-    expect(packageJson.scripts['test:electron']).toBe('node scripts/run-electron-tests.mjs');
+    expect(packageJson.scripts['test:electron']).toBe(
+      'npm run build && node scripts/run-electron-tests.mjs',
+    );
     expect(pocketBaseDownloader).toContain("value === 'darwin'");
     expect(development).toContain('macOS remains a supported local development host');
     expect(development).toContain('resources/pocketbase/darwin-arm64/pocketbase');
