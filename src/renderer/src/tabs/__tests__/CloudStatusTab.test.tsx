@@ -46,6 +46,7 @@ function makeItem<P extends CloudStatusProvider = 'aws'>(
     pubDate: overrides.pubDate ?? '2026-07-20T15:00:00.000Z',
     link: overrides.link ?? '',
     severity: overrides.severity ?? 'error',
+    affectedScopes: overrides.affectedScopes,
   };
 }
 
@@ -71,7 +72,7 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
     expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
-    expect(screen.getAllByText('Unknown')).toHaveLength(14);
+    expect(screen.getAllByText('Unknown')).toHaveLength(12);
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
     expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
@@ -93,14 +94,14 @@ describe('CloudStatusTab', () => {
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(14);
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(12);
     expect(
       screen.getByRole('button', { name: 'View AWS status details' }),
     ).toHaveAccessibleDescription('Operational No active issues');
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
-  it('renders four separately navigable Mist regions immediately after Cloudflare', () => {
+  it('renders one Mist row and one Dynatrace row immediately after Cloudflare', () => {
     const { container } = render(
       <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
     );
@@ -116,37 +117,72 @@ describe('CloudStatusTab', () => {
       'Jira',
       'GitHub',
       'Cloudflare',
-      'Juniper Mist Global',
-      'Juniper Mist EMEA',
-      'Juniper Mist APAC',
-      'Juniper Mist Federal',
+      'Juniper Mist',
+      'Dynatrace',
       'Google Cloud',
       'Claude',
       'ChatGPT',
       'Salesforce',
     ]);
-    expect(screen.getByText('across 14 monitored providers')).toBeInTheDocument();
-    for (const region of ['Global', 'EMEA', 'APAC', 'Federal']) {
-      expect(
-        screen.getByRole('button', { name: `View Juniper Mist ${region} status details` }),
-      ).toBeInTheDocument();
-    }
+    expect(screen.getByText('across 12 monitored providers')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View Juniper Mist status details' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View Dynatrace status details' }),
+    ).toBeInTheDocument();
   });
 
-  it('offers only the official status action for a Mist region', () => {
+  it('offers only the official status action for Juniper Mist', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'View Juniper Mist Global status details' }),
-    );
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Open Juniper Mist Global official status page' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Juniper Mist official status page' }));
 
     expect(openExternal).toHaveBeenCalledWith('https://status.mist.com/');
     expect(
-      screen.queryByRole('button', { name: /Open Juniper Mist Global on (?:X|Downdetector)/ }),
+      screen.queryByRole('button', { name: /Open Juniper Mist on (?:X|Downdetector)/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it('deduplicates Mist regions and shows affected scopes for Mist and Dynatrace', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        mist_global: [
+          makeItem({
+            id: 'mist-1',
+            provider: 'mist_global',
+            title: 'Mist login outage',
+          }),
+        ],
+        mist_apac: [
+          makeItem({
+            id: 'mist-1',
+            provider: 'mist_apac',
+            title: 'Mist login outage',
+          }),
+        ],
+        dynatrace: [
+          makeItem({
+            id: 'dynatrace-1',
+            provider: 'dynatrace',
+            title: 'Dynatrace platform outage',
+            affectedScopes: ['AWS · Americas', 'Azure · Europe'],
+          }),
+        ],
+      },
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
+    expect(screen.getAllByText('Mist login outage')).toHaveLength(1);
+    expect(screen.getByText('Global · APAC')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Dynatrace status details' }));
+    expect(screen.getByText('Dynatrace platform outage')).toBeInTheDocument();
+    expect(screen.getByText('AWS · Americas · Azure · Europe')).toBeInTheDocument();
   });
 
   it('does not claim full coverage when a provider feed is unavailable', () => {
@@ -532,7 +568,7 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '14 providers monitored · 1 active outage · 1 degraded issue',
+      '12 providers monitored · 1 active outage · 1 degraded issue',
     );
   });
 });

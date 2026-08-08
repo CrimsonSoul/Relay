@@ -29,7 +29,6 @@ import { ConnectionManager } from './components/ConnectionManager';
 import {
   Contact,
   readSaveConfigResult,
-  type CloudStatusProvider,
   type PbAuthSession,
   type PublicRelayConfig,
 } from '@shared/ipc';
@@ -38,6 +37,7 @@ import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
+import type { DisplayCloudStatusProvider } from './utils/cloudStatusDisplay';
 import { useErrorNotifications } from './hooks/useErrorNotifications';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
@@ -211,9 +211,9 @@ export function MainApp({
     handleToggleGroup,
   } = useAppAssembler();
   const [selectedCloudStatusProvider, setSelectedCloudStatusProvider] =
-    useState<CloudStatusProvider | null>(null);
+    useState<DisplayCloudStatusProvider | null>(null);
   const handleOpenCloudStatusProvider = useCallback(
-    (provider: CloudStatusProvider) => {
+    (provider: DisplayCloudStatusProvider) => {
       setSelectedCloudStatusProvider(provider);
       setActiveTab('Status');
     },

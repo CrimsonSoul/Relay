@@ -1,4 +1,5 @@
 import type { CloudStatusProvider } from '@shared/ipc';
+import type { DisplayCloudStatusProvider } from '../../utils/cloudStatusDisplay';
 
 type IconProps = { size?: number };
 
@@ -88,7 +89,10 @@ export const SalesforceIcon = ({ size = 18 }: IconProps) => (
 );
 
 /** Lookup map for rendering a provider's icon by key. */
-const PROVIDER_ICON_MAP: Record<CloudStatusProvider, React.FC<IconProps>> = {
+const PROVIDER_ICON_MAP: Record<
+  CloudStatusProvider | DisplayCloudStatusProvider,
+  React.FC<IconProps>
+> = {
   aws: AWSIcon,
   azure: AzureIcon,
   m365: M365Icon,
@@ -99,6 +103,7 @@ const PROVIDER_ICON_MAP: Record<CloudStatusProvider, React.FC<IconProps>> = {
   mist_emea: JuniperNetworksIcon,
   mist_apac: JuniperNetworksIcon,
   mist_federal: JuniperNetworksIcon,
+  mist: JuniperNetworksIcon,
   dynatrace: DynatraceIcon,
   google: GoogleCloudIcon,
   anthropic: ClaudeIcon,
@@ -110,7 +115,7 @@ export function ProviderIcon({
   provider,
   size,
 }: Readonly<{
-  provider: CloudStatusProvider;
+  provider: CloudStatusProvider | DisplayCloudStatusProvider;
   size?: number;
 }>) {
   const Icon = PROVIDER_ICON_MAP[provider];

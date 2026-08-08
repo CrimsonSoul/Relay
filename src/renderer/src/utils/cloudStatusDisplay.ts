@@ -1,4 +1,5 @@
 import {
+  CLOUD_STATUS_PROVIDERS,
   MIST_CLOUD_STATUS_PROVIDER_ORDER,
   type CloudStatusData,
   type CloudStatusItem,
@@ -23,6 +24,29 @@ export const DISPLAY_CLOUD_STATUS_PROVIDER_ORDER = [
 ] as const;
 
 export type DisplayCloudStatusProvider = (typeof DISPLAY_CLOUD_STATUS_PROVIDER_ORDER)[number];
+
+export const DISPLAY_CLOUD_STATUS_PROVIDERS: Record<
+  DisplayCloudStatusProvider,
+  {
+    label: string;
+    statusUrl: string;
+    twitterHandle?: string;
+    downdetectorSlug?: string;
+  }
+> = {
+  aws: CLOUD_STATUS_PROVIDERS.aws,
+  azure: CLOUD_STATUS_PROVIDERS.azure,
+  m365: CLOUD_STATUS_PROVIDERS.m365,
+  jira: CLOUD_STATUS_PROVIDERS.jira,
+  github: CLOUD_STATUS_PROVIDERS.github,
+  cloudflare: CLOUD_STATUS_PROVIDERS.cloudflare,
+  mist: { label: 'Juniper Mist', statusUrl: 'https://status.mist.com/' },
+  dynatrace: CLOUD_STATUS_PROVIDERS.dynatrace,
+  google: CLOUD_STATUS_PROVIDERS.google,
+  anthropic: CLOUD_STATUS_PROVIDERS.anthropic,
+  openai: CLOUD_STATUS_PROVIDERS.openai,
+  salesforce: CLOUD_STATUS_PROVIDERS.salesforce,
+};
 
 export type DisplayCloudStatusItem = Omit<CloudStatusItem, 'provider' | 'affectedScopes'> & {
   provider: DisplayCloudStatusProvider;

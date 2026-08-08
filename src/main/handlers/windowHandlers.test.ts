@@ -251,6 +251,26 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).toHaveBeenCalledWith('https://status.mist.com/notices/example');
     });
 
+    it('opens exact-host Dynatrace Status.io URLs and blocks lookalike hosts', async () => {
+      await expect(
+        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+          {},
+          'https://dynatrace.status.io/pages/incident/example',
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+          {},
+          'https://dynatrace.status.io.evil.example/pages/incident/example',
+        ),
+      ).resolves.toBe(false);
+
+      expect(shell.openExternal).toHaveBeenCalledOnce();
+      expect(shell.openExternal).toHaveBeenCalledWith(
+        'https://dynatrace.status.io/pages/incident/example',
+      );
+    });
+
     it('opens the fixed Dispatcher Radar intranet URL and returns true', async () => {
       const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, RADAR_URL);
 

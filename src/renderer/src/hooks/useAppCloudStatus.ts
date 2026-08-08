@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RecordModel } from 'pocketbase';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
-  CLOUD_STATUS_PROVIDERS,
   MIST_CLOUD_STATUS_PROVIDER_ORDER,
   type CloudStatusData,
   type CloudStatusItem,
   type CloudStatusPartition,
   type CloudStatusProvider,
+  type ExtensionCloudStatusData,
+  type ExtensionCloudStatusSnapshotRecord,
   type LegacyCloudStatusData,
   type LegacyCloudStatusSnapshotRecord,
   type MistCloudStatusData,
@@ -15,6 +16,7 @@ import {
 } from '@shared/ipc';
 import {
   emptyCloudStatusProviders,
+  unavailableExtensionCloudStatusData,
   mergeCloudStatusData,
   setCloudStatusProviderItems,
   splitCloudStatusData,
@@ -24,7 +26,14 @@ import { ErrorCategory } from '@shared/logging';
 import { getErrorMessage } from '@shared/types';
 import { secureStorage } from '../utils/secureStorage';
 import { loggers } from '../utils/logger';
-import { getCurrentCloudIssues, getCurrentCloudOutages } from '../utils/cloudStatus';
+import { isCurrentCloudIssue } from '../utils/cloudStatus';
+import {
+  aggregateCloudStatusForDisplay,
+  DISPLAY_CLOUD_STATUS_PROVIDER_ORDER,
+  DISPLAY_CLOUD_STATUS_PROVIDERS,
+  type DisplayCloudStatusItem,
+  type DisplayCloudStatusProvider,
+} from '../utils/cloudStatusDisplay';
 import type { ShowToast } from '../components/Toast';
 import { useCollection } from './useCollection';
 
@@ -40,27 +49,30 @@ type CacheEntry = {
 
 type CollectionLegacyCloudStatusSnapshot = LegacyCloudStatusSnapshotRecord & RecordModel;
 type CollectionMistCloudStatusSnapshot = MistCloudStatusSnapshotRecord & RecordModel;
+type CollectionExtensionCloudStatusSnapshot = ExtensionCloudStatusSnapshotRecord & RecordModel;
 type StatusObservationTimestamps = {
   legacy: number;
   mist: number;
+  extension: number;
 };
 
 function defaultStatusObservationTimestamps(data: CloudStatusData): StatusObservationTimestamps {
   return {
     legacy: data.lastUpdated,
     mist: data.lastUpdated,
+    extension: data.lastUpdated,
   };
 }
 
-function providerLabel(provider: string): string {
-  return CLOUD_STATUS_PROVIDERS[provider as keyof typeof CLOUD_STATUS_PROVIDERS]?.label ?? provider;
+function providerLabel(provider: DisplayCloudStatusProvider): string {
+  return DISPLAY_CLOUD_STATUS_PROVIDERS[provider].label;
 }
 
-function outageKey(item: CloudStatusItem): string {
+function outageKey(item: DisplayCloudStatusItem): string {
   return `${item.provider}:${item.id}`;
 }
 
-function isScheduledMaintenance(item: CloudStatusItem): boolean {
+function isScheduledMaintenance(item: DisplayCloudStatusItem): boolean {
   return /\b(?:planned|scheduled)\b[\s:-]*(?:\w+[\s:-]+){0,4}maintenance\b/i.test(item.title);
 }
 
@@ -76,9 +88,9 @@ function notificationSnapshotIdentity(
   });
 }
 
-function orderByProvider(items: CloudStatusItem[]): CloudStatusItem[] {
+function orderByProvider(items: DisplayCloudStatusItem[]): DisplayCloudStatusItem[] {
   const providerOrder = new Map(
-    CLOUD_STATUS_PROVIDER_ORDER.map((provider, index) => [provider, index]),
+    DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.map((provider, index) => [provider, index]),
   );
   return [...items].sort(
     (left, right) =>
@@ -88,27 +100,29 @@ function orderByProvider(items: CloudStatusItem[]): CloudStatusItem[] {
 }
 
 type CurrentStatusState = {
-  issues: CloudStatusItem[];
-  outages: CloudStatusItem[];
-  issueProviders: Set<CloudStatusProvider>;
-  outageProviders: Set<CloudStatusProvider>;
-  feedErrorProviders: Set<CloudStatusProvider>;
-  actionableWarnings: Map<CloudStatusProvider, CloudStatusItem>;
+  issues: DisplayCloudStatusItem[];
+  outages: DisplayCloudStatusItem[];
+  issueProviders: Set<DisplayCloudStatusProvider>;
+  outageProviders: Set<DisplayCloudStatusProvider>;
+  feedErrorProviders: Set<DisplayCloudStatusProvider>;
+  actionableWarnings: Map<DisplayCloudStatusProvider, DisplayCloudStatusItem>;
 };
 
-const MIST_PROVIDERS = new Set<CloudStatusProvider>(MIST_CLOUD_STATUS_PROVIDER_ORDER);
-
 function observationTimestampFor(
-  provider: CloudStatusProvider,
+  provider: DisplayCloudStatusProvider,
   observations: StatusObservationTimestamps,
 ): number {
-  return MIST_PROVIDERS.has(provider) ? observations.mist : observations.legacy;
+  if (provider === 'mist') return observations.mist;
+  return provider === 'dynatrace' ? observations.extension : observations.legacy;
 }
 
 function currentStatusState(data: CloudStatusData): CurrentStatusState {
-  const issues = getCurrentCloudIssues(data);
+  const displayData = aggregateCloudStatusForDisplay(data);
+  const issues = Object.values(displayData.providers)
+    .flat()
+    .filter((item) => isCurrentCloudIssue(item));
   const outages = orderByProvider(issues.filter((item) => item.severity === 'error'));
-  const actionableWarnings = new Map<CloudStatusProvider, CloudStatusItem>();
+  const actionableWarnings = new Map<DisplayCloudStatusProvider, DisplayCloudStatusItem>();
   for (const item of issues) {
     if (
       item.severity === 'warning' &&
@@ -123,16 +137,16 @@ function currentStatusState(data: CloudStatusData): CurrentStatusState {
     outages,
     issueProviders: new Set(issues.map((item) => item.provider)),
     outageProviders: new Set(outages.map((item) => item.provider)),
-    feedErrorProviders: new Set(data.errors.map((error) => error.provider)),
+    feedErrorProviders: new Set(displayData.errors.map((error) => error.provider)),
     actionableWarnings,
   };
 }
 
 function clearDegradationCandidate(
-  provider: CloudStatusProvider,
-  candidateCounts: Map<CloudStatusProvider, number>,
-  candidateObservations: Map<CloudStatusProvider, number>,
-  candidateFirstObservations: Map<CloudStatusProvider, number>,
+  provider: DisplayCloudStatusProvider,
+  candidateCounts: Map<DisplayCloudStatusProvider, number>,
+  candidateObservations: Map<DisplayCloudStatusProvider, number>,
+  candidateFirstObservations: Map<DisplayCloudStatusProvider, number>,
 ): void {
   candidateCounts.delete(provider);
   candidateObservations.delete(provider);
@@ -140,14 +154,14 @@ function clearDegradationCandidate(
 }
 
 function advanceProviderDegradation(
-  provider: CloudStatusProvider,
+  provider: DisplayCloudStatusProvider,
   state: CurrentStatusState,
-  activeProblemProviders: Set<CloudStatusProvider>,
-  candidateCounts: Map<CloudStatusProvider, number>,
-  candidateObservations: Map<CloudStatusProvider, number>,
-  candidateFirstObservations: Map<CloudStatusProvider, number>,
+  activeProblemProviders: Set<DisplayCloudStatusProvider>,
+  candidateCounts: Map<DisplayCloudStatusProvider, number>,
+  candidateObservations: Map<DisplayCloudStatusProvider, number>,
+  candidateFirstObservations: Map<DisplayCloudStatusProvider, number>,
   observationTimestamp: number,
-): CloudStatusItem | null {
+): DisplayCloudStatusItem | null {
   if (state.feedErrorProviders.has(provider)) {
     clearDegradationCandidate(
       provider,
@@ -217,14 +231,14 @@ function advanceProviderDegradation(
 
 function collectNewDegradations(
   state: CurrentStatusState,
-  activeProblemProviders: Set<CloudStatusProvider>,
-  candidateCounts: Map<CloudStatusProvider, number>,
-  candidateObservations: Map<CloudStatusProvider, number>,
-  candidateFirstObservations: Map<CloudStatusProvider, number>,
+  activeProblemProviders: Set<DisplayCloudStatusProvider>,
+  candidateCounts: Map<DisplayCloudStatusProvider, number>,
+  candidateObservations: Map<DisplayCloudStatusProvider, number>,
+  candidateFirstObservations: Map<DisplayCloudStatusProvider, number>,
   observations: StatusObservationTimestamps,
-): CloudStatusItem[] {
-  const newDegradations: CloudStatusItem[] = [];
-  for (const provider of CLOUD_STATUS_PROVIDER_ORDER) {
+): DisplayCloudStatusItem[] {
+  const newDegradations: DisplayCloudStatusItem[] = [];
+  for (const provider of DISPLAY_CLOUD_STATUS_PROVIDER_ORDER) {
     const degradation = advanceProviderDegradation(
       provider,
       state,
@@ -242,11 +256,11 @@ function collectNewDegradations(
 function retainOutageKeysDuringFeedErrors(
   currentOutageIds: Set<string>,
   previousOutageIds: Set<string>,
-  feedErrorProviders: Set<CloudStatusProvider>,
+  feedErrorProviders: Set<DisplayCloudStatusProvider>,
 ): Set<string> {
   const retainedIds = new Set(currentOutageIds);
   for (const activeId of previousOutageIds) {
-    const provider = activeId.slice(0, activeId.indexOf(':')) as CloudStatusProvider;
+    const provider = activeId.slice(0, activeId.indexOf(':')) as DisplayCloudStatusProvider;
     if (feedErrorProviders.has(provider)) retainedIds.add(activeId);
   }
   return retainedIds;
@@ -289,18 +303,21 @@ function normalizeCachedCloudStatus(data: CloudStatusData): CloudStatusData {
   const hasMistCoverage = MIST_CLOUD_STATUS_PROVIDER_ORDER.every((provider) =>
     Array.isArray(source[provider]),
   );
-  if (hasMistCoverage) return normalized;
-
+  const hasExtensionCoverage = Array.isArray(source.dynatrace);
+  const partitions = splitCloudStatusData(normalized);
   return mergeCloudStatusData(
-    splitCloudStatusData(normalized).legacy,
-    unavailableMistCloudStatusData(normalized.lastUpdated),
+    partitions.legacy,
+    hasMistCoverage ? partitions.mist : unavailableMistCloudStatusData(normalized.lastUpdated),
+    hasExtensionCoverage
+      ? partitions.extension
+      : unavailableExtensionCloudStatusData(normalized.lastUpdated),
   );
 }
 
 /** Consume the server-owned Cloud Status snapshot and issue local notifications. */
 export function useAppCloudStatus(
   showToast: ShowToast,
-  onOpenProvider?: (provider: CloudStatusProvider) => void,
+  onOpenProvider?: (provider: DisplayCloudStatusProvider) => void,
 ) {
   const legacySnapshot = useCollection<CollectionLegacyCloudStatusSnapshot>(
     'cloud_status_snapshot',
@@ -310,13 +327,19 @@ export function useAppCloudStatus(
     'cloud_status_mist_snapshot',
     { filter: 'key="current"' },
   );
+  const extensionSnapshot = useCollection<CollectionExtensionCloudStatusSnapshot>(
+    'cloud_status_extension_snapshot',
+    { filter: 'key="current"' },
+  );
   const [statusData, setStatusData] = useState<CloudStatusData | null>(null);
   const [manualLoading, setManualLoading] = useState(false);
   const activeOutageIdsRef = useRef(new Set<string>());
-  const activeProblemProvidersRef = useRef(new Set<CloudStatusProvider>());
-  const degradationCandidateCountsRef = useRef(new Map<CloudStatusProvider, number>());
-  const degradationCandidateObservationsRef = useRef(new Map<CloudStatusProvider, number>());
-  const degradationCandidateFirstObservationsRef = useRef(new Map<CloudStatusProvider, number>());
+  const activeProblemProvidersRef = useRef(new Set<DisplayCloudStatusProvider>());
+  const degradationCandidateCountsRef = useRef(new Map<DisplayCloudStatusProvider, number>());
+  const degradationCandidateObservationsRef = useRef(new Map<DisplayCloudStatusProvider, number>());
+  const degradationCandidateFirstObservationsRef = useRef(
+    new Map<DisplayCloudStatusProvider, number>(),
+  );
   const baselineEstablishedRef = useRef(false);
   const cacheRestoredRef = useRef(false);
   const lastNotificationSnapshotRef = useRef<string | null>(null);
@@ -417,11 +440,10 @@ export function useAppCloudStatus(
     const cached = secureStorage.getItemSync<CacheEntry>(CACHE_KEY);
     if (!cached?.data?.providers) return;
     const normalized = normalizeCachedCloudStatus(cached.data);
+    const current = currentStatusState(normalized);
     cacheRestoredRef.current = true;
-    activeOutageIdsRef.current = new Set(getCurrentCloudOutages(normalized).map(outageKey));
-    activeProblemProvidersRef.current = new Set(
-      getCurrentCloudIssues(normalized).map((item) => item.provider),
-    );
+    activeOutageIdsRef.current = new Set(current.outages.map(outageKey));
+    activeProblemProvidersRef.current = current.issueProviders;
     lastNotificationSnapshotRef.current = notificationSnapshotIdentity(normalized);
     baselineEstablishedRef.current = true;
     setStatusData(normalized);
@@ -429,6 +451,7 @@ export function useAppCloudStatus(
 
   const legacyRecord = legacySnapshot.data[0];
   const mistRecord = mistSnapshot.data[0];
+  const extensionRecord = extensionSnapshot.data[0];
   const legacyResolved =
     Boolean(legacyRecord) ||
     (!legacySnapshot.loading &&
@@ -437,18 +460,27 @@ export function useAppCloudStatus(
     Boolean(mistRecord) ||
     (!mistSnapshot.loading && (mistSnapshot.hasLoadedSnapshot || Boolean(mistSnapshot.error)));
   const mistUnsupported = mistResolved && !mistRecord;
+  const extensionResolved =
+    Boolean(extensionRecord) ||
+    (!extensionSnapshot.loading &&
+      (extensionSnapshot.hasLoadedSnapshot || Boolean(extensionSnapshot.error)));
+  const extensionUnsupported = extensionResolved && !extensionRecord;
 
   useEffect(() => {
-    if (!legacyRecord || !mistResolved) return;
+    if (!legacyRecord || !mistResolved || !extensionResolved) return;
     const mist: MistCloudStatusData = mistRecord
       ? toStatusPartition(mistRecord)
       : unavailableMistCloudStatusData(legacyRecord.lastUpdated);
     const legacy: LegacyCloudStatusData = toStatusPartition(legacyRecord);
-    commitStatus(mergeCloudStatusData(legacy, mist), {
+    const extension: ExtensionCloudStatusData = extensionRecord
+      ? toStatusPartition(extensionRecord)
+      : unavailableExtensionCloudStatusData(legacyRecord.lastUpdated);
+    commitStatus(mergeCloudStatusData(legacy, mist, extension), {
       legacy: legacy.lastUpdated,
       mist: mist.lastUpdated,
+      extension: extension.lastUpdated,
     });
-  }, [commitStatus, legacyRecord, mistRecord, mistResolved]);
+  }, [commitStatus, extensionRecord, extensionResolved, legacyRecord, mistRecord, mistResolved]);
 
   const refetch = useCallback(async () => {
     setManualLoading(true);
@@ -462,12 +494,14 @@ export function useAppCloudStatus(
         api.getCloudStatus(),
         new Promise((resolve) => setTimeout(resolve, 500)),
       ]);
-      const safeData = mistUnsupported
-        ? mergeCloudStatusData(
-            splitCloudStatusData(data).legacy,
-            unavailableMistCloudStatusData(data.lastUpdated),
-          )
-        : data;
+      const partitions = splitCloudStatusData(data);
+      const safeData = mergeCloudStatusData(
+        partitions.legacy,
+        mistUnsupported ? unavailableMistCloudStatusData(data.lastUpdated) : partitions.mist,
+        extensionUnsupported
+          ? unavailableExtensionCloudStatusData(data.lastUpdated)
+          : partitions.extension,
+      );
       commitStatus(safeData);
     } catch (error) {
       loggers.app.error('Cloud status fetch failed', {
@@ -477,13 +511,15 @@ export function useAppCloudStatus(
     } finally {
       setManualLoading(false);
     }
-  }, [commitStatus, mistUnsupported]);
+  }, [commitStatus, extensionUnsupported, mistUnsupported]);
 
   return {
     statusData,
     loading:
       manualLoading ||
-      (!cacheRestoredRef.current && !statusData && (!legacyResolved || !mistResolved)),
+      (!cacheRestoredRef.current &&
+        !statusData &&
+        (!legacyResolved || !mistResolved || !extensionResolved)),
     refetch,
   };
 }
