@@ -12,6 +12,7 @@ import { loggers } from '../../logger';
 import { truncateError } from '../ipcHelpers';
 import { fetchGoogleCloudProvider } from './googleProvider';
 import { fetchMistProviderGroup } from './mistProvider';
+import { fetchDynatraceStatusProvider } from './dynatraceStatusProvider';
 import { RSS_FEEDS, fetchRssProvider } from './rssProvider';
 import { fetchSalesforceProvider } from './salesforceProvider';
 import { STATUSPAGE_FEEDS, fetchStatuspageProvider } from './statuspageProvider';
@@ -33,11 +34,15 @@ function fetchProvider(provider: LegacyCloudStatusProvider): Promise<CloudStatus
 export async function fetchCloudStatusData(
   previous?: CloudStatusData | null,
 ): Promise<CloudStatusData> {
-  const [legacyResults, mistResult] = await Promise.all([
+  const [legacyResults, mistResult, dynatraceResult] = await Promise.all([
     Promise.allSettled(
       LEGACY_CLOUD_STATUS_PROVIDER_ORDER.map((provider) => fetchProvider(provider)),
     ),
     fetchMistProviderGroup().then(
+      (value) => ({ status: 'fulfilled', value }) as const,
+      (reason: unknown) => ({ status: 'rejected', reason }) as const,
+    ),
+    fetchDynatraceStatusProvider().then(
       (value) => ({ status: 'fulfilled', value }) as const,
       (reason: unknown) => ({ status: 'rejected', reason }) as const,
     ),
@@ -71,6 +76,17 @@ export async function fetchCloudStatusData(
       errors.push({ provider, message });
     }
     loggers.cloudStatus.warn('Juniper Mist status feed failed', {
+      error: message,
+      category: ErrorCategory.NETWORK,
+    });
+  }
+
+  if (dynatraceResult.status === 'fulfilled') {
+    setCloudStatusProviderItems(providers, 'dynatrace', dynatraceResult.value);
+  } else {
+    const message = truncateError(dynatraceResult.reason);
+    errors.push({ provider: 'dynatrace', message });
+    loggers.cloudStatus.warn('Dynatrace status feed failed', {
       error: message,
       category: ErrorCategory.NETWORK,
     });
