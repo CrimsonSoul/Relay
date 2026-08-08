@@ -4,6 +4,7 @@ import type { CloudStatusPartition, CloudStatusProvider } from '@shared/ipc';
 
 export const LEGACY_CLOUD_STATUS_COLLECTION = 'cloud_status_snapshot';
 export const MIST_CLOUD_STATUS_COLLECTION = 'cloud_status_mist_snapshot';
+export const EXTENSION_CLOUD_STATUS_COLLECTION = 'cloud_status_extension_snapshot';
 
 const SNAPSHOT_KEY = 'current';
 

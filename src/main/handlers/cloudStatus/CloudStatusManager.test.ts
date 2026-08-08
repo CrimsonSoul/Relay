@@ -18,11 +18,18 @@ const legacyGet = vi.fn().mockRejectedValue(new Error('missing'));
 const mistCreate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
 const mistUpdate = vi.fn().mockResolvedValue({ id: 'mist-snapshot' });
 const mistGet = vi.fn().mockRejectedValue(new Error('missing'));
-const collection = vi.fn((name: string) =>
-  name === 'cloud_status_mist_snapshot'
-    ? { create: mistCreate, update: mistUpdate, getFirstListItem: mistGet }
-    : { create: legacyCreate, update: legacyUpdate, getFirstListItem: legacyGet },
-);
+const extensionCreate = vi.fn().mockResolvedValue({ id: 'extension-snapshot' });
+const extensionUpdate = vi.fn().mockResolvedValue({ id: 'extension-snapshot' });
+const extensionGet = vi.fn().mockRejectedValue(new Error('missing'));
+const collection = vi.fn((name: string) => {
+  if (name === 'cloud_status_mist_snapshot') {
+    return { create: mistCreate, update: mistUpdate, getFirstListItem: mistGet };
+  }
+  if (name === 'cloud_status_extension_snapshot') {
+    return { create: extensionCreate, update: extensionUpdate, getFirstListItem: extensionGet };
+  }
+  return { create: legacyCreate, update: legacyUpdate, getFirstListItem: legacyGet };
+});
 const pb = { collection } as unknown as PocketBase;
 
 function data(items: CloudStatusItem[] = []): CloudStatusData {
@@ -58,8 +65,10 @@ describe('CloudStatusManager', () => {
     vi.clearAllMocks();
     legacyCreate.mockResolvedValue({ id: 'legacy-snapshot' });
     mistCreate.mockResolvedValue({ id: 'mist-snapshot' });
+    extensionCreate.mockResolvedValue({ id: 'extension-snapshot' });
     legacyGet.mockRejectedValue(new Error('missing'));
     mistGet.mockRejectedValue(new Error('missing'));
+    extensionGet.mockRejectedValue(new Error('missing'));
   });
 
   afterEach(() => vi.useRealTimers());
@@ -123,8 +132,10 @@ describe('CloudStatusManager', () => {
 
     expect(legacyCreate).toHaveBeenCalledTimes(1);
     expect(mistCreate).toHaveBeenCalledTimes(1);
+    expect(extensionCreate).toHaveBeenCalledTimes(1);
     expect(legacyUpdate).not.toHaveBeenCalled();
     expect(mistUpdate).not.toHaveBeenCalled();
+    expect(extensionUpdate).not.toHaveBeenCalled();
   });
 
   it('publishes unchanged degraded Mist polls without rewriting the healthy legacy partition', async () => {
@@ -174,9 +185,31 @@ describe('CloudStatusManager', () => {
     ]);
   });
 
-  it('merges persisted legacy and Mist partitions before the first provider fetch', async () => {
-    const persisted = data([issue('error'), issue('warning', 'mist_emea')]);
-    const { legacy, mist } = splitCloudStatusData(persisted);
+  it('publishes Dynatrace only in the extension singleton', async () => {
+    const manager = new CloudStatusManager(
+      () => pb,
+      vi.fn().mockResolvedValue(data([issue('error', 'dynatrace')])),
+    );
+
+    await manager.refresh();
+
+    const legacyPayload = legacyCreate.mock.calls[0]?.[0] as { providers: object };
+    const mistPayload = mistCreate.mock.calls[0]?.[0] as { providers: object };
+    const extensionPayload = extensionCreate.mock.calls[0]?.[0] as { providers: object };
+    expect(legacyPayload.providers).not.toHaveProperty('dynatrace');
+    expect(mistPayload.providers).not.toHaveProperty('dynatrace');
+    expect(extensionPayload.providers).toEqual({
+      dynatrace: [expect.objectContaining({ provider: 'dynatrace' })],
+    });
+  });
+
+  it('merges all persisted partitions before the first provider fetch', async () => {
+    const persisted = data([
+      issue('error'),
+      issue('warning', 'mist_emea'),
+      issue('warning', 'dynatrace'),
+    ]);
+    const { legacy, mist, extension } = splitCloudStatusData(persisted);
     legacyGet.mockResolvedValue({
       id: 'legacy-snapshot',
       key: 'current',
@@ -189,6 +222,12 @@ describe('CloudStatusManager', () => {
       contentHash: 'mist-content',
       ...mist,
     });
+    extensionGet.mockResolvedValue({
+      id: 'extension-snapshot',
+      key: 'current',
+      contentHash: 'extension-content',
+      ...extension,
+    });
     const fetchStatus = vi.fn(async (previous?: CloudStatusData | null) => previous ?? data());
     const manager = new CloudStatusManager(() => pb, fetchStatus);
 
@@ -199,9 +238,11 @@ describe('CloudStatusManager', () => {
         providers: expect.objectContaining({
           aws: [expect.objectContaining({ provider: 'aws' })],
           mist_emea: [expect.objectContaining({ provider: 'mist_emea' })],
+          dynatrace: [expect.objectContaining({ provider: 'dynatrace' })],
         }),
       }),
     );
     expect(manager.getSnapshot().providers.mist_emea).toHaveLength(1);
+    expect(manager.getSnapshot().providers.dynatrace).toHaveLength(1);
   });
 });

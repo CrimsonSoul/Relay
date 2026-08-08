@@ -91,23 +91,17 @@ describe('cacheHandlers', () => {
       expect(result).toEqual(mockData);
     });
 
-    it('reads the shared cloud status snapshot for offline clients', () => {
-      const snapshot = [{ id: 'snapshot', key: 'current' }];
+    it.each([
+      ['shared', 'cloud_status_snapshot', 'snapshot'],
+      ['Mist', 'cloud_status_mist_snapshot', 'mist-snapshot'],
+      ['extension', 'cloud_status_extension_snapshot', 'extension-snapshot'],
+    ])('reads the %s cloud status snapshot for offline clients', (_label, collection, id) => {
+      const snapshot = [{ id, key: 'current' }];
       mockCache.readCollection.mockReturnValue(snapshot);
 
-      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'cloud_status_snapshot');
+      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, collection);
 
-      expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_snapshot');
-      expect(result).toEqual(snapshot);
-    });
-
-    it('reads the separate Mist cloud status snapshot for offline clients', () => {
-      const snapshot = [{ id: 'mist-snapshot', key: 'current' }];
-      mockCache.readCollection.mockReturnValue(snapshot);
-
-      const result = getHandler(IPC_CHANNELS.CACHE_READ)({}, 'cloud_status_mist_snapshot');
-
-      expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_mist_snapshot');
+      expect(mockCache.readCollection).toHaveBeenCalledWith(collection);
       expect(result).toEqual(snapshot);
     });
 
@@ -289,28 +283,16 @@ describe('cacheHandlers', () => {
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
-    it('ingests realtime updates for an existing server-owned readable collection', () => {
-      const record = { id: 'snapshot', key: 'current', providers: [] };
+    it.each([
+      ['cloud_status_snapshot', 'snapshot'],
+      ['cloud_status_mist_snapshot', 'mist-snapshot'],
+      ['cloud_status_extension_snapshot', 'extension-snapshot'],
+    ])('ingests realtime updates for the server-owned %s collection', (collection, id) => {
+      const record = { id, key: 'current', providers: [] };
 
-      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'cloud_status_snapshot', 'update', record);
+      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, collection, 'update', record);
 
-      expect(mockCache.updateRecord).toHaveBeenCalledWith(
-        'cloud_status_snapshot',
-        'update',
-        record,
-      );
-    });
-
-    it('ingests realtime updates for the Mist server-owned collection', () => {
-      const record = { id: 'mist-snapshot', key: 'current', providers: [] };
-
-      getHandler(IPC_CHANNELS.CACHE_WRITE)({}, 'cloud_status_mist_snapshot', 'update', record);
-
-      expect(mockCache.updateRecord).toHaveBeenCalledWith(
-        'cloud_status_mist_snapshot',
-        'update',
-        record,
-      );
+      expect(mockCache.updateRecord).toHaveBeenCalledWith(collection, 'update', record);
     });
 
     it('does not ingest retired roster realtime updates', () => {
@@ -425,35 +407,17 @@ describe('cacheHandlers', () => {
       expect(mockCache.writeCollection).toHaveBeenCalledWith('contacts', signature, records);
     });
 
-    it('persists the shared cloud status snapshot for offline clients', () => {
-      const records = [{ id: 'snapshot', key: 'current' }];
+    it.each([
+      ['cloud_status_snapshot', 'snapshot'],
+      ['cloud_status_mist_snapshot', 'mist-snapshot'],
+      ['cloud_status_extension_snapshot', 'extension-snapshot'],
+    ])('persists the %s snapshot for offline clients', (collection, id) => {
+      const records = [{ id, key: 'current' }];
 
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)(
-        {},
-        'cloud_status_snapshot',
-        '1:0123456789abcdef',
-        records,
-      );
-
-      expect(mockCache.writeCollection).toHaveBeenCalledWith(
-        'cloud_status_snapshot',
-        '1:0123456789abcdef',
-        records,
-      );
-    });
-
-    it('persists the separate Mist cloud status snapshot for offline clients', () => {
-      const records = [{ id: 'mist-snapshot', key: 'current' }];
-
-      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)(
-        {},
-        'cloud_status_mist_snapshot',
-        '1:0123456789abcdef',
-        records,
-      );
+      getHandler(IPC_CHANNELS.CACHE_SNAPSHOT)({}, collection, '1:0123456789abcdef', records);
 
       expect(mockCache.writeCollection).toHaveBeenCalledWith(
-        'cloud_status_mist_snapshot',
+        collection,
         '1:0123456789abcdef',
         records,
       );

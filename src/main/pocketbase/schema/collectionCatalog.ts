@@ -32,7 +32,10 @@ import {
   KNOWLEDGE_SEARCH_MAX_PASSAGE_TEXT,
 } from '@shared/knowledgeSearch';
 import type { CollectionDef, CollectionRules, FieldDef } from './collectionTypes';
-import { MIST_CLOUD_STATUS_COLLECTION } from '../../handlers/cloudStatus/CloudStatusSnapshotStore';
+import {
+  EXTENSION_CLOUD_STATUS_COLLECTION,
+  MIST_CLOUD_STATUS_COLLECTION,
+} from '../../handlers/cloudStatus/CloudStatusSnapshotStore';
 
 const AUTH_RULE = '@request.auth.id != ""';
 /** Autodate fields added to every collection for created/updated timestamps. */
@@ -52,6 +55,8 @@ const CLOUD_STATUS_SNAPSHOT_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)';
 export const CLOUD_STATUS_MIST_SNAPSHOT_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_cloud_status_mist_snapshot_key ON cloud_status_mist_snapshot (key)';
+export const CLOUD_STATUS_EXTENSION_SNAPSHOT_KEY_INDEX =
+  'CREATE UNIQUE INDEX idx_cloud_status_extension_snapshot_key ON cloud_status_extension_snapshot (key)';
 const DYNATRACE_PROBLEM_ID_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_id ON dynatrace_problems (problemId)';
 const DYNATRACE_PROBLEM_QUEUE_INDEX =
@@ -543,6 +548,20 @@ export const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'contentHash', required: true },
     ],
     indexes: [CLOUD_STATUS_MIST_SNAPSHOT_KEY_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
+  {
+    name: EXTENSION_CLOUD_STATUS_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'key', required: true },
+      { type: 'json', name: 'providers', required: true },
+      // Healthy snapshots use an empty array, which PocketBase treats as blank.
+      { type: 'json', name: 'errors', required: false },
+      { type: 'number', name: 'lastUpdated', required: true },
+      { type: 'text', name: 'contentHash', required: true },
+    ],
+    indexes: [CLOUD_STATUS_EXTENSION_SNAPSHOT_KEY_INDEX],
     rules: SERVER_OWNED_RULES,
   },
   PRIVILEGED_ACCOUNT_FINAL_DEFINITION,

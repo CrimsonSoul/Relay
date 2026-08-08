@@ -597,6 +597,7 @@ describe('ensureCollections', () => {
       'client_presence',
       'cloud_status_snapshot',
       'cloud_status_mist_snapshot',
+      'cloud_status_extension_snapshot',
       'relay_privileged_accounts',
       'relay_privileged_state',
       'relay_privileged_devices',
@@ -695,7 +696,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(31);
+    expect(mockCreate).toHaveBeenCalledTimes(32);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -1917,55 +1918,30 @@ describe('ensureCollections', () => {
     expect(mockCreateBatch).not.toHaveBeenCalled();
   });
 
-  it('creates a read-only shared cloud status singleton collection', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-
-    await ensureCollections(mockPb);
-
-    const snapshotCall = mockCreate.mock.calls.find(
-      (call: unknown[]) => (call[0] as { name: string }).name === 'cloud_status_snapshot',
-    )?.[0] as
-      | {
-          listRule: string | null;
-          viewRule: string | null;
-          createRule: string | null;
-          updateRule: string | null;
-          deleteRule: string | null;
-          fields: Array<{ name: string; type: string; required?: boolean }>;
-          indexes: string[];
-        }
-      | undefined;
-
-    expect(snapshotCall).toMatchObject({
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: null,
-      updateRule: null,
-      deleteRule: null,
-    });
-    expect(snapshotCall?.fields).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: 'key', type: 'text', required: true }),
-        expect.objectContaining({ name: 'providers', type: 'json', required: true }),
-        expect.objectContaining({ name: 'errors', type: 'json', required: false }),
-        expect.objectContaining({ name: 'lastUpdated', type: 'number', required: true }),
-        expect.objectContaining({ name: 'contentHash', type: 'text', required: true }),
-      ]),
-    );
-    expect(snapshotCall?.indexes).toContain(
+  it.each([
+    [
+      'shared',
+      'cloud_status_snapshot',
       'CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)',
-    );
-  });
-
-  it('creates a separate read-only Mist cloud status singleton collection', async () => {
+    ],
+    [
+      'Mist',
+      'cloud_status_mist_snapshot',
+      'CREATE UNIQUE INDEX idx_cloud_status_mist_snapshot_key ON cloud_status_mist_snapshot (key)',
+    ],
+    [
+      'extension',
+      'cloud_status_extension_snapshot',
+      'CREATE UNIQUE INDEX idx_cloud_status_extension_snapshot_key ON cloud_status_extension_snapshot (key)',
+    ],
+  ])('creates the read-only %s cloud status singleton collection', async (_label, name, index) => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
     const snapshotCall = mockCreate.mock.calls.find(
-      (call: unknown[]) => (call[0] as { name: string }).name === 'cloud_status_mist_snapshot',
+      (call: unknown[]) => (call[0] as { name: string }).name === name,
     )?.[0] as
       | {
           listRule: string | null;
@@ -1994,9 +1970,7 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'contentHash', type: 'text', required: true }),
       ]),
     );
-    expect(snapshotCall?.indexes).toContain(
-      'CREATE UNIQUE INDEX idx_cloud_status_mist_snapshot_key ON cloud_status_mist_snapshot (key)',
-    );
+    expect(snapshotCall?.indexes).toContain(index);
   });
 
   it('makes existing cloud status errors optional for healthy snapshots', async () => {
