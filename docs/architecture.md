@@ -123,37 +123,36 @@ combined in-memory view. Persistence remains split for compatibility:
 
 - `cloud_status_snapshot` keeps the original ten-provider contract.
 - `cloud_status_mist_snapshot` contains four Juniper Mist region rows.
+- `cloud_status_extension_snapshot` contains post-compatibility providers, beginning with Dynatrace.
 
-Updated clients merge both records. Older clients retain the original exact shape, and updated
-clients connected to an older server keep missing Mist regions visible as Unknown without creating
-false outage alerts.
+Updated clients merge all three records. Older clients retain the original or original-plus-Mist
+shapes, and updated clients connected to an older server keep missing Mist or extension providers
+visible as Unknown without creating false outage alerts.
 
-#### Approved Dynatrace and Mist roll-up extension
+#### Dynatrace and Mist roll-up
 
-This extension is approved but not yet implemented. Implementation will add
-`cloud_status_extension_snapshot` for post-compatibility providers, beginning with Dynatrace, and
-reuse that partition for later additions. Updated clients will merge every available partition;
-older clients will retain the original and Mist shapes, while an updated client connected to an
-older server will default missing extension providers to Unknown rather than fail or generate a
+The extension partition is reusable for later providers. Updated clients merge every available
+partition; older clients retain the original and Mist shapes, while an updated client connected to
+an older server defaults missing extension providers to Unknown rather than failing or generating a
 false outage.
 
-The public API and persisted snapshots will retain the raw provider buckets, while a display
-aggregation layer will own the operator-facing provider list. It will deduplicate the same Mist
-incident across regional buckets, union its affected regions, and present one `Juniper Mist` row.
-Dynatrace will be a single display provider; its dedicated Status.io adapter will map affected cloud
-and region containers into the same bounded affected-scope metadata. Service Status will therefore
-present twelve rows: the original ten providers, Juniper Mist, and Dynatrace.
+The public API and persisted snapshots retain the raw provider buckets, while a display aggregation
+layer owns the operator-facing provider list. It deduplicates the same Mist incident across regional
+buckets, unions its affected regions, and presents one `Juniper Mist` row. Dynatrace is a single
+display provider; its dedicated Status.io adapter maps affected cloud and region containers into the
+same bounded affected-scope metadata. Service Status presents twelve rows: the original ten
+providers, Juniper Mist, and Dynatrace.
 
-Roll-up posture will use the worst current availability state: outage, degraded, unknown, then
+Roll-up posture uses the worst current availability state: outage, degraded, unknown, then
 operational. Status.io degraded performance maps to degraded, while partial and full service
 disruptions map to outage. Planned maintenance, closed incidents, security-only notices, stale
-records, and operational monitoring updates will not enter the active issue list. A failed feed will
-keep the last good snapshot and mark only its display provider Unknown; a partial Mist component
+records, and operational monitoring updates do not enter the active issue list. A failed feed keeps
+the last good snapshot and marks only its display provider Unknown; a partial Mist component
 failure cannot manufacture an outage.
 
-Cloud notifications will consume the display aggregation rather than the raw regional buckets, so a
-Mist incident produces one stable notification regardless of how many regions it affects. Dynatrace
-public-status incidents will use normal cloud-notification priority. The separate Dynatrace Problems
+Cloud notifications consume the display aggregation rather than the raw regional buckets, so a Mist
+incident produces one stable notification regardless of how many regions it affects. Dynatrace
+public-status incidents use normal cloud-notification priority. The separate Dynatrace Problems
 notification manager remains authoritative for tenant problems and keeps priority over cloud
 notifications.
 
@@ -286,6 +285,7 @@ truth. Representative boundaries include:
 | `conflict_log`                        | Offline replay conflict evidence                       |
 | `cloud_status_snapshot`               | Original ten-provider compatibility snapshot           |
 | `cloud_status_mist_snapshot`          | Four-region Mist compatibility snapshot                |
+| `cloud_status_extension_snapshot`     | Post-compatibility provider snapshot                   |
 | `knowledge_documents`                 | Server-owned Wiki metadata and protected files         |
 | `knowledge_categories`                | Ordered Wiki category records                          |
 | `knowledge_search_chunks`             | Rebuildable, server-owned derived passages             |
