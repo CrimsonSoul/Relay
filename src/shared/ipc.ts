@@ -214,6 +214,8 @@ export const MIST_CLOUD_STATUS_PROVIDER_ORDER = [
   'mist_federal',
 ] as const;
 
+export const EXTENSION_CLOUD_STATUS_PROVIDER_ORDER = ['dynatrace'] as const;
+
 export const CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
   'azure',
@@ -222,6 +224,7 @@ export const CLOUD_STATUS_PROVIDER_ORDER = [
   'github',
   'cloudflare',
   ...MIST_CLOUD_STATUS_PROVIDER_ORDER,
+  ...EXTENSION_CLOUD_STATUS_PROVIDER_ORDER,
   'google',
   'anthropic',
   'openai',
@@ -230,6 +233,7 @@ export const CLOUD_STATUS_PROVIDER_ORDER = [
 
 export type LegacyCloudStatusProvider = (typeof LEGACY_CLOUD_STATUS_PROVIDER_ORDER)[number];
 export type MistCloudStatusProvider = (typeof MIST_CLOUD_STATUS_PROVIDER_ORDER)[number];
+export type ExtensionCloudStatusProvider = (typeof EXTENSION_CLOUD_STATUS_PROVIDER_ORDER)[number];
 export type CloudStatusProvider = (typeof CLOUD_STATUS_PROVIDER_ORDER)[number];
 
 export type CloudStatusSeverity = 'info' | 'warning' | 'error' | 'resolved';
@@ -242,6 +246,7 @@ export type CloudStatusItem<P extends CloudStatusProvider = CloudStatusProvider>
   pubDate: string;
   link: string;
   severity: CloudStatusSeverity;
+  affectedScopes?: string[];
 };
 
 export type CloudStatusPartition<P extends CloudStatusProvider> = {
@@ -252,6 +257,7 @@ export type CloudStatusPartition<P extends CloudStatusProvider> = {
 
 export type LegacyCloudStatusData = CloudStatusPartition<LegacyCloudStatusProvider>;
 export type MistCloudStatusData = CloudStatusPartition<MistCloudStatusProvider>;
+export type ExtensionCloudStatusData = CloudStatusPartition<ExtensionCloudStatusProvider>;
 export type CloudStatusData = CloudStatusPartition<CloudStatusProvider>;
 
 type CloudStatusSnapshotMetadata = {
@@ -264,6 +270,8 @@ type CloudStatusSnapshotMetadata = {
 
 export type LegacyCloudStatusSnapshotRecord = LegacyCloudStatusData & CloudStatusSnapshotMetadata;
 export type MistCloudStatusSnapshotRecord = MistCloudStatusData & CloudStatusSnapshotMetadata;
+export type ExtensionCloudStatusSnapshotRecord = ExtensionCloudStatusData &
+  CloudStatusSnapshotMetadata;
 
 export type CloudStatusSnapshotRecord = CloudStatusData & CloudStatusSnapshotMetadata;
 
@@ -403,6 +411,10 @@ export const CLOUD_STATUS_PROVIDERS: Record<
   mist_federal: {
     label: 'Juniper Mist Federal',
     statusUrl: 'https://status.mist.com/',
+  },
+  dynatrace: {
+    label: 'Dynatrace',
+    statusUrl: 'https://dynatrace.status.io/',
   },
   google: {
     label: 'Google Cloud',
