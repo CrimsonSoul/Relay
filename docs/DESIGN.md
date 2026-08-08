@@ -79,6 +79,27 @@ responsible for their domain content.
 - This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
   other domain-specific toolbars retain their own interaction and density rules.
 
+### Approved Service Status provider-row extension
+
+This extension is approved but not yet implemented. Service Status remains an operational coverage
+list, not a generic vendor dashboard. Its overview will keep one scannable row per operator-facing
+provider, ordered by outage, degraded, unknown, then operational. Juniper Mist will be one row even
+though the server retains four regional buckets for compatibility; Dynatrace will also be one row.
+The summary, provider count, keyboard order, and status bar will all use the twelve displayed
+providers rather than the raw storage bucket count.
+
+Selecting either roll-up row will use the existing provider-detail workspace. Duplicate regional
+incidents will render once, and an `Affected` line will list the union of published regions or
+cloud/region containers. The title, latest published update, severity, timestamp, and official-status
+action will keep the same hierarchy as other incidents. Affected scopes are text, not color-only
+signals or a new card layer.
+
+An active incident will outrank feed uncertainty in the visible posture. With no active incident, an
+unavailable or incomplete feed will read Unknown and retain any last-good detail without implying it
+is current. Juniper Mist and Dynatrace will use the same row geometry, focus return, responsive
+behavior, and accessible status text as every other provider; the roll-up introduces no modal or
+nested navigation.
+
 Workflow actions state only outcomes Relay can observe. Compose may say it opened a Teams draft or
 copied recipients, but not that Teams created or sent a meeting. Alerts follows the same rule for
 Outlook and downloaded drafts. Destructive and externally consequential actions retain confirmation

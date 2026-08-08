@@ -128,6 +128,35 @@ Updated clients merge both records. Older clients retain the original exact shap
 clients connected to an older server keep missing Mist regions visible as Unknown without creating
 false outage alerts.
 
+#### Approved Dynatrace and Mist roll-up extension
+
+This extension is approved but not yet implemented. Implementation will add
+`cloud_status_extension_snapshot` for post-compatibility providers, beginning with Dynatrace, and
+reuse that partition for later additions. Updated clients will merge every available partition;
+older clients will retain the original and Mist shapes, while an updated client connected to an
+older server will default missing extension providers to Unknown rather than fail or generate a
+false outage.
+
+The public API and persisted snapshots will retain the raw provider buckets, while a display
+aggregation layer will own the operator-facing provider list. It will deduplicate the same Mist
+incident across regional buckets, union its affected regions, and present one `Juniper Mist` row.
+Dynatrace will be a single display provider; its dedicated Status.io adapter will map affected cloud
+and region containers into the same bounded affected-scope metadata. Service Status will therefore
+present twelve rows: the original ten providers, Juniper Mist, and Dynatrace.
+
+Roll-up posture will use the worst current availability state: outage, degraded, unknown, then
+operational. Status.io degraded performance maps to degraded, while partial and full service
+disruptions map to outage. Planned maintenance, closed incidents, security-only notices, stale
+records, and operational monitoring updates will not enter the active issue list. A failed feed will
+keep the last good snapshot and mark only its display provider Unknown; a partial Mist component
+failure cannot manufacture an outage.
+
+Cloud notifications will consume the display aggregation rather than the raw regional buckets, so a
+Mist incident produces one stable notification regardless of how many regions it affects. Dynatrace
+public-status incidents will use normal cloud-notification priority. The separate Dynatrace Problems
+notification manager remains authoritative for tenant problems and keeps priority over cloud
+notifications.
+
 ### Dispatcher Radar
 
 `src/main/handlers/radar/RadarManager.ts` owns polling, coalescing, stale-data behavior, and the CW
