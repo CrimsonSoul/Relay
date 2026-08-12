@@ -843,6 +843,26 @@ describe('useCollection', () => {
     expect(result.current.data[0]?.id).toBe('cached-err');
   });
 
+  it('clears a stale fetch error after a current offline cache read succeeds', async () => {
+    const cacheRead = vi
+      .fn<() => Promise<RecordModel[] | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([makeRecord('cached-after-error')]);
+    (globalThis as Record<string, unknown>).api = { cacheRead };
+    mockGetFullList.mockRejectedValue(new Error('Server down'));
+
+    const { result } = renderHook(() => useCollection('test'));
+    await waitFor(() => expect(result.current.error).toBe('Server down'));
+
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => connectionChangeCallback?.('offline'));
+
+    await waitFor(() =>
+      expect(result.current.data.map((record) => record.id)).toEqual(['cached-after-error']),
+    );
+    expect(result.current.error).toBeNull();
+  });
+
   it('handles non-Error objects in catch', async () => {
     mockGetFullList.mockRejectedValue('string error');
 

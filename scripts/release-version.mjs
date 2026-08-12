@@ -121,7 +121,11 @@ export function planRelease({ latestTag, commits, headSha }) {
 function runGit(args, cwd) {
   // Git is a required developer/CI tool here, and every argument is fixed or validated.
   // eslint-disable-next-line sonarjs/no-os-command-from-path
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  }).trim();
 }
 
 function readReachableVersionTags(cwd) {

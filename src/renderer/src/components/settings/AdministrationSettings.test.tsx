@@ -316,6 +316,57 @@ describe('AdministrationSettings', () => {
     );
   });
 
+  it('allows only one alerting-profile scope replacement while confirmation is pending', async () => {
+    let finishReplacement!: (result: { ok: true }) => void;
+    const execute = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          finishReplacement = resolve;
+        }),
+    );
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: '1 selected',
+            valueSummary: ['NOC Core'],
+            revision: 4,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
+      target: { value: 'NOC Core\nRetail Stores' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Review stored problem scope' });
+    const applyButton = within(dialog).getByRole('button', { name: 'Apply stored scope' });
+    fireEvent.click(applyButton);
+    fireEvent.click(applyButton);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(applyButton).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+    finishReplacement({ ok: true });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Review stored problem scope' })).toBeNull(),
+    );
+  });
+
   it('defines a compact selector and stacked rows below half-screen widths', () => {
     expect(settingsCss).toMatch(
       /@media \(max-width:\s*980px\)[\s\S]*\.administration-settings__rail\s*{[^}]*display:\s*none/,

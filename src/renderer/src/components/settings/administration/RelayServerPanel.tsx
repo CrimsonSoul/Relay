@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
@@ -21,6 +21,8 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
     Array.isArray(profiles?.valueSummary) ? profiles.valueSummary.join('\n') : '',
   );
   const [profileConfirming, setProfileConfirming] = useState(false);
+  const [applyingProfiles, setApplyingProfiles] = useState(false);
+  const applyingProfilesRef = useRef(false);
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -71,19 +73,26 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   };
 
   const replaceProfiles = async () => {
-    if (!profiles) return;
-    const result = await execute({
-      command: 'administration.setting.replace',
-      payload: {
-        setting: 'dynatrace.alerting-profiles',
-        value: { profiles: selectedProfileNames },
-        expectedRevision: profiles.revision,
-      },
-      expectedRevision: null,
-    });
-    if (result.ok) {
-      setProfileConfirming(false);
-      setFeedback('Stored Dynatrace problem scope updated.');
+    if (!profiles || applyingProfilesRef.current) return;
+    applyingProfilesRef.current = true;
+    setApplyingProfiles(true);
+    try {
+      const result = await execute({
+        command: 'administration.setting.replace',
+        payload: {
+          setting: 'dynatrace.alerting-profiles',
+          value: { profiles: selectedProfileNames },
+          expectedRevision: profiles.revision,
+        },
+        expectedRevision: null,
+      });
+      if (result.ok) {
+        setProfileConfirming(false);
+        setFeedback('Stored Dynatrace problem scope updated.');
+      }
+    } finally {
+      applyingProfilesRef.current = false;
+      setApplyingProfiles(false);
     }
   };
 
@@ -238,20 +247,29 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
 
       <Modal
         isOpen={profileConfirming}
-        onClose={() => setProfileConfirming(false)}
+        onClose={() => {
+          if (!applyingProfilesRef.current) setProfileConfirming(false);
+        }}
         title="Review stored problem scope"
         subtitle={`${selectedProfileNames.length} alerting profile${selectedProfileNames.length === 1 ? '' : 's'} selected`}
         variant="standard"
+        dismissible={!applyingProfiles}
         footer={
           <>
             <TactileButton
               type="button"
               variant="secondary"
               onClick={() => setProfileConfirming(false)}
+              disabled={applyingProfiles}
             >
               Cancel
             </TactileButton>
-            <TactileButton type="button" variant="primary" onClick={() => void replaceProfiles()}>
+            <TactileButton
+              type="button"
+              variant="primary"
+              loading={applyingProfiles}
+              onClick={() => void replaceProfiles()}
+            >
               Apply stored scope
             </TactileButton>
           </>

@@ -998,7 +998,8 @@ function ProblemDetail({
                 </div>
                 <small>
                   Relay records the ticket number for notation only. It does not create or update a
-                  Service Desk ticket.
+                  Service Desk ticket. Enter a full HTTPS ticket link to also get an
+                  &ldquo;Open&rdquo; action on the saved reference.
                 </small>
               </div>
               <label className="dt-problem-note-composer">

@@ -112,6 +112,11 @@ the shared external-action rate limit, and logs only an origin-safe URL
 description when it blocks or cannot open a link. Relay Web applies the same URL
 shape checks in its browser action before opening a new tab.
 
+This capability applies no host allowlist. The Service Desk host is
+operator-supplied, so any HTTPS host that meets the shape checks is accepted.
+The trust boundary is the explicit operator click plus the shape checks, not a
+fixed host set.
+
 ### External Dashboard Popouts
 
 Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -196,6 +196,37 @@ describe('Relay release versioning', () => {
           '',
         ].join('\n'),
       );
+    } finally {
+      await rm(repository, { force: true, recursive: true });
+    }
+  });
+
+  it('derives the first release when untagged Git history exceeds the default child-process buffer', async () => {
+    const repository = await mkdtemp(path.join(tmpdir(), 'relay-release-version-large-history-'));
+    const messagePath = path.join(repository, 'commit-message.txt');
+
+    try {
+      git(repository, 'init', '--initial-branch=test');
+      git(repository, 'config', 'user.name', 'Relay Test');
+      git(repository, 'config', 'user.email', 'relay-test@example.invalid');
+      await writeFile(
+        messagePath,
+        `feat: create release automation\n\n${'release context '.repeat(80_000)}`,
+        'utf8',
+      );
+      git(repository, 'commit', '--allow-empty', '-F', messagePath);
+
+      const result = spawnSync(process.execPath, [releaseScript], {
+        cwd: repository,
+        encoding: 'utf8',
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        action: 'create',
+        releaseType: 'initial',
+        tag: 'v1.0.0',
+      });
     } finally {
       await rm(repository, { force: true, recursive: true });
     }

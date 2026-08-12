@@ -720,6 +720,7 @@ export class CollectionStore<T extends CollectionRecord> {
       const totalItems = cachedQuery.membership?.totalItems ?? filtered?.length ?? cached.length;
       this.updateSnapshot({
         data: cached,
+        error: null,
         hasLoadedSnapshot: true,
         totalItems,
         hasMore: Boolean(filtered && cached.length < filtered.length),

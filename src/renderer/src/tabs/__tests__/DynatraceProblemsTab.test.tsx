@@ -1380,7 +1380,9 @@ describe('DynatraceProblemsTab', () => {
     expect(
       await screen.findByText(/Choose your name, then add a ticket or note below/i),
     ).toBeVisible();
-    expect(screen.getByText(/Relay records the ticket number for notation only/i)).toBeVisible();
+    expect(
+      screen.getByText(/Enter a full HTTPS ticket link to also get an “Open” action/i),
+    ).toBeVisible();
   });
 
   it('keeps historical notes and addressed metadata without operator IDs visible', async () => {
