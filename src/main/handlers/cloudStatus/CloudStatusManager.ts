@@ -3,11 +3,13 @@ import type {
   CloudStatusData,
   CloudStatusItem,
   CloudStatusProvider,
+  ExtensionCloudStatusProvider,
   LegacyCloudStatusProvider,
   MistCloudStatusProvider,
 } from '@shared/ipc';
 import {
   emptyCloudStatusProviders,
+  emptyExtensionCloudStatusProviders,
   emptyLegacyCloudStatusProviders,
   emptyMistCloudStatusProviders,
   mergeCloudStatusData,
@@ -17,6 +19,7 @@ import { loggers } from '../../logger';
 import { fetchCloudStatusData } from './fetchCloudStatus';
 import {
   CloudStatusSnapshotStore,
+  EXTENSION_CLOUD_STATUS_COLLECTION,
   LEGACY_CLOUD_STATUS_COLLECTION,
   MIST_CLOUD_STATUS_COLLECTION,
 } from './CloudStatusSnapshotStore';
@@ -48,6 +51,7 @@ export class CloudStatusManager {
   private hydrated = false;
   private readonly legacyStore: CloudStatusSnapshotStore<LegacyCloudStatusProvider>;
   private readonly mistStore: CloudStatusSnapshotStore<MistCloudStatusProvider>;
+  private readonly extensionStore: CloudStatusSnapshotStore<ExtensionCloudStatusProvider>;
 
   constructor(
     private readonly getPocketBase: () => PocketBase | null,
@@ -62,6 +66,11 @@ export class CloudStatusManager {
       getPocketBase,
       MIST_CLOUD_STATUS_COLLECTION,
       emptyMistCloudStatusProviders,
+    );
+    this.extensionStore = new CloudStatusSnapshotStore(
+      getPocketBase,
+      EXTENSION_CLOUD_STATUS_COLLECTION,
+      emptyExtensionCloudStatusProviders,
     );
   }
 
@@ -94,10 +103,11 @@ export class CloudStatusManager {
     try {
       await this.hydratePersistedSnapshot();
       const next = await this.fetchStatus(this.snapshot);
-      const { legacy, mist } = splitCloudStatusData(next);
+      const { legacy, mist, extension } = splitCloudStatusData(next);
       await Promise.all([
         this.legacyStore.persist(legacy, isDegraded(legacy)),
         this.mistStore.persist(mist, isDegraded(mist)),
+        this.extensionStore.persist(extension, isDegraded(extension)),
       ]);
       this.snapshot = next;
       return next;
@@ -113,11 +123,12 @@ export class CloudStatusManager {
     if (!pb) return;
     this.hydrated = true;
     const current = splitCloudStatusData(this.snapshot);
-    const [legacy, mist] = await Promise.all([
+    const [legacy, mist, extension] = await Promise.all([
       this.legacyStore.hydrate(current.legacy),
       this.mistStore.hydrate(current.mist),
+      this.extensionStore.hydrate(current.extension),
     ]);
-    this.snapshot = mergeCloudStatusData(legacy, mist);
+    this.snapshot = mergeCloudStatusData(legacy, mist, extension);
   }
 
   private scheduleNext(): void {

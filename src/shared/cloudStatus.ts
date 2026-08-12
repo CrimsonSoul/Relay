@@ -3,6 +3,7 @@ import type {
   CloudStatusItem,
   CloudStatusPartition,
   CloudStatusProvider,
+  ExtensionCloudStatusData,
   LegacyCloudStatusData,
   MistCloudStatusData,
 } from './ipc';
@@ -28,9 +29,9 @@ function matchingProviderItems<P extends CloudStatusProvider>(
   data: CloudStatusData,
   provider: P,
 ): CloudStatusItem<P>[] {
-  return data.providers[provider].filter(
-    (item): item is CloudStatusItem<P> => item.provider === provider,
-  );
+  const items = data.providers[provider];
+  if (!Array.isArray(items)) return [];
+  return items.filter((item): item is CloudStatusItem<P> => item.provider === provider);
 }
 
 export function emptyLegacyCloudStatusProviders(): LegacyCloudStatusData['providers'] {
@@ -57,6 +58,18 @@ export function emptyMistCloudStatusProviders(): MistCloudStatusData['providers'
   };
 }
 
+export function emptyExtensionCloudStatusProviders(): ExtensionCloudStatusData['providers'] {
+  return { dynatrace: [] };
+}
+
+function emptyExtensionCloudStatusData(): ExtensionCloudStatusData {
+  return {
+    providers: emptyExtensionCloudStatusProviders(),
+    errors: [],
+    lastUpdated: 0,
+  };
+}
+
 export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
   return {
     aws: [],
@@ -69,6 +82,7 @@ export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
     mist_emea: [],
     mist_apac: [],
     mist_federal: [],
+    dynatrace: [],
     google: [],
     anthropic: [],
     openai: [],
@@ -79,9 +93,11 @@ export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
 export function splitCloudStatusData(data: CloudStatusData): {
   legacy: LegacyCloudStatusData;
   mist: MistCloudStatusData;
+  extension: ExtensionCloudStatusData;
 } {
   const legacyErrors: LegacyCloudStatusData['errors'] = [];
   const mistErrors: MistCloudStatusData['errors'] = [];
+  const extensionErrors: ExtensionCloudStatusData['errors'] = [];
 
   for (const error of data.errors) {
     switch (error.provider) {
@@ -90,6 +106,9 @@ export function splitCloudStatusData(data: CloudStatusData): {
       case 'mist_apac':
       case 'mist_federal':
         mistErrors.push({ provider: error.provider, message: error.message });
+        break;
+      case 'dynatrace':
+        extensionErrors.push({ provider: error.provider, message: error.message });
         break;
       case 'aws':
       case 'azure':
@@ -133,12 +152,18 @@ export function splitCloudStatusData(data: CloudStatusData): {
       errors: mistErrors,
       lastUpdated: data.lastUpdated,
     },
+    extension: {
+      providers: { dynatrace: matchingProviderItems(data, 'dynatrace') },
+      errors: extensionErrors,
+      lastUpdated: data.lastUpdated,
+    },
   };
 }
 
 export function mergeCloudStatusData(
   legacy: LegacyCloudStatusData,
   mist: MistCloudStatusData,
+  extension: ExtensionCloudStatusData = emptyExtensionCloudStatusData(),
 ): CloudStatusData {
   return {
     providers: {
@@ -152,13 +177,14 @@ export function mergeCloudStatusData(
       mist_emea: mist.providers.mist_emea,
       mist_apac: mist.providers.mist_apac,
       mist_federal: mist.providers.mist_federal,
+      dynatrace: extension.providers.dynatrace,
       google: legacy.providers.google,
       anthropic: legacy.providers.anthropic,
       openai: legacy.providers.openai,
       salesforce: legacy.providers.salesforce,
     },
-    errors: [...legacy.errors, ...mist.errors],
-    lastUpdated: Math.max(legacy.lastUpdated, mist.lastUpdated),
+    errors: [...legacy.errors, ...mist.errors, ...extension.errors],
+    lastUpdated: Math.max(legacy.lastUpdated, mist.lastUpdated, extension.lastUpdated),
   };
 }
 
@@ -171,6 +197,21 @@ export function unavailableMistCloudStatusData(lastUpdated = Date.now()): MistCl
       { provider: 'mist_emea', message },
       { provider: 'mist_apac', message },
       { provider: 'mist_federal', message },
+    ],
+    lastUpdated,
+  };
+}
+
+export function unavailableExtensionCloudStatusData(
+  lastUpdated = Date.now(),
+): ExtensionCloudStatusData {
+  return {
+    providers: emptyExtensionCloudStatusProviders(),
+    errors: [
+      {
+        provider: 'dynatrace',
+        message: 'Dynatrace status is unavailable from this Relay server.',
+      },
     ],
     lastUpdated,
   };

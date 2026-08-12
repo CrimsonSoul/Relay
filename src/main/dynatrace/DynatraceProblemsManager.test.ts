@@ -31,6 +31,8 @@ function makeProblem(problemId: string, title: string) {
     impactedEntities: [],
     managementZones: [],
     alertingProfiles: [],
+    scopeExcluded: false,
+    scopeExcludedAt: '',
     environmentUrl: config.environmentUrl,
     syncedAt: '2026-07-09T20:00:00.000Z',
   } satisfies Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>;
@@ -74,6 +76,8 @@ describe('DynatraceProblemsManager', () => {
       getFullList: vi
         .fn()
         .mockResolvedValueOnce([{ id: 'record-1', problemId: 'PROBLEM-1' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]),
       update: vi.fn().mockResolvedValue({}),
       create: vi.fn().mockResolvedValue({ id: 'record-2', problemId: 'PROBLEM-2' }),
@@ -100,6 +104,7 @@ describe('DynatraceProblemsManager', () => {
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [firstProblem, secondProblem],
         totalCount: 2,
+        resultTruncated: true,
       }),
       testConnection: vi.fn(),
     };
@@ -117,7 +122,13 @@ describe('DynatraceProblemsManager', () => {
     expect(pocketBase.collection).toHaveBeenCalledWith(DYNATRACE_PROBLEM_SYNC_COLLECTION);
     expect(syncCollection.update).toHaveBeenCalledWith(
       'sync-1',
-      expect.objectContaining({ state: 'ok', error: '' }),
+      expect.objectContaining({
+        state: 'ok',
+        error: '',
+        consecutiveFailures: 0,
+        resultTruncated: true,
+        scopeSource: 'alerting-profile',
+      }),
       { requestKey: null },
     );
   });
@@ -173,7 +184,7 @@ describe('DynatraceProblemsManager', () => {
     );
   });
 
-  it('stores only selected-profile problems and removes excluded history with its local records', async () => {
+  it('marks excluded history out of scope without deleting problems, notes, or dispositions', async () => {
     const selectedConfig = { ...config, alertingProfiles: ['POS Store', 'Alerts for NOC'] };
     const matchedProblem = {
       ...makeProblem('MATCHED', 'Selected profile problem'),
@@ -184,9 +195,20 @@ describe('DynatraceProblemsManager', () => {
         .fn()
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
-          { id: 'kept-record', problemId: 'KEPT', alertingProfiles: ['Alerts for NOC'] },
-          { id: 'excluded-record', problemId: 'EXCLUDED', alertingProfiles: ['Default'] },
+          {
+            id: 'kept-record',
+            problemId: 'KEPT',
+            alertingProfiles: ['Alerts for NOC'],
+            scopeExcluded: false,
+          },
+          {
+            id: 'excluded-record',
+            problemId: 'EXCLUDED',
+            alertingProfiles: ['Default'],
+            scopeExcluded: false,
+          },
         ])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]),
       update: vi.fn().mockResolvedValue({}),
       create: vi.fn().mockResolvedValue({ id: 'matched-record', problemId: 'MATCHED' }),
@@ -222,7 +244,16 @@ describe('DynatraceProblemsManager', () => {
     };
     const client = {
       fetchAlertingProfiles: vi.fn().mockResolvedValue(['Alerts for NOC', 'Default', 'POS Store']),
-      fetchProblems: vi.fn().mockResolvedValue({ problems: [matchedProblem], totalCount: 1 }),
+      inspectAlertingProfileField: vi.fn().mockResolvedValue({
+        problemCount: 20,
+        profiledProblemCount: 18,
+        healthy: true,
+      }),
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [matchedProblem],
+        totalCount: 1,
+        resultTruncated: false,
+      }),
       testConnection: vi.fn(),
     };
     const manager = new DynatraceProblemsManager(
@@ -235,12 +266,14 @@ describe('DynatraceProblemsManager', () => {
 
     expect(client.fetchProblems).toHaveBeenCalledWith(selectedConfig, { mode: 'reconcile' });
     expect(problemCollection.create).toHaveBeenCalledWith(matchedProblem, { requestKey: null });
-    expect(problemCollection.delete).toHaveBeenCalledWith('excluded-record', {
-      requestKey: null,
-    });
-    expect(problemCollection.delete).not.toHaveBeenCalledWith('kept-record', expect.anything());
-    expect(noteCollection.delete).toHaveBeenCalledWith('excluded-note', { requestKey: null });
-    expect(stateCollection.delete).toHaveBeenCalledWith('excluded-state', { requestKey: null });
+    expect(problemCollection.update).toHaveBeenCalledWith(
+      'excluded-record',
+      { scopeExcluded: true, scopeExcludedAt: expect.any(String) },
+      { requestKey: null },
+    );
+    expect(problemCollection.delete).not.toHaveBeenCalledWith('excluded-record', expect.anything());
+    expect(noteCollection.delete).not.toHaveBeenCalled();
+    expect(stateCollection.delete).not.toHaveBeenCalled();
     expect(syncCollection.update).toHaveBeenLastCalledWith(
       'sync-1',
       expect.objectContaining({
@@ -248,9 +281,332 @@ describe('DynatraceProblemsManager', () => {
         availableAlertingProfiles: ['Alerts for NOC', 'Default', 'POS Store'],
         selectedAlertingProfiles: ['POS Store', 'Alerts for NOC'],
         profileFilterConfigured: true,
+        scopeSource: 'alerting-profile',
+        profileFieldHealthy: true,
+        profileCatalogCount: 3,
+        matchedProfileCount: 2,
       }),
       { requestKey: null },
     );
+  });
+
+  it('fails closed and preserves the last good scope when Dynatrace stops returning profile metadata', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T18:00:00.000Z'));
+    const selectedConfig = { ...config, alertingProfiles: ['NOC Core'] };
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({
+        id: 'sync-1',
+        key: 'primary',
+        lastSuccessAt: '2026-08-07T17:55:00.000Z',
+        availableAlertingProfiles: ['NOC Core'],
+        consecutiveFailures: 0,
+      }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = {
+      load: vi.fn().mockReturnValue(selectedConfig),
+      getPublicSettings: vi.fn(),
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      inspectAlertingProfileField: vi.fn().mockResolvedValue({
+        problemCount: 17,
+        profiledProblemCount: 0,
+        healthy: false,
+      }),
+      fetchProblems: vi.fn(),
+      testConnection: vi.fn(),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).rejects.toThrow(/metadata.*preserved/i);
+
+    expect(client.fetchProblems).not.toHaveBeenCalled();
+    expect(problemCollection.getFullList).not.toHaveBeenCalled();
+    expect(problemCollection.update).not.toHaveBeenCalled();
+    expect(problemCollection.delete).not.toHaveBeenCalled();
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({
+        state: 'error',
+        profileFieldHealthy: false,
+        consecutiveFailures: 1,
+        staleSince: '2026-08-07T18:00:00.000Z',
+      }),
+      { requestKey: null },
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('fails closed when a scoped reconciliation cannot refresh the profile catalog', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T18:00:00.000Z'));
+    const selectedConfig = { ...config, alertingProfiles: ['NOC Core'] };
+    const syncRecord: Record<string, unknown> = {
+      id: 'sync-1',
+      key: 'primary',
+      lastSuccessAt: '2026-08-07T17:55:00.000Z',
+      lastReconciledAt: '2026-08-07T17:59:00.000Z',
+      availableAlertingProfiles: ['NOC Core'],
+      profileCatalogCount: 1,
+      matchedProfileCount: 1,
+    };
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn(async () => syncRecord),
+      update: vi.fn(async (_id: string, patch: Record<string, unknown>) => {
+        Object.assign(syncRecord, patch);
+        return syncRecord;
+      }),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = {
+      load: vi.fn().mockReturnValue(selectedConfig),
+      getPublicSettings: vi.fn(),
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      fetchAlertingProfiles: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Catalog unavailable'))
+        .mockRejectedValueOnce(new Error('Catalog still unavailable'))
+        .mockResolvedValueOnce(['NOC Core']),
+      inspectAlertingProfileField: vi.fn().mockResolvedValue({
+        problemCount: 10,
+        profiledProblemCount: 10,
+        healthy: true,
+      }),
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [],
+        totalCount: 0,
+        resultTruncated: false,
+      }),
+      testConnection: vi.fn(),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow(true)).rejects.toThrow('Catalog unavailable');
+    vi.advanceTimersByTime(61_000);
+    await expect(manager.syncNow()).rejects.toThrow('Catalog still unavailable');
+
+    expect(client.inspectAlertingProfileField).not.toHaveBeenCalled();
+    expect(client.fetchProblems).not.toHaveBeenCalled();
+    expect(client.fetchAlertingProfiles).toHaveBeenCalledTimes(2);
+    expect(problemCollection.getFullList).not.toHaveBeenCalled();
+    expect(problemCollection.update).not.toHaveBeenCalled();
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({
+        state: 'error',
+        error: 'Catalog still unavailable',
+        profileCatalogCount: 1,
+        matchedProfileCount: 1,
+        reconciliationPending: true,
+      }),
+      { requestKey: null },
+    );
+
+    vi.advanceTimersByTime(61_000);
+    await expect(manager.syncNow()).resolves.toBe(0);
+
+    expect(client.fetchAlertingProfiles).toHaveBeenCalledTimes(3);
+    expect(client.inspectAlertingProfileField).toHaveBeenCalledOnce();
+    expect(client.fetchProblems).toHaveBeenCalledOnce();
+    expect(problemCollection.getFullList).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('persists a failed forced reconciliation and retries it before incremental polling resumes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T18:00:00.000Z'));
+    const selectedConfig = { ...config, alertingProfiles: ['NOC Core'] };
+    const syncRecord: Record<string, unknown> = {
+      id: 'sync-1',
+      key: 'primary',
+      lastSuccessAt: '2026-08-07T17:55:00.000Z',
+      lastReconciledAt: '2026-08-07T17:55:00.000Z',
+      availableAlertingProfiles: ['NOC Core'],
+    };
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn(async () => syncRecord),
+      update: vi.fn(async (_id: string, patch: Record<string, unknown>) => {
+        Object.assign(syncRecord, patch);
+        return syncRecord;
+      }),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = {
+      load: vi.fn().mockReturnValue(selectedConfig),
+      getPublicSettings: vi.fn(),
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue(['NOC Core']),
+      inspectAlertingProfileField: vi
+        .fn()
+        .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 0, healthy: false })
+        .mockResolvedValueOnce({ problemCount: 12, profiledProblemCount: 12, healthy: true }),
+      fetchProblems: vi
+        .fn()
+        .mockResolvedValue({ problems: [], totalCount: 0, resultTruncated: false }),
+      testConnection: vi.fn(),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow(true)).rejects.toThrow(/metadata.*preserved/i);
+    expect(syncRecord.reconciliationPending).toBe(true);
+
+    vi.advanceTimersByTime(61_000);
+    await expect(manager.syncNow()).resolves.toBe(0);
+
+    expect(client.fetchProblems).toHaveBeenCalledWith(selectedConfig, { mode: 'reconcile' });
+    expect(syncRecord.reconciliationPending).toBe(false);
+    expect(syncRecord.state).toBe('ok');
+
+    vi.useRealTimers();
+  });
+
+  it('restores a future persisted retry deadline after a process restart', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T18:00:00.000Z'));
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({
+        id: 'sync-1',
+        key: 'primary',
+        lastSuccessAt: '2026-08-07T17:55:00.000Z',
+        lastReconciledAt: '2026-08-07T17:55:00.000Z',
+        nextRetryAt: '2026-08-07T18:02:00.000Z',
+      }),
+      update: vi.fn(),
+      create: vi.fn(),
+    };
+    const pocketBase = { collection: vi.fn(() => syncCollection) };
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = { fetchProblems: vi.fn(), testConnection: vi.fn() };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).resolves.toBe(0);
+
+    expect(client.fetchProblems).not.toHaveBeenCalled();
+    expect(syncCollection.update).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('records consecutive failures and Dynatrace retry guidance without replacing the last success', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T18:00:00.000Z'));
+    const previousSync = {
+      id: 'sync-1',
+      key: 'primary',
+      lastSuccessAt: '2026-08-07T17:30:00.000Z',
+      lastReconciledAt: '2026-08-07T17:30:00.000Z',
+      staleSince: '2026-08-07T17:45:00.000Z',
+      consecutiveFailures: 2,
+    };
+    const problemCollection = { getFullList: vi.fn(), update: vi.fn(), create: vi.fn() };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue(previousSync),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      fetchProblems: vi
+        .fn()
+        .mockRejectedValue(new Error('Dynatrace rate-limited the Grail query.', { cause: 90_000 })),
+      testConnection: vi.fn(),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).rejects.toThrow(/rate-limited/i);
+
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({
+        state: 'error',
+        consecutiveFailures: 3,
+        staleSince: '2026-08-07T17:45:00.000Z',
+        nextRetryAt: '2026-08-07T18:01:30.000Z',
+      }),
+      { requestKey: null },
+    );
+    expect(syncCollection.update.mock.calls.at(-1)?.[1]).not.toHaveProperty('lastSuccessAt');
+
+    vi.useRealTimers();
   });
 
   it('keeps a rolling year of resolved history and removes its local notes and disposition together', async () => {
@@ -275,22 +631,38 @@ describe('DynatraceProblemsManager', () => {
       status: 'OPEN',
       endTime: -1,
     };
+    const staleExcluded = {
+      ...oldOpen,
+      scopeExcluded: true,
+      scopeExcludedAt: new Date(Date.now() - 366 * day).toISOString(),
+    };
+    const retainedProblems = [expiredClosed, recentClosed, oldOpen].map((problem) => ({
+      ...problem,
+      alertingProfiles: [],
+      scopeExcluded: false,
+    }));
     const problemCollection = {
-      getFullList: vi.fn().mockResolvedValueOnce([expiredClosed, recentClosed, oldOpen]),
+      getFullList: vi
+        .fn()
+        .mockResolvedValueOnce(retainedProblems)
+        .mockResolvedValueOnce(retainedProblems)
+        .mockResolvedValueOnce([staleExcluded]),
       update: vi.fn().mockResolvedValue({}),
       create: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue(true),
     };
     const noteCollection = {
-      getFullList: vi
-        .fn()
-        .mockResolvedValue([{ id: 'expired-note', problemId: 'EXPIRED-PROBLEM' }]),
+      getFullList: vi.fn().mockResolvedValue([
+        { id: 'expired-note', problemId: 'EXPIRED-PROBLEM' },
+        { id: 'stale-note', problemId: 'OLD-OPEN-PROBLEM' },
+      ]),
       delete: vi.fn().mockResolvedValue(true),
     };
     const stateCollection = {
-      getFullList: vi
-        .fn()
-        .mockResolvedValue([{ id: 'expired-state', problemId: 'EXPIRED-PROBLEM' }]),
+      getFullList: vi.fn().mockResolvedValue([
+        { id: 'expired-state', problemId: 'EXPIRED-PROBLEM' },
+        { id: 'stale-state', problemId: 'OLD-OPEN-PROBLEM' },
+      ]),
       delete: vi.fn().mockResolvedValue(true),
     };
     const syncCollection = {
@@ -325,9 +697,9 @@ describe('DynatraceProblemsManager', () => {
 
     await expect(manager.syncNow()).resolves.toBe(0);
 
-    expect(problemCollection.getFullList).toHaveBeenLastCalledWith({
+    expect(problemCollection.getFullList).toHaveBeenCalledWith({
       filter: expect.stringContaining('status="CLOSED"'),
-      fields: 'id,problemId,status,endTime',
+      fields: 'id,problemId,status,endTime,scopeExcluded,scopeExcludedAt',
       requestKey: null,
     });
     expect(noteCollection.getFullList).toHaveBeenCalledWith({
@@ -339,9 +711,12 @@ describe('DynatraceProblemsManager', () => {
       requestKey: null,
     });
     expect(noteCollection.delete).toHaveBeenCalledWith('expired-note', { requestKey: null });
+    expect(noteCollection.delete).toHaveBeenCalledWith('stale-note', { requestKey: null });
     expect(stateCollection.delete).toHaveBeenCalledWith('expired-state', { requestKey: null });
-    expect(problemCollection.delete).toHaveBeenCalledTimes(1);
+    expect(stateCollection.delete).toHaveBeenCalledWith('stale-state', { requestKey: null });
+    expect(problemCollection.delete).toHaveBeenCalledTimes(2);
     expect(problemCollection.delete).toHaveBeenCalledWith('expired-record', { requestKey: null });
+    expect(problemCollection.delete).toHaveBeenCalledWith('open-record', { requestKey: null });
 
     vi.useRealTimers();
   });
@@ -367,6 +742,7 @@ describe('DynatraceProblemsManager', () => {
       lastSuccessAt: '2026-07-10T19:59:00.000Z',
       lastReconciledAt: '2026-07-10T12:00:00.000Z',
       availableAlertingProfiles: ['Payments Production'],
+      resultTruncated: true,
     };
     const syncCollection = {
       getFirstListItem: vi.fn().mockResolvedValue(syncRecord),
@@ -389,6 +765,7 @@ describe('DynatraceProblemsManager', () => {
       fetchProblems: vi.fn().mockResolvedValue({
         problems: [{ ...unchangedProblem, syncedAt: '2026-07-10T20:00:00.000Z' }],
         totalCount: 1,
+        resultTruncated: false,
       }),
       testConnection: vi.fn(),
     };
@@ -414,7 +791,11 @@ describe('DynatraceProblemsManager', () => {
     expect(problemCollection.delete).not.toHaveBeenCalled();
     expect(syncCollection.update).toHaveBeenLastCalledWith(
       'sync-1',
-      expect.objectContaining({ state: 'ok', lastSuccessAt: '2026-07-10T20:00:00.000Z' }),
+      expect.objectContaining({
+        state: 'ok',
+        lastSuccessAt: '2026-07-10T20:00:00.000Z',
+        resultTruncated: true,
+      }),
       { requestKey: null },
     );
     expect(syncCollection.update.mock.calls.at(-1)?.[1]).not.toHaveProperty('lastReconciledAt');

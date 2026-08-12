@@ -20,6 +20,7 @@ const api: BridgeAPI = {
   },
   markStartupRendererMounted: () => ipcRenderer.send(IPC_CHANNELS.STARTUP_RENDERER_MOUNTED),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
+  openServiceDeskUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_DESK_URL, url),
 
   onAuthRequested: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, request: AuthRequest) => {
@@ -172,6 +173,10 @@ const api: BridgeAPI = {
   retryWebServer: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_RETRY),
   // Cache (offline)
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
+  cacheQueryRead: (collection: string, queryKey: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_QUERY_READ, collection, queryKey),
+  cacheQuerySnapshot: (collection, queryKey, membership) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_QUERY_SNAPSHOT, collection, queryKey, membership),
   cacheWrite: (collection: string, action: string, record: unknown) =>
     ipcRenderer.invoke(IPC_CHANNELS.CACHE_WRITE, collection, action, record),
   cacheSnapshot: (collection: string, signature: string, records: unknown[]) =>

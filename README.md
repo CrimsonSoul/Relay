@@ -6,6 +6,11 @@ Relay releases are distributed for Windows. macOS remains supported as a local d
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2042-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%206.0-2ea043)
 
+## Download
+
+[Download the latest Windows release](https://github.com/CrimsonSoul/Relay/releases/latest). Each
+release includes the Windows x64 installer and its SHA-256 checksum.
+
 ## Snapshot
 
 - Embedded PocketBase server/client mode with local-first storage and realtime sync
@@ -84,7 +89,7 @@ The README screenshots are generated from the Electron Playwright harness.
 
 ```bash
 npm run build
-npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
 cp tmp/redesign-shots/compose.png docs/screenshots/compose.png
 cp tmp/redesign-shots/alerts.png docs/screenshots/alerts.png
 cp tmp/redesign-shots/oncall.png docs/screenshots/oncall.png

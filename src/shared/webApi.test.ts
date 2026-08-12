@@ -115,6 +115,7 @@ describe('Relay Web API operational schemas', () => {
         'mist_emea',
         'mist_apac',
         'mist_federal',
+        'dynatrace',
         'google',
         'anthropic',
         'openai',
@@ -122,8 +123,55 @@ describe('Relay Web API operational schemas', () => {
       ].map((provider) => [provider, []]),
     );
     expect(
-      WebCloudStatusDataSchema.safeParse({ providers, lastUpdated: 1, errors: [] }).success,
+      WebCloudStatusDataSchema.safeParse({
+        providers: {
+          ...providers,
+          dynatrace: [
+            {
+              id: 'dynatrace-incident-1',
+              provider: 'dynatrace',
+              title: 'Processing delays',
+              description: 'Logs are delayed.',
+              pubDate: '2026-08-08T18:00:00.000Z',
+              link: 'https://dynatrace.status.io/',
+              severity: 'warning',
+              affectedScopes: ['AWS · Americas'],
+            },
+          ],
+        },
+        lastUpdated: 1,
+        errors: [],
+      }).success,
     ).toBe(true);
+    const dynatraceItem = {
+      id: 'dynatrace-incident-1',
+      provider: 'dynatrace',
+      title: 'Processing delays',
+      description: 'Logs are delayed.',
+      pubDate: '2026-08-08T18:00:00.000Z',
+      link: 'https://dynatrace.status.io/',
+      severity: 'warning',
+    };
+    expect(
+      WebCloudStatusDataSchema.safeParse({
+        providers: {
+          ...providers,
+          dynatrace: [{ ...dynatraceItem, affectedScopes: Array(101).fill('AWS · Americas') }],
+        },
+        lastUpdated: 1,
+        errors: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      WebCloudStatusDataSchema.safeParse({
+        providers: {
+          ...providers,
+          dynatrace: [{ ...dynatraceItem, affectedScopes: ['x'.repeat(201)] }],
+        },
+        lastUpdated: 1,
+        errors: [],
+      }).success,
+    ).toBe(false);
     expect(
       WebCloudStatusDataSchema.safeParse({ providers: {}, lastUpdated: 1, errors: [] }).success,
     ).toBe(false);

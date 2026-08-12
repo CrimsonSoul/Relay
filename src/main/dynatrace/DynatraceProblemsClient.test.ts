@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { DynatraceProblemsClient } from './DynatraceProblemsClient';
+import { DynatraceProblemsClient, getDynatraceRetryAfterMs } from './DynatraceProblemsClient';
 
 type FetchMock = Mock<typeof fetch>;
 
@@ -119,6 +119,7 @@ describe('DynatraceProblemsClient', () => {
     const result = await client.fetchProblems(config);
 
     expect(result.problems).toHaveLength(2);
+    expect(result.resultTruncated).toBe(false);
     expect(result.problems[0]).toMatchObject({
       problemId: 'problem-1',
       displayId: 'P-240791',
@@ -245,6 +246,90 @@ describe('DynatraceProblemsClient', () => {
       'POS Store',
     ]);
     expect(requestQuery(fetchMock, 0)).toContain('expand alertingProfile=labels.alerting_profile');
+  });
+
+  it('checks whether alerting-profile metadata is still present before scoped reconciliation', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      queryResponse([
+        {
+          problemCount: 42,
+          profiledProblemCount: 39,
+        },
+      ]),
+    );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    await expect(client.inspectAlertingProfileField(config)).resolves.toEqual({
+      problemCount: 42,
+      profiledProblemCount: 39,
+      healthy: true,
+    });
+    expect(requestQuery(fetchMock, 0)).toContain(
+      'profiledProblemCount=countIf(isNotNull(labels.alerting_profile))',
+    );
+  });
+
+  it('surfaces Grail result-limit warnings instead of treating a truncated response as complete', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      queryResponse([problem()], {
+        result: {
+          records: [problem()],
+          metadata: {
+            grail: {
+              notifications: [
+                {
+                  notificationType: 'RESULT_RECORD_LIMIT_REACHED',
+                  severity: 'WARN',
+                  message: 'The maximum result record limit was reached.',
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    await expect(client.fetchProblems(config)).resolves.toMatchObject({
+      totalCount: 1,
+      resultTruncated: true,
+    });
+  });
+
+  it('treats an exact DQL limit-sized result as truncated even without a notification', async () => {
+    const records = Array.from({ length: 10_000 }, (_, index) =>
+      problem({ problemId: `problem-${index}`, displayId: `P-${index}` }),
+    );
+    const client = new DynatraceProblemsClient(
+      vi.fn<typeof fetch>().mockResolvedValue(queryResponse(records)),
+    );
+
+    await expect(client.fetchProblems(config)).resolves.toMatchObject({
+      totalCount: 10_000,
+      resultTruncated: true,
+    });
+  });
+
+  it('preserves Dynatrace retry guidance on rate-limit errors', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 429,
+            message: 'Too many queued queries.',
+            retryAfterSeconds: 90,
+          },
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const error = await client.testConnection(config).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(getDynatraceRetryAfterMs(error)).toBe(90_000);
+    expect((error as Error).message).toMatch(/rate-limited/i);
   });
 
   it('returns a safe least-privilege error without echoing the platform token', async () => {

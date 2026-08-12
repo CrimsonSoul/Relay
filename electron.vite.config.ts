@@ -62,6 +62,13 @@ function rendererManualChunk(id: string): string | undefined {
   return undefined;
 }
 
+function mainManualChunk(id: string): string | undefined {
+  const normalizedId = id.replaceAll('\\', '/');
+  return normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsClient.ts')
+    ? 'dynatrace-problems-client'
+    : undefined;
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -85,6 +92,9 @@ export default defineConfig({
         output: {
           format: 'es',
           entryFileNames: '[name].js',
+          chunkFileNames: '[name]-[hash].js',
+          manualChunks: mainManualChunk,
+          onlyExplicitManualChunks: true,
         },
       },
     },

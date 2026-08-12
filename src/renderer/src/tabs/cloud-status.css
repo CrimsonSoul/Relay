@@ -338,7 +338,7 @@
   text-wrap: pretty;
 }
 
-.cloud-status-outage p {
+.cloud-status-outage__description {
   max-width: 72ch;
   margin: 0;
   padding: 0 var(--space-4) var(--space-3);
@@ -346,6 +346,33 @@
   font-size: var(--text-sm);
   line-height: 1.55;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cloud-status-outage__affected {
+  display: grid;
+  max-width: 72ch;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.cloud-status-outage__affected dt {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.cloud-status-outage__affected dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -548,6 +575,11 @@
   .cloud-status-outage__meta time {
     width: 100%;
     margin-left: 0;
+  }
+
+  .cloud-status-outage__affected {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
   }
 
   .cloud-status__status-summary {

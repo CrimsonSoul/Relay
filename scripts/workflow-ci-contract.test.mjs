@@ -55,6 +55,11 @@ describe('CI workflow contracts', () => {
         required: true,
         type: 'string',
       },
+      'baseline-workflow': {
+        description: 'Workflow used to find the previous successful Windows artifact.',
+        required: true,
+        type: 'string',
+      },
       compression: {
         description: 'electron-builder compression mode for the production artifact.',
         required: true,
@@ -62,6 +67,17 @@ describe('CI workflow contracts', () => {
       },
       publish: {
         description: 'electron-builder publish policy.',
+        required: true,
+        type: 'string',
+      },
+      'release-version': {
+        default: '',
+        description: 'Normal semantic version embedded in a release package.',
+        required: false,
+        type: 'string',
+      },
+      'source-sha': {
+        description: 'Exact source commit packaged by the caller.',
         required: true,
         type: 'string',
       },
@@ -79,8 +95,9 @@ describe('CI workflow contracts', () => {
 
     const packageJob = workflow.jobs.package;
     expect(packageJob['runs-on']).toBe('windows-latest');
-    expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ github.sha }}');
+    expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(packageJob.outputs['artifact-name']).toBe('${{ inputs.artifact-name }}');
+    expect(findStep(packageJob, 'Checkout repository').with.ref).toBe('${{ inputs.source-sha }}');
     expect(findStep(packageJob, 'Setup Node.js').with['node-version-file']).toBe('.node-version');
     expect(findStep(packageJob, 'Get PocketBase version').run).toContain('--print-version');
     expect(findStep(packageJob, 'Find previous successful Windows artifact').env.GH_TOKEN).toBe(
@@ -89,14 +106,23 @@ describe('CI workflow contracts', () => {
     expect(
       findStep(packageJob, 'Find previous successful Windows artifact').env.BASELINE_BRANCH,
     ).toBe('${{ inputs.baseline-branch }}');
+    expect(
+      findStep(packageJob, 'Find previous successful Windows artifact').env.BASELINE_WORKFLOW,
+    ).toBe('${{ inputs.baseline-workflow }}');
     const buildStep = findStep(packageJob, 'Build and package');
     expect(buildStep.env).toEqual({
       COMPRESSION: '${{ inputs.compression }}',
       PUBLISH_POLICY: '${{ inputs.publish }}',
+      RELAY_RELEASE_VERSION: '${{ inputs.release-version }}',
     });
     expect(buildStep.run).toContain('--config.compression="$env:COMPRESSION"');
     expect(buildStep.run).toContain('--publish "$env:PUBLISH_POLICY"');
     expect(buildStep.run).not.toContain('${{ inputs.');
+    const versionStep = findStep(packageJob, 'Verify packaged release version');
+    expect(versionStep.if).toBe("inputs.release-version != ''");
+    expect(versionStep.env.RELAY_RELEASE_VERSION).toBe('${{ inputs.release-version }}');
+    expect(versionStep.run).toContain("(Get-Item -LiteralPath './release/Relay.exe').VersionInfo");
+    expect(versionStep.run).toContain('$actualCore -ne $env:RELAY_RELEASE_VERSION');
     const benchmarkStep = findStep(packageJob, 'Benchmark packaged startup paths');
     expect(benchmarkStep.env.COMPRESSION).toBe('${{ inputs.compression }}');
     expect(benchmarkStep.run).not.toContain('${{ inputs.compression }}');
@@ -132,15 +158,6 @@ describe('CI workflow contracts', () => {
         job: 'quality',
         key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
         name: 'build.yml',
-        path: '~/.cache/electron',
-        restoreKeys: undefined,
-        step: 'Cache Electron binary',
-      },
-      {
-        continueOnError: true,
-        job: 'quality',
-        key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
-        name: 'release.yml',
         path: '~/.cache/electron',
         restoreKeys: undefined,
         step: 'Cache Electron binary',
@@ -209,14 +226,17 @@ describe('CI workflow contracts', () => {
     expect(previous).toMatchObject({
       env: {
         BASELINE_BRANCH: '${{ inputs.baseline-branch }}',
+        BASELINE_WORKFLOW: '${{ inputs.baseline-workflow }}',
         GH_TOKEN: "${{ secrets['github-token'] }}",
+        SOURCE_SHA: '${{ inputs.source-sha }}',
       },
       id: 'previous',
       shell: 'pwsh',
     });
     expect(previous.run).toBe(
-      './scripts/find-previous-windows-artifact.ps1 -Workflow build.yml -Branch "$env:BASELINE_BRANCH" -CurrentSha "${{ github.sha }}" -Destination "$env:RUNNER_TEMP\\RelayPrevious.exe"',
+      './scripts/find-previous-windows-artifact.ps1 -Workflow "$env:BASELINE_WORKFLOW" -Branch "$env:BASELINE_BRANCH" -CurrentSha "$env:SOURCE_SHA" -Destination "$env:RUNNER_TEMP\\RelayPrevious.exe"',
     );
+    expect(previous.run).not.toContain('${{ inputs.');
   });
 
   it('keeps branch and release callers valid while preserving their legitimate differences', async () => {
@@ -230,24 +250,32 @@ describe('CI workflow contracts', () => {
     expect(build.jobs.quality.name).toBe('Build quality gate');
     expect(buildPackage.uses).toBe('./.github/workflows/reusable-windows-package.yml');
     expect(expression(buildPackage.if)).toContain("github.event_name == 'workflow_dispatch'");
+    expect(expression(buildPackage.if)).not.toContain("github.ref == 'refs/heads/test'");
     expect(buildPackage).not.toHaveProperty('needs');
     expect(buildPackage.with).toEqual({
       'artifact-name': 'relay-windows',
       'baseline-branch': '${{ github.ref_name }}',
+      'baseline-workflow': 'build.yml',
       compression: 'store',
       publish: 'never',
+      'source-sha': '${{ github.sha }}',
     });
     expect(buildPackage.secrets).toEqual({ 'github-token': '${{ secrets.GITHUB_TOKEN }}' });
 
     expect(releasePackage.uses).toBe('./.github/workflows/reusable-windows-package.yml');
+    expect(releasePackage.needs).toBe('determine');
+    expect(releasePackage.if).toBe("needs.determine.outputs.should-package == 'true'");
     expect(releasePackage.with).toEqual({
       'artifact-name': 'relay-windows',
-      'baseline-branch': 'main',
+      'baseline-branch': 'test',
+      'baseline-workflow': 'release.yml',
       compression: 'normal',
       publish: 'never',
+      'release-version': '${{ needs.determine.outputs.version }}',
+      'source-sha': '${{ needs.determine.outputs.source-sha }}',
     });
     expect(releasePackage.secrets).toEqual({ 'github-token': '${{ secrets.GITHUB_TOKEN }}' });
-    expect(release.jobs.release.needs).toEqual(['quality', 'package-windows']);
+    expect(release.jobs.release.needs).toEqual(['determine', 'package-windows']);
     expect(findStep(release.jobs.release, 'Download Windows artifact').with.name).toBe(
       '${{ needs.package-windows.outputs.artifact-name }}',
     );

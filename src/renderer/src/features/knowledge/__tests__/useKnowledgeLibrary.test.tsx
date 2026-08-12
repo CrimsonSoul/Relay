@@ -83,6 +83,10 @@ describe('useKnowledgeLibrary', () => {
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
+      totalItems: 0,
+      hasMore: false,
+      loadingMore: false,
+      loadMore: vi.fn(async () => undefined),
       refetch: name === 'knowledge_documents' ? documentRefetch : categoryRefetch,
     }));
 
@@ -104,6 +108,10 @@ describe('useKnowledgeLibrary', () => {
       loading: false,
       error: null,
       hasLoadedSnapshot: false,
+      totalItems: 0,
+      hasMore: false,
+      loadingMore: false,
+      loadMore: vi.fn(async () => undefined),
       refetch: vi.fn(async () => undefined),
     });
 
@@ -144,6 +152,10 @@ describe('useKnowledgeLibrary', () => {
         loading: false,
         error: null,
         hasLoadedSnapshot: options?.enabled !== false,
+        totalItems: data.length,
+        hasMore: false,
+        loadingMore: false,
+        loadMore: vi.fn(async () => undefined),
         refetch: vi.fn(async () => undefined),
       };
     });

@@ -17,10 +17,30 @@ describe('Windows package contract', () => {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 
     expect(packageJson.scripts['build:win']).toMatch(/npm run package:win --$/);
-    expect(packageJson.scripts.release).toBe('npm run build:win -- --publish always');
+    expect(packageJson.scripts).not.toHaveProperty('release');
     expect(resolveElectronBuilderArgs([])).toEqual(['--publish', 'never']);
     expect(resolveElectronBuilderArgs(['--publish', 'always'])).toEqual(['--publish', 'always']);
     expect(resolveElectronBuilderArgs(['--publish=always'])).toEqual(['--publish=always']);
+  });
+
+  it('injects only a canonical automated release version into packaged application metadata', () => {
+    expect(resolveElectronBuilderArgs([], { RELAY_RELEASE_VERSION: '' })).toEqual([
+      '--publish',
+      'never',
+    ]);
+    expect(resolveElectronBuilderArgs([], { RELAY_RELEASE_VERSION: '2.3.4' })).toEqual([
+      '--publish',
+      'never',
+      '--config.extraMetadata.version=2.3.4',
+    ]);
+    expect(() => resolveElectronBuilderArgs([], { RELAY_RELEASE_VERSION: '2.3.4-beta.1' })).toThrow(
+      /release version/i,
+    );
+    expect(() =>
+      resolveElectronBuilderArgs(['--config.extraMetadata.version=9.9.9'], {
+        RELAY_RELEASE_VERSION: '2.3.4',
+      }),
+    ).toThrow(/release version/i);
   });
 
   it('keeps lightweight fixture flags away from electron-builder', () => {

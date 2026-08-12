@@ -90,13 +90,17 @@ function getDevTestWindowSize(): { width: number; height: number } | null {
 export function showAndFocusWindow(window: BrowserWindow | null, reason: string): boolean {
   if (!window || window.isDestroyed()) return false;
 
-  if (window.isMinimized()) window.restore();
   if (shouldSuppressDesktopSideEffects()) {
-    if (!window.isVisible()) window.showInactive();
-  } else {
-    if (!window.isVisible()) window.show();
-    window.focus();
+    loggers.main.info('Main window presentation suppressed for E2E', {
+      reason,
+      visible: window.isVisible(),
+    });
+    return true;
   }
+
+  if (window.isMinimized()) window.restore();
+  if (!window.isVisible()) window.show();
+  window.focus();
 
   loggers.main.info('Main window presented', {
     reason,

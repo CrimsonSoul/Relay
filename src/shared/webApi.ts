@@ -361,6 +361,7 @@ const CloudStatusProviderSchema = z.enum([
   'mist_emea',
   'mist_apac',
   'mist_federal',
+  'dynatrace',
   'google',
   'anthropic',
   'openai',
@@ -423,6 +424,7 @@ function cloudStatusItemSchema<const P extends CloudStatusProvider>(provider: P)
       pubDate: z.string().max(100),
       link: z.string().max(2_048),
       severity: z.enum(['info', 'warning', 'error', 'resolved']),
+      affectedScopes: z.array(z.string().max(200)).max(100).optional(),
     })
     .strict();
 }
@@ -441,6 +443,7 @@ export const WebCloudStatusDataSchema: z.ZodType<CloudStatusData> = z
         mist_emea: z.array(cloudStatusItemSchema('mist_emea')),
         mist_apac: z.array(cloudStatusItemSchema('mist_apac')),
         mist_federal: z.array(cloudStatusItemSchema('mist_federal')),
+        dynatrace: z.array(cloudStatusItemSchema('dynatrace')),
         google: z.array(cloudStatusItemSchema('google')),
         anthropic: z.array(cloudStatusItemSchema('anthropic')),
         openai: z.array(cloudStatusItemSchema('openai')),

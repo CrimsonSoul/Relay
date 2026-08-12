@@ -10,6 +10,7 @@ type RealtimeEvent = { action: string; record: RecordModel };
 type RealtimeCallback = (event: RealtimeEvent) => void;
 
 const mockGetFullList = vi.fn<() => Promise<RecordModel[]>>();
+const mockGetList = vi.fn();
 const mockSubscribe = vi.fn<(topic: string, callback: RealtimeCallback) => Promise<() => void>>();
 const mockUnsubscribe = vi.fn();
 
@@ -19,6 +20,7 @@ vi.mock('../../services/pocketbase', () => ({
   getPb: () => ({
     collection: () => ({
       getFullList: mockGetFullList,
+      getList: mockGetList,
       subscribe: mockSubscribe,
     }),
   }),
@@ -40,8 +42,17 @@ vi.mock('../../services/pocketbase', () => ({
 }));
 
 import { isOnline } from '../../services/pocketbase';
-import { resetCollectionStoreRegistry } from '../../stores/collectionStoreRegistry';
-import { collectionRevisionSignature, useCollection } from '../useCollection';
+import {
+  applyOfflineMutationToStores,
+  collectionStoreRegistrySize,
+  getCollectionStore,
+  resetCollectionStoreRegistry,
+} from '../../stores/collectionStoreRegistry';
+import {
+  collectionQueryCacheKey,
+  collectionRevisionSignature,
+  useCollection,
+} from '../useCollection';
 
 function makeRecord(id: string, extra: Record<string, unknown> = {}): RecordModel {
   return {
@@ -58,6 +69,13 @@ beforeEach(() => {
   resetCollectionStoreRegistry();
   vi.clearAllMocks();
   mockGetFullList.mockResolvedValue([]);
+  mockGetList.mockResolvedValue({
+    page: 1,
+    perPage: 50,
+    totalPages: 1,
+    totalItems: 0,
+    items: [],
+  });
   mockSubscribe.mockResolvedValue(mockUnsubscribe);
   vi.mocked(isOnline).mockReturnValue(true);
   connectionChangeCallback = null;
@@ -120,6 +138,68 @@ describe('useCollection', () => {
     expect(mockSubscribe).toHaveBeenCalledTimes(2);
   });
 
+  it('batches high-cardinality related filters behind one stable store identity', async () => {
+    const initialValues = Array.from({ length: 125 }, (_, index) => `problem-${index}`);
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useCollection('test', {
+          sort: 'created',
+          batchedFilter: {
+            key: 'loaded-problems',
+            field: 'problemId',
+            values,
+            batchSize: 40,
+          },
+        }),
+      { initialProps: { values: initialValues } },
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(mockGetFullList).toHaveBeenCalledTimes(4);
+    const calls = mockGetFullList.mock.calls as unknown as Array<[{ filter?: string }]>;
+    for (const [options] of calls) {
+      const filter = String(options.filter ?? '');
+      expect((filter.match(/problemId=/g) ?? []).length).toBeLessThanOrEqual(40);
+      expect(filter.length).toBeLessThan(4_096);
+    }
+    expect(collectionStoreRegistrySize()).toBe(1);
+
+    rerender({ values: [...initialValues, 'problem-125'] });
+    await waitFor(() => expect(mockGetFullList).toHaveBeenCalledTimes(8));
+
+    expect(collectionStoreRegistrySize()).toBe(1);
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('revives an Activity-retained store after the disposal grace period', async () => {
+    vi.useFakeTimers();
+    const retainedStore = getCollectionStore('contacts', { filter: 'team="noc"' });
+    const { unmount } = renderHook(() => useCollection('contacts', { filter: 'team="noc"' }));
+    await act(async () => Promise.resolve());
+    expect(collectionStoreRegistrySize()).toBe(1);
+
+    unmount();
+    await act(async () => vi.advanceTimersByTime(5_000));
+    expect(getCollectionStore('contacts', { filter: 'team="noc"' })).toBe(retainedStore);
+
+    const revived = renderHook(() => useCollection('contacts', { filter: 'team="noc"' }));
+    await act(async () => Promise.resolve());
+    act(() =>
+      applyOfflineMutationToStores({
+        mutationId: 'retained-store-mutation',
+        collection: 'contacts',
+        action: 'create',
+        record: makeRecord('offline-contact', { team: 'noc' }),
+        pendingCount: 1,
+      }),
+    );
+
+    expect(revived.result.current.data.map((record) => record.id)).toContain('offline-contact');
+    revived.unmount();
+    resetCollectionStoreRegistry();
+    vi.useRealTimers();
+  });
+
   it('keeps a shared subscription alive across a short hidden Activity', async () => {
     function CollectionConsumer() {
       useCollection('test');
@@ -151,6 +231,349 @@ describe('useCollection', () => {
 
     expect(result.current.data).toHaveLength(2);
     expect(result.current.error).toBeNull();
+  });
+
+  it('loads a bounded first page and expands it on demand', async () => {
+    const firstPage = {
+      page: 1,
+      perPage: 2,
+      totalPages: 3,
+      totalItems: 5,
+      items: [makeRecord('1'), makeRecord('2')],
+    };
+    mockGetList
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({
+        page: 2,
+        perPage: 2,
+        totalPages: 3,
+        totalItems: 5,
+        items: [makeRecord('3'), makeRecord('4')],
+      });
+
+    const { result } = renderHook(() => useCollection('test', { pageSize: 2 }));
+
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    expect(mockGetFullList).not.toHaveBeenCalled();
+    expect(mockGetList).toHaveBeenCalledWith(1, 2, {
+      sort: '-created',
+      filter: '',
+      requestKey: null,
+    });
+    expect(result.current.totalItems).toBe(5);
+    expect(result.current.hasMore).toBe(true);
+
+    await act(async () => {
+      await Promise.all([result.current.loadMore(), result.current.loadMore()]);
+    });
+
+    expect(mockGetList).toHaveBeenLastCalledWith(2, 2, {
+      sort: '-created',
+      filter: '',
+      requestKey: null,
+    });
+    expect(result.current.data).toHaveLength(4);
+    expect(result.current.totalItems).toBe(5);
+    expect(result.current.hasMore).toBe(true);
+    expect(result.current.loadingMore).toBe(false);
+  });
+
+  it('keeps the next page available after a load-more request fails', async () => {
+    const firstPage = {
+      page: 1,
+      perPage: 2,
+      totalPages: 2,
+      totalItems: 4,
+      items: [makeRecord('1'), makeRecord('2')],
+    };
+    mockGetList
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(firstPage)
+      .mockRejectedValueOnce(new Error('Page unavailable'))
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce({
+        page: 2,
+        perPage: 2,
+        totalPages: 2,
+        totalItems: 4,
+        items: [makeRecord('3'), makeRecord('4')],
+      });
+    const { result } = renderHook(() => useCollection('test', { pageSize: 2 }));
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    await act(async () => result.current.loadMore());
+
+    expect(result.current.error).toBe('Page unavailable');
+    expect(result.current.loadingMore).toBe(false);
+
+    await act(async () => result.current.loadMore());
+
+    expect(mockGetList).toHaveBeenLastCalledWith(2, 2, expect.any(Object));
+    expect(result.current.data).toHaveLength(4);
+  });
+
+  it('keeps loaded pages when an older refetch completes after load more', async () => {
+    const page = (pageNumber: number, ids: string[]) => ({
+      page: pageNumber,
+      perPage: 2,
+      totalPages: 3,
+      totalItems: 6,
+      items: ids.map((id) => makeRecord(id)),
+    });
+    let resolveOlderRefetch: ((value: ReturnType<typeof page>) => void) | undefined;
+    const olderRefetch = new Promise<ReturnType<typeof page>>((resolve) => {
+      resolveOlderRefetch = resolve;
+    });
+    mockGetList
+      .mockResolvedValueOnce(page(1, ['1', '2']))
+      .mockImplementationOnce(() => olderRefetch)
+      .mockResolvedValueOnce(page(1, ['1', '2']))
+      .mockResolvedValueOnce(page(2, ['3', '4']))
+      .mockResolvedValueOnce(page(1, ['1', '2']))
+      .mockResolvedValueOnce(page(2, ['3', '4']))
+      .mockResolvedValueOnce(page(3, ['5', '6']));
+    const { result } = renderHook(() => useCollection('test', { pageSize: 2 }));
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    let pendingRefetch: Promise<void> | undefined;
+    act(() => {
+      pendingRefetch = result.current.refetch();
+    });
+    await waitFor(() => expect(mockGetList).toHaveBeenCalledTimes(2));
+
+    await act(async () => result.current.loadMore());
+    expect(result.current.data.map((record) => record.id)).toEqual(['1', '2', '3', '4']);
+
+    await act(async () => {
+      resolveOlderRefetch?.(page(1, ['old-1', 'old-2']));
+      await pendingRefetch;
+    });
+    expect(result.current.data.map((record) => record.id)).toEqual(['1', '2', '3', '4']);
+
+    await act(async () => result.current.loadMore());
+    expect(mockGetList).toHaveBeenLastCalledWith(3, 2, expect.any(Object));
+    expect(result.current.data.map((record) => record.id)).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+
+  it('merges filtered snapshots into the shared offline cache instead of replacing it', async () => {
+    const cacheSnapshot = vi.fn();
+    const cacheWrite = vi.fn();
+    (globalThis as Record<string, unknown>).api = { cacheSnapshot, cacheWrite };
+    mockGetFullList.mockResolvedValue([makeRecord('closed', { status: 'CLOSED' })]);
+
+    renderHook(() => useCollection('test', { filter: 'status="CLOSED"' }));
+
+    await waitFor(() => expect(cacheWrite).toHaveBeenCalled());
+    expect(cacheWrite).toHaveBeenCalledWith(
+      'test',
+      'update',
+      expect.objectContaining({ id: 'closed' }),
+    );
+    expect(cacheSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('persists filtered query membership without deleting unrelated cached rows', async () => {
+    const current = makeRecord('current', { status: 'CLOSED' });
+    const cacheWrite = vi.fn();
+    const cacheQuerySnapshot = vi.fn();
+    (globalThis as Record<string, unknown>).api = {
+      cacheQuerySnapshot,
+      cacheWrite,
+    };
+    mockGetFullList.mockResolvedValue([current]);
+
+    renderHook(() => useCollection('test', { filter: 'status="CLOSED"' }));
+
+    await waitFor(() =>
+      expect(cacheQuerySnapshot).toHaveBeenCalledWith(
+        'test',
+        collectionQueryCacheKey('test', { filter: 'status="CLOSED"' }),
+        { recordIds: ['current'], totalItems: 1, complete: true },
+      ),
+    );
+    expect(cacheWrite).not.toHaveBeenCalledWith('test', 'delete', expect.anything());
+  });
+
+  it('uses cached query membership to exclude stale filtered rows offline', async () => {
+    vi.mocked(isOnline).mockReturnValue(false);
+    const current = makeRecord('current', { status: 'CLOSED' });
+    const stale = makeRecord('stale', { status: 'CLOSED' });
+    const unrelated = makeRecord('unrelated', { status: 'OPEN' });
+    const cacheQueryRead = vi.fn(async () => ({
+      recordIds: ['current'],
+      totalItems: 50,
+      complete: false,
+    }));
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn(async () => [current, stale, unrelated]),
+      cacheQueryRead,
+    };
+
+    const { result } = renderHook(() =>
+      useCollection('test', { filter: 'status="CLOSED"', pageSize: 100 }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data.map((record) => record.id)).toEqual(['current']);
+    expect(result.current.totalItems).toBe(50);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.cachedPartial).toBe(true);
+    expect(cacheQueryRead).toHaveBeenCalledWith(
+      'test',
+      collectionQueryCacheKey('test', { filter: 'status="CLOSED"', pageSize: 100 }),
+    );
+  });
+
+  it('pages through all locally cached membership rows after an offline restart', async () => {
+    vi.mocked(isOnline).mockReturnValue(false);
+    const records = Array.from({ length: 300 }, (_, index) =>
+      makeRecord(`history-${index}`, { status: 'CLOSED' }),
+    );
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn(async () => records),
+      cacheQueryRead: vi.fn(async () => ({
+        recordIds: records.map((record) => record.id),
+        totalItems: 500,
+        complete: false,
+      })),
+    };
+    const { result } = renderHook(() =>
+      useCollection('test', { filter: 'status="CLOSED"', pageSize: 100 }),
+    );
+    await waitFor(() => expect(result.current.data).toHaveLength(100));
+
+    expect(result.current.totalItems).toBe(500);
+    expect(result.current.hasMore).toBe(true);
+    expect(result.current.cachedPartial).toBe(true);
+    await act(async () => result.current.loadMore());
+
+    expect(result.current.data).toHaveLength(200);
+    expect(result.current.totalItems).toBe(500);
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  it('pages through legacy cached rows when query membership metadata is absent', async () => {
+    vi.mocked(isOnline).mockReturnValue(false);
+    const records = Array.from({ length: 150 }, (_, index) =>
+      makeRecord(`legacy-history-${index}`, { status: 'CLOSED' }),
+    );
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn(async () => records),
+    };
+    const { result } = renderHook(() =>
+      useCollection('test', { filter: 'status="CLOSED"', pageSize: 100 }),
+    );
+    await waitFor(() => expect(result.current.data).toHaveLength(100));
+
+    expect(result.current.totalItems).toBe(150);
+    expect(result.current.hasMore).toBe(true);
+    expect(result.current.cachedPartial).toBe(false);
+    await act(async () => result.current.loadMore());
+
+    expect(result.current.data).toHaveLength(150);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it('keeps a paged realtime snapshot bounded when a matching unseen record arrives', async () => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, callback) => {
+      realtimeCallback = callback;
+      return mockUnsubscribe;
+    });
+    mockGetList.mockResolvedValue({
+      page: 1,
+      perPage: 2,
+      totalPages: 3,
+      totalItems: 5,
+      items: [
+        makeRecord('1', { status: 'CLOSED', startTime: 2 }),
+        makeRecord('2', { status: 'CLOSED', startTime: 1 }),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useCollection('test', {
+        filter: 'status="CLOSED"',
+        sort: '-startTime',
+        pageSize: 2,
+      }),
+    );
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    act(() => {
+      realtimeCallback({
+        action: 'update',
+        record: makeRecord('3', { status: 'CLOSED', startTime: 3 }),
+      });
+    });
+
+    expect(result.current.data.map((record) => record.id)).toEqual(['3', '1']);
+    expect(result.current.data).toHaveLength(2);
+    expect(result.current.totalItems).toBe(5);
+  });
+
+  it('refills a paged filter when a held realtime record leaves membership', async () => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, callback) => {
+      realtimeCallback = callback;
+      return mockUnsubscribe;
+    });
+    mockGetList
+      .mockResolvedValueOnce({
+        page: 1,
+        perPage: 2,
+        totalPages: 3,
+        totalItems: 5,
+        items: [
+          makeRecord('1', { status: 'CLOSED', startTime: 3 }),
+          makeRecord('2', { status: 'CLOSED', startTime: 2 }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        page: 1,
+        perPage: 2,
+        totalPages: 2,
+        totalItems: 4,
+        items: [
+          makeRecord('2', { status: 'CLOSED', startTime: 2 }),
+          makeRecord('3', { status: 'CLOSED', startTime: 1 }),
+        ],
+      });
+    const { result } = renderHook(() =>
+      useCollection('test', {
+        filter: 'status="CLOSED"',
+        sort: '-startTime',
+        pageSize: 2,
+      }),
+    );
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+
+    act(() => {
+      realtimeCallback({
+        action: 'update',
+        record: makeRecord('1', { status: 'OPEN', startTime: 3 }),
+      });
+    });
+
+    expect(result.current.data.map((record) => record.id)).toEqual(['2']);
+    expect(result.current.totalItems).toBe(4);
+    await waitFor(() => expect(result.current.data.map((record) => record.id)).toEqual(['2', '3']));
+  });
+
+  it('treats missing scopeExcluded as false in legacy offline cache records', async () => {
+    vi.mocked(isOnline).mockReturnValue(false);
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn(async () => [makeRecord('legacy', { status: 'OPEN' })]),
+    };
+
+    const { result } = renderHook(() =>
+      useCollection('dynatrace_problems', {
+        filter: 'scopeExcluded=false && status="OPEN"',
+      }),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data.map((record) => record.id)).toEqual(['legacy']);
   });
 
   it('sets error state on fetch failure', async () => {
@@ -202,6 +625,32 @@ describe('useCollection', () => {
     expect(result.current.data).toHaveLength(2);
   });
 
+  it('accepts realtime creates matching an OR equality filter and rejects unrelated records', async () => {
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
+      realtimeCallback = cb;
+      return mockUnsubscribe;
+    });
+
+    const { result } = renderHook(() =>
+      useCollection('test', { filter: 'problemId="problem-1" || problemId="problem-2"' }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      realtimeCallback({
+        action: 'create',
+        record: makeRecord('matching', { problemId: 'problem-2' }),
+      });
+      realtimeCallback({
+        action: 'create',
+        record: makeRecord('unrelated', { problemId: 'problem-3' }),
+      });
+    });
+
+    expect(result.current.data.map((record) => record.id)).toEqual(['matching']);
+  });
+
   it('applies update event from realtime subscription', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1', { name: 'old' })]);
     let realtimeCallback: RealtimeCallback = () => {};
@@ -219,6 +668,30 @@ describe('useCollection', () => {
     });
 
     expect((result.current.data[0] as Record<string, unknown>).name).toBe('new');
+  });
+
+  it('moves realtime updates into and out of a filtered snapshot', async () => {
+    mockGetFullList.mockResolvedValue([makeRecord('visible', { scopeExcluded: 'false' })]);
+    let realtimeCallback: RealtimeCallback = () => {};
+    mockSubscribe.mockImplementation(async (_topic, cb) => {
+      realtimeCallback = cb;
+      return mockUnsubscribe;
+    });
+    const { result } = renderHook(() => useCollection('test', { filter: 'scopeExcluded="false"' }));
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+
+    act(() => {
+      realtimeCallback({
+        action: 'update',
+        record: makeRecord('visible', { scopeExcluded: 'true' }),
+      });
+      realtimeCallback({
+        action: 'update',
+        record: makeRecord('newly-visible', { scopeExcluded: 'false' }),
+      });
+    });
+
+    expect(result.current.data.map((record) => record.id)).toEqual(['newly-visible']);
   });
 
   it('applies delete event from realtime subscription', async () => {
@@ -368,6 +841,26 @@ describe('useCollection', () => {
     expect(result.current.error).toBe('Server down');
     expect(result.current.data).toHaveLength(1);
     expect(result.current.data[0]?.id).toBe('cached-err');
+  });
+
+  it('clears a stale fetch error after a current offline cache read succeeds', async () => {
+    const cacheRead = vi
+      .fn<() => Promise<RecordModel[] | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([makeRecord('cached-after-error')]);
+    (globalThis as Record<string, unknown>).api = { cacheRead };
+    mockGetFullList.mockRejectedValue(new Error('Server down'));
+
+    const { result } = renderHook(() => useCollection('test'));
+    await waitFor(() => expect(result.current.error).toBe('Server down'));
+
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => connectionChangeCallback?.('offline'));
+
+    await waitFor(() =>
+      expect(result.current.data.map((record) => record.id)).toEqual(['cached-after-error']),
+    );
+    expect(result.current.error).toBeNull();
   });
 
   it('handles non-Error objects in catch', async () => {

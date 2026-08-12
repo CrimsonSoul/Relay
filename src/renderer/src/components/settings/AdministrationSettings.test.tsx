@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -262,8 +262,108 @@ describe('AdministrationSettings', () => {
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
 
-    expect(screen.getByLabelText('Selected profile names · one per line')).toHaveClass(
+    expect(screen.getByLabelText('Selected alerting profiles · one per line')).toHaveClass(
       'tactile-input',
+    );
+  });
+
+  it('reviews alerting-profile scope changes before applying the non-destructive filter', async () => {
+    const execute = vi.fn().mockResolvedValue({ ok: true });
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: '1 selected',
+            valueSummary: ['NOC Core'],
+            revision: 4,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
+      target: { value: 'NOC Core\nRetail Stores' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Review stored problem scope' });
+    expect(within(dialog).getByText('Retail Stores')).toBeVisible();
+    expect(within(dialog).getByText(/notes and local dispositions are preserved/i)).toBeVisible();
+    expect(execute).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+    await waitFor(() =>
+      expect(execute).toHaveBeenCalledWith({
+        command: 'administration.setting.replace',
+        payload: {
+          setting: 'dynatrace.alerting-profiles',
+          value: { profiles: ['NOC Core', 'Retail Stores'] },
+          expectedRevision: 4,
+        },
+        expectedRevision: null,
+      }),
+    );
+  });
+
+  it('allows only one alerting-profile scope replacement while confirmation is pending', async () => {
+    let finishReplacement!: (result: { ok: true }) => void;
+    const execute = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          finishReplacement = resolve;
+        }),
+    );
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: '1 selected',
+            valueSummary: ['NOC Core'],
+            revision: 4,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
+      target: { value: 'NOC Core\nRetail Stores' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Review stored problem scope' });
+    const applyButton = within(dialog).getByRole('button', { name: 'Apply stored scope' });
+    fireEvent.click(applyButton);
+    fireEvent.click(applyButton);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(applyButton).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+    finishReplacement({ ok: true });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Review stored problem scope' })).toBeNull(),
     );
   });
 

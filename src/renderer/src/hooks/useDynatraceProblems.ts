@@ -15,15 +15,46 @@ import {
   setDynatraceProblemAddressed,
 } from '../services/dynatraceProblemsService';
 
+const HISTORY_PAGE_SIZE = 100;
+const RELATED_PROBLEM_BATCH_SIZE = 40;
+
 export function useDynatraceProblems() {
-  const problems = useCollection<DynatraceProblemRecord>(DYNATRACE_PROBLEMS_COLLECTION, {
-    sort: '-startTime',
+  const openProblems = useCollection<DynatraceProblemRecord>(DYNATRACE_PROBLEMS_COLLECTION, {
+    sort: '-startTime,-id',
+    filter: 'scopeExcluded=false && status="OPEN"',
   });
+  const historyProblems = useCollection<DynatraceProblemRecord>(DYNATRACE_PROBLEMS_COLLECTION, {
+    sort: '-startTime,-id',
+    filter: 'scopeExcluded=false && status="CLOSED"',
+    pageSize: HISTORY_PAGE_SIZE,
+  });
+  const problems = useMemo(
+    () => [...openProblems.data, ...historyProblems.data],
+    [historyProblems.data, openProblems.data],
+  );
+  const loadedProblemIds = useMemo(
+    () => [...new Set(problems.map((problem) => problem.problemId))],
+    [problems],
+  );
   const states = useCollection<DynatraceProblemStateRecord>(DYNATRACE_PROBLEM_STATES_COLLECTION, {
     sort: '-updated',
+    batchedFilter: {
+      key: 'dynatrace-loaded-problems',
+      field: 'problemId',
+      values: loadedProblemIds,
+      batchSize: RELATED_PROBLEM_BATCH_SIZE,
+    },
+    enabled: loadedProblemIds.length > 0,
   });
   const notes = useCollection<DynatraceProblemNoteRecord>(DYNATRACE_PROBLEM_NOTES_COLLECTION, {
     sort: 'created',
+    batchedFilter: {
+      key: 'dynatrace-loaded-problems',
+      field: 'problemId',
+      values: loadedProblemIds,
+      batchSize: RELATED_PROBLEM_BATCH_SIZE,
+    },
+    enabled: loadedProblemIds.length > 0,
   });
   const sync = useCollection<DynatraceProblemSyncRecord>(DYNATRACE_PROBLEM_SYNC_COLLECTION, {
     sort: '-updated',
@@ -72,16 +103,32 @@ export function useDynatraceProblems() {
   );
 
   const refetch = useCallback(async () => {
-    await Promise.all([problems.refetch(), states.refetch(), notes.refetch(), sync.refetch()]);
-  }, [notes, problems, states, sync]);
+    await Promise.all([
+      openProblems.refetch(),
+      historyProblems.refetch(),
+      states.refetch(),
+      notes.refetch(),
+      sync.refetch(),
+    ]);
+  }, [historyProblems, notes, openProblems, states, sync]);
 
   return {
-    problems: problems.data,
+    problems,
     stateByProblemId,
     notesByProblemId,
     sync: sync.data[0] ?? null,
-    loading: problems.loading || states.loading || notes.loading || sync.loading,
-    error: problems.error || states.error || notes.error || sync.error,
+    totalHistoryCount: historyProblems.totalItems,
+    hasMoreHistory: historyProblems.hasMore,
+    loadingMoreHistory: historyProblems.loadingMore,
+    historyCachedPartial: historyProblems.cachedPartial === true,
+    loadMoreHistory: historyProblems.loadMore,
+    loading:
+      openProblems.loading ||
+      historyProblems.loading ||
+      states.loading ||
+      notes.loading ||
+      sync.loading,
+    error: openProblems.error || historyProblems.error || states.error || notes.error || sync.error,
     setAddressed,
     addNote,
     refetch,

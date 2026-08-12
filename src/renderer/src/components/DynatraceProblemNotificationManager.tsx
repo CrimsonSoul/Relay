@@ -43,7 +43,7 @@ export function DynatraceProblemNotificationManager({
   const { showToast } = useToast();
   const { data: problems, loading } = useCollection<DynatraceProblemRecord>(
     DYNATRACE_PROBLEMS_COLLECTION,
-    { sort: '-startTime' },
+    { sort: '-startTime', filter: 'scopeExcluded=false && status="OPEN"' },
   );
   const initializedRef = useRef(false);
   const seenProblemIdsRef = useRef(new Set<string>());

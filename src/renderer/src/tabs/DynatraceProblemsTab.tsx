@@ -14,8 +14,8 @@ import {
   type DynatraceProblemStateRecord,
   type DynatraceProblemSyncRecord,
 } from '@shared/dynatraceProblems';
+import { normalizeServiceDeskUrl } from '@shared/urlSecurity';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
-import { Modal } from '../components/Modal';
 import { TabFallback } from '../components/TabFallback';
 import { TactileButton } from '../components/TactileButton';
 import { useToast } from '../components/Toast';
@@ -139,7 +139,9 @@ function severityTone(severity: DynatraceProblemSeverity): 'critical' | 'warning
   return 'warning';
 }
 
-function formatDateTime(value: number | string | undefined): string {
+type DateTimeValue = number | string | undefined;
+
+function formatDateTime(value: DateTimeValue): string {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
@@ -149,6 +151,31 @@ function formatDateTime(value: number | string | undefined): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function formatExactDateTime(value: DateTimeValue): string {
+  if (!value) return 'Unknown time';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+function toDateTimeAttribute(value: DateTimeValue): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function getSafeTicketUrl(reference: string): string | null {
+  return normalizeServiceDeskUrl(reference);
 }
 
 function timeAgo(value: string | undefined): string {
@@ -196,7 +223,6 @@ function searchableText(problem: DynatraceProblemRecord): string {
     problem.rootCauseName,
     ...problem.affectedEntities.flatMap((entity) => [entity.name, entity.id, entity.type]),
     ...problem.impactedEntities.flatMap((entity) => [entity.name, entity.id, entity.type]),
-    ...problem.managementZones.map((zone) => zone.name),
     ...(problem.alertingProfiles ?? []),
   ]
     .join(' ')
@@ -229,7 +255,7 @@ function getPrimaryEntity(problem: DynatraceProblemRecord): {
 }
 
 function problemSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): number {
-  return b.startTime - a.startTime;
+  return b.startTime - a.startTime || b.id.localeCompare(a.id);
 }
 
 function summarizeProblemResponse(
@@ -390,148 +416,17 @@ function ProblemResponseMetadata({
 
 function getLastSyncLabel(sync: DynatraceProblemSyncRecord | null): string {
   if (sync?.state === 'disabled') return 'Sync disabled';
-  if (sync?.lastSuccessAt) return `Synced ${timeAgo(sync.lastSuccessAt)}`;
   if (sync?.state === 'syncing') return 'Syncing now';
+  if (sync?.state === 'error' && sync.lastSuccessAt) {
+    return `Sync failed · last success ${timeAgo(sync.lastSuccessAt)}`;
+  }
+  if (sync?.lastSuccessAt) return `Synced ${timeAgo(sync.lastSuccessAt)}`;
   return 'Not yet synced';
 }
 
 function getAddressActionLabel(saving: boolean, addressed: boolean): string {
   if (saving) return 'Saving…';
   return addressed ? 'Return to queue' : 'Mark addressed locally';
-}
-
-type AlertingProfilePickerProps = {
-  profiles: string[];
-  selectedProfiles: string[];
-  filterConfigured: boolean;
-  canSave: boolean;
-  saving: boolean;
-  onChange: (profiles: string[]) => void;
-  onCancel: () => void;
-  onSave: () => Promise<boolean>;
-};
-
-function AlertingProfilePicker({
-  profiles,
-  selectedProfiles,
-  filterConfigured,
-  canSave,
-  saving,
-  onChange,
-  onCancel,
-  onSave,
-}: Readonly<AlertingProfilePickerProps>) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const selected = useMemo(() => new Set(selectedProfiles), [selectedProfiles]);
-  const visibleProfiles = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return normalizedQuery
-      ? profiles.filter((profile) => profile.toLowerCase().includes(normalizedQuery))
-      : profiles;
-  }, [profiles, query]);
-
-  const closeWithoutSaving = useCallback(() => {
-    setOpen(false);
-    setQuery('');
-    onCancel();
-  }, [onCancel]);
-
-  const toggleProfile = (profile: string) => {
-    const next = new Set(selected);
-    if (next.has(profile)) next.delete(profile);
-    else next.add(profile);
-    onChange(profiles.filter((candidate) => next.has(candidate)));
-  };
-
-  const triggerLabel = filterConfigured
-    ? `${selectedProfiles.length} retained`
-    : 'Choose retained profiles';
-
-  return (
-    <>
-      <button
-        type="button"
-        className={`dt-problems__profile-trigger${filterConfigured ? ' dt-problems__profile-trigger--configured' : ''}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        disabled={profiles.length === 0}
-      >
-        <span>Alerting profiles</span>
-        <strong>{profiles.length === 0 ? 'Catalog loading' : triggerLabel}</strong>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="m7 10 5 5 5-5" stroke="currentColor" strokeWidth="2" />
-        </svg>
-      </button>
-      <Modal
-        isOpen={open}
-        onClose={closeWithoutSaving}
-        title="Alerting profile filter"
-        subtitle={`${profiles.length} available from Dynatrace`}
-        variant="standard"
-        bodyClassName="dt-profile-picker"
-        footer={
-          canSave ? (
-            <>
-              <TactileButton variant="secondary" onClick={closeWithoutSaving} disabled={saving}>
-                Cancel
-              </TactileButton>
-              <TactileButton
-                variant="primary"
-                disabled={selectedProfiles.length === 0 || saving}
-                loading={saving}
-                onClick={() => void onSave().then((saved) => saved && setOpen(false))}
-              >
-                Save retention filter
-              </TactileButton>
-            </>
-          ) : undefined
-        }
-      >
-        <label className="dt-profile-picker__search">
-          <span className="sr-only">Search alerting profiles</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Find an alerting profile"
-            autoFocus
-          />
-        </label>
-        <div className="dt-profile-picker__bulk-actions">
-          <button type="button" onClick={() => onChange(profiles)} disabled={!canSave}>
-            Select all
-          </button>
-          <button type="button" onClick={() => onChange([])} disabled={!canSave}>
-            Clear
-          </button>
-          <span>{selectedProfiles.length} selected</span>
-        </div>
-        <div className="dt-profile-picker__list" role="group" aria-label="Alerting profiles">
-          {visibleProfiles.map((profile) => (
-            <label className="dt-profile-picker__option" key={profile}>
-              <input
-                type="checkbox"
-                checked={selected.has(profile)}
-                onChange={() => toggleProfile(profile)}
-                disabled={!canSave}
-              />
-              <span>{profile}</span>
-            </label>
-          ))}
-          {visibleProfiles.length === 0 && (
-            <div className="dt-profile-picker__empty">No profiles match this search.</div>
-          )}
-        </div>
-        <div className="dt-profile-picker__retention-note">
-          {canSave
-            ? 'Saving removes excluded problem records, local dispositions, and notes from Relay.'
-            : 'Profile retention is managed on the Relay server.'}
-        </div>
-      </Modal>
-    </>
-  );
 }
 
 function getDispositionDetail(
@@ -561,12 +456,17 @@ type ProblemQueueProps = {
   sync: DynatraceProblemSyncRecord | null;
   totalProblemCount: number;
   totalHistoryCount: number;
+  loadedHistoryCount: number;
+  historyCachedPartial: boolean;
+  hasMoreHistory: boolean;
+  loadingMoreHistory: boolean;
   historyScopeCount: number;
   historyMode: boolean;
   historySort: HistorySort;
   historyResponseFilter: HistoryResponseFilter;
   onHistorySortChange: (sort: HistorySort) => void;
   onHistoryResponseFilterChange: (filter: HistoryResponseFilter) => void;
+  onLoadMoreHistory: () => void;
   onSelect: (problemId: string) => void;
 };
 
@@ -580,6 +480,49 @@ type ProblemQueueRowProps = {
 };
 
 const PROBLEM_QUEUE_ROW_HEIGHT = 124;
+
+function emptyQueueCopy(
+  integrationDisabled: boolean,
+  historyMode: boolean,
+  historyResponseFilter: HistoryResponseFilter,
+  historyScopeCount: number,
+  totalHistoryCount: number,
+): { title: string; description: string } {
+  if (integrationDisabled) {
+    return {
+      title: 'Dynatrace Problems is not configured',
+      description: 'Configure the read-only integration in Settings on the Relay server.',
+    };
+  }
+  if (historyMode && historyResponseFilter !== 'all' && historyScopeCount > 0) {
+    return {
+      title: 'No history matches this response filter',
+      description: 'Choose another response filter to see the remaining resolved problems.',
+    };
+  }
+  if (historyMode && totalHistoryCount === 0) {
+    return {
+      title: 'No resolved problems in the one-year history',
+      description: 'Resolved problems will remain here with their local notes and disposition.',
+    };
+  }
+  return {
+    title: 'No problems match this queue',
+    description: 'Try another filter or clear the search.',
+  };
+}
+
+function refreshControlCopy(
+  canSyncDynatrace: boolean,
+  refreshing: boolean,
+): { label: string; tooltip: string } {
+  const label = canSyncDynatrace ? 'Sync Dynatrace problems now' : 'Reload Relay problem data';
+  if (!refreshing) return { label, tooltip: label };
+  return {
+    label,
+    tooltip: canSyncDynatrace ? 'Syncing Dynatrace problems' : 'Reloading Relay problem data',
+  };
+}
 
 // Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
 // comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent
@@ -637,7 +580,12 @@ function ProblemQueueRow({
           <span className="dt-problem-row__meta">
             <span>{problem.displayId || problem.problemId}</span>
             <span>{alertingProfile || problem.impactLevel.toLowerCase()}</span>
-            <span>{formatDateTime(problem.startTime)}</span>
+            <time
+              dateTime={toDateTimeAttribute(problem.startTime)}
+              title={formatExactDateTime(problem.startTime)}
+            >
+              {formatDateTime(problem.startTime)}
+            </time>
           </span>
         </span>
       </button>
@@ -653,12 +601,17 @@ function ProblemQueue({
   sync,
   totalProblemCount,
   totalHistoryCount,
+  loadedHistoryCount,
+  historyCachedPartial,
+  hasMoreHistory,
+  loadingMoreHistory,
   historyScopeCount,
   historyMode,
   historySort,
   historyResponseFilter,
   onHistorySortChange,
   onHistoryResponseFilterChange,
+  onLoadMoreHistory,
   onSelect,
 }: Readonly<ProblemQueueProps>) {
   const rowProps = useMemo<ProblemQueueRowProps>(
@@ -675,19 +628,13 @@ function ProblemQueue({
   let queueContents: React.ReactNode;
   if (problems.length === 0) {
     const integrationDisabled = sync?.state === 'disabled' && totalProblemCount === 0;
-    let emptyTitle = 'No problems match this queue';
-    let emptyDescription = 'Try another filter or clear the search.';
-    if (integrationDisabled) {
-      emptyTitle = 'Dynatrace Problems is not configured';
-      emptyDescription = 'Configure the read-only integration in Settings on the Relay server.';
-    } else if (historyMode && historyResponseFilter !== 'all' && historyScopeCount > 0) {
-      emptyTitle = 'No history matches this response filter';
-      emptyDescription = 'Choose another response filter to see the remaining resolved problems.';
-    } else if (historyMode && totalHistoryCount === 0) {
-      emptyTitle = 'No resolved problems in the one-year history';
-      emptyDescription =
-        'Resolved problems will remain here with their local notes and disposition.';
-    }
+    const { title, description } = emptyQueueCopy(
+      integrationDisabled,
+      historyMode,
+      historyResponseFilter,
+      historyScopeCount,
+      totalHistoryCount,
+    );
     queueContents = (
       <div className="dt-problems__empty">
         <svg
@@ -702,8 +649,8 @@ function ProblemQueue({
           <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
           <path d="m9 12 2 2 4-4" />
         </svg>
-        <strong>{emptyTitle}</strong>
-        <span>{emptyDescription}</span>
+        <strong>{title}</strong>
+        <span>{description}</span>
       </div>
     );
   } else {
@@ -724,6 +671,10 @@ function ProblemQueue({
       </div>
     );
   }
+  const historyAvailability = historyCachedPartial ? 'cached' : 'loaded';
+  const problemCountLabel = historyMode
+    ? `${problems.length.toLocaleString()} shown · ${loadedHistoryCount.toLocaleString()} of ${totalHistoryCount.toLocaleString()} ${historyAvailability}`
+    : `${problems.length.toLocaleString()} shown`;
 
   return (
     <section
@@ -733,14 +684,22 @@ function ProblemQueue({
       <div className="dt-problems__section-heading">
         <div className="dt-problems__section-heading-copy">
           <span>{historyMode ? 'History' : 'Problem queue'}</span>
-          {historyMode && <small>Resolved problems are retained for one year.</small>}
+          <small>
+            {historyMode ? (
+              <>Resolved problems are retained for one year.</>
+            ) : (
+              <>
+                <kbd>Alt+↑/↓</kbd> move · <kbd>Alt+N</kbd> note
+              </>
+            )}
+          </small>
         </div>
         <span
           role={historyMode ? 'status' : undefined}
           aria-live={historyMode ? 'polite' : undefined}
           aria-atomic={historyMode ? 'true' : undefined}
         >
-          {problems.length} shown
+          {problemCountLabel}
         </span>
       </div>
       {historyMode && (
@@ -778,11 +737,18 @@ function ProblemQueue({
         </div>
       )}
       {queueContents}
+      {historyMode && hasMoreHistory && (
+        <div className="dt-problems__history-pagination">
+          <button type="button" onClick={onLoadMoreHistory} disabled={loadingMoreHistory}>
+            {loadingMoreHistory ? 'Loading…' : 'Load 100 more'}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
 
-type ProblemSavingAction = 'address' | 'response' | 'refresh' | 'profile' | null;
+type ProblemSavingAction = 'address' | 'response' | 'refresh' | null;
 
 type PendingDispositionResponse = {
   noteId: string;
@@ -815,6 +781,8 @@ type ProblemDetailProps = {
   onSaveResponse: () => void;
   onAddressToggle: () => void;
   onOpenDynatrace: (problem: DynatraceProblemRecord) => void;
+  onCopyTicket: (reference: string) => void;
+  onOpenTicket: (reference: string) => void;
 };
 
 type ProblemResolverSelectProps = {
@@ -871,6 +839,8 @@ function ProblemDetail({
   onSaveResponse,
   onAddressToggle,
   onOpenDynatrace,
+  onCopyTicket,
+  onOpenTicket,
 }: Readonly<ProblemDetailProps>) {
   if (!problem) {
     return (
@@ -920,7 +890,15 @@ function ProblemDetail({
           <h3>{problem.title}</h3>
           <div className="dt-problem-detail__identity">
             <span>{problem.displayId || problem.problemId}</span>
-            <span>Started {formatDateTime(problem.startTime)}</span>
+            <span>
+              Started{' '}
+              <time
+                dateTime={toDateTimeAttribute(problem.startTime)}
+                title={formatExactDateTime(problem.startTime)}
+              >
+                {formatDateTime(problem.startTime)}
+              </time>
+            </span>
             <span>Duration {formatDuration(problem)}</span>
           </div>
         </header>
@@ -935,10 +913,6 @@ function ProblemDetail({
             <strong>{problem.rootCauseName || 'Not identified'}</strong>
           </div>
           <div>
-            <span>Management zones</span>
-            <strong>{problem.managementZones.map((zone) => zone.name).join(', ') || 'None'}</strong>
-          </div>
-          <div>
             <span>Alerting profile</span>
             <strong title={(problem.alertingProfiles ?? []).join(', ')}>
               {(problem.alertingProfiles ?? []).join(', ') || 'Not assigned'}
@@ -949,6 +923,11 @@ function ProblemDetail({
         <div className="dt-problem-detail__section">
           <div className="dt-problem-detail__section-title">Affected entities</div>
           <EntityList entities={problem.affectedEntities} />
+        </div>
+
+        <div className="dt-problem-detail__section">
+          <div className="dt-problem-detail__section-title">Impacted entities</div>
+          <EntityList entities={problem.impactedEntities} />
         </div>
 
         <div className="dt-problem-detail__response">
@@ -1019,7 +998,8 @@ function ProblemDetail({
                 </div>
                 <small>
                   Relay records the ticket number for notation only. It does not create or update a
-                  Service Desk ticket.
+                  Service Desk ticket. Enter a full HTTPS ticket link to also get an
+                  &ldquo;Open&rdquo; action on the saved reference.
                 </small>
               </div>
               <label className="dt-problem-note-composer">
@@ -1082,12 +1062,35 @@ function ProblemDetail({
                   <article className="dt-problem-note" key={note.id}>
                     <div className="dt-problem-note__meta">
                       <strong>{note.author || 'Unattributed'}</strong>
-                      <span>{formatDateTime(note.created)}</span>
+                      <time
+                        dateTime={toDateTimeAttribute(note.created)}
+                        title={formatExactDateTime(note.created)}
+                      >
+                        {formatDateTime(note.created)}
+                      </time>
                     </div>
                     {ticketReference ? (
                       <div className="dt-problem-note__ticket">
                         <span>Service Desk ticket</span>
                         <strong>{ticketReference}</strong>
+                        <div className="dt-problem-note__ticket-actions">
+                          <button
+                            type="button"
+                            aria-label={`Copy ${ticketReference}`}
+                            onClick={() => onCopyTicket(ticketReference)}
+                          >
+                            Copy
+                          </button>
+                          {getSafeTicketUrl(ticketReference) && (
+                            <button
+                              type="button"
+                              aria-label={`Open ${ticketReference}`}
+                              onClick={() => onOpenTicket(ticketReference)}
+                            >
+                              Open ↗
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <p>{note.note}</p>
@@ -1120,6 +1123,11 @@ export const DynatraceProblemsTab: React.FC<{
     stateByProblemId,
     notesByProblemId,
     sync,
+    totalHistoryCount,
+    hasMoreHistory,
+    loadingMoreHistory,
+    historyCachedPartial,
+    loadMoreHistory,
     loading,
     error,
     setAddressed,
@@ -1131,8 +1139,6 @@ export const DynatraceProblemsTab: React.FC<{
   const [historyPreferences, setHistoryPreferences] =
     useState<HistoryPreferences>(readHistoryPreferences);
   const { sort: historySort, responseFilter: historyResponseFilter } = historyPreferences;
-  const [profileDraft, setProfileDraft] = useState<string[]>([]);
-  const [profileDraftDirty, setProfileDraftDirty] = useState(false);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const lastSelectedProblemIdRef = useRef<string | null>(null);
@@ -1168,14 +1174,22 @@ export const DynatraceProblemsTab: React.FC<{
   const counts = useMemo(() => {
     let unaddressed = 0;
     let addressed = 0;
-    let resolved = 0;
+    let loadedHistory = 0;
     for (const problem of problems) {
-      if (problem.status === 'CLOSED') resolved += 1;
-      else if (isAddressed(stateByProblemId.get(problem.problemId))) addressed += 1;
+      if (problem.status === 'CLOSED') {
+        loadedHistory += 1;
+        continue;
+      }
+      if (isAddressed(stateByProblemId.get(problem.problemId))) addressed += 1;
       else unaddressed += 1;
     }
-    return { unaddressed, addressed, resolved };
-  }, [problems, stateByProblemId]);
+    return {
+      unaddressed,
+      addressed,
+      resolved: Math.max(totalHistoryCount, loadedHistory),
+      loadedHistory,
+    };
+  }, [problems, stateByProblemId, totalHistoryCount]);
 
   const unaddressedProblemIds = useMemo(
     () =>
@@ -1209,26 +1223,6 @@ export const DynatraceProblemsTab: React.FC<{
     onNoUnaddressedProblems: reportNoUnaddressedProblems,
   });
 
-  const alertingProfiles = useMemo(() => {
-    const profiles = [
-      ...(sync?.availableAlertingProfiles ?? []),
-      ...(sync?.selectedAlertingProfiles ?? []),
-      ...problems.flatMap((problem) => problem.alertingProfiles ?? []),
-    ];
-    return [...new Set(profiles)].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: 'base' }),
-    );
-  }, [problems, sync?.availableAlertingProfiles, sync?.selectedAlertingProfiles]);
-  const profileFilterConfigured = sync?.profileFilterConfigured === true;
-  const savedProfiles = useMemo(
-    () => (profileFilterConfigured ? (sync?.selectedAlertingProfiles ?? []) : alertingProfiles),
-    [alertingProfiles, profileFilterConfigured, sync?.selectedAlertingProfiles],
-  );
-
-  useEffect(() => {
-    if (!profileDraftDirty) setProfileDraft(savedProfiles);
-  }, [profileDraftDirty, savedProfiles]);
-
   const responseSummaries = useMemo(() => {
     const summaries = new Map<string, ProblemResponseSummary>();
     for (const problem of problems) {
@@ -1247,10 +1241,6 @@ export const DynatraceProblemsTab: React.FC<{
     const normalizedQuery = query.trim().toLowerCase();
     const scopedProblems = problems
       .filter((problem) => matchesFilter(problem, stateByProblemId.get(problem.problemId), filter))
-      .filter((problem) => {
-        if (!profileFilterConfigured && !profileDraftDirty) return true;
-        return problem.alertingProfiles.some((profile) => profileDraft.includes(profile));
-      })
       .filter((problem) => !normalizedQuery || searchableText(problem).includes(normalizedQuery));
     const visibleProblems = scopedProblems
       .filter(
@@ -1275,9 +1265,6 @@ export const DynatraceProblemsTab: React.FC<{
     historyResponseFilter,
     historySort,
     problems,
-    profileDraft,
-    profileDraftDirty,
-    profileFilterConfigured,
     query,
     responseSummaries,
     stateByProblemId,
@@ -1348,6 +1335,25 @@ export const DynatraceProblemsTab: React.FC<{
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
       if (!url || !(await globalThis.api?.openExternal(url))) {
         showToast('Unable to open this problem in Dynatrace.', 'error');
+      }
+    },
+    [showToast],
+  );
+  const handleCopyTicket = useCallback(
+    async (reference: string) => {
+      if (await globalThis.api?.writeClipboard(reference)) {
+        showToast('Service Desk reference copied', 'success');
+      } else {
+        showToast('Unable to copy the Service Desk reference.', 'error');
+      }
+    },
+    [showToast],
+  );
+  const handleOpenTicket = useCallback(
+    async (reference: string) => {
+      const url = getSafeTicketUrl(reference);
+      if (!url || !(await globalThis.api?.openServiceDeskUrl(url))) {
+        showToast('Unable to open the Service Desk reference.', 'error');
       }
     },
     [showToast],
@@ -1463,7 +1469,8 @@ export const DynatraceProblemsTab: React.FC<{
     if (savingAction) return;
     setSavingAction('refresh');
     try {
-      if (relayMode === 'server' && sync?.state !== 'disabled') {
+      const canSyncDynatrace = relayMode === 'server' && globalThis.api?.runtime?.kind !== 'web';
+      if (canSyncDynatrace && sync?.state !== 'disabled') {
         const result = await globalThis.api?.syncDynatraceProblems();
         if (result && !result.success) throw new Error(result.error || 'Dynatrace sync failed.');
       }
@@ -1478,49 +1485,11 @@ export const DynatraceProblemsTab: React.FC<{
     }
   };
 
-  const handleProfileDraftChange = (profiles: string[]) => {
-    setProfileDraft(profiles);
-    setProfileDraftDirty(true);
-  };
-
-  const handleProfileDraftCancel = () => {
-    setProfileDraft(savedProfiles);
-    setProfileDraftDirty(false);
-  };
-
-  const handleSaveProfileFilter = async (): Promise<boolean> => {
-    if (relayMode !== 'server') {
-      showToast('Save the retained alerting profiles on the Relay server.', 'warning');
-      return false;
-    }
-    if (profileDraft.length === 0 || savingAction) return false;
-    setSavingAction('profile');
-    try {
-      const result = await globalThis.api?.saveDynatraceProblemProfileFilter(profileDraft);
-      if (!result?.success || !result.data) {
-        throw new Error(result?.error || 'Could not save the alerting profile filter.');
-      }
-      setProfileDraftDirty(false);
-      await refetch();
-      showToast(
-        `Retention filter saved · ${result.data.count.toLocaleString()} matching problems`,
-        'success',
-      );
-      return true;
-    } catch (saveError) {
-      showToast(
-        saveError instanceof Error ? saveError.message : 'Could not save the profile filter',
-        'error',
-      );
-      return false;
-    } finally {
-      setSavingAction(null);
-    }
-  };
-
   if (loading && problems.length === 0) return <TabFallback />;
 
   const lastSyncLabel = getLastSyncLabel(sync);
+  const canSyncDynatrace = relayMode === 'server' && globalThis.api?.runtime?.kind !== 'web';
+  const refreshControl = refreshControlCopy(canSyncDynatrace, savingAction === 'refresh');
 
   return (
     <div className="dt-problems">
@@ -1532,6 +1501,7 @@ export const DynatraceProblemsTab: React.FC<{
             className={`dt-problems__sync-state dt-problems__sync-state--${sync?.state ?? 'disabled'}`}
             role="status"
             aria-live="polite"
+            title={sync?.lastSuccessAt ? formatExactDateTime(sync.lastSuccessAt) : undefined}
           >
             {lastSyncLabel}
           </span>
@@ -1540,13 +1510,12 @@ export const DynatraceProblemsTab: React.FC<{
 
       <TabCommandBar ariaLabel="Problem queue actions">
         <TabCommandGroup kind="utility" className="dt-problems__toolbar">
-          <div className="dt-problems__filters" role="tablist" aria-label="Problem queue filters">
+          <fieldset className="dt-problems__filters" aria-label="Problem queue filters">
             {FILTERS.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                role="tab"
-                aria-selected={filter === item.id}
+                aria-pressed={filter === item.id}
                 className={`dt-problems__filter${filter === item.id ? ' dt-problems__filter--active' : ''}`}
                 onClick={() => setFilter(item.id)}
               >
@@ -1554,25 +1523,15 @@ export const DynatraceProblemsTab: React.FC<{
                 <span className="dt-problems__filter-count">{counts[item.id]}</span>
               </button>
             ))}
-          </div>
+          </fieldset>
           <div className="dt-problems__tools">
-            <AlertingProfilePicker
-              profiles={alertingProfiles}
-              selectedProfiles={profileDraft}
-              filterConfigured={profileFilterConfigured}
-              canSave={relayMode === 'server'}
-              saving={savingAction === 'profile'}
-              onChange={handleProfileDraftChange}
-              onCancel={handleProfileDraftCancel}
-              onSave={handleSaveProfileFilter}
-            />
             <div className="dt-problems__search scoped-search-control">
               <SearchInput
                 type="search"
                 aria-label="Search problems"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search title, ID, entity, profile, or zone"
+                placeholder="Search title, ID, entity, or profile"
                 className="scoped-search-input"
               />
             </div>
@@ -1581,12 +1540,8 @@ export const DynatraceProblemsTab: React.FC<{
               className="dt-problems__refresh"
               onClick={() => void handleRefresh()}
               disabled={savingAction === 'refresh'}
-              aria-label="Refresh Dynatrace Problems"
-              tooltip={
-                savingAction === 'refresh'
-                  ? 'Refreshing Dynatrace Problems'
-                  : 'Refresh Dynatrace Problems'
-              }
+              aria-label={refreshControl.label}
+              tooltip={refreshControl.tooltip}
               icon={
                 <svg
                   className={
@@ -1616,6 +1571,15 @@ export const DynatraceProblemsTab: React.FC<{
         <div className="dt-problems__notice dt-problems__notice--error" role="alert">
           <strong>Dynatrace sync needs attention.</strong>
           <span>{sync.error || 'Relay could not refresh the problem feed.'}</span>
+          {sync.nextRetryAt && (
+            <span>Next automatic retry {formatExactDateTime(sync.nextRetryAt)}.</span>
+          )}
+        </div>
+      )}
+      {sync?.resultTruncated && (
+        <div className="dt-problems__notice dt-problems__notice--warning" role="alert">
+          <strong>Dynatrace result limit reached.</strong>
+          <span>Relay history may be incomplete until the query limit or scope is adjusted.</span>
         </div>
       )}
       {error && (
@@ -1626,6 +1590,9 @@ export const DynatraceProblemsTab: React.FC<{
       )}
 
       <div className="dt-problems__workspace">
+        <span className="sr-only" aria-live="polite">
+          {selectedProblem ? `Selected problem ${selectedProblem.title}` : 'No problem selected'}
+        </span>
         <ProblemQueue
           problems={filteredProblems}
           states={stateByProblemId}
@@ -1634,12 +1601,17 @@ export const DynatraceProblemsTab: React.FC<{
           sync={sync}
           totalProblemCount={problems.length}
           totalHistoryCount={counts.resolved}
+          loadedHistoryCount={counts.loadedHistory}
+          historyCachedPartial={historyCachedPartial}
+          hasMoreHistory={hasMoreHistory}
+          loadingMoreHistory={loadingMoreHistory}
           historyScopeCount={historyScopeCount}
           historyMode={filter === 'resolved'}
           historySort={historySort}
           historyResponseFilter={historyResponseFilter}
           onHistorySortChange={handleHistorySortChange}
           onHistoryResponseFilterChange={handleHistoryResponseFilterChange}
+          onLoadMoreHistory={() => void loadMoreHistory()}
           onSelect={setSelectedProblemId}
         />
         <ProblemDetail
@@ -1659,6 +1631,8 @@ export const DynatraceProblemsTab: React.FC<{
           onSaveResponse={() => void handleSaveResponse()}
           onAddressToggle={() => void handleAddressToggle()}
           onOpenDynatrace={(problem) => void handleOpenDynatrace(problem)}
+          onCopyTicket={(reference) => void handleCopyTicket(reference)}
+          onOpenTicket={(reference) => void handleOpenTicket(reference)}
         />
       </div>
 

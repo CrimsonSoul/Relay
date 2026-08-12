@@ -50,6 +50,36 @@ describe('preload Knowledge web link bridge', () => {
     expect(api.runtime).toEqual(ELECTRON_RUNTIME);
   });
 
+  it('uses the dedicated Service Desk URL channel', async () => {
+    const url = 'https://servicedesk.example.com/incidents/INC0012345';
+
+    await api.openServiceDeskUrl(url);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('shell:openServiceDeskUrl', url);
+  });
+
+  it('forwards query-scoped offline cache membership over dedicated channels', async () => {
+    const membership = { recordIds: ['problem-1'], totalItems: 250, complete: false };
+    electronMocks.invoke.mockResolvedValueOnce(membership);
+
+    await expect(api.cacheQueryRead('dynatrace_problems', '0123456789abcdef')).resolves.toEqual(
+      membership,
+    );
+    await api.cacheQuerySnapshot('dynatrace_problems', '0123456789abcdef', membership);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      'cache:queryRead',
+      'dynatrace_problems',
+      '0123456789abcdef',
+    );
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      'cache:querySnapshot',
+      'dynatrace_problems',
+      '0123456789abcdef',
+      membership,
+    );
+  });
+
   it('does not expose a generic file-path opening capability', () => {
     const bridge = api as unknown as Record<string, unknown>;
 

@@ -21,6 +21,8 @@ export type DesktopFallbackApi = Pick<
   | 'saveWebServerConfig'
   | 'retryWebServer'
   | 'cacheRead'
+  | 'cacheQueryRead'
+  | 'cacheQuerySnapshot'
   | 'cacheWrite'
   | 'cacheSnapshot'
   | 'mutateOffline'
@@ -69,6 +71,8 @@ export function createDesktopFallbackApi({
     saveWebServerConfig: async () => unavailable('Configure Relay Web in Relay Desktop.'),
     retryWebServer: async () => unavailable('Restart Relay Web from Relay Desktop.'),
     cacheRead: async () => [],
+    cacheQueryRead: async () => null,
+    cacheQuerySnapshot: async () => undefined,
     cacheWrite: async () => undefined,
     cacheSnapshot: async () => undefined,
     mutateOffline: async () => ({ ok: false, error: 'Web access is online-only.' }),

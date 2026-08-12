@@ -68,7 +68,7 @@ jobs:
         run: npm test
 
   package-windows:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb' || github.ref == 'refs/heads/test'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb'))
     permissions:
       actions: read
       contents: read
@@ -76,7 +76,9 @@ jobs:
     with:
       artifact-name: relay-windows
       baseline-branch: ${{ github.ref_name }}
+      baseline-workflow: build.yml
       compression: store
       publish: never
+      source-sha: ${{ github.sha }}
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}

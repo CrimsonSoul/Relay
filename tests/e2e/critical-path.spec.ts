@@ -1040,6 +1040,27 @@ test.describe('Vital Critical Path', () => {
     });
   });
 
+  test.describe('desktop isolation contract', () => {
+    test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.default });
+
+    test('keeps the native Electron test window hidden', async () => {
+      if (!electronApp) throw new Error('Server Electron app not launched');
+      const nativeWindowState = await electronApp.evaluate(({ BrowserWindow }) => ({
+        e2eIsolationEnabled:
+          process.env.NODE_ENV === 'test' &&
+          process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS === '1',
+        visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
+        focused: BrowserWindow.getAllWindows()[0]?.isFocused() ?? null,
+      }));
+
+      expect(nativeWindowState).toEqual({
+        e2eIsolationEnabled: true,
+        visible: false,
+        focused: false,
+      });
+    });
+  });
+
   test.describe('rename-safe fixture profile contract', () => {
     test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.renameContract });
 
@@ -2283,8 +2304,8 @@ test.describe('Vital Critical Path', () => {
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
 
     await expect(window.getByRole('heading', { name: 'Local response queue' })).toBeVisible();
-    await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Refresh Dynatrace Problems' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Unaddressed 0' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Sync Dynatrace problems now' })).toBeVisible();
   });
 
   test('Service Status uses the operational queue layout', async () => {
@@ -2295,17 +2316,21 @@ test.describe('Vital Critical Path', () => {
     ).toBeVisible();
     const providerSummary = window.getByRole('status').filter({ hasText: 'monitored providers' });
     await expect(providerSummary).toHaveCount(1);
-    await expect(providerSummary).toContainText('14 monitored providers');
+    await expect(providerSummary).toContainText('12 monitored providers');
     const overview = window.getByRole('region', { name: 'Provider overview', exact: true });
     await expect(overview).toBeVisible();
-    for (const region of ['Global', 'EMEA', 'APAC', 'Federal']) {
-      await expect(
-        overview.getByRole('button', {
-          name: `View Juniper Mist ${region} status details`,
-          exact: true,
-        }),
-      ).toBeVisible();
-    }
+    await expect(
+      overview.getByRole('button', {
+        name: 'View Juniper Mist status details',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      overview.getByRole('button', {
+        name: 'View Dynatrace status details',
+        exact: true,
+      }),
+    ).toBeVisible();
     await overview
       .getByRole('button', { name: 'View Cloudflare status details', exact: true })
       .click();
@@ -2344,9 +2369,9 @@ test.describe('Vital Critical Path', () => {
     expect(seededProblems).toHaveLength(7);
 
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
-    await expect(window.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
-    await expect(window.getByRole('tab', { name: 'Addressed locally 1' })).toBeVisible();
-    await expect(window.getByRole('tab', { name: 'History 2' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Addressed locally 1' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'History 2' })).toBeVisible();
     await expect(window.getByRole('tab', { name: /^All/ })).toHaveCount(0);
     await expect(
       window.getByRole('heading', { name: 'Checkout service availability below SLO' }),
@@ -2366,7 +2391,7 @@ test.describe('Vital Critical Path', () => {
     const ticketNote = `Ticket: ${ticketNumber}`;
 
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
-    await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Unaddressed 0' })).toBeVisible();
     await goToTab(window, 'sidebar-compose', 'Compose');
 
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
@@ -2387,7 +2412,7 @@ test.describe('Vital Critical Path', () => {
     const connectedClient = await launchConnectedClient();
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
-    await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
 
     await expect(window.getByText('New Dynatrace problems')).toBeVisible();
@@ -2405,7 +2430,7 @@ test.describe('Vital Critical Path', () => {
     await window.getByRole('combobox', { name: 'Resolved by' }).selectOption('Ryan');
     await expect(addressedAction).toBeEnabled();
     await addressedAction.click();
-    await expect(window.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Addressed locally 2' })).toBeVisible();
 
     await expect
       .poll(async () => {
@@ -2430,11 +2455,13 @@ test.describe('Vital Critical Path', () => {
         addressed: true,
       });
 
-    await window.getByRole('tab', { name: 'Addressed locally 2' }).click();
+    await window.getByRole('button', { name: 'Addressed locally 2' }).click();
     await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
 
-    await expect(connectedClient.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
-    await connectedClient.getByRole('tab', { name: 'Addressed locally 2' }).click();
+    await expect(
+      connectedClient.getByRole('button', { name: 'Addressed locally 2' }),
+    ).toBeVisible();
+    await connectedClient.getByRole('button', { name: 'Addressed locally 2' }).click();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     const clientDetail = connectedClient.getByRole('region', {
       name: 'Selected problem details',
@@ -2446,7 +2473,7 @@ test.describe('Vital Critical Path', () => {
     await expect(syncedTicket).toContainText(ticketNumber);
     await expect(syncedTicket).toContainText('Ryan');
 
-    await connectedClient.getByRole('tab', { name: 'History 2' }).click();
+    await connectedClient.getByRole('button', { name: 'History 2' }).click();
     const historicalDetail = connectedClient.getByRole('region', {
       name: 'Selected problem details',
     });
@@ -2469,7 +2496,7 @@ test.describe('Vital Critical Path', () => {
 
     let connectedClient = await launchConnectedClient();
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
-    await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
     await expect
@@ -2510,7 +2537,7 @@ test.describe('Vital Critical Path', () => {
     const connectionStatus = connectedClient.locator('[data-connection-state]').first();
     await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
-    await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expect(connectedClient.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
     await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
     await expect(
@@ -2580,7 +2607,7 @@ test.describe('Vital Critical Path', () => {
     if (!electronApp) throw new Error('Electron app not launched');
     await runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
-    await expect(window.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Unaddressed 4' })).toBeVisible();
 
     const readGeometry = () =>
       window.evaluate(() => {

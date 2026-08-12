@@ -31,6 +31,12 @@ export {
   type OfflineWritableCollection,
 } from './offlineCollections';
 
+export type CachedQueryMembership = {
+  recordIds: string[];
+  totalItems: number;
+  complete: boolean;
+};
+
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
   id?: string;
@@ -208,6 +214,8 @@ export const MIST_CLOUD_STATUS_PROVIDER_ORDER = [
   'mist_federal',
 ] as const;
 
+export const EXTENSION_CLOUD_STATUS_PROVIDER_ORDER = ['dynatrace'] as const;
+
 export const CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
   'azure',
@@ -216,6 +224,7 @@ export const CLOUD_STATUS_PROVIDER_ORDER = [
   'github',
   'cloudflare',
   ...MIST_CLOUD_STATUS_PROVIDER_ORDER,
+  ...EXTENSION_CLOUD_STATUS_PROVIDER_ORDER,
   'google',
   'anthropic',
   'openai',
@@ -224,6 +233,7 @@ export const CLOUD_STATUS_PROVIDER_ORDER = [
 
 export type LegacyCloudStatusProvider = (typeof LEGACY_CLOUD_STATUS_PROVIDER_ORDER)[number];
 export type MistCloudStatusProvider = (typeof MIST_CLOUD_STATUS_PROVIDER_ORDER)[number];
+export type ExtensionCloudStatusProvider = (typeof EXTENSION_CLOUD_STATUS_PROVIDER_ORDER)[number];
 export type CloudStatusProvider = (typeof CLOUD_STATUS_PROVIDER_ORDER)[number];
 
 export type CloudStatusSeverity = 'info' | 'warning' | 'error' | 'resolved';
@@ -236,6 +246,7 @@ export type CloudStatusItem<P extends CloudStatusProvider = CloudStatusProvider>
   pubDate: string;
   link: string;
   severity: CloudStatusSeverity;
+  affectedScopes?: string[];
 };
 
 export type CloudStatusPartition<P extends CloudStatusProvider> = {
@@ -246,6 +257,7 @@ export type CloudStatusPartition<P extends CloudStatusProvider> = {
 
 export type LegacyCloudStatusData = CloudStatusPartition<LegacyCloudStatusProvider>;
 export type MistCloudStatusData = CloudStatusPartition<MistCloudStatusProvider>;
+export type ExtensionCloudStatusData = CloudStatusPartition<ExtensionCloudStatusProvider>;
 export type CloudStatusData = CloudStatusPartition<CloudStatusProvider>;
 
 type CloudStatusSnapshotMetadata = {
@@ -258,6 +270,8 @@ type CloudStatusSnapshotMetadata = {
 
 export type LegacyCloudStatusSnapshotRecord = LegacyCloudStatusData & CloudStatusSnapshotMetadata;
 export type MistCloudStatusSnapshotRecord = MistCloudStatusData & CloudStatusSnapshotMetadata;
+export type ExtensionCloudStatusSnapshotRecord = ExtensionCloudStatusData &
+  CloudStatusSnapshotMetadata;
 
 export type CloudStatusSnapshotRecord = CloudStatusData & CloudStatusSnapshotMetadata;
 
@@ -397,6 +411,10 @@ export const CLOUD_STATUS_PROVIDERS: Record<
   mist_federal: {
     label: 'Juniper Mist Federal',
     statusUrl: 'https://status.mist.com/',
+  },
+  dynatrace: {
+    label: 'Dynatrace',
+    statusUrl: 'https://dynatrace.status.io/',
   },
   google: {
     label: 'Google Cloud',
@@ -562,6 +580,8 @@ export type BridgeAPI = {
   markStartupRendererMounted?: () => void;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
   openExternal: (url: string) => Promise<boolean>;
+  /** Opens an operator-selected HTTPS ticket link through the narrower Service Desk capability. */
+  openServiceDeskUrl: (url: string) => Promise<boolean>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => () => void;
   submitAuth: (
     nonce: string,
@@ -694,6 +714,12 @@ export type BridgeAPI = {
   retryWebServer: () => Promise<IpcResult<RelayWebServerPublicState>>;
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
+  cacheQueryRead: (collection: string, queryKey: string) => Promise<CachedQueryMembership | null>;
+  cacheQuerySnapshot: (
+    collection: string,
+    queryKey: string,
+    membership: CachedQueryMembership,
+  ) => Promise<void>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
   cacheSnapshot: (collection: string, signature: string, records: unknown[]) => Promise<void>;
   mutateOffline: (input: OfflineMutationInput) => Promise<OfflineMutationResult>;
@@ -772,6 +798,7 @@ export const IPC_CHANNELS = {
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_MAXIMIZE_CHANGE: 'window:maximizeChange',
   OPEN_EXTERNAL: 'shell:openExternal',
+  OPEN_SERVICE_DESK_URL: 'shell:openServiceDeskUrl',
   AUTH_REQUESTED: 'auth:requested',
   AUTH_SUBMIT: 'auth:submit',
   AUTH_CANCEL: 'auth:cancel',
@@ -850,6 +877,8 @@ export const IPC_CHANNELS = {
   WEB_SERVER_RETRY: 'webServer:retry',
   // Cache (offline mode)
   CACHE_READ: 'cache:read',
+  CACHE_QUERY_READ: 'cache:queryRead',
+  CACHE_QUERY_SNAPSHOT: 'cache:querySnapshot',
   CACHE_WRITE: 'cache:write',
   CACHE_SNAPSHOT: 'cache:snapshot',
   OFFLINE_MUTATE: 'offline:mutate',

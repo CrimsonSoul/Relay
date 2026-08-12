@@ -9,7 +9,8 @@ const DISPOSAL_GRACE_MS = 5_000;
 
 interface RegistryEntry {
   collectionName: string;
-  store: CollectionStore<CollectionRecord>;
+  strongStore: CollectionStore<CollectionRecord> | null;
+  storeRef: WeakRef<CollectionStore<CollectionRecord>>;
   disposalTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -27,6 +28,11 @@ function asTypedStore<T extends CollectionRecord>(
 }
 
 const stores = new Map<string, RegistryEntry>();
+const collectedStores = new FinalizationRegistry<{ key: string; entry: RegistryEntry }>(
+  ({ key, entry }) => {
+    if (stores.get(key) === entry && !entry.storeRef.deref()) stores.delete(key);
+  },
+);
 const appliedMutationIds = new Set<string>();
 let offlineMutationUnsubscribe: (() => void) | null = null;
 
@@ -38,8 +44,9 @@ function applyMutation(event: OfflineMutationApplied): void {
     if (oldest) appliedMutationIds.delete(oldest);
   }
   for (const entry of stores.values()) {
-    if (entry.collectionName === event.collection) {
-      entry.store.applyOptimisticMutation(event.action, event.record as CollectionRecord);
+    const store = entry.strongStore ?? entry.storeRef.deref();
+    if (entry.collectionName === event.collection && store) {
+      store.applyOptimisticMutation(event.action, event.record as CollectionRecord);
     }
   }
 }
@@ -65,6 +72,10 @@ export function normalizeCollectionQuery(
     collectionName.trim(),
     normalizePart(options.sort) || '-created',
     normalizePart(options.filter),
+    options.pageSize ?? null,
+    options.batchedFilter?.key ?? null,
+    options.batchedFilter?.field ?? null,
+    options.batchedFilter?.batchSize ?? null,
   ]);
 }
 
@@ -75,29 +86,41 @@ export function getCollectionStore<T extends CollectionRecord>(
   ensureOfflineMutationListener();
   const key = normalizeCollectionQuery(collectionName, options);
   const existing = stores.get(key);
-  if (existing) return asTypedStore<T>(existing.store);
+  const existingStore = existing?.strongStore ?? existing?.storeRef.deref();
+  if (existingStore) return asTypedStore<T>(existingStore);
+  if (existing) stores.delete(key);
 
   const entry: RegistryEntry = {
     collectionName,
-    store: undefined as unknown as CollectionStore<CollectionRecord>,
+    strongStore: null,
+    storeRef: undefined as unknown as WeakRef<CollectionStore<CollectionRecord>>,
     disposalTimer: null,
   };
   const store = new CollectionStore<CollectionRecord>(
     collectionName,
     options,
     (subscriberCount) => {
+      const retainedStore = entry.strongStore ?? entry.storeRef.deref();
       if (subscriberCount > 0) {
         if (entry.disposalTimer) clearTimeout(entry.disposalTimer);
         entry.disposalTimer = null;
+        if (retainedStore) entry.strongStore = retainedStore;
+        stores.set(key, entry);
         return;
       }
       entry.disposalTimer = setTimeout(() => {
         entry.disposalTimer = null;
-        if (entry.store.subscriberCount === 0) entry.store.dispose();
+        const inactiveStore = entry.strongStore ?? entry.storeRef.deref();
+        if (inactiveStore?.subscriberCount === 0) {
+          inactiveStore.dispose();
+          entry.strongStore = null;
+        }
       }, DISPOSAL_GRACE_MS);
     },
   );
-  entry.store = store;
+  entry.strongStore = store;
+  entry.storeRef = new WeakRef(store);
+  collectedStores.register(store, { key, entry }, entry);
   stores.set(key, entry);
   return asTypedStore<T>(store);
 }
@@ -105,7 +128,8 @@ export function getCollectionStore<T extends CollectionRecord>(
 export function resetCollectionStoreRegistry(): void {
   for (const entry of stores.values()) {
     if (entry.disposalTimer) clearTimeout(entry.disposalTimer);
-    entry.store.dispose();
+    (entry.strongStore ?? entry.storeRef.deref())?.dispose();
+    collectedStores.unregister(entry);
   }
   stores.clear();
   appliedMutationIds.clear();
@@ -114,5 +138,8 @@ export function resetCollectionStoreRegistry(): void {
 }
 
 export function collectionStoreRegistrySize(): number {
+  for (const [key, entry] of stores) {
+    if (!entry.strongStore && !entry.storeRef.deref()) stores.delete(key);
+  }
   return stores.size;
 }

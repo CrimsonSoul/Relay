@@ -12,6 +12,7 @@ const providerMocks = vi.hoisted(() => ({
   google: vi.fn(),
   salesforce: vi.fn(),
   mist: vi.fn(),
+  dynatrace: vi.fn(),
 }));
 
 vi.mock('../../logger', () => ({
@@ -37,6 +38,9 @@ vi.mock('./statuspageProvider', () => ({
 vi.mock('./googleProvider', () => ({ fetchGoogleCloudProvider: providerMocks.google }));
 vi.mock('./salesforceProvider', () => ({ fetchSalesforceProvider: providerMocks.salesforce }));
 vi.mock('./mistProvider', () => ({ fetchMistProviderGroup: providerMocks.mist }));
+vi.mock('./dynatraceStatusProvider', () => ({
+  fetchDynatraceStatusProvider: providerMocks.dynatrace,
+}));
 
 import { fetchCloudStatusData } from './fetchCloudStatus';
 
@@ -68,9 +72,33 @@ beforeEach(() => {
     providers: emptyMistCloudStatusProviders(),
     errors: [],
   });
+  providerMocks.dynatrace.mockResolvedValue([]);
 });
 
 describe('fetchCloudStatusData', () => {
+  it('merges the Dynatrace public-status result into the extension bucket', async () => {
+    const dynatrace = item('dynatrace', 'dynatrace-1');
+    providerMocks.dynatrace.mockResolvedValue([dynatrace]);
+
+    const result = await fetchCloudStatusData();
+
+    expect(result.providers.dynatrace).toEqual([dynatrace]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('retains the last-good Dynatrace result when its feed fails', async () => {
+    const previous = item('dynatrace', 'previous-dynatrace');
+    providerMocks.dynatrace.mockRejectedValue(new Error('Status.io unavailable'));
+
+    const result = await fetchCloudStatusData(previousStatus([previous]));
+
+    expect(result.providers.dynatrace).toEqual([previous]);
+    expect(result.errors).toContainEqual({
+      provider: 'dynatrace',
+      message: 'Status.io unavailable',
+    });
+  });
+
   it('fetches one Mist group and merges its four regional buckets', async () => {
     const mistProviders = emptyMistCloudStatusProviders();
     mistProviders.mist_emea.push(item('mist_emea', 'mist-1'));

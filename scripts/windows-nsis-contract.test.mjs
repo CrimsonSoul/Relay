@@ -305,7 +305,8 @@ describe('Windows packaging integration contract', () => {
       'Exercise isolated activation boundaries and stable fallback',
     );
 
-    expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ github.sha }}');
+    expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
+    expect(smoke.env.RELAY_EXPECTED_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(smoke.run).toContain('steps.previous.outputs.build_id');
     expect(smoke.run).toContain('scripts/windows-bootstrap-smoke.ps1');
     expect(smoke.run).toContain('-PreviousArtifact');
@@ -325,6 +326,7 @@ describe('Windows packaging integration contract', () => {
       expect(caller.jobs['package-windows'].uses).toBe(
         './.github/workflows/reusable-windows-package.yml',
       );
+      expect(caller.jobs['package-windows'].with['source-sha']).toBeTruthy();
     }
   });
 

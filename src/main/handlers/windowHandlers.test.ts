@@ -251,6 +251,26 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).toHaveBeenCalledWith('https://status.mist.com/notices/example');
     });
 
+    it('opens exact-host Dynatrace Status.io URLs and blocks lookalike hosts', async () => {
+      await expect(
+        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+          {},
+          'https://dynatrace.status.io/pages/incident/example',
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+          {},
+          'https://dynatrace.status.io.evil.example/pages/incident/example',
+        ),
+      ).resolves.toBe(false);
+
+      expect(shell.openExternal).toHaveBeenCalledOnce();
+      expect(shell.openExternal).toHaveBeenCalledWith(
+        'https://dynatrace.status.io/pages/incident/example',
+      );
+    });
+
     it('opens the fixed Dispatcher Radar intranet URL and returns true', async () => {
       const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, RADAR_URL);
 
@@ -449,6 +469,26 @@ describe('windowHandlers', () => {
 
       expect(shell.openExternal).not.toHaveBeenCalled();
       expect(result).toBe(false);
+    });
+  });
+
+  describe('OPEN_SERVICE_DESK_URL', () => {
+    it('opens a credential-free HTTPS ticket URL through the dedicated capability', async () => {
+      const url = 'https://servicedesk.example.com/incidents/INC0012345';
+
+      await expect(getHandler(IPC_CHANNELS.OPEN_SERVICE_DESK_URL)({}, url)).resolves.toBe(true);
+      expect(shell.openExternal).toHaveBeenCalledWith(url);
+    });
+
+    it.each([
+      'http://servicedesk.example.com/INC0012345',
+      'https://user:secret@servicedesk.example.com/INC0012345',
+      'https://servicedesk.example.com:8443/INC0012345',
+      ' https://servicedesk.example.com/INC0012345',
+      'https://servicedesk.example.com/INC0012345\nignored',
+    ])('blocks unsafe Service Desk URL %s', async (url) => {
+      await expect(getHandler(IPC_CHANNELS.OPEN_SERVICE_DESK_URL)({}, url)).resolves.toBe(false);
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
   });
 

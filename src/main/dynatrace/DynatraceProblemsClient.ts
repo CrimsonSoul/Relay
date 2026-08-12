@@ -51,6 +51,11 @@ const CONNECTION_TEST_QUERY = `fetch dt.davis.problems, from:-2h
 | filter not(dt.davis.is_duplicate)
 | summarize problemCount=count()`;
 
+const ALERTING_PROFILE_FIELD_HEALTH_QUERY = `fetch dt.davis.problems, from:-365d
+| dedup event.id, sort:{timestamp desc}
+| filter not(dt.davis.is_duplicate)
+| summarize problemCount=count(), profiledProblemCount=countIf(isNotNull(labels.alerting_profile))`;
+
 const entitySchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
@@ -79,10 +84,24 @@ const problemSchema = z.object({
   alertingProfiles: stringListSchema.nullish(),
 });
 
-const queryResultSchema = z.object({
+const queryNotificationSchema = z.looseObject({
+  notificationType: z.string().nullish(),
+  message: z.string().nullish(),
+});
+
+const queryResultSchema = z.looseObject({
   records: z
     .array(z.record(z.string(), z.unknown()).nullable())
     .transform((records) => records.filter((record) => record !== null)),
+  metadata: z
+    .looseObject({
+      grail: z
+        .looseObject({
+          notifications: z.array(queryNotificationSchema).nullish(),
+        })
+        .nullish(),
+    })
+    .nullish(),
 });
 
 const queryResponseSchema = z.looseObject({
@@ -93,12 +112,27 @@ const queryResponseSchema = z.looseObject({
 
 type GrailProblem = z.infer<typeof problemSchema>;
 type QueryResponse = z.infer<typeof queryResponseSchema>;
+type QueryResult = z.infer<typeof queryResultSchema>;
 type FetchLike = typeof fetch;
 
 export type DynatraceProblemsFetchResult = {
   problems: Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>[];
   totalCount: number;
+  resultTruncated: boolean;
 };
+
+export type DynatraceAlertingProfileFieldHealth = {
+  problemCount: number;
+  profiledProblemCount: number;
+  healthy: boolean;
+};
+
+export function getDynatraceRetryAfterMs(error: unknown): number | null {
+  const retryAfterMs = error instanceof Error ? error.cause : null;
+  return typeof retryAfterMs === 'number' && Number.isFinite(retryAfterMs) && retryAfterMs >= 0
+    ? retryAfterMs
+    : null;
+}
 
 function dqlStringLiteral(value: string): string {
   const escaped = value.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
@@ -273,6 +307,8 @@ function toRecord(
     impactedEntities: (problem.relatedEntities ?? []).map(toEntityRef),
     managementZones: [],
     alertingProfiles: normalizeStringList(problem.alertingProfiles),
+    scopeExcluded: false,
+    scopeExcludedAt: '',
     environmentUrl,
     syncedAt,
   };
@@ -310,13 +346,58 @@ function assertQueryCanContinue(state: string): void {
   }
 }
 
-function parseQueryRecords(result: unknown): Record<string, unknown>[] | null {
+function parseQueryResult(result: unknown): QueryResult | null {
   if (result == null) return null;
   const parsed = queryResultSchema.safeParse(result);
   if (!parsed.success) {
     throw new Error('Dynatrace returned an unexpected Grail query result.');
   }
-  return parsed.data.records;
+  return parsed.data;
+}
+
+function resultWasTruncated(result: QueryResult): boolean {
+  return (result.metadata?.grail?.notifications ?? []).some((notification) => {
+    const type = notification.notificationType?.toUpperCase() ?? '';
+    const message = notification.message?.toLowerCase() ?? '';
+    return (
+      (type.includes('RESULT') && type.includes('LIMIT')) ||
+      (/result/.test(message) && /limit/.test(message) && /(reach|exceed|truncate)/.test(message))
+    );
+  });
+}
+
+function numericCount(record: Record<string, unknown> | undefined, field: string): number | null {
+  const value = record?.[field];
+  const count = typeof value === 'string' ? Number(value) : value;
+  return typeof count === 'number' && Number.isFinite(count) && count >= 0
+    ? Math.floor(count)
+    : null;
+}
+
+function retryAfterHeaderMilliseconds(headers: Headers): number | null {
+  const retryAfter = headers.get('retry-after');
+  if (!retryAfter) return null;
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const date = Date.parse(retryAfter);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
+}
+
+async function retryAfterMilliseconds(response: Response): Promise<number | null> {
+  const headerValue = retryAfterHeaderMilliseconds(response.headers);
+  if (headerValue !== null) return headerValue;
+  try {
+    const body = (await response.json()) as {
+      error?: { retryAfterSeconds?: unknown };
+    };
+    const value = body.error?.retryAfterSeconds;
+    const seconds = typeof value === 'string' ? Number(value) : value;
+    return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0
+      ? Math.ceil(seconds * 1_000)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function queryEnvelopeSummary(response: QueryResponse): string {
@@ -340,8 +421,8 @@ export class DynatraceProblemsClient {
     scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
   ): Promise<DynatraceProblemsFetchResult> {
     const syncedAt = new Date().toISOString();
-    const records = await this.runQuery(config, buildProblemsQuery(config.alertingProfiles, scope));
-    const parsed = z.array(problemSchema).safeParse(records);
+    const result = await this.runQuery(config, buildProblemsQuery(config.alertingProfiles, scope));
+    const parsed = z.array(problemSchema).safeParse(result.records);
     if (!parsed.success) {
       throw new Error('Dynatrace returned an unexpected Grail Problems response.');
     }
@@ -349,12 +430,18 @@ export class DynatraceProblemsClient {
     const problems = parsed.data.map((problem) =>
       toRecord(problem, config.environmentUrl, syncedAt),
     );
-    return { problems, totalCount: problems.length };
+    return {
+      problems,
+      totalCount: problems.length,
+      resultTruncated: resultWasTruncated(result) || problems.length >= MAX_PROBLEMS,
+    };
   }
 
   async fetchAlertingProfiles(config: DynatraceProblemsConfig): Promise<string[]> {
-    const records = await this.runQuery(config, ALERTING_PROFILES_QUERY);
-    const parsed = z.array(z.object({ alertingProfile: z.string().min(1) })).safeParse(records);
+    const result = await this.runQuery(config, ALERTING_PROFILES_QUERY);
+    const parsed = z
+      .array(z.object({ alertingProfile: z.string().min(1) }))
+      .safeParse(result.records);
     if (!parsed.success) {
       throw new Error('Dynatrace returned an unexpected alerting profile catalog.');
     }
@@ -363,27 +450,39 @@ export class DynatraceProblemsClient {
     ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }
 
-  async testConnection(config: DynatraceProblemsConfig): Promise<number> {
-    const records = await this.runQuery(config, CONNECTION_TEST_QUERY);
-    const countValue = records[0]?.problemCount;
-    const count = typeof countValue === 'string' ? Number(countValue) : countValue;
-    if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) {
-      throw new Error('Dynatrace returned an unexpected Grail Problems response.');
+  async inspectAlertingProfileField(
+    config: DynatraceProblemsConfig,
+  ): Promise<DynatraceAlertingProfileFieldHealth> {
+    const result = await this.runQuery(config, ALERTING_PROFILE_FIELD_HEALTH_QUERY);
+    const problemCount = numericCount(result.records[0], 'problemCount');
+    const profiledProblemCount = numericCount(result.records[0], 'profiledProblemCount');
+    if (problemCount === null || profiledProblemCount === null) {
+      throw new Error('Dynatrace returned an unexpected alerting-profile health response.');
     }
-    return Math.floor(count);
+    return {
+      problemCount,
+      profiledProblemCount,
+      healthy: problemCount === 0 || profiledProblemCount > 0,
+    };
   }
 
-  private async runQuery(
-    config: DynatraceProblemsConfig,
-    query: string,
-  ): Promise<Record<string, unknown>[]> {
+  async testConnection(config: DynatraceProblemsConfig): Promise<number> {
+    const result = await this.runQuery(config, CONNECTION_TEST_QUERY);
+    const count = numericCount(result.records[0], 'problemCount');
+    if (count === null) {
+      throw new Error('Dynatrace returned an unexpected Grail Problems response.');
+    }
+    return count;
+  }
+
+  private async runQuery(config: DynatraceProblemsConfig, query: string): Promise<QueryResult> {
     const startedAt = Date.now();
     let response = await this.executeQuery(config, query);
     let requestToken = response.requestToken ?? null;
 
     while (true) {
-      const records = parseQueryRecords(response.result);
-      if (response.state === 'SUCCEEDED' && records) return records;
+      const result = parseQueryResult(response.result);
+      if (response.state === 'SUCCEEDED' && result) return result;
       assertQueryCanContinue(response.state);
       requestToken = response.requestToken ?? requestToken;
       if (!requestToken) {
@@ -438,7 +537,11 @@ export class DynatraceProblemsClient {
         redirect: 'error',
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(apiErrorMessage(response.status));
+      if (!response.ok) {
+        const retryAfterMs =
+          response.status === 429 ? await retryAfterMilliseconds(response) : null;
+        throw new Error(apiErrorMessage(response.status), { cause: retryAfterMs });
+      }
 
       const parsed = queryResponseSchema.safeParse(await response.json());
       if (!parsed.success) {

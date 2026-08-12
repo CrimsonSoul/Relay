@@ -1,4 +1,5 @@
 import type { BridgeAPI, IpcResult } from '@shared/ipc';
+import { normalizeServiceDeskUrl } from '@shared/urlSecurity';
 import {
   WebBrandAssetResultSchema,
   WebCloudStatusDataSchema,
@@ -25,6 +26,7 @@ export type OperationalWebApi = Pick<
   | 'runtime'
   | 'platform'
   | 'openExternal'
+  | 'openServiceDeskUrl'
   | 'onAuthRequested'
   | 'submitAuth'
   | 'cancelAuth'
@@ -108,6 +110,10 @@ export function createOperationalWebApi({
     runtime: session.runtime,
     platform: browserPlatform(),
     openExternal: async (url) => actions.openExternal(url),
+    openServiceDeskUrl: async (url) => {
+      const normalized = normalizeServiceDeskUrl(url);
+      return normalized ? actions.openExternal(normalized) : false;
+    },
     onAuthRequested: noopSubscription,
     submitAuth: async () => false,
     cancelAuth: () => undefined,

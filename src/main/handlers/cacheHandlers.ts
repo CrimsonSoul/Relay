@@ -1,5 +1,10 @@
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS, RELAY_APP_USER_EMAIL } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  RELAY_APP_USER_EMAIL,
+  type CachedQueryMembership,
+  type PendingMutationOverlay,
+} from '@shared/ipc';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
@@ -14,10 +19,12 @@ import {
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
-import type { PendingMutationOverlay } from '@shared/ipc';
 import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
-import { MIST_CLOUD_STATUS_COLLECTION } from './cloudStatus/CloudStatusSnapshotStore';
+import {
+  EXTENSION_CLOUD_STATUS_COLLECTION,
+  MIST_CLOUD_STATUS_COLLECTION,
+} from './cloudStatus/CloudStatusSnapshotStore';
 
 const VALID_COLLECTIONS = new Set([
   'contacts',
@@ -33,6 +40,7 @@ const VALID_COLLECTIONS = new Set([
   'oncall_board_settings',
   'cloud_status_snapshot',
   MIST_CLOUD_STATUS_COLLECTION,
+  EXTENSION_CLOUD_STATUS_COLLECTION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_CATEGORIES_COLLECTION,
   DYNATRACE_PROBLEMS_COLLECTION,
@@ -46,6 +54,8 @@ const MAX_CACHE_RECORDS = 10_000;
 const MAX_CACHE_RECORD_BYTES = 256 * 1024;
 const MAX_CACHE_SNAPSHOT_BYTES = 10 * 1024 * 1024;
 const CACHE_SIGNATURE_PATTERN = /^\d{1,5}:[0-9a-f]{16}$/;
+const CACHE_QUERY_KEY_PATTERN = /^[0-9a-f]{16}$/;
+const MAX_CACHE_RECORD_ID_BYTES = 512;
 
 const hasNonEmptyStringId = (record: unknown): record is Record<string, unknown> & { id: string } =>
   !!record &&
@@ -79,6 +89,40 @@ function isSnapshotWithinCacheLimit(records: Record<string, unknown>[]): boolean
   }
 
   return true;
+}
+
+function isQueryMembershipWithinCacheLimit(
+  membership: unknown,
+): membership is CachedQueryMembership {
+  if (!membership || typeof membership !== 'object' || Array.isArray(membership)) return false;
+  const { recordIds, totalItems, complete } = membership as Partial<CachedQueryMembership>;
+  if (!Array.isArray(recordIds) || recordIds.length > MAX_CACHE_RECORDS) return false;
+  if (
+    typeof totalItems !== 'number' ||
+    !Number.isSafeInteger(totalItems) ||
+    totalItems < recordIds.length ||
+    typeof complete !== 'boolean'
+  ) {
+    return false;
+  }
+  let totalBytes = 0;
+  for (const id of recordIds) {
+    if (typeof id !== 'string' || id.trim().length === 0) return false;
+    const bytes = Buffer.byteLength(id, 'utf8');
+    if (bytes > MAX_CACHE_RECORD_ID_BYTES) return false;
+    totalBytes += bytes;
+    if (totalBytes > MAX_CACHE_SNAPSHOT_BYTES) return false;
+  }
+  return true;
+}
+
+function isValidCacheQuery(collection: unknown, queryKey: unknown): boolean {
+  return (
+    typeof collection === 'string' &&
+    VALID_COLLECTIONS.has(collection) &&
+    typeof queryKey === 'string' &&
+    CACHE_QUERY_KEY_PATTERN.test(queryKey)
+  );
 }
 
 function readableCacheRecords(
@@ -172,6 +216,31 @@ export function setupCacheHandlers(
       ? readableCacheRecords(collection, records as Record<string, unknown>[])
       : [];
   });
+
+  ipcMain.handle(IPC_CHANNELS.CACHE_QUERY_READ, (event, collection: string, queryKey: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_QUERY_READ)) return null;
+    if (!isValidCacheQuery(collection, queryKey)) {
+      loggers.cache.error('CACHE_QUERY_READ: invalid query identity', { collection });
+      return null;
+    }
+    return getCache()?.readQueryMembership(collection, queryKey) ?? null;
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.CACHE_QUERY_SNAPSHOT,
+    (event, collection: string, queryKey: string, membership: CachedQueryMembership) => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)) return;
+      if (!isValidCacheQuery(collection, queryKey)) {
+        loggers.cache.error('CACHE_QUERY_SNAPSHOT: invalid query identity', { collection });
+        return;
+      }
+      if (!isQueryMembershipWithinCacheLimit(membership)) {
+        loggers.cache.error('CACHE_QUERY_SNAPSHOT: invalid membership', { collection });
+        return;
+      }
+      getCache()?.writeQueryMembership(collection, queryKey, membership);
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_WRITE,

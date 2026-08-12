@@ -100,6 +100,8 @@ describe('WebBridge', () => {
 
     expect(Object.keys(bridge).sort((left, right) => left.localeCompare(right))).toEqual([
       'addDynatraceDashboard',
+      'cacheQueryRead',
+      'cacheQuerySnapshot',
       'cacheRead',
       'cacheSnapshot',
       'cacheWrite',
@@ -163,6 +165,7 @@ describe('WebBridge', () => {
       'openExternal',
       'openKnowledgeWebLink',
       'openRadarSignIn',
+      'openServiceDeskUrl',
       'optimizeAlertImage',
       'pauseKnowledgeUploadBatch',
       'platform',
@@ -360,6 +363,25 @@ describe('WebBridge', () => {
     await expect(bridge.getRadarSnapshot()).rejects.toThrow(
       'Relay Web returned an invalid response',
     );
+  });
+
+  it('opens only bounded credential-free HTTPS Service Desk links', async () => {
+    const openWindow = vi.fn(() => ({ opener: null }) as Window);
+    const bridge = createWebBridge(SESSION, {
+      actions: createBrowserActions({ openWindow }),
+    });
+    const ticketUrl = 'https://servicedesk.example.com/incidents/INC0012345';
+
+    await expect(bridge.openServiceDeskUrl(ticketUrl)).resolves.toBe(true);
+    await expect(
+      bridge.openServiceDeskUrl('http://servicedesk.example.com/INC0012345'),
+    ).resolves.toBe(false);
+    await expect(
+      bridge.openServiceDeskUrl('https://user:secret@servicedesk.example.com/INC0012345'),
+    ).resolves.toBe(false);
+
+    expect(openWindow).toHaveBeenCalledOnce();
+    expect(openWindow).toHaveBeenCalledWith(ticketUrl, '_blank', 'noopener,noreferrer');
   });
 
   it('maps protected actions onto exact privileged routes', async () => {

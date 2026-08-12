@@ -5,6 +5,9 @@ import type {
   CloudStatusData,
   CloudStatusItem,
   CloudStatusSnapshotRecord,
+  ExtensionCloudStatusData,
+  ExtensionCloudStatusProvider,
+  ExtensionCloudStatusSnapshotRecord,
   LegacyCloudStatusData,
   LegacyCloudStatusProvider,
   LegacyCloudStatusSnapshotRecord,
@@ -15,6 +18,7 @@ import type {
 import {
   appendCloudStatusItem,
   emptyCloudStatusProviders,
+  emptyExtensionCloudStatusProviders,
   emptyLegacyCloudStatusProviders,
   emptyMistCloudStatusProviders,
   splitCloudStatusData,
@@ -45,6 +49,12 @@ const { collectionStates, mockUseCollection } = vi.hoisted(() => ({
       error: null as string | null,
       hasLoadedSnapshot: false,
     },
+    cloud_status_extension_snapshot: {
+      data: [] as ExtensionCloudStatusSnapshotRecord[],
+      loading: false,
+      error: null as string | null,
+      hasLoadedSnapshot: false,
+    },
   },
   mockUseCollection: vi.fn(),
 }));
@@ -65,18 +75,21 @@ import { useAppCloudStatus } from '../useAppCloudStatus';
 
 const legacyState = collectionStates.cloud_status_snapshot;
 const mistState = collectionStates.cloud_status_mist_snapshot;
+const extensionState = collectionStates.cloud_status_extension_snapshot;
 
 const collectionState = {
   set data(records: CloudStatusSnapshotRecord[]) {
     if (records.length === 0) {
       legacyState.data = [];
       mistState.data = [];
+      extensionState.data = [];
       legacyState.hasLoadedSnapshot = false;
       mistState.hasLoadedSnapshot = false;
+      extensionState.hasLoadedSnapshot = false;
       return;
     }
     const record = records[0]!;
-    const { legacy, mist } = splitCloudStatusData(record);
+    const { legacy, mist, extension } = splitCloudStatusData(record);
     const metadata = {
       id: record.id,
       key: record.key,
@@ -86,16 +99,20 @@ const collectionState = {
     };
     legacyState.data = [{ ...metadata, ...legacy }];
     mistState.data = [{ ...metadata, ...mist }];
+    extensionState.data = [{ ...metadata, ...extension }];
     legacyState.hasLoadedSnapshot = true;
     mistState.hasLoadedSnapshot = true;
+    extensionState.hasLoadedSnapshot = true;
   },
   set loading(value: boolean) {
     legacyState.loading = value;
     mistState.loading = value;
+    extensionState.loading = value;
   },
   set error(value: string | null) {
     legacyState.error = value;
     mistState.error = value;
+    extensionState.error = value;
   },
 };
 
@@ -138,6 +155,16 @@ function mistStatus(items: CloudStatusItem[] = []): MistCloudStatusData {
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 
+function extensionStatus(items: CloudStatusItem[] = []): ExtensionCloudStatusData {
+  const providers = emptyExtensionCloudStatusProviders();
+  for (const current of items) {
+    if (current.provider in providers) {
+      appendCloudStatusItem(providers, current as CloudStatusItem<ExtensionCloudStatusProvider>);
+    }
+  }
+  return { providers, errors: [], lastUpdated: Date.now() };
+}
+
 function snapshot(data: CloudStatusData): CloudStatusSnapshotRecord {
   return {
     id: 'snapshot-1',
@@ -171,12 +198,34 @@ function mistSnapshot(data: MistCloudStatusData): MistCloudStatusSnapshotRecord 
   };
 }
 
+function extensionSnapshot(data: ExtensionCloudStatusData): ExtensionCloudStatusSnapshotRecord {
+  return {
+    id: 'extension-snapshot',
+    key: 'current',
+    contentHash: 'extension-hash',
+    created: '2026-07-10T18:00:00.000Z',
+    updated: '2026-07-10T18:00:00.000Z',
+    ...data,
+  };
+}
+
 function mistItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
   return item({
     id: 'mist-incident-1',
     provider: 'mist_global',
     title: 'Mist login outage',
     link: 'https://status.mist.com/notices/test-incident',
+    ...overrides,
+  });
+}
+
+function dynatraceItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
+  return item({
+    id: 'dynatrace-incident-1',
+    provider: 'dynatrace',
+    title: 'Dynatrace platform outage',
+    link: 'https://dynatrace.status.io/pages/incident/incident-1',
+    affectedScopes: ['AWS · Americas'],
     ...overrides,
   });
 }
@@ -206,6 +255,7 @@ describe('useAppCloudStatus', () => {
     collectionState.error = null;
     legacyState.hasLoadedSnapshot = false;
     mistState.hasLoadedSnapshot = false;
+    extensionState.hasLoadedSnapshot = false;
     getCloudStatus.mockResolvedValue(status());
     // The hook only reads `getCloudStatus`; `Partial<BridgeAPI>` keeps that stub
     // checked against the real bridge contract without asserting a whole bridge.
@@ -229,11 +279,16 @@ describe('useAppCloudStatus', () => {
     expect(mockUseCollection).toHaveBeenCalledWith('cloud_status_mist_snapshot', {
       filter: 'key="current"',
     });
+    expect(mockUseCollection).toHaveBeenCalledWith('cloud_status_extension_snapshot', {
+      filter: 'key="current"',
+    });
   });
 
-  it('waits for both snapshot partitions before establishing the baseline', async () => {
+  it('waits for every snapshot partition before establishing the baseline', async () => {
     legacyState.data = [legacySnapshot(legacyStatus())];
     legacyState.hasLoadedSnapshot = true;
+    extensionState.data = [extensionSnapshot(extensionStatus())];
+    extensionState.hasLoadedSnapshot = true;
     mistState.loading = true;
 
     const { result, rerender } = renderHook(() => useAppCloudStatus(showToast));
@@ -251,6 +306,8 @@ describe('useAppCloudStatus', () => {
   it('marks Mist unknown without alerts when an older server lacks the collection', async () => {
     legacyState.data = [legacySnapshot(legacyStatus())];
     legacyState.hasLoadedSnapshot = true;
+    extensionState.data = [extensionSnapshot(extensionStatus())];
+    extensionState.hasLoadedSnapshot = true;
     mistState.loading = false;
     mistState.error = 'Missing collection';
     mistState.hasLoadedSnapshot = false;
@@ -262,9 +319,32 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
+  it('marks Dynatrace unknown without alerts when an older server lacks the extension', async () => {
+    legacyState.data = [legacySnapshot(legacyStatus())];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.data = [mistSnapshot(mistStatus())];
+    mistState.hasLoadedSnapshot = true;
+    extensionState.loading = false;
+    extensionState.error = 'Missing collection';
+    extensionState.hasLoadedSnapshot = false;
+
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() =>
+      expect(result.current.statusData?.errors).toContainEqual({
+        provider: 'dynatrace',
+        message: 'Dynatrace status is unavailable from this Relay server.',
+      }),
+    );
+    expect(result.current.statusData?.providers.dynatrace).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('does not let manual refresh label Mist healthy when the server lacks Mist storage', async () => {
     legacyState.data = [legacySnapshot(legacyStatus())];
     legacyState.hasLoadedSnapshot = true;
+    extensionState.data = [extensionSnapshot(extensionStatus())];
+    extensionState.hasLoadedSnapshot = true;
     mistState.error = 'Missing collection';
     getCloudStatus.mockResolvedValue(status([mistItem({ severity: 'info' })]));
     const { result } = renderHook(() => useAppCloudStatus(showToast));
@@ -286,7 +366,31 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('batches one multi-region Mist incident into one toast and opens the first region', async () => {
+  it('does not let manual refresh label Dynatrace healthy when the server lacks extensions', async () => {
+    legacyState.data = [legacySnapshot(legacyStatus())];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.data = [mistSnapshot(mistStatus())];
+    mistState.hasLoadedSnapshot = true;
+    extensionState.error = 'Missing collection';
+    getCloudStatus.mockResolvedValue(status([dynatraceItem({ severity: 'info' })]));
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+
+    await act(async () => {
+      const refresh = result.current.refetch();
+      await vi.advanceTimersByTimeAsync(500);
+      await refresh;
+    });
+
+    expect(result.current.statusData?.providers.dynatrace).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'dynatrace',
+      message: 'Dynatrace status is unavailable from this Relay server.',
+    });
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('batches one multi-region Mist incident into one display-level toast', async () => {
     collectionState.data = [snapshot(status())];
     const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
     await act(async () => Promise.resolve());
@@ -296,17 +400,36 @@ describe('useAppCloudStatus', () => {
 
     await waitFor(() =>
       expect(showToast).toHaveBeenCalledWith(
-        'Juniper Mist Global Outage: Mist login outage (+1 more)',
+        'Juniper Mist Outage: Mist login outage',
         'error',
         expect.objectContaining({ delivery: 'cloud-outage' }),
       ),
     );
     expect(showToast).toHaveBeenCalledOnce();
     showToast.mock.calls[0]?.[2]?.action?.onClick();
-    expect(openProvider).toHaveBeenCalledWith('mist_global');
+    expect(openProvider).toHaveBeenCalledWith('mist');
   });
 
-  it('normalizes a pre-Mist secure-storage cache to four unavailable regions', async () => {
+  it('routes a new Dynatrace public outage through the cloud notification queue', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([dynatraceItem()]))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'Dynatrace Outage: Dynatrace platform outage',
+        'error',
+        expect.objectContaining({ delivery: 'cloud-outage' }),
+      ),
+    );
+    showToast.mock.calls[0]?.[2]?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('dynatrace');
+  });
+
+  it('normalizes a pre-partition secure-storage cache to unavailable Mist and Dynatrace', async () => {
     const oldProviders = emptyLegacyCloudStatusProviders();
     secureStorageMock.setItemSync('cached_cloud_status', {
       fetchedAt: Date.now(),
@@ -315,8 +438,9 @@ describe('useAppCloudStatus', () => {
 
     const { result } = renderHook(() => useAppCloudStatus(showToast));
 
-    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(4));
+    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(5));
     expect(result.current.statusData?.providers.mist_federal).toEqual([]);
+    expect(result.current.statusData?.providers.dynatrace).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -560,8 +684,12 @@ describe('useAppCloudStatus', () => {
     const baselineTimestamp = Date.now();
     legacyState.data = [legacySnapshot({ ...legacyStatus(), lastUpdated: baselineTimestamp })];
     mistState.data = [mistSnapshot({ ...mistStatus(), lastUpdated: baselineTimestamp })];
+    extensionState.data = [
+      extensionSnapshot({ ...extensionStatus(), lastUpdated: baselineTimestamp }),
+    ];
     legacyState.hasLoadedSnapshot = true;
     mistState.hasLoadedSnapshot = true;
+    extensionState.hasLoadedSnapshot = true;
     const { rerender } = renderHook(() => useAppCloudStatus(showToast));
     await act(async () => Promise.resolve());
 

@@ -39,6 +39,35 @@ These files define the current workflow and should win over stale assumptions:
 | `src/main/dynatrace/DynatraceWindowManager.ts`       | Relay-framed Dynatrace popout windows and navigation policy |
 | `src/main/dynatrace/DynatraceDashboardStore.ts`      | Local dashboard URL and popout bounds storage               |
 
+## Automated Releases
+
+Relay publishes normal GitHub Releases automatically from the protected `test` branch. A push to
+`test` starts `.github/workflows/release.yml`, which waits for `Build quality gate`,
+`SonarQube quality gate`, and `Snyk security gate` to succeed on that exact commit. A failed,
+cancelled, skipped, neutral, stale, or missing gate blocks publication.
+
+`scripts/release-version.mjs` derives the next normal semantic version from conventional commits
+since the highest reachable `vX.Y.Z` tag:
+
+- `fix:`, `perf:`, and `revert:` increment the patch version.
+- `feat:` increments the minor version.
+- A `!` before the subject colon or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer increments the
+  major version.
+- Documentation, test, CI, build, style, refactor, and chore-only updates do not create an empty
+  release.
+- When no release tag exists, the first release is `v1.0.0`.
+
+The calculated version is injected into Electron package metadata without changing the source
+commit. The reusable Windows job must still pass its native dependency build, persistent bootstrap
+smoke test, packaged startup benchmark, and isolated boundary harness. The release then publishes
+`Relay-vX.Y.Z-windows-x64.exe` and its SHA-256 file as a normal latest release with generated notes.
+
+Release runs queue instead of cancelling one another. A rerun verifies a complete release already
+attached to the exact commit and does not duplicate it; a missing release or asset is rebuilt and
+completed under the existing tag. Do not publish through a local npm script or tag a commit outside
+`test`; merge the release-worthy conventional commit through the protected `test` pull-request
+workflow.
+
 ## Startup Performance
 
 Relay shows a static renderer shell as soon as the first window loads, while required workspace
@@ -368,6 +397,11 @@ npm run test:knowledge-upload-soak
 
 `npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
 
+`npm run test:electron` builds the current source before launching Playwright so it cannot test a
+stale `dist` tree. Test-mode Electron windows remain native-hidden and unfocused; on macOS the test
+process also uses accessory activation policy so the suite does not take over the interactive
+desktop. Run the command through npm so its native-module ABI restoration always executes.
+
 `npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
 Coverage thresholds are currently 80% for lines, functions, branches, and statements in the main/shared and renderer configs. The cache config has no independent coverage threshold.
@@ -422,7 +456,7 @@ The README screenshot set is produced by an explicit Electron Playwright harness
 
 ```bash
 npm run build
-npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
 ```
 
 Generated images land in `tmp/redesign-shots/`. Inspect them for demo-only content and accidental

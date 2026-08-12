@@ -1,88 +1,258 @@
 name: Build and Release
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - test
 
 permissions:
   actions: read
+  checks: read
   contents: read
 
+concurrency:
+  group: relay-release-test
+  cancel-in-progress: false
+
 jobs:
-  quality:
+  gates:
+    name: Verify required test gates
     runs-on: ubuntu-latest
-    env:
-      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    timeout-minutes: 30
+    outputs:
+      source-sha: ${{ steps.required.outputs.source-sha }}
     steps:
-      - name: Checkout repository
+      - name: Wait for exact commit gates
+        id: required
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const requiredNames = [
+              'Build quality gate',
+              'SonarQube quality gate',
+              'Snyk security gate',
+            ];
+            if (context.ref !== 'refs/heads/test') {
+              throw new Error(`Release workflow rejected unexpected ref ${context.ref}`);
+            }
+
+            const sourceSha = context.sha;
+            const deadline = Date.now() + 25 * 60 * 1000;
+            let lastSummary = 'required checks have not appeared yet';
+
+            while (Date.now() < deadline) {
+              const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: sourceSha,
+                filter: 'latest',
+                per_page: 100,
+              });
+              const byName = new Map(
+                checkRuns
+                  .filter((run) => run.app?.slug === 'github-actions')
+                  .map((run) => [run.name, run]),
+              );
+              const failed = requiredNames.filter((name) => {
+                const run = byName.get(name);
+                return run?.status === 'completed' && run.conclusion !== 'success';
+              });
+              if (failed.length > 0) {
+                throw new Error(`Release blocked by unsuccessful checks: ${failed.join(', ')}`);
+              }
+
+              const waiting = requiredNames.filter((name) => {
+                const run = byName.get(name);
+                return run?.status !== 'completed' || run.conclusion !== 'success';
+              });
+              if (waiting.length === 0) {
+                core.setOutput('source-sha', sourceSha);
+                core.info(`All required checks succeeded for ${sourceSha}.`);
+                return;
+              }
+
+              lastSummary = waiting
+                .map((name) => {
+                  const run = byName.get(name);
+                  return `${name}=${run ? `${run.status}/${run.conclusion ?? 'pending'}` : 'missing'}`;
+                })
+                .join(', ');
+              core.info(`Waiting for ${sourceSha}: ${lastSummary}`);
+              await new Promise((resolve) => setTimeout(resolve, 15000));
+            }
+
+            throw new Error(`Timed out waiting for required checks on ${sourceSha}: ${lastSummary}`);
+
+  determine:
+    name: Determine release version
+    needs: gates
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.version.outputs.action }}
+      should-package: ${{ steps.existing-assets.outputs.should-package || steps.release-state.outputs.should-package }}
+      source-sha: ${{ steps.version.outputs.source_sha }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout exact test commit
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.gates.outputs.source-sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: package-lock.json
 
-      - name: Get Electron version
-        id: electron-version
-        run: |
-          ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
-          echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
+      - name: Determine semantic version
+        id: version
+        run: node scripts/release-version.mjs
 
-      - name: Cache Electron binary
-        continue-on-error: true
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/electron
-          key: electron-linux-x64-${{ steps.electron-version.outputs.version }}
-
-      - name: Install dependencies
+      - name: Resolve existing release state
+        id: release-state
+        uses: actions/github-script@v8
         env:
-          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
-        run: npm ci --prefer-offline
+          RELEASE_ACTION: ${{ steps.version.outputs.action }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
+        with:
+          script: |
+            const action = process.env.RELEASE_ACTION;
+            const tag = process.env.RELEASE_TAG;
+            const version = process.env.RELEASE_VERSION;
+            const sourceSha = process.env.SOURCE_SHA;
+            const expectedAsset = `Relay-${tag}-windows-x64.exe`;
+            const expectedChecksum = `${expectedAsset}.sha256`;
+            core.setOutput('complete', 'false');
 
-      - name: Static checks (typecheck + lint + format, parallel)
+            if (action === 'skip') {
+              core.setOutput('should-package', 'false');
+              core.notice('No release-worthy conventional commits were found.');
+              return;
+            }
+            if (!['create', 'verify'].includes(action)) {
+              throw new Error(`Unexpected release action: ${action}`);
+            }
+            if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag)) {
+              throw new Error(`Unexpected release tag: ${tag}`);
+            }
+            if (version !== tag.slice(1) || !/^[0-9a-f]{40}$/.test(sourceSha)) {
+              throw new Error('Release version outputs are inconsistent');
+            }
+
+            let ref;
+            try {
+              ref = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            if (action === 'create') {
+              if (ref) throw new Error(`Refusing to reuse existing tag ${tag}`);
+              core.setOutput('should-package', 'true');
+              return;
+            }
+            if (!ref) throw new Error(`Expected existing tag ${tag}`);
+
+            let object = ref.data.object;
+            for (let depth = 0; object.type === 'tag' && depth < 5; depth += 1) {
+              const annotated = await github.rest.git.getTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_sha: object.sha,
+              });
+              object = annotated.data.object;
+            }
+            if (object.type !== 'commit' || object.sha !== sourceSha) {
+              throw new Error(`Tag ${tag} does not resolve to ${sourceSha}`);
+            }
+
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            if (!release) {
+              core.setOutput('should-package', 'true');
+              return;
+            }
+
+            const assetNames = new Set(release.data.assets.map((asset) => asset.name));
+            const complete =
+              !release.data.draft &&
+              !release.data.prerelease &&
+              assetNames.has(expectedAsset) &&
+              assetNames.has(expectedChecksum);
+            core.setOutput('should-package', complete ? 'false' : 'true');
+            core.setOutput('complete', complete ? 'true' : 'false');
+            if (complete) core.info(`${tag} has both expected release assets.`);
+
+      - name: Verify existing release assets
+        id: existing-assets
+        if: steps.release-state.outputs.complete == 'true'
+        shell: bash
+        env:
+          ASSET_NAME: Relay-${{ steps.version.outputs.tag }}-windows-x64.exe
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          npm run typecheck & TYPECHECK=$!
-          npm run lint & LINT=$!
-          npm run format:check & FORMAT=$!
-          npm audit --audit-level=high --omit=dev & AUDIT=$!
-          wait $TYPECHECK && wait $LINT && wait $FORMAT && wait $AUDIT
-
-      - name: Run tests
-        run: npm test
+          set -u
+          verify_dir="$(mktemp -d)"
+          if gh release download "$TAG" \
+            --pattern "$ASSET_NAME" \
+            --pattern "$ASSET_NAME.sha256" \
+            --dir "$verify_dir" && \
+            (cd "$verify_dir" && sha256sum --check "$ASSET_NAME.sha256"); then
+            echo 'should-package=false' >> "$GITHUB_OUTPUT"
+            echo "Existing $TAG assets and checksum are complete."
+          else
+            echo 'should-package=true' >> "$GITHUB_OUTPUT"
+            echo "Existing $TAG assets could not be verified and will be rebuilt."
+          fi
 
   package-windows:
+    needs: determine
+    if: needs.determine.outputs.should-package == 'true'
     permissions:
       actions: read
       contents: read
     uses: ./.github/workflows/reusable-windows-package.yml
     with:
       artifact-name: relay-windows
-      baseline-branch: main
+      baseline-branch: test
+      baseline-workflow: release.yml
       compression: normal
       publish: never
+      release-version: ${{ needs.determine.outputs.version }}
+      source-sha: ${{ needs.determine.outputs.source-sha }}
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
 
   release:
-    needs: [quality, package-windows]
+    name: Publish GitHub release
+    needs: [determine, package-windows]
+    if: needs.determine.outputs.should-package == 'true' && needs.package-windows.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Checkout repository
+      - name: Checkout exact test commit
         uses: actions/checkout@v6
-
-      - name: Determine version
-        id: version
-        uses: actions/github-script@v8
         with:
-          script: |
-            const version = require('./package.json').version;
-            core.setOutput('tag', `v${version}`);
-            core.setOutput('name', `Release v${version}`);
+          fetch-depth: 0
+          ref: ${{ needs.determine.outputs.source-sha }}
 
       - name: Download Windows artifact
         uses: actions/download-artifact@v8
@@ -90,15 +260,53 @@ jobs:
           name: ${{ needs.package-windows.outputs.artifact-name }}
           path: release/
 
-      - name: Create release
+      - name: Create versioned release assets
+        id: assets
+        shell: bash
+        env:
+          TAG: ${{ needs.determine.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset_name="Relay-${TAG}-windows-x64.exe"
+          mv release/Relay.exe "release/$asset_name"
+          (cd release && sha256sum "$asset_name" > "$asset_name.sha256")
+          echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        id: publish
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.name }}
-          body: 'Automated release from workflow dispatch.'
+          draft: false
+          fail_on_unmatched_files: true
           files: |
-            release/Relay.exe
-          draft: true
+            release/${{ steps.assets.outputs.asset_name }}
+            release/${{ steps.assets.outputs.asset_name }}.sha256
+          generate_release_notes: true
+          make_latest: true
+          name: Relay ${{ needs.determine.outputs.tag }}
+          overwrite_files: true
           prerelease: false
+          tag_name: ${{ needs.determine.outputs.tag }}
+          target_commitish: ${{ needs.determine.outputs.source-sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify published release
+        shell: bash
+        env:
+          ASSET_NAME: ${{ steps.assets.outputs.asset_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.determine.outputs.source-sha }}
+          TAG: ${{ needs.determine.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git rev-list -n 1 "$TAG")" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)" = 'false'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)" = 'false'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$TAG"
+          verify_dir="$(mktemp -d)"
+          gh release download "$TAG" --pattern "$ASSET_NAME" --pattern "$ASSET_NAME.sha256" --dir "$verify_dir"
+          (cd "$verify_dir" && sha256sum --check "$ASSET_NAME.sha256")
+          release_url="$(gh release view "$TAG" --json url --jq .url)"
+          echo "Published and verified [$TAG]($release_url)." >> "$GITHUB_STEP_SUMMARY"

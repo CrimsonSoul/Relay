@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  emptyExtensionCloudStatusProviders,
   emptyLegacyCloudStatusProviders,
   emptyMistCloudStatusProviders,
   mergeCloudStatusData,
@@ -66,11 +67,12 @@ describe('cloud status partitions', () => {
     expect(Object.values(unavailable.providers).flat()).toEqual([]);
   });
 
-  it('round-trips incidents and errors through legacy and Mist partitions', () => {
+  it('round-trips incidents and errors through every snapshot partition', () => {
     const awsItem = item('aws', 'aws-1');
     const mistItem = item('mist_apac', 'mist-1');
     const combined: CloudStatusData = {
       providers: {
+        ...emptyExtensionCloudStatusProviders(),
         ...emptyLegacyCloudStatusProviders(),
         ...emptyMistCloudStatusProviders(),
         aws: [awsItem],
@@ -94,12 +96,41 @@ describe('cloud status partitions', () => {
       errors: [{ provider: 'mist_emea', message: 'Mist EMEA unavailable' }],
       lastUpdated: 20,
     });
-    expect(mergeCloudStatusData(split.legacy, split.mist)).toEqual(combined);
+    expect(mergeCloudStatusData(split.legacy, split.mist, split.extension)).toEqual(combined);
+  });
+
+  it('keeps Dynatrace in a third partition without changing legacy or Mist records', () => {
+    const dynatraceItem: CloudStatusItem<'dynatrace'> = {
+      ...item('dynatrace', 'dynatrace-1'),
+      affectedScopes: ['AWS · Americas'],
+    };
+    const combined: CloudStatusData = {
+      providers: {
+        ...emptyExtensionCloudStatusProviders(),
+        ...emptyLegacyCloudStatusProviders(),
+        ...emptyMistCloudStatusProviders(),
+        dynatrace: [dynatraceItem],
+      },
+      errors: [{ provider: 'dynatrace', message: 'Dynatrace unavailable' }],
+      lastUpdated: 30,
+    };
+
+    const split = splitCloudStatusData(combined);
+
+    expect(Object.keys(split.legacy.providers)).toHaveLength(10);
+    expect(Object.keys(split.mist.providers)).toHaveLength(4);
+    expect(split.extension).toEqual({
+      providers: { dynatrace: [dynatraceItem] },
+      errors: [{ provider: 'dynatrace', message: 'Dynatrace unavailable' }],
+      lastUpdated: 30,
+    });
+    expect(mergeCloudStatusData(split.legacy, split.mist, split.extension)).toEqual(combined);
   });
 
   it('drops an item whose provider identity does not match its snapshot bucket', () => {
     const malformed = {
       providers: {
+        ...emptyExtensionCloudStatusProviders(),
         ...emptyLegacyCloudStatusProviders(),
         ...emptyMistCloudStatusProviders(),
         aws: [item('mist_global', 'misrouted')],

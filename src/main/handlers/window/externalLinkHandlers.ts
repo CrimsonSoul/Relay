@@ -2,7 +2,7 @@ import { ipcMain, shell } from 'electron';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
 import { isDynatraceHost } from '@shared/dynatrace';
 import { RADAR_URL } from '@shared/radar';
-import { describeUrlForLog } from '@shared/urlSecurity';
+import { describeUrlForLog, normalizeServiceDeskUrl } from '@shared/urlSecurity';
 import { loggers } from '../../logger';
 import { assertTrustedIpcSender } from '../../utils/trustedSender';
 import { rateLimiters } from '../../rateLimiter';
@@ -138,6 +138,24 @@ export function registerOpenExternalHandler(): void {
       return false;
     } catch {
       loggers.security.error(`Invalid URL provided to openExternal: ${describeUrlForLog(url)}`);
+      return false;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_DESK_URL, async (event, url: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_SERVICE_DESK_URL)) return false;
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
+    const normalizedUrl = normalizeServiceDeskUrl(url);
+    if (!normalizedUrl) {
+      loggers.security.error(`Blocked opening Service Desk URL: ${describeUrlForLog(url)}`);
+      return false;
+    }
+    if (shouldSuppressDesktopSideEffects()) return true;
+    try {
+      await shell.openExternal(normalizedUrl); // NOSONAR - explicit user action; HTTPS, credentials, port, length, and control characters are validated above.
+      return true;
+    } catch {
+      loggers.security.error(`Could not open Service Desk URL: ${describeUrlForLog(url)}`);
       return false;
     }
   });

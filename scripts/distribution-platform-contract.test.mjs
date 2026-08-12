@@ -27,10 +27,23 @@ describe('Relay distribution platform contract', () => {
     const development = read('docs/DEVELOPMENT.md');
 
     expect(packageJson.scripts.dev).toBe('ELECTRON_RUN_AS_NODE= electron-vite dev');
-    expect(packageJson.scripts['test:electron']).toBe('node scripts/run-electron-tests.mjs');
+    expect(packageJson.scripts['test:electron']).toBe(
+      'npm run build && node scripts/run-electron-tests.mjs',
+    );
     expect(pocketBaseDownloader).toContain("value === 'darwin'");
     expect(development).toContain('macOS remains a supported local development host');
     expect(development).toContain('resources/pocketbase/darwin-arm64/pocketbase');
     expect(development).toContain('resources/pocketbase/darwin-x64/pocketbase');
+  });
+
+  it('keeps the screenshot refresh harness explicit instead of running it in every Electron gate', () => {
+    const screenshotSpec = read('tests/e2e/redesign-screenshots.spec.ts');
+    const readme = read('README.md');
+    const development = read('docs/DEVELOPMENT.md');
+
+    expect(screenshotSpec).toContain("process.env.RELAY_CAPTURE_SCREENSHOTS !== '1'");
+    expect(screenshotSpec).toContain('Explicit screenshot refresh only');
+    expect(readme).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test');
+    expect(development).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test');
   });
 });

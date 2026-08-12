@@ -179,20 +179,6 @@ describe('CSS zero-warning contracts', () => {
           ['forced-color-adjust', 'none'],
         ],
       },
-      {
-        source: cssSources.dynatraceProblems,
-        selector: '.dt-profile-picker__bulk-actions span',
-        location: {
-          previousSibling: '.dt-profile-picker',
-          nextSibling: '.dt-profile-picker__search',
-        },
-        declarations: [
-          ['margin-left', 'auto'],
-          ['color', 'var(--color-text-tertiary)'],
-          ['font-family', 'var(--font-family-mono)'],
-          ['font-size', 'var(--text-2xs)'],
-        ],
-      },
     ] as const;
 
     for (const { source, selector, location, declarations: expectedDeclarations } of contracts) {
