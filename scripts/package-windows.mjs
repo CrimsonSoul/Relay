@@ -85,12 +85,28 @@ export function resolveMakensisCommand(
   };
 }
 
-export function resolveElectronBuilderArgs(args) {
+export function resolveElectronBuilderArgs(args, env = process.env) {
   const forwarded = args.filter((arg) => arg !== '--compile-launcher-only' && arg !== '--fixture');
   const hasPublishPolicy = forwarded.some(
     (arg) => arg === '--publish' || arg.startsWith('--publish='),
   );
-  return hasPublishPolicy ? forwarded : [...forwarded, '--publish', 'never'];
+  const releaseVersion = env.RELAY_RELEASE_VERSION === '' ? undefined : env.RELAY_RELEASE_VERSION;
+  const hasVersionOverride = forwarded.some((arg) =>
+    arg.startsWith('--config.extraMetadata.version'),
+  );
+  if (releaseVersion !== undefined) {
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(releaseVersion)) {
+      throw new Error('Relay release version must be a canonical normal semantic version');
+    }
+    if (hasVersionOverride) {
+      throw new Error('Relay release version cannot be combined with a package version override');
+    }
+  }
+
+  const withPublishPolicy = hasPublishPolicy ? forwarded : [...forwarded, '--publish', 'never'];
+  return releaseVersion
+    ? [...withPublishPolicy, `--config.extraMetadata.version=${releaseVersion}`]
+    : withPublishPolicy;
 }
 
 export function resolvePackageMode(args) {

@@ -17,7 +17,9 @@ tests remain authoritative when details change.
 | Validation    | Zod 4.4.3                                               |
 | Testing       | Vitest 4.1.10 and Playwright 1.62.0                     |
 
-Version declarations and locks live in `package.json`, `package-lock.json`, and `.node-version`.
+Dependency and runtime declarations live in `package.json`, `package-lock.json`, and
+`.node-version`. Release versions are derived from conventional commits on `test` and injected into
+the packaged application by the gated GitHub release workflow.
 
 ## Runtime Model
 

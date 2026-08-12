@@ -35,4 +35,15 @@ describe('Relay distribution platform contract', () => {
     expect(development).toContain('resources/pocketbase/darwin-arm64/pocketbase');
     expect(development).toContain('resources/pocketbase/darwin-x64/pocketbase');
   });
+
+  it('keeps the screenshot refresh harness explicit instead of running it in every Electron gate', () => {
+    const screenshotSpec = read('tests/e2e/redesign-screenshots.spec.ts');
+    const readme = read('README.md');
+    const development = read('docs/DEVELOPMENT.md');
+
+    expect(screenshotSpec).toContain("process.env.RELAY_CAPTURE_SCREENSHOTS !== '1'");
+    expect(screenshotSpec).toContain('Explicit screenshot refresh only');
+    expect(readme).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test');
+    expect(development).toContain('RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test');
+  });
 });

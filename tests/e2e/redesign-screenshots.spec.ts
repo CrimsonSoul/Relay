@@ -6,7 +6,7 @@
  * Settings accent picker and the accent scheme set into tmp/redesign-shots/.
  *
  * Not part of the default suite watchlist intent — run explicitly:
- *   npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+ *   RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
  */
 import { _electron as electron, test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
@@ -432,6 +432,9 @@ const seedData = async (port: number) => {
 };
 
 test.describe('Redesign screenshot harness', () => {
+  // This manual artifact generator is intentionally excluded from normal regression gates.
+  test.skip(process.env.RELAY_CAPTURE_SCREENSHOTS !== '1', 'Explicit screenshot refresh only');
+
   test('captures Accent Ink screenshots across tabs and accent schemes', async () => {
     test.setTimeout(8 * 60 * 1000);
 

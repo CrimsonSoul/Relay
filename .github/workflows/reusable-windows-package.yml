@@ -11,12 +11,25 @@ on:
         description: Branch used to find the previous successful Windows artifact.
         required: true
         type: string
+      baseline-workflow:
+        description: Workflow used to find the previous successful Windows artifact.
+        required: true
+        type: string
       compression:
         description: electron-builder compression mode for the production artifact.
         required: true
         type: string
       publish:
         description: electron-builder publish policy.
+        required: true
+        type: string
+      release-version:
+        description: Normal semantic version embedded in a release package.
+        required: false
+        default: ''
+        type: string
+      source-sha:
+        description: Exact source commit packaged by the caller.
         required: true
         type: string
     secrets:
@@ -39,10 +52,12 @@ jobs:
       artifact-name: ${{ inputs.artifact-name }}
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-      RELAY_BUILD_ID: r1-${{ github.sha }}
+      RELAY_BUILD_ID: r1-${{ inputs.source-sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source-sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -143,12 +158,14 @@ jobs:
         shell: pwsh
         env:
           BASELINE_BRANCH: ${{ inputs.baseline-branch }}
+          BASELINE_WORKFLOW: ${{ inputs.baseline-workflow }}
           GH_TOKEN: ${{ secrets['github-token'] }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
         run: >-
           ./scripts/find-previous-windows-artifact.ps1
-          -Workflow build.yml
+          -Workflow "$env:BASELINE_WORKFLOW"
           -Branch "$env:BASELINE_BRANCH"
-          -CurrentSha "${{ github.sha }}"
+          -CurrentSha "$env:SOURCE_SHA"
           -Destination "$env:RUNNER_TEMP\RelayPrevious.exe"
 
       - name: Build lightweight previous fixture when no artifact exists
@@ -166,21 +183,36 @@ jobs:
         env:
           COMPRESSION: ${{ inputs.compression }}
           PUBLISH_POLICY: ${{ inputs.publish }}
+          RELAY_RELEASE_VERSION: ${{ inputs.release-version }}
         run: >-
           node scripts/package-windows.mjs
           --config.compression="$env:COMPRESSION"
           --config.npmRebuild=false
           --publish "$env:PUBLISH_POLICY"
 
+      - name: Verify packaged release version
+        if: inputs.release-version != ''
+        shell: pwsh
+        env:
+          RELAY_RELEASE_VERSION: ${{ inputs.release-version }}
+        run: |
+          $versionInfo = (Get-Item -LiteralPath './release/Relay.exe').VersionInfo
+          $actualCore = "$($versionInfo.FileMajorPart).$($versionInfo.FileMinorPart).$($versionInfo.FileBuildPart)"
+          if ($actualCore -ne $env:RELAY_RELEASE_VERSION) {
+            throw "Packaged version $actualCore does not match release version $env:RELAY_RELEASE_VERSION"
+          }
+          Write-Host "Verified packaged release version $actualCore."
+
       - name: Smoke test persistent bootstrap
         shell: pwsh
         env:
+          RELAY_EXPECTED_BUILD_ID: r1-${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
         run: >-
           ./scripts/windows-bootstrap-smoke.ps1
           -Artifact ./release/Relay.exe
           -PreviousArtifact "$env:RUNNER_TEMP\RelayPrevious.exe"
-          -ExpectedBuildId "r1-${{ github.sha }}"
+          -ExpectedBuildId "$env:RELAY_EXPECTED_BUILD_ID"
           -ExpectedPreviousBuildId "${{ steps.previous.outputs.build_id }}"
 
       - name: Benchmark packaged startup paths
@@ -243,7 +275,7 @@ jobs:
 
       - name: Build previous isolated boundary fixture
         env:
-          RELAY_BUILD_ID: h0-${{ github.sha }}
+          RELAY_BUILD_ID: h0-${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_HARNESS: 1
           RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
         run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
@@ -254,7 +286,7 @@ jobs:
 
       - name: Build current isolated boundary fixture
         env:
-          RELAY_BUILD_ID: h1-${{ github.sha }}
+          RELAY_BUILD_ID: h1-${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_HARNESS: 1
           RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
         run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
@@ -262,14 +294,16 @@ jobs:
       - name: Exercise isolated activation boundaries and stable fallback
         shell: pwsh
         env:
+          RELAY_EXPECTED_BUILD_ID: h1-${{ inputs.source-sha }}
+          RELAY_EXPECTED_PREVIOUS_BUILD_ID: h0-${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_BOUNDARY_CONFIRM: 1
         run: >-
           ./scripts/windows-bootstrap-boundary-smoke.ps1
           -Artifact ./release/Relay.exe
           -PreviousArtifact "$env:RUNNER_TEMP\RelayBoundaryPrevious.exe"
           -Root "$env:RUNNER_TEMP\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}"
-          -ExpectedBuildId "h1-${{ github.sha }}"
-          -ExpectedPreviousBuildId "h0-${{ github.sha }}"
+          -ExpectedBuildId "$env:RELAY_EXPECTED_BUILD_ID"
+          -ExpectedPreviousBuildId "$env:RELAY_EXPECTED_PREVIOUS_BUILD_ID"
 
       - name: Restore production artifact
         shell: pwsh
