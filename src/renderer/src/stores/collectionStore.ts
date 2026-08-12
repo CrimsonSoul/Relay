@@ -116,7 +116,7 @@ export function collectionQueryCacheKey(
     options.batchedFilter?.batchSize ?? ''
   }`;
   for (let index = 0; index < identity.length; index += 1) {
-    hash ^= BigInt(identity.charCodeAt(index));
+    hash ^= BigInt(identity.codePointAt(index) ?? 0);
     hash = (hash * prime) & mask;
   }
   return hash.toString(16).padStart(16, '0');

@@ -1509,7 +1509,7 @@ export const DynatraceProblemsTab: React.FC<{
 
       <TabCommandBar ariaLabel="Problem queue actions">
         <TabCommandGroup kind="utility" className="dt-problems__toolbar">
-          <div className="dt-problems__filters" role="group" aria-label="Problem queue filters">
+          <fieldset className="dt-problems__filters" aria-label="Problem queue filters">
             {FILTERS.map((item) => (
               <button
                 key={item.id}
@@ -1522,7 +1522,7 @@ export const DynatraceProblemsTab: React.FC<{
                 <span className="dt-problems__filter-count">{counts[item.id]}</span>
               </button>
             ))}
-          </div>
+          </fieldset>
           <div className="dt-problems__tools">
             <div className="dt-problems__search scoped-search-control">
               <SearchInput

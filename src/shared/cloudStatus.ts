@@ -62,6 +62,14 @@ export function emptyExtensionCloudStatusProviders(): ExtensionCloudStatusData['
   return { dynatrace: [] };
 }
 
+function emptyExtensionCloudStatusData(): ExtensionCloudStatusData {
+  return {
+    providers: emptyExtensionCloudStatusProviders(),
+    errors: [],
+    lastUpdated: 0,
+  };
+}
+
 export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
   return {
     aws: [],
@@ -155,11 +163,7 @@ export function splitCloudStatusData(data: CloudStatusData): {
 export function mergeCloudStatusData(
   legacy: LegacyCloudStatusData,
   mist: MistCloudStatusData,
-  extension: ExtensionCloudStatusData = {
-    providers: emptyExtensionCloudStatusProviders(),
-    errors: [],
-    lastUpdated: 0,
-  },
+  extension: ExtensionCloudStatusData = emptyExtensionCloudStatusData(),
 ): CloudStatusData {
   return {
     providers: {

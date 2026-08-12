@@ -82,6 +82,9 @@
 .dt-problems__filters {
   min-width: 0;
   gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  margin: 0;
   overflow-x: auto;
 }
 

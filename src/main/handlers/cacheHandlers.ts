@@ -1,5 +1,10 @@
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS, RELAY_APP_USER_EMAIL, type CachedQueryMembership } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  RELAY_APP_USER_EMAIL,
+  type CachedQueryMembership,
+  type PendingMutationOverlay,
+} from '@shared/ipc';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
@@ -14,7 +19,6 @@ import {
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
-import type { PendingMutationOverlay } from '@shared/ipc';
 import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
 import {

@@ -126,8 +126,7 @@ export function normalizeServiceDeskUrl(value: unknown): string | null {
   }
   const parsed = parseUrl(value);
   if (
-    !parsed ||
-    parsed.protocol !== 'https:' ||
+    parsed?.protocol !== 'https:' ||
     parsed.username ||
     parsed.password ||
     parsed.port ||
