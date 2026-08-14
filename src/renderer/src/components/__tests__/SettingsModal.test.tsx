@@ -112,6 +112,8 @@ function createBridgeMock() {
     saveWebServerConfig: vi.fn(),
     retryWebServer: vi.fn(),
     writeClipboard: vi.fn(),
+    getAppVersion: vi.fn().mockResolvedValue('1.0.0'),
+    openReleasesPage: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -185,6 +187,17 @@ describe('SettingsModal', () => {
 
     expect(screen.getByRole('tabpanel', { name: 'Access' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privileged access' })).toBeVisible();
+  });
+
+  it('offers the installed Relay version and releases action in About', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'About' })).toBeInTheDocument();
+    expect(await screen.findByText('v1.0.0')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'View releases' }));
+    await waitFor(() => expect(mockApi.openReleasesPage).toHaveBeenCalledOnce());
   });
 
   it('offers Administration to the authenticated Relay administrator', () => {

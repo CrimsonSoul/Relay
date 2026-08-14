@@ -9,9 +9,12 @@ import { rateLimiters } from '../../rateLimiter';
 import { shouldSuppressDesktopSideEffects } from '../../app/e2eSafety';
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
-  ...Object.values(CLOUD_STATUS_PROVIDERS).map((provider) =>
+  ...Object.values(CLOUD_STATUS_PROVIDERS).flatMap((provider) => [
     new URL(provider.statusUrl).hostname.toLowerCase(),
-  ),
+    ...(provider.officialSupportUrl
+      ? [new URL(provider.officialSupportUrl).hostname.toLowerCase()]
+      : []),
+  ]),
   'stspg.io',
   'statuspage.io',
   'x.com',

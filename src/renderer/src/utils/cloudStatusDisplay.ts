@@ -12,6 +12,8 @@ export const DISPLAY_CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
   'azure',
   'm365',
+  'proofpoint',
+  'crowdstrike',
   'jira',
   'github',
   'cloudflare',
@@ -30,6 +32,8 @@ export const DISPLAY_CLOUD_STATUS_PROVIDERS: Record<
   {
     label: string;
     statusUrl: string;
+    statusSourceLabel?: string;
+    officialSupportUrl?: string;
     twitterHandle?: string;
     downdetectorSlug?: string;
   }
@@ -37,6 +41,8 @@ export const DISPLAY_CLOUD_STATUS_PROVIDERS: Record<
   aws: CLOUD_STATUS_PROVIDERS.aws,
   azure: CLOUD_STATUS_PROVIDERS.azure,
   m365: CLOUD_STATUS_PROVIDERS.m365,
+  proofpoint: CLOUD_STATUS_PROVIDERS.proofpoint,
+  crowdstrike: CLOUD_STATUS_PROVIDERS.crowdstrike,
   jira: CLOUD_STATUS_PROVIDERS.jira,
   github: CLOUD_STATUS_PROVIDERS.github,
   cloudflare: CLOUD_STATUS_PROVIDERS.cloudflare,
@@ -63,6 +69,8 @@ const DIRECT_DISPLAY_PROVIDERS = [
   'aws',
   'azure',
   'm365',
+  'proofpoint',
+  'crowdstrike',
   'jira',
   'github',
   'cloudflare',
@@ -78,6 +86,8 @@ function emptyDisplayProviders(): DisplayCloudStatusData['providers'] {
     aws: [],
     azure: [],
     m365: [],
+    proofpoint: [],
+    crowdstrike: [],
     jira: [],
     github: [],
     cloudflare: [],
@@ -90,12 +100,17 @@ function emptyDisplayProviders(): DisplayCloudStatusData['providers'] {
   };
 }
 
-const MIST_SCOPE_LABELS: Record<MistCloudStatusProvider, string> = {
+export const MIST_SCOPE_LABELS: Record<MistCloudStatusProvider, string> = {
   mist_global: 'Global',
   mist_emea: 'EMEA',
   mist_apac: 'APAC',
   mist_federal: 'Federal',
 };
+
+export const DISPLAY_MIST_REGION_OPTIONS = MIST_CLOUD_STATUS_PROVIDER_ORDER.map((provider) => ({
+  provider,
+  label: MIST_SCOPE_LABELS[provider],
+}));
 
 const SEVERITY_RANK: Record<CloudStatusSeverity, number> = {
   resolved: 0,

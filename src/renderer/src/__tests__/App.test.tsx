@@ -581,6 +581,31 @@ describe('MainApp', () => {
     }
   });
 
+  it('checks GitHub releases from the desktop main window', async () => {
+    const previousApi = globalThis.api;
+    const checkForUpdates = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        currentVersion: '1.0.0',
+        latestVersion: '1.0.0',
+        updateAvailable: false,
+      },
+    });
+    globalThis.api = {
+      ...previousApi,
+      runtime: ELECTRON_RUNTIME,
+      checkForUpdates,
+      openReleasesPage: vi.fn().mockResolvedValue(true),
+    } as typeof globalThis.api;
+
+    try {
+      renderApp();
+      await vi.waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
   it('does not mount Radar queue notifications in a desktop popout', () => {
     const previousApi = globalThis.api;
     globalThis.api = { ...previousApi, runtime: ELECTRON_RUNTIME } as typeof globalThis.api;

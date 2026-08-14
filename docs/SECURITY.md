@@ -117,6 +117,16 @@ operator-supplied, so any HTTPS host that meets the shape checks is accepted.
 The trust boundary is the explicit operator click plus the shape checks, not a
 fixed host set.
 
+### Release Discovery
+
+Desktop update discovery is advisory and credential-free. The main process requests only the fixed
+GitHub API endpoint for `CrimsonSoul/Relay`'s latest release, rejects redirects, bounds request time
+and response size, requires JSON, and accepts only a published normal `vX.Y.Z` release. The renderer
+cannot provide an alternate repository, URL, or version. Opening release details also uses a fixed
+Relay Releases URL through a trusted-sender-validated and rate-limited IPC handler. Relay Web does
+not receive these desktop capabilities, and no response can trigger an automatic download or
+installation.
+
 ### External Dashboard Popouts
 
 Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.
@@ -199,11 +209,11 @@ and bounds the generated PNG before persistence or response construction.
 
 Currently enforced limits include:
 
-| Boundary                 | Enforced operations                                                                                                                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, and Wiki external-link opening (`fsOperations`); cloud-status network refreshes (`network`); renderer log forwarding (`rendererLogging`) |
-| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                 |
-| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                        |
+| Boundary                 | Enforced operations                                                                                                                                                                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, release-page opening, and Wiki external-link opening (`fsOperations`); cloud-status refreshes and release checks (`network`); renderer log forwarding (`rendererLogging`) |
+| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                                                  |
+| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                                                         |
 
 `fileImport`, `dataMutation`, and `dataReload` are defined as reusable global buckets but have no current production call sites; do not rely on those definitions as enforced controls. Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
 

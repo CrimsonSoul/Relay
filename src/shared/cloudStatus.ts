@@ -1,3 +1,4 @@
+import { CLOUD_STATUS_PROVIDERS, EXTENSION_CLOUD_STATUS_PROVIDER_ORDER } from './ipc';
 import type {
   CloudStatusData,
   CloudStatusItem,
@@ -59,7 +60,7 @@ export function emptyMistCloudStatusProviders(): MistCloudStatusData['providers'
 }
 
 export function emptyExtensionCloudStatusProviders(): ExtensionCloudStatusData['providers'] {
-  return { dynatrace: [] };
+  return { dynatrace: [], proofpoint: [], crowdstrike: [] };
 }
 
 function emptyExtensionCloudStatusData(): ExtensionCloudStatusData {
@@ -75,6 +76,8 @@ export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
     aws: [],
     azure: [],
     m365: [],
+    proofpoint: [],
+    crowdstrike: [],
     jira: [],
     github: [],
     cloudflare: [],
@@ -108,6 +111,8 @@ export function splitCloudStatusData(data: CloudStatusData): {
         mistErrors.push({ provider: error.provider, message: error.message });
         break;
       case 'dynatrace':
+      case 'proofpoint':
+      case 'crowdstrike':
         extensionErrors.push({ provider: error.provider, message: error.message });
         break;
       case 'aws':
@@ -153,7 +158,11 @@ export function splitCloudStatusData(data: CloudStatusData): {
       lastUpdated: data.lastUpdated,
     },
     extension: {
-      providers: { dynatrace: matchingProviderItems(data, 'dynatrace') },
+      providers: {
+        dynatrace: matchingProviderItems(data, 'dynatrace'),
+        proofpoint: matchingProviderItems(data, 'proofpoint'),
+        crowdstrike: matchingProviderItems(data, 'crowdstrike'),
+      },
       errors: extensionErrors,
       lastUpdated: data.lastUpdated,
     },
@@ -165,11 +174,14 @@ export function mergeCloudStatusData(
   mist: MistCloudStatusData,
   extension: ExtensionCloudStatusData = emptyExtensionCloudStatusData(),
 ): CloudStatusData {
+  const normalizedExtension = normalizeExtensionCloudStatusData(extension);
   return {
     providers: {
       aws: legacy.providers.aws,
       azure: legacy.providers.azure,
       m365: legacy.providers.m365,
+      proofpoint: normalizedExtension.providers.proofpoint,
+      crowdstrike: normalizedExtension.providers.crowdstrike,
       jira: legacy.providers.jira,
       github: legacy.providers.github,
       cloudflare: legacy.providers.cloudflare,
@@ -177,15 +189,43 @@ export function mergeCloudStatusData(
       mist_emea: mist.providers.mist_emea,
       mist_apac: mist.providers.mist_apac,
       mist_federal: mist.providers.mist_federal,
-      dynatrace: extension.providers.dynatrace,
+      dynatrace: normalizedExtension.providers.dynatrace,
       google: legacy.providers.google,
       anthropic: legacy.providers.anthropic,
       openai: legacy.providers.openai,
       salesforce: legacy.providers.salesforce,
     },
-    errors: [...legacy.errors, ...mist.errors, ...extension.errors],
+    errors: [...legacy.errors, ...mist.errors, ...normalizedExtension.errors],
     lastUpdated: Math.max(legacy.lastUpdated, mist.lastUpdated, extension.lastUpdated),
   };
+}
+
+export function normalizeExtensionCloudStatusData(
+  data: ExtensionCloudStatusData,
+): ExtensionCloudStatusData {
+  const source = data.providers as Partial<ExtensionCloudStatusData['providers']>;
+  const providers = emptyExtensionCloudStatusProviders();
+  const errors = Array.isArray(data.errors) ? [...data.errors] : [];
+  for (const provider of EXTENSION_CLOUD_STATUS_PROVIDER_ORDER) {
+    const items = source[provider];
+    if (Array.isArray(items)) {
+      setCloudStatusProviderItems(
+        providers,
+        provider,
+        items.filter(
+          (item): item is CloudStatusItem<typeof provider> => item.provider === provider,
+        ),
+      );
+      continue;
+    }
+    if (!errors.some((error) => error.provider === provider)) {
+      errors.push({
+        provider,
+        message: `${CLOUD_STATUS_PROVIDERS[provider].label} status is unavailable from this Relay server.`,
+      });
+    }
+  }
+  return { providers, errors, lastUpdated: data.lastUpdated };
 }
 
 export function unavailableMistCloudStatusData(lastUpdated = Date.now()): MistCloudStatusData {
@@ -207,12 +247,10 @@ export function unavailableExtensionCloudStatusData(
 ): ExtensionCloudStatusData {
   return {
     providers: emptyExtensionCloudStatusProviders(),
-    errors: [
-      {
-        provider: 'dynatrace',
-        message: 'Dynatrace status is unavailable from this Relay server.',
-      },
-    ],
+    errors: EXTENSION_CLOUD_STATUS_PROVIDER_ORDER.map((provider) => ({
+      provider,
+      message: `${CLOUD_STATUS_PROVIDERS[provider].label} status is unavailable from this Relay server.`,
+    })),
     lastUpdated,
   };
 }

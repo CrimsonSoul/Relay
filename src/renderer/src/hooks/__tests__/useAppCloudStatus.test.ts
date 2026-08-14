@@ -230,6 +230,27 @@ function dynatraceItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusIte
   });
 }
 
+function proofpointItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
+  return item({
+    id: '000026896',
+    provider: 'proofpoint',
+    title: 'Proofpoint service interruption',
+    link: 'https://proofpoint.my.site.com/community/s/article/example',
+    affectedScopes: ['Email Protection'],
+    ...overrides,
+  });
+}
+
+function crowdstrikeItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
+  return item({
+    id: 'crowdstrike-statusgator-down',
+    provider: 'crowdstrike',
+    title: 'CrowdStrike outage reported by StatusGator',
+    link: 'https://statusgator.com/services/crowdstrike',
+    ...overrides,
+  });
+}
+
 function nextPoll(data: CloudStatusData): CloudStatusData {
   return { ...data, lastUpdated: data.lastUpdated + 60_000 };
 }
@@ -319,7 +340,7 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('marks Dynatrace unknown without alerts when an older server lacks the extension', async () => {
+  it('marks extension providers unknown without alerts when an older server lacks the extension', async () => {
     legacyState.data = [legacySnapshot(legacyStatus())];
     legacyState.hasLoadedSnapshot = true;
     mistState.data = [mistSnapshot(mistStatus())];
@@ -337,6 +358,48 @@ describe('useAppCloudStatus', () => {
       }),
     );
     expect(result.current.statusData?.providers.dynatrace).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'proofpoint',
+      message: 'Proofpoint status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.proofpoint).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'crowdstrike',
+      message: 'CrowdStrike status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('marks newer extension providers unknown when an older snapshot contains only Dynatrace', async () => {
+    legacyState.data = [legacySnapshot(legacyStatus())];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.data = [mistSnapshot(mistStatus())];
+    mistState.hasLoadedSnapshot = true;
+    extensionState.data = [
+      extensionSnapshot({
+        providers: { dynatrace: [] },
+        errors: [],
+        lastUpdated: Date.now(),
+      } as unknown as ExtensionCloudStatusData),
+    ];
+    extensionState.hasLoadedSnapshot = true;
+
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    await waitFor(() =>
+      expect(result.current.statusData?.errors).toContainEqual({
+        provider: 'proofpoint',
+        message: 'Proofpoint status is unavailable from this Relay server.',
+      }),
+    );
+    expect(result.current.statusData?.providers.dynatrace).toEqual([]);
+    expect(result.current.statusData?.providers.proofpoint).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'crowdstrike',
+      message: 'CrowdStrike status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -429,7 +492,64 @@ describe('useAppCloudStatus', () => {
     expect(openProvider).toHaveBeenCalledWith('dynatrace');
   });
 
-  it('normalizes a pre-partition secure-storage cache to unavailable Mist and Dynatrace', async () => {
+  it('routes a new Proofpoint enterprise outage through the cloud notification queue', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([proofpointItem()]))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'Proofpoint Outage: Proofpoint service interruption',
+        'error',
+        expect.objectContaining({ delivery: 'cloud-outage' }),
+      ),
+    );
+    showToast.mock.calls[0]?.[2]?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('proofpoint');
+  });
+
+  it('routes a new third-party CrowdStrike outage through the cloud notification queue', async () => {
+    collectionState.data = [snapshot(status())];
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast, openProvider));
+    await act(async () => Promise.resolve());
+
+    collectionState.data = [snapshot(status([crowdstrikeItem()]))];
+    rerender();
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'CrowdStrike Outage: CrowdStrike outage reported by StatusGator',
+        'error',
+        expect.objectContaining({ delivery: 'cloud-outage' }),
+      ),
+    );
+    showToast.mock.calls[0]?.[2]?.action?.onClick();
+    expect(openProvider).toHaveBeenCalledWith('crowdstrike');
+  });
+
+  it('shows a CrowdStrike warning without ever creating a degradation toast', async () => {
+    collectionState.data = [snapshot(status())];
+    const { result, rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = crowdstrikeItem({
+      id: 'crowdstrike-statusgator-warning',
+      severity: 'warning',
+      title: 'Possible CrowdStrike disruption reported by StatusGator',
+    });
+
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 10_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 70_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
+    await publishStatus(rerender, { ...status([warning]), lastUpdated: 190_000 });
+
+    expect(result.current.statusData?.providers.crowdstrike).toEqual([warning]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a pre-partition cache to unavailable Mist and extension providers', async () => {
     const oldProviders = emptyLegacyCloudStatusProviders();
     secureStorageMock.setItemSync('cached_cloud_status', {
       fetchedAt: Date.now(),
@@ -438,9 +558,11 @@ describe('useAppCloudStatus', () => {
 
     const { result } = renderHook(() => useAppCloudStatus(showToast));
 
-    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(5));
+    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(7));
     expect(result.current.statusData?.providers.mist_federal).toEqual([]);
     expect(result.current.statusData?.providers.dynatrace).toEqual([]);
+    expect(result.current.statusData?.providers.proofpoint).toEqual([]);
+    expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 

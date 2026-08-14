@@ -236,40 +236,37 @@ describe('windowHandlers', () => {
       expect(result).toBe(true);
     });
 
-    it('opens exact-host Mist notice URLs and blocks lookalike hosts', async () => {
-      await expect(
-        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'https://status.mist.com/notices/example'),
-      ).resolves.toBe(true);
-      await expect(
-        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
-          {},
-          'https://status.mist.com.evil.example/notices/example',
-        ),
-      ).resolves.toBe(false);
-
-      expect(shell.openExternal).toHaveBeenCalledOnce();
-      expect(shell.openExternal).toHaveBeenCalledWith('https://status.mist.com/notices/example');
-    });
-
-    it('opens exact-host Dynatrace Status.io URLs and blocks lookalike hosts', async () => {
-      await expect(
-        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
-          {},
-          'https://dynatrace.status.io/pages/incident/example',
-        ),
-      ).resolves.toBe(true);
-      await expect(
-        getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
-          {},
-          'https://dynatrace.status.io.evil.example/pages/incident/example',
-        ),
-      ).resolves.toBe(false);
-
-      expect(shell.openExternal).toHaveBeenCalledOnce();
-      expect(shell.openExternal).toHaveBeenCalledWith(
+    it.each([
+      [
+        'Mist notice',
+        'https://status.mist.com/notices/example',
+        'https://status.mist.com.evil.example/notices/example',
+      ],
+      [
+        'Dynatrace Status.io',
         'https://dynatrace.status.io/pages/incident/example',
-      );
-    });
+        'https://dynatrace.status.io.evil.example/pages/incident/example',
+      ],
+      [
+        'Proofpoint incident',
+        'https://proofpoint.my.site.com/community/s/article/example',
+        'https://proofpoint.my.site.com.evil.example/community/s/article/example',
+      ],
+      [
+        'CrowdStrike support',
+        'https://supportportal.crowdstrike.com/s/get-help',
+        'https://supportportal.crowdstrike.com.evil.example/s/get-help',
+      ],
+    ])(
+      'opens exact-host %s URLs and blocks lookalike hosts',
+      async (_label, trusted, lookalike) => {
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, trusted)).resolves.toBe(true);
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, lookalike)).resolves.toBe(false);
+
+        expect(shell.openExternal).toHaveBeenCalledOnce();
+        expect(shell.openExternal).toHaveBeenCalledWith(trusted);
+      },
+    );
 
     it('opens the fixed Dispatcher Radar intranet URL and returns true', async () => {
       const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, RADAR_URL);

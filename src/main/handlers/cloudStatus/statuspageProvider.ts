@@ -72,6 +72,8 @@ export async function fetchStatuspageProvider(
     severity: statuspageImpactToSeverity(inc.impact, inc.status),
   }));
 
+  if (provider === 'cloudflare' && incidents.length === 0) return [];
+
   if (incidents.length > 0 || !json.status || json.status.indicator === 'none') {
     return incidents;
   }

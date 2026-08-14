@@ -21,6 +21,7 @@ import { HeaderSearch } from './components/HeaderSearch';
 import { AlertReminderManager } from './components/AlertReminderManager';
 import { DynatraceProblemNotificationManager } from './components/DynatraceProblemNotificationManager';
 import { RadarQueueNotificationManager } from './components/RadarQueueNotificationManager';
+import { ReleaseUpdateNotificationManager } from './components/ReleaseUpdateNotificationManager';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
@@ -592,6 +593,10 @@ export function MainApp({
 
         <ErrorBoundary fallback={null}>
           <AlertReminderManager />
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={null}>
+          <ReleaseUpdateNotificationManager />
         </ErrorBoundary>
 
         <ErrorBoundary fallback={null}>

@@ -41,13 +41,14 @@ function data(items: CloudStatusItem[] = []): CloudStatusData {
 function issue(
   severity: CloudStatusItem['severity'],
   provider: CloudStatusItem['provider'] = 'aws',
+  pubDate = new Date(Date.now()).toISOString(),
 ): CloudStatusItem {
   return {
     id: 'issue-1',
     provider,
     title: 'Service event',
     description: '',
-    pubDate: '2026-07-10T18:00:00.000Z',
+    pubDate,
     link: '',
     severity,
   };
@@ -96,6 +97,25 @@ describe('CloudStatusManager', () => {
     await flushRefresh();
     await vi.advanceTimersByTimeAsync(DEGRADED_CLOUD_STATUS_INTERVAL_MS);
 
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    manager.stop();
+  });
+
+  it('keeps the healthy cadence when a retained issue is older than seven days', async () => {
+    const stalePublishedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 1).toISOString();
+    const fetchStatus = vi
+      .fn()
+      .mockResolvedValue(data([issue('warning', 'aws', stalePublishedAt)]));
+    const manager = new CloudStatusManager(() => pb, fetchStatus);
+
+    manager.start();
+    await flushRefresh();
+    await vi.advanceTimersByTimeAsync(DEGRADED_CLOUD_STATUS_INTERVAL_MS);
+
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(
+      HEALTHY_CLOUD_STATUS_INTERVAL_MS - DEGRADED_CLOUD_STATUS_INTERVAL_MS,
+    );
     expect(fetchStatus).toHaveBeenCalledTimes(2);
     manager.stop();
   });
@@ -200,6 +220,8 @@ describe('CloudStatusManager', () => {
     expect(mistPayload.providers).not.toHaveProperty('dynatrace');
     expect(extensionPayload.providers).toEqual({
       dynatrace: [expect.objectContaining({ provider: 'dynatrace' })],
+      proofpoint: [],
+      crowdstrike: [],
     });
   });
 

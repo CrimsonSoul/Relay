@@ -62,6 +62,13 @@ commit. The reusable Windows job must still pass its native dependency build, pe
 smoke test, packaged startup benchmark, and isolated boundary harness. The release then publishes
 `Relay-vX.Y.Z-windows-x64.exe` and its SHA-256 file as a normal latest release with generated notes.
 
+The injected package version is also the installed version shown under **Settings > About**. Desktop
+Relay checks GitHub's latest public normal release at startup and no more than once every six hours
+while running. When a newer `vX.Y.Z` release exists, Relay shows one advisory notification per
+version with a **View release** action. The action opens the fixed Relay Releases page; Relay does not
+download or install updates. Relay Web does not perform this desktop release check, and a failed or
+malformed GitHub response remains silent so update discovery cannot interrupt normal operations.
+
 Release runs queue instead of cancelling one another. A rerun verifies a complete release already
 attached to the exact commit and does not duplicate it; a missing release or asset is rebuilt and
 completed under the existing tag. Do not publish through a local npm script or tag a commit outside

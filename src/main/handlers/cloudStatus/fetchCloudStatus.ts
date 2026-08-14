@@ -1,9 +1,11 @@
 import {
   CLOUD_STATUS_PROVIDERS,
+  EXTENSION_CLOUD_STATUS_PROVIDER_ORDER,
   LEGACY_CLOUD_STATUS_PROVIDER_ORDER,
   MIST_CLOUD_STATUS_PROVIDER_ORDER,
   type CloudStatusData,
   type CloudStatusItem,
+  type ExtensionCloudStatusProvider,
   type LegacyCloudStatusProvider,
 } from '@shared/ipc';
 import { emptyCloudStatusProviders, setCloudStatusProviderItems } from '@shared/cloudStatus';
@@ -19,7 +21,7 @@ import { STATUSPAGE_FEEDS, fetchStatuspageProvider } from './statuspageProvider'
 
 export { emptyCloudStatusProviders } from '@shared/cloudStatus';
 
-function fetchProvider(provider: LegacyCloudStatusProvider): Promise<CloudStatusItem[]> {
+function fetchLegacyProvider(provider: LegacyCloudStatusProvider): Promise<CloudStatusItem[]> {
   const rssUrl = RSS_FEEDS[provider];
   if (rssUrl) return fetchRssProvider(rssUrl, provider);
 
@@ -31,20 +33,36 @@ function fetchProvider(provider: LegacyCloudStatusProvider): Promise<CloudStatus
   return Promise.resolve([]);
 }
 
+function fetchExtensionProvider(
+  provider: ExtensionCloudStatusProvider,
+): Promise<CloudStatusItem[]> {
+  switch (provider) {
+    case 'dynatrace':
+      return fetchDynatraceStatusProvider();
+    case 'proofpoint':
+      return import('./proofpointProvider').then(({ fetchProofpointProvider }) =>
+        fetchProofpointProvider(),
+      );
+    case 'crowdstrike':
+      return import('./crowdstrikeProvider').then(({ fetchCrowdStrikeProvider }) =>
+        fetchCrowdStrikeProvider(),
+      );
+  }
+}
+
 export async function fetchCloudStatusData(
   previous?: CloudStatusData | null,
 ): Promise<CloudStatusData> {
-  const [legacyResults, mistResult, dynatraceResult] = await Promise.all([
+  const [legacyResults, mistResult, extensionResults] = await Promise.all([
     Promise.allSettled(
-      LEGACY_CLOUD_STATUS_PROVIDER_ORDER.map((provider) => fetchProvider(provider)),
+      LEGACY_CLOUD_STATUS_PROVIDER_ORDER.map((provider) => fetchLegacyProvider(provider)),
     ),
     fetchMistProviderGroup().then(
       (value) => ({ status: 'fulfilled', value }) as const,
       (reason: unknown) => ({ status: 'rejected', reason }) as const,
     ),
-    fetchDynatraceStatusProvider().then(
-      (value) => ({ status: 'fulfilled', value }) as const,
-      (reason: unknown) => ({ status: 'rejected', reason }) as const,
+    Promise.allSettled(
+      EXTENSION_CLOUD_STATUS_PROVIDER_ORDER.map((provider) => fetchExtensionProvider(provider)),
     ),
   ]);
   const providers = { ...(previous?.providers ?? emptyCloudStatusProviders()) };
@@ -81,12 +99,16 @@ export async function fetchCloudStatusData(
     });
   }
 
-  if (dynatraceResult.status === 'fulfilled') {
-    setCloudStatusProviderItems(providers, 'dynatrace', dynatraceResult.value);
-  } else {
-    const message = truncateError(dynatraceResult.reason);
-    errors.push({ provider: 'dynatrace', message });
-    loggers.cloudStatus.warn('Dynatrace status feed failed', {
+  for (let index = 0; index < EXTENSION_CLOUD_STATUS_PROVIDER_ORDER.length; index += 1) {
+    const provider = EXTENSION_CLOUD_STATUS_PROVIDER_ORDER[index]!;
+    const result = extensionResults[index]!;
+    if (result.status === 'fulfilled') {
+      setCloudStatusProviderItems(providers, provider, result.value);
+      continue;
+    }
+    const message = truncateError(result.reason);
+    errors.push({ provider, message });
+    loggers.cloudStatus.warn(`${CLOUD_STATUS_PROVIDERS[provider].label} status feed failed`, {
       error: message,
       category: ErrorCategory.NETWORK,
     });

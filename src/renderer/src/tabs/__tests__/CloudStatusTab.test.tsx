@@ -72,11 +72,16 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
     expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
-    expect(screen.getAllByText('Unknown')).toHaveLength(12);
+    expect(screen.getAllByText('Unknown')).toHaveLength(14);
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
     expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
     expect(screen.queryByText('No active vendor issues')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
+    for (const region of ['Global', 'EMEA', 'APAC', 'Federal']) {
+      expect(screen.getByRole('button', { name: `${region} Unknown` })).toBeInTheDocument();
+    }
   });
 
   it('keeps a two-column provider overview without a global active-issues pane', () => {
@@ -94,14 +99,14 @@ describe('CloudStatusTab', () => {
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(12);
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(14);
     expect(
       screen.getByRole('button', { name: 'View AWS status details' }),
     ).toHaveAccessibleDescription('Operational No active issues');
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
-  it('renders one Mist row and one Dynatrace row immediately after Cloudflare', () => {
+  it('renders one Proofpoint row and keeps the combined Mist and Dynatrace rows', () => {
     const { container } = render(
       <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
     );
@@ -114,6 +119,8 @@ describe('CloudStatusTab', () => {
       'AWS',
       'Azure',
       'Microsoft 365',
+      'Proofpoint',
+      'CrowdStrike',
       'Jira',
       'GitHub',
       'Cloudflare',
@@ -124,7 +131,10 @@ describe('CloudStatusTab', () => {
       'ChatGPT',
       'Salesforce',
     ]);
-    expect(screen.getByText('across 12 monitored providers')).toBeInTheDocument();
+    expect(screen.getByText('across 14 monitored providers')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View Proofpoint status details' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'View Juniper Mist status details' }),
     ).toBeInTheDocument();
@@ -145,7 +155,92 @@ describe('CloudStatusTab', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('deduplicates Mist regions and shows affected scopes for Mist and Dynatrace', () => {
+  it('shows Proofpoint as one outage-focused provider with its affected products', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        proofpoint: [
+          makeItem({
+            id: '000026896',
+            provider: 'proofpoint',
+            title: 'Proofpoint service interruption',
+            description: 'Mail flow and portal access may be unavailable.',
+            link: 'https://proofpoint.my.site.com/community/s/article/example',
+            affectedScopes: ['Proofpoint Essentials', 'Email Protection'],
+          }),
+        ],
+      },
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    const proofpointButton = screen.getByRole('button', {
+      name: 'View Proofpoint status details',
+    });
+    expect(proofpointButton).toHaveAccessibleDescription('Outage 1 active issue');
+    fireEvent.click(proofpointButton);
+
+    expect(screen.getByText('Proofpoint service interruption')).toBeInTheDocument();
+    expect(screen.getByText('Proofpoint Essentials · Email Protection')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View official status' }));
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://proofpoint.my.site.com/community/s/article/example',
+    );
+    expect(
+      screen.queryByRole('button', { name: /Open Proofpoint on (?:X|Downdetector)/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('labels CrowdStrike as third-party and separates StatusGator from official support', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        crowdstrike: [
+          makeItem({
+            id: 'crowdstrike-statusgator-down',
+            provider: 'crowdstrike',
+            title: 'CrowdStrike outage reported by StatusGator',
+            description: 'CrowdStrike is currently down.',
+            link: 'https://statusgator.com/services/crowdstrike',
+          }),
+        ],
+      },
+    });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    const crowdstrikeRow = screen
+      .getByRole('button', { name: 'View CrowdStrike status details' })
+      .closest('.cloud-status-provider');
+    expect(crowdstrikeRow).toHaveTextContent('Third-party');
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
+        (node) => node.textContent,
+      ),
+    ).toContain('CrowdStrike');
+
+    fireEvent.click(screen.getByRole('button', { name: 'View CrowdStrike status details' }));
+
+    expect(
+      screen.getByText('Status supplied by StatusGator, not CrowdStrike.'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open CrowdStrike on StatusGator' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open CrowdStrike official support portal' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open CrowdStrike on Downdetector' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View StatusGator report' }));
+
+    expect(openExternal).toHaveBeenNthCalledWith(1, 'https://statusgator.com/services/crowdstrike');
+    expect(openExternal).toHaveBeenNthCalledWith(
+      2,
+      'https://supportportal.crowdstrike.com/s/get-help',
+    );
+    expect(openExternal).toHaveBeenNthCalledWith(3, 'https://downdetector.com/status/crowdstrike/');
+    expect(openExternal).toHaveBeenNthCalledWith(4, 'https://statusgator.com/services/crowdstrike');
+  });
+
+  it('deduplicates Mist regions and filters its detail view by regional posture', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -163,6 +258,14 @@ describe('CloudStatusTab', () => {
             title: 'Mist login outage',
           }),
         ],
+        mist_emea: [
+          makeItem({
+            id: 'mist-2',
+            provider: 'mist_emea',
+            title: 'Mist EMEA packet loss',
+            severity: 'warning',
+          }),
+        ],
         dynatrace: [
           makeItem({
             id: 'dynatrace-1',
@@ -178,6 +281,25 @@ describe('CloudStatusTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
     expect(screen.getAllByText('Mist login outage')).toHaveLength(1);
     expect(screen.getByText('Global · APAC')).toBeInTheDocument();
+    expect(screen.getByText('Mist EMEA packet loss')).toBeInTheDocument();
+    const regionGroup = screen.getByRole('group', { name: 'Juniper Mist regions' });
+    expect(regionGroup).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All Outage' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Global Outage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'EMEA Degraded' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'APAC Outage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Federal Operational' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'EMEA Degraded' }));
+    expect(screen.queryByText('Mist login outage')).not.toBeInTheDocument();
+    expect(screen.getByText('Mist EMEA packet loss')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Federal Operational' }));
+    expect(screen.queryByText('Mist EMEA packet loss')).not.toBeInTheDocument();
+    expect(screen.getByText('No active issues for Juniper Mist Federal')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
     fireEvent.click(screen.getByRole('button', { name: 'View Dynatrace status details' }));
@@ -459,7 +581,7 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
   });
 
-  it('orders outage providers before degraded, unknown, and operational providers', () => {
+  it('orders outage providers before unknown, degraded, and operational providers', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -478,7 +600,43 @@ describe('CloudStatusTab', () => {
       Array.from(container.querySelectorAll('.cloud-status-provider__name'))
         .slice(0, 4)
         .map((node) => node.textContent),
-    ).toEqual(['Azure', 'Cloudflare', 'GitHub', 'AWS']);
+    ).toEqual(['Azure', 'GitHub', 'Cloudflare', 'AWS']);
+  });
+
+  it('shows stale degradation as unknown when the latest provider fetch failed', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        cloudflare: [
+          makeItem({ provider: 'cloudflare', severity: 'warning', title: 'Last known latency' }),
+        ],
+      },
+      errors: [{ provider: 'cloudflare', message: 'fetch failed' }],
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(
+      screen.getByRole('button', { name: 'View Cloudflare status details' }),
+    ).toHaveAccessibleDescription('Unknown 1 active issue');
+    expect(screen.getByText('Coverage incomplete')).toBeInTheDocument();
+    expect(screen.getByTestId('status-bar')).toHaveTextContent('coverage incomplete');
+    expect(screen.getByTestId('status-bar')).not.toHaveTextContent('degraded issue');
+  });
+
+  it('keeps a confirmed outage visible when the latest provider fetch failed', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        proofpoint: [makeItem({ provider: 'proofpoint', severity: 'error' })],
+      },
+      errors: [{ provider: 'proofpoint', message: 'fetch failed' }],
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(
+      screen.getByRole('button', { name: 'View Proofpoint status details' }),
+    ).toHaveAccessibleDescription('Outage 1 active issue');
+    expect(screen.getByText('1 active outage')).toBeInTheDocument();
   });
 
   it('shows provider issue details and opens the incident source', () => {
@@ -568,7 +726,7 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '12 providers monitored · 1 active outage · 1 degraded issue',
+      '14 providers monitored · 1 active outage · 1 degraded issue',
     );
   });
 });

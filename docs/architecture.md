@@ -118,20 +118,37 @@ Desktop clients and Relay Web sessions write bounded heartbeat records. Server m
 active client records and presents their sanitized host/browser labels; the server itself is not
 counted. Presence is operational status, not an authorization mechanism.
 
+### Release discovery
+
+The packaged Electron version is the installed version shown in Settings and the comparison source
+for update discovery. The main process owns a bounded, credential-free request to GitHub's fixed
+latest-release endpoint. It accepts only a published, non-prerelease `vX.Y.Z` release, limits the
+response size and request duration, rejects redirects and malformed data, and caches a successful
+result for six hours. Trusted IPC exposes only the installed version, the normalized comparison
+result, and an action that opens Relay's fixed Releases page.
+
+The desktop renderer checks on startup and every six hours while running. A newer normal release
+produces one advisory toast per version, persisted in local renderer storage, with a **View release**
+action. It never downloads or installs an update. Failures are silent outside main-process logs and
+do not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop
+notification.
+
 ### Service Status
 
-`src/main/handlers/cloudStatus/CloudStatusManager.ts` polls official status sources and owns one
-combined in-memory view. Persistence remains split for compatibility:
+`src/main/handlers/cloudStatus/CloudStatusManager.ts` polls approved public status sources and owns
+one combined in-memory view. Provider groups run concurrently with bounded ten-second requests.
+Persistence remains split for compatibility:
 
 - `cloud_status_snapshot` keeps the original ten-provider contract.
 - `cloud_status_mist_snapshot` contains four Juniper Mist region rows.
-- `cloud_status_extension_snapshot` contains post-compatibility providers, beginning with Dynatrace.
+- `cloud_status_extension_snapshot` contains post-compatibility providers: Dynatrace, Proofpoint,
+  and CrowdStrike.
 
 Updated clients merge all three records. Older clients retain the original or original-plus-Mist
 shapes, and updated clients connected to an older server keep missing Mist or extension providers
 visible as Unknown without creating false outage alerts.
 
-#### Dynatrace and Mist roll-up
+#### Provider roll-up and dedicated adapters
 
 The extension partition is reusable for later providers. Updated clients merge every available
 partition; older clients retain the original and Mist shapes, while an updated client connected to
@@ -142,21 +159,42 @@ The public API and persisted snapshots retain the raw provider buckets, while a 
 layer owns the operator-facing provider list. It deduplicates the same Mist incident across regional
 buckets, unions its affected regions, and presents one `Juniper Mist` row. Dynatrace is a single
 display provider; its dedicated Status.io adapter maps affected cloud and region containers into the
-same bounded affected-scope metadata. Service Status presents twelve rows: the original ten
-providers, Juniper Mist, and Dynatrace.
+same bounded affected-scope metadata. Proofpoint is also one display provider. Its dedicated adapter
+uses Proofpoint's public enterprise current-incidents flow, validates the Salesforce response and
+official article URLs, and maps products marked `Currently Impacted` into affected scopes. Service
+Status presents fourteen rows: the original ten providers, Juniper Mist, Dynatrace, Proofpoint, and
+CrowdStrike. Mist details expose All, Global, EMEA, APAC, and Federal filters while preserving the
+single overview row and deduplicated All view.
 
-Roll-up posture uses the worst current availability state: outage, degraded, unknown, then
-operational. Status.io degraded performance maps to degraded, while partial and full service
+CrowdStrike has no unauthenticated official status feed in this integration. Its dedicated adapter
+reads the bounded public StatusGator service page and anchors parsing to the CrowdStrike status
+heading rather than unrelated page copy. Operational and maintenance states produce no active
+record, warning produces a third-party degradation, and down produces a third-party outage. The UI
+labels StatusGator as the source and keeps CrowdStrike's official support portal as a separate
+action. Downdetector remains a manual outbound link and never enters automated posture.
+
+Roll-up posture uses the worst current availability state: outage, unknown, degraded, then
+operational. A confirmed outage remains visible through a feed failure, but feed uncertainty
+outranks a retained degradation so stale warning data cannot look current. Status.io degraded
+performance maps to degraded, while partial and full service
 disruptions map to outage. Planned maintenance, closed incidents, security-only notices, stale
 records, and operational monitoring updates do not enter the active issue list. A failed feed keeps
 the last good snapshot and marks only its display provider Unknown; a partial Mist component
-failure cannot manufacture an outage.
+failure cannot manufacture an outage. An authoritative empty Proofpoint current-incidents table
+clears its prior outage state; malformed, oversized, or failed responses retain the last confirmed
+state and add a provider feed error.
+
+AWS RSS entries older than seven days are discarded before persistence and cannot accelerate the
+polling cadence. Cloudflare requires an active incident before component-only aggregate status can
+create an issue, preventing partial or maintenance component metadata from contradicting an
+otherwise operational public page.
 
 Cloud notifications consume the display aggregation rather than the raw regional buckets, so a Mist
-incident produces one stable notification regardless of how many regions it affects. Dynatrace
-public-status incidents use normal cloud-notification priority. The separate Dynatrace Problems
-notification manager remains authoritative for tenant problems and keeps priority over cloud
-notifications.
+incident produces one stable notification regardless of how many regions it affects. Dynatrace and
+Proofpoint public-status incidents use normal cloud-notification priority. A CrowdStrike outage uses
+that same queue but retains its StatusGator attribution; CrowdStrike warnings are visible as
+degraded without generating a toast. The separate Dynatrace Problems notification manager remains
+authoritative for tenant problems and keeps priority over cloud notifications.
 
 ### Dispatcher Radar
 

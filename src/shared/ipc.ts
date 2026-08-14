@@ -24,6 +24,7 @@ import type {
 import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
 import type { OfflineWritableCollection } from './offlineCollections';
 import type { RelayRuntimeDescriptor } from './runtime';
+import type { RelayUpdateCheck } from './releases';
 
 export {
   OFFLINE_WRITABLE_COLLECTIONS,
@@ -214,17 +215,23 @@ export const MIST_CLOUD_STATUS_PROVIDER_ORDER = [
   'mist_federal',
 ] as const;
 
-export const EXTENSION_CLOUD_STATUS_PROVIDER_ORDER = ['dynatrace'] as const;
+export const EXTENSION_CLOUD_STATUS_PROVIDER_ORDER = [
+  'dynatrace',
+  'proofpoint',
+  'crowdstrike',
+] as const;
 
 export const CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
   'azure',
   'm365',
+  'proofpoint',
+  'crowdstrike',
   'jira',
   'github',
   'cloudflare',
   ...MIST_CLOUD_STATUS_PROVIDER_ORDER,
-  ...EXTENSION_CLOUD_STATUS_PROVIDER_ORDER,
+  'dynatrace',
   'google',
   'anthropic',
   'openai',
@@ -355,6 +362,8 @@ export const CLOUD_STATUS_PROVIDERS: Record<
     label: string;
     shortLabel?: string;
     statusUrl: string;
+    statusSourceLabel?: string;
+    officialSupportUrl?: string;
     twitterHandle?: string;
     downdetectorSlug?: string;
   }
@@ -377,6 +386,17 @@ export const CLOUD_STATUS_PROVIDERS: Record<
     statusUrl: 'https://status.cloud.microsoft',
     twitterHandle: 'MSFT365Status',
     downdetectorSlug: 'microsoft-365',
+  },
+  proofpoint: {
+    label: 'Proofpoint',
+    statusUrl: 'https://proofpoint.my.site.com/community/s/proofpoint-current-incidents',
+  },
+  crowdstrike: {
+    label: 'CrowdStrike',
+    statusUrl: 'https://statusgator.com/services/crowdstrike',
+    statusSourceLabel: 'StatusGator',
+    officialSupportUrl: 'https://supportportal.crowdstrike.com/s/get-help',
+    downdetectorSlug: 'crowdstrike',
   },
   jira: {
     label: 'Jira',
@@ -578,6 +598,10 @@ export type BridgeAPI = {
   getStartupState?: () => Promise<StartupSnapshot>;
   onStartupStateChanged?: (callback: (snapshot: StartupSnapshot) => void) => () => void;
   markStartupRendererMounted?: () => void;
+  /** Desktop-only packaged application version and GitHub release discovery. */
+  getAppVersion?: () => Promise<string | null>;
+  checkForUpdates?: () => Promise<IpcResult<RelayUpdateCheck>>;
+  openReleasesPage?: () => Promise<boolean>;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
   openExternal: (url: string) => Promise<boolean>;
   /** Opens an operator-selected HTTPS ticket link through the narrower Service Desk capability. */
@@ -792,6 +816,9 @@ export const IPC_CHANNELS = {
   STARTUP_GET_STATE: 'startup:getState',
   STARTUP_STATE_CHANGED: 'startup:stateChanged',
   STARTUP_RENDERER_MOUNTED: 'startup:rendererMounted',
+  APP_GET_VERSION: 'app:getVersion',
+  APP_CHECK_FOR_UPDATES: 'app:checkForUpdates',
+  APP_OPEN_RELEASES: 'app:openReleases',
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',

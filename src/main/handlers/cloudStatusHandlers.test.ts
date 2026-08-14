@@ -155,39 +155,40 @@ describe('cloudStatusHandlers', () => {
   // --- RSS parsing & severity inference ---
 
   it('parses RSS items and infers severity from status tag', async () => {
+    const currentPubDate = new Date().toISOString();
     const xml = rssXml([
       {
         title: 'Issue 1',
         description: 'Outage desc',
-        pubDate: '2026-02-28T10:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g1',
         status: 'unavailable',
       },
       {
         title: 'Issue 2',
         description: 'Advisory',
-        pubDate: '2026-02-28T11:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g2',
         status: 'advisory',
       },
       {
         title: 'Restored',
         description: 'Back up',
-        pubDate: '2026-02-28T12:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g3',
         status: 'resolved',
       },
       {
         title: 'Normal',
         description: 'OK',
-        pubDate: '2026-02-28T09:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g4',
         status: 'available',
       },
       {
         title: 'Degraded',
         description: 'Slow',
-        pubDate: '2026-02-28T09:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g5',
         status: 'degraded',
       },
@@ -213,26 +214,27 @@ describe('cloudStatusHandlers', () => {
   });
 
   it('infers severity from text content when no status tag', async () => {
+    const currentPubDate = new Date().toISOString();
     const xml = rssXml([
       {
         title: 'Major outage in us-east-1',
         description: '',
-        pubDate: '2026-02-28T10:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g1',
       },
       {
         title: 'Normal service',
         description: 'resolved and operating normally',
-        pubDate: '2026-02-28T11:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g2',
       },
       {
         title: 'Elevated errors',
         description: 'intermittent failures',
-        pubDate: '2026-02-28T12:00:00Z',
+        pubDate: currentPubDate,
         guid: 'g3',
       },
-      { title: 'Update', description: 'general info', pubDate: '2026-02-28T09:00:00Z', guid: 'g4' },
+      { title: 'Update', description: 'general info', pubDate: currentPubDate, guid: 'g4' },
     ]);
 
     globalThis.fetch = vi.fn().mockResolvedValue({
