@@ -88,7 +88,7 @@ export function parseCrowdStrikeStatusGatorPage(
       },
     ];
   }
-  if (!status || status.heading !== 'CrowdStrike is down') {
+  if (status?.heading !== 'CrowdStrike is down') {
     throw new Error('Invalid CrowdStrike StatusGator response');
   }
   return [

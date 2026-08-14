@@ -284,6 +284,7 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('Mist EMEA packet loss')).toBeInTheDocument();
     const regionGroup = screen.getByRole('group', { name: 'Juniper Mist regions' });
     expect(regionGroup).toBeInTheDocument();
+    expect(regionGroup.tagName).toBe('FIELDSET');
     expect(screen.getByRole('button', { name: 'All Outage' })).toHaveAttribute(
       'aria-pressed',
       'true',

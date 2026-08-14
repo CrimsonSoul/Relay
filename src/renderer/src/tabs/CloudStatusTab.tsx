@@ -509,11 +509,8 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
         </div>
 
         {selectedProvider === 'mist' && (
-          <div
-            className="cloud-status__region-filter"
-            role="group"
-            aria-label="Juniper Mist regions"
-          >
+          <fieldset className="cloud-status__region-filter">
+            <legend className="sr-only">Juniper Mist regions</legend>
             {[{ provider: 'all' as const, label: 'All' }, ...DISPLAY_MIST_REGION_OPTIONS].map(
               (region) => {
                 const regionPosture = postureForMistRegion(region.provider);
@@ -535,7 +532,7 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
                 );
               },
             )}
-          </div>
+          </fieldset>
         )}
 
         {selectedIssues.length > 0 ? (
