@@ -10,6 +10,8 @@ const providerMocks = vi.hoisted(() => ({
   rss: vi.fn(),
   statuspage: vi.fn(),
   google: vi.fn(),
+  crowdstrike: vi.fn(),
+  proofpoint: vi.fn(),
   salesforce: vi.fn(),
   mist: vi.fn(),
   dynatrace: vi.fn(),
@@ -36,6 +38,8 @@ vi.mock('./statuspageProvider', () => ({
 }));
 
 vi.mock('./googleProvider', () => ({ fetchGoogleCloudProvider: providerMocks.google }));
+vi.mock('./crowdstrikeProvider', () => ({ fetchCrowdStrikeProvider: providerMocks.crowdstrike }));
+vi.mock('./proofpointProvider', () => ({ fetchProofpointProvider: providerMocks.proofpoint }));
 vi.mock('./salesforceProvider', () => ({ fetchSalesforceProvider: providerMocks.salesforce }));
 vi.mock('./mistProvider', () => ({ fetchMistProviderGroup: providerMocks.mist }));
 vi.mock('./dynatraceStatusProvider', () => ({
@@ -67,6 +71,8 @@ beforeEach(() => {
   providerMocks.rss.mockResolvedValue([]);
   providerMocks.statuspage.mockResolvedValue([]);
   providerMocks.google.mockResolvedValue([]);
+  providerMocks.crowdstrike.mockResolvedValue([]);
+  providerMocks.proofpoint.mockResolvedValue([]);
   providerMocks.salesforce.mockResolvedValue([]);
   providerMocks.mist.mockResolvedValue({
     providers: emptyMistCloudStatusProviders(),
@@ -76,6 +82,54 @@ beforeEach(() => {
 });
 
 describe('fetchCloudStatusData', () => {
+  it('fetches the third-party CrowdStrike signal into its extension bucket', async () => {
+    const crowdstrike = item('crowdstrike', 'crowdstrike-statusgator-down');
+    providerMocks.crowdstrike.mockResolvedValue([crowdstrike]);
+
+    const result = await fetchCloudStatusData();
+
+    expect(providerMocks.crowdstrike).toHaveBeenCalledOnce();
+    expect(result.providers.crowdstrike).toEqual([crowdstrike]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('retains the last CrowdStrike signal when StatusGator is unavailable', async () => {
+    const previous = item('crowdstrike', 'previous-crowdstrike');
+    providerMocks.crowdstrike.mockRejectedValue(new Error('StatusGator unavailable'));
+
+    const result = await fetchCloudStatusData(previousStatus([previous]));
+
+    expect(result.providers.crowdstrike).toEqual([previous]);
+    expect(result.errors).toContainEqual({
+      provider: 'crowdstrike',
+      message: 'StatusGator unavailable',
+    });
+  });
+
+  it('fetches Proofpoint current incidents into its dedicated provider bucket', async () => {
+    const proofpoint = item('proofpoint', 'proofpoint-1');
+    providerMocks.proofpoint.mockResolvedValue([proofpoint]);
+
+    const result = await fetchCloudStatusData();
+
+    expect(providerMocks.proofpoint).toHaveBeenCalledOnce();
+    expect(result.providers.proofpoint).toEqual([proofpoint]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('retains the last confirmed Proofpoint outage when its feed fails', async () => {
+    const previous = item('proofpoint', 'previous-proofpoint');
+    providerMocks.proofpoint.mockRejectedValue(new Error('Proofpoint unavailable'));
+
+    const result = await fetchCloudStatusData(previousStatus([previous]));
+
+    expect(result.providers.proofpoint).toEqual([previous]);
+    expect(result.errors).toContainEqual({
+      provider: 'proofpoint',
+      message: 'Proofpoint unavailable',
+    });
+  });
+
   it('merges the Dynatrace public-status result into the extension bucket', async () => {
     const dynatrace = item('dynatrace', 'dynatrace-1');
     providerMocks.dynatrace.mockResolvedValue([dynatrace]);

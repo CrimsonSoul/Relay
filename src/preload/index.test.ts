@@ -50,6 +50,20 @@ describe('preload Knowledge web link bridge', () => {
     expect(api.runtime).toEqual(ELECTRON_RUNTIME);
   });
 
+  it('exposes only dedicated application release actions', async () => {
+    expect(api.getAppVersion).toBeTypeOf('function');
+    expect(api.checkForUpdates).toBeTypeOf('function');
+    expect(api.openReleasesPage).toBeTypeOf('function');
+
+    await api.getAppVersion!();
+    await api.checkForUpdates!();
+    await api.openReleasesPage!();
+
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'app:getVersion');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'app:checkForUpdates');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'app:openReleases');
+  });
+
   it('uses the dedicated Service Desk URL channel', async () => {
     const url = 'https://servicedesk.example.com/incidents/INC0012345';
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { downdetectorUrl, type CloudStatusData } from '@shared/ipc';
+import { downdetectorUrl, type CloudStatusData, type MistCloudStatusProvider } from '@shared/ipc';
 import { ProviderIcon } from '../components/icons/ProviderIcons';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
@@ -10,11 +10,13 @@ import {
   aggregateCloudStatusForDisplay,
   DISPLAY_CLOUD_STATUS_PROVIDER_ORDER,
   DISPLAY_CLOUD_STATUS_PROVIDERS,
+  DISPLAY_MIST_REGION_OPTIONS,
   type DisplayCloudStatusItem,
   type DisplayCloudStatusProvider,
 } from '../utils/cloudStatusDisplay';
 
 type ProviderPosture = 'outage' | 'degraded' | 'unknown' | 'clear';
+type MistRegionFilter = 'all' | MistCloudStatusProvider;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
 function timeAgo(dateStr: string): string {
@@ -61,8 +63,8 @@ function providerPosture(
   hasFeedError: boolean,
 ): ProviderPosture {
   if (hasOutage) return 'outage';
-  if (hasDegradation) return 'degraded';
   if (hasFeedError) return 'unknown';
+  if (hasDegradation) return 'degraded';
   return 'clear';
 }
 
@@ -75,8 +77,8 @@ function postureLabel(posture: ProviderPosture): string {
 
 function postureRank(posture: ProviderPosture): number {
   if (posture === 'outage') return 0;
-  if (posture === 'degraded') return 1;
-  if (posture === 'unknown') return 2;
+  if (posture === 'unknown') return 1;
+  if (posture === 'degraded') return 2;
   return 3;
 }
 
@@ -132,15 +134,29 @@ const ProviderActions: React.FC<{ provider: DisplayCloudStatusProvider }> = ({ p
   const config = DISPLAY_CLOUD_STATUS_PROVIDERS[provider];
   // Read out of the config object so the guard narrows inside the click handler below.
   const downdetectorSlug = config.downdetectorSlug;
+  const officialSupportUrl = config.officialSupportUrl;
   return (
     <div className="cloud-status-provider__actions">
       <button
         type="button"
         onClick={() => void globalThis.api?.openExternal(config.statusUrl)}
-        aria-label={`Open ${providerLabel(provider)} official status page`}
+        aria-label={
+          config.statusSourceLabel
+            ? `Open ${providerLabel(provider)} on ${config.statusSourceLabel}`
+            : `Open ${providerLabel(provider)} official status page`
+        }
       >
-        Status
+        {config.statusSourceLabel ?? 'Status'}
       </button>
+      {officialSupportUrl && (
+        <button
+          type="button"
+          onClick={() => void globalThis.api?.openExternal(officialSupportUrl)}
+          aria-label={`Open ${providerLabel(provider)} official support portal`}
+        >
+          Official support
+        </button>
+      )}
       {config.twitterHandle && (
         <button
           type="button"
@@ -195,6 +211,12 @@ const ProviderRow: React.FC<{
             {providerLabel(provider)}
           </span>
           <span id={countId} className="cloud-status-provider__count">
+            {DISPLAY_CLOUD_STATUS_PROVIDERS[provider].statusSourceLabel && (
+              <>
+                <span className="cloud-status-provider__source">Third-party</span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
             {providerDetailCountLabel(issueCount, hasFeedError)}
           </span>
         </span>
@@ -216,6 +238,7 @@ const OutageRow: React.FC<{ item: DisplayCloudStatusItem }> = ({ item }) => {
   const description = useMemo(() => stripHtml(item.description), [item.description]);
   const degraded = item.severity === 'warning';
   const severityLabel = degraded ? 'Degraded' : 'Outage';
+  const sourceLabel = DISPLAY_CLOUD_STATUS_PROVIDERS[item.provider].statusSourceLabel;
   return (
     <article className={`cloud-status-outage${degraded ? ' cloud-status-outage--degraded' : ''}`}>
       <div className="cloud-status-outage__meta">
@@ -246,7 +269,8 @@ const OutageRow: React.FC<{ item: DisplayCloudStatusItem }> = ({ item }) => {
           )
         }
       >
-        View official status{' ' /* Keep text separate from the decorative glyph. */}
+        {sourceLabel ? `View ${sourceLabel} report` : 'View official status'}{' '}
+        {/* Keep text separate from the decorative glyph. */}
         <span aria-hidden="true">↗</span>
       </button>
     </article>
@@ -268,10 +292,10 @@ function statusSummary(
   if (outageCount > 0) {
     return { tone: 'outage', label: activeIssueCountLabel(outageCount, degradedCount) };
   }
+  if (hasFeedErrors) return { tone: 'unknown', label: 'Coverage incomplete' };
   if (degradedCount > 0) {
     return { tone: 'degraded', label: degradedCountLabel(degradedCount) };
   }
-  if (hasFeedErrors) return { tone: 'unknown', label: 'Coverage incomplete' };
   return { tone: 'clear', label: 'No active vendor issues' };
 }
 
@@ -339,6 +363,7 @@ type ProviderOverviewWorkspaceProps = ProviderHealthProps & {
 
 type ProviderDetailWorkspaceProps = ProviderHealthProps & {
   issues: DisplayCloudStatusItem[];
+  mistFeedErrorProviders: ReadonlySet<MistCloudStatusProvider>;
   selectedProvider: DisplayCloudStatusProvider | null;
   onShowOverview: () => void;
 };
@@ -380,6 +405,7 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
 
 const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
   issues,
+  mistFeedErrorProviders,
   outageProviders,
   degradedProviders,
   errorProviders,
@@ -387,20 +413,53 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
   onShowOverview,
 }) => {
   const backButtonRef = useRef<HTMLButtonElement>(null);
+  const [selectedMistRegion, setSelectedMistRegion] = useState<MistRegionFilter>('all');
   useEffect(() => {
     if (selectedProvider) backButtonRef.current?.focus();
   }, [selectedProvider]);
 
   if (!selectedProvider) return null;
 
-  const selectedIssues = issues.filter((item) => item.provider === selectedProvider);
-  const posture = providerPosture(
-    outageProviders.has(selectedProvider),
-    degradedProviders.has(selectedProvider),
-    errorProviders.has(selectedProvider),
-  );
+  const providerIssues = issues.filter((item) => item.provider === selectedProvider);
+  const activeMistRegion =
+    selectedProvider === 'mist' && selectedMistRegion !== 'all'
+      ? DISPLAY_MIST_REGION_OPTIONS.find(({ provider }) => provider === selectedMistRegion)
+      : undefined;
+  const selectedIssues = activeMistRegion
+    ? providerIssues.filter((item) => item.affectedScopes.includes(activeMistRegion.label))
+    : providerIssues;
+  const postureForMistRegion = (region: MistRegionFilter): ProviderPosture => {
+    if (region === 'all') {
+      return providerPosture(
+        outageProviders.has('mist'),
+        degradedProviders.has('mist'),
+        errorProviders.has('mist'),
+      );
+    }
+    const regionLabel = DISPLAY_MIST_REGION_OPTIONS.find(
+      ({ provider }) => provider === region,
+    )?.label;
+    const regionIssues = providerIssues.filter((item) =>
+      regionLabel ? item.affectedScopes.includes(regionLabel) : false,
+    );
+    return providerPosture(
+      regionIssues.some((item) => item.severity === 'error'),
+      regionIssues.some((item) => item.severity === 'warning'),
+      mistFeedErrorProviders.has(region),
+    );
+  };
+  const posture =
+    selectedProvider === 'mist'
+      ? postureForMistRegion(selectedMistRegion)
+      : providerPosture(
+          outageProviders.has(selectedProvider),
+          degradedProviders.has(selectedProvider),
+          errorProviders.has(selectedProvider),
+        );
   const label = providerLabel(selectedProvider);
+  const detailLabel = activeMistRegion ? `${label} ${activeMistRegion.label}` : label;
   const unavailable = posture === 'unknown';
+  const sourceLabel = DISPLAY_CLOUD_STATUS_PROVIDERS[selectedProvider].statusSourceLabel;
 
   return (
     <div className="cloud-status__workspace cloud-status__workspace--detail">
@@ -436,6 +495,11 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
             <div>
               <h3>{label}</h3>
               <p>{providerDetailDescription(selectedIssues.length, unavailable)}</p>
+              {sourceLabel && (
+                <p>
+                  Status supplied by {sourceLabel}, not {label}.
+                </p>
+              )}
             </div>
           </div>
           <span className={`cloud-status-provider__state cloud-status-provider__state--${posture}`}>
@@ -443,6 +507,33 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
           </span>
           <ProviderActions provider={selectedProvider} />
         </div>
+
+        {selectedProvider === 'mist' && (
+          <fieldset className="cloud-status__region-filter">
+            <legend className="sr-only">Juniper Mist regions</legend>
+            {[{ provider: 'all' as const, label: 'All' }, ...DISPLAY_MIST_REGION_OPTIONS].map(
+              (region) => {
+                const regionPosture = postureForMistRegion(region.provider);
+                return (
+                  <button
+                    key={region.provider}
+                    type="button"
+                    aria-label={`${region.label} ${postureLabel(regionPosture)}`}
+                    aria-pressed={selectedMistRegion === region.provider}
+                    onClick={() => setSelectedMistRegion(region.provider)}
+                  >
+                    <span>{region.label}</span>
+                    <span
+                      className={`cloud-status__region-state cloud-status__region-state--${regionPosture}`}
+                    >
+                      {postureLabel(regionPosture)}
+                    </span>
+                  </button>
+                );
+              },
+            )}
+          </fieldset>
+        )}
 
         {selectedIssues.length > 0 ? (
           <div className="cloud-status__outage-list">
@@ -455,8 +546,8 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
             <CoverageStateIcon unknown={unavailable} />
             <h3>
               {unavailable
-                ? `Status feed unavailable for ${label}`
-                : `No active issues for ${label}`}
+                ? `Status feed unavailable for ${detailLabel}`
+                : `No active issues for ${detailLabel}`}
             </h3>
             <p>
               {unavailable
@@ -472,7 +563,7 @@ const ProviderDetailWorkspace: React.FC<ProviderDetailWorkspaceProps> = ({
 
 const StatusWorkspace: React.FC<StatusWorkspaceProps> = (props) => {
   if (props.selectedProvider) {
-    return <ProviderDetailWorkspace {...props} />;
+    return <ProviderDetailWorkspace key={props.selectedProvider} {...props} />;
   }
   return <ProviderOverviewWorkspace {...props} />;
 };
@@ -541,6 +632,19 @@ export const CloudStatusTab: React.FC<{
       ),
     [displayStatus],
   );
+  const mistFeedErrorProviders = useMemo(
+    () =>
+      new Set(
+        statusData
+          ? statusData.errors
+              .map((error) => error.provider)
+              .filter((provider): provider is MistCloudStatusProvider =>
+                DISPLAY_MIST_REGION_OPTIONS.some((region) => region.provider === provider),
+              )
+          : DISPLAY_MIST_REGION_OPTIONS.map(({ provider }) => provider),
+      ),
+    [statusData],
+  );
   const issues = useMemo(
     () =>
       displayStatus
@@ -570,7 +674,12 @@ export const CloudStatusTab: React.FC<{
     () => issues.filter((item) => item.severity === 'error').length,
     [issues],
   );
-  const degradedCount = issues.length - outageCount;
+  const confirmedDegradations = useMemo(
+    () =>
+      issues.filter((item) => item.severity === 'warning' && !errorProviders.has(item.provider)),
+    [errorProviders, issues],
+  );
+  const degradedCount = confirmedDegradations.length;
   const providerIssueCounts = useMemo(() => {
     const counts = new Map<DisplayCloudStatusProvider, number>();
     for (const item of issues) {
@@ -583,9 +692,8 @@ export const CloudStatusTab: React.FC<{
     [issues],
   );
   const degradedProviders = useMemo(
-    () =>
-      new Set(issues.filter((item) => item.severity === 'warning').map((item) => item.provider)),
-    [issues],
+    () => new Set(confirmedDegradations.map((item) => item.provider)),
+    [confirmedDegradations],
   );
   const providerOrder = useMemo(
     () =>
@@ -604,6 +712,9 @@ export const CloudStatusTab: React.FC<{
   const hasFeedErrors = errorProviders.size > 0;
   const updatedLabel = `Updated ${lastUpdatedLabel(statusData?.lastUpdated ?? 0)}`;
   const summary = statusSummary(outageCount, degradedCount, hasFeedErrors, snapshotUnavailable);
+  let statusBarSummary = activeIssueCountLabel(outageCount, degradedCount);
+  if (snapshotUnavailable) statusBarSummary = 'coverage unavailable';
+  else if (hasFeedErrors && outageCount === 0) statusBarSummary = 'coverage incomplete';
 
   return (
     <div className="cloud-status">
@@ -667,6 +778,7 @@ export const CloudStatusTab: React.FC<{
         outageProviders={outageProviders}
         degradedProviders={degradedProviders}
         errorProviders={errorProviders}
+        mistFeedErrorProviders={mistFeedErrorProviders}
         selectedProvider={selectedProvider}
         onSelectProvider={handleSelectProvider}
         onShowOverview={handleShowOverview}
@@ -678,10 +790,7 @@ export const CloudStatusTab: React.FC<{
         center={<span>{updatedLabel}</span>}
         right={
           <span className="cloud-status__status-summary">
-            {DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored ·{' '}
-            {snapshotUnavailable
-              ? 'coverage unavailable'
-              : activeIssueCountLabel(outageCount, degradedCount)}
+            {DISPLAY_CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored · {statusBarSummary}
           </span>
         }
       />

@@ -3,6 +3,7 @@ import type PocketBase from 'pocketbase';
 import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupRadarHandlers } from './handlers/radar';
 import { setupWindowHandlers } from './handlers/windowHandlers';
+import { setupReleaseUpdateHandlers } from './handlers/releaseUpdateHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
 import { setupRelayWebServerHandlers } from './handlers/webServerHandlers';
 import { setupCacheHandlers } from './handlers/cacheHandlers';
@@ -104,6 +105,7 @@ export function setupIpcHandlers(opts: {
 
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
   safeSetup('radar', () => setupRadarHandlers());
+  safeSetup('releaseUpdates', () => setupReleaseUpdateHandlers());
 
   safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager?.() ?? null));
 

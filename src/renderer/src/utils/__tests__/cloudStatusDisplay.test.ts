@@ -68,6 +68,8 @@ describe('cloud status display aggregation', () => {
       'aws',
       'azure',
       'm365',
+      'proofpoint',
+      'crowdstrike',
       'jira',
       'github',
       'cloudflare',
@@ -83,6 +85,10 @@ describe('cloud status display aggregation', () => {
   it('copies ordinary providers and folds regional errors into display-provider errors', () => {
     const providers = emptyCloudStatusProviders();
     providers.aws = [item('aws', 'aws-1')];
+    providers.proofpoint = [
+      item('proofpoint', 'proofpoint-1', { affectedScopes: ['Email Protection'] }),
+    ];
+    providers.crowdstrike = [item('crowdstrike', 'crowdstrike-1')];
     providers.dynatrace = [
       item('dynatrace', 'dynatrace-1', { affectedScopes: ['AWS · Americas'] }),
     ];
@@ -101,6 +107,20 @@ describe('cloud status display aggregation', () => {
 
     expect(display.providers.aws).toEqual([
       expect.objectContaining({ id: 'aws-1', provider: 'aws', affectedScopes: [] }),
+    ]);
+    expect(display.providers.proofpoint).toEqual([
+      expect.objectContaining({
+        id: 'proofpoint-1',
+        provider: 'proofpoint',
+        affectedScopes: ['Email Protection'],
+      }),
+    ]);
+    expect(display.providers.crowdstrike).toEqual([
+      expect.objectContaining({
+        id: 'crowdstrike-1',
+        provider: 'crowdstrike',
+        affectedScopes: [],
+      }),
     ]);
     expect(display.providers.dynatrace).toEqual([
       expect.objectContaining({

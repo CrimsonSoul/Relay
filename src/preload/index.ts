@@ -19,6 +19,9 @@ const api: BridgeAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.STARTUP_STATE_CHANGED, handler);
   },
   markStartupRendererMounted: () => ipcRenderer.send(IPC_CHANNELS.STARTUP_RENDERER_MOUNTED),
+  getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_VERSION),
+  checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.APP_CHECK_FOR_UPDATES),
+  openReleasesPage: () => ipcRenderer.invoke(IPC_CHANNELS.APP_OPEN_RELEASES),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   openServiceDeskUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_DESK_URL, url),
 

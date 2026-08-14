@@ -12,6 +12,8 @@ export const RSS_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
   m365: 'https://status.cloud.microsoft/api/feed/mac',
 };
 
+const AWS_CURRENT_FEED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Extract text content from an XML tag, handling CDATA sections. */
 export function extractTag(xml: string, tag: string): string {
   const regex = new RegExp(
@@ -92,6 +94,7 @@ export function inferSeverity(
 export async function fetchRssProvider(
   url: string,
   provider: CloudStatusProvider,
+  now = Date.now(),
 ): Promise<CloudStatusItem[]> {
   const res = await fetchNoStore(url, {
     headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
@@ -102,7 +105,9 @@ export async function fetchRssProvider(
 
   const xml = await res.text();
   const rawItems = parseRssItems(xml).filter(
-    (item) => !item.description.includes('This site is updated when service issues are preventing'),
+    (item) =>
+      !item.description.includes('This site is updated when service issues are preventing') &&
+      (provider !== 'aws' || Date.parse(item.pubDate) >= now - AWS_CURRENT_FEED_WINDOW_MS),
   );
 
   return rawItems.map((item) => ({

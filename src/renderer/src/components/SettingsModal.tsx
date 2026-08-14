@@ -14,6 +14,7 @@ import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { AdministrationSettings } from './settings/AdministrationSettings';
+import { AboutSettings } from './settings/AboutSettings';
 import { AppearanceSettings, AppearanceSettingsProvider } from './settings/AppearanceSettings';
 import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 import {
@@ -57,7 +58,8 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   closed: 'Closed',
 };
 
-type SettingsSectionId = 'appearance' | 'connection' | 'access' | 'administration' | 'dynatrace';
+type SettingsSectionId =
+  'appearance' | 'connection' | 'access' | 'administration' | 'dynatrace' | 'about';
 
 const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
@@ -65,6 +67,7 @@ const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
   { id: 'access', label: 'Access' },
   { id: 'administration', label: 'Administration' },
   { id: 'dynatrace', label: 'Dynatrace' },
+  { id: 'about', label: 'About' },
 ];
 
 type SettingsShellProps = {
@@ -582,13 +585,17 @@ const SettingsModalContent: React.FC<Props> = ({
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
   const settingsSections = useMemo(
     () =>
-      SETTINGS_SECTIONS.filter(
-        (section) =>
+      SETTINGS_SECTIONS.filter((section) => {
+        if (section.id === 'about') {
+          return presentation === 'page' && Boolean(globalThis.api?.getAppVersion);
+        }
+        return (
           section.id !== 'administration' ||
           (privilegedSession.state === 'active' &&
-            (privilegedSession.role === 'owner' || privilegedSession.role === 'admin')),
-      ),
-    [privilegedSession.role, privilegedSession.state],
+            (privilegedSession.role === 'owner' || privilegedSession.role === 'admin'))
+        );
+      }),
+    [presentation, privilegedSession.role, privilegedSession.state],
   );
 
   useEffect(() => {
@@ -646,6 +653,7 @@ const SettingsModalContent: React.FC<Props> = ({
       {presentation === 'page' && activeSection === 'administration' && (
         <AdministrationSettings relayMode={relayMode} />
       )}
+      {presentation === 'page' && activeSection === 'about' && <AboutSettings />}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
   );

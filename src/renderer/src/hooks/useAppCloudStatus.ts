@@ -16,10 +16,11 @@ import {
 } from '@shared/ipc';
 import {
   emptyCloudStatusProviders,
-  unavailableExtensionCloudStatusData,
   mergeCloudStatusData,
+  normalizeExtensionCloudStatusData,
   setCloudStatusProviderItems,
   splitCloudStatusData,
+  unavailableExtensionCloudStatusData,
   unavailableMistCloudStatusData,
 } from '@shared/cloudStatus';
 import { ErrorCategory } from '@shared/logging';
@@ -113,7 +114,9 @@ function observationTimestampFor(
   observations: StatusObservationTimestamps,
 ): number {
   if (provider === 'mist') return observations.mist;
-  return provider === 'dynatrace' ? observations.extension : observations.legacy;
+  return provider === 'dynatrace' || provider === 'proofpoint' || provider === 'crowdstrike'
+    ? observations.extension
+    : observations.legacy;
 }
 
 function currentStatusState(data: CloudStatusData): CurrentStatusState {
@@ -126,6 +129,7 @@ function currentStatusState(data: CloudStatusData): CurrentStatusState {
   for (const item of issues) {
     if (
       item.severity === 'warning' &&
+      item.provider !== 'crowdstrike' &&
       !isScheduledMaintenance(item) &&
       !actionableWarnings.has(item.provider)
     ) {
@@ -303,14 +307,16 @@ function normalizeCachedCloudStatus(data: CloudStatusData): CloudStatusData {
   const hasMistCoverage = MIST_CLOUD_STATUS_PROVIDER_ORDER.every((provider) =>
     Array.isArray(source[provider]),
   );
-  const hasExtensionCoverage = Array.isArray(source.dynatrace);
   const partitions = splitCloudStatusData(normalized);
+  const extension = normalizeExtensionCloudStatusData({
+    providers: source as ExtensionCloudStatusData['providers'],
+    errors: partitions.extension.errors,
+    lastUpdated: normalized.lastUpdated,
+  });
   return mergeCloudStatusData(
     partitions.legacy,
     hasMistCoverage ? partitions.mist : unavailableMistCloudStatusData(normalized.lastUpdated),
-    hasExtensionCoverage
-      ? partitions.extension
-      : unavailableExtensionCloudStatusData(normalized.lastUpdated),
+    extension,
   );
 }
 
@@ -495,12 +501,15 @@ export function useAppCloudStatus(
         new Promise((resolve) => setTimeout(resolve, 500)),
       ]);
       const partitions = splitCloudStatusData(data);
+      const extension = normalizeExtensionCloudStatusData({
+        providers: data.providers as ExtensionCloudStatusData['providers'],
+        errors: partitions.extension.errors,
+        lastUpdated: data.lastUpdated,
+      });
       const safeData = mergeCloudStatusData(
         partitions.legacy,
         mistUnsupported ? unavailableMistCloudStatusData(data.lastUpdated) : partitions.mist,
-        extensionUnsupported
-          ? unavailableExtensionCloudStatusData(data.lastUpdated)
-          : partitions.extension,
+        extensionUnsupported ? unavailableExtensionCloudStatusData(data.lastUpdated) : extension,
       );
       commitStatus(safeData);
     } catch (error) {

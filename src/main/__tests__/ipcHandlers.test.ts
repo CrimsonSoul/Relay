@@ -17,6 +17,7 @@ vi.mock('@shared/types', () => ({
 
 const mockSetupCloudStatusHandlers = vi.fn();
 const mockSetupWindowHandlers = vi.fn();
+const mockSetupReleaseUpdateHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
@@ -28,6 +29,9 @@ vi.mock('../handlers/cloudStatus', () => ({
 }));
 vi.mock('../handlers/windowHandlers', () => ({
   setupWindowHandlers: (...args: unknown[]) => mockSetupWindowHandlers(...args),
+}));
+vi.mock('../handlers/releaseUpdateHandlers', () => ({
+  setupReleaseUpdateHandlers: (...args: unknown[]) => mockSetupReleaseUpdateHandlers(...args),
 }));
 vi.mock('../handlers/setupHandlers', () => ({
   setupSetupHandlers: (...args: unknown[]) => mockSetupSetupHandlers(...args),
@@ -65,6 +69,7 @@ describe('setupIpcHandlers', () => {
 
     expect(mockSetupCloudStatusHandlers).toHaveBeenCalled();
     expect(mockSetupWindowHandlers).toHaveBeenCalled();
+    expect(mockSetupReleaseUpdateHandlers).toHaveBeenCalled();
     expect(mockSetupSetupHandlers).toHaveBeenCalled();
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();

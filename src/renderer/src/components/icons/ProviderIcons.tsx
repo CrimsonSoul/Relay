@@ -24,6 +24,20 @@ export const M365Icon = ({ size = 18 }: IconProps) => (
   </svg>
 );
 
+/** Proofpoint — security shield mark */
+export const ProofpointIcon = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 1.5 3.5 4.7v6.8c0 5.2 3.4 9.1 8.5 11 5.1-1.9 8.5-5.8 8.5-11V4.7L12 1.5Zm0 3.1 5.6 2.1v4.8c0 3.6-2.1 6.4-5.6 8-3.5-1.6-5.6-4.4-5.6-8V6.7L12 4.6Zm-2.5 3v8.8h2.4v-2.5h1.2c2.3 0 3.9-1.2 3.9-3.2 0-2-1.6-3.1-3.9-3.1H9.5Zm2.4 2h1.1c1 0 1.6.4 1.6 1.2s-.6 1.2-1.6 1.2h-1.1V9.6Z" />
+  </svg>
+);
+
+/** CrowdStrike — compact falcon-inspired mark */
+export const CrowdStrikeIcon = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M2 5.2c4.7-.8 9.1.1 13.3 2.6L22 5.9l-5.4 4.4 4.1.8-5.9 2.2 3.3 1.6-7.2.7 2.8 2.7-5.8-1.7-2.3 2.2.5-4.5L2 10.7l5.3-.5L2 5.2Z" />
+  </svg>
+);
+
 /** Jira — official logo mark (Simple Icons, CC0) */
 export const JiraIcon = ({ size = 18 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -96,6 +110,8 @@ const PROVIDER_ICON_MAP: Record<
   aws: AWSIcon,
   azure: AzureIcon,
   m365: M365Icon,
+  proofpoint: ProofpointIcon,
+  crowdstrike: CrowdStrikeIcon,
   jira: JiraIcon,
   github: GitHubIcon,
   cloudflare: CloudflareIcon,

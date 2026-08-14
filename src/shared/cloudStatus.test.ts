@@ -34,6 +34,11 @@ describe('cloud status partitions', () => {
       'mist_apac',
       'mist_federal',
     ]);
+    expect(Object.keys(emptyExtensionCloudStatusProviders())).toEqual([
+      'dynatrace',
+      'proofpoint',
+      'crowdstrike',
+    ]);
     expectTypeOf<CloudStatusItem & { provider: 'mist_global' }>().not.toExtend<
       LegacyCloudStatusData['providers']['aws'][number]
     >();
@@ -120,7 +125,7 @@ describe('cloud status partitions', () => {
     expect(Object.keys(split.legacy.providers)).toHaveLength(10);
     expect(Object.keys(split.mist.providers)).toHaveLength(4);
     expect(split.extension).toEqual({
-      providers: { dynatrace: [dynatraceItem] },
+      providers: { dynatrace: [dynatraceItem], proofpoint: [], crowdstrike: [] },
       errors: [{ provider: 'dynatrace', message: 'Dynatrace unavailable' }],
       lastUpdated: 30,
     });
@@ -140,6 +145,30 @@ describe('cloud status partitions', () => {
     } as unknown as CloudStatusData;
 
     expect(splitCloudStatusData(malformed).legacy.providers.aws).toEqual([]);
+  });
+
+  it('marks a newly added extension provider unknown when hydrating an older snapshot', () => {
+    const legacy = { providers: emptyLegacyCloudStatusProviders(), errors: [], lastUpdated: 10 };
+    const mist = { providers: emptyMistCloudStatusProviders(), errors: [], lastUpdated: 10 };
+    const oldExtension = {
+      providers: { dynatrace: [] },
+      errors: [],
+      lastUpdated: 10,
+    } as unknown as Parameters<typeof mergeCloudStatusData>[2];
+
+    const merged = mergeCloudStatusData(legacy, mist, oldExtension);
+
+    expect(merged.providers.dynatrace).toEqual([]);
+    expect(merged.providers.proofpoint).toEqual([]);
+    expect(merged.providers.crowdstrike).toEqual([]);
+    expect(merged.errors).toContainEqual({
+      provider: 'proofpoint',
+      message: 'Proofpoint status is unavailable from this Relay server.',
+    });
+    expect(merged.errors).toContainEqual({
+      provider: 'crowdstrike',
+      message: 'CrowdStrike status is unavailable from this Relay server.',
+    });
   });
 
   it('uses the newest partition timestamp when merging', () => {

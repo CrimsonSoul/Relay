@@ -26,6 +26,7 @@ import {
 
 export const HEALTHY_CLOUD_STATUS_INTERVAL_MS = 5 * 60_000;
 export const DEGRADED_CLOUD_STATUS_INTERVAL_MS = 60_000;
+const CURRENT_CLOUD_STATUS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type FetchStatus = (previous?: CloudStatusData | null) => Promise<CloudStatusData>;
 
@@ -38,8 +39,16 @@ function isDegraded(data: {
   providers: Partial<Record<CloudStatusProvider, CloudStatusItem[]>>;
 }): boolean {
   if (data.errors.length > 0) return true;
+  const oldestCurrentIssue = Date.now() - CURRENT_CLOUD_STATUS_WINDOW_MS;
   return Object.values(data.providers).some((items) =>
-    items?.some((item) => item.severity === 'warning' || item.severity === 'error'),
+    items?.some((item) => {
+      const publishedAt = Date.parse(item.pubDate);
+      return (
+        (item.severity === 'warning' || item.severity === 'error') &&
+        Number.isFinite(publishedAt) &&
+        publishedAt >= oldestCurrentIssue
+      );
+    }),
   );
 }
 

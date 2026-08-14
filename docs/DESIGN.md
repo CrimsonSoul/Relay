@@ -82,22 +82,31 @@ responsible for their domain content.
 ### Service Status provider rows
 
 Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
-keeps one scannable row per operator-facing provider, ordered by outage, degraded, unknown, then
+keeps one scannable row per operator-facing provider, ordered by outage, unknown, degraded, then
 operational. Juniper Mist is one row even though the server retains four regional buckets for
-compatibility; Dynatrace is also one row. The summary, provider count, keyboard order, and status bar
-use the displayed twelve-provider list rather than the raw storage bucket count.
+compatibility; Dynatrace, Proofpoint, and CrowdStrike are also one row each. The summary, provider
+count, keyboard order, and status bar use the displayed fourteen-provider list rather than the raw storage bucket
+count.
 
-Selecting either roll-up row uses the existing provider-detail workspace. Duplicate regional
-incidents render once, and an `Affected` line lists the union of published regions or cloud/region
-containers. The title, latest published update, severity, timestamp, and official-status action keep
-the same hierarchy as other incidents. Affected scopes are text, not color-only
-signals or a new card layer.
+Selecting Juniper Mist uses the existing provider-detail workspace with compact `All`, `Global`,
+`EMEA`, `APAC`, and `Federal` filters. Each filter includes accessible posture text. `All` is the
+default and deduplicates incidents shared by multiple regions; an `Affected` line lists the union of
+published regions. Selecting a region filters those incidents and uses that region's own outage,
+unknown, degraded, or operational posture. Dynatrace uses the same `Affected` treatment for its
+cloud and region containers. Affected scopes are text, not color-only signals or a new card layer.
 
-An active incident outranks feed uncertainty in the visible posture. With no active incident, an
-unavailable or incomplete feed reads Unknown and retains any last-good detail without implying it is
-current. Juniper Mist and Dynatrace use the same row geometry, focus return, responsive
-behavior, and accessible status text as every other provider; the roll-up introduces no modal or
-nested navigation.
+CrowdStrike is visibly marked `Third-party` in its overview row and detail workspace because its
+automated signal comes from StatusGator rather than CrowdStrike. The source action says
+`StatusGator`; a separate `Official support` action goes to CrowdStrike. Incident actions say
+`View StatusGator report` and must not imply official confirmation. Downdetector remains a manual
+secondary link, never an automated health input.
+
+An active outage outranks feed uncertainty in the visible posture. Feed uncertainty outranks a
+retained degradation, so an old warning cannot be presented as current after a failed refresh. With
+no active outage, an unavailable or incomplete feed reads Unknown and retains any last-good detail
+without implying it is current. Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use the same
+row geometry, focus return, responsive behavior, and accessible status text as every other provider;
+the regional filter introduces no modal or nested navigation.
 
 Workflow actions state only outcomes Relay can observe. Compose may say it opened a Teams draft or
 copied recipients, but not that Teams created or sent a meeting. Alerts follows the same rule for
