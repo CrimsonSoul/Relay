@@ -123,11 +123,11 @@ counted. Presence is operational status, not an authorization mechanism.
 The packaged Electron version is the installed version shown in Settings and the comparison source
 for update discovery. The main process owns a bounded, credential-free request to GitHub's fixed
 latest-release endpoint. It accepts only a published, non-prerelease `vX.Y.Z` release, limits the
-response size and request duration, rejects redirects and malformed data, and caches a successful
-result for one hour. Trusted IPC exposes only the installed version, the normalized comparison
-result, and an action that opens Relay's fixed Releases page.
+response size and request duration, rejects redirects and malformed data, and single-flights
+concurrent checks without caching a completed result. Trusted IPC exposes only the installed
+version, the normalized comparison result, and an action that opens Relay's fixed Releases page.
 
-The desktop renderer checks on startup and every hour while running. A newer normal release
+The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **View release**
 action. It never downloads or installs an update. Failures are silent outside main-process logs and
 do not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop

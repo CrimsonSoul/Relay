@@ -12,7 +12,7 @@ vi.mock('../Toast', () => ({
 }));
 
 const LAST_NOTIFIED_VERSION_KEY = 'relay:lastNotifiedReleaseVersion';
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const CHECK_INTERVAL_MS = 15 * 60 * 1_000;
 
 describe('ReleaseUpdateNotificationManager', () => {
   const checkForUpdates = vi.fn();
@@ -119,7 +119,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     expect(checkForUpdates).not.toHaveBeenCalled();
   });
 
-  it('checks again after six hours for long-running Relay sessions', async () => {
+  it('checks every 15 minutes and notifies for each newly discovered version', async () => {
     vi.useFakeTimers();
     checkForUpdates
       .mockResolvedValueOnce({
@@ -137,6 +137,14 @@ describe('ReleaseUpdateNotificationManager', () => {
           latestVersion: '1.1.0',
           updateAvailable: true,
         },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          currentVersion: '1.0.0',
+          latestVersion: '1.2.0',
+          updateAvailable: true,
+        },
       });
 
     render(<ReleaseUpdateNotificationManager />);
@@ -144,11 +152,36 @@ describe('ReleaseUpdateNotificationManager', () => {
     expect(checkForUpdates).toHaveBeenCalledOnce();
 
     await act(async () => {
-      vi.advanceTimersByTime(CHECK_INTERVAL_MS);
+      vi.advanceTimersByTime(CHECK_INTERVAL_MS - 1);
+      await Promise.resolve();
+    });
+    expect(checkForUpdates).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
       await Promise.resolve();
     });
 
     expect(checkForUpdates).toHaveBeenCalledTimes(2);
     expect(mocks.showToast).toHaveBeenCalledOnce();
+    expect(mocks.showToast).toHaveBeenLastCalledWith(
+      'Relay v1.1.0 is available.',
+      'info',
+      expect.any(Object),
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(CHECK_INTERVAL_MS);
+      await Promise.resolve();
+    });
+
+    expect(checkForUpdates).toHaveBeenCalledTimes(3);
+    expect(mocks.showToast).toHaveBeenCalledTimes(2);
+    expect(mocks.showToast).toHaveBeenLastCalledWith(
+      'Relay v1.2.0 is available.',
+      'info',
+      expect.any(Object),
+    );
+    expect(localStorage.getItem(LAST_NOTIFIED_VERSION_KEY)).toBe('1.2.0');
   });
 });

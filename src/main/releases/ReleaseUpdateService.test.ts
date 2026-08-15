@@ -143,24 +143,16 @@ describe('ReleaseUpdateService', () => {
     await expect(service.check()).rejects.toThrow();
   });
 
-  it('reuses a successful check within the cache window', async () => {
-    let now = 1_000;
+  it('fetches a fresh release after a completed check', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse(githubRelease('v1.1.0')));
     const service = new ReleaseUpdateService({
       fetch,
       getCurrentVersion: () => '1.0.0',
-      now: () => now,
-      cacheTtlMs: 10_000,
     });
 
     await service.check();
-    now = 10_999;
     await service.check();
 
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    now = 11_000;
-    await service.check();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

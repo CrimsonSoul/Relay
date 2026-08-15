@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useToast } from './Toast';
 
 const LAST_NOTIFIED_VERSION_KEY = 'relay:lastNotifiedReleaseVersion';
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const CHECK_INTERVAL_MS = 15 * 60 * 1_000;
 
 function readLastNotifiedVersion(): string | null {
   try {
