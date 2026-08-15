@@ -59,8 +59,12 @@ since the highest reachable `vX.Y.Z` tag:
 
 The calculated version is injected into Electron package metadata without changing the source
 commit. The reusable Windows job must still pass its native dependency build, persistent bootstrap
-smoke test, packaged startup benchmark, and isolated boundary harness. The release then publishes
-`Relay-vX.Y.Z-windows-x64.exe` and its SHA-256 file as a normal latest release with generated notes.
+smoke test, packaged startup benchmark, and isolated boundary harness. That job continues to pass
+`Relay.exe` internally so build and baseline workflows share the same verified executable. The
+release job packages that executable as `Relay-vX.Y.Z-windows-x64.zip`, with exactly one top-level
+member named `Relay.exe`, and publishes only the ZIP plus
+`Relay-vX.Y.Z-windows-x64.zip.sha256` as a normal latest release with generated notes. The checksum
+covers the downloadable ZIP, not the executable inside it.
 
 The injected package version is also the installed version shown under **Settings > About**. Desktop
 Relay checks GitHub's latest public normal release at startup and no more than once every six hours
@@ -69,9 +73,11 @@ version with a **View release** action. The action opens the fixed Relay Release
 download or install updates. Relay Web does not perform this desktop release check, and a failed or
 malformed GitHub response remains silent so update discovery cannot interrupt normal operations.
 
-Release runs queue instead of cancelling one another. A rerun verifies a complete release already
-attached to the exact commit and does not duplicate it; a missing release or asset is rebuilt and
-completed under the existing tag. Do not publish through a local npm script or tag a commit outside
+Release runs queue instead of cancelling one another. A rerun treats a release attached to the exact
+commit as complete only when the ZIP and checksum are both present, the checksum matches the ZIP,
+the archive passes an integrity check, and its exact member list is `Relay.exe`. A missing, corrupt,
+or structurally invalid asset is rebuilt and completed under the existing tag. Older releases keep
+their original asset format. Do not publish through a local npm script or tag a commit outside
 `test`; merge the release-worthy conventional commit through the protected `test` pull-request
 workflow.
 
