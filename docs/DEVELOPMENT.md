@@ -67,11 +67,13 @@ member named `Relay.exe`, and publishes only the ZIP plus
 covers the downloadable ZIP, not the executable inside it.
 
 The injected package version is also the installed version shown under **Settings > About**. Desktop
-Relay checks GitHub's latest public normal release at startup and no more than once every six hours
-while running. When a newer `vX.Y.Z` release exists, Relay shows one advisory notification per
-version with a **View release** action. The action opens the fixed Relay Releases page; Relay does not
-download or install updates. Relay Web does not perform this desktop release check, and a failed or
-malformed GitHub response remains silent so update discovery cannot interrupt normal operations.
+Relay checks GitHub's latest public normal release at startup and once every hour while running. The
+main-process result cache uses the same one-hour lifetime so an hourly renderer check can discover
+each newly published version. When a newer `vX.Y.Z` release exists, Relay shows one advisory
+notification per version with a **View release** action. The action opens the fixed Relay Releases
+page; Relay does not download or install updates. Relay Web does not perform this desktop release
+check, and a failed or malformed GitHub response remains silent so update discovery cannot interrupt
+normal operations.
 
 Release runs queue instead of cancelling one another. A rerun treats a release attached to the exact
 commit as complete only when the ZIP and checksum are both present, the checksum matches the ZIP,
