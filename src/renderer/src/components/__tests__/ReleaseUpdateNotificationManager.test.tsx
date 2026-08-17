@@ -104,6 +104,16 @@ describe('ReleaseUpdateNotificationManager', () => {
     expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
   });
 
+  it('fails closed when a successful update response has no data', async () => {
+    checkForUpdates.mockResolvedValue({ success: true });
+
+    render(<ReleaseUpdateNotificationManager />);
+
+    await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+  });
+
   it('does not run desktop update checks in Relay Web', async () => {
     vi.stubGlobal('api', {
       runtime: WEB_RUNTIME,

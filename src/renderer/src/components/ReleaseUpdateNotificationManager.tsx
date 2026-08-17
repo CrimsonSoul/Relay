@@ -50,13 +50,14 @@ export function ReleaseUpdateNotificationManager() {
     const check = async () => {
       try {
         const result = await api.checkForUpdates?.();
-        if (cancelled || !result?.success) return;
-        if (!result.data.updateAvailable) {
+        const update = result?.success ? result.data : undefined;
+        if (cancelled || !update) return;
+        if (!update.updateAvailable) {
           setAvailableVersion(null);
           return;
         }
 
-        const latestVersion = result.data.latestVersion;
+        const latestVersion = update.latestVersion;
         setAvailableVersion(latestVersion);
         if (lastNotifiedVersionRef.current === latestVersion) return;
         lastNotifiedVersionRef.current = latestVersion;
