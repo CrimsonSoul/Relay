@@ -70,10 +70,17 @@ The injected package version is also the installed version shown under **Setting
 Relay checks GitHub's latest public normal release at startup and every 15 minutes while running.
 Completed results are not cached, so each scheduled check can discover a newly published version;
 concurrent requests still share one in-flight lookup. When a newer `vX.Y.Z` release exists, Relay
-shows one advisory notification per version with a **View release** action. The action opens the
-fixed Relay Releases page; Relay does not download or install updates. Relay Web does not perform
-this desktop release check, and a failed or malformed GitHub response remains silent so update
-discovery cannot interrupt normal operations.
+shows one advisory notification per version and a persistent, non-dismissible header action. The
+header uses `Update · vX.Y.Z` in wide layouts and `vX.Y.Z` at the 1200 px compact-shell breakpoint,
+updates when a later release is discovered, and remains until the installed version is current. Both
+actions open the fixed Relay Releases page; Relay does not download or install updates. Relay Web
+does not perform this desktop release check, and a failed or malformed GitHub response remains
+silent so update discovery cannot interrupt normal operations or erase a previously confirmed
+update.
+
+Focused renderer coverage for this flow must verify the dynamic release label, later-version
+replacement, persistence after a failed refresh, one notification per version, the recoverable
+open-release error, desktop-only rendering, and both wide and compact-shell label variants.
 
 Release runs queue instead of cancelling one another. A rerun treats a release attached to the exact
 commit as complete only when the ZIP and checksum are both present, the checksum matches the ZIP,

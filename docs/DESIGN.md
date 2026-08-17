@@ -328,6 +328,26 @@ document, workspace, or tab without changing unrelated Compose state. Actions th
 bridge, such as Add group or a contact's `+ Bridge` control, remain separate and have explicit
 accessible names. Keyboard hints describe only actions available for the active result.
 
+### Persistent release update indicator (`.release-update-indicator`)
+
+When packaged desktop Relay discovers a newer normal release, the global header action area shows a
+compact `TactileButton` before the world clock. Wide and full-screen layouts use the visible label
+`Update · vX.Y.Z`; at the existing 1200 px compact-shell breakpoint and below, the label contracts
+to `vX.Y.Z`. The version always comes from the latest validated release response and changes when a
+later release is discovered.
+
+The indicator uses a static accent dot, accent-bright text, a restrained accent tint, the standard
+2 px control radius, and the shared focus treatment. It does not pulse, glow, animate, use warning
+or alarm colors, or offer a dismiss or snooze action. Clicking it opens Relay's fixed GitHub Releases
+page. If that explicit action fails, the control stays in place and Relay shows a recoverable error
+toast. The control remains visible on every tab until the installed version is current; a transient
+refresh failure does not erase a previously confirmed update.
+
+The compact label must remain visible when the sidebar rests at 64 px. It may not shrink, wrap,
+overlap the centered search control or platform window controls, or disappear with the world clock.
+The existing one-time toast announces each newly discovered version; the persistent control itself
+is not a repeatedly announced live region. Relay Web and pop-out windows do not render it.
+
 ---
 
 ## 9. Typography

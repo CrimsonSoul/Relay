@@ -129,9 +129,14 @@ version, the normalized comparison result, and an action that opens Relay's fixe
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **View release**
-action. It never downloads or installs an update. Failures are silent outside main-process logs and
-do not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop
-notification.
+action. The validated latest version also drives a non-dismissible header indicator that remains
+visible until the installed version is current and updates when a later release is discovered. A
+failed refresh does not clear a previously confirmed update. The release notification manager owns
+the latest confirmed renderer state, the one-time toast, and the indicator rendered in the app
+header, so Relay does not create a second polling path. Relay never downloads or installs an update.
+Failures are silent unless an operator explicitly tries and fails to open the Releases page; they do
+not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop
+notification or indicator.
 
 ### Service Status
 
