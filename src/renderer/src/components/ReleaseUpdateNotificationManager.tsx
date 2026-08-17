@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
+import { TactileButton } from './TactileButton';
 
 const LAST_NOTIFIED_VERSION_KEY = 'relay:lastNotifiedReleaseVersion';
 const CHECK_INTERVAL_MS = 15 * 60 * 1_000;
@@ -22,7 +23,24 @@ function rememberNotifiedVersion(version: string): void {
 
 export function ReleaseUpdateNotificationManager() {
   const { showToast } = useToast();
+  const [availableVersion, setAvailableVersion] = useState<string | null>(null);
   const lastNotifiedVersionRef = useRef<string | null>(readLastNotifiedVersion());
+  const openingRef = useRef(false);
+
+  const handleOpenReleases = useCallback(async () => {
+    if (openingRef.current) return;
+    openingRef.current = true;
+    try {
+      const opened = await globalThis.api?.openReleasesPage?.();
+      if (!opened) throw new Error('Release page did not open');
+    } catch {
+      showToast('Could not open GitHub Releases. Check your connection and try again.', 'error', {
+        title: 'Release page unavailable',
+      });
+    } finally {
+      openingRef.current = false;
+    }
+  }, [showToast]);
 
   useEffect(() => {
     const api = globalThis.api;
@@ -32,9 +50,14 @@ export function ReleaseUpdateNotificationManager() {
     const check = async () => {
       try {
         const result = await api.checkForUpdates?.();
-        if (cancelled || !result?.success || !result.data?.updateAvailable) return;
+        if (cancelled || !result?.success) return;
+        if (!result.data.updateAvailable) {
+          setAvailableVersion(null);
+          return;
+        }
 
         const latestVersion = result.data.latestVersion;
+        setAvailableVersion(latestVersion);
         if (lastNotifiedVersionRef.current === latestVersion) return;
         lastNotifiedVersionRef.current = latestVersion;
         rememberNotifiedVersion(latestVersion);
@@ -45,7 +68,7 @@ export function ReleaseUpdateNotificationManager() {
           action: {
             label: 'View release',
             onClick: () => {
-              void api.openReleasesPage?.();
+              void handleOpenReleases();
             },
           },
         });
@@ -60,7 +83,20 @@ export function ReleaseUpdateNotificationManager() {
       cancelled = true;
       globalThis.clearInterval(interval);
     };
-  }, [showToast]);
+  }, [handleOpenReleases, showToast]);
 
-  return null;
+  if (!availableVersion) return null;
+
+  return (
+    <TactileButton
+      size="sm"
+      className="release-update-indicator"
+      icon={<span className="release-update-indicator__dot" aria-hidden="true" />}
+      aria-label={`Relay v${availableVersion} is available. View release`}
+      onClick={() => void handleOpenReleases()}
+    >
+      <span className="release-update-indicator__wide-label">Update · </span>
+      <span className="release-update-indicator__version">v{availableVersion}</span>
+    </TactileButton>
+  );
 }
