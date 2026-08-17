@@ -6,6 +6,10 @@ const responsiveCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/responsive.css'),
   'utf8',
 );
+const componentsCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
+  'utf8',
+);
 const dynatraceCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/tabs/dynatrace-problems.css'),
   'utf8',
@@ -60,6 +64,28 @@ describe('compact Relay shell', () => {
       /\.release-update-indicator(?!__)[^{]*\{[^}]*display:\s*none/u,
     );
     expect(compactBlock).toMatch(/\.world-clock-container[\s\S]*?display:\s*none/u);
+  });
+
+  it('protects the release reminder from narrow Windows header controls', () => {
+    const windowControlsBlock = mediaBlock(responsiveCss, 'max-width: 980px') ?? '';
+    const narrowBlock = mediaBlock(responsiveCss, 'max-width: 720px') ?? '';
+
+    expect(windowControlsBlock).toMatch(
+      /\.platform-win32 \.app-header\s*\{[^}]*padding-right:\s*156px/u,
+    );
+    expect(narrowBlock).toMatch(/\.header-title-container\s*\{[^}]*display:\s*none/u);
+    expect(narrowBlock).toMatch(/\.header-search-container\s*\{[^}]*min-width:\s*0/u);
+    expect(narrowBlock).toMatch(/\.header-search-bar\s*\{[^}]*min-width:\s*0/u);
+    expect(narrowBlock).toMatch(/\.header-search-bar-shortcut\s*\{[^}]*display:\s*none/u);
+    expect(narrowBlock).toMatch(
+      /\.release-update-indicator\.tactile-button\s*\{[^}]*padding-inline:\s*8px/u,
+    );
+  });
+
+  it('keeps explicit space between the release label and version', () => {
+    expect(componentsCss).toMatch(
+      /\.release-update-indicator__wide-label\s*\{[^}]*margin-inline-end:\s*4px/u,
+    );
   });
 
   it('switches the Dynatrace queue and detail to one column before half-screen width', () => {

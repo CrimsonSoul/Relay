@@ -117,6 +117,10 @@
   gap: 0;
 }
 
+.release-update-indicator__wide-label {
+  margin-inline-end: 4px;
+}
+
 .release-update-indicator__dot {
   display: block;
   width: 7px;

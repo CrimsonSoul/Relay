@@ -80,7 +80,8 @@ update.
 
 Focused renderer coverage for this flow must verify the dynamic release label, later-version
 replacement, persistence after a failed refresh, one notification per version, the recoverable
-open-release error, desktop-only rendering, and both wide and compact-shell label variants.
+open-release error, malformed-success handling, desktop-only rendering, wide and compact-shell label
+variants, and minimum-width header geometry with the Windows window-control reservation.
 
 Release runs queue instead of cancelling one another. A rerun treats a release attached to the exact
 commit as complete only when the ZIP and checksum are both present, the checksum matches the ZIP,

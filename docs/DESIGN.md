@@ -337,14 +337,17 @@ to `vX.Y.Z`. The version always comes from the latest validated release response
 later release is discovered.
 
 The indicator uses a static accent dot, accent-bright text, a restrained accent tint, the standard
-2 px control radius, and the shared focus treatment. It does not pulse, glow, animate, use warning
-or alarm colors, or offer a dismiss or snooze action. Clicking it opens Relay's fixed GitHub Releases
-page. If that explicit action fails, the control stays in place and Relay shows a recoverable error
-toast. The control remains visible on every tab until the installed version is current; a transient
-refresh failure does not erase a previously confirmed update.
+2 px control radius, and the shared focus treatment. It does not pulse, glow, use ambient
+attention-seeking animation, use warning or alarm colors, or offer a dismiss or snooze action; it
+retains the ordinary hover and press feedback of a `TactileButton`. Clicking it opens Relay's fixed
+GitHub Releases page. If that explicit action fails, the control stays in place and Relay shows a
+recoverable error toast. The control remains visible on every tab until the installed version is
+current; a transient refresh failure does not erase a previously confirmed update.
 
 The compact label must remain visible when the sidebar rests at 64 px. It may not shrink, wrap,
 overlap the centered search control or platform window controls, or disappear with the world clock.
+At 720 px and below, the breadcrumb and search shortcut badge yield space while the search field
+remains shrinkable, preserving the indicator through Relay's 400 px desktop window minimum.
 The existing one-time toast announces each newly discovered version; the persistent control itself
 is not a repeatedly announced live region. Relay Web and pop-out windows do not render it.
 
