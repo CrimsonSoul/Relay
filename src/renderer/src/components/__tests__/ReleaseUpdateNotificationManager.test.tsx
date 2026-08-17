@@ -69,11 +69,12 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     render(<ReleaseUpdateNotificationManager />);
 
-    await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
+    const reminder = await screen.findByRole('button', {
+      name: 'Relay v1.1.0 is available. View release',
+    });
+    expect(checkForUpdates).toHaveBeenCalledOnce();
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. View release' }),
-    ).toBeVisible();
+    expect(reminder).toBeVisible();
   });
 
   it('does not notify when the installed release is current', async () => {

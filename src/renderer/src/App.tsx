@@ -438,6 +438,9 @@ export function MainApp({
               />
             </div>
             <div className="header-actions">
+              <ErrorBoundary fallback={null}>
+                <ReleaseUpdateNotificationManager />
+              </ErrorBoundary>
               <WorldClock />
             </div>
           </header>
@@ -593,10 +596,6 @@ export function MainApp({
 
         <ErrorBoundary fallback={null}>
           <AlertReminderManager />
-        </ErrorBoundary>
-
-        <ErrorBoundary fallback={null}>
-          <ReleaseUpdateNotificationManager />
         </ErrorBoundary>
 
         <ErrorBoundary fallback={null}>

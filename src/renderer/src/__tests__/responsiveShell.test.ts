@@ -47,6 +47,21 @@ describe('compact Relay shell', () => {
     );
   });
 
+  it('keeps the release reminder visible with a compact label below desktop width', () => {
+    const compactBlock = mediaBlock(responsiveCss, 'max-width: 1200px') ?? '';
+
+    expect(compactBlock).toMatch(
+      /\.release-update-indicator__wide-label\s*\{[^}]*display:\s*none/u,
+    );
+    expect(compactBlock).toMatch(
+      /\.release-update-indicator\.tactile-button\s*\{[^}]*padding-inline:\s*10px/u,
+    );
+    expect(compactBlock).not.toMatch(
+      /\.release-update-indicator(?!__)[^{]*\{[^}]*display:\s*none/u,
+    );
+    expect(compactBlock).toMatch(/\.world-clock-container[\s\S]*?display:\s*none/u);
+  });
+
   it('switches the Dynatrace queue and detail to one column before half-screen width', () => {
     expect(dynatraceCss).toContain('@media (max-width: 900px)');
     expect(dynatraceCss).toMatch(

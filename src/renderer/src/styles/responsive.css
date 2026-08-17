@@ -110,6 +110,14 @@
     display: none;
   }
 
+  .release-update-indicator__wide-label {
+    display: none;
+  }
+
+  .release-update-indicator.tactile-button {
+    padding-inline: 10px;
+  }
+
   .app-header {
     padding-inline: 20px;
   }
