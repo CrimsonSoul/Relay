@@ -37,7 +37,10 @@ type RoleAccountAdministrationManager = Pick<
 >;
 type PublisherAdministrationManager = Pick<PublisherAssignmentManager, 'assign'>;
 type DeviceAdministrationManager = Pick<PrivilegedDeviceManager, 'rename' | 'revoke'>;
-type AdministrationSettingService = Pick<RelayAdministrationService, 'replace'>;
+type AdministrationSettingService = Pick<
+  RelayAdministrationService,
+  'replace' | 'testProblemScope'
+>;
 type AdministrationSnapshotReader = Pick<RelayAdministrationSnapshotReader, 'read'>;
 type ReauthenticationProofConsumer = (
   requestId: string,
@@ -179,6 +182,15 @@ export function registerAdministrationCommands({
       registrar.registerCommand('administration.snapshot.read', 'settings.manage', (context) =>
         snapshotReader.read({ accountId: context.account.id }),
       );
+    registrar.registerCommand(
+      'administration.dynatrace-problem-scope.test',
+      'settings.manage',
+      (_context, payload) =>
+        administrationService.testProblemScope({
+          alertingProfiles: payload.profiles,
+          customDqlMatcher: payload.customDqlMatcher,
+        }),
+    );
     registrar.registerCommand(
       'administration.setting.replace',
       'settings.manage',

@@ -11,12 +11,9 @@ type NoStoreFetchRequestInit = FetchRequestInit & { cache: 'no-store' };
 type ReleaseUpdateServiceOptions = {
   fetch?: typeof globalThis.fetch;
   getCurrentVersion: () => string;
-  now?: () => number;
-  cacheTtlMs?: number;
   requestTimeoutMs?: number;
 };
 
-const DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 const MAX_RELEASE_RESPONSE_BYTES = 64 * 1_024;
 
@@ -63,18 +60,12 @@ async function readLatestVersion(response: Awaited<ReturnType<typeof fetch>>): P
 export class ReleaseUpdateService {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly getCurrentVersion: () => string;
-  private readonly now: () => number;
-  private readonly cacheTtlMs: number;
   private readonly requestTimeoutMs: number;
-  private cached: { currentVersion: string; expiresAt: number; value: RelayUpdateCheck } | null =
-    null;
   private inFlight: { currentVersion: string; promise: Promise<RelayUpdateCheck> } | null = null;
 
   constructor(options: ReleaseUpdateServiceOptions) {
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.getCurrentVersion = options.getCurrentVersion;
-    this.now = options.now ?? Date.now;
-    this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
@@ -84,20 +75,9 @@ export class ReleaseUpdateService {
       return Promise.reject(new Error('Packaged Relay version is not a normal semantic version'));
     }
 
-    const now = this.now();
-    if (this.cached?.currentVersion === currentVersion && this.cached.expiresAt > now) {
-      return Promise.resolve(this.cached.value);
-    }
     if (this.inFlight?.currentVersion === currentVersion) return this.inFlight.promise;
 
-    const promise = this.fetchUpdate(currentVersion).then((value) => {
-      this.cached = {
-        currentVersion,
-        expiresAt: this.now() + this.cacheTtlMs,
-        value,
-      };
-      return value;
-    });
+    const promise = this.fetchUpdate(currentVersion);
     this.inFlight = { currentVersion, promise };
     const clearInFlight = () => {
       if (this.inFlight?.promise === promise) this.inFlight = null;

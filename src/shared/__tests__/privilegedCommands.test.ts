@@ -136,6 +136,7 @@ describe('privileged command validation', () => {
     expect(isPublicPrivilegedCommandName('operator.create')).toBe(false);
     expect(isPublicPrivilegedCommandName('publisher.assign')).toBe(true);
     expect(isPublicPrivilegedCommandName('administration.setting.replace')).toBe(true);
+    expect(isPublicPrivilegedCommandName('administration.dynatrace-problem-scope.test')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.upload.batch.begin')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.upload.file.begin')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.upload.status')).toBe(true);
@@ -522,8 +523,18 @@ describe('privileged command validation', () => {
       'administration.setting.replace',
       {
         setting: 'dynatrace.alerting-profiles',
-        value: { profiles: ['NOC Core', 'Payments'] },
+        value: {
+          profiles: ['NOC Core', 'Payments'],
+          customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+        },
         expectedRevision: 1,
+      },
+    ],
+    [
+      'administration.dynatrace-problem-scope.test',
+      {
+        profiles: [],
+        customDqlMatcher: 'matchesPhrase(event.name, "Packet loss on")',
       },
     ],
   ] as const)('strictly accepts the %s payload', (command, payload) => {
@@ -610,9 +621,21 @@ describe('privileged command validation', () => {
     ).toBeNull();
     expect(
       getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
+        profiles: [],
+        customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+      }),
+    ).toBeNull();
+    expect(
+      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
         profiles: ['NOC Core', 'NOC Core'],
       }),
     ).toMatch(/duplicate/i);
+    expect(
+      getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
+        profiles: [],
+        customDqlMatcher: 'matchesValue(event.name, "*") | limit 1',
+      }),
+    ).toMatch(/matcher expression/i);
   });
 
   it('publishes the approved command size bound', () => {

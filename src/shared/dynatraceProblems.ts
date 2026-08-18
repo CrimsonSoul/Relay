@@ -103,7 +103,7 @@ export type DynatraceProblemSyncRecord = {
   availableAlertingProfiles?: string[];
   selectedAlertingProfiles?: string[];
   profileFilterConfigured?: boolean;
-  scopeSource?: 'alerting-profile';
+  scopeSource?: 'unfiltered' | 'alerting-profile' | 'custom-dql' | 'combined';
   profileFieldHealthy?: boolean;
   profileCatalogCount?: number;
   matchedProfileCount?: number;
@@ -135,11 +135,134 @@ export type DynatraceProblemsTestResult = {
   problemCount: number;
 };
 
+export type DynatraceProblemScopeInput = {
+  alertingProfiles: string[];
+  customDqlMatcher: string;
+};
+
+export type DynatraceProblemScopeTestResult =
+  { valid: true; problemCount: number } | { valid: false; error: string };
+
 const MAX_DYNATRACE_URL_LENGTH = 2048;
 const MAX_DYNATRACE_PROBLEM_ID_LENGTH = 512;
 export const MAX_DYNATRACE_API_TOKEN_LENGTH = 4096;
 export const MAX_DYNATRACE_ALERTING_PROFILES = 250;
 export const MAX_DYNATRACE_ALERTING_PROFILE_LENGTH = 512;
+export const MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH = 16_000;
+
+const DQL_PIPELINE_COMMAND_PATTERN =
+  /^(?:fetch|filter|fields(?:add|remove|rename)?|sort|limit|dedup|summarize|append|join|lookup)\b/i;
+const DQL_STATUS_TRANSITION_PATTERN = /\bevent\s*\.\s*status_transition\b/i;
+
+function hasUnsafeControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 8 ||
+        codePoint === 11 ||
+        codePoint === 12 ||
+        (codePoint >= 14 && codePoint <= 31) ||
+        codePoint === 127)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isEscapedQuote(value: string, quoteIndex: number): boolean {
+  let slashCount = 0;
+  for (let index = quoteIndex - 1; index >= 0 && value[index] === '\\'; index -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function isDqlCommentStart(character: string, next: string): boolean {
+  return (
+    (character === '/' && (next === '/' || next === '*')) || (character === '*' && next === '/')
+  );
+}
+
+function scanDynatraceCustomDqlMatcher(
+  matcher: string,
+): { valid: true; unquoted: string } | { valid: false; error: string } {
+  let quoted = false;
+  let unquoted = '';
+  for (let index = 0; index < matcher.length; index += 1) {
+    const character = matcher.charAt(index);
+    if (character === '"' && !isEscapedQuote(matcher, index)) {
+      quoted = !quoted;
+      unquoted += ' ';
+      continue;
+    }
+    if (quoted) {
+      unquoted += ' ';
+      continue;
+    }
+    if (isDqlCommentStart(character, matcher.charAt(index + 1))) {
+      return { valid: false, error: 'Comments are not allowed in the custom DQL matcher.' };
+    }
+    if (character === '|' || character === ';') {
+      return {
+        valid: false,
+        error: 'Enter only a DQL matcher expression, without fetch or pipeline commands.',
+      };
+    }
+    unquoted += character;
+  }
+  return quoted
+    ? { valid: false, error: 'Close every quoted string in the custom DQL matcher.' }
+    : { valid: true, unquoted };
+}
+
+export function normalizeDynatraceCustomDqlMatcher(value: string): string {
+  return value.replace(/\r\n?/g, '\n').trim();
+}
+
+/**
+ * Enforces Relay's expression-only boundary before a matcher can be embedded in a server-owned
+ * Grail query. Dynatrace remains authoritative for the complete DQL grammar during the test query.
+ */
+export function getDynatraceCustomDqlMatcherError(value: string): string | null {
+  const matcher = normalizeDynatraceCustomDqlMatcher(value);
+  if (!matcher) return null;
+  if (matcher.length > MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH) {
+    return `The custom DQL matcher is too long. Keep it under ${MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH.toLocaleString()} characters.`;
+  }
+  if (hasUnsafeControlCharacter(matcher)) {
+    return 'Remove control characters from the custom DQL matcher.';
+  }
+  if (DQL_PIPELINE_COMMAND_PATTERN.test(matcher)) {
+    return 'Enter only a DQL matcher expression, without fetch or pipeline commands.';
+  }
+
+  const scanned = scanDynatraceCustomDqlMatcher(matcher);
+  if (!scanned.valid) return scanned.error;
+  if (DQL_STATUS_TRANSITION_PATTERN.test(scanned.unquoted)) {
+    return 'Remove event.status_transition. Relay keeps matching problems through updates until Dynatrace closes them.';
+  }
+  return null;
+}
+
+export function normalizeDynatraceProblemScopeTestResult(
+  value: unknown,
+): DynatraceProblemScopeTestResult | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.valid === true) {
+    return Number.isSafeInteger(record.problemCount) && (record.problemCount as number) >= 0
+      ? { valid: true, problemCount: record.problemCount as number }
+      : null;
+  }
+  if (record.valid === false) {
+    return typeof record.error === 'string' && record.error.length > 0 && record.error.length <= 512
+      ? { valid: false, error: record.error }
+      : null;
+  }
+  return null;
+}
 
 export function normalizeDynatraceEnvironmentUrl(value: string): string {
   try {

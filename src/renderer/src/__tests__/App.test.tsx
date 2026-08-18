@@ -587,8 +587,8 @@ describe('MainApp', () => {
       success: true,
       data: {
         currentVersion: '1.0.0',
-        latestVersion: '1.0.0',
-        updateAvailable: false,
+        latestVersion: '1.1.0',
+        updateAvailable: true,
       },
     });
     globalThis.api = {
@@ -600,7 +600,14 @@ describe('MainApp', () => {
 
     try {
       renderApp();
-      await vi.waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
+      const reminder = await screen.findByRole('button', {
+        name: 'Relay v1.1.0 is available. View release',
+      });
+      expect(checkForUpdates).toHaveBeenCalledOnce();
+      expect(reminder.closest('.header-actions')).not.toBeNull();
+      expect(screen.getAllByRole('button', { name: /Relay v1\.1\.0 is available/u })).toHaveLength(
+        1,
+      );
     } finally {
       globalThis.api = previousApi;
     }

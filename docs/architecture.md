@@ -123,15 +123,20 @@ counted. Presence is operational status, not an authorization mechanism.
 The packaged Electron version is the installed version shown in Settings and the comparison source
 for update discovery. The main process owns a bounded, credential-free request to GitHub's fixed
 latest-release endpoint. It accepts only a published, non-prerelease `vX.Y.Z` release, limits the
-response size and request duration, rejects redirects and malformed data, and caches a successful
-result for six hours. Trusted IPC exposes only the installed version, the normalized comparison
-result, and an action that opens Relay's fixed Releases page.
+response size and request duration, rejects redirects and malformed data, and single-flights
+concurrent checks without caching a completed result. Trusted IPC exposes only the installed
+version, the normalized comparison result, and an action that opens Relay's fixed Releases page.
 
-The desktop renderer checks on startup and every six hours while running. A newer normal release
+The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **View release**
-action. It never downloads or installs an update. Failures are silent outside main-process logs and
-do not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop
-notification.
+action. The validated latest version also drives a non-dismissible header indicator that remains
+visible until the installed version is current and updates when a later release is discovered. A
+failed refresh does not clear a previously confirmed update. The release notification manager owns
+the latest confirmed renderer state, the one-time toast, and the indicator rendered in the app
+header, so Relay does not create a second polling path. Relay never downloads or installs an update.
+Failures are silent unless an operator explicitly tries and fails to open the Releases page; they do
+not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop
+notification or indicator.
 
 ### Service Status
 
@@ -195,6 +200,31 @@ Proofpoint public-status incidents use normal cloud-notification priority. A Cro
 that same queue but retains its StatusGator attribution; CrowdStrike warnings are visible as
 degraded without generating a toast. The separate Dynatrace Problems notification manager remains
 authoritative for tenant problems and keeps priority over cloud notifications.
+
+### Dynatrace Problems
+
+`src/main/dynatrace/DynatraceProblemsManager.ts` owns the server-wide problem feed, incremental
+polling, daily full reconciliation, scope transitions, retry state, and one-year retention.
+`DynatraceProblemsClient.ts` owns the bounded Grail requests and composes every query from Relay's
+fixed fetch, deduplication, projection, sort, and limit stages.
+
+Problem scope has two independently optional inputs: exact alerting-profile names and one custom DQL
+matcher expression. When both are present, the client emits separate filters and therefore applies
+`AND` semantics. Shared validation permits only an expression that can be embedded inside Relay's
+owned `filter (...)` stage; pipelines, comments, control characters, and
+`event.status_transition` are rejected. Dynatrace remains the final grammar authority through a
+canonical count query that runs before the configuration is saved. A zero count is valid.
+
+Scope management travels through the protected command boundary and requires `settings.manage`.
+The matcher is included in the protected administration summary but omitted from ordinary public
+settings. Existing profile-only clients remain compatible: a legacy profile update preserves any
+stored matcher, while an updated client submits both values atomically.
+
+Full custom-scope reconciliation treats the returned problem IDs as authoritative only when the
+result is complete. A truncated result fails closed without applying exclusions. Incremental polls
+also fetch the bounded set of changed unfiltered IDs, allowing Relay to mark only observed
+nonmatches as `scopeExcluded`. Exclusion hides the record from active views without deleting its
+notes or local disposition; normal retention owns eventual deletion.
 
 ### Dispatcher Radar
 

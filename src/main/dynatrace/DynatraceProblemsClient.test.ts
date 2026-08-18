@@ -46,6 +46,7 @@ const config = {
   environmentUrl: 'https://abc123.apps.dynatrace.com',
   apiToken: 'dt0s16.platform-read-only-token',
   alertingProfiles: null,
+  customDqlMatcher: null,
 };
 
 function problem(overrides: Record<string, unknown> = {}) {
@@ -227,6 +228,79 @@ describe('DynatraceProblemsClient', () => {
     const query = requestQuery(fetchMock, 0);
     expect(query).toContain('iAny(in(labels.alerting_profile[]');
     expect(query).toContain('array("POS Store", "NOC \\"Primary\\"")');
+  });
+
+  it('combines alerting profiles and a custom matcher before Relay-owned projection', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([problem()]));
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    await client.fetchProblems({
+      ...config,
+      alertingProfiles: ['Alerts for NOC'],
+      customDqlMatcher: `matchesValue(entity_tags, "teams:network")
+and maintenance.is_under_maintenance == false`,
+    });
+
+    const query = requestQuery(fetchMock, 0);
+    const profileFilterAt = query.indexOf('iAny(in(labels.alerting_profile[]');
+    const matcherAt = query.indexOf('matchesValue(entity_tags, "teams:network")');
+    const fieldsAt = query.indexOf('| fields problemId=event.id');
+    expect(profileFilterAt).toBeGreaterThan(-1);
+    expect(matcherAt).toBeGreaterThan(profileFilterAt);
+    expect(fieldsAt).toBeGreaterThan(matcherAt);
+  });
+
+  it('counts zero current matches with the same canonical custom scope', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([{ problemCount: 0 }]));
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    await expect(
+      client.countMatchingProblems({
+        ...config,
+        customDqlMatcher: 'matchesPhrase(event.name, "No current match")',
+      }),
+    ).resolves.toBe(0);
+
+    const query = requestQuery(fetchMock, 0);
+    expect(query).toContain('| filter (\nmatchesPhrase(event.name, "No current match")\n)');
+    expect(query).toContain('| summarize problemCount=count()');
+    expect(query).not.toContain('| fields problemId=event.id');
+  });
+
+  it('observes unscoped changed IDs during incremental custom-filter polling', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse([problem()]))
+      .mockResolvedValueOnce(
+        queryResponse([{ problemId: 'problem-1' }, { problemId: 'problem-no-longer-matches' }]),
+      );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems(
+      {
+        ...config,
+        customDqlMatcher: 'dt.davis.mute.status == "NOT_MUTED"',
+      },
+      { mode: 'incremental', lookbackMinutes: 12 },
+    );
+
+    expect(result.observedProblemIds).toEqual(['problem-1', 'problem-no-longer-matches']);
+    expect(requestQuery(fetchMock, 0)).toContain('dt.davis.mute.status == "NOT_MUTED"');
+    expect(requestQuery(fetchMock, 1)).toContain('| fields problemId=event.id');
+    expect(requestQuery(fetchMock, 1)).not.toContain('dt.davis.mute.status');
+  });
+
+  it('defensively rejects unsafe matcher content before sending a Grail request', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    await expect(
+      client.countMatchingProblems({
+        ...config,
+        customDqlMatcher: 'matchesValue(event.name, "*") | limit 1',
+      }),
+    ).rejects.toThrow(/matcher expression/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('loads a distinct sorted alerting profile catalog without storing problem records', async () => {

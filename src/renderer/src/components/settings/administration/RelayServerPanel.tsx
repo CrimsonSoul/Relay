@@ -1,10 +1,104 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH,
+  getDynatraceCustomDqlMatcherError,
+  normalizeDynatraceCustomDqlMatcher,
+  normalizeDynatraceProblemScopeTestResult,
+  type DynatraceProblemScopeTestResult,
+} from '@shared/dynatraceProblems';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationPanelProps } from './types';
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
+
+type ProblemScopeMode = {
+  label: string;
+  description: string;
+};
+
+function describeProblemScope(profileCount: number, customMatcher: string): ProblemScopeMode {
+  if (profileCount > 0 && customMatcher) {
+    return {
+      label: 'Profiles + custom DQL',
+      description: 'Profiles and custom DQL are combined with AND.',
+    };
+  }
+  if (profileCount > 0) {
+    return {
+      label: 'Alerting profiles only',
+      description: 'Only problems in the selected alerting profiles appear in Relay.',
+    };
+  }
+  if (customMatcher) {
+    return {
+      label: 'Custom DQL only',
+      description: 'The custom DQL matcher controls which problems appear in Relay.',
+    };
+  }
+  return {
+    label: 'Unfiltered',
+    description: 'Leave both fields empty to restore the unfiltered problem feed.',
+  };
+}
+
+function describeMatcherChange(nextMatcher: string, storedMatcher: string): string {
+  if (nextMatcher === storedMatcher) return 'Unchanged';
+  if (!nextMatcher) return 'Removed';
+  return storedMatcher ? 'Updated' : 'Added';
+}
+
+function problemScopeReplacementValue(
+  profiles: string[],
+  nextMatcher: string,
+  storedMatcher: string,
+): { profiles: string[]; customDqlMatcher?: string } {
+  if (nextMatcher || storedMatcher) return { profiles, customDqlMatcher: nextMatcher };
+  return { profiles };
+}
+
+function ProblemScopeTestStatus({
+  testing,
+  result,
+}: Readonly<{ testing: boolean; result: DynatraceProblemScopeTestResult | null }>) {
+  if (testing) {
+    return (
+      <output className="administration-scope-status">
+        <strong>Testing current scope</strong>
+        <span>Dynatrace is validating the matcher and counting current problems.</span>
+      </output>
+    );
+  }
+  if (!result) return null;
+  if (!result.valid) {
+    return (
+      <div className="administration-scope-status administration-scope-status--error" role="alert">
+        <strong>Scope needs attention</strong>
+        <span>{result.error}</span>
+      </div>
+    );
+  }
+
+  const zeroMatches = result.problemCount === 0;
+  const statusClass = zeroMatches
+    ? 'administration-scope-status--warning'
+    : 'administration-scope-status--ok';
+  return (
+    <output className={`administration-scope-status ${statusClass}`}>
+      <strong>
+        {zeroMatches
+          ? 'Valid scope · no current problems match'
+          : `Valid scope · ${result.problemCount.toLocaleString()} current problems match`}
+      </strong>
+      <span>
+        {zeroMatches
+          ? 'Saving will hide all currently visible problems. Stored history and notes remain intact.'
+          : 'This preview uses the same server-owned scope Relay will save.'}
+      </span>
+    </output>
+  );
+}
 
 export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationPanelProps>) {
   const { reauthenticate, busy } = usePrivilegedAccess();
@@ -20,6 +114,13 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const [profileText, setProfileText] = useState(
     Array.isArray(profiles?.valueSummary) ? profiles.valueSummary.join('\n') : '',
   );
+  const storedCustomDqlMatcher = profiles?.customDqlMatcher ?? '';
+  const [customDqlMatcher, setCustomDqlMatcher] = useState(storedCustomDqlMatcher);
+  const [scopeTestResult, setScopeTestResult] = useState<DynatraceProblemScopeTestResult | null>(
+    null,
+  );
+  const [testingScope, setTestingScope] = useState(false);
+  const testingScopeRef = useRef(false);
   const [profileConfirming, setProfileConfirming] = useState(false);
   const [applyingProfiles, setApplyingProfiles] = useState(false);
   const applyingProfilesRef = useRef(false);
@@ -27,6 +128,10 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const tokenFormId = useId();
+  const profileFieldId = useId();
+  const profileHintId = useId();
+  const matcherFieldId = useId();
+  const matcherHintId = useId();
   const selectedProfileNames = useMemo(
     () =>
       profileText
@@ -45,6 +150,12 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const removedProfileNames = storedProfileNames.filter(
     (profile) => !selectedProfileNames.includes(profile),
   );
+  const normalizedCustomDqlMatcher = useMemo(
+    () => normalizeDynatraceCustomDqlMatcher(customDqlMatcher),
+    [customDqlMatcher],
+  );
+  const scopeMode = describeProblemScope(selectedProfileNames.length, normalizedCustomDqlMatcher);
+  const matcherChange = describeMatcherChange(normalizedCustomDqlMatcher, storedCustomDqlMatcher);
 
   useEffect(
     () => () => {
@@ -72,16 +183,21 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
     }
   };
 
-  const replaceProfiles = async () => {
+  const replaceProblemScope = async () => {
     if (!profiles || applyingProfilesRef.current) return;
     applyingProfilesRef.current = true;
     setApplyingProfiles(true);
     try {
+      const value = problemScopeReplacementValue(
+        selectedProfileNames,
+        normalizedCustomDqlMatcher,
+        storedCustomDqlMatcher,
+      );
       const result = await execute({
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: selectedProfileNames },
+          value,
           expectedRevision: profiles.revision,
         },
         expectedRevision: null,
@@ -94,6 +210,59 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
       applyingProfilesRef.current = false;
       setApplyingProfiles(false);
     }
+  };
+
+  const testProblemScope = async (openReview: boolean) => {
+    if (!profiles || testingScopeRef.current) return;
+    const matcherError = getDynatraceCustomDqlMatcherError(customDqlMatcher);
+    if (matcherError) {
+      setScopeTestResult({ valid: false, error: matcherError });
+      return;
+    }
+
+    testingScopeRef.current = true;
+    setTestingScope(true);
+    setScopeTestResult(null);
+    try {
+      const result = await execute({
+        command: 'administration.dynatrace-problem-scope.test',
+        payload: {
+          profiles: selectedProfileNames,
+          customDqlMatcher: normalizedCustomDqlMatcher,
+        },
+        expectedRevision: null,
+      });
+      if (!result.ok) {
+        setScopeTestResult({
+          valid: false,
+          error: 'Relay could not test this scope. Review the administration error and try again.',
+        });
+        return;
+      }
+      const tested = normalizeDynatraceProblemScopeTestResult(result.value);
+      if (!tested) {
+        setScopeTestResult({
+          valid: false,
+          error: 'Relay returned an invalid scope test result. Refresh and try again.',
+        });
+        return;
+      }
+      setScopeTestResult(tested);
+      if (tested.valid && openReview) setProfileConfirming(true);
+    } finally {
+      testingScopeRef.current = false;
+      setTestingScope(false);
+    }
+  };
+
+  const changeProfileText = (value: string) => {
+    setProfileText(value);
+    setScopeTestResult(null);
+  };
+
+  const changeCustomDqlMatcher = (value: string) => {
+    setCustomDqlMatcher(value);
+    setScopeTestResult(null);
   };
 
   const replaceToken = async (event: FormSubmitEvent) => {
@@ -198,8 +367,9 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
           className="administration-setting administration-setting--wide"
           onSubmit={(event) => {
             event.preventDefault();
-            setProfileConfirming(true);
+            void testProblemScope(true);
           }}
+          aria-busy={testingScope}
         >
           <div className="administration-setting__heading">
             <strong>Stored problem scope</strong>
@@ -210,26 +380,64 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
             </span>
           </div>
           <p>
-            Relay continues to use Dynatrace alerting profiles for feed scope. Problems outside the
-            selected profiles are hidden, while their notes and local dispositions remain stored
+            Restrict the server-owned feed with alerting profiles, a custom DQL matcher, or both.
+            Problems outside scope are hidden while their notes and local dispositions remain stored
             until normal one-year history expiry.
           </p>
-          <label className="administration-field">
-            <span>Selected alerting profiles · one per line</span>
-            <textarea
-              className="tactile-input"
-              value={profileText}
-              onChange={(event) => setProfileText(event.target.value)}
-              rows={5}
-            />
-          </label>
-          <TactileButton
-            type="submit"
-            disabled={!profiles || selectedProfileNames.length === 0}
-            variant="primary"
-          >
-            Review scope change
-          </TactileButton>
+          <div className="administration-scope-summary">
+            <strong>{scopeMode.label}</strong>
+            <span>{scopeMode.description}</span>
+          </div>
+          <div className="administration-scope-grid">
+            <div className="administration-field">
+              <label htmlFor={profileFieldId}>Selected alerting profiles · one per line</label>
+              <textarea
+                id={profileFieldId}
+                className="tactile-input"
+                value={profileText}
+                onChange={(event) => changeProfileText(event.target.value)}
+                rows={8}
+                aria-describedby={profileHintId}
+              />
+              <small id={profileHintId}>Optional. Profile names are matched exactly.</small>
+            </div>
+            <div className="administration-field">
+              <label htmlFor={matcherFieldId}>Custom DQL matcher</label>
+              <textarea
+                id={matcherFieldId}
+                className="tactile-input administration-dql-input"
+                value={customDqlMatcher}
+                onChange={(event) => changeCustomDqlMatcher(event.target.value)}
+                rows={8}
+                maxLength={MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH}
+                aria-describedby={matcherHintId}
+                aria-invalid={scopeTestResult?.valid === false}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                placeholder={
+                  'matchesValue(entity_tags, "teams:network")\nand dt.davis.mute.status == "NOT_MUTED"'
+                }
+              />
+              <small id={matcherHintId}>
+                Expression only. Do not include fetch, filter pipes, fields, sorting, or limits.
+              </small>
+            </div>
+          </div>
+          <ProblemScopeTestStatus testing={testingScope} result={scopeTestResult} />
+          <div className="administration-actions administration-scope-actions">
+            <TactileButton
+              type="button"
+              disabled={!profiles}
+              loading={testingScope}
+              onClick={() => void testProblemScope(false)}
+            >
+              Test scope
+            </TactileButton>
+            <TactileButton type="submit" disabled={!profiles || testingScope} variant="primary">
+              Review scope change
+            </TactileButton>
+          </div>
         </form>
       </div>
       <div className="administration-callout">
@@ -251,7 +459,11 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
           if (!applyingProfilesRef.current) setProfileConfirming(false);
         }}
         title="Review stored problem scope"
-        subtitle={`${selectedProfileNames.length} alerting profile${selectedProfileNames.length === 1 ? '' : 's'} selected`}
+        subtitle={
+          scopeTestResult?.valid
+            ? `${scopeTestResult.problemCount.toLocaleString()} current problems match`
+            : scopeMode.label
+        }
         variant="standard"
         dismissible={!applyingProfiles}
         footer={
@@ -268,7 +480,7 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
               type="button"
               variant="primary"
               loading={applyingProfiles}
-              onClick={() => void replaceProfiles()}
+              onClick={() => void replaceProblemScope()}
             >
               Apply stored scope
             </TactileButton>
@@ -288,6 +500,13 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
             <strong>Removed ({removedProfileNames.length})</strong>
             <span>{removedProfileNames.join(', ') || 'None'}</span>
           </div>
+          <div className="administration-callout">
+            <strong>Custom DQL matcher</strong>
+            <span>{matcherChange}</span>
+          </div>
+          {normalizedCustomDqlMatcher && (
+            <pre className="administration-scope-preview">{normalizedCustomDqlMatcher}</pre>
+          )}
         </div>
       </Modal>
 

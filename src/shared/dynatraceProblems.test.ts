@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDynatraceProblemUrl,
   getDynatraceApiTokenError,
+  getDynatraceCustomDqlMatcherError,
   getDynatraceEnvironmentUrlError,
+  normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
+  normalizeDynatraceProblemScopeTestResult,
   type DynatraceProblemNoteRecord,
 } from './dynatraceProblems';
 
@@ -49,6 +52,63 @@ describe('Dynatrace Problems validation', () => {
     expect(getDynatraceApiTokenError('token with spaces')).toMatch(/whitespace/i);
     expect(getDynatraceApiTokenError('x'.repeat(4097))).toMatch(/too long/i);
     expect(getDynatraceApiTokenError('dt0s16.example-token')).toBeNull();
+  });
+
+  it('accepts a multiline workflow-style matcher while preserving quoted pipeline characters', () => {
+    const matcher = `
+      (
+        matchesValue(entity_tags, "teams:network")
+        or matchesPhrase(event.name, "Packet loss on")
+        or matchesValue(event.name, "WAN | Core")
+        or matchesValue(labels.alerting_profile, "*Alerts for NOC")
+      )
+      and maintenance.is_under_maintenance == false
+      and dt.davis.mute.status == "NOT_MUTED"
+    `;
+
+    expect(getDynatraceCustomDqlMatcherError(matcher)).toBeNull();
+    expect(normalizeDynatraceCustomDqlMatcher(`\r\n${matcher}\r\n`)).toBe(
+      matcher.trim().replaceAll('\r\n', '\n'),
+    );
+  });
+
+  it.each([
+    ['a complete pipeline', 'matchesValue(event.name, "*") | limit 1', /matcher expression/i],
+    ['a fetch command', 'fetch dt.davis.problems, from:-2h', /matcher expression/i],
+    ['a line comment', 'matchesValue(event.name, "UPS*") // ignore', /comments/i],
+    ['a block comment', 'matchesValue(event.name, "UPS*") /* ignore */', /comments/i],
+    [
+      'transition-dependent filtering',
+      'not matchesValue(event.status_transition, "UPDATED")',
+      /status_transition/i,
+    ],
+    ['an unclosed string', 'matchesValue(event.name, "UPS*)', /quoted string/i],
+    ['a control character', 'matchesValue(event.name, "UPS")\u0000', /control/i],
+    ['an oversized matcher', 'x'.repeat(16_001), /too long/i],
+  ])('rejects %s', (_caseName, matcher, expectedError) => {
+    expect(getDynatraceCustomDqlMatcherError(matcher)).toMatch(expectedError);
+  });
+
+  it('allows a blank matcher to clear custom DQL scope', () => {
+    expect(getDynatraceCustomDqlMatcherError('  \r\n  ')).toBeNull();
+    expect(normalizeDynatraceCustomDqlMatcher('  \r\n  ')).toBe('');
+  });
+
+  it('normalizes only bounded custom-scope test results', () => {
+    expect(normalizeDynatraceProblemScopeTestResult({ valid: true, problemCount: 0 })).toEqual({
+      valid: true,
+      problemCount: 0,
+    });
+    expect(
+      normalizeDynatraceProblemScopeTestResult({
+        valid: false,
+        error: 'Dynatrace rejected the matcher syntax.',
+      }),
+    ).toEqual({ valid: false, error: 'Dynatrace rejected the matcher syntax.' });
+    expect(normalizeDynatraceProblemScopeTestResult({ valid: true, problemCount: -1 })).toBeNull();
+    expect(
+      normalizeDynatraceProblemScopeTestResult({ valid: false, error: 'x'.repeat(513) }),
+    ).toBeNull();
   });
 });
 

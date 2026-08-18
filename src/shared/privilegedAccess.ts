@@ -8,6 +8,10 @@ import {
   type RelayRoleAccountRecord,
   type StoredRoleAccountRole,
 } from './roleAccounts';
+import {
+  getDynatraceCustomDqlMatcherError,
+  normalizeDynatraceCustomDqlMatcher,
+} from './dynatraceProblems';
 
 export type {
   EffectivePrivilegedRole,
@@ -128,7 +132,7 @@ export type RelayAdministrableSetting = (typeof RELAY_ADMINISTRABLE_SETTINGS)[nu
 export type RelayAdministrationSettingValueMap = {
   'dynatrace.environment-url': { environmentUrl: string };
   'dynatrace.platform-token': { apiToken: string; environmentUrl?: string };
-  'dynatrace.alerting-profiles': { profiles: string[] };
+  'dynatrace.alerting-profiles': { profiles: string[]; customDqlMatcher?: string };
 };
 
 export type RelayRoleAccountAdminView = {
@@ -165,6 +169,8 @@ export type RelayAdministrationSettingSummary = {
   configured: boolean;
   summary: 'Configured' | 'Not configured';
   valueSummary?: string | string[];
+  /** Present only in the protected administration snapshot for the combined problem scope. */
+  customDqlMatcher?: string;
   revision: number;
 };
 
@@ -404,7 +410,7 @@ function normalizeAdministrationSettingSummary(
   value: unknown,
 ): RelayAdministrationSettingSummary | null {
   if (!isRecord(value)) return null;
-  const { setting, configured, summary, valueSummary, revision } = value;
+  const { setting, configured, summary, valueSummary, customDqlMatcher, revision } = value;
   if (
     !isRelayAdministrableSetting(setting) ||
     typeof configured !== 'boolean' ||
@@ -415,6 +421,16 @@ function normalizeAdministrationSettingSummary(
   const expectedSummary = configured ? 'Configured' : 'Not configured';
   if (summary !== expectedSummary) return null;
   if (setting === 'dynatrace.platform-token' && valueSummary !== undefined) return null;
+  if (customDqlMatcher !== undefined) {
+    if (
+      setting !== 'dynatrace.alerting-profiles' ||
+      typeof customDqlMatcher !== 'string' ||
+      !normalizeDynatraceCustomDqlMatcher(customDqlMatcher) ||
+      getDynatraceCustomDqlMatcherError(customDqlMatcher)
+    ) {
+      return null;
+    }
+  }
   if (
     valueSummary !== undefined &&
     typeof valueSummary !== 'string' &&
@@ -429,6 +445,9 @@ function normalizeAdministrationSettingSummary(
     configured,
     summary: expectedSummary,
     ...(valueSummary === undefined ? {} : { valueSummary: valueSummary as string | string[] }),
+    ...(customDqlMatcher === undefined
+      ? {}
+      : { customDqlMatcher: normalizeDynatraceCustomDqlMatcher(customDqlMatcher) }),
     revision,
   };
 }

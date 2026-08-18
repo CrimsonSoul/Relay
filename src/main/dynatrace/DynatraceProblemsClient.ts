@@ -5,6 +5,10 @@ import type {
   DynatraceProblemRecord,
   DynatraceProblemSeverity,
 } from '@shared/dynatraceProblems';
+import {
+  getDynatraceCustomDqlMatcherError,
+  normalizeDynatraceCustomDqlMatcher,
+} from '@shared/dynatraceProblems';
 import type { DynatraceProblemsConfig } from './DynatraceProblemsConfigStore';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -36,6 +40,9 @@ const PROBLEMS_QUERY_FIELDS = `| fields problemId=event.id,
     relatedEntities=smartscape.related_entities,
     alertingProfiles=labels.alerting_profile
 | sort startTime desc
+| limit ${MAX_PROBLEMS}`;
+
+const PROBLEM_IDS_QUERY_FIELDS = `| fields problemId=event.id
 | limit ${MAX_PROBLEMS}`;
 
 const ALERTING_PROFILES_QUERY = `fetch dt.davis.problems, from:-365d
@@ -84,6 +91,8 @@ const problemSchema = z.object({
   alertingProfiles: stringListSchema.nullish(),
 });
 
+const problemIdSchema = z.object({ problemId: z.string().min(1) });
+
 const queryNotificationSchema = z.looseObject({
   notificationType: z.string().nullish(),
   message: z.string().nullish(),
@@ -119,6 +128,8 @@ export type DynatraceProblemsFetchResult = {
   problems: Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>[];
   totalCount: number;
   resultTruncated: boolean;
+  /** Changed IDs observed without custom scope during an incremental matcher poll. */
+  observedProblemIds: string[] | null;
 };
 
 export type DynatraceAlertingProfileFieldHealth = {
@@ -139,21 +150,48 @@ function dqlStringLiteral(value: string): string {
   return `"${escaped}"`;
 }
 
-function buildProblemsQuery(
-  alertingProfiles: string[] | null,
-  scope: DynatraceProblemsQueryScope,
-): string {
-  const timeframe =
-    scope.mode === 'reconcile' ? '-365d' : `-${Math.max(1, Math.ceil(scope.lookbackMinutes))}m`;
+function queryTimeframe(scope: DynatraceProblemsQueryScope): string {
+  return scope.mode === 'reconcile'
+    ? '-365d'
+    : `-${Math.max(1, Math.ceil(scope.lookbackMinutes))}m`;
+}
+
+function buildProblemQueryBase(scope: DynatraceProblemsQueryScope): string {
+  return `fetch dt.davis.problems, from:${queryTimeframe(scope)}
+| dedup event.id, sort:{timestamp desc}
+| filter not(dt.davis.is_duplicate)`;
+}
+
+function buildProblemScopeFilters(config: DynatraceProblemsConfig): string {
+  const alertingProfiles = config.alertingProfiles;
   const profileFilter = alertingProfiles?.length
     ? `\n| filter iAny(in(labels.alerting_profile[], array(${alertingProfiles
         .map(dqlStringLiteral)
         .join(', ')})))`
     : '';
-  return `fetch dt.davis.problems, from:${timeframe}
-| dedup event.id, sort:{timestamp desc}
-| filter not(dt.davis.is_duplicate)${profileFilter}
+  const matcher = normalizeDynatraceCustomDqlMatcher(config.customDqlMatcher ?? '');
+  const matcherError = getDynatraceCustomDqlMatcherError(matcher);
+  if (matcherError) throw new Error(matcherError);
+  const matcherFilter = matcher ? `\n| filter (\n${matcher}\n)` : '';
+  return `${profileFilter}${matcherFilter}`;
+}
+
+function buildProblemsQuery(
+  config: DynatraceProblemsConfig,
+  scope: DynatraceProblemsQueryScope,
+): string {
+  return `${buildProblemQueryBase(scope)}${buildProblemScopeFilters(config)}
 ${PROBLEMS_QUERY_FIELDS}`;
+}
+
+function buildMatchingProblemCountQuery(config: DynatraceProblemsConfig): string {
+  return `${buildProblemQueryBase(DEFAULT_PROBLEMS_QUERY_SCOPE)}${buildProblemScopeFilters(config)}
+| summarize problemCount=count()`;
+}
+
+function buildObservedProblemIdsQuery(scope: DynatraceProblemsQueryScope): string {
+  return `${buildProblemQueryBase(scope)}
+${PROBLEM_IDS_QUERY_FIELDS}`;
 }
 
 function toEntityRef(entity: z.infer<typeof entitySchema>): DynatraceEntityRef {
@@ -421,7 +459,14 @@ export class DynatraceProblemsClient {
     scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
   ): Promise<DynatraceProblemsFetchResult> {
     const syncedAt = new Date().toISOString();
-    const result = await this.runQuery(config, buildProblemsQuery(config.alertingProfiles, scope));
+    const shouldObserveChangedIds =
+      scope.mode === 'incremental' && Boolean(config.customDqlMatcher?.trim());
+    const [result, observation] = await Promise.all([
+      this.runQuery(config, buildProblemsQuery(config, scope)),
+      shouldObserveChangedIds
+        ? this.runQuery(config, buildObservedProblemIdsQuery(scope))
+        : Promise.resolve(null),
+    ]);
     const parsed = z.array(problemSchema).safeParse(result.records);
     if (!parsed.success) {
       throw new Error('Dynatrace returned an unexpected Grail Problems response.');
@@ -430,11 +475,36 @@ export class DynatraceProblemsClient {
     const problems = parsed.data.map((problem) =>
       toRecord(problem, config.environmentUrl, syncedAt),
     );
+    const parsedObservation = observation
+      ? z.array(problemIdSchema).safeParse(observation.records)
+      : null;
+    if (parsedObservation && !parsedObservation.success) {
+      throw new Error('Dynatrace returned an unexpected problem scope observation.');
+    }
+    const observedProblemIds = parsedObservation
+      ? [...new Set(parsedObservation.data.map((record) => record.problemId))]
+      : null;
     return {
       problems,
       totalCount: problems.length,
-      resultTruncated: resultWasTruncated(result) || problems.length >= MAX_PROBLEMS,
+      resultTruncated:
+        resultWasTruncated(result) ||
+        problems.length >= MAX_PROBLEMS ||
+        Boolean(
+          observation &&
+          (resultWasTruncated(observation) || (observedProblemIds?.length ?? 0) >= MAX_PROBLEMS),
+        ),
+      observedProblemIds,
     };
+  }
+
+  async countMatchingProblems(config: DynatraceProblemsConfig): Promise<number> {
+    const result = await this.runQuery(config, buildMatchingProblemCountQuery(config));
+    const count = numericCount(result.records[0], 'problemCount');
+    if (count === null) {
+      throw new Error('Dynatrace returned an unexpected custom problem scope response.');
+    }
+    return count;
   }
 
   async fetchAlertingProfiles(config: DynatraceProblemsConfig): Promise<string[]> {

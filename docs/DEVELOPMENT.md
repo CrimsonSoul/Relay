@@ -59,19 +59,35 @@ since the highest reachable `vX.Y.Z` tag:
 
 The calculated version is injected into Electron package metadata without changing the source
 commit. The reusable Windows job must still pass its native dependency build, persistent bootstrap
-smoke test, packaged startup benchmark, and isolated boundary harness. The release then publishes
-`Relay-vX.Y.Z-windows-x64.exe` and its SHA-256 file as a normal latest release with generated notes.
+smoke test, packaged startup benchmark, and isolated boundary harness. That job continues to pass
+`Relay.exe` internally so build and baseline workflows share the same verified executable. The
+release job packages that executable as `Relay-vX.Y.Z-windows-x64.zip`, with exactly one top-level
+member named `Relay.exe`, and publishes only the ZIP plus
+`Relay-vX.Y.Z-windows-x64.zip.sha256` as a normal latest release with generated notes. The checksum
+covers the downloadable ZIP, not the executable inside it.
 
 The injected package version is also the installed version shown under **Settings > About**. Desktop
-Relay checks GitHub's latest public normal release at startup and no more than once every six hours
-while running. When a newer `vX.Y.Z` release exists, Relay shows one advisory notification per
-version with a **View release** action. The action opens the fixed Relay Releases page; Relay does not
-download or install updates. Relay Web does not perform this desktop release check, and a failed or
-malformed GitHub response remains silent so update discovery cannot interrupt normal operations.
+Relay checks GitHub's latest public normal release at startup and every 15 minutes while running.
+Completed results are not cached, so each scheduled check can discover a newly published version;
+concurrent requests still share one in-flight lookup. When a newer `vX.Y.Z` release exists, Relay
+shows one advisory notification per version and a persistent, non-dismissible header action. The
+header uses `Update · vX.Y.Z` in wide layouts and `vX.Y.Z` at the 1200 px compact-shell breakpoint,
+updates when a later release is discovered, and remains until the installed version is current. Both
+actions open the fixed Relay Releases page; Relay does not download or install updates. Relay Web
+does not perform this desktop release check, and a failed or malformed GitHub response remains
+silent so update discovery cannot interrupt normal operations or erase a previously confirmed
+update.
 
-Release runs queue instead of cancelling one another. A rerun verifies a complete release already
-attached to the exact commit and does not duplicate it; a missing release or asset is rebuilt and
-completed under the existing tag. Do not publish through a local npm script or tag a commit outside
+Focused renderer coverage for this flow must verify the dynamic release label, later-version
+replacement, persistence after a failed refresh, one notification per version, the recoverable
+open-release error, malformed-success handling, desktop-only rendering, wide and compact-shell label
+variants, and minimum-width header geometry with the Windows window-control reservation.
+
+Release runs queue instead of cancelling one another. A rerun treats a release attached to the exact
+commit as complete only when the ZIP and checksum are both present, the checksum matches the ZIP,
+the archive passes an integrity check, and its exact member list is `Relay.exe`. A missing, corrupt,
+or structurally invalid asset is rebuilt and completed under the existing tag. Older releases keep
+their original asset format. Do not publish through a local npm script or tag a commit outside
 `test`; merge the release-worthy conventional commit through the protected `test` pull-request
 workflow.
 
@@ -304,14 +320,34 @@ Implementation notes:
 
 ### Dynatrace Problems
 
-The Relay server polls the read-only Dynatrace Problems API for open problems and a rolling year of
-resolved history. Problems, local NOC notes, and local addressed metadata are stored in PocketBase,
-so clients on the LAN see the same operational history without sending local response data back to
-Dynatrace.
+The Relay server polls Dynatrace Grail for open problems and a rolling year of resolved history.
+Problems, local NOC notes, and local addressed metadata are stored in PocketBase, so clients on the
+LAN see the same operational history without sending local response data back to Dynatrace.
+
+The server-owned query may be narrowed with selected alerting profiles, a custom DQL matcher
+expression, or both. When both are configured, Relay combines them with `AND`. The custom value is
+an expression only: Relay places it inside its own `filter (...)` stage after deduplication and
+before Relay's fixed projection, sort, and limit. Do not include `fetch`, pipeline stages, comments,
+or `event.status_transition`. If alerting-profile tests belong inside an `OR` expression, leave the
+separate selected-profile list empty so Relay does not add an outer profile condition.
+
+Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
+first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the
+prospective complete scope with Dynatrace and returns the current match count. Syntax or request
+failures prevent the write. A valid zero-match scope is allowed but shown as a warning. The matcher
+is exposed only in the protected administration snapshot; ordinary public Dynatrace settings remain
+compatible with clients that know only the alerting-profile list.
+
+Saving a validated scope forces a full reconciliation. Problems that leave scope are marked hidden
+instead of being deleted, preserving their notes and local disposition. Incremental custom-scope
+polls compare the matching IDs with changed unfiltered IDs so tag, mute, maintenance, or profile
+changes can promptly hide a problem. A truncated full custom-scope result fails closed and leaves
+the last complete visible scope intact.
 
 After a successful sync, Relay removes resolved problems whose Dynatrace end time is more than 365
-days old. Their associated local notes and addressed state are removed in the same cleanup. Open
-problems are never aged out, even when they began more than a year ago.
+days old. Records excluded from scope receive the same 365-day retention window. Associated local
+notes and addressed state are removed only when their problem record reaches that retention
+boundary. In-scope open problems are never aged out, even when they began more than a year ago.
 
 ### Optimistic Lists
 

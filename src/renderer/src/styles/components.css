@@ -97,6 +97,39 @@
   border-color: transparent;
 }
 
+/* Persistent release state: visible without competing with operational alerts. */
+.release-update-indicator.tactile-button {
+  flex: 0 0 auto;
+  padding-inline: 12px;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--color-border-strong));
+  background: var(--accent-subtle);
+  color: var(--accent-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.release-update-indicator.tactile-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent-bright);
+}
+
+.release-update-indicator .tactile-button-label {
+  gap: 0;
+}
+
+.release-update-indicator__wide-label {
+  margin-inline-end: 4px;
+}
+
+.release-update-indicator__dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 /* Compact segmented size selector — shared by on-call and notes */
 .size-segmented-control {
   display: inline-grid;

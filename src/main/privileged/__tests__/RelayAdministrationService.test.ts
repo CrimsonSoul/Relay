@@ -13,13 +13,18 @@ describe('RelayAdministrationService', () => {
       profileFilterConfigured: true,
       selectedAlertingProfiles: ['NOC Core'],
     })),
+    getAdministrativeScope: vi.fn(() => ({
+      alertingProfiles: ['NOC Core'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    })),
     saveSettings: vi.fn((input) => ({
       configured: true,
       environmentUrl: input.environmentUrl,
       profileFilterConfigured: true,
       selectedAlertingProfiles: ['NOC Core'],
     })),
-    saveAlertingProfiles: vi.fn(async () => 4),
+    testProblemScope: vi.fn(async () => 4),
+    saveProblemScope: vi.fn(async () => 4),
   };
 
   beforeEach(() => vi.clearAllMocks());
@@ -70,6 +75,7 @@ describe('RelayAdministrationService', () => {
         configured: true,
         summary: 'Configured',
         valueSummary: ['NOC Core'],
+        customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
         revision: 0,
       },
     ]);
@@ -104,14 +110,17 @@ describe('RelayAdministrationService', () => {
     expect(JSON.stringify(result)).not.toContain('dt0s16.new-platform-token');
   });
 
-  it('saves selected alerting profiles and rejects stale revisions', async () => {
+  it('lets an older profile-only client preserve custom DQL and rejects stale revisions', async () => {
     const current = service();
     await current.replace({
       setting: 'dynatrace.alerting-profiles',
       value: { profiles: ['NOC Core', 'Payments'] },
       expectedRevision: 0,
     });
-    expect(dynatrace.saveAlertingProfiles).toHaveBeenCalledWith(['NOC Core', 'Payments']);
+    expect(dynatrace.saveProblemScope).toHaveBeenCalledWith({
+      alertingProfiles: ['NOC Core', 'Payments'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
 
     await expect(
       current.replace({
@@ -120,5 +129,39 @@ describe('RelayAdministrationService', () => {
         expectedRevision: 0,
       }),
     ).rejects.toEqual(new RelaySettingConflictError(1));
+  });
+
+  it('atomically replaces profiles and custom DQL from a current client', async () => {
+    await service().replace({
+      setting: 'dynatrace.alerting-profiles',
+      value: {
+        profiles: [],
+        customDqlMatcher: 'matchesPhrase(event.name, "Packet loss on")',
+      },
+      expectedRevision: 0,
+    });
+
+    expect(dynatrace.saveProblemScope).toHaveBeenCalledWith({
+      alertingProfiles: [],
+      customDqlMatcher: 'matchesPhrase(event.name, "Packet loss on")',
+    });
+  });
+
+  it('returns safe scope test outcomes, including a valid zero-match result', async () => {
+    dynatrace.testProblemScope.mockResolvedValueOnce(0);
+    await expect(
+      service().testProblemScope({
+        alertingProfiles: [],
+        customDqlMatcher: 'matchesPhrase(event.name, "No current match")',
+      }),
+    ).resolves.toEqual({ valid: true, problemCount: 0 });
+
+    dynatrace.testProblemScope.mockRejectedValueOnce(new Error('Dynatrace rejected the matcher.'));
+    await expect(
+      service().testProblemScope({
+        alertingProfiles: [],
+        customDqlMatcher: 'matchesPhrase(event.name, "broken")',
+      }),
+    ).resolves.toEqual({ valid: false, error: 'Dynatrace rejected the matcher.' });
   });
 });

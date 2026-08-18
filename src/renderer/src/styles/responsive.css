@@ -110,6 +110,14 @@
     display: none;
   }
 
+  .release-update-indicator__wide-label {
+    display: none;
+  }
+
+  .release-update-indicator.tactile-button {
+    padding-inline: 10px;
+  }
+
   .app-header {
     padding-inline: 20px;
   }
@@ -127,6 +135,32 @@
   .header-search-container {
     min-width: 180px;
     padding-inline: 16px 0;
+  }
+}
+
+/* At the desktop window minimum, Windows controls consume most of the header.
+   Keep search usable but let it yield to the persistent release state. */
+@media (max-width: 720px) {
+  .header-title-container {
+    display: none;
+  }
+
+  .header-search-container {
+    min-width: 0;
+    padding-inline: 0 8px;
+    overflow: hidden;
+  }
+
+  .header-search-bar {
+    min-width: 0;
+  }
+
+  .header-search-bar-shortcut {
+    display: none;
+  }
+
+  .release-update-indicator.tactile-button {
+    padding-inline: 8px;
   }
 }
 

@@ -123,7 +123,7 @@ jobs:
             const tag = process.env.RELEASE_TAG;
             const version = process.env.RELEASE_VERSION;
             const sourceSha = process.env.SOURCE_SHA;
-            const expectedAsset = `Relay-${tag}-windows-x64.exe`;
+            const expectedAsset = `Relay-${tag}-windows-x64.zip`;
             const expectedChecksum = `${expectedAsset}.sha256`;
             core.setOutput('complete', 'false');
 
@@ -203,7 +203,7 @@ jobs:
         if: steps.release-state.outputs.complete == 'true'
         shell: bash
         env:
-          ASSET_NAME: Relay-${{ steps.version.outputs.tag }}-windows-x64.exe
+          ASSET_NAME: Relay-${{ steps.version.outputs.tag }}-windows-x64.zip
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
@@ -213,7 +213,10 @@ jobs:
             --pattern "$ASSET_NAME" \
             --pattern "$ASSET_NAME.sha256" \
             --dir "$verify_dir" && \
-            (cd "$verify_dir" && sha256sum --check "$ASSET_NAME.sha256"); then
+            (cd "$verify_dir" && \
+              sha256sum --check "$ASSET_NAME.sha256" && \
+              unzip -tqq "$ASSET_NAME" && \
+              test "$(unzip -Z1 "$ASSET_NAME")" = 'Relay.exe'); then
             echo 'should-package=false' >> "$GITHUB_OUTPUT"
             echo "Existing $TAG assets and checksum are complete."
           else
@@ -267,9 +270,14 @@ jobs:
           TAG: ${{ needs.determine.outputs.tag }}
         run: |
           set -euo pipefail
-          asset_name="Relay-${TAG}-windows-x64.exe"
-          mv release/Relay.exe "release/$asset_name"
-          (cd release && sha256sum "$asset_name" > "$asset_name.sha256")
+          asset_name="Relay-${TAG}-windows-x64.zip"
+          (
+            cd release
+            zip -j "$asset_name" Relay.exe
+            unzip -tqq "$asset_name"
+            test "$(unzip -Z1 "$asset_name")" = 'Relay.exe'
+            sha256sum "$asset_name" > "$asset_name.sha256"
+          )
           echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
@@ -307,6 +315,11 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$TAG"
           verify_dir="$(mktemp -d)"
           gh release download "$TAG" --pattern "$ASSET_NAME" --pattern "$ASSET_NAME.sha256" --dir "$verify_dir"
-          (cd "$verify_dir" && sha256sum --check "$ASSET_NAME.sha256")
+          (
+            cd "$verify_dir"
+            sha256sum --check "$ASSET_NAME.sha256"
+            unzip -tqq "$ASSET_NAME"
+            test "$(unzip -Z1 "$ASSET_NAME")" = 'Relay.exe'
+          )
           release_url="$(gh release view "$TAG" --json url --jq .url)"
           echo "Published and verified [$TAG]($release_url)." >> "$GITHUB_STEP_SUMMARY"

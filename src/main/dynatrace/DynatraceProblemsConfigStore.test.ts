@@ -37,6 +37,7 @@ describe('DynatraceProblemsConfigStore', () => {
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.platform-read-only-token',
       alertingProfiles: null,
+      customDqlMatcher: null,
     });
     expect(store.getPublicSettings()).toEqual({
       configured: true,
@@ -60,6 +61,7 @@ describe('DynatraceProblemsConfigStore', () => {
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.platform-read-only-token',
       alertingProfiles: null,
+      customDqlMatcher: null,
     });
   });
 
@@ -78,6 +80,7 @@ describe('DynatraceProblemsConfigStore', () => {
       environmentUrl: 'https://second.apps.dynatrace.com',
       apiToken: 'dt0s16.existing-platform-token',
       alertingProfiles: null,
+      customDqlMatcher: null,
     });
   });
 
@@ -97,6 +100,7 @@ describe('DynatraceProblemsConfigStore', () => {
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.platform-read-only-token',
       alertingProfiles: ['POS Store', 'Alerts for NOC'],
+      customDqlMatcher: null,
     });
     expect(store.getPublicSettings()).toEqual({
       configured: true,
@@ -107,6 +111,63 @@ describe('DynatraceProblemsConfigStore', () => {
     expect(readFileSync(join(dir, 'dynatrace-problems.json'), 'utf8')).not.toContain(
       'dt0s16.platform-read-only-token',
     );
+  });
+
+  it('persists matcher-only scope and lets legacy profile saves preserve it', () => {
+    const store = new DynatraceProblemsConfigStore(dir, {
+      isPackaged: true,
+      secureStorage,
+    });
+    store.save({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      apiToken: 'dt0s16.platform-read-only-token',
+    });
+
+    store.saveProblemScope({
+      alertingProfiles: [],
+      customDqlMatcher: '  matchesValue(entity_tags, "teams:network")  ',
+    });
+    store.saveAlertingProfiles(['NOC Core']);
+
+    expect(store.load()).toEqual({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      apiToken: 'dt0s16.platform-read-only-token',
+      alertingProfiles: ['NOC Core'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+    expect(store.getAdministrativeScope()).toEqual({
+      alertingProfiles: ['NOC Core'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+  });
+
+  it('allows both scope mechanisms to be cleared and rejects unsafe matcher content', () => {
+    const store = new DynatraceProblemsConfigStore(dir, {
+      isPackaged: true,
+      secureStorage,
+    });
+    store.save({
+      environmentUrl: 'https://abc123.apps.dynatrace.com',
+      apiToken: 'dt0s16.platform-read-only-token',
+    });
+    store.saveProblemScope({
+      alertingProfiles: ['NOC Core'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+
+    store.saveProblemScope({ alertingProfiles: [], customDqlMatcher: '' });
+
+    expect(store.getAdministrativeScope()).toEqual({
+      alertingProfiles: [],
+      customDqlMatcher: '',
+    });
+    expect(store.load()).toMatchObject({ alertingProfiles: null, customDqlMatcher: null });
+    expect(() =>
+      store.saveProblemScope({
+        alertingProfiles: [],
+        customDqlMatcher: 'matchesValue(event.name, "*") | limit 1',
+      }),
+    ).toThrow(/matcher expression/i);
   });
 
   it('refuses plaintext token storage in packaged Relay', () => {

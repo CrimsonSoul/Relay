@@ -1,7 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
+const execFileAsync = promisify(execFile);
 const workflowUrl = new URL('../.github/workflows/release.yml', import.meta.url);
 const readWorkflowText = () => readFile(workflowUrl, 'utf8');
 const readWorkflow = async () => parse(await readWorkflowText());
@@ -49,7 +54,7 @@ describe('release workflow authority boundary', () => {
     expect(script).toContain("conclusion !== 'success'");
   });
 
-  it('publishes a normal latest release with a versioned Windows asset and checksum', async () => {
+  it('publishes a normal latest release with a versioned Windows ZIP and checksum', async () => {
     const workflow = await readWorkflow();
     const determine = workflow.jobs.determine;
     const packageJob = workflow.jobs['package-windows'];
@@ -70,10 +75,18 @@ describe('release workflow authority boundary', () => {
       'node scripts/release-version.mjs',
     );
     expect(existingAssetStep.if).toBe("steps.release-state.outputs.complete == 'true'");
+    expect(existingAssetStep.env.ASSET_NAME).toBe(
+      'Relay-${{ steps.version.outputs.tag }}-windows-x64.zip',
+    );
     expect(existingAssetStep.run).toContain('gh release download');
     expect(existingAssetStep.run).toContain('sha256sum --check');
+    expect(existingAssetStep.run).toContain('unzip -tqq "$ASSET_NAME"');
+    expect(existingAssetStep.run).toContain('unzip -Z1 "$ASSET_NAME"');
     expect(findStep(determine, 'Resolve existing release state').with.script).not.toContain(
       'getLatestRelease',
+    );
+    expect(findStep(determine, 'Resolve existing release state').with.script).toContain(
+      'Relay-${tag}-windows-x64.zip',
     );
     expect(packageJob.needs).toBe('determine');
     expect(packageJob.if).toBe("needs.determine.outputs.should-package == 'true'");
@@ -85,7 +98,10 @@ describe('release workflow authority boundary', () => {
       'source-sha': '${{ needs.determine.outputs.source-sha }}',
     });
     expect(release.permissions).toEqual({ actions: 'read', contents: 'write' });
-    expect(assetStep.run).toContain('Relay-${TAG}-windows-x64.exe');
+    expect(assetStep.run).toContain('Relay-${TAG}-windows-x64.zip');
+    expect(assetStep.run).toContain('zip -j "$asset_name" Relay.exe');
+    expect(assetStep.run).toContain('unzip -tqq "$asset_name"');
+    expect(assetStep.run).toContain('unzip -Z1 "$asset_name"');
     expect(assetStep.run).toContain('sha256sum');
     expect(releaseStep.with).toMatchObject({
       draft: false,
@@ -96,7 +112,42 @@ describe('release workflow authority boundary', () => {
       target_commitish: '${{ needs.determine.outputs.source-sha }}',
     });
     expect(releaseStep.with.files).toContain('.sha256');
-    expect(findStep(release, 'Verify published release').run).toContain('sha256sum --check');
+    const publishedVerification = findStep(release, 'Verify published release').run;
+    expect(publishedVerification).toContain('sha256sum --check');
+    expect(publishedVerification).toContain('unzip -tqq "$ASSET_NAME"');
+    expect(publishedVerification).toContain('unzip -Z1 "$ASSET_NAME"');
+  });
+
+  it('creates a checksum-valid ZIP containing only Relay.exe', async () => {
+    const workflow = await readWorkflow();
+    const assetScript = findStep(workflow.jobs.release, 'Create versioned release assets').run;
+    const tempDir = await mkdtemp(join(tmpdir(), 'relay-release-assets-'));
+    const releaseDir = join(tempDir, 'release');
+    const outputFile = join(tempDir, 'github-output.txt');
+    const tag = 'v1.2.3';
+    const assetName = `Relay-${tag}-windows-x64.zip`;
+
+    try {
+      await mkdir(releaseDir);
+      await writeFile(join(releaseDir, 'Relay.exe'), 'verified relay executable');
+      await execFileAsync('bash', ['-c', assetScript], {
+        cwd: tempDir,
+        env: { ...process.env, GITHUB_OUTPUT: outputFile, TAG: tag },
+      });
+
+      const { stdout: members } = await execFileAsync('unzip', [
+        '-Z1',
+        join(releaseDir, assetName),
+      ]);
+      expect(members.trim().split(/\r?\n/u)).toEqual(['Relay.exe']);
+
+      await expect(
+        execFileAsync('sha256sum', ['--check', `${assetName}.sha256`], { cwd: releaseDir }),
+      ).resolves.toMatchObject({ stdout: `${assetName}: OK\n` });
+      await expect(readFile(outputFile, 'utf8')).resolves.toBe(`asset_name=${assetName}\n`);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
   });
 
   it('documents the public download and automatic test-branch release contract in living docs', async () => {
@@ -111,8 +162,8 @@ describe('release workflow authority boundary', () => {
     expect(development).toContain('Build quality gate');
     expect(development).toContain('SonarQube quality gate');
     expect(development).toContain('Snyk security gate');
-    expect(development).toContain('Relay-vX.Y.Z-windows-x64.exe');
-    expect(development).toContain('SHA-256');
+    expect(development).toContain('Relay-vX.Y.Z-windows-x64.zip');
+    expect(development).toContain('Relay-vX.Y.Z-windows-x64.zip.sha256');
     expect(architecture).toContain(
       'Release versions are derived from conventional commits on `test`',
     );

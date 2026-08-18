@@ -133,7 +133,7 @@ describe('setupDynatraceProblemsHandlers', () => {
     expect(manager.syncNow).toHaveBeenCalledWith(true);
   });
 
-  it('validates, deduplicates, and saves a server-side profile filter', async () => {
+  it('validates, deduplicates, saves, and clears a server-side profile filter', async () => {
     await expect(
       getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, [
         'POS Store',
@@ -145,6 +145,7 @@ describe('setupDynatraceProblemsHandlers', () => {
 
     await expect(
       getHandler(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER)({}, []),
-    ).resolves.toMatchObject({ success: false });
+    ).resolves.toEqual({ success: true, data: { count: 4 } });
+    expect(manager.saveAlertingProfiles).toHaveBeenLastCalledWith([]);
   });
 });

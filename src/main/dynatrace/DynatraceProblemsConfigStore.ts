@@ -10,8 +10,11 @@ import {
 import { join } from 'node:path';
 import {
   getDynatraceApiTokenError,
+  getDynatraceCustomDqlMatcherError,
   getDynatraceEnvironmentUrlError,
+  normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
+  type DynatraceProblemScopeInput,
   type DynatraceProblemsPublicSettings,
   type DynatraceProblemsSettingsInput,
 } from '@shared/dynatraceProblems';
@@ -22,6 +25,8 @@ export type DynatraceProblemsConfig = {
   apiToken: string;
   /** Null preserves the legacy unfiltered behavior until a profile filter is saved. */
   alertingProfiles: string[] | null;
+  /** Null preserves the legacy profile-only or unfiltered behavior. */
+  customDqlMatcher: string | null;
 };
 
 type StoredDynatraceProblemsConfig = {
@@ -30,6 +35,7 @@ type StoredDynatraceProblemsConfig = {
   /** Development/test migration fallback. Packaged Relay never writes this field. */
   apiToken?: string;
   alertingProfiles?: string[] | null;
+  customDqlMatcher?: string | null;
 };
 
 type SecureStorageAdapter = Pick<
@@ -89,10 +95,22 @@ export class DynatraceProblemsConfigStore {
 
       if (getDynatraceApiTokenError(apiToken)) return null;
 
+      let customDqlMatcher: string | null = null;
+      if (stored.customDqlMatcher !== undefined && stored.customDqlMatcher !== null) {
+        if (
+          typeof stored.customDqlMatcher !== 'string' ||
+          getDynatraceCustomDqlMatcherError(stored.customDqlMatcher)
+        ) {
+          return null;
+        }
+        customDqlMatcher = normalizeDynatraceCustomDqlMatcher(stored.customDqlMatcher) || null;
+      }
+
       const config = {
         environmentUrl,
         apiToken,
         alertingProfiles: normalizeAlertingProfiles(stored.alertingProfiles),
+        customDqlMatcher,
       };
       if (stored.apiToken && secureStorage?.isEncryptionAvailable()) this.write(config);
       return config;
@@ -125,6 +143,7 @@ export class DynatraceProblemsConfigStore {
       environmentUrl: normalizeDynatraceEnvironmentUrl(input.environmentUrl),
       apiToken,
       alertingProfiles: existing?.alertingProfiles ?? null,
+      customDqlMatcher: existing?.customDqlMatcher ?? null,
     };
     this.write(config);
     return config;
@@ -133,9 +152,30 @@ export class DynatraceProblemsConfigStore {
   saveAlertingProfiles(alertingProfiles: string[]): DynatraceProblemsConfig {
     const existing = this.load();
     if (!existing) throw new Error('Configure Dynatrace Problems before saving a profile filter.');
-    const normalized = normalizeAlertingProfiles(alertingProfiles);
-    if (!normalized) throw new Error('Select at least one alerting profile.');
-    const config = { ...existing, alertingProfiles: normalized };
+    return this.saveProblemScope({
+      alertingProfiles,
+      customDqlMatcher: existing.customDqlMatcher ?? '',
+    });
+  }
+
+  getAdministrativeScope(): DynatraceProblemScopeInput {
+    const config = this.load();
+    return {
+      alertingProfiles: config?.alertingProfiles ?? [],
+      customDqlMatcher: config?.customDqlMatcher ?? '',
+    };
+  }
+
+  saveProblemScope(input: DynatraceProblemScopeInput): DynatraceProblemsConfig {
+    const existing = this.load();
+    if (!existing) throw new Error('Configure Dynatrace Problems before saving problem scope.');
+    const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
+    if (matcherError) throw new Error(matcherError);
+    const config = {
+      ...existing,
+      alertingProfiles: normalizeAlertingProfiles(input.alertingProfiles),
+      customDqlMatcher: normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher) || null,
+    };
     this.write(config);
     return config;
   }
@@ -156,6 +196,7 @@ export class DynatraceProblemsConfigStore {
     const stored: StoredDynatraceProblemsConfig = {
       environmentUrl: config.environmentUrl,
       alertingProfiles: config.alertingProfiles,
+      customDqlMatcher: config.customDqlMatcher,
     };
 
     if (secureStorage?.isEncryptionAvailable()) {
