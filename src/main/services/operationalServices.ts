@@ -238,11 +238,10 @@ export class DynatraceProblemsService {
     try {
       const normalized = [...new Set(profiles.map((profile) => profile.trim()))].filter(Boolean);
       if (
-        normalized.length === 0 ||
         normalized.length > MAX_DYNATRACE_ALERTING_PROFILES ||
         normalized.some((profile) => profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH)
       ) {
-        throw new Error('Select at least one valid alerting profile.');
+        throw new Error('Select only valid alerting profiles.');
       }
       return { success: true, data: { count: await manager.saveAlertingProfiles(normalized) } };
     } catch (error) {

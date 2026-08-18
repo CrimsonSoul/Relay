@@ -15,8 +15,10 @@ import {
 import {
   MAX_DYNATRACE_ALERTING_PROFILES,
   MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
+  getDynatraceCustomDqlMatcherError,
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
+  normalizeDynatraceCustomDqlMatcher,
   normalizeDynatraceEnvironmentUrl,
 } from './dynatraceProblems';
 import {
@@ -55,6 +57,10 @@ export type PrivilegedCommandPayloadMap = {
   'privileged.status.read': { clientVersion: string };
   'privileged.reauth.confirm': { authenticatedAt: string };
   'administration.snapshot.read': Record<string, never>;
+  'administration.dynatrace-problem-scope.test': {
+    profiles: string[];
+    customDqlMatcher: string;
+  };
   'account.admin.create': { username: string; displayName: string; expectedStateRevision: number };
   'account.publisher.create': {
     username: string;
@@ -358,6 +364,7 @@ export function isPublicPrivilegedCommandName(
 const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'privileged.status.read',
   'administration.snapshot.read',
+  'administration.dynatrace-problem-scope.test',
   'account.admin.create',
   'account.publisher.create',
   'account.display-name.update',
@@ -695,9 +702,22 @@ function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSe
   if (setting === 'dynatrace.platform-token') {
     return normalizeTokenSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
   }
-  if (!hasExactKeys(value, ['profiles'])) return null;
+  const hasProfilesOnly = hasExactKeys(value, ['profiles']);
+  const hasCustomMatcher = hasExactKeys(value, ['profiles', 'customDqlMatcher']);
+  if (!hasProfilesOnly && !hasCustomMatcher) return null;
   const profiles = normalizeAlertingProfiles(value.profiles);
-  return profiles ? ({ profiles } as RelayAdministrationSettingValueMap[K]) : null;
+  if (!profiles) return null;
+  if (!hasCustomMatcher) return { profiles } as RelayAdministrationSettingValueMap[K];
+  if (
+    typeof value.customDqlMatcher !== 'string' ||
+    getDynatraceCustomDqlMatcherError(value.customDqlMatcher)
+  ) {
+    return null;
+  }
+  return {
+    profiles,
+    customDqlMatcher: normalizeDynatraceCustomDqlMatcher(value.customDqlMatcher),
+  } as RelayAdministrationSettingValueMap[K];
 }
 
 export function getRelayAdministrationSettingValueError(
@@ -714,6 +734,15 @@ export function getRelayAdministrationSettingValueError(
     );
     if (new Set(normalized).size !== normalized.length)
       return 'Remove duplicate alerting profiles.';
+  }
+  if (
+    setting === 'dynatrace.alerting-profiles' &&
+    isRecord(value) &&
+    Object.hasOwn(value, 'customDqlMatcher') &&
+    typeof value.customDqlMatcher === 'string'
+  ) {
+    const matcherError = getDynatraceCustomDqlMatcherError(value.customDqlMatcher);
+    if (matcherError) return matcherError;
   }
   return normalizeRelayAdministrationSettingValue(setting, value)
     ? null
@@ -861,6 +890,24 @@ function normalizeSettingReplacementPayload(
   } as PrivilegedCommandPayloadMap['administration.setting.replace'];
 }
 
+function normalizeDynatraceProblemScopeTestPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['profiles', 'customDqlMatcher'])) return null;
+  const profiles = normalizeAlertingProfiles(payload.profiles);
+  if (
+    !profiles ||
+    typeof payload.customDqlMatcher !== 'string' ||
+    getDynatraceCustomDqlMatcherError(payload.customDqlMatcher)
+  ) {
+    return null;
+  }
+  return {
+    profiles,
+    customDqlMatcher: normalizeDynatraceCustomDqlMatcher(payload.customDqlMatcher),
+  };
+}
+
 // Exact-key validation across the full signed command union is intentionally centralized.
 // eslint-disable-next-line sonarjs/cognitive-complexity
 function normalizePayload(
@@ -877,6 +924,8 @@ function normalizePayload(
       return normalizeReauthenticationPayload(payload);
     case 'administration.snapshot.read':
       return hasExactKeys(payload, []) ? {} : null;
+    case 'administration.dynatrace-problem-scope.test':
+      return normalizeDynatraceProblemScopeTestPayload(payload);
     case 'account.admin.create':
     case 'account.publisher.create':
       return normalizeAccountCreatePayload(payload);

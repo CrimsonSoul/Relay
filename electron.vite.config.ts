@@ -64,9 +64,13 @@ function rendererManualChunk(id: string): string | undefined {
 
 function mainManualChunk(id: string): string | undefined {
   const normalizedId = id.replaceAll('\\', '/');
-  return normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsClient.ts')
-    ? 'dynatrace-problems-client'
-    : undefined;
+  if (
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsClient.ts') ||
+    normalizedId.endsWith('/src/shared/dynatraceProblems.ts')
+  ) {
+    return 'dynatrace-problems-client';
+  }
+  return undefined;
 }
 
 export default defineConfig({

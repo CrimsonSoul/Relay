@@ -24,6 +24,14 @@ const settingsCss = readFileSync(
   'utf8',
 );
 
+const workflowMatcher = `(
+  matchesValue(entity_tags, "teams:network")
+  or matchesPhrase(event.name, "Packet loss on")
+  or matchesValue(labels.alerting_profile, "*Alerts for NOC")
+)
+and maintenance.is_under_maintenance == false
+and dt.davis.mute.status == "NOT_MUTED"`;
+
 const snapshot: RelayAdministrationSnapshot = {
   accounts: [
     {
@@ -265,10 +273,15 @@ describe('AdministrationSettings', () => {
     expect(screen.getByLabelText('Selected alerting profiles · one per line')).toHaveClass(
       'tactile-input',
     );
+    expect(screen.getByLabelText('Custom DQL matcher')).toHaveClass('tactile-input');
   });
 
   it('reviews alerting-profile scope changes before applying the non-destructive filter', async () => {
-    const execute = vi.fn().mockResolvedValue({ ok: true });
+    const execute = vi.fn(async (request) =>
+      request.command === 'administration.dynatrace-problem-scope.test'
+        ? { ok: true, value: { valid: true, problemCount: 12 } }
+        : { ok: true },
+    );
     mockUseRelayAdministration.mockReturnValue({
       snapshot: {
         ...snapshot,
@@ -297,14 +310,19 @@ describe('AdministrationSettings', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Review stored problem scope' });
+    const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     expect(within(dialog).getByText('Retail Stores')).toBeVisible();
+    expect(within(dialog).getByText(/12 current problems match/i)).toBeVisible();
     expect(within(dialog).getByText(/notes and local dispositions are preserved/i)).toBeVisible();
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenNthCalledWith(1, {
+      command: 'administration.dynatrace-problem-scope.test',
+      payload: { profiles: ['NOC Core', 'Retail Stores'], customDqlMatcher: '' },
+      expectedRevision: null,
+    });
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
     await waitFor(() =>
-      expect(execute).toHaveBeenCalledWith({
+      expect(execute).toHaveBeenNthCalledWith(2, {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
@@ -318,12 +336,14 @@ describe('AdministrationSettings', () => {
 
   it('allows only one alerting-profile scope replacement while confirmation is pending', async () => {
     let finishReplacement!: (result: { ok: true }) => void;
-    const execute = vi.fn(
-      () =>
-        new Promise<{ ok: true }>((resolve) => {
-          finishReplacement = resolve;
-        }),
-    );
+    const execute = vi.fn((request) => {
+      if (request.command === 'administration.dynatrace-problem-scope.test') {
+        return Promise.resolve({ ok: true, value: { valid: true, problemCount: 8 } });
+      }
+      return new Promise<{ ok: true }>((resolve) => {
+        finishReplacement = resolve;
+      });
+    });
     mockUseRelayAdministration.mockReturnValue({
       snapshot: {
         ...snapshot,
@@ -352,12 +372,12 @@ describe('AdministrationSettings', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Review stored problem scope' });
+    const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     const applyButton = within(dialog).getByRole('button', { name: 'Apply stored scope' });
     fireEvent.click(applyButton);
     fireEvent.click(applyButton);
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(applyButton).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
 
@@ -367,12 +387,193 @@ describe('AdministrationSettings', () => {
     );
   });
 
+  it('tests and submits the workflow-style custom matcher with profile AND semantics', async () => {
+    const execute = vi.fn(async (request) =>
+      request.command === 'administration.dynatrace-problem-scope.test'
+        ? { ok: true, value: { valid: true, problemCount: 6 } }
+        : { ok: true },
+    );
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: 'Configured',
+            valueSummary: ['NOC Core'],
+            revision: 4,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Custom DQL matcher'), {
+      target: { value: workflowMatcher },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
+
+    expect(await screen.findByText(/6 current problems match/i)).toBeVisible();
+    expect(screen.getByText(/profiles and custom DQL are combined with AND/i)).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+
+    await waitFor(() =>
+      expect(execute).toHaveBeenLastCalledWith({
+        command: 'administration.setting.replace',
+        payload: {
+          setting: 'dynatrace.alerting-profiles',
+          value: { profiles: ['NOC Core'], customDqlMatcher: workflowMatcher },
+          expectedRevision: 4,
+        },
+        expectedRevision: null,
+      }),
+    );
+  });
+
+  it('accepts zero matches with a visible warning before review', async () => {
+    const execute = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { valid: true, problemCount: 0 },
+    });
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: false,
+            summary: 'Not configured',
+            revision: 0,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="server" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Custom DQL matcher'), {
+      target: { value: 'matchesPhrase(event.name, "No current match")' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
+
+    expect(await screen.findByText(/no current problems match/i)).toBeVisible();
+    expect(screen.getByText(/saving will hide all currently visible problems/i)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Review scope change' })).toBeEnabled();
+  });
+
+  it('shows server matcher errors without clearing the administrator draft', async () => {
+    const execute = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { valid: false, error: 'Dynatrace could not parse line 2.' },
+    });
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: false,
+            summary: 'Not configured',
+            revision: 0,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="server" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    const matcher = screen.getByLabelText('Custom DQL matcher');
+    fireEvent.change(matcher, { target: { value: 'matchesPhrase(event.name, "broken")' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+
+    expect(await screen.findByText('Dynatrace could not parse line 2.')).toBeVisible();
+    expect(matcher).toHaveValue('matchesPhrase(event.name, "broken")');
+    expect(screen.queryByRole('dialog', { name: 'Review stored problem scope' })).toBeNull();
+  });
+
+  it('can explicitly clear both profiles and an existing custom matcher', async () => {
+    const execute = vi.fn(async (request) =>
+      request.command === 'administration.dynatrace-problem-scope.test'
+        ? { ok: true, value: { valid: true, problemCount: 42 } }
+        : { ok: true },
+    );
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: 'Configured',
+            valueSummary: ['NOC Core'],
+            customDqlMatcher: workflowMatcher,
+            revision: 7,
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+      canAdminister: true,
+      refresh: vi.fn(),
+      execute,
+      clearError: vi.fn(),
+    });
+
+    render(<AdministrationSettings relayMode="server" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByLabelText('Custom DQL matcher'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
+
+    await waitFor(() =>
+      expect(execute).toHaveBeenLastCalledWith({
+        command: 'administration.setting.replace',
+        payload: {
+          setting: 'dynatrace.alerting-profiles',
+          value: { profiles: [], customDqlMatcher: '' },
+          expectedRevision: 7,
+        },
+        expectedRevision: null,
+      }),
+    );
+  });
+
   it('defines a compact selector and stacked rows below half-screen widths', () => {
     expect(settingsCss).toMatch(
       /@media \(max-width:\s*980px\)[\s\S]*\.administration-settings__rail\s*{[^}]*display:\s*none/,
     );
     expect(settingsCss).toMatch(
       /@media \(max-width:\s*680px\)[\s\S]*\.administration-row\s*{[^}]*grid-template-columns:\s*1fr/,
+    );
+    expect(settingsCss).toMatch(
+      /@media \(max-width:\s*680px\)[\s\S]*\.administration-scope-grid\s*{[^}]*grid-template-columns:\s*1fr/,
     );
   });
 });

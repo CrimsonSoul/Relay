@@ -13,8 +13,8 @@ const electronViteCli = path.join(
   'bin',
   'electron-vite.js',
 );
-// 525_000, not the original 500_000. The main entry is ~506KB. Three ways to get it
-// back under 500KB were tried and all three rejected:
+// 535_000, not the original 500_000. Three ways to get the main entry back under 500KB
+// were tried and all three rejected:
 //   1. A `manualChunks` split of privileged/relay-web produced the circular chunks this
 //      same test forbids a few assertions above — both have cyclic edges with the entry.
 //   2. Demand-loading src/main/privileged with `await import()` at its two call sites did
@@ -26,9 +26,11 @@ const electronViteCli = path.join(
 //      identically, which says the breakage follows the chunk boundary itself rather than
 //      when it is loaded.
 // A 148KB saving is not worth an upload path that silently fails to resume, so the
-// privileged runtime stays statically linked and the ceiling carries ~4% headroom.
-// Raising it again should mean re-examining what grew, not nudging the number.
-const applicationChunkLimitBytes = 525_000;
+// privileged runtime stays statically linked. The server-wide Dynatrace scope flow added
+// ~3.05KB of measured main-process coordination to a 524.66KB baseline. Its shared runtime
+// stays with the existing Dynatrace client chunk to avoid a circular edge; 535KB leaves
+// ~1.4% headroom. Raising this again should mean re-examining what grew.
+const applicationChunkLimitBytes = 535_000;
 const buildTimeoutMs = 60_000;
 const testTimeoutMs = buildTimeoutMs + 5_000;
 

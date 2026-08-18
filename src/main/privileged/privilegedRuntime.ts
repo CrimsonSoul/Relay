@@ -774,7 +774,11 @@ export type ProductionPrivilegedRuntimeOptions = {
   hostname?: string;
   dynatraceProblemsManager?: Pick<
     DynatraceProblemsManager,
-    'getSettings' | 'saveSettings' | 'saveAlertingProfiles'
+    | 'getSettings'
+    | 'getAdministrativeScope'
+    | 'saveSettings'
+    | 'saveProblemScope'
+    | 'testProblemScope'
   > | null;
 };
 

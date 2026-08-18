@@ -201,6 +201,31 @@ that same queue but retains its StatusGator attribution; CrowdStrike warnings ar
 degraded without generating a toast. The separate Dynatrace Problems notification manager remains
 authoritative for tenant problems and keeps priority over cloud notifications.
 
+### Dynatrace Problems
+
+`src/main/dynatrace/DynatraceProblemsManager.ts` owns the server-wide problem feed, incremental
+polling, daily full reconciliation, scope transitions, retry state, and one-year retention.
+`DynatraceProblemsClient.ts` owns the bounded Grail requests and composes every query from Relay's
+fixed fetch, deduplication, projection, sort, and limit stages.
+
+Problem scope has two independently optional inputs: exact alerting-profile names and one custom DQL
+matcher expression. When both are present, the client emits separate filters and therefore applies
+`AND` semantics. Shared validation permits only an expression that can be embedded inside Relay's
+owned `filter (...)` stage; pipelines, comments, control characters, and
+`event.status_transition` are rejected. Dynatrace remains the final grammar authority through a
+canonical count query that runs before the configuration is saved. A zero count is valid.
+
+Scope management travels through the protected command boundary and requires `settings.manage`.
+The matcher is included in the protected administration summary but omitted from ordinary public
+settings. Existing profile-only clients remain compatible: a legacy profile update preserves any
+stored matcher, while an updated client submits both values atomically.
+
+Full custom-scope reconciliation treats the returned problem IDs as authoritative only when the
+result is complete. A truncated result fails closed without applying exclusions. Incremental polls
+also fetch the bounded set of changed unfiltered IDs, allowing Relay to mark only observed
+nonmatches as `scopeExcluded`. Exclusion hides the record from active views without deleting its
+notes or local disposition; normal retention owns eventual deletion.
+
 ### Dispatcher Radar
 
 `src/main/handlers/radar/RadarManager.ts` owns polling, coalescing, stale-data behavior, and the CW

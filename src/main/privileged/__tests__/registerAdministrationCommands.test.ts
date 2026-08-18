@@ -33,7 +33,10 @@ describe('registerAdministrationCommands', () => {
     rename: vi.fn(async (input) => input),
     revoke: vi.fn(async (input) => input),
   };
-  const administrationService = { replace: vi.fn(async (payload) => payload) };
+  const administrationService = {
+    replace: vi.fn(async (payload) => payload),
+    testProblemScope: vi.fn(async () => ({ valid: true, problemCount: 3 })),
+  };
   const snapshotReader = { read: vi.fn(async () => ({ generatedAt: '2026-07-17T15:00:00.000Z' })) };
 
   beforeEach(() => {
@@ -64,6 +67,7 @@ describe('registerAdministrationCommands', () => {
       ['privileged.device.rename', 'devices.manage'],
       ['privileged.device.revoke', 'devices.manage'],
       ['administration.snapshot.read', 'settings.manage'],
+      ['administration.dynatrace-problem-scope.test', 'settings.manage'],
       ['administration.setting.replace', 'settings.manage'],
     ]);
     expect(handlers.has('operator.create')).toBe(false);
@@ -132,6 +136,20 @@ describe('registerAdministrationCommands', () => {
   it('returns only manager snapshots and reads administration by active account', async () => {
     await handlers.get('administration.snapshot.read')!(context, {} as never);
     expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-charles' });
+  });
+
+  it('tests prospective Dynatrace scope under settings administration authority', async () => {
+    const payload = {
+      profiles: [],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+
+    await handlers.get('administration.dynatrace-problem-scope.test')!(context, payload as never);
+
+    expect(administrationService.testProblemScope).toHaveBeenCalledWith({
+      alertingProfiles: [],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
   });
 
   it('invokes device revoke with the authenticated account and effective role', async () => {

@@ -1057,7 +1057,7 @@ export const COLLECTIONS: CollectionDef[] = [
       {
         type: 'select',
         name: 'scopeSource',
-        values: ['alerting-profile'],
+        values: ['unfiltered', 'alerting-profile', 'custom-dql', 'combined'],
         maxSelect: 1,
       },
       { type: 'bool', name: 'profileFieldHealthy' },

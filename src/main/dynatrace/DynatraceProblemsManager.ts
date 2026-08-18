@@ -6,7 +6,12 @@ import {
   DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_KEY,
+  MAX_DYNATRACE_ALERTING_PROFILES,
+  MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
+  getDynatraceCustomDqlMatcherError,
+  normalizeDynatraceCustomDqlMatcher,
   type DynatraceProblemRecord,
+  type DynatraceProblemScopeInput,
   type DynatraceProblemsPublicSettings,
   type DynatraceProblemsSettingsInput,
   type DynatraceProblemsTestResult,
@@ -69,6 +74,11 @@ type ProfileScopeState = {
   matchedProfileCount: number;
   validationError: string | null;
 };
+type ProblemScopeSource = 'unfiltered' | 'alerting-profile' | 'custom-dql' | 'combined';
+type ProblemScopeReconciliation =
+  | { mode: 'all' }
+  | { mode: 'profiles'; selectedProfiles: Set<string> }
+  | { mode: 'matched-ids'; matchedProblemIds: Set<string>; candidateProblemIds?: Set<string> };
 
 /**
  * Local stand-in for `Map.groupBy`, which is ES2024 and therefore outside the `lib`
@@ -135,6 +145,58 @@ function incrementalLookbackMinutes(sync: SyncRecord | null, now: number): numbe
   return Math.ceil(bounded / 60_000);
 }
 
+function scopeSource(config: DynatraceProblemsConfig): ProblemScopeSource {
+  const profilesConfigured = Boolean(config.alertingProfiles?.length);
+  const matcherConfigured = Boolean(config.customDqlMatcher);
+  if (profilesConfigured && matcherConfigured) return 'combined';
+  if (profilesConfigured) return 'alerting-profile';
+  if (matcherConfigured) return 'custom-dql';
+  return 'unfiltered';
+}
+
+function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): DynatraceProblemScopeInput {
+  const alertingProfiles = [
+    ...new Set(input.alertingProfiles.map((profile) => profile.trim()).filter(Boolean)),
+  ];
+  if (
+    alertingProfiles.length > MAX_DYNATRACE_ALERTING_PROFILES ||
+    alertingProfiles.some((profile) => profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH)
+  ) {
+    throw new Error('Select only valid Dynatrace alerting profiles.');
+  }
+  const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
+  if (matcherError) throw new Error(matcherError);
+  return {
+    alertingProfiles,
+    customDqlMatcher: normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher),
+  };
+}
+
+function applyAlertingProfileScope(
+  problems: IncomingProblem[],
+  selectedProfiles: Set<string> | null,
+): IncomingProblem[] {
+  if (!selectedProfiles) return problems;
+  return problems.filter((problem) =>
+    problem.alertingProfiles.some((profile) => selectedProfiles.has(profile)),
+  );
+}
+
+function createFullProblemScopeReconciliation(
+  config: DynatraceProblemsConfig,
+  selectedProfiles: Set<string> | null,
+  problems: IncomingProblem[],
+): ProblemScopeReconciliation {
+  if (config.customDqlMatcher) {
+    return {
+      mode: 'matched-ids',
+      matchedProblemIds: new Set(problems.map((problem) => problem.problemId)),
+    };
+  }
+  if (selectedProfiles) return { mode: 'profiles', selectedProfiles };
+  return { mode: 'all' };
+}
+
 function problemFingerprint(problem: IncomingProblem | ExistingProblem): string {
   const entities = (values: DynatraceProblemRecord['affectedEntities']) =>
     [...(values ?? [])].sort((a, b) =>
@@ -183,6 +245,10 @@ export class DynatraceProblemsManager {
     return this.store.getPublicSettings();
   }
 
+  getAdministrativeScope(): DynatraceProblemScopeInput {
+    return this.store.getAdministrativeScope();
+  }
+
   saveSettings(input: DynatraceProblemsSettingsInput): DynatraceProblemsPublicSettings {
     this.store.save(input);
     this.start(true);
@@ -190,9 +256,35 @@ export class DynatraceProblemsManager {
   }
 
   async saveAlertingProfiles(alertingProfiles: string[]): Promise<number> {
-    this.store.saveAlertingProfiles(alertingProfiles);
+    return this.saveProblemScope({
+      alertingProfiles,
+      customDqlMatcher: this.store.getAdministrativeScope().customDqlMatcher,
+    });
+  }
+
+  async testProblemScope(input: DynatraceProblemScopeInput): Promise<number> {
+    const existing = this.store.load();
+    if (!existing) throw new Error('Configure Dynatrace Problems before testing problem scope.');
+    const normalized = normalizeProblemScopeInput(input);
+    return this.client.countMatchingProblems({
+      ...existing,
+      alertingProfiles: normalized.alertingProfiles.length ? normalized.alertingProfiles : null,
+      customDqlMatcher: normalized.customDqlMatcher || null,
+    });
+  }
+
+  async saveProblemScope(input: DynatraceProblemScopeInput): Promise<number> {
     if (this.syncInFlight) await this.syncInFlight.catch(() => undefined);
-    return this.syncNow(true);
+    const normalized = normalizeProblemScopeInput(input);
+    const problemCount = await this.testProblemScope(normalized);
+    if (this.syncInFlight) await this.syncInFlight.catch(() => undefined);
+    this.store.saveProblemScope(normalized);
+    try {
+      await this.syncNow(true);
+    } catch (error) {
+      loggers.main.warn('Saved Dynatrace problem scope; reconciliation will retry', { error });
+    }
+    return problemCount;
   }
 
   async testSettings(input: DynatraceProblemsSettingsInput): Promise<DynatraceProblemsTestResult> {
@@ -201,6 +293,7 @@ export class DynatraceProblemsManager {
       environmentUrl: normalizeDynatraceEnvironmentUrl(input.environmentUrl),
       apiToken: input.apiToken?.trim() || existing?.apiToken || '',
       alertingProfiles: existing?.alertingProfiles ?? null,
+      customDqlMatcher: existing?.customDqlMatcher ?? null,
     };
     const problemCount = await this.client.testConnection(config);
     return { reachable: true, problemCount };
@@ -217,7 +310,7 @@ export class DynatraceProblemsManager {
         availableAlertingProfiles: [],
         selectedAlertingProfiles: [],
         profileFilterConfigured: false,
-        scopeSource: 'alerting-profile',
+        scopeSource: 'unfiltered',
         profileFieldHealthy: true,
         profileCatalogCount: 0,
         matchedProfileCount: 0,
@@ -314,11 +407,12 @@ export class DynatraceProblemsManager {
       ({ profileFieldHealthy, profileCatalogCount, matchedProfileCount } = profileScope);
       if (profileScope.validationError) throw new Error(profileScope.validationError);
       const result = await this.client.fetchProblems(config, queryScope);
-      const scopedProblems = selectedProfileSet
-        ? result.problems.filter((problem) =>
-            problem.alertingProfiles.some((profile) => selectedProfileSet.has(profile)),
-          )
-        : result.problems;
+      if (reconciliation && config.customDqlMatcher && result.resultTruncated) {
+        throw new Error(
+          'Dynatrace returned a truncated custom-scope reconciliation. Existing Relay data was preserved.',
+        );
+      }
+      const scopedProblems = applyAlertingProfileScope(result.problems, selectedProfileSet);
       const problems = scopedProblems.map((problem) => ({
         ...problem,
         scopeExcluded: false,
@@ -330,12 +424,15 @@ export class DynatraceProblemsManager {
       );
 
       const upsertStats = await this.upsertProblems(pb, problems, reconciliation);
-      let scopeExcludedCount = 0;
-      let retentionPrunedCount = 0;
-      if (reconciliation) {
-        scopeExcludedCount = await this.reconcileProblemScope(pb, selectedProfileSet);
-        retentionPrunedCount = await this.pruneExpiredHistory(pb);
-      }
+      const { scopeExcludedCount, retentionPrunedCount } = await this.reconcileFetchedProblemScope(
+        pb,
+        config,
+        reconciliation,
+        selectedProfileSet,
+        problems,
+        result.observedProblemIds,
+        result.resultTruncated,
+      );
       const successAt = new Date().toISOString();
       await this.writeSyncState('ok', {
         lastAttemptAt: attemptedAt,
@@ -345,7 +442,7 @@ export class DynatraceProblemsManager {
         availableAlertingProfiles: this.availableAlertingProfiles,
         selectedAlertingProfiles: selectedProfiles ?? [],
         profileFilterConfigured: selectedProfiles !== null,
-        scopeSource: 'alerting-profile',
+        scopeSource: scopeSource(config),
         profileFieldHealthy,
         profileCatalogCount,
         matchedProfileCount,
@@ -373,7 +470,7 @@ export class DynatraceProblemsManager {
       await this.writeSyncState('error', {
         lastAttemptAt: attemptedAt,
         error: message,
-        scopeSource: 'alerting-profile',
+        scopeSource: scopeSource(config),
         profileFieldHealthy,
         profileCatalogCount,
         matchedProfileCount,
@@ -384,6 +481,32 @@ export class DynatraceProblemsManager {
       });
       throw error;
     }
+  }
+
+  private async reconcileFetchedProblemScope(
+    pb: PocketBase,
+    config: DynatraceProblemsConfig,
+    reconciliation: boolean,
+    selectedProfiles: Set<string> | null,
+    problems: IncomingProblem[],
+    observedProblemIds: string[] | null,
+    resultTruncated: boolean,
+  ): Promise<{ scopeExcludedCount: number; retentionPrunedCount: number }> {
+    if (reconciliation) {
+      const scope = createFullProblemScopeReconciliation(config, selectedProfiles, problems);
+      const scopeExcludedCount = await this.reconcileProblemScope(pb, scope);
+      const retentionPrunedCount = await this.pruneExpiredHistory(pb);
+      return { scopeExcludedCount, retentionPrunedCount };
+    }
+    if (!config.customDqlMatcher || !observedProblemIds || resultTruncated) {
+      return { scopeExcludedCount: 0, retentionPrunedCount: 0 };
+    }
+    const scopeExcludedCount = await this.reconcileProblemScope(pb, {
+      mode: 'matched-ids',
+      matchedProblemIds: new Set(problems.map((problem) => problem.problemId)),
+      candidateProblemIds: new Set(observedProblemIds),
+    });
+    return { scopeExcludedCount, retentionPrunedCount: 0 };
   }
 
   private async prepareProfileScope(
@@ -560,21 +683,20 @@ export class DynatraceProblemsManager {
 
   private async reconcileProblemScope(
     pb: PocketBase,
-    selectedProfiles: Set<string> | null,
+    scope: ProblemScopeReconciliation,
   ): Promise<number> {
-    const problems = await pb
-      .collection(DYNATRACE_PROBLEMS_COLLECTION)
-      .getFullList<FilterableProblem>({
-        fields: 'id,problemId,alertingProfiles,scopeExcluded,scopeExcludedAt',
-        requestKey: null,
-      });
+    const problems = await this.loadFilterableProblems(pb, scope);
     const excludedAt = new Date().toISOString();
     let excludedCount = 0;
     for (const problem of problems) {
-      const shouldExclude = Boolean(
-        selectedProfiles &&
-        !problem.alertingProfiles?.some((profile) => selectedProfiles.has(profile)),
-      );
+      let shouldExclude = false;
+      if (scope.mode === 'profiles') {
+        shouldExclude = !problem.alertingProfiles?.some((profile) =>
+          scope.selectedProfiles.has(profile),
+        );
+      } else if (scope.mode === 'matched-ids') {
+        shouldExclude = !scope.matchedProblemIds.has(problem.problemId);
+      }
       if (shouldExclude) excludedCount += 1;
       const missingExcludedAt = shouldExclude && parsedTimestamp(problem.scopeExcludedAt) === null;
       const staleIncludedAt = !shouldExclude && Boolean(problem.scopeExcludedAt);
@@ -590,6 +712,30 @@ export class DynatraceProblemsManager {
       );
     }
     return excludedCount;
+  }
+
+  private async loadFilterableProblems(
+    pb: PocketBase,
+    scope: ProblemScopeReconciliation,
+  ): Promise<FilterableProblem[]> {
+    const collection = pb.collection(DYNATRACE_PROBLEMS_COLLECTION);
+    const options = {
+      fields: 'id,problemId,alertingProfiles,scopeExcluded,scopeExcludedAt',
+      requestKey: null,
+    } as const;
+    if (scope.mode !== 'matched-ids' || !scope.candidateProblemIds) {
+      return collection.getFullList<FilterableProblem>(options);
+    }
+    const problemIds = [...scope.candidateProblemIds];
+    const problems: FilterableProblem[] = [];
+    for (let index = 0; index < problemIds.length; index += EXISTING_LOOKUP_BATCH_SIZE) {
+      const filter = problemIds
+        .slice(index, index + EXISTING_LOOKUP_BATCH_SIZE)
+        .map((problemId) => `problemId="${escapeFilter(problemId)}"`)
+        .join(' || ');
+      problems.push(...(await collection.getFullList<FilterableProblem>({ ...options, filter })));
+    }
+    return problems;
   }
 
   private async deleteProblemsWithRelatedRecords(
@@ -651,7 +797,7 @@ export class DynatraceProblemsManager {
       availableAlertingProfiles?: string[];
       selectedAlertingProfiles?: string[];
       profileFilterConfigured?: boolean;
-      scopeSource?: 'alerting-profile';
+      scopeSource?: ProblemScopeSource;
       profileFieldHealthy?: boolean;
       profileCatalogCount?: number;
       matchedProfileCount?: number;

@@ -14,6 +14,7 @@ const config = {
   environmentUrl: 'https://abc123.apps.dynatrace.com',
   apiToken: 'dt0s16.platform-read-only-token',
   alertingProfiles: null,
+  customDqlMatcher: null,
 };
 
 function makeProblem(problemId: string, title: string) {
@@ -66,7 +67,113 @@ describe('DynatraceProblemsManager', () => {
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.new-platform-token',
       alertingProfiles: null,
+      customDqlMatcher: null,
     });
+  });
+
+  it('tests a prospective combined scope without persisting it and accepts zero matches', async () => {
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      countMatchingProblems: vi.fn().mockResolvedValue(0),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => null,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(
+      manager.testProblemScope({
+        alertingProfiles: ['NOC Core'],
+        customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+      }),
+    ).resolves.toBe(0);
+    expect(client.countMatchingProblems).toHaveBeenCalledWith({
+      ...config,
+      alertingProfiles: ['NOC Core'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+    expect(store).not.toHaveProperty('saveProblemScope');
+  });
+
+  it('validates a scope before saving and triggers a forced reconciliation', async () => {
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      saveProblemScope: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = { countMatchingProblems: vi.fn().mockResolvedValue(0) };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => null,
+      client as unknown as DynatraceProblemsClient,
+    );
+    const sync = vi.spyOn(manager, 'syncNow').mockResolvedValue(0);
+    const input = {
+      alertingProfiles: [],
+      customDqlMatcher: 'matchesPhrase(event.name, "No current match")',
+    };
+
+    await expect(manager.saveProblemScope(input)).resolves.toBe(0);
+
+    expect(store.saveProblemScope).toHaveBeenCalledWith(input);
+    expect(sync).toHaveBeenCalledWith(true);
+  });
+
+  it('does not replace the stored scope when Dynatrace rejects validation', async () => {
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      saveProblemScope: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      countMatchingProblems: vi.fn().mockRejectedValue(new Error('Matcher syntax rejected')),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => null,
+      client as unknown as DynatraceProblemsClient,
+    );
+    const sync = vi.spyOn(manager, 'syncNow').mockResolvedValue(0);
+
+    await expect(
+      manager.saveProblemScope({
+        alertingProfiles: [],
+        customDqlMatcher: 'matchesPhrase(event.name, "broken")',
+      }),
+    ).rejects.toThrow('Matcher syntax rejected');
+
+    expect(store.saveProblemScope).not.toHaveBeenCalled();
+    expect(sync).not.toHaveBeenCalled();
+  });
+
+  it('keeps a validated scope saved when its first reconciliation must retry', async () => {
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      saveProblemScope: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = { countMatchingProblems: vi.fn().mockResolvedValue(4) };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => null,
+      client as unknown as DynatraceProblemsClient,
+    );
+    vi.spyOn(manager, 'syncNow').mockRejectedValue(new Error('Dynatrace temporarily unavailable'));
+    const input = {
+      alertingProfiles: [],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+
+    await expect(manager.saveProblemScope(input)).resolves.toBe(4);
+    expect(store.saveProblemScope).toHaveBeenCalledWith(input);
   });
 
   it('updates known problems, creates new problems, and publishes sync health', async () => {
@@ -127,7 +234,7 @@ describe('DynatraceProblemsManager', () => {
         error: '',
         consecutiveFailures: 0,
         resultTruncated: true,
-        scopeSource: 'alerting-profile',
+        scopeSource: 'unfiltered',
       }),
       { requestKey: null },
     );
@@ -286,6 +393,198 @@ describe('DynatraceProblemsManager', () => {
         profileCatalogCount: 3,
         matchedProfileCount: 2,
       }),
+      { requestKey: null },
+    );
+  });
+
+  it('reconciles custom DQL scope from the authoritative full match set', async () => {
+    const matcherConfig = {
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+    const matchedProblem = makeProblem('MATCHED', 'Still in custom scope');
+    const existingMatched = { id: 'matched-record', ...matchedProblem };
+    const problemCollection = {
+      getFullList: vi
+        .fn()
+        .mockResolvedValueOnce([existingMatched])
+        .mockResolvedValueOnce([
+          {
+            id: 'matched-record',
+            problemId: 'MATCHED',
+            alertingProfiles: [],
+            scopeExcluded: false,
+            scopeExcludedAt: '',
+          },
+          {
+            id: 'lost-record',
+            problemId: 'NO-LONGER-MATCHED',
+            alertingProfiles: [],
+            scopeExcluded: false,
+            scopeExcludedAt: '',
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync-1', key: 'primary' }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = {
+      load: vi.fn().mockReturnValue(matcherConfig),
+      getPublicSettings: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [matchedProblem],
+        totalCount: 1,
+        resultTruncated: false,
+        observedProblemIds: null,
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).resolves.toBe(1);
+
+    expect(problemCollection.update).toHaveBeenCalledTimes(1);
+    expect(problemCollection.update).toHaveBeenCalledWith(
+      'lost-record',
+      { scopeExcluded: true, scopeExcludedAt: expect.any(String) },
+      { requestKey: null },
+    );
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({ state: 'ok', scopeSource: 'custom-dql' }),
+      { requestKey: null },
+    );
+  });
+
+  it('hides only observed changed problems that stop matching during incremental polling', async () => {
+    const matcherConfig = {
+      ...config,
+      customDqlMatcher: 'dt.davis.mute.status == "NOT_MUTED"',
+    };
+    const matchedProblem = makeProblem('MATCHED', 'Still in custom scope');
+    const existingMatched = { id: 'matched-record', ...matchedProblem };
+    const problemCollection = {
+      getFullList: vi
+        .fn()
+        .mockResolvedValueOnce([existingMatched])
+        .mockResolvedValueOnce([
+          {
+            id: 'matched-record',
+            problemId: 'MATCHED',
+            alertingProfiles: [],
+            scopeExcluded: false,
+            scopeExcludedAt: '',
+          },
+          {
+            id: 'lost-record',
+            problemId: 'LOST',
+            alertingProfiles: [],
+            scopeExcluded: false,
+            scopeExcludedAt: '',
+          },
+        ]),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({
+        id: 'sync-1',
+        key: 'primary',
+        lastSuccessAt: new Date(Date.now() - 60_000).toISOString(),
+        lastReconciledAt: new Date().toISOString(),
+      }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
+    const client = {
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [matchedProblem],
+        totalCount: 1,
+        resultTruncated: false,
+        observedProblemIds: ['MATCHED', 'LOST'],
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).resolves.toBe(1);
+
+    expect(problemCollection.update).toHaveBeenCalledTimes(1);
+    expect(problemCollection.update).toHaveBeenCalledWith(
+      'lost-record',
+      { scopeExcluded: true, scopeExcludedAt: expect.any(String) },
+      { requestKey: null },
+    );
+  });
+
+  it('preserves the last complete custom scope when a reconciliation result is truncated', async () => {
+    const matcherConfig = {
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+    const problemCollection = { getFullList: vi.fn(), update: vi.fn(), create: vi.fn() };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync-1', key: 'primary' }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue([]),
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [makeProblem('PARTIAL', 'Partial result')],
+        totalCount: 10_000,
+        resultTruncated: true,
+        observedProblemIds: null,
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).rejects.toThrow(/truncated.*preserved/i);
+
+    expect(problemCollection.getFullList).not.toHaveBeenCalled();
+    expect(problemCollection.update).not.toHaveBeenCalled();
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({ state: 'error', reconciliationPending: true }),
       { requestKey: null },
     );
   });

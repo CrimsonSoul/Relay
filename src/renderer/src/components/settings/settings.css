@@ -788,6 +788,7 @@
 
 .administration-create label > span,
 .administration-field > span,
+.administration-field > label,
 .administration-settings__selector > span {
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
@@ -980,6 +981,90 @@
   overflow-wrap: anywhere;
 }
 
+.administration-scope-summary,
+.administration-scope-status {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.administration-scope-summary {
+  background: color-mix(in srgb, var(--color-bg-surface) 78%, var(--color-bg-base));
+}
+
+.administration-scope-summary strong,
+.administration-scope-status strong {
+  color: var(--color-text-primary);
+}
+
+.administration-scope-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.administration-field small {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+
+textarea.administration-dql-input {
+  min-height: 190px;
+  font-family: var(--font-family-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.administration-scope-status--ok {
+  border-color: color-mix(in srgb, var(--ok) 70%, var(--color-border));
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  color: #6ad982;
+}
+
+.administration-scope-status--warning {
+  border-color: #9c7132;
+  background: #2a2112;
+  color: #f3bf70;
+}
+
+.administration-scope-status--error {
+  border-color: var(--alarm);
+  background: var(--alarm-dim);
+  color: var(--alarm-bright);
+}
+
+.administration-scope-actions {
+  justify-content: flex-start;
+}
+
+.administration-scope-preview {
+  max-height: 220px;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-base);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .administration-dialog-form {
   display: grid;
   gap: var(--space-4);
@@ -1079,6 +1164,10 @@
     grid-template-columns: 1fr;
   }
 
+  .administration-scope-grid {
+    grid-template-columns: 1fr;
+  }
+
   .administration-row {
     grid-template-columns: 1fr;
   }
@@ -1091,6 +1180,18 @@
 
   .administration-setting--wide {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .administration-scope-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .administration-scope-actions .tactile-button {
+    width: 100%;
   }
 }
 

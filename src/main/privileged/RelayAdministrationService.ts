@@ -1,4 +1,9 @@
-import type { DynatraceProblemsPublicSettings } from '@shared/dynatraceProblems';
+import type {
+  DynatraceProblemScopeInput,
+  DynatraceProblemScopeTestResult,
+  DynatraceProblemsPublicSettings,
+} from '@shared/dynatraceProblems';
+import { getErrorMessage } from '@shared/types';
 import {
   RELAY_ADMINISTRABLE_SETTINGS,
   type RelayAdministrableSetting,
@@ -32,7 +37,11 @@ export const RELAY_SETTINGS_MUTATION_INVENTORY: ReadonlyArray<
 
 type DynatraceAdministrationPort = Pick<
   DynatraceProblemsManager,
-  'getSettings' | 'saveSettings' | 'saveAlertingProfiles'
+  | 'getSettings'
+  | 'getAdministrativeScope'
+  | 'saveSettings'
+  | 'saveProblemScope'
+  | 'testProblemScope'
 >;
 
 type RelayAdministrationServiceOptions = {
@@ -78,6 +87,23 @@ export class RelayAdministrationService {
     return this.summaryFor(input.setting, settings);
   }
 
+  async testProblemScope(
+    input: DynatraceProblemScopeInput,
+  ): Promise<DynatraceProblemScopeTestResult> {
+    try {
+      return { valid: true, problemCount: await this.dynatrace.testProblemScope(input) };
+    } catch (error) {
+      const message = getErrorMessage(error);
+      return {
+        valid: false,
+        error:
+          message.length > 0 && message.length <= 512
+            ? message
+            : 'Dynatrace could not validate this problem scope.',
+      };
+    }
+  }
+
   private async applyReplacement(
     input: RelayAdministrationSettingReplacePayload,
   ): Promise<DynatraceProblemsPublicSettings> {
@@ -95,9 +121,14 @@ export class RelayAdministrationService {
           apiToken: input.value.apiToken,
         });
       }
-      case 'dynatrace.alerting-profiles':
-        await this.dynatrace.saveAlertingProfiles(input.value.profiles);
+      case 'dynatrace.alerting-profiles': {
+        const currentScope = this.dynatrace.getAdministrativeScope();
+        await this.dynatrace.saveProblemScope({
+          alertingProfiles: input.value.profiles,
+          customDqlMatcher: input.value.customDqlMatcher ?? currentScope.customDqlMatcher,
+        });
         return this.dynatrace.getSettings();
+      }
     }
   }
 
@@ -117,12 +148,14 @@ export class RelayAdministrationService {
       };
     }
     if (setting === 'dynatrace.alerting-profiles') {
-      const configured = settings.profileFilterConfigured;
+      const scope = this.dynatrace.getAdministrativeScope();
+      const configured = scope.alertingProfiles.length > 0 || Boolean(scope.customDqlMatcher);
       return {
         setting,
         configured,
         summary: configuredSummary(configured),
-        ...(configured ? { valueSummary: [...settings.selectedAlertingProfiles] } : {}),
+        ...(scope.alertingProfiles.length > 0 ? { valueSummary: [...scope.alertingProfiles] } : {}),
+        ...(scope.customDqlMatcher ? { customDqlMatcher: scope.customDqlMatcher } : {}),
         revision,
       };
     }
