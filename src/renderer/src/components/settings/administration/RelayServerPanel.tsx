@@ -64,10 +64,10 @@ function ProblemScopeTestStatus({
 }: Readonly<{ testing: boolean; result: DynatraceProblemScopeTestResult | null }>) {
   if (testing) {
     return (
-      <div className="administration-scope-status" role="status">
+      <output className="administration-scope-status">
         <strong>Testing current scope</strong>
         <span>Dynatrace is validating the matcher and counting current problems.</span>
-      </div>
+      </output>
     );
   }
   if (!result) return null;
@@ -85,7 +85,7 @@ function ProblemScopeTestStatus({
     ? 'administration-scope-status--warning'
     : 'administration-scope-status--ok';
   return (
-    <div className={`administration-scope-status ${statusClass}`} role="status">
+    <output className={`administration-scope-status ${statusClass}`}>
       <strong>
         {zeroMatches
           ? 'Valid scope · no current problems match'
@@ -96,7 +96,7 @@ function ProblemScopeTestStatus({
           ? 'Saving will hide all currently visible problems. Stored history and notes remain intact.'
           : 'This preview uses the same server-owned scope Relay will save.'}
       </span>
-    </div>
+    </output>
   );
 }
 

@@ -156,8 +156,15 @@ const DQL_STATUS_TRANSITION_PATTERN = /\bevent\s*\.\s*status_transition\b/i;
 
 function hasUnsafeControlCharacter(value: string): boolean {
   for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (code <= 8 || code === 11 || code === 12 || (code >= 14 && code <= 31) || code === 127) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 8 ||
+        codePoint === 11 ||
+        codePoint === 12 ||
+        (codePoint >= 14 && codePoint <= 31) ||
+        codePoint === 127)
+    ) {
       return true;
     }
   }
