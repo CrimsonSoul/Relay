@@ -118,25 +118,50 @@ Desktop clients and Relay Web sessions write bounded heartbeat records. Server m
 active client records and presents their sanitized host/browser labels; the server itself is not
 counted. Presence is operational status, not an authorization mechanism.
 
-### Release discovery
+### Release discovery and manual updates
 
 The packaged Electron version is the installed version shown in Settings and the comparison source
 for update discovery. The main process owns a bounded, credential-free request to GitHub's fixed
 latest-release endpoint. It accepts only a published, non-prerelease `vX.Y.Z` release, limits the
 response size and request duration, rejects redirects and malformed data, and single-flights
-concurrent checks without caching a completed result. Trusted IPC exposes only the installed
-version, the normalized comparison result, and an action that opens Relay's fixed Releases page.
+concurrent checks without caching a completed result. `ReleaseUpdateService` keeps ordinary
+notification discovery separate from installability: installation additionally requires GitHub's
+immutable flag, the exact versioned ZIP and checksum assets, uploaded state, bounded sizes, GitHub
+SHA-256 digests, fixed asset API URLs, and a 40-character target commit.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
-produces one advisory toast per version, persisted in local renderer storage, with a **View release**
-action. The validated latest version also drives a non-dismissible header indicator that remains
-visible until the installed version is current and updates when a later release is discovered. A
-failed refresh does not clear a previously confirmed update. The release notification manager owns
-the latest confirmed renderer state, the one-time toast, and the indicator rendered in the app
-header, so Relay does not create a second polling path. Relay never downloads or installs an update.
-Failures are silent unless an operator explicitly tries and fails to open the Releases page; they do
-not affect startup or normal Relay work. Relay Web has neither the release check nor the desktop
-notification or indicator.
+produces one advisory toast per version, persisted in local renderer storage, with a **Review
+update** action. The validated latest version also drives a non-dismissible header indicator that
+remains visible until the installed version is current and changes to Downloading, Install, or
+Restart as the operator progresses. A failed refresh does not clear a previously confirmed update,
+and a same-version check cannot overwrite a download or restart-ready state.
+
+The **Update Relay** dialog is the only renderer workflow. Its fixed preload actions carry no URL,
+path, filename, version, or command argument from the renderer. `ReleaseUpdateManager` owns the
+state machine and requires separate **Download update**, **Install update**, and **Restart Relay**
+requests. Unsupported or unpackaged desktop runtimes retain notification-only GitHub review and do
+not expose an enabled install action. The downloader re-fetches the release before use, follows at
+most three HTTPS redirects across the fixed GitHub asset host set, streams to an exclusive `.part`
+file in a protected per-version directory under `%LOCALAPPDATA%\Relay\Updates`, atomically renames
+the verified file, and requires the byte count and GitHub digest to match. The checksum
+file must independently name the exact ZIP and declare that same digest. The ZIP reader accepts one
+regular, non-encrypted top-level member named `Relay.exe`, bounds expansion, validates CRC and the
+Windows executable marker, and rejects traversal, links, directories, and unsupported compression.
+
+Immediately before execution, the manager revalidates the private staging path and re-hashes the
+extracted executable. Installation launches that exact file with the fixed `/relay-prepare-only`
+argument, which lets the existing persistent Windows bootstrap prepare and activate the new runtime
+without closing the current process. A successful preparation changes the state to restart-ready;
+only the final explicit action validates and relaunches through `%LOCALAPPDATA%\Relay\Relay.exe`.
+Cancellation and failures remove untrusted partial data, while a bootstrap failure retains the
+verified installer for a deliberate retry. Startup cleanup removes only recognized updater staging
+directories older than 24 hours, leaving recent or unrelated paths untouched.
+
+Discovery failures remain silent and do not affect startup or normal Relay work. Explicit action
+failures appear inside the dialog or as a recovery toast. Relay Web has none of the release-check,
+download, install, restart, notification, or indicator capabilities. The GitHub immutable release
+and protected release workflow are the update trust root; the downloaded bootstrap does not have an
+independent publisher signature.
 
 ### Service Status
 
@@ -206,7 +231,7 @@ authoritative for tenant problems and keeps priority over cloud notifications.
 `src/main/dynatrace/DynatraceProblemsManager.ts` owns the server-wide problem feed, incremental
 polling, daily full reconciliation, scope transitions, retry state, and one-year retention.
 `DynatraceProblemsClient.ts` owns the bounded Grail requests and composes every query from Relay's
-fixed fetch, deduplication, projection, sort, and limit stages.
+fixed fetch, deduplication, projection, ordering, and result-boundary stages.
 
 Problem scope is an exclusive choice between no filter, exact alerting-profile names, and one custom
 DQL matcher expression. The administration service exposes the server's cached profile catalog for
@@ -214,10 +239,19 @@ selection and atomically clears the inactive scope mechanism. Config loading, co
 manager, and the query builder all enforce custom-DQL precedence for legacy values that contain both,
 so they can never regain the former combined behavior.
 
+Incremental problem polling checks profile-catalog freshness independently from the daily full
+problem reconciliation. A successful or failed ordinary catalog attempt is throttled for one hour;
+forced reconciliation bypasses that cache. Failure leaves the last known catalog available and does
+not fail the problem sync, while profile-scoped full reconciliation still requires fresh metadata
+before applying destructive exclusions.
+
 Shared validation permits a complete boolean expression that can be embedded inside Relay's owned
 `filter (...)` stage. Internal `or` and `and` clauses—including checks against
-`event.status_transition`—are preserved. Pipelines, comments, and control characters are rejected.
-Dynatrace remains the final grammar authority through a canonical count query that runs before the
+`event.status_transition`—are preserved. For custom scope, the latest `dt.davis.problems` view stays
+the display source while an `event.id in [...]` subquery evaluates the matcher against raw
+`DAVIS_PROBLEM` workflow events. Relay therefore keeps direct-polling latency without depending on
+workflow or email delivery. Pipelines, comments, and control characters are rejected. Dynatrace
+remains the final grammar authority through a canonical count query that runs before the
 configuration is saved. A zero count is valid.
 
 Scope management travels through the protected command boundary and requires `settings.manage`.
@@ -226,11 +260,15 @@ settings. Existing profile-only clients remain compatible: their profile update 
 mode and clears any stored matcher, while an updated client submits the active value and an explicit
 empty value for the inactive mode atomically.
 
-Full custom-scope reconciliation treats the returned problem IDs as authoritative only when the
-result is complete. A truncated result fails closed without applying exclusions. Incremental polls
-also fetch the bounded set of changed unfiltered IDs, allowing Relay to mark only observed
-nonmatches as `scopeExcluded`. Exclusion hides the record from active views without deleting its
-notes or local disposition; normal retention owns eventual deletion.
+The scope preview counts currently active matches. Full custom-scope reconciliation follows stable
+problem-ID cursors through the complete one-year match set, so crossing a single Grail query's record
+limit does not truncate the stored scope. The saved setting returns immediately while that forced
+reconciliation continues under the normal sync-state and retry path. A genuinely incomplete page
+still fails closed without applying exclusions. Incremental custom-scope polling fetches new matching
+problems and a bounded unfiltered set of current problem changes. Existing eligible IDs receive the
+latest details even when an update does not independently match the workflow expression; unrelated
+changed IDs are ignored. Full reconciliation owns exclusions. Exclusion hides the record from active
+views without deleting its notes or local disposition; normal retention owns eventual deletion.
 
 ### Dispatcher Radar
 

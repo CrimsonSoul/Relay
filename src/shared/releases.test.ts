@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { compareRelayVersions, normalizeRelayVersionTag } from './releases';
+import {
+  compareRelayVersions,
+  normalizeRelaySha256Digest,
+  normalizeRelayVersionTag,
+  relayReleaseAssetNames,
+} from './releases';
 
 describe('Relay release versions', () => {
   it('normalizes a canonical GitHub release tag to the packaged version', () => {
@@ -31,5 +36,37 @@ describe('Relay release versions', () => {
 
   it('refuses to compare malformed package versions', () => {
     expect(compareRelayVersions('1.0.0-beta.1', '1.0.0')).toBeNull();
+  });
+
+  it('derives the exact updater asset names for a canonical release', () => {
+    expect(relayReleaseAssetNames('12.34.56')).toEqual({
+      archive: 'Relay-v12.34.56-windows-x64.zip',
+      checksum: 'Relay-v12.34.56-windows-x64.zip.sha256',
+    });
+  });
+
+  it.each(['1.2', '01.2.3', '1.2.3-beta.1', '../1.2.3', ''])(
+    'refuses updater asset names for malformed version %j',
+    (version) => {
+      expect(relayReleaseAssetNames(version)).toBeNull();
+    },
+  );
+
+  it('normalizes the lowercase digest from GitHub release metadata', () => {
+    expect(
+      normalizeRelaySha256Digest(
+        'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      ),
+    ).toBe('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef');
+  });
+
+  it.each([
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    'sha512:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    'sha256:ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+    'sha256:1234',
+    '',
+  ])('rejects malformed GitHub asset digest %j', (digest) => {
+    expect(normalizeRelaySha256Digest(digest)).toBeNull();
   });
 });

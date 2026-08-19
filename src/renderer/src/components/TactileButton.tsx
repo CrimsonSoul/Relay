@@ -12,22 +12,25 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
 };
 
-export const TactileButton: React.FC<Props> = ({
-  children,
-  variant = 'secondary',
-  size = 'md',
-  active = false,
-  icon,
-  loading = false,
-  block = false,
-  tooltip,
-  tooltipPosition = 'top',
-  className = '',
-  style,
-  disabled,
-  title,
-  ...props
-}) => {
+export const TactileButton = React.forwardRef<HTMLButtonElement, Props>(function TactileButton(
+  {
+    children,
+    variant = 'secondary',
+    size = 'md',
+    active = false,
+    icon,
+    loading = false,
+    block = false,
+    tooltip,
+    tooltipPosition = 'top',
+    className = '',
+    style,
+    disabled,
+    title,
+    ...props
+  },
+  ref,
+) {
   const classes = [
     'tactile-button',
     `tactile-button--${variant}`,
@@ -54,6 +57,7 @@ export const TactileButton: React.FC<Props> = ({
 
   const button = (
     <button
+      ref={ref}
       type={props.type ?? 'button'}
       style={style}
       className={classes}
@@ -92,4 +96,4 @@ export const TactileButton: React.FC<Props> = ({
       {button}
     </Tooltip>
   );
-};
+});

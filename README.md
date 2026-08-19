@@ -9,7 +9,13 @@ Relay releases are distributed for Windows. macOS remains supported as a local d
 ## Download
 
 [Download the latest Windows release](https://github.com/CrimsonSoul/Relay/releases/latest). Each
-release includes the Windows x64 installer and its SHA-256 checksum.
+release includes the Windows x64 installer and its SHA-256 checksum. Relay builds that include the
+manual updater can guide you through separate Download, Install, and Restart actions for future
+immutable releases; older builds must install the first updater-capable release from GitHub.
+
+Release executables are not currently Windows publisher-signed. The in-app flow verifies the fixed
+GitHub repository, immutable release metadata, GitHub's asset digest, and the published checksum,
+but that trust model is not a substitute for Authenticode publisher identity.
 
 ## Snapshot
 

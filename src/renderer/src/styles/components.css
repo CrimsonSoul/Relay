@@ -130,6 +130,160 @@
   background: var(--accent);
 }
 
+/* Manual GitHub update flow. The sequence stays legible without competing with operational UI. */
+.release-update-modal__content {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.release-update-modal__steps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-update-modal__steps::before {
+  content: '';
+  position: absolute;
+  top: 11px;
+  right: 16.667%;
+  left: 16.667%;
+  height: 1px;
+  background: var(--color-border-strong);
+}
+
+.release-update-modal__step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+}
+
+.release-update-modal__step[data-state='current'],
+.release-update-modal__step[data-state='complete'] {
+  color: var(--color-text-primary);
+}
+
+.release-update-modal__step-marker {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-round);
+  background: var(--color-bg-surface-elevated);
+  color: var(--color-text-tertiary);
+}
+
+.release-update-modal__step[data-state='current'] .release-update-modal__step-marker {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
+.release-update-modal__step[data-state='complete'] .release-update-modal__step-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.release-update-modal__step-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+}
+
+.release-update-modal__message {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+}
+
+.release-update-modal__message[role='alert'] {
+  color: var(--alarm-bright);
+}
+
+.release-update-modal__progress {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.release-update-modal__progress progress {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--color-border);
+  color: var(--accent);
+  appearance: none;
+}
+
+.release-update-modal__progress progress::-webkit-progress-bar {
+  background: var(--color-border);
+}
+
+.release-update-modal__progress progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.release-update-modal__progress progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.release-update-modal__trust {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.release-update-modal__trust-icon {
+  margin-top: 1px;
+  color: var(--accent-bright);
+}
+
+.release-update-modal__trust > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.release-update-modal__trust strong {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+.release-update-modal__trust span {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.release-update-modal__footer-status {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
 /* Compact segmented size selector — shared by on-call and notes */
 .size-segmented-control {
   display: inline-grid;

@@ -88,6 +88,20 @@ describe('compact Relay shell', () => {
     );
   });
 
+  it('keeps the manual update flow usable at a 400px viewport', () => {
+    const narrowUpdateBlock = mediaBlock(responsiveCss, 'max-width: 520px') ?? '';
+
+    expect(componentsCss).toMatch(
+      /\.release-update-modal__steps\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/u,
+    );
+    expect(narrowUpdateBlock).toMatch(
+      /\.release-update-modal \.modal-footer-generic\s*\{[^}]*flex-direction:\s*column/u,
+    );
+    expect(narrowUpdateBlock).toMatch(
+      /\.release-update-modal \.modal-footer-generic > \.tactile-button\s*\{[^}]*width:\s*100%/u,
+    );
+  });
+
   it('switches the Dynatrace queue and detail to one column before half-screen width', () => {
     expect(dynatraceCss).toContain('@media (max-width: 900px)');
     expect(dynatraceCss).toMatch(

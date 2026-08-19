@@ -331,25 +331,39 @@ accessible names. Keyboard hints describe only actions available for the active 
 ### Persistent release update indicator (`.release-update-indicator`)
 
 When packaged desktop Relay discovers a newer normal release, the global header action area shows a
-compact `TactileButton` before the world clock. Wide and full-screen layouts use the visible label
-`Update · vX.Y.Z`; at the existing 1200 px compact-shell breakpoint and below, the label contracts
-to `vX.Y.Z`. The version always comes from the latest validated release response and changes when a
-later release is discovered.
+compact `TactileButton` before the world clock. Wide and full-screen layouts use a concise state
+label: `Update`, `Downloading`, `Install`, `Installing`, `Restart`, or `Update issue`, followed by
+`· vX.Y.Z`. At the existing 1200 px compact-shell breakpoint and below, the state label contracts to
+`vX.Y.Z`. The version always comes from the latest validated release response and changes when a
+later release is discovered. Its accessible name includes both the version and current action.
 
 The indicator uses a static accent dot, accent-bright text, a restrained accent tint, the standard
 2 px control radius, and the shared focus treatment. It does not pulse, glow, use ambient
 attention-seeking animation, use warning or alarm colors, or offer a dismiss or snooze action; it
 retains the ordinary hover and press feedback of a `TactileButton`. Clicking it opens Relay's fixed
-GitHub Releases page. If that explicit action fails, the control stays in place and Relay shows a
-recoverable error toast. The control remains visible on every tab until the installed version is
-current; a transient refresh failure does not erase a previously confirmed update.
+**Update Relay** dialog when the desktop updater bridge is present. Older builds fall back to the
+fixed GitHub Releases page. The control remains visible on every tab until the installed version is
+current; a transient refresh failure or repeated same-version check does not erase a previously
+confirmed update or manual progress.
+
+The dialog uses the standard modal shell and a single three-stage line for Download, Install, and
+Restart. It names the current stage, shows bounded byte progress during download, explains the
+immutable-GitHub and SHA-256 trust model, and discloses that publisher signing is not included.
+Buttons name the exact next action. Download, install, and restart are never combined; cancellation
+is offered only while downloading, and installation temporarily prevents dismissal while the
+Windows bootstrap prepares the runtime. **View on GitHub** remains a secondary action throughout
+the flow, including download, preparation, restart-ready, and error states. Mutable releases replace
+installation controls with that review action. Failures name what failed and present only a valid recovery such as **Retry download**,
+**Retry install**, **Check again**, or **Retry restart**.
 
 The compact label must remain visible when the sidebar rests at 64 px. It may not shrink, wrap,
 overlap the centered search control or platform window controls, or disappear with the world clock.
 At 720 px and below, the breadcrumb and search shortcut badge yield space while the search field
 remains shrinkable, preserving the indicator through Relay's 400 px desktop window minimum.
-The existing one-time toast announces each newly discovered version; the persistent control itself
-is not a repeatedly announced live region. Relay Web and pop-out windows do not render it.
+At 520 px and below, modal footer actions stack at full width while the three-stage line remains a
+single readable row. The one-time toast announces each newly discovered version with **Review
+update**; the persistent control itself is not a repeatedly announced live region. Relay Web and
+pop-out windows do not render it.
 
 ---
 

@@ -24,7 +24,7 @@ import type {
 import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
 import type { OfflineWritableCollection } from './offlineCollections';
 import type { RelayRuntimeDescriptor } from './runtime';
-import type { RelayUpdateCheck } from './releases';
+import type { RelayUpdateCheck, RelayUpdateSnapshot } from './releases';
 
 export {
   OFFLINE_WRITABLE_COLLECTIONS,
@@ -601,6 +601,12 @@ export type BridgeAPI = {
   /** Desktop-only packaged application version and GitHub release discovery. */
   getAppVersion?: () => Promise<string | null>;
   checkForUpdates?: () => Promise<IpcResult<RelayUpdateCheck>>;
+  getUpdateState?: () => Promise<RelayUpdateSnapshot | null>;
+  downloadUpdate?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
+  cancelUpdateDownload?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
+  installUpdate?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
+  restartToUpdate?: () => Promise<IpcResult<boolean>>;
+  onUpdateStateChanged?: (callback: (snapshot: RelayUpdateSnapshot) => void) => () => void;
   openReleasesPage?: () => Promise<boolean>;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
   openExternal: (url: string) => Promise<boolean>;
@@ -818,6 +824,12 @@ export const IPC_CHANNELS = {
   STARTUP_RENDERER_MOUNTED: 'startup:rendererMounted',
   APP_GET_VERSION: 'app:getVersion',
   APP_CHECK_FOR_UPDATES: 'app:checkForUpdates',
+  APP_UPDATE_GET_STATE: 'app:updateGetState',
+  APP_UPDATE_DOWNLOAD: 'app:updateDownload',
+  APP_UPDATE_CANCEL_DOWNLOAD: 'app:updateCancelDownload',
+  APP_UPDATE_INSTALL: 'app:updateInstall',
+  APP_UPDATE_RESTART: 'app:updateRestart',
+  APP_UPDATE_STATE_CHANGED: 'app:updateStateChanged',
   APP_OPEN_RELEASES: 'app:openReleases',
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',

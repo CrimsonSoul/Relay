@@ -197,6 +197,21 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('FILE_ATTRIBUTE_REPARSE_POINT');
   });
 
+  it('reports prepare-only lock contention as a failed preparation', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const contentionStart = source.indexOf('BootstrapAlreadyRunning:');
+    const contentionEnd = source.indexOf('BootstrapLockFailed:');
+    const contention = source.slice(contentionStart, contentionEnd);
+
+    expect(contentionStart).toBeGreaterThan(-1);
+    expect(contentionEnd).toBeGreaterThan(contentionStart);
+    expect(contention).toContain('${If} $RelayArgs == "/relay-prepare-only"');
+    expect(contention).toContain('SetErrorLevel 1');
+    expect(contention.indexOf('SetErrorLevel 1')).toBeLessThan(
+      contention.indexOf('SetErrorLevel 0'),
+    );
+  });
+
   it('passes the launcher probe without adding quotes to the parsed argument', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
 
@@ -240,6 +255,9 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('[string]$ExpectedPreviousBuildId');
     expect(source).toContain('[IO.FileShare]::Read');
     expect(source).toContain('ConcurrentPreparation');
+    expect(source).toContain('Wait-BootstrapLockHeld');
+    expect(source).toContain('DifferentBuildContentionRejected');
+    expect(source).toContain('$competingPreviousProcess.ExitCode -eq 0');
     expect(source).toContain("Get-IniValue -Path $statePath -Key 'previous'");
     expect(source).toContain('verify-windows-pe.mjs');
     expect(source).toContain('[Diagnostics.Stopwatch]::StartNew()');
