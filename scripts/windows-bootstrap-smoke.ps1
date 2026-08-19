@@ -197,7 +197,24 @@ try {
   [IO.File]::WriteAllText($sentinelPath, "relay-bootstrap-smoke-$([Guid]::NewGuid())")
   $dataTreeHashBefore = Get-DirectoryTreeHash -Path $relayAppDataRoot
 
-  $previousFirstPreparationMs = Invoke-RelayPreparation -Path $previousArtifactPath
+  $previousFirstTimer = [Diagnostics.Stopwatch]::StartNew()
+  $concurrentTimer = [Diagnostics.Stopwatch]::StartNew()
+  $primaryPreviousProcess = Start-Process -FilePath $previousArtifactPath -ArgumentList '/relay-prepare-only' -PassThru
+  Wait-BootstrapLockHeld -Process $primaryPreviousProcess
+  $differentBuildContender = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
+  Wait-ProcessWithTimeout -Process $differentBuildContender -Context 'Different-build preparation contender'
+  Wait-ProcessWithTimeout -Process $primaryPreviousProcess -Context 'Primary previous-build preparation'
+  $previousFirstTimer.Stop()
+  $concurrentTimer.Stop()
+  if ($primaryPreviousProcess.ExitCode -ne 0) {
+    throw "Primary previous-build preparation failed with exit code $($primaryPreviousProcess.ExitCode)."
+  }
+  if ($differentBuildContender.ExitCode -eq 0) {
+    throw 'A different-build prepare-only contender incorrectly reported success.'
+  }
+  $previousFirstPreparationMs = $previousFirstTimer.ElapsedMilliseconds
+  $concurrentPreparationMs = $concurrentTimer.ElapsedMilliseconds
+
   if (-not (Test-Path -LiteralPath $statePath)) {
     throw 'Relay bootstrap did not create state.ini'
   }
@@ -224,20 +241,7 @@ try {
     [IO.FileShare]::Read
   )
   try {
-    $concurrentTimer = [Diagnostics.Stopwatch]::StartNew()
-    $firstProcess = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
-    Wait-BootstrapLockHeld -Process $firstProcess
-    $competingPreviousProcess = Start-Process -FilePath $previousArtifactPath -ArgumentList '/relay-prepare-only' -PassThru
-    Wait-ProcessWithTimeout -Process $competingPreviousProcess -Context 'Competing previous-build preparation'
-    Wait-ProcessWithTimeout -Process $firstProcess -Context 'First concurrent preparation'
-    $concurrentTimer.Stop()
-    if ($firstProcess.ExitCode -ne 0) {
-      throw "Primary concurrent preparation failed with exit code $($firstProcess.ExitCode)."
-    }
-    if ($competingPreviousProcess.ExitCode -eq 0) {
-      throw 'A different-build prepare-only contender incorrectly reported success.'
-    }
-    $concurrentPreparationMs = $concurrentTimer.ElapsedMilliseconds
+    $currentFirstPreparationMs = Invoke-RelayPreparation -Path $artifactPath
   }
   finally {
     $oldRuntimeHandle.Dispose()
@@ -339,6 +343,7 @@ try {
     PreviousFirstPreparationMs = $previousFirstPreparationMs
     PreviousReusePreparationMs = $previousReusePreparationMs
     ConcurrentPreparationMs = $concurrentPreparationMs
+    CurrentFirstPreparationMs = $currentFirstPreparationMs
     CurrentReusePreparationMs = $currentReusePreparationMs
     CurrentRepairPreparationMs = $currentRepairPreparationMs
     ExecutableRepairPreparationMs = $executableRepairPreparationMs

@@ -257,7 +257,12 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('ConcurrentPreparation');
     expect(source).toContain('Wait-BootstrapLockHeld');
     expect(source).toContain('DifferentBuildContentionRejected');
-    expect(source).toContain('$competingPreviousProcess.ExitCode -eq 0');
+    expect(source).toContain(
+      '$primaryPreviousProcess = Start-Process -FilePath $previousArtifactPath',
+    );
+    expect(source).toContain('$differentBuildContender = Start-Process -FilePath $artifactPath');
+    expect(source).toContain('$differentBuildContender.ExitCode -eq 0');
+    expect(source).not.toContain('$competingPreviousProcess');
     expect(source).toContain("Get-IniValue -Path $statePath -Key 'previous'");
     expect(source).toContain('verify-windows-pe.mjs');
     expect(source).toContain('[Diagnostics.Stopwatch]::StartNew()');
