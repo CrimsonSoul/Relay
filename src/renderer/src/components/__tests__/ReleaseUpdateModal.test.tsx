@@ -74,6 +74,14 @@ describe('ReleaseUpdateModal', () => {
     expect(actions.onRestart).not.toHaveBeenCalled();
   });
 
+  it('uses native output semantics for non-error live status updates', () => {
+    renderModal(snapshot({ phase: 'installing' }));
+
+    const statuses = screen.getAllByRole('status');
+    expect(statuses).toHaveLength(2);
+    for (const status of statuses) expect(status.tagName).toBe('OUTPUT');
+  });
+
   it('keeps focus contained when installation enters its non-dismissible busy state', async () => {
     const actions = {
       onClose: vi.fn(),

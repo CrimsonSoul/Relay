@@ -36,7 +36,7 @@ export function parseRelayChecksum(text: string, assetName: string): string {
     throw new Error('Relay release checksum content was invalid');
   }
   const match = CHECKSUM_PATTERN.exec(line);
-  if (!match || match[3] !== assetName) {
+  if (match?.[3] !== assetName) {
     throw new Error('Relay release checksum did not name the expected asset');
   }
   return match[1]!;

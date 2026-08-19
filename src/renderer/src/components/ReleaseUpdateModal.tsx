@@ -144,9 +144,9 @@ function modalFooter(
   if (update.phase === 'installing') {
     return (
       <>
-        <span className="release-update-modal__footer-status" role="status">
+        <output className="release-update-modal__footer-status" aria-live="polite">
           Preparing update…
-        </span>
+        </output>
         {githubButton}
       </>
     );
@@ -301,13 +301,15 @@ export function ReleaseUpdateModal({
           })}
         </ol>
 
-        <p
-          id={statusId}
-          className="release-update-modal__message"
-          role={update.phase === 'error' ? 'alert' : 'status'}
-        >
-          {phaseMessage(update)}
-        </p>
+        {update.phase === 'error' ? (
+          <p id={statusId} className="release-update-modal__message" role="alert">
+            {phaseMessage(update)}
+          </p>
+        ) : (
+          <output id={statusId} className="release-update-modal__message" aria-live="polite">
+            {phaseMessage(update)}
+          </output>
+        )}
 
         {update.phase === 'downloading' && update.totalBytes !== null && (
           <div className="release-update-modal__progress">

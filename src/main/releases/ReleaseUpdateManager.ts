@@ -56,7 +56,7 @@ export type ReleaseUpdateManagerOptions = {
   downloadAsset?: DownloadAsset;
   extractInstaller?: ExtractInstaller;
   spawnInstaller?: (path: string, args: string[]) => Promise<number | null>;
-  createPrivateDirectory?: (path: string) => unknown | Promise<unknown>;
+  createPrivateDirectory?: (path: string) => unknown;
   relaunch?: (options: { execPath: string }) => void;
   quit?: () => void;
 };
