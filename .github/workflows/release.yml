@@ -331,7 +331,7 @@ jobs:
             if (matches.length === 0) return;
 
             const release = matches[0];
-            if (action !== 'verify' || release.draft !== true) {
+            if (!['create', 'verify'].includes(action) || release.draft !== true) {
               throw new Error(`Refusing to replace non-draft release state for ${tag}`);
             }
             await github.rest.repos.deleteRelease({
@@ -413,11 +413,23 @@ jobs:
               throw new Error(`${tag} was missing an expected release asset`);
             }
 
-            const tagRef = await github.rest.git.getRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `tags/${tag}`,
-            });
+            let tagRef;
+            try {
+              tagRef = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              tagRef = await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/tags/${tag}`,
+                sha: sourceSha,
+              });
+              core.info(`Created ${tag} at the verified test commit.`);
+            }
             let object = tagRef.data.object;
             for (let depth = 0; object.type === 'tag' && depth < 5; depth += 1) {
               const annotated = await github.rest.git.getTag({

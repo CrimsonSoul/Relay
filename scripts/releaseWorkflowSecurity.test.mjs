@@ -150,6 +150,8 @@ describe('release workflow authority boundary', () => {
     expect(releaseStep.with).not.toHaveProperty('overwrite_files');
     expect(replaceDraftStep.uses).toBe('actions/github-script@v8');
     expect(replaceDraftStep.with.script).toContain('release.draft !== true');
+    expect(replaceDraftStep.with.script).toContain("!['create', 'verify'].includes(action)");
+    expect(replaceDraftStep.with.script).not.toContain("action !== 'verify'");
     expect(replaceDraftStep.with.script).toContain('deleteRelease');
     expect(replaceDraftStep.with.script).not.toContain('release.assets');
     expect(finalizeStep.uses).toBe('actions/github-script@v8');
@@ -158,7 +160,13 @@ describe('release workflow authority boundary', () => {
     expect(finalizeStep.with.script).toContain('digest');
     expect(finalizeStep.with.script).toContain('expectedDigests');
     expect(finalizeStep.with.script).toContain('getRef');
+    expect(finalizeStep.with.script).toContain('createRef');
+    expect(finalizeStep.with.script).toContain('ref: `refs/tags/${tag}`');
+    expect(finalizeStep.with.script).toContain('sha: sourceSha');
     expect(finalizeStep.with.script).toContain('getTag');
+    expect(finalizeStep.with.script.indexOf('createRef')).toBeLessThan(
+      finalizeStep.with.script.indexOf('updateRelease'),
+    );
     expect(finalizeStep.with.script.indexOf('getRef')).toBeLessThan(
       finalizeStep.with.script.indexOf('updateRelease'),
     );
