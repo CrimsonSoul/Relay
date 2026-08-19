@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DynatraceProblemsConfigStore } from './DynatraceProblemsConfigStore';
@@ -113,7 +113,7 @@ describe('DynatraceProblemsConfigStore', () => {
     );
   });
 
-  it('persists matcher-only scope and lets legacy profile saves preserve it', () => {
+  it('keeps custom DQL exclusive when a legacy scope contains profiles too', () => {
     const store = new DynatraceProblemsConfigStore(dir, {
       isPackaged: true,
       secureStorage,
@@ -124,19 +124,41 @@ describe('DynatraceProblemsConfigStore', () => {
     });
 
     store.saveProblemScope({
-      alertingProfiles: [],
+      alertingProfiles: ['NOC Core'],
       customDqlMatcher: '  matchesValue(entity_tags, "teams:network")  ',
     });
-    store.saveAlertingProfiles(['NOC Core']);
 
     expect(store.load()).toEqual({
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.platform-read-only-token',
-      alertingProfiles: ['NOC Core'],
+      alertingProfiles: null,
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
     });
     expect(store.getAdministrativeScope()).toEqual({
-      alertingProfiles: ['NOC Core'],
+      alertingProfiles: [],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+  });
+
+  it('loads a legacy combined configuration as custom-DQL-only scope', () => {
+    writeFileSync(
+      join(dir, 'dynatrace-problems.json'),
+      JSON.stringify({
+        environmentUrl: 'https://abc123.apps.dynatrace.com',
+        encryptedApiToken: Buffer.from('encrypted:dt0s16.platform-read-only-token').toString(
+          'base64',
+        ),
+        alertingProfiles: ['NOC Core'],
+        customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+      }),
+    );
+    const store = new DynatraceProblemsConfigStore(dir, {
+      isPackaged: true,
+      secureStorage,
+    });
+
+    expect(store.load()).toMatchObject({
+      alertingProfiles: null,
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
     });
   });

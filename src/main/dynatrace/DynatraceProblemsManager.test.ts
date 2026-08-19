@@ -71,7 +71,7 @@ describe('DynatraceProblemsManager', () => {
     });
   });
 
-  it('tests a prospective combined scope without persisting it and accepts zero matches', async () => {
+  it('treats custom DQL as the exclusive scope when a legacy request also includes profiles', async () => {
     const store = {
       load: vi.fn().mockReturnValue(config),
       getPublicSettings: vi.fn(),
@@ -94,7 +94,7 @@ describe('DynatraceProblemsManager', () => {
     ).resolves.toBe(0);
     expect(client.countMatchingProblems).toHaveBeenCalledWith({
       ...config,
-      alertingProfiles: ['NOC Core'],
+      alertingProfiles: null,
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
     });
     expect(store).not.toHaveProperty('saveProblemScope');
@@ -281,6 +281,10 @@ describe('DynatraceProblemsManager', () => {
     await manager.syncNow(true);
 
     expect(client.fetchAlertingProfiles).toHaveBeenCalledTimes(2);
+    expect(manager.getAvailableAlertingProfileCatalog()).toEqual([
+      'New Retail Profile',
+      'Payments Production',
+    ]);
     expect(syncCollection.update).toHaveBeenLastCalledWith(
       'sync-1',
       expect.objectContaining({
@@ -475,7 +479,7 @@ describe('DynatraceProblemsManager', () => {
     );
   });
 
-  it('keeps both profile matches and custom-DQL-only matches in a combined scope', async () => {
+  it('reports a legacy combined configuration as custom-DQL scope', async () => {
     const combinedConfig = {
       ...config,
       alertingProfiles: ['NOC Core'],
@@ -539,7 +543,7 @@ describe('DynatraceProblemsManager', () => {
     expect(problemCollection.create).toHaveBeenCalledWith(matcherOnlyMatch, { requestKey: null });
     expect(syncCollection.update).toHaveBeenLastCalledWith(
       'sync-1',
-      expect.objectContaining({ state: 'ok', scopeSource: 'combined' }),
+      expect.objectContaining({ state: 'ok', scopeSource: 'custom-dql' }),
       { requestKey: null },
     );
   });

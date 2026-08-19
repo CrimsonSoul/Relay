@@ -39,7 +39,7 @@ release includes the Windows x64 installer and its SHA-256 checksum.
 - **On-Call Board**: Manage team and role coverage with drag-and-drop scheduling, lock control, export/copy tools, and popout support
 - **Knowledge**: Browse the shared Wiki, Contacts, and Servers from one workspace; search server-managed PDF guides and cache opened documents for desktop offline reading
 - **Service Status**: Monitor provider incident feeds across major cloud and SaaS vendors
-- **Dynatrace Problems**: Review synchronized Problems, filter by alerting profile, record local dispositions and ticket references, and open the source Problem in Dynatrace
+- **Dynatrace Problems**: Review synchronized Problems, scope the feed with selected alerting profiles or a complete custom DQL expression, record local dispositions and ticket references, and open the source Problem in Dynatrace
 - **Dispatcher Radar**: Review the Relay server's validated dispatch, queue, service, and dashboard-timing snapshot without exposing the CW Dashboard session to clients
 - **Relay Web Backup**: Use the shared Relay workspace from a supported desktop browser on the trusted LAN or VPN
 - **Client Presence**: Show connected Relay clients in server mode, list hostnames on hover, and notify when clients connect

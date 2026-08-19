@@ -776,6 +776,7 @@ export type ProductionPrivilegedRuntimeOptions = {
     DynatraceProblemsManager,
     | 'getSettings'
     | 'getAdministrativeScope'
+    | 'getAvailableAlertingProfileCatalog'
     | 'saveSettings'
     | 'saveProblemScope'
     | 'testProblemScope'

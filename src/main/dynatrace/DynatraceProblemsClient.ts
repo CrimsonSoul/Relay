@@ -172,11 +172,9 @@ function buildProblemScopeFilters(config: DynatraceProblemsConfig): string {
   const matcher = normalizeDynatraceCustomDqlMatcher(config.customDqlMatcher ?? '');
   const matcherError = getDynatraceCustomDqlMatcherError(matcher);
   if (matcherError) throw new Error(matcherError);
-  if (profileMatcher && matcher) {
-    return `\n| filter (\n${profileMatcher}\nor (\n${matcher}\n)\n)`;
-  }
+  if (matcher) return `\n| filter (\n${matcher}\n)`;
   if (profileMatcher) return `\n| filter ${profileMatcher}`;
-  return matcher ? `\n| filter (\n${matcher}\n)` : '';
+  return '';
 }
 
 function buildProblemsQuery(

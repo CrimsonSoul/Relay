@@ -324,19 +324,24 @@ The Relay server polls Dynatrace Grail for open problems and a rolling year of r
 Problems, local NOC notes, and local addressed metadata are stored in PocketBase, so clients on the
 LAN see the same operational history without sending local response data back to Dynatrace.
 
-The server-owned query may be narrowed with selected alerting profiles, a custom DQL matcher
-expression, or both. When both are configured, Relay combines them with `OR`: a problem appears when
-it matches any selected profile or the custom expression. Logic inside the custom expression is
-preserved. Relay places that expression inside its own `filter (...)` stage after deduplication and
-before Relay's fixed projection, sort, and limit. Do not include `fetch`, pipeline stages, comments,
-or `event.status_transition`.
+The server-owned query has three mutually exclusive scope modes: all problems, one or more selected
+alerting profiles, or one custom DQL filter expression. Administration presents the server-discovered
+alerting-profile catalog as a multi-select list. Custom DQL is never combined with that list; switching
+modes clears the inactive filter when the scope is saved. A legacy configuration or request that
+contains both is treated as custom-DQL-only.
+
+Relay preserves the complete custom expression, including its internal `or` and `and` clauses, and
+places it inside one owned `filter (...)` stage after deduplication and before Relay's fixed
+projection, sort, and limit. Expressions may reference `event.status_transition`. Do not include
+`fetch`, a leading `filter` pipe, other pipeline stages, comments, or control characters.
 
 Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
 first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the
 prospective complete scope with Dynatrace and returns the current match count. Syntax or request
 failures prevent the write. A valid zero-match scope is allowed but shown as a warning. The matcher
 is exposed only in the protected administration snapshot; ordinary public Dynatrace settings remain
-compatible with clients that know only the alerting-profile list.
+compatible with clients that know only the alerting-profile list. A profile update from such a
+client selects profile mode and clears custom DQL rather than combining the two mechanisms.
 
 Saving a validated scope forces a full reconciliation. Problems that leave scope are marked hidden
 instead of being deleted, preserving their notes and local disposition. Incremental custom-scope

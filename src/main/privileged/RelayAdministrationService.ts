@@ -39,6 +39,7 @@ type DynatraceAdministrationPort = Pick<
   DynatraceProblemsManager,
   | 'getSettings'
   | 'getAdministrativeScope'
+  | 'getAvailableAlertingProfileCatalog'
   | 'saveSettings'
   | 'saveProblemScope'
   | 'testProblemScope'
@@ -122,10 +123,10 @@ export class RelayAdministrationService {
         });
       }
       case 'dynatrace.alerting-profiles': {
-        const currentScope = this.dynatrace.getAdministrativeScope();
+        const customDqlMatcher = input.value.customDqlMatcher ?? '';
         await this.dynatrace.saveProblemScope({
-          alertingProfiles: input.value.profiles,
-          customDqlMatcher: input.value.customDqlMatcher ?? currentScope.customDqlMatcher,
+          alertingProfiles: customDqlMatcher ? [] : input.value.profiles,
+          customDqlMatcher,
         });
         return this.dynatrace.getSettings();
       }
@@ -149,13 +150,17 @@ export class RelayAdministrationService {
     }
     if (setting === 'dynatrace.alerting-profiles') {
       const scope = this.dynatrace.getAdministrativeScope();
+      const customDqlMatcher = scope.customDqlMatcher;
       const configured = scope.alertingProfiles.length > 0 || Boolean(scope.customDqlMatcher);
       return {
         setting,
         configured,
         summary: configuredSummary(configured),
-        ...(scope.alertingProfiles.length > 0 ? { valueSummary: [...scope.alertingProfiles] } : {}),
-        ...(scope.customDqlMatcher ? { customDqlMatcher: scope.customDqlMatcher } : {}),
+        ...(!customDqlMatcher && scope.alertingProfiles.length > 0
+          ? { valueSummary: [...scope.alertingProfiles] }
+          : {}),
+        ...(customDqlMatcher ? { customDqlMatcher } : {}),
+        availableValues: this.dynatrace.getAvailableAlertingProfileCatalog(),
         revision,
       };
     }

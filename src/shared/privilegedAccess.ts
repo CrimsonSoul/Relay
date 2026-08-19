@@ -169,8 +169,10 @@ export type RelayAdministrationSettingSummary = {
   configured: boolean;
   summary: 'Configured' | 'Not configured';
   valueSummary?: string | string[];
-  /** Present only in the protected administration snapshot for the combined problem scope. */
+  /** Present only in the protected administration snapshot for custom-DQL problem scope. */
   customDqlMatcher?: string;
+  /** Server-discovered values available to the protected setting editor. */
+  availableValues?: string[];
   revision: number;
 };
 
@@ -406,11 +408,35 @@ function normalizePrivilegedDeviceAdminView(value: unknown): RelayPrivilegedDevi
   };
 }
 
+function normalizeAdministrationAvailableValues(
+  setting: RelayAdministrableSetting,
+  value: unknown,
+): string[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (
+    setting !== 'dynatrace.alerting-profiles' ||
+    !Array.isArray(value) ||
+    value.length > 250 ||
+    value.some((entry) => typeof entry !== 'string' || entry.length > 512)
+  ) {
+    return null;
+  }
+  return [...value];
+}
+
 function normalizeAdministrationSettingSummary(
   value: unknown,
 ): RelayAdministrationSettingSummary | null {
   if (!isRecord(value)) return null;
-  const { setting, configured, summary, valueSummary, customDqlMatcher, revision } = value;
+  const {
+    setting,
+    configured,
+    summary,
+    valueSummary,
+    customDqlMatcher,
+    availableValues,
+    revision,
+  } = value;
   if (
     !isRelayAdministrableSetting(setting) ||
     typeof configured !== 'boolean' ||
@@ -421,6 +447,11 @@ function normalizeAdministrationSettingSummary(
   const expectedSummary = configured ? 'Configured' : 'Not configured';
   if (summary !== expectedSummary) return null;
   if (setting === 'dynatrace.platform-token' && valueSummary !== undefined) return null;
+  const normalizedAvailableValues = normalizeAdministrationAvailableValues(
+    setting,
+    availableValues,
+  );
+  if (normalizedAvailableValues === null) return null;
   if (customDqlMatcher !== undefined) {
     if (
       setting !== 'dynatrace.alerting-profiles' ||
@@ -448,6 +479,9 @@ function normalizeAdministrationSettingSummary(
     ...(customDqlMatcher === undefined
       ? {}
       : { customDqlMatcher: normalizeDynatraceCustomDqlMatcher(customDqlMatcher) }),
+    ...(normalizedAvailableValues === undefined
+      ? {}
+      : { availableValues: normalizedAvailableValues }),
     revision,
   };
 }

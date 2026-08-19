@@ -26,9 +26,16 @@ const settingsCss = readFileSync(
 
 const workflowMatcher = `(
   matchesValue(entity_tags, "teams:network")
+  or matchesValue(entity_tags, "critical_intf")
+  or matchesValue(event.name, "UPS on battery*")
   or matchesPhrase(event.name, "Packet loss on")
+  or matchesValue(affected_entity_types, "dt.entity.python:certificate_monitor_certificate")
+  or matchesValue(labels.alerting_profile, "*WAN Links")
   or matchesValue(labels.alerting_profile, "*Alerts for NOC")
+  or matchesValue(labels.alerting_profile, "Pure Array Latency")
+  or matchesValue(labels.alerting_profile, "duo auth proxy on chpw-duoauth01")
 )
+and not matchesValue(event.status_transition, "UPDATED")
 and maintenance.is_under_maintenance == false
 and dt.davis.mute.status == "NOT_MUTED"`;
 
@@ -266,14 +273,16 @@ describe('AdministrationSettings', () => {
     );
   });
 
-  it('uses the shared tactile field for multiline administration values', () => {
+  it('presents three mutually exclusive scope methods and a tactile DQL editor', () => {
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
 
-    expect(screen.getByLabelText('Selected alerting profiles · one per line')).toHaveClass(
-      'tactile-input',
-    );
-    expect(screen.getByLabelText('Custom DQL matcher')).toHaveClass('tactile-input');
+    expect(screen.getByRole('radio', { name: /all problems/i })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /alerting profiles/i })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /custom DQL/i })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
+    expect(screen.getByLabelText('Complete DQL filter expression')).toHaveClass('tactile-input');
   });
 
   it('reviews alerting-profile scope changes before applying the non-destructive filter', async () => {
@@ -291,6 +300,7 @@ describe('AdministrationSettings', () => {
             configured: true,
             summary: '1 selected',
             valueSummary: ['NOC Core'],
+            availableValues: ['NOC Core', 'Retail Stores'],
             revision: 4,
           },
         ],
@@ -305,9 +315,8 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
-      target: { value: 'NOC Core\nRetail Stores' },
-    });
+    expect(screen.getByRole('checkbox', { name: 'NOC Core' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
@@ -326,7 +335,7 @@ describe('AdministrationSettings', () => {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: ['NOC Core', 'Retail Stores'] },
+          value: { profiles: ['NOC Core', 'Retail Stores'], customDqlMatcher: '' },
           expectedRevision: 4,
         },
         expectedRevision: null,
@@ -353,6 +362,7 @@ describe('AdministrationSettings', () => {
             configured: true,
             summary: '1 selected',
             valueSummary: ['NOC Core'],
+            availableValues: ['NOC Core', 'Retail Stores'],
             revision: 4,
           },
         ],
@@ -367,9 +377,7 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
-      target: { value: 'NOC Core\nRetail Stores' },
-    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Retail Stores' }));
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
@@ -387,7 +395,7 @@ describe('AdministrationSettings', () => {
     );
   });
 
-  it('tests and submits the workflow-style custom matcher with profile OR semantics', async () => {
+  it('tests and submits the complete workflow DQL without combining selected profiles', async () => {
     const execute = vi.fn(async (request) =>
       request.command === 'administration.dynatrace-problem-scope.test'
         ? { ok: true, value: { valid: true, problemCount: 6 } }
@@ -402,6 +410,7 @@ describe('AdministrationSettings', () => {
             configured: true,
             summary: 'Configured',
             valueSummary: ['NOC Core'],
+            availableValues: ['NOC Core', 'Retail Stores'],
             revision: 4,
           },
         ],
@@ -416,13 +425,19 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="client" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    fireEvent.change(screen.getByLabelText('Custom DQL matcher'), {
+    fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
+    fireEvent.change(screen.getByLabelText('Complete DQL filter expression'), {
       target: { value: workflowMatcher },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
 
     expect(await screen.findByText(/6 current problems match/i)).toBeVisible();
-    expect(screen.getByText(/matches an alerting profile or the custom DQL/i)).toBeVisible();
+    expect(screen.getByText(/complete DQL expression is the only filter/i)).toBeVisible();
+    expect(execute).toHaveBeenNthCalledWith(1, {
+      command: 'administration.dynatrace-problem-scope.test',
+      payload: { profiles: [], customDqlMatcher: workflowMatcher },
+      expectedRevision: null,
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
@@ -433,7 +448,7 @@ describe('AdministrationSettings', () => {
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value: { profiles: ['NOC Core'], customDqlMatcher: workflowMatcher },
+          value: { profiles: [], customDqlMatcher: workflowMatcher },
           expectedRevision: 4,
         },
         expectedRevision: null,
@@ -468,7 +483,8 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="server" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    fireEvent.change(screen.getByLabelText('Custom DQL matcher'), {
+    fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
+    fireEvent.change(screen.getByLabelText('Complete DQL filter expression'), {
       target: { value: 'matchesPhrase(event.name, "No current match")' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
@@ -505,7 +521,8 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="server" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    const matcher = screen.getByLabelText('Custom DQL matcher');
+    fireEvent.click(screen.getByRole('radio', { name: /custom DQL/i }));
+    const matcher = screen.getByLabelText('Complete DQL filter expression');
     fireEvent.change(matcher, { target: { value: 'matchesPhrase(event.name, "broken")' } });
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
 
@@ -544,10 +561,7 @@ describe('AdministrationSettings', () => {
 
     render(<AdministrationSettings relayMode="server" />);
     fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
-    fireEvent.change(screen.getByLabelText('Selected alerting profiles · one per line'), {
-      target: { value: '' },
-    });
-    fireEvent.change(screen.getByLabelText('Custom DQL matcher'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('radio', { name: /all problems/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Apply stored scope' }));
@@ -573,7 +587,7 @@ describe('AdministrationSettings', () => {
       /@media \(max-width:\s*680px\)[\s\S]*\.administration-row\s*{[^}]*grid-template-columns:\s*1fr/,
     );
     expect(settingsCss).toMatch(
-      /@media \(max-width:\s*680px\)[\s\S]*\.administration-scope-grid\s*{[^}]*grid-template-columns:\s*1fr/,
+      /@media \(max-width:\s*680px\)[\s\S]*\.administration-scope-methods\s*{[^}]*grid-template-columns:\s*1fr/,
     );
   });
 });

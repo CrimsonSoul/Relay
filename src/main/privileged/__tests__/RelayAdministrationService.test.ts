@@ -17,6 +17,7 @@ describe('RelayAdministrationService', () => {
       alertingProfiles: ['NOC Core'],
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
     })),
+    getAvailableAlertingProfileCatalog: vi.fn(() => ['NOC Core', 'Payments', 'Retail Stores']),
     saveSettings: vi.fn((input) => ({
       configured: true,
       environmentUrl: input.environmentUrl,
@@ -74,8 +75,8 @@ describe('RelayAdministrationService', () => {
         setting: 'dynatrace.alerting-profiles',
         configured: true,
         summary: 'Configured',
-        valueSummary: ['NOC Core'],
         customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+        availableValues: ['NOC Core', 'Payments', 'Retail Stores'],
         revision: 0,
       },
     ]);
@@ -110,7 +111,7 @@ describe('RelayAdministrationService', () => {
     expect(JSON.stringify(result)).not.toContain('dt0s16.new-platform-token');
   });
 
-  it('lets an older profile-only client preserve custom DQL and rejects stale revisions', async () => {
+  it('lets an older profile-only client switch away from custom DQL and rejects stale revisions', async () => {
     const current = service();
     await current.replace({
       setting: 'dynatrace.alerting-profiles',
@@ -119,7 +120,7 @@ describe('RelayAdministrationService', () => {
     });
     expect(dynatrace.saveProblemScope).toHaveBeenCalledWith({
       alertingProfiles: ['NOC Core', 'Payments'],
-      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+      customDqlMatcher: '',
     });
 
     await expect(
@@ -131,11 +132,11 @@ describe('RelayAdministrationService', () => {
     ).rejects.toEqual(new RelaySettingConflictError(1));
   });
 
-  it('atomically replaces profiles and custom DQL from a current client', async () => {
+  it('makes custom DQL authoritative when a legacy client submits both scope mechanisms', async () => {
     await service().replace({
       setting: 'dynatrace.alerting-profiles',
       value: {
-        profiles: [],
+        profiles: ['NOC Core'],
         customDqlMatcher: 'matchesPhrase(event.name, "Packet loss on")',
       },
       expectedRevision: 0,
