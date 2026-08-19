@@ -510,11 +510,8 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
                 />
               </label>
               {filteredProfileNames.length > 0 ? (
-                <div
-                  className="administration-profile-list"
-                  role="group"
-                  aria-label="Available alerting profiles"
-                >
+                <fieldset className="administration-profile-list">
+                  <legend className="sr-only">Available alerting profiles</legend>
                   {filteredProfileNames.map((profile) => (
                     <label className="administration-profile-option" key={profile}>
                       <input
@@ -525,9 +522,9 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
                       <span>{profile}</span>
                     </label>
                   ))}
-                </div>
+                </fieldset>
               ) : (
-                <div className="administration-empty" role="status">
+                <output className="administration-empty">
                   <strong>
                     {availableProfileNames.length > 0
                       ? 'No profiles match this search'
@@ -538,7 +535,7 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
                       ? 'Clear the search to see the full profile list.'
                       : 'Sync Dynatrace Problems, then refresh administration.'}
                   </span>
-                </div>
+                </output>
               )}
               <small id={profileHintId}>
                 Relay matches any selected profile exactly. Selecting this mode clears custom DQL.

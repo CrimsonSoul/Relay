@@ -1104,7 +1104,10 @@
 
 .administration-profile-list {
   display: grid;
+  min-width: 0;
   max-height: 260px;
+  margin: 0;
+  padding: 0;
   overflow: auto;
   border: 1px solid var(--color-border-strong);
   background: var(--color-bg-base);

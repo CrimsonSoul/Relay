@@ -285,6 +285,59 @@ describe('AdministrationSettings', () => {
     expect(screen.getByLabelText('Complete DQL filter expression')).toHaveClass('tactile-input');
   });
 
+  it('groups discovered alerting profiles with native fieldset semantics', () => {
+    mockUseRelayAdministration.mockReturnValue({
+      ...mockUseRelayAdministration(),
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: '1 selected',
+            valueSummary: ['NOC Core'],
+            availableValues: ['NOC Core', 'Retail Stores'],
+            revision: 4,
+          },
+        ],
+      },
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+
+    expect(screen.getByRole('group', { name: 'Available alerting profiles' }).tagName).toBe(
+      'FIELDSET',
+    );
+  });
+
+  it('announces an empty alerting-profile search with native output semantics', () => {
+    mockUseRelayAdministration.mockReturnValue({
+      ...mockUseRelayAdministration(),
+      snapshot: {
+        ...snapshot,
+        settings: [
+          {
+            setting: 'dynatrace.alerting-profiles',
+            configured: true,
+            summary: '1 selected',
+            valueSummary: ['NOC Core'],
+            availableValues: ['NOC Core', 'Retail Stores'],
+            revision: 4,
+          },
+        ],
+      },
+    });
+
+    render(<AdministrationSettings relayMode="client" />);
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
+    fireEvent.change(screen.getByLabelText('Find an alerting profile'), {
+      target: { value: 'missing' },
+    });
+
+    expect(screen.getByText('No profiles match this search').closest('output')).not.toBeNull();
+  });
+
   it('reviews alerting-profile scope changes before applying the non-destructive filter', async () => {
     const execute = vi.fn(async (request) =>
       request.command === 'administration.dynatrace-problem-scope.test'
