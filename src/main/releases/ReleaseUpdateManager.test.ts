@@ -383,6 +383,10 @@ describe('ReleaseUpdateManager', () => {
   it('aborts and drains an older in-flight download before publishing a newer release', async () => {
     let archiveAbortObserved = false;
     let partialArchivePath = '';
+    let markArchiveAbortReady: (() => void) | undefined;
+    const archiveAbortReady = new Promise<void>((resolvePromise) => {
+      markArchiveAbortReady = resolvePromise;
+    });
     downloadAsset.mockImplementation(
       async (releaseAsset: RelayInstallableAsset, destination: string, options) => {
         if (releaseAsset.name.endsWith('.sha256')) {
@@ -401,13 +405,15 @@ describe('ReleaseUpdateManager', () => {
             },
             { once: true },
           );
+          markArchiveAbortReady?.();
         });
       },
     );
     const updates = manager();
     await updates.noteCheck(updateCheck());
     const pendingDownload = updates.download();
-    await vi.waitFor(() => expect(downloadAsset).toHaveBeenCalledTimes(2));
+    await archiveAbortReady;
+    expect(downloadAsset).toHaveBeenCalledTimes(2);
 
     const superseding = await updates.noteCheck(
       updateCheck({ latestVersion: '1.2.0', assetSizeBytes: 150_000_000 }),
