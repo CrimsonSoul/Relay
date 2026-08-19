@@ -103,6 +103,33 @@ describe('Relay release versioning', () => {
     });
   });
 
+  it('recognizes conventional commit subjects preserved by a GitHub squash merge', () => {
+    expect(
+      planRelease({
+        commits: [
+          commit(
+            'Add secure manual updates and Dynatrace filtering (#238)',
+            [
+              '* feat: add secure updates and Dynatrace filtering',
+              '',
+              '* fix: resolve updater quality findings',
+              '',
+              '---------',
+              '',
+              'Co-authored-by: Relay Test <relay-test@example.invalid>',
+            ].join('\n'),
+          ),
+        ],
+        headSha: sourceSha,
+        latestTag: {
+          name: 'v1.4.0',
+          sha: 'a'.repeat(40),
+          version: { major: 1, minor: 4, patch: 0 },
+        },
+      }),
+    ).toMatchObject({ releaseType: 'minor', tag: 'v1.5.0', version: '1.5.0' });
+  });
+
   it('increments major versions for breaking changes', () => {
     expect(
       planRelease({

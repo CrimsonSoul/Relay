@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 const VERSION_TAG_PATTERN = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const CONVENTIONAL_SUBJECT_PATTERN = /^([a-z][a-z0-9-]*)(?:\([^\r\n)]+\))?(!)?:\s+\S.*$/iu;
 const BREAKING_FOOTER_PATTERN = /^BREAKING[ -]CHANGE:\s*\S/im;
+const SQUASHED_PULL_REQUEST_SUBJECT_PATTERN = /\s\(#[1-9]\d*\)$/u;
+const SQUASHED_COMMIT_SUBJECT_PATTERN = /^\* ([^\r\n]+)$/gmu;
 const SOURCE_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const PATCH_TYPES = new Set(['fix', 'perf', 'revert']);
 const RELEASE_IMPACT = { none: 0, patch: 1, minor: 2, major: 3 };
@@ -55,7 +57,7 @@ export function selectLatestVersionTag(tags) {
   );
 }
 
-export function classifyConventionalCommit({ subject, body = '' }) {
+function classifyConventionalSubject(subject, body = '') {
   const match = CONVENTIONAL_SUBJECT_PATTERN.exec(subject ?? '');
   const breaking = Boolean(match?.[2]) || BREAKING_FOOTER_PATTERN.test(body ?? '');
   if (breaking) return 'major';
@@ -64,6 +66,18 @@ export function classifyConventionalCommit({ subject, body = '' }) {
   const type = match[1].toLowerCase();
   if (type === 'feat') return 'minor';
   return PATCH_TYPES.has(type) ? 'patch' : 'none';
+}
+
+export function classifyConventionalCommit({ subject, body = '' }) {
+  let highest = classifyConventionalSubject(subject, body);
+  if (!SQUASHED_PULL_REQUEST_SUBJECT_PATTERN.test(subject ?? '')) return highest;
+
+  for (const match of body.matchAll(SQUASHED_COMMIT_SUBJECT_PATTERN)) {
+    const candidate = classifyConventionalSubject(match[1]);
+    if (RELEASE_IMPACT[candidate] > RELEASE_IMPACT[highest]) highest = candidate;
+  }
+
+  return highest;
 }
 
 function highestReleaseType(commits) {
