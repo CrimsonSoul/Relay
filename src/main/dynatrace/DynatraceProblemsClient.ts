@@ -164,16 +164,19 @@ function buildProblemQueryBase(scope: DynatraceProblemsQueryScope): string {
 
 function buildProblemScopeFilters(config: DynatraceProblemsConfig): string {
   const alertingProfiles = config.alertingProfiles;
-  const profileFilter = alertingProfiles?.length
-    ? `\n| filter iAny(in(labels.alerting_profile[], array(${alertingProfiles
+  const profileMatcher = alertingProfiles?.length
+    ? `iAny(in(labels.alerting_profile[], array(${alertingProfiles
         .map(dqlStringLiteral)
         .join(', ')})))`
     : '';
   const matcher = normalizeDynatraceCustomDqlMatcher(config.customDqlMatcher ?? '');
   const matcherError = getDynatraceCustomDqlMatcherError(matcher);
   if (matcherError) throw new Error(matcherError);
-  const matcherFilter = matcher ? `\n| filter (\n${matcher}\n)` : '';
-  return `${profileFilter}${matcherFilter}`;
+  if (profileMatcher && matcher) {
+    return `\n| filter (\n${profileMatcher}\nor (\n${matcher}\n)\n)`;
+  }
+  if (profileMatcher) return `\n| filter ${profileMatcher}`;
+  return matcher ? `\n| filter (\n${matcher}\n)` : '';
 }
 
 function buildProblemsQuery(

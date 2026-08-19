@@ -209,9 +209,10 @@ polling, daily full reconciliation, scope transitions, retry state, and one-year
 fixed fetch, deduplication, projection, sort, and limit stages.
 
 Problem scope has two independently optional inputs: exact alerting-profile names and one custom DQL
-matcher expression. When both are present, the client emits separate filters and therefore applies
-`AND` semantics. Shared validation permits only an expression that can be embedded inside Relay's
-owned `filter (...)` stage; pipelines, comments, control characters, and
+matcher expression. When both are present, the client groups them into one filter with `OR`
+semantics, so a problem is included when it matches any selected profile or the custom expression.
+Shared validation permits only an expression that can be embedded inside Relay's owned
+`filter (...)` stage; pipelines, comments, control characters, and
 `event.status_transition` are rejected. Dynatrace remains the final grammar authority through a
 canonical count query that runs before the configuration is saved. A zero count is valid.
 

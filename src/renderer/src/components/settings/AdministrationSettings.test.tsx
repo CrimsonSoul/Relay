@@ -387,7 +387,7 @@ describe('AdministrationSettings', () => {
     );
   });
 
-  it('tests and submits the workflow-style custom matcher with profile AND semantics', async () => {
+  it('tests and submits the workflow-style custom matcher with profile OR semantics', async () => {
     const execute = vi.fn(async (request) =>
       request.command === 'administration.dynatrace-problem-scope.test'
         ? { ok: true, value: { valid: true, problemCount: 6 } }
@@ -422,7 +422,7 @@ describe('AdministrationSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Test scope' }));
 
     expect(await screen.findByText(/6 current problems match/i)).toBeVisible();
-    expect(screen.getByText(/profiles and custom DQL are combined with AND/i)).toBeVisible();
+    expect(screen.getByText(/matches an alerting profile or the custom DQL/i)).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review scope change' }));
     const dialog = await screen.findByRole('dialog', { name: 'Review stored problem scope' });

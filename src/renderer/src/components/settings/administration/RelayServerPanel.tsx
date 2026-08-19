@@ -21,8 +21,8 @@ type ProblemScopeMode = {
 function describeProblemScope(profileCount: number, customMatcher: string): ProblemScopeMode {
   if (profileCount > 0 && customMatcher) {
     return {
-      label: 'Profiles + custom DQL',
-      description: 'Profiles and custom DQL are combined with AND.',
+      label: 'Profiles or custom DQL',
+      description: 'A problem appears when it matches an alerting profile or the custom DQL.',
     };
   }
   if (profileCount > 0) {

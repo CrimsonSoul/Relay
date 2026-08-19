@@ -475,6 +475,75 @@ describe('DynatraceProblemsManager', () => {
     );
   });
 
+  it('keeps both profile matches and custom-DQL-only matches in a combined scope', async () => {
+    const combinedConfig = {
+      ...config,
+      alertingProfiles: ['NOC Core'],
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+    const profileMatch = {
+      ...makeProblem('PROFILE-MATCH', 'Selected profile problem'),
+      alertingProfiles: ['NOC Core'],
+    };
+    const matcherOnlyMatch = {
+      ...makeProblem('MATCHER-MATCH', 'Custom DQL problem'),
+      alertingProfiles: ['Default'],
+    };
+    const problemCollection = {
+      getFullList: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn().mockImplementation(async (problem) => ({
+        id: `record-${problem.problemId}`,
+        ...problem,
+      })),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync-1', key: 'primary' }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = { load: vi.fn().mockReturnValue(combinedConfig), getPublicSettings: vi.fn() };
+    const client = {
+      fetchAlertingProfiles: vi.fn().mockResolvedValue(['Default', 'NOC Core']),
+      inspectAlertingProfileField: vi.fn().mockResolvedValue({
+        problemCount: 2,
+        profiledProblemCount: 2,
+        healthy: true,
+      }),
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [profileMatch, matcherOnlyMatch],
+        totalCount: 2,
+        resultTruncated: false,
+        observedProblemIds: null,
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).resolves.toBe(2);
+
+    expect(problemCollection.create).toHaveBeenCalledWith(matcherOnlyMatch, { requestKey: null });
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({ state: 'ok', scopeSource: 'combined' }),
+      { requestKey: null },
+    );
+  });
+
   it('hides only observed changed problems that stop matching during incremental polling', async () => {
     const matcherConfig = {
       ...config,

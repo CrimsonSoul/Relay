@@ -230,7 +230,7 @@ describe('DynatraceProblemsClient', () => {
     expect(query).toContain('array("POS Store", "NOC \\"Primary\\"")');
   });
 
-  it('combines alerting profiles and a custom matcher before Relay-owned projection', async () => {
+  it('matches an alerting profile or the custom matcher before Relay-owned projection', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([problem()]));
     const client = new DynatraceProblemsClient(fetchMock);
 
@@ -242,9 +242,17 @@ and maintenance.is_under_maintenance == false`,
     });
 
     const query = requestQuery(fetchMock, 0);
+    const combinedScope = `| filter (
+iAny(in(labels.alerting_profile[], array("Alerts for NOC")))
+or (
+matchesValue(entity_tags, "teams:network")
+and maintenance.is_under_maintenance == false
+)
+)`;
     const profileFilterAt = query.indexOf('iAny(in(labels.alerting_profile[]');
     const matcherAt = query.indexOf('matchesValue(entity_tags, "teams:network")');
     const fieldsAt = query.indexOf('| fields problemId=event.id');
+    expect(query).toContain(combinedScope);
     expect(profileFilterAt).toBeGreaterThan(-1);
     expect(matcherAt).toBeGreaterThan(profileFilterAt);
     expect(fieldsAt).toBeGreaterThan(matcherAt);
