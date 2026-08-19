@@ -325,11 +325,11 @@ Problems, local NOC notes, and local addressed metadata are stored in PocketBase
 LAN see the same operational history without sending local response data back to Dynatrace.
 
 The server-owned query may be narrowed with selected alerting profiles, a custom DQL matcher
-expression, or both. When both are configured, Relay combines them with `AND`. The custom value is
-an expression only: Relay places it inside its own `filter (...)` stage after deduplication and
+expression, or both. When both are configured, Relay combines them with `OR`: a problem appears when
+it matches any selected profile or the custom expression. Logic inside the custom expression is
+preserved. Relay places that expression inside its own `filter (...)` stage after deduplication and
 before Relay's fixed projection, sort, and limit. Do not include `fetch`, pipeline stages, comments,
-or `event.status_transition`. If alerting-profile tests belong inside an `OR` expression, leave the
-separate selected-profile list empty so Relay does not add an outer profile condition.
+or `event.status_transition`.
 
 Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
 first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the

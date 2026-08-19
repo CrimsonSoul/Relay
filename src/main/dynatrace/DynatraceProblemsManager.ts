@@ -412,7 +412,9 @@ export class DynatraceProblemsManager {
           'Dynatrace returned a truncated custom-scope reconciliation. Existing Relay data was preserved.',
         );
       }
-      const scopedProblems = applyAlertingProfileScope(result.problems, selectedProfileSet);
+      const scopedProblems = config.customDqlMatcher
+        ? result.problems
+        : applyAlertingProfileScope(result.problems, selectedProfileSet);
       const problems = scopedProblems.map((problem) => ({
         ...problem,
         scopeExcluded: false,
