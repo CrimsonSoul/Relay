@@ -188,15 +188,19 @@ jobs:
               return;
             }
 
-            const assetNames = new Set(release.data.assets.map((asset) => asset.name));
-            const complete =
-              !release.data.draft &&
-              !release.data.prerelease &&
-              assetNames.has(expectedAsset) &&
-              assetNames.has(expectedChecksum);
+            const { classifyExistingRelease } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/releaseWorkflowContract.mjs`
+            );
+            const releaseState = classifyExistingRelease(release.data, {
+              expectedAsset,
+              expectedChecksum,
+              sourceSha,
+            });
+            const complete = releaseState === 'complete';
             core.setOutput('should-package', complete ? 'false' : 'true');
             core.setOutput('complete', complete ? 'true' : 'false');
-            if (complete) core.info(`${tag} has both expected release assets.`);
+            core.setOutput('replace-draft', releaseState === 'replace-draft' ? 'true' : 'false');
+            if (complete) core.info(`${tag} has canonical release metadata and assets.`);
 
       - name: Verify existing release assets
         id: existing-assets
@@ -205,24 +209,46 @@ jobs:
         env:
           ASSET_NAME: Relay-${{ steps.version.outputs.tag }}-windows-x64.zip
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          set -u
+          set -euo pipefail
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          test "$(jq -r .target_commitish <<<"$release_json")" = "$SOURCE_SHA"
+          test "$(jq '.assets | length' <<<"$release_json")" = '2'
+          test "$(jq -r --arg archive "$ASSET_NAME" --arg checksum "$ASSET_NAME.sha256" '
+            ([.assets[].name] | sort) == ([$archive, $checksum] | sort)
+          ' <<<"$release_json")" = 'true'
+          test "$(jq -r '.assets | all(
+            .state == "uploaded" and
+            (.size | type == "number") and
+            .size > 0 and
+            (.digest != null and (.digest | test("^sha256:[0-9a-f]{64}$")))
+          )' <<<"$release_json")" = 'true'
+          archive_digest="$(jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")"
+          checksum_digest="$(jq -r --arg name "$ASSET_NAME.sha256" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")"
           verify_dir="$(mktemp -d)"
-          if gh release download "$TAG" \
+          gh release download "$TAG" \
             --pattern "$ASSET_NAME" \
             --pattern "$ASSET_NAME.sha256" \
-            --dir "$verify_dir" && \
-            (cd "$verify_dir" && \
-              sha256sum --check "$ASSET_NAME.sha256" && \
-              unzip -tqq "$ASSET_NAME" && \
-              test "$(unzip -Z1 "$ASSET_NAME")" = 'Relay.exe'); then
-            echo 'should-package=false' >> "$GITHUB_OUTPUT"
-            echo "Existing $TAG assets and checksum are complete."
-          else
-            echo 'should-package=true' >> "$GITHUB_OUTPUT"
-            echo "Existing $TAG assets could not be verified and will be rebuilt."
-          fi
+            --dir "$verify_dir"
+          (
+            cd "$verify_dir"
+            sha256sum --check "$ASSET_NAME.sha256"
+            unzip -tqq "$ASSET_NAME"
+            test "$(unzip -Z1 "$ASSET_NAME")" = 'Relay.exe'
+            test "sha256:$(sha256sum "$ASSET_NAME" | cut -d' ' -f1)" = "$archive_digest"
+            test "sha256:$(sha256sum "$ASSET_NAME.sha256" | cut -d' ' -f1)" = "$checksum_digest"
+          )
+          immutable='false'
+          for _attempt in $(seq 1 24); do
+            immutable="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
+            test "$immutable" = 'true' && break
+            sleep 5
+          done
+          test "$immutable" = 'true'
+          echo 'should-package=false' >> "$GITHUB_OUTPUT"
+          echo "Existing immutable $TAG assets and checksum are complete."
 
   package-windows:
     needs: determine
@@ -278,26 +304,141 @@ jobs:
             test "$(unzip -Z1 "$asset_name")" = 'Relay.exe'
             sha256sum "$asset_name" > "$asset_name.sha256"
           )
+          archive_sha256="$(sha256sum "release/$asset_name" | cut -d' ' -f1)"
+          checksum_sha256="$(sha256sum "release/$asset_name.sha256" | cut -d' ' -f1)"
           echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
+          echo "checksum_sha256=$checksum_sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Publish GitHub release
+      - name: Replace incomplete draft release
+        uses: actions/github-script@v8
+        env:
+          RELEASE_ACTION: ${{ needs.determine.outputs.action }}
+          TAG: ${{ needs.determine.outputs.tag }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const action = process.env.RELEASE_ACTION;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const matches = releases.filter((release) => release.tag_name === tag);
+            if (matches.length > 1) {
+              throw new Error(`Expected at most one release for ${tag}, found ${matches.length}`);
+            }
+            if (matches.length === 0) return;
+
+            const release = matches[0];
+            if (action !== 'verify' || release.draft !== true) {
+              throw new Error(`Refusing to replace non-draft release state for ${tag}`);
+            }
+            await github.rest.repos.deleteRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+            });
+            core.info(`Removed incomplete draft ${tag} before clean asset upload.`);
+
+      - name: Create draft GitHub release
         id: publish
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          draft: false
+          draft: true
           fail_on_unmatched_files: true
           files: |
             release/${{ steps.assets.outputs.asset_name }}
             release/${{ steps.assets.outputs.asset_name }}.sha256
           generate_release_notes: true
-          make_latest: true
+          make_latest: false
           name: Relay ${{ needs.determine.outputs.tag }}
-          overwrite_files: true
           prerelease: false
           tag_name: ${{ needs.determine.outputs.tag }}
           target_commitish: ${{ needs.determine.outputs.source-sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Finalize immutable GitHub release
+        uses: actions/github-script@v8
+        env:
+          ARCHIVE_SHA256: ${{ steps.assets.outputs.archive_sha256 }}
+          ASSET_NAME: ${{ steps.assets.outputs.asset_name }}
+          CHECKSUM_SHA256: ${{ steps.assets.outputs.checksum_sha256 }}
+          SOURCE_SHA: ${{ needs.determine.outputs.source-sha }}
+          TAG: ${{ needs.determine.outputs.tag }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const sourceSha = process.env.SOURCE_SHA;
+            const assetName = process.env.ASSET_NAME;
+            const expectedNames = new Set([assetName, `${assetName}.sha256`]);
+            const expectedDigests = new Map([
+              [assetName, `sha256:${process.env.ARCHIVE_SHA256}`],
+              [`${assetName}.sha256`, `sha256:${process.env.CHECKSUM_SHA256}`],
+            ]);
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const matches = releases.filter((release) => release.tag_name === tag);
+            if (matches.length !== 1) {
+              throw new Error(`Expected one draft release for ${tag}, found ${matches.length}`);
+            }
+
+            const release = matches[0];
+            if (release.draft !== true || release.prerelease !== false) {
+              throw new Error(`${tag} was not a normal draft release`);
+            }
+            if (release.target_commitish !== sourceSha) {
+              throw new Error(`${tag} did not target the verified test commit`);
+            }
+            if (release.assets.length !== 2) {
+              throw new Error(`${tag} did not contain exactly two assets`);
+            }
+            for (const asset of release.assets) {
+              if (
+                !expectedNames.delete(asset.name) ||
+                asset.state !== 'uploaded' ||
+                !Number.isSafeInteger(asset.size) ||
+                asset.size <= 0 ||
+                !/^sha256:[0-9a-f]{64}$/.test(asset.digest ?? '') ||
+                asset.digest !== expectedDigests.get(asset.name)
+              ) {
+                throw new Error(`${tag} contained invalid release asset metadata`);
+              }
+            }
+            if (expectedNames.size !== 0) {
+              throw new Error(`${tag} was missing an expected release asset`);
+            }
+
+            const tagRef = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `tags/${tag}`,
+            });
+            let object = tagRef.data.object;
+            for (let depth = 0; object.type === 'tag' && depth < 5; depth += 1) {
+              const annotated = await github.rest.git.getTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_sha: object.sha,
+              });
+              object = annotated.data.object;
+            }
+            if (object.type !== 'commit' || object.sha !== sourceSha) {
+              throw new Error(`Tag ${tag} did not resolve to the verified test commit`);
+            }
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              draft: false,
+              prerelease: false,
+              make_latest: 'true',
+            });
 
       - name: Verify published release
         shell: bash
@@ -313,6 +454,18 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)" = 'false'
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)" = 'false'
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$TAG"
+          immutable='false'
+          for _attempt in $(seq 1 24); do
+            immutable="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
+            test "$immutable" = 'true' && break
+            sleep 5
+          done
+          test "$immutable" = 'true'
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          test "$(jq '.assets | length' <<<"$release_json")" = '2'
+          test "$(jq -r '.assets | map(.digest) | all(. != null and test("^sha256:[0-9a-f]{64}$"))' <<<"$release_json")" = 'true'
+          archive_digest="$(jq -r --arg name "$ASSET_NAME" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")"
+          checksum_digest="$(jq -r --arg name "$ASSET_NAME.sha256" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")"
           verify_dir="$(mktemp -d)"
           gh release download "$TAG" --pattern "$ASSET_NAME" --pattern "$ASSET_NAME.sha256" --dir "$verify_dir"
           (
@@ -320,6 +473,8 @@ jobs:
             sha256sum --check "$ASSET_NAME.sha256"
             unzip -tqq "$ASSET_NAME"
             test "$(unzip -Z1 "$ASSET_NAME")" = 'Relay.exe'
+            test "sha256:$(sha256sum "$ASSET_NAME" | cut -d' ' -f1)" = "$archive_digest"
+            test "sha256:$(sha256sum "$ASSET_NAME.sha256" | cut -d' ' -f1)" = "$checksum_digest"
           )
           release_url="$(gh release view "$TAG" --json url --jq .url)"
           echo "Published and verified [$TAG]($release_url)." >> "$GITHUB_STEP_SUMMARY"

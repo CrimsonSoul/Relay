@@ -7,6 +7,7 @@ import {
   type StartupSnapshot,
 } from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
+import type { RelayUpdateSnapshot } from '@shared/releases';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 
 const api: BridgeAPI = {
@@ -21,6 +22,17 @@ const api: BridgeAPI = {
   markStartupRendererMounted: () => ipcRenderer.send(IPC_CHANNELS.STARTUP_RENDERER_MOUNTED),
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_VERSION),
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.APP_CHECK_FOR_UPDATES),
+  getUpdateState: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD),
+  cancelUpdateDownload: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_CANCEL_DOWNLOAD),
+  installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_INSTALL),
+  restartToUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_RESTART),
+  onUpdateStateChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: RelayUpdateSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.APP_UPDATE_STATE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.APP_UPDATE_STATE_CHANGED, handler);
+  },
   openReleasesPage: () => ipcRenderer.invoke(IPC_CHANNELS.APP_OPEN_RELEASES),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   openServiceDeskUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_DESK_URL, url),

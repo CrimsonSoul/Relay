@@ -16,22 +16,58 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1_000;
 
 describe('ReleaseUpdateNotificationManager', () => {
   const checkForUpdates = vi.fn();
+  const getUpdateState = vi.fn();
+  const downloadUpdate = vi.fn();
+  const cancelUpdateDownload = vi.fn();
+  const installUpdate = vi.fn();
+  const restartToUpdate = vi.fn();
+  const onUpdateStateChanged = vi.fn();
   const openReleasesPage = vi.fn().mockResolvedValue(true);
+  let stateListener: ((snapshot: unknown) => void) | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    stateListener = null;
+    getUpdateState.mockResolvedValue(null);
+    downloadUpdate.mockResolvedValue({ success: false, error: 'not-started' });
+    cancelUpdateDownload.mockResolvedValue({
+      success: true,
+      data: {
+        phase: 'available',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 0,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      },
+    });
+    installUpdate.mockResolvedValue({ success: false, error: 'not-started' });
+    restartToUpdate.mockResolvedValue({ success: true, data: true });
+    onUpdateStateChanged.mockImplementation((listener: (snapshot: unknown) => void) => {
+      stateListener = listener;
+      return vi.fn();
+    });
     checkForUpdates.mockResolvedValue({
       success: true,
       data: {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         updateAvailable: true,
+        installable: true,
+        assetSizeBytes: 140_000_000,
       },
     });
     vi.stubGlobal('api', {
       runtime: ELECTRON_RUNTIME,
       checkForUpdates,
+      getUpdateState,
+      downloadUpdate,
+      cancelUpdateDownload,
+      installUpdate,
+      restartToUpdate,
+      onUpdateStateChanged,
       openReleasesPage,
     });
   });
@@ -45,7 +81,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
 
     const reminder = await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. View release',
+      name: 'Relay v1.1.0 is available. Review update',
     });
     expect(reminder).toHaveTextContent('Update · v1.1.0');
     await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
@@ -53,7 +89,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       title: 'Update available',
       durationMs: 12_000,
       action: {
-        label: 'View release',
+        label: 'Review update',
         onClick: expect.any(Function),
       },
     });
@@ -61,7 +97,65 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     const options = mocks.showToast.mock.calls[0]?.[2];
     await act(async () => options.action.onClick());
-    expect(openReleasesPage).toHaveBeenCalledOnce();
+    expect(screen.getByRole('dialog', { name: 'Update Relay' })).toBeVisible();
+    expect(openReleasesPage).not.toHaveBeenCalled();
+  });
+
+  it('preserves an authoritative unsupported state when its advisory check resolves later', async () => {
+    const deferredCheck: {
+      resolve?: (value: {
+        success: true;
+        data: {
+          currentVersion: string;
+          latestVersion: string;
+          updateAvailable: true;
+          installable: false;
+          assetSizeBytes: number;
+        };
+      }) => void;
+    } = {};
+    checkForUpdates.mockReturnValueOnce(
+      new Promise((resolvePromise) => {
+        deferredCheck.resolve = resolvePromise;
+      }),
+    );
+    render(<ReleaseUpdateNotificationManager />);
+    await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
+
+    act(() => {
+      stateListener?.({
+        phase: 'available',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: false,
+        downloadedBytes: 0,
+        totalBytes: 140_000_000,
+        failureCode: 'unsupported',
+      });
+    });
+    await act(async () => {
+      deferredCheck.resolve?.({
+        success: true,
+        data: {
+          currentVersion: '1.0.0',
+          latestVersion: '1.1.0',
+          updateAvailable: true,
+          installable: false,
+          assetSizeBytes: 140_000_000,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Relay v1.1.0 is available. Review update',
+      }),
+    );
+    expect(screen.getByText(/only in packaged Relay for Windows x64/u)).toBeVisible();
+    expect(
+      screen.queryByText(/cannot install it because GitHub has not locked it as immutable/u),
+    ).toBeNull();
   });
 
   it('does not repeat a release notification already shown on this workstation', async () => {
@@ -70,11 +164,131 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
 
     const reminder = await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. View release',
+      name: 'Relay v1.1.0 is available. Review update',
     });
     expect(checkForUpdates).toHaveBeenCalledOnce();
     expect(mocks.showToast).not.toHaveBeenCalled();
     expect(reminder).toBeVisible();
+  });
+
+  it('requires separate download, install, and restart clicks in the renderer flow', async () => {
+    downloadUpdate.mockResolvedValueOnce({
+      success: true,
+      data: {
+        phase: 'downloaded',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 140_000_000,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      },
+    });
+    installUpdate.mockResolvedValueOnce({
+      success: true,
+      data: {
+        phase: 'ready-to-restart',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 140_000_000,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      },
+    });
+    render(<ReleaseUpdateNotificationManager />);
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Relay v1.1.0 is available. Review update',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
+    await waitFor(() => expect(downloadUpdate).toHaveBeenCalledOnce());
+    expect(installUpdate).not.toHaveBeenCalled();
+    expect(restartToUpdate).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Install update' }));
+    await waitFor(() => expect(installUpdate).toHaveBeenCalledOnce());
+    expect(restartToUpdate).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart Relay' }));
+    await waitFor(() => expect(restartToUpdate).toHaveBeenCalledOnce());
+  });
+
+  it('allows an in-flight download to be cancelled while its action promise is pending', async () => {
+    const deferredDownload: {
+      resolve?: (value: Awaited<ReturnType<typeof downloadUpdate>>) => void;
+    } = {};
+    downloadUpdate.mockReturnValueOnce(
+      new Promise((resolvePromise) => {
+        deferredDownload.resolve = resolvePromise;
+      }),
+    );
+    render(<ReleaseUpdateNotificationManager />);
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Relay v1.1.0 is available. Review update',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
+    await waitFor(() => expect(downloadUpdate).toHaveBeenCalledOnce());
+
+    act(() => {
+      stateListener?.({
+        phase: 'downloading',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 32_000_000,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
+
+    await waitFor(() => expect(cancelUpdateDownload).toHaveBeenCalledOnce());
+    await act(async () => {
+      deferredDownload.resolve?.({
+        success: true,
+        data: {
+          phase: 'available',
+          currentVersion: '1.0.0',
+          latestVersion: '1.1.0',
+          installable: true,
+          downloadedBytes: 0,
+          totalBytes: 140_000_000,
+          failureCode: null,
+        },
+      });
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps restart-ready state noticeable after the update dialog closes', async () => {
+    render(<ReleaseUpdateNotificationManager />);
+    await screen.findByRole('button', {
+      name: 'Relay v1.1.0 is available. Review update',
+    });
+
+    act(() => {
+      stateListener?.({
+        phase: 'ready-to-restart',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 140_000_000,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      });
+    });
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Relay v1.1.0 is ready to restart. Review update',
+      }),
+    ).toHaveTextContent('Restart · v1.1.0');
   });
 
   it('does not notify when the installed release is current', async () => {
@@ -91,7 +305,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
   });
 
   it('keeps GitHub failures silent in the renderer', async () => {
@@ -101,7 +315,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
   });
 
   it('fails closed when a successful update response has no data', async () => {
@@ -111,7 +325,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     await waitFor(() => expect(checkForUpdates).toHaveBeenCalledOnce());
     expect(mocks.showToast).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
   });
 
   it('does not run desktop update checks in Relay Web', async () => {
@@ -125,7 +339,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     await act(async () => undefined);
 
     expect(checkForUpdates).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
   });
 
   it('fails closed when a partial bridge does not identify its runtime', async () => {
@@ -138,7 +352,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     await act(async () => undefined);
 
     expect(checkForUpdates).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
   });
 
   it('keeps the last confirmed reminder through a failed refresh', async () => {
@@ -157,7 +371,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
     await act(async () => undefined);
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. View release' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
     ).toBeVisible();
 
     await act(async () => {
@@ -167,7 +381,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     expect(checkForUpdates).toHaveBeenCalledTimes(2);
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. View release' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
     ).toBeVisible();
   });
 
@@ -194,7 +408,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
     await act(async () => undefined);
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. View release' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
     ).toBeVisible();
 
     await act(async () => {
@@ -202,7 +416,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       await Promise.resolve();
     });
 
-    expect(screen.queryByRole('button', { name: /is available\. View release/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: /is available\. Review update/u })).toBeNull();
   });
 
   it('keeps the reminder visible and shows an error when the release page cannot open', async () => {
@@ -210,9 +424,10 @@ describe('ReleaseUpdateNotificationManager', () => {
     render(<ReleaseUpdateNotificationManager />);
 
     const reminder = await screen.findByRole('button', {
-      name: 'Relay v1.1.0 is available. View release',
+      name: 'Relay v1.1.0 is available. Review update',
     });
     fireEvent.click(reminder);
+    fireEvent.click(await screen.findByRole('button', { name: 'View on GitHub' }));
 
     await waitFor(() =>
       expect(mocks.showToast).toHaveBeenLastCalledWith(
@@ -275,7 +490,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       expect.any(Object),
     );
     expect(
-      screen.getByRole('button', { name: 'Relay v1.1.0 is available. View release' }),
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
     ).toHaveTextContent('Update · v1.1.0');
 
     await act(async () => {
@@ -291,7 +506,7 @@ describe('ReleaseUpdateNotificationManager', () => {
       expect.any(Object),
     );
     expect(
-      screen.getByRole('button', { name: 'Relay v1.2.0 is available. View release' }),
+      screen.getByRole('button', { name: 'Relay v1.2.0 is available. Review update' }),
     ).toHaveTextContent('Update · v1.2.0');
     expect(localStorage.getItem(LAST_NOTIFIED_VERSION_KEY)).toBe('1.2.0');
   });

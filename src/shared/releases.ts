@@ -1,4 +1,5 @@
 const NORMAL_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+const GITHUB_SHA256_DIGEST_PATTERN = /^sha256:([0-9a-f]{64})$/u;
 
 export const RELAY_LATEST_RELEASE_API_URL =
   'https://api.github.com/repos/CrimsonSoul/Relay/releases/latest';
@@ -8,6 +9,36 @@ export type RelayUpdateCheck = {
   currentVersion: string;
   latestVersion: string;
   updateAvailable: boolean;
+  installable: boolean;
+  assetSizeBytes: number | null;
+};
+
+export type RelayUpdatePhase =
+  'idle' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'ready-to-restart' | 'error';
+
+export type RelayUpdateFailureCode =
+  | 'unsupported'
+  | 'release-not-immutable'
+  | 'release-changed'
+  | 'download-failed'
+  | 'verification-failed'
+  | 'cancelled'
+  | 'install-failed'
+  | 'restart-unavailable';
+
+export type RelayUpdateSnapshot = {
+  phase: RelayUpdatePhase;
+  currentVersion: string;
+  latestVersion: string | null;
+  installable: boolean;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  failureCode: RelayUpdateFailureCode | null;
+};
+
+export type RelayReleaseAssetNames = {
+  archive: string;
+  checksum: string;
 };
 
 type NormalVersion = {
@@ -32,6 +63,16 @@ export function normalizeRelayVersionTag(tag: string): string | null {
   if (!tag.startsWith('v')) return null;
   const version = tag.slice(1);
   return parseNormalVersion(version) ? version : null;
+}
+
+export function relayReleaseAssetNames(version: string): RelayReleaseAssetNames | null {
+  if (!parseNormalVersion(version)) return null;
+  const archive = `Relay-v${version}-windows-x64.zip`;
+  return { archive, checksum: `${archive}.sha256` };
+}
+
+export function normalizeRelaySha256Digest(value: string): string | null {
+  return GITHUB_SHA256_DIGEST_PATTERN.exec(value)?.[1] ?? null;
 }
 
 export function compareRelayVersions(left: string, right: string): -1 | 0 | 1 | null {

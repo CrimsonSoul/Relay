@@ -210,6 +210,24 @@ describe('DynatraceProblemsClient', () => {
     expect(fetchUrl(fetchMock, 2)).toContain('request-token=stable-token');
   });
 
+  it('allows a large Grail query to keep polling beyond the per-request timeout', async () => {
+    vi.useFakeTimers();
+    let requestCount = 0;
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => {
+      requestCount += 1;
+      if (requestCount <= 65) {
+        return response({ state: 'RUNNING', requestToken: 'long-running-token' });
+      }
+      return queryResponse([{ problemCount: 3 }]);
+    });
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const pending = client.testConnection(config);
+    await vi.advanceTimersByTimeAsync(16_500);
+
+    await expect(pending).resolves.toBe(3);
+  });
+
   it('filters the Grail query to any selected alerting profile with escaped literals', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -263,7 +281,32 @@ and dt.davis.mute.status == "NOT_MUTED"`;
     expect(fieldsAt).toBeGreaterThan(matcherAt);
   });
 
-  it('counts zero current matches with the same canonical custom scope', async () => {
+  it('keeps latest problems as the display source but evaluates custom scope on workflow events', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([problem()]));
+    const client = new DynatraceProblemsClient(fetchMock);
+    const matcher = `matchesValue(entity_tags, "teams:network")
+and not matchesValue(event.status_transition, "UPDATED")`;
+
+    await client.fetchProblems({
+      ...config,
+      customDqlMatcher: matcher,
+    });
+
+    const query = requestQuery(fetchMock, 0);
+    const latestProblemsAt = query.indexOf('fetch dt.davis.problems, from:-365d');
+    const workflowEventsAt = query.indexOf('fetch events, from:-365d');
+    const matcherAt = query.indexOf(`| filter (\n${matcher}\n)`);
+    const projectionAt = query.indexOf('| fields problemId=event.id');
+
+    expect(latestProblemsAt).toBe(0);
+    expect(query).toContain('| filter event.id in [');
+    expect(query).toContain('| filter event.kind == "DAVIS_PROBLEM"');
+    expect(workflowEventsAt).toBeGreaterThan(latestProblemsAt);
+    expect(matcherAt).toBeGreaterThan(workflowEventsAt);
+    expect(projectionAt).toBeGreaterThan(matcherAt);
+  });
+
+  it('counts only currently active problems with the same canonical custom scope', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([{ problemCount: 0 }]));
     const client = new DynatraceProblemsClient(fetchMock);
 
@@ -275,17 +318,51 @@ and dt.davis.mute.status == "NOT_MUTED"`;
     ).resolves.toBe(0);
 
     const query = requestQuery(fetchMock, 0);
+    const activeAt = query.indexOf('| filter event.status == "ACTIVE"');
+    const matcherAt = query.indexOf('| filter (\nmatchesPhrase(event.name, "No current match")\n)');
+    expect(activeAt).toBeGreaterThan(-1);
+    expect(matcherAt).toBeGreaterThan(activeAt);
     expect(query).toContain('| filter (\nmatchesPhrase(event.name, "No current match")\n)');
     expect(query).toContain('| summarize problemCount=count()');
     expect(query).not.toContain('| fields problemId=event.id');
   });
 
-  it('observes unscoped changed IDs during incremental custom-filter polling', async () => {
+  it('pages a complete custom-scope reconciliation beyond the single-query record limit', async () => {
+    const firstPage = Array.from({ length: 10_000 }, (_, index) =>
+      problem({
+        problemId: `problem-${index.toString().padStart(5, '0')}`,
+        displayId: `P-${index}`,
+      }),
+    );
+    const finalProblem = problem({ problemId: 'problem-10000', displayId: 'P-10000' });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse(firstPage))
+      .mockResolvedValueOnce(queryResponse([finalProblem]));
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems({
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+
+    expect(result.totalCount).toBe(10_001);
+    expect(result.problems.at(-1)?.problemId).toBe('problem-10000');
+    expect(result.resultTruncated).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(requestQuery(fetchMock, 0)).toContain('| sort problemId asc');
+    expect(requestQuery(fetchMock, 1)).toContain('| filter event.id > "problem-09999"');
+  });
+
+  it('observes unscoped changed problems during incremental custom-filter polling', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(queryResponse([problem()]))
       .mockResolvedValueOnce(
-        queryResponse([{ problemId: 'problem-1' }, { problemId: 'problem-no-longer-matches' }]),
+        queryResponse([
+          problem({ problemId: 'problem-1' }),
+          problem({ problemId: 'problem-no-longer-matches' }),
+        ]),
       );
     const client = new DynatraceProblemsClient(fetchMock);
 
@@ -297,10 +374,47 @@ and dt.davis.mute.status == "NOT_MUTED"`;
       { mode: 'incremental', lookbackMinutes: 12 },
     );
 
-    expect(result.observedProblemIds).toEqual(['problem-1', 'problem-no-longer-matches']);
+    expect(result.changedProblems?.map((problem) => problem.problemId)).toEqual([
+      'problem-1',
+      'problem-no-longer-matches',
+    ]);
     expect(requestQuery(fetchMock, 0)).toContain('dt.davis.mute.status == "NOT_MUTED"');
     expect(requestQuery(fetchMock, 1)).toContain('| fields problemId=event.id');
     expect(requestQuery(fetchMock, 1)).not.toContain('dt.davis.mute.status');
+  });
+
+  it('returns current details for every changed problem during incremental custom scope polling', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse([problem({ problemId: 'problem-new-match' })]))
+      .mockResolvedValueOnce(
+        queryResponse([
+          problem({ problemId: 'problem-new-match' }),
+          problem({
+            problemId: 'problem-existing-match',
+            title: 'Latest title after an excluded update',
+          }),
+        ]),
+      );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems(
+      {
+        ...config,
+        customDqlMatcher: 'not matchesValue(event.status_transition, "UPDATED")',
+      },
+      { mode: 'incremental', lookbackMinutes: 12 },
+    );
+
+    expect(result.changedProblems).toEqual([
+      expect.objectContaining({ problemId: 'problem-new-match' }),
+      expect.objectContaining({
+        problemId: 'problem-existing-match',
+        title: 'Latest title after an excluded update',
+      }),
+    ]);
+    expect(requestQuery(fetchMock, 1)).toContain('| fields problemId=event.id');
+    expect(requestQuery(fetchMock, 1)).not.toContain('event.status_transition');
   });
 
   it('defensively rejects unsafe matcher content before sending a Grail request', async () => {
@@ -425,6 +539,23 @@ and dt.davis.mute.status == "NOT_MUTED"`;
 
     await expect(client.testConnection(config)).rejects.toThrow(/storage:events:read/i);
     await expect(client.testConnection(config)).rejects.not.toThrow(config.apiToken);
+  });
+
+  it('surfaces a safe Dynatrace query failure detail', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        state: 'FAILED',
+        requestToken: 'failed-query-token',
+        error: { message: 'DQL parse error near event.status_transition.' },
+      }),
+    );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const error = await client.testConnection(config).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/DQL parse error near event\.status_transition/i);
+    expect((error as Error).message).not.toContain(config.apiToken);
   });
 
   it('rejects malformed Grail records instead of storing them', async () => {

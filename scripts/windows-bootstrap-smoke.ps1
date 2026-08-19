@@ -31,6 +31,7 @@ $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Rela
 $startMenuShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Relay\Relay.lnk'
 $launcherPath = Join-Path $runtimeRoot 'Relay.exe'
 $statePath = Join-Path $runtimeRoot 'state.ini'
+$bootstrapLockPath = Join-Path $runtimeRoot 'bootstrap.lock'
 $oldRuntimeHandle = $null
 
 if (Test-Path -LiteralPath $runtimeRoot) {
@@ -67,6 +68,43 @@ function Wait-ProcessWithTimeout {
     throw "$Context timed out after $TimeoutSeconds seconds."
   }
   $Process.WaitForExit()
+}
+
+function Wait-BootstrapLockHeld {
+  param(
+    [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+    [int]$TimeoutSeconds = 15
+  )
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $Process.Refresh()
+    if ($Process.HasExited) {
+      $Process.WaitForExit()
+      throw "Relay preparation exited with code $($Process.ExitCode) before its bootstrap lock was observed."
+    }
+    if (Test-Path -LiteralPath $bootstrapLockPath) {
+      $probe = $null
+      try {
+        $probe = [IO.File]::Open(
+          $bootstrapLockPath,
+          [IO.FileMode]::Open,
+          [IO.FileAccess]::ReadWrite,
+          [IO.FileShare]::None
+        )
+      }
+      catch [IO.IOException] {
+        return
+      }
+      finally {
+        if ($null -ne $probe) {
+          $probe.Dispose()
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 25
+  }
+  throw "Relay bootstrap lock was not observed within $TimeoutSeconds seconds."
 }
 
 function Invoke-RelayPreparation {
@@ -188,12 +226,16 @@ try {
   try {
     $concurrentTimer = [Diagnostics.Stopwatch]::StartNew()
     $firstProcess = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
-    $secondProcess = Start-Process -FilePath $artifactPath -ArgumentList '/relay-prepare-only' -PassThru
+    Wait-BootstrapLockHeld -Process $firstProcess
+    $competingPreviousProcess = Start-Process -FilePath $previousArtifactPath -ArgumentList '/relay-prepare-only' -PassThru
+    Wait-ProcessWithTimeout -Process $competingPreviousProcess -Context 'Competing previous-build preparation'
     Wait-ProcessWithTimeout -Process $firstProcess -Context 'First concurrent preparation'
-    Wait-ProcessWithTimeout -Process $secondProcess -Context 'Second concurrent preparation'
     $concurrentTimer.Stop()
-    if ($firstProcess.ExitCode -ne 0 -or $secondProcess.ExitCode -ne 0) {
-      throw "Concurrent preparation failed with $($firstProcess.ExitCode)/$($secondProcess.ExitCode)."
+    if ($firstProcess.ExitCode -ne 0) {
+      throw "Primary concurrent preparation failed with exit code $($firstProcess.ExitCode)."
+    }
+    if ($competingPreviousProcess.ExitCode -eq 0) {
+      throw 'A different-build prepare-only contender incorrectly reported success.'
     }
     $concurrentPreparationMs = $concurrentTimer.ElapsedMilliseconds
   }
@@ -292,6 +334,7 @@ try {
     MissingExecutableRepaired = $true
     BrokenCurrentPreservedPrevious = $true
     ConcurrentPreparation = $true
+    DifferentBuildContentionRejected = $true
     UpdateWhilePreviousLocked = $true
     PreviousFirstPreparationMs = $previousFirstPreparationMs
     PreviousReusePreparationMs = $previousReusePreparationMs

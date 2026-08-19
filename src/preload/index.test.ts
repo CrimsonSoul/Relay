@@ -53,15 +53,50 @@ describe('preload Knowledge web link bridge', () => {
   it('exposes only dedicated application release actions', async () => {
     expect(api.getAppVersion).toBeTypeOf('function');
     expect(api.checkForUpdates).toBeTypeOf('function');
+    expect(api.getUpdateState).toBeTypeOf('function');
+    expect(api.downloadUpdate).toBeTypeOf('function');
+    expect(api.cancelUpdateDownload).toBeTypeOf('function');
+    expect(api.installUpdate).toBeTypeOf('function');
+    expect(api.restartToUpdate).toBeTypeOf('function');
+    expect(api.onUpdateStateChanged).toBeTypeOf('function');
     expect(api.openReleasesPage).toBeTypeOf('function');
 
     await api.getAppVersion!();
     await api.checkForUpdates!();
+    await api.getUpdateState!();
+    await api.downloadUpdate!();
+    await api.cancelUpdateDownload!();
+    await api.installUpdate!();
+    await api.restartToUpdate!();
     await api.openReleasesPage!();
+
+    const callback = vi.fn();
+    const unsubscribe = api.onUpdateStateChanged!(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'app:updateStateChanged',
+    )?.[1] as (_event: unknown, snapshot: unknown) => void;
+    const update = {
+      phase: 'downloading',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      installable: true,
+      downloadedBytes: 10,
+      totalBytes: 100,
+      failureCode: null,
+    };
+    handler({}, update);
+    unsubscribe();
 
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'app:getVersion');
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'app:checkForUpdates');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'app:openReleases');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'app:updateGetState');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, 'app:updateDownload');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, 'app:updateCancelDownload');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, 'app:updateInstall');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, 'app:updateRestart');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, 'app:openReleases');
+    expect(callback).toHaveBeenCalledWith(update);
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('app:updateStateChanged', handler);
   });
 
   it('uses the dedicated Service Desk URL channel', async () => {

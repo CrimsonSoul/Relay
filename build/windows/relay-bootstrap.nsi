@@ -123,10 +123,12 @@ Function .onInit
   Goto BootstrapLockReady
 
 BootstrapAlreadyRunning:
+    ${If} $RelayArgs == "/relay-prepare-only"
+      SetErrorLevel 1
+      Quit
+    ${EndIf}
     ${If} ${FileExists} "$RelayLauncher"
-      ${If} $RelayArgs != "/relay-prepare-only"
-        Exec '"$RelayLauncher" $RelayArgs'
-      ${EndIf}
+      Exec '"$RelayLauncher" $RelayArgs'
     ${Else}
       MessageBox MB_OK|MB_ICONINFORMATION "Relay is already being prepared."
     ${EndIf}

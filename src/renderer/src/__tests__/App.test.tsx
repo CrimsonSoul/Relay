@@ -589,6 +589,8 @@ describe('MainApp', () => {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         updateAvailable: true,
+        installable: true,
+        assetSizeBytes: 140_000_000,
       },
     });
     globalThis.api = {
@@ -601,7 +603,7 @@ describe('MainApp', () => {
     try {
       renderApp();
       const reminder = await screen.findByRole('button', {
-        name: 'Relay v1.1.0 is available. View release',
+        name: 'Relay v1.1.0 is available. Review update',
       });
       expect(checkForUpdates).toHaveBeenCalledOnce();
       expect(reminder.closest('.header-actions')).not.toBeNull();

@@ -164,6 +164,26 @@
   }
 }
 
+@media (max-width: 520px) {
+  .release-update-modal .modal-footer-generic {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .release-update-modal .modal-footer-generic > .tactile-button {
+    width: 100%;
+  }
+
+  .release-update-modal__step {
+    gap: 5px;
+    font-size: var(--text-2xs);
+  }
+
+  .release-update-modal__content {
+    gap: var(--space-4);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar {
     transition: none;
