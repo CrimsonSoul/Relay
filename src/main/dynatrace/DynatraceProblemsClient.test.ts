@@ -230,31 +230,36 @@ describe('DynatraceProblemsClient', () => {
     expect(query).toContain('array("POS Store", "NOC \\"Primary\\"")');
   });
 
-  it('matches an alerting profile or the custom matcher before Relay-owned projection', async () => {
+  it('uses the complete custom matcher instead of combining it with alerting profiles', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([problem()]));
     const client = new DynatraceProblemsClient(fetchMock);
+    const workflowMatcher = `(
+  matchesValue(entity_tags, "teams:network")
+  or matchesValue(entity_tags, "critical_intf")
+  or matchesValue(event.name, "UPS on battery*")
+  or matchesPhrase(event.name, "Packet loss on")
+  or matchesValue(affected_entity_types, "dt.entity.python:certificate_monitor_certificate")
+  or matchesValue(labels.alerting_profile, "*WAN Links")
+  or matchesValue(labels.alerting_profile, "*Alerts for NOC")
+  or matchesValue(labels.alerting_profile, "Pure Array Latency")
+  or matchesValue(labels.alerting_profile, "duo auth proxy on chpw-duoauth01")
+)
+and not matchesValue(event.status_transition, "UPDATED")
+and maintenance.is_under_maintenance == false
+and dt.davis.mute.status == "NOT_MUTED"`;
 
     await client.fetchProblems({
       ...config,
       alertingProfiles: ['Alerts for NOC'],
-      customDqlMatcher: `matchesValue(entity_tags, "teams:network")
-and maintenance.is_under_maintenance == false`,
+      customDqlMatcher: workflowMatcher,
     });
 
     const query = requestQuery(fetchMock, 0);
-    const combinedScope = `| filter (
-iAny(in(labels.alerting_profile[], array("Alerts for NOC")))
-or (
-matchesValue(entity_tags, "teams:network")
-and maintenance.is_under_maintenance == false
-)
-)`;
-    const profileFilterAt = query.indexOf('iAny(in(labels.alerting_profile[]');
-    const matcherAt = query.indexOf('matchesValue(entity_tags, "teams:network")');
+    const matcherAt = query.indexOf(workflowMatcher);
     const fieldsAt = query.indexOf('| fields problemId=event.id');
-    expect(query).toContain(combinedScope);
-    expect(profileFilterAt).toBeGreaterThan(-1);
-    expect(matcherAt).toBeGreaterThan(profileFilterAt);
+    expect(query).toContain(`| filter (\n${workflowMatcher}\n)`);
+    expect(query).not.toContain('iAny(in(labels.alerting_profile[]');
+    expect(matcherAt).toBeGreaterThan(-1);
     expect(fieldsAt).toBeGreaterThan(matcherAt);
   });
 

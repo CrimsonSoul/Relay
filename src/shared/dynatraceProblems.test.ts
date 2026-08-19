@@ -62,6 +62,7 @@ describe('Dynatrace Problems validation', () => {
         or matchesValue(event.name, "WAN | Core")
         or matchesValue(labels.alerting_profile, "*Alerts for NOC")
       )
+      and not matchesValue(event.status_transition, "UPDATED")
       and maintenance.is_under_maintenance == false
       and dt.davis.mute.status == "NOT_MUTED"
     `;
@@ -77,11 +78,6 @@ describe('Dynatrace Problems validation', () => {
     ['a fetch command', 'fetch dt.davis.problems, from:-2h', /matcher expression/i],
     ['a line comment', 'matchesValue(event.name, "UPS*") // ignore', /comments/i],
     ['a block comment', 'matchesValue(event.name, "UPS*") /* ignore */', /comments/i],
-    [
-      'transition-dependent filtering',
-      'not matchesValue(event.status_transition, "UPDATED")',
-      /status_transition/i,
-    ],
     ['an unclosed string', 'matchesValue(event.name, "UPS*)', /quoted string/i],
     ['a control character', 'matchesValue(event.name, "UPS")\u0000', /control/i],
     ['an oversized matcher', 'x'.repeat(16_001), /too long/i],

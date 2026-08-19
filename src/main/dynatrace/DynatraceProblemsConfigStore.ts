@@ -23,9 +23,9 @@ import { loggers } from '../logger';
 export type DynatraceProblemsConfig = {
   environmentUrl: string;
   apiToken: string;
-  /** Null preserves the legacy unfiltered behavior until a profile filter is saved. */
+  /** Null means the active scope is unfiltered or custom DQL. */
   alertingProfiles: string[] | null;
-  /** Null preserves the legacy profile-only or unfiltered behavior. */
+  /** Null means the active scope is unfiltered or alerting profiles. */
   customDqlMatcher: string | null;
 };
 
@@ -109,7 +109,9 @@ export class DynatraceProblemsConfigStore {
       const config = {
         environmentUrl,
         apiToken,
-        alertingProfiles: normalizeAlertingProfiles(stored.alertingProfiles),
+        alertingProfiles: customDqlMatcher
+          ? null
+          : normalizeAlertingProfiles(stored.alertingProfiles),
         customDqlMatcher,
       };
       if (stored.apiToken && secureStorage?.isEncryptionAvailable()) this.write(config);
@@ -154,7 +156,7 @@ export class DynatraceProblemsConfigStore {
     if (!existing) throw new Error('Configure Dynatrace Problems before saving a profile filter.');
     return this.saveProblemScope({
       alertingProfiles,
-      customDqlMatcher: existing.customDqlMatcher ?? '',
+      customDqlMatcher: '',
     });
   }
 
@@ -171,10 +173,11 @@ export class DynatraceProblemsConfigStore {
     if (!existing) throw new Error('Configure Dynatrace Problems before saving problem scope.');
     const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
     if (matcherError) throw new Error(matcherError);
+    const customDqlMatcher = normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher) || null;
     const config = {
       ...existing,
-      alertingProfiles: normalizeAlertingProfiles(input.alertingProfiles),
-      customDqlMatcher: normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher) || null,
+      alertingProfiles: customDqlMatcher ? null : normalizeAlertingProfiles(input.alertingProfiles),
+      customDqlMatcher,
     };
     this.write(config);
     return config;

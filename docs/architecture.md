@@ -208,18 +208,23 @@ polling, daily full reconciliation, scope transitions, retry state, and one-year
 `DynatraceProblemsClient.ts` owns the bounded Grail requests and composes every query from Relay's
 fixed fetch, deduplication, projection, sort, and limit stages.
 
-Problem scope has two independently optional inputs: exact alerting-profile names and one custom DQL
-matcher expression. When both are present, the client groups them into one filter with `OR`
-semantics, so a problem is included when it matches any selected profile or the custom expression.
-Shared validation permits only an expression that can be embedded inside Relay's owned
-`filter (...)` stage; pipelines, comments, control characters, and
-`event.status_transition` are rejected. Dynatrace remains the final grammar authority through a
-canonical count query that runs before the configuration is saved. A zero count is valid.
+Problem scope is an exclusive choice between no filter, exact alerting-profile names, and one custom
+DQL matcher expression. The administration service exposes the server's cached profile catalog for
+selection and atomically clears the inactive scope mechanism. Config loading, command handling, the
+manager, and the query builder all enforce custom-DQL precedence for legacy values that contain both,
+so they can never regain the former combined behavior.
+
+Shared validation permits a complete boolean expression that can be embedded inside Relay's owned
+`filter (...)` stage. Internal `or` and `and` clauses—including checks against
+`event.status_transition`—are preserved. Pipelines, comments, and control characters are rejected.
+Dynatrace remains the final grammar authority through a canonical count query that runs before the
+configuration is saved. A zero count is valid.
 
 Scope management travels through the protected command boundary and requires `settings.manage`.
 The matcher is included in the protected administration summary but omitted from ordinary public
-settings. Existing profile-only clients remain compatible: a legacy profile update preserves any
-stored matcher, while an updated client submits both values atomically.
+settings. Existing profile-only clients remain compatible: their profile update selects profile
+mode and clears any stored matcher, while an updated client submits the active value and an explicit
+empty value for the inactive mode atomically.
 
 Full custom-scope reconciliation treats the returned problem IDs as authoritative only when the
 result is complete. A truncated result fails closed without applying exclusions. Incremental polls

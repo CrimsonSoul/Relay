@@ -13,49 +13,65 @@ import type { AdministrationPanelProps } from './types';
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
 
-type ProblemScopeMode = {
+type ProblemScopeMethod = 'all' | 'profiles' | 'custom-dql';
+
+type ProblemScopeDescription = {
   label: string;
   description: string;
 };
 
-function describeProblemScope(profileCount: number, customMatcher: string): ProblemScopeMode {
-  if (profileCount > 0 && customMatcher) {
+function initialProblemScopeMethod(
+  profileCount: number,
+  customMatcher: string,
+): ProblemScopeMethod {
+  if (customMatcher) return 'custom-dql';
+  return profileCount > 0 ? 'profiles' : 'all';
+}
+
+function describeProblemScope(
+  method: ProblemScopeMethod,
+  profileCount: number,
+  customMatcher: string,
+): ProblemScopeDescription {
+  if (method === 'profiles') {
+    let description = 'Select at least one alerting profile before testing or saving this scope.';
+    if (profileCount > 0) {
+      const profileNoun = profileCount === 1 ? 'profile' : 'profiles';
+      description = `${profileCount.toLocaleString()} selected ${profileNoun} are the only scope filter.`;
+    }
     return {
-      label: 'Profiles or custom DQL',
-      description: 'A problem appears when it matches an alerting profile or the custom DQL.',
+      label: 'Alerting profiles',
+      description,
     };
   }
-  if (profileCount > 0) {
+  if (method === 'custom-dql') {
     return {
-      label: 'Alerting profiles only',
-      description: 'Only problems in the selected alerting profiles appear in Relay.',
-    };
-  }
-  if (customMatcher) {
-    return {
-      label: 'Custom DQL only',
-      description: 'The custom DQL matcher controls which problems appear in Relay.',
+      label: 'Custom DQL',
+      description: customMatcher
+        ? 'The complete DQL expression is the only filter applied to the problem feed.'
+        : 'Paste the complete DQL filter expression before testing or saving this scope.',
     };
   }
   return {
-    label: 'Unfiltered',
-    description: 'Leave both fields empty to restore the unfiltered problem feed.',
+    label: 'All problems',
+    description: 'Relay applies no profile or custom DQL filter to the problem feed.',
   };
+}
+
+function isProblemScopeReady(
+  method: ProblemScopeMethod,
+  profileCount: number,
+  customMatcher: string,
+): boolean {
+  if (method === 'profiles') return profileCount > 0;
+  if (method === 'custom-dql') return Boolean(customMatcher);
+  return true;
 }
 
 function describeMatcherChange(nextMatcher: string, storedMatcher: string): string {
   if (nextMatcher === storedMatcher) return 'Unchanged';
   if (!nextMatcher) return 'Removed';
   return storedMatcher ? 'Updated' : 'Added';
-}
-
-function problemScopeReplacementValue(
-  profiles: string[],
-  nextMatcher: string,
-  storedMatcher: string,
-): { profiles: string[]; customDqlMatcher?: string } {
-  if (nextMatcher || storedMatcher) return { profiles, customDqlMatcher: nextMatcher };
-  return { profiles };
 }
 
 function ProblemScopeTestStatus({
@@ -66,7 +82,7 @@ function ProblemScopeTestStatus({
     return (
       <output className="administration-scope-status">
         <strong>Testing current scope</strong>
-        <span>Dynatrace is validating the matcher and counting current problems.</span>
+        <span>Dynatrace is validating this scope and counting current problems.</span>
       </output>
     );
   }
@@ -111,10 +127,16 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const profiles = settings.get('dynatrace.alerting-profiles');
   const [environmentUrl, setEnvironmentUrl] = useState('');
   const [platformToken, setPlatformToken] = useState('');
-  const [profileText, setProfileText] = useState(
-    Array.isArray(profiles?.valueSummary) ? profiles.valueSummary.join('\n') : '',
+  const storedProfileNames = useMemo(
+    () => (Array.isArray(profiles?.valueSummary) ? profiles.valueSummary : []),
+    [profiles?.valueSummary],
   );
   const storedCustomDqlMatcher = profiles?.customDqlMatcher ?? '';
+  const [scopeMethod, setScopeMethod] = useState<ProblemScopeMethod>(() =>
+    initialProblemScopeMethod(storedProfileNames.length, storedCustomDqlMatcher),
+  );
+  const [selectedProfileNames, setSelectedProfileNames] = useState<string[]>(storedProfileNames);
+  const [profileSearch, setProfileSearch] = useState('');
   const [customDqlMatcher, setCustomDqlMatcher] = useState(storedCustomDqlMatcher);
   const [scopeTestResult, setScopeTestResult] = useState<DynatraceProblemScopeTestResult | null>(
     null,
@@ -128,34 +150,49 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const tokenFormId = useId();
-  const profileFieldId = useId();
+  const scopeMethodName = useId();
   const profileHintId = useId();
   const matcherFieldId = useId();
   const matcherHintId = useId();
-  const selectedProfileNames = useMemo(
+  const availableProfileNames = useMemo(
     () =>
-      profileText
-        .split(/\r?\n/)
-        .map((value) => value.trim())
-        .filter(Boolean),
-    [profileText],
+      [
+        ...new Set([
+          ...(Array.isArray(profiles?.availableValues) ? profiles.availableValues : []),
+          ...storedProfileNames,
+        ]),
+      ].sort((a, b) => a.localeCompare(b)),
+    [profiles?.availableValues, storedProfileNames],
   );
-  const storedProfileNames = useMemo(
-    () => (Array.isArray(profiles?.valueSummary) ? profiles.valueSummary : []),
-    [profiles?.valueSummary],
-  );
-  const addedProfileNames = selectedProfileNames.filter(
-    (profile) => !storedProfileNames.includes(profile),
-  );
-  const removedProfileNames = storedProfileNames.filter(
-    (profile) => !selectedProfileNames.includes(profile),
-  );
+  const filteredProfileNames = useMemo(() => {
+    const search = profileSearch.trim().toLocaleLowerCase();
+    return search
+      ? availableProfileNames.filter((profile) => profile.toLocaleLowerCase().includes(search))
+      : availableProfileNames;
+  }, [availableProfileNames, profileSearch]);
+  const activeProfileNames = scopeMethod === 'profiles' ? selectedProfileNames : [];
   const normalizedCustomDqlMatcher = useMemo(
     () => normalizeDynatraceCustomDqlMatcher(customDqlMatcher),
     [customDqlMatcher],
   );
-  const scopeMode = describeProblemScope(selectedProfileNames.length, normalizedCustomDqlMatcher);
-  const matcherChange = describeMatcherChange(normalizedCustomDqlMatcher, storedCustomDqlMatcher);
+  const activeCustomDqlMatcher = scopeMethod === 'custom-dql' ? normalizedCustomDqlMatcher : '';
+  const addedProfileNames = activeProfileNames.filter(
+    (profile) => !storedProfileNames.includes(profile),
+  );
+  const removedProfileNames = storedProfileNames.filter(
+    (profile) => !activeProfileNames.includes(profile),
+  );
+  const scopeDescription = describeProblemScope(
+    scopeMethod,
+    activeProfileNames.length,
+    activeCustomDqlMatcher,
+  );
+  const matcherChange = describeMatcherChange(activeCustomDqlMatcher, storedCustomDqlMatcher);
+  const scopeReady = isProblemScopeReady(
+    scopeMethod,
+    activeProfileNames.length,
+    activeCustomDqlMatcher,
+  );
 
   useEffect(
     () => () => {
@@ -188,16 +225,14 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
     applyingProfilesRef.current = true;
     setApplyingProfiles(true);
     try {
-      const value = problemScopeReplacementValue(
-        selectedProfileNames,
-        normalizedCustomDqlMatcher,
-        storedCustomDqlMatcher,
-      );
       const result = await execute({
         command: 'administration.setting.replace',
         payload: {
           setting: 'dynatrace.alerting-profiles',
-          value,
+          value: {
+            profiles: activeProfileNames,
+            customDqlMatcher: activeCustomDqlMatcher,
+          },
           expectedRevision: profiles.revision,
         },
         expectedRevision: null,
@@ -214,7 +249,17 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
 
   const testProblemScope = async (openReview: boolean) => {
     if (!profiles || testingScopeRef.current) return;
-    const matcherError = getDynatraceCustomDqlMatcherError(customDqlMatcher);
+    if (!scopeReady) {
+      setScopeTestResult({
+        valid: false,
+        error:
+          scopeMethod === 'profiles'
+            ? 'Select at least one alerting profile.'
+            : 'Enter the complete DQL filter expression.',
+      });
+      return;
+    }
+    const matcherError = getDynatraceCustomDqlMatcherError(activeCustomDqlMatcher);
     if (matcherError) {
       setScopeTestResult({ valid: false, error: matcherError });
       return;
@@ -227,8 +272,8 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
       const result = await execute({
         command: 'administration.dynatrace-problem-scope.test',
         payload: {
-          profiles: selectedProfileNames,
-          customDqlMatcher: normalizedCustomDqlMatcher,
+          profiles: activeProfileNames,
+          customDqlMatcher: activeCustomDqlMatcher,
         },
         expectedRevision: null,
       });
@@ -255,8 +300,17 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
     }
   };
 
-  const changeProfileText = (value: string) => {
-    setProfileText(value);
+  const changeScopeMethod = (method: ProblemScopeMethod) => {
+    setScopeMethod(method);
+    setScopeTestResult(null);
+  };
+
+  const toggleProfile = (profile: string) => {
+    setSelectedProfileNames((current) =>
+      current.includes(profile)
+        ? current.filter((candidate) => candidate !== profile)
+        : [...current, profile],
+    );
     setScopeTestResult(null);
   };
 
@@ -380,29 +434,117 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
             </span>
           </div>
           <p>
-            Restrict the server-owned feed with alerting profiles, a custom DQL matcher, or both.
-            Problems outside scope are hidden while their notes and local dispositions remain stored
-            until normal one-year history expiry.
+            Choose one server-owned scope method. Alerting profiles and custom DQL are never
+            combined. Problems outside scope are hidden while their notes and local dispositions
+            remain stored until normal one-year history expiry.
           </p>
-          <div className="administration-scope-summary">
-            <strong>{scopeMode.label}</strong>
-            <span>{scopeMode.description}</span>
-          </div>
-          <div className="administration-scope-grid">
-            <div className="administration-field">
-              <label htmlFor={profileFieldId}>Selected alerting profiles · one per line</label>
-              <textarea
-                id={profileFieldId}
-                className="tactile-input"
-                value={profileText}
-                onChange={(event) => changeProfileText(event.target.value)}
-                rows={8}
-                aria-describedby={profileHintId}
-              />
-              <small id={profileHintId}>Optional. Profile names are matched exactly.</small>
+          <fieldset className="administration-scope-method-fieldset">
+            <legend>Problem scope method</legend>
+            <div className="administration-scope-methods">
+              <label
+                htmlFor={`${scopeMethodName}-all`}
+                className={`administration-scope-method${scopeMethod === 'all' ? ' is-selected' : ''}`}
+              >
+                <input
+                  id={`${scopeMethodName}-all`}
+                  type="radio"
+                  name={scopeMethodName}
+                  value="all"
+                  checked={scopeMethod === 'all'}
+                  onChange={() => changeScopeMethod('all')}
+                />
+                <strong>All problems</strong>
+                <small>No scope filter</small>
+              </label>
+              <label
+                htmlFor={`${scopeMethodName}-profiles`}
+                className={`administration-scope-method${scopeMethod === 'profiles' ? ' is-selected' : ''}`}
+              >
+                <input
+                  id={`${scopeMethodName}-profiles`}
+                  type="radio"
+                  name={scopeMethodName}
+                  value="profiles"
+                  checked={scopeMethod === 'profiles'}
+                  onChange={() => changeScopeMethod('profiles')}
+                />
+                <strong>Alerting profiles</strong>
+                <small>Select from the discovered list</small>
+              </label>
+              <label
+                htmlFor={`${scopeMethodName}-custom-dql`}
+                className={`administration-scope-method${scopeMethod === 'custom-dql' ? ' is-selected' : ''}`}
+              >
+                <input
+                  id={`${scopeMethodName}-custom-dql`}
+                  type="radio"
+                  name={scopeMethodName}
+                  value="custom-dql"
+                  checked={scopeMethod === 'custom-dql'}
+                  onChange={() => changeScopeMethod('custom-dql')}
+                />
+                <strong>Custom DQL</strong>
+                <small>Use one complete filter expression</small>
+              </label>
             </div>
+          </fieldset>
+          <div className="administration-scope-summary">
+            <strong>{scopeDescription.label}</strong>
+            <span>{scopeDescription.description}</span>
+          </div>
+          {scopeMethod === 'profiles' && (
+            <div className="administration-profile-picker" aria-describedby={profileHintId}>
+              <div className="administration-profile-picker__header">
+                <strong>Available alerting profiles</strong>
+                <span>{selectedProfileNames.length.toLocaleString()} selected</span>
+              </div>
+              <label className="administration-field">
+                <span>Find an alerting profile</span>
+                <input
+                  className="tactile-input"
+                  type="search"
+                  value={profileSearch}
+                  onChange={(event) => setProfileSearch(event.target.value)}
+                  placeholder="Search discovered profiles"
+                  autoComplete="off"
+                />
+              </label>
+              {filteredProfileNames.length > 0 ? (
+                <fieldset className="administration-profile-list">
+                  <legend className="sr-only">Available alerting profiles</legend>
+                  {filteredProfileNames.map((profile) => (
+                    <label className="administration-profile-option" key={profile}>
+                      <input
+                        type="checkbox"
+                        checked={selectedProfileNames.includes(profile)}
+                        onChange={() => toggleProfile(profile)}
+                      />
+                      <span>{profile}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : (
+                <output className="administration-empty">
+                  <strong>
+                    {availableProfileNames.length > 0
+                      ? 'No profiles match this search'
+                      : 'No alerting profiles discovered yet'}
+                  </strong>
+                  <span>
+                    {availableProfileNames.length > 0
+                      ? 'Clear the search to see the full profile list.'
+                      : 'Sync Dynatrace Problems, then refresh administration.'}
+                  </span>
+                </output>
+              )}
+              <small id={profileHintId}>
+                Relay matches any selected profile exactly. Selecting this mode clears custom DQL.
+              </small>
+            </div>
+          )}
+          {scopeMethod === 'custom-dql' && (
             <div className="administration-field">
-              <label htmlFor={matcherFieldId}>Custom DQL matcher</label>
+              <label htmlFor={matcherFieldId}>Complete DQL filter expression</label>
               <textarea
                 id={matcherFieldId}
                 className="tactile-input administration-dql-input"
@@ -416,25 +558,31 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
                 autoCapitalize="off"
                 autoCorrect="off"
                 placeholder={
-                  'matchesValue(entity_tags, "teams:network")\nand dt.davis.mute.status == "NOT_MUTED"'
+                  '(\n  matchesValue(entity_tags, "teams:network")\n  or matchesPhrase(event.name, "Packet loss on")\n)\nand dt.davis.mute.status == "NOT_MUTED"'
                 }
               />
               <small id={matcherHintId}>
-                Expression only. Do not include fetch, filter pipes, fields, sorting, or limits.
+                Paste everything that belongs inside one filter. Do not include fetch, a leading
+                filter pipe, fields, sorting, or limits. Selecting this mode clears alerting
+                profiles.
               </small>
             </div>
-          </div>
+          )}
           <ProblemScopeTestStatus testing={testingScope} result={scopeTestResult} />
           <div className="administration-actions administration-scope-actions">
             <TactileButton
               type="button"
-              disabled={!profiles}
+              disabled={!profiles || !scopeReady}
               loading={testingScope}
               onClick={() => void testProblemScope(false)}
             >
               Test scope
             </TactileButton>
-            <TactileButton type="submit" disabled={!profiles || testingScope} variant="primary">
+            <TactileButton
+              type="submit"
+              disabled={!profiles || testingScope || !scopeReady}
+              variant="primary"
+            >
               Review scope change
             </TactileButton>
           </div>
@@ -462,7 +610,7 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
         subtitle={
           scopeTestResult?.valid
             ? `${scopeTestResult.problemCount.toLocaleString()} current problems match`
-            : scopeMode.label
+            : scopeDescription.label
         }
         variant="standard"
         dismissible={!applyingProfiles}
@@ -504,8 +652,8 @@ export function RelayServerPanel({ snapshot, execute }: Readonly<AdministrationP
             <strong>Custom DQL matcher</strong>
             <span>{matcherChange}</span>
           </div>
-          {normalizedCustomDqlMatcher && (
-            <pre className="administration-scope-preview">{normalizedCustomDqlMatcher}</pre>
+          {activeCustomDqlMatcher && (
+            <pre className="administration-scope-preview">{activeCustomDqlMatcher}</pre>
           )}
         </div>
       </Modal>

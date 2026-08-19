@@ -148,9 +148,8 @@ function incrementalLookbackMinutes(sync: SyncRecord | null, now: number): numbe
 function scopeSource(config: DynatraceProblemsConfig): ProblemScopeSource {
   const profilesConfigured = Boolean(config.alertingProfiles?.length);
   const matcherConfigured = Boolean(config.customDqlMatcher);
-  if (profilesConfigured && matcherConfigured) return 'combined';
-  if (profilesConfigured) return 'alerting-profile';
   if (matcherConfigured) return 'custom-dql';
+  if (profilesConfigured) return 'alerting-profile';
   return 'unfiltered';
 }
 
@@ -166,9 +165,10 @@ function normalizeProblemScopeInput(input: DynatraceProblemScopeInput): Dynatrac
   }
   const matcherError = getDynatraceCustomDqlMatcherError(input.customDqlMatcher);
   if (matcherError) throw new Error(matcherError);
+  const customDqlMatcher = normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher);
   return {
-    alertingProfiles,
-    customDqlMatcher: normalizeDynatraceCustomDqlMatcher(input.customDqlMatcher),
+    alertingProfiles: customDqlMatcher ? [] : alertingProfiles,
+    customDqlMatcher,
   };
 }
 
@@ -249,6 +249,17 @@ export class DynatraceProblemsManager {
     return this.store.getAdministrativeScope();
   }
 
+  getAvailableAlertingProfileCatalog(): string[] {
+    const selectedProfiles = [...(this.store.load()?.alertingProfiles ?? [])].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const selectedProfileSet = new Set(selectedProfiles);
+    const discoveredProfiles = this.availableAlertingProfiles
+      .filter((profile) => !selectedProfileSet.has(profile))
+      .sort((a, b) => a.localeCompare(b));
+    return [...selectedProfiles, ...discoveredProfiles].slice(0, MAX_DYNATRACE_ALERTING_PROFILES);
+  }
+
   saveSettings(input: DynatraceProblemsSettingsInput): DynatraceProblemsPublicSettings {
     this.store.save(input);
     this.start(true);
@@ -258,7 +269,7 @@ export class DynatraceProblemsManager {
   async saveAlertingProfiles(alertingProfiles: string[]): Promise<number> {
     return this.saveProblemScope({
       alertingProfiles,
-      customDqlMatcher: this.store.getAdministrativeScope().customDqlMatcher,
+      customDqlMatcher: '',
     });
   }
 

@@ -152,7 +152,6 @@ export const MAX_DYNATRACE_CUSTOM_DQL_MATCHER_LENGTH = 16_000;
 
 const DQL_PIPELINE_COMMAND_PATTERN =
   /^(?:fetch|filter|fields(?:add|remove|rename)?|sort|limit|dedup|summarize|append|join|lookup)\b/i;
-const DQL_STATUS_TRANSITION_PATTERN = /\bevent\s*\.\s*status_transition\b/i;
 
 function hasUnsafeControlCharacter(value: string): boolean {
   for (const character of value) {
@@ -240,9 +239,6 @@ export function getDynatraceCustomDqlMatcherError(value: string): string | null 
 
   const scanned = scanDynatraceCustomDqlMatcher(matcher);
   if (!scanned.valid) return scanned.error;
-  if (DQL_STATUS_TRANSITION_PATTERN.test(scanned.unquoted)) {
-    return 'Remove event.status_transition. Relay keeps matching problems through updates until Dynatrace closes them.';
-  }
   return null;
 }
 
