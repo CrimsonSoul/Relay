@@ -152,6 +152,63 @@ describe('evaluateReuseArtifacts', () => {
     }
   });
 
+  it('rejects a no-DA zero-line source with only LF:0', () => {
+    expect(
+      evaluateReuseArtifacts({
+        ...validInput,
+        coverageFiles: [
+          validInput.coverageFiles[0],
+          {
+            content: `${rendererLcov}TN:\nSF:src/renderer/lf-only.css\nLF:0\nend_of_record\n`,
+            path: 'renderer/lcov.info',
+          },
+        ],
+      }),
+    ).toMatchObject({ eligible: false, reason: 'coverage-format-invalid', reuse: false });
+  });
+
+  it('rejects a no-DA zero-line source with only LH:0', () => {
+    expect(
+      evaluateReuseArtifacts({
+        ...validInput,
+        coverageFiles: [
+          validInput.coverageFiles[0],
+          {
+            content: `${rendererLcov}TN:\nSF:src/renderer/lh-only.css\nLH:0\nend_of_record\n`,
+            path: 'renderer/lcov.info',
+          },
+        ],
+      }),
+    ).toMatchObject({ eligible: false, reason: 'coverage-format-invalid', reuse: false });
+  });
+
+  it('rejects a dangling TN header after a complete payload', () => {
+    expect(
+      evaluateReuseArtifacts({
+        ...validInput,
+        coverageFiles: [
+          validInput.coverageFiles[0],
+          { content: `${rendererLcov}TN:trailing\n`, path: 'renderer/lcov.info' },
+        ],
+      }),
+    ).toMatchObject({ eligible: false, reason: 'coverage-format-invalid', reuse: false });
+  });
+
+  it('rejects duplicate TN headers before their source', () => {
+    expect(
+      evaluateReuseArtifacts({
+        ...validInput,
+        coverageFiles: [
+          validInput.coverageFiles[0],
+          {
+            content: `${rendererLcov}TN:first\nTN:duplicate\nSF:src/renderer/second.ts\nDA:1,1\nLF:1\nLH:1\nend_of_record\n`,
+            path: 'renderer/lcov.info',
+          },
+        ],
+      }),
+    ).toMatchObject({ eligible: false, reason: 'coverage-format-invalid', reuse: false });
+  });
+
   it('rejects a renderer tracefile made entirely of zero-line sources', () => {
     expect(
       evaluateReuseArtifacts({

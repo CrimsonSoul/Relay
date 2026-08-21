@@ -66,8 +66,10 @@ function openLcovSource(payload, state) {
   state.sourceOpen = true;
   state.sourceHasData = false;
   state.sourceLineFound = null;
+  state.sourceLineHit = null;
   state.sourceSummaryCompatible = true;
   state.sourceSummaryTags = new Set();
+  state.testNamePending = false;
   return true;
 }
 
@@ -85,7 +87,10 @@ function recordLcovData(payload, state) {
 }
 
 function closeLcovSource(state) {
-  const validZeroLineSource = state.sourceLineFound === 0 && state.sourceSummaryCompatible === true;
+  const validZeroLineSource =
+    state.sourceLineFound === 0 &&
+    state.sourceLineHit === 0 &&
+    state.sourceSummaryCompatible === true;
   if (!state.sourceOpen || (!state.sourceHasData && !validZeroLineSource)) return false;
   state.sourceOpen = false;
   state.sourceHasData = false;
@@ -106,6 +111,7 @@ function recordLcovSummary(line, state) {
   if (!Number.isSafeInteger(value) || state.sourceSummaryTags.has(tag)) return false;
   state.sourceSummaryTags.add(tag);
   if (tag === 'LF') state.sourceLineFound = value;
+  if (tag === 'LH') state.sourceLineHit = value;
   if (value !== 0) state.sourceSummaryCompatible = false;
   return true;
 }
@@ -128,6 +134,12 @@ function validSupplementalLcovRecord(line, state) {
   return validNamedLcovRecord(line, /^VER:(.+)$/u);
 }
 
+function openLcovTestName(payload, state) {
+  if (state.sourceOpen || state.testNamePending || containsControlCharacter(payload)) return false;
+  state.testNamePending = true;
+  return true;
+}
+
 function validLcovLine(line, state) {
   if (line.length === 0) return true;
   if (line === 'end_of_record') return closeLcovSource(state);
@@ -137,7 +149,7 @@ function validLcovLine(line, state) {
   const payload = line.slice(separator + 1);
   if (tag === 'SF') return openLcovSource(payload, state);
   if (tag === 'DA') return recordLcovData(payload, state);
-  if (tag === 'TN') return !state.sourceOpen && !containsControlCharacter(payload);
+  if (tag === 'TN') return openLcovTestName(payload, state);
   return state.sourceOpen && validSupplementalLcovRecord(line, state);
 }
 
@@ -157,16 +169,19 @@ function validLcov(text) {
     records: 0,
     sourceHasData: false,
     sourceLineFound: null,
+    sourceLineHit: null,
     sourceOpen: false,
     sourceSummaryCompatible: false,
     sourceSummaryTags: new Set(),
+    testNamePending: false,
   };
   const lines = text.replaceAll('\r\n', '\n').split('\n');
   return (
     lines.every((line) => validLcovLine(line, state)) &&
     state.records > 0 &&
     state.dataRecords > 0 &&
-    !state.sourceOpen
+    !state.sourceOpen &&
+    !state.testNamePending
   );
 }
 
