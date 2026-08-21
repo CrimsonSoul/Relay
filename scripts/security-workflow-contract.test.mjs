@@ -22,10 +22,75 @@ const findStep = (job, name) => {
 test('test pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.on.pull_request.branches, ['main', 'test']);
   assert.equal(build.jobs.quality.name, 'Build quality gate');
+  assert.equal(build.jobs.quality.if, 'always()');
+  assert.deepEqual(build.jobs.quality.needs, ['static', 'unit-tests', 'renderer-tests']);
+  const aggregate = findStep(build.jobs.quality, 'Require successful build components');
+  assert.deepEqual(aggregate.env, {
+    RENDERER_TESTS_RESULT: '${{ needs.renderer-tests.result }}',
+    STATIC_RESULT: '${{ needs.static.result }}',
+    UNIT_TESTS_RESULT: '${{ needs.unit-tests.result }}',
+  });
+  assert.match(aggregate.run, /exit 1/u);
   assert.ok(
     !('needs' in build.jobs['package-windows']),
     'package-windows must not declare a needs dependency',
   );
+});
+
+test('Sonar consumes unit coverage and both merged renderer coverage shards', () => {
+  const unitCoverage = security.jobs['unit-coverage'];
+  const rendererCoverage = security.jobs['renderer-coverage'];
+  const sonar = security.jobs.sonarqube;
+
+  assert.equal(
+    findStep(unitCoverage, 'Generate unit coverage').run,
+    'npm run test:coverage -- --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0',
+  );
+  assert.deepEqual(findStep(unitCoverage, 'Upload unit coverage'), {
+    name: 'Upload unit coverage',
+    uses: 'actions/upload-artifact@v7',
+    with: {
+      name: 'unit-coverage',
+      path: 'coverage/unit/lcov.info',
+      'if-no-files-found': 'error',
+      'retention-days': 1,
+    },
+  });
+  assert.deepEqual(rendererCoverage.strategy.matrix, {
+    'shard-index': [1, 2],
+    'shard-total': [2],
+  });
+  assert.equal(rendererCoverage.strategy['fail-fast'], false);
+  assert.equal(
+    findStep(rendererCoverage, 'Generate renderer coverage shard').run,
+    'npm run test:renderer -- --coverage --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0',
+  );
+  assert.deepEqual(findStep(rendererCoverage, 'Upload renderer coverage shard'), {
+    name: 'Upload renderer coverage shard',
+    uses: 'actions/upload-artifact@v7',
+    with: {
+      name: 'renderer-coverage-${{ matrix.shard-index }}',
+      path: '.vitest-reports/',
+      'if-no-files-found': 'error',
+      'include-hidden-files': true,
+      'retention-days': 1,
+    },
+  });
+  assert.deepEqual(sonar.needs, ['unit-coverage', 'renderer-coverage']);
+  assert.deepEqual(findStep(sonar, 'Download unit coverage').with, {
+    name: 'unit-coverage',
+    path: 'coverage/unit',
+  });
+  assert.deepEqual(findStep(sonar, 'Download renderer coverage shards').with, {
+    pattern: 'renderer-coverage-*',
+    path: '.vitest-reports',
+    'merge-multiple': true,
+  });
+  const merge = findStep(sonar, 'Merge renderer coverage');
+  assert.match(merge.run, /--merge-reports/u);
+  assert.match(merge.run, /--config vitest\.renderer\.config\.ts/u);
+  assert.match(merge.run, /--coverage\.reporter=lcov/u);
+  assert.match(merge.run, /--coverage\.reportsDirectory=coverage\/renderer/u);
 });
 
 test('scanner jobs retain stable required names and bounded CI entrypoints', () => {

@@ -16,6 +16,88 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  unit-coverage:
+    name: Unit coverage
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'test' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Generate unit coverage
+        run: npm run test:coverage -- --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-coverage
+          path: coverage/unit/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+  renderer-coverage:
+    name: Renderer coverage (${{ matrix.shard-index }}/${{ matrix.shard-total }})
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.base.ref == 'test' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        shard-index: [1, 2]
+        shard-total: [2]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Generate renderer coverage shard
+        run: npm run test:renderer -- --coverage --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+
+      - name: Upload renderer coverage shard
+        uses: actions/upload-artifact@v7
+        with:
+          name: renderer-coverage-${{ matrix.shard-index }}
+          path: .vitest-reports/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
   sonarqube:
     name: SonarQube quality gate
     if: >-
@@ -23,6 +105,7 @@ jobs:
       (github.event_name == 'pull_request' &&
        github.event.pull_request.base.ref == 'test' &&
        github.event.pull_request.head.repo.full_name == github.repository)
+    needs: [unit-coverage, renderer-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -52,8 +135,21 @@ jobs:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
-      - name: Generate LCOV coverage
-        run: npm run test:coverage:sonar
+      - name: Download unit coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: unit-coverage
+          path: coverage/unit
+
+      - name: Download renderer coverage shards
+        uses: actions/download-artifact@v8
+        with:
+          pattern: renderer-coverage-*
+          path: .vitest-reports
+          merge-multiple: true
+
+      - name: Merge renderer coverage
+        run: npx vitest --merge-reports --config vitest.renderer.config.ts --coverage --coverage.reporter=lcov --coverage.reportsDirectory=coverage/renderer --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
 
       - name: Run Sonar finding gate
         shell: bash

@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
-  quality:
-    name: Build quality gate
+  static:
+    name: Static checks
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -74,8 +74,78 @@ jobs:
           npm audit --audit-level=high --omit=dev & AUDIT=$!
           wait $TYPECHECK && wait $LINT && wait $FORMAT && wait $AUDIT
 
-      - name: Run tests
-        run: npm test
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Run unit tests
+        run: npm run test:unit && npm run test:cache
+
+  renderer-tests:
+    name: Renderer tests (${{ matrix.shard-index }}/${{ matrix.shard-total }})
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        shard-index: [1, 2]
+        shard-total: [2]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Run renderer tests
+        run: npm run test:renderer -- --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}
+
+  quality:
+    name: Build quality gate
+    if: always()
+    needs: [static, unit-tests, renderer-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful build components
+        env:
+          STATIC_RESULT: ${{ needs.static.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          RENDERER_TESTS_RESULT: ${{ needs.renderer-tests.result }}
+        shell: bash
+        run: |
+          if [[ "$STATIC_RESULT" != "success" ||
+                "$UNIT_TESTS_RESULT" != "success" ||
+                "$RENDERER_TESTS_RESULT" != "success" ]]; then
+            echo "Build components did not all succeed: static=$STATIC_RESULT unit-tests=$UNIT_TESTS_RESULT renderer-tests=$RENDERER_TESTS_RESULT"
+            exit 1
+          fi
 
   package-windows:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb'))

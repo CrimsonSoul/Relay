@@ -155,7 +155,7 @@ describe('CI workflow contracts', () => {
     expect(caches).toEqual([
       {
         continueOnError: true,
-        job: 'quality',
+        job: 'static',
         key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
         name: 'build.yml',
         path: '~/.cache/electron',
@@ -164,7 +164,7 @@ describe('CI workflow contracts', () => {
       },
       {
         continueOnError: true,
-        job: 'quality',
+        job: 'static',
         key: "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
         name: 'build.yml',
         path: '.cache/eslint\n.cache/prettier\n',
