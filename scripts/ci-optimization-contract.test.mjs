@@ -33,22 +33,33 @@ describe('CI optimization contracts', () => {
     expect(pkg.scripts['format:check']).toContain('--cache-strategy content');
   });
 
-  it('caches only static-analysis artifacts without making the quality gate depend on cache health', async () => {
+  it('never restores ESLint across commits while allowing safe Prettier content-cache reuse', async () => {
     const build = await readYaml('.github/workflows/build.yml');
-    const cache = findStep(build.jobs.static, 'Cache static analysis results');
+    const eslintCache = findStep(build.jobs.static, 'Cache ESLint results');
+    const prettierCache = findStep(build.jobs.static, 'Cache Prettier results');
 
-    expect(cache).toMatchObject({
+    expect(eslintCache).toEqual({
+      name: 'Cache ESLint results',
       'continue-on-error': true,
       uses: 'actions/cache@v5',
       with: {
-        path: '.cache/eslint\n.cache/prettier\n',
-        'restore-keys':
-          "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-",
+        path: '.cache/eslint',
+        key: "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}",
       },
     });
-    expect(cache.with.key).toBe(
-      "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
-    );
+    expect(eslintCache.with).not.toHaveProperty('restore-keys');
+
+    expect(prettierCache).toEqual({
+      name: 'Cache Prettier results',
+      'continue-on-error': true,
+      uses: 'actions/cache@v5',
+      with: {
+        path: '.cache/prettier',
+        key: "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
+        'restore-keys':
+          "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-",
+      },
+    });
   });
 
   it('shards renderer tests behind a fail-closed aggregate build gate', async () => {
@@ -105,8 +116,11 @@ describe('CI optimization contracts', () => {
         'shard-total': [2],
       },
     });
-    expect(findStep(rendererCoverage, 'Generate renderer coverage shard').run).toContain(
-      '--reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
+    const rendererCommand = findStep(rendererCoverage, 'Generate renderer coverage shard').run;
+    expect(rendererCommand).toContain('--reporter=dot');
+    expect(rendererCommand).toContain('--reporter=blob');
+    expect(rendererCommand).toContain(
+      '--shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
     );
 
     const sonar = security.jobs.sonarqube;
@@ -135,21 +149,68 @@ describe('CI optimization contracts', () => {
         'pull-requests': 'read',
       });
       expect(provenance.outputs).toEqual({
-        'coverage-artifact': '${{ steps.resolve.outputs.coverage-artifact }}',
-        eligible: '${{ steps.resolve.outputs.eligible }}',
-        'head-sha': '${{ steps.resolve.outputs.head-sha }}',
-        'head-tree': '${{ steps.resolve.outputs.head-tree }}',
-        'pull-request': '${{ steps.resolve.outputs.pull-request }}',
-        reuse: '${{ steps.resolve.outputs.reuse }}',
-        'security-run-id': '${{ steps.resolve.outputs.security-run-id }}',
+        'coverage-artifact': '${{ steps.metadata.outputs.coverage-artifact }}',
+        eligible: '${{ steps.finalize.outputs.eligible }}',
+        'head-sha': '${{ steps.metadata.outputs.head-sha }}',
+        'head-tree': '${{ steps.metadata.outputs.head-tree }}',
+        'pull-request': '${{ steps.metadata.outputs.pull-request }}',
+        reason: '${{ steps.finalize.outputs.reason }}',
+        reuse: '${{ steps.finalize.outputs.reuse }}',
+        'security-run-id': '${{ steps.metadata.outputs.security-run-id }}',
       });
-      const resolve = findStep(provenance, 'Resolve exact-tree reuse');
-      expect(resolve.id).toBe('resolve');
-      expect(resolve.env).toEqual({
-        GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+      const metadata = findStep(provenance, 'Resolve exact-tree reuse metadata');
+      expect(metadata.id).toBe('metadata');
+      expect(metadata.env).toEqual({ GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' });
+      expect(metadata.run).toBe('node scripts/ciTreeReuse.mjs');
+
+      const buildPayload = findStep(provenance, 'Download candidate Build attestation');
+      expect(buildPayload).toEqual({
+        name: 'Download candidate Build attestation',
+        id: 'build_payload',
+        if: "steps.metadata.outputs.metadata-eligible == 'true'",
+        'continue-on-error': true,
+        uses: 'actions/download-artifact@v8',
+        with: {
+          'github-token': '${{ secrets.GITHUB_TOKEN }}',
+          name: '${{ steps.metadata.outputs.build-artifact }}',
+          path: '${{ runner.temp }}/ci-reuse/build',
+          'run-id': '${{ steps.metadata.outputs.build-run-id }}',
+        },
+      });
+      const coveragePayload = findStep(provenance, 'Download candidate merged LCOV');
+      expect(coveragePayload).toEqual({
+        name: 'Download candidate merged LCOV',
+        id: 'coverage_payload',
+        if: "steps.metadata.outputs.metadata-eligible == 'true'",
+        'continue-on-error': true,
+        uses: 'actions/download-artifact@v8',
+        with: {
+          'github-token': '${{ secrets.GITHUB_TOKEN }}',
+          name: '${{ steps.metadata.outputs.coverage-artifact }}',
+          path: '${{ runner.temp }}/ci-reuse/coverage',
+          'run-id': '${{ steps.metadata.outputs.security-run-id }}',
+        },
+      });
+
+      const finalize = findStep(provenance, 'Finalize exact-tree reuse');
+      expect(finalize.id).toBe('finalize');
+      expect(finalize.if).toBe('always()');
+      expect(finalize.env).toEqual({
+        BASE_SHA: '${{ steps.metadata.outputs.base-sha }}',
+        BUILD_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/build',
+        BUILD_DOWNLOAD_OUTCOME: '${{ steps.build_payload.outcome }}',
+        COVERAGE_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/coverage',
+        COVERAGE_DOWNLOAD_OUTCOME: '${{ steps.coverage_payload.outcome }}',
+        HEAD_SHA: '${{ steps.metadata.outputs.head-sha }}',
+        METADATA_ELIGIBLE: '${{ steps.metadata.outputs.metadata-eligible }}',
+        METADATA_REASON: '${{ steps.metadata.outputs.metadata-reason }}',
+        PULL_REQUEST: '${{ steps.metadata.outputs.pull-request }}',
         RELAY_CI_TREE_REUSE_MODE: '${{ vars.RELAY_CI_TREE_REUSE_MODE }}',
       });
-      expect(resolve.run).toBe('node scripts/ciTreeReuse.mjs');
+      expect(finalize.run).toBe('node scripts/ciReuseArtifactValidation.mjs');
+      expect(provenance.steps.indexOf(finalize)).toBeGreaterThan(
+        provenance.steps.indexOf(coveragePayload),
+      );
     }
 
     expect(security.jobs.sonarqube.permissions).toEqual({

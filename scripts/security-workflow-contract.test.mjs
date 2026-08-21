@@ -28,6 +28,9 @@ test('test pull requests emit the stable build quality gate', () => {
     contents: 'read',
     'pull-requests': 'read',
   });
+  assert.equal(build.jobs.provenance.outputs.eligible, '${{ steps.finalize.outputs.eligible }}');
+  assert.equal(build.jobs.provenance.outputs.reuse, '${{ steps.finalize.outputs.reuse }}');
+  assert.equal(build.jobs.provenance.outputs.reason, '${{ steps.finalize.outputs.reason }}');
   assert.equal(build.jobs.quality.name, 'Build quality gate');
   assert.equal(build.jobs.quality.if, 'always()');
   assert.deepEqual(build.jobs.quality.needs, [
@@ -78,7 +81,7 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
   assert.equal(rendererCoverage.strategy['fail-fast'], false);
   assert.equal(
     findStep(rendererCoverage, 'Generate renderer coverage shard').run,
-    'npm run test:renderer -- --coverage --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0',
+    'npm run test:renderer -- --coverage --reporter=dot --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0',
   );
   assert.deepEqual(findStep(rendererCoverage, 'Upload renderer coverage shard'), {
     name: 'Upload renderer coverage shard',
@@ -174,6 +177,9 @@ test('scanner jobs retain stable required names and bounded CI entrypoints', () 
     contents: 'read',
     'pull-requests': 'read',
   });
+  assert.equal(security.jobs.provenance.outputs.eligible, '${{ steps.finalize.outputs.eligible }}');
+  assert.equal(security.jobs.provenance.outputs.reuse, '${{ steps.finalize.outputs.reuse }}');
+  assert.equal(security.jobs.provenance.outputs.reason, '${{ steps.finalize.outputs.reason }}');
   assert.deepEqual(security.jobs.sonarqube.permissions, {
     actions: 'read',
     contents: 'read',

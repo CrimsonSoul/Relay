@@ -12,6 +12,9 @@ const REQUIRED_CHECKS = ['Build quality gate', 'SonarQube quality gate', 'Snyk s
 const MAX_COMPARE_COMMITS = 300;
 
 const blankResult = (reason) => ({
+  baseSha: '',
+  buildArtifact: '',
+  buildRunId: '',
   coverageArtifact: '',
   eligible: false,
   headSha: '',
@@ -266,6 +269,9 @@ export function evaluateTreeReuse(input) {
   if (coverage.reason !== null) return blankResult(coverage.reason);
 
   return {
+    baseSha: pullRequest.baseSha,
+    buildArtifact: buildAttestation.artifact.name,
+    buildRunId: String(input.buildRun.id),
     coverageArtifact: coverage.artifact.name,
     eligible: true,
     headSha: pullRequest.headSha,
@@ -504,23 +510,28 @@ async function resolveFromGitHub({ env, fetchJson }) {
 const safeEligibleResult = (result) =>
   result.eligible === true &&
   isPositiveId(result.pullRequest) &&
+  isSha(result.baseSha) &&
   isSha(result.headSha) &&
   isSha(result.headTree) &&
+  /^[1-9]\d*$/u.test(result.buildRunId) &&
+  ARTIFACT_PATTERN.test(result.buildArtifact) &&
   /^[1-9]\d*$/u.test(result.securityRunId) &&
   ARTIFACT_PATTERN.test(result.coverageArtifact);
 
-async function writeOutputs(outputPath, result, reuse) {
+async function writeOutputs(outputPath, result) {
   const reason = /^[a-z][a-z0-9-]*$/u.test(result.reason) ? result.reason : 'api-failure';
   const lines = [
-    `eligible=${result.eligible === true ? 'true' : 'false'}`,
-    `reason=${reason}`,
-    `reuse=${reuse ? 'true' : 'false'}`,
+    `metadata-eligible=${result.eligible === true ? 'true' : 'false'}`,
+    `metadata-reason=${reason}`,
   ];
   if (result.eligible === true) {
     lines.push(
       `pull-request=${result.pullRequest}`,
+      `base-sha=${result.baseSha}`,
       `head-sha=${result.headSha}`,
       `head-tree=${result.headTree}`,
+      `build-run-id=${result.buildRunId}`,
+      `build-artifact=${result.buildArtifact}`,
       `security-run-id=${result.securityRunId}`,
       `coverage-artifact=${result.coverageArtifact}`,
     );
@@ -538,9 +549,8 @@ export async function runCiTreeReuse({ env = process.env, fetchJson = defaultFet
   if (result.eligible === true && !safeEligibleResult(result)) {
     result = blankResult('api-failure');
   }
-  const reuse = result.eligible === true && env.RELAY_CI_TREE_REUSE_MODE === 'enabled';
-  await writeOutputs(env.GITHUB_OUTPUT, result, reuse);
-  return { ...result, reuse };
+  await writeOutputs(env.GITHUB_OUTPUT, result);
+  return result;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

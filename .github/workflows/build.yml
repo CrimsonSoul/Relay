@@ -30,23 +30,61 @@ jobs:
       pull-requests: read
     runs-on: ubuntu-latest
     outputs:
-      eligible: ${{ steps.resolve.outputs.eligible }}
-      reuse: ${{ steps.resolve.outputs.reuse }}
-      pull-request: ${{ steps.resolve.outputs.pull-request }}
-      head-sha: ${{ steps.resolve.outputs.head-sha }}
-      head-tree: ${{ steps.resolve.outputs.head-tree }}
-      security-run-id: ${{ steps.resolve.outputs.security-run-id }}
-      coverage-artifact: ${{ steps.resolve.outputs.coverage-artifact }}
+      eligible: ${{ steps.finalize.outputs.eligible }}
+      reuse: ${{ steps.finalize.outputs.reuse }}
+      reason: ${{ steps.finalize.outputs.reason }}
+      pull-request: ${{ steps.metadata.outputs.pull-request }}
+      head-sha: ${{ steps.metadata.outputs.head-sha }}
+      head-tree: ${{ steps.metadata.outputs.head-tree }}
+      security-run-id: ${{ steps.metadata.outputs.security-run-id }}
+      coverage-artifact: ${{ steps.metadata.outputs.coverage-artifact }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Resolve exact-tree reuse
-        id: resolve
+      - name: Resolve exact-tree reuse metadata
+        id: metadata
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
         run: node scripts/ciTreeReuse.mjs
+
+      - name: Download candidate Build attestation
+        id: build_payload
+        if: steps.metadata.outputs.metadata-eligible == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.metadata.outputs.build-artifact }}
+          path: ${{ runner.temp }}/ci-reuse/build
+          run-id: ${{ steps.metadata.outputs.build-run-id }}
+
+      - name: Download candidate merged LCOV
+        id: coverage_payload
+        if: steps.metadata.outputs.metadata-eligible == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.metadata.outputs.coverage-artifact }}
+          path: ${{ runner.temp }}/ci-reuse/coverage
+          run-id: ${{ steps.metadata.outputs.security-run-id }}
+
+      - name: Finalize exact-tree reuse
+        id: finalize
+        if: always()
+        env:
+          BASE_SHA: ${{ steps.metadata.outputs.base-sha }}
+          BUILD_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/build
+          BUILD_DOWNLOAD_OUTCOME: ${{ steps.build_payload.outcome }}
+          COVERAGE_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/coverage
+          COVERAGE_DOWNLOAD_OUTCOME: ${{ steps.coverage_payload.outcome }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head-sha }}
+          METADATA_ELIGIBLE: ${{ steps.metadata.outputs.metadata-eligible }}
+          METADATA_REASON: ${{ steps.metadata.outputs.metadata-reason }}
+          PULL_REQUEST: ${{ steps.metadata.outputs.pull-request }}
+          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
+        run: node scripts/ciReuseArtifactValidation.mjs
 
   static:
     name: Static checks
@@ -79,15 +117,20 @@ jobs:
           path: ~/.cache/electron
           key: electron-linux-x64-${{ steps.electron-version.outputs.version }}
 
-      - name: Cache static analysis results
+      - name: Cache ESLint results
         continue-on-error: true
         uses: actions/cache@v5
         with:
-          path: |
-            .cache/eslint
-            .cache/prettier
-          key: static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-${{ github.sha }}
-          restore-keys: static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-
+          path: .cache/eslint
+          key: eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}
+
+      - name: Cache Prettier results
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: .cache/prettier
+          key: prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-${{ github.sha }}
+          restore-keys: prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-
 
       - name: Install dependencies
         env:

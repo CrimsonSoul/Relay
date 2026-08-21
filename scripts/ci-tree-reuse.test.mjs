@@ -109,6 +109,9 @@ const validFixture = {
 describe('evaluateTreeReuse', () => {
   it('accepts one exact-tree squash with all required exact-head evidence', () => {
     expect(evaluateTreeReuse(validFixture)).toEqual({
+      baseSha,
+      buildArtifact: buildArtifactName,
+      buildRunId: String(buildRunId),
       coverageArtifact: coverageArtifactName,
       eligible: true,
       headSha,
@@ -396,6 +399,9 @@ describe('evaluateTreeReuse', () => {
 
   it('fails closed with sanitized empty outputs for malformed input instead of throwing', () => {
     expect(evaluateTreeReuse({ ...validFixture, currentSha: 'not-a-sha' })).toEqual({
+      baseSha: '',
+      buildArtifact: '',
+      buildRunId: '',
       coverageArtifact: '',
       eligible: false,
       headSha: '',
@@ -469,29 +475,33 @@ const validFetchJson = async (rawUrl) => {
 };
 
 describe('runCiTreeReuse adapter', () => {
-  it('writes only sanitized validated outputs and enables reuse only for exact enabled mode', async () => {
+  it('writes only sanitized candidate identities and cannot claim final reuse', async () => {
     const env = await adapterEnv();
     const result = await runCiTreeReuse({ env, fetchJson: validFetchJson });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
-    expect(result).toMatchObject({ eligible: true, reason: 'eligible', reuse: true });
+    expect(result).toMatchObject({ eligible: true, reason: 'eligible' });
+    expect(result).not.toHaveProperty('reuse');
     expect(output).toBe(
       [
-        'eligible=true',
-        'reason=eligible',
-        'reuse=true',
+        'metadata-eligible=true',
+        'metadata-reason=eligible',
         'pull-request=243',
+        `base-sha=${baseSha}`,
         `head-sha=${headSha}`,
         `head-tree=${treeSha}`,
+        `build-run-id=${buildRunId}`,
+        `build-artifact=${buildArtifactName}`,
         `security-run-id=${securityRunId}`,
         `coverage-artifact=${coverageArtifactName}`,
         '',
       ].join('\n'),
     );
     expect(output).not.toContain(env.GITHUB_TOKEN);
+    expect(output).not.toMatch(/^reuse=/mu);
   });
 
-  it('still resolves complete provenance in shadow mode while forcing reuse false', async () => {
+  it('still resolves complete metadata provenance in shadow mode', async () => {
     const env = await adapterEnv('shadow');
     const requests = [];
     const result = await runCiTreeReuse({
@@ -503,13 +513,14 @@ describe('runCiTreeReuse adapter', () => {
     });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
-    expect(result).toMatchObject({ eligible: true, reuse: false });
+    expect(result).toMatchObject({ eligible: true, reason: 'eligible' });
+    expect(result).not.toHaveProperty('reuse');
     expect(requests).toHaveLength(10);
     expect(requests).toContain(
       `https://api.github.com/repos/${repository}/compare/${baseSha}...${headSha}?per_page=100&page=1`,
     );
-    expect(output).toContain('eligible=true\n');
-    expect(output).toContain('reuse=false\n');
+    expect(output).toContain('metadata-eligible=true\n');
+    expect(output).not.toMatch(/^reuse=/mu);
   });
 
   it('fails closed on API errors without writing the token or response body', async () => {
@@ -523,8 +534,9 @@ describe('runCiTreeReuse adapter', () => {
     });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
-    expect(result).toMatchObject({ eligible: false, reason: 'api-failure', reuse: false });
-    expect(output).toBe('eligible=false\nreason=api-failure\nreuse=false\n');
+    expect(result).toMatchObject({ eligible: false, reason: 'api-failure' });
+    expect(result).not.toHaveProperty('reuse');
+    expect(output).toBe('metadata-eligible=false\nmetadata-reason=api-failure\n');
     expect(output).not.toContain(env.GITHUB_TOKEN);
     expect(output).not.toContain(responseBody);
   });
@@ -540,9 +552,9 @@ describe('runCiTreeReuse adapter', () => {
       },
     });
 
-    expect(result).toMatchObject({ eligible: false, reason: 'api-failure', reuse: false });
+    expect(result).toMatchObject({ eligible: false, reason: 'api-failure' });
     expect(await readFile(env.GITHUB_OUTPUT, 'utf8')).toBe(
-      'eligible=false\nreason=api-failure\nreuse=false\n',
+      'metadata-eligible=false\nmetadata-reason=api-failure\n',
     );
   });
 
@@ -558,7 +570,7 @@ describe('runCiTreeReuse adapter', () => {
       },
     });
 
-    expect(result).toMatchObject({ eligible: false, reason: 'api-failure', reuse: false });
+    expect(result).toMatchObject({ eligible: false, reason: 'api-failure' });
     expect(pages).toEqual(['1', '2', '3']);
   });
 
@@ -580,7 +592,7 @@ describe('runCiTreeReuse adapter', () => {
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
     expect(result.eligible).toBe(false);
-    expect(output).toBe('eligible=false\nreason=coverage-artifact-unavailable\nreuse=false\n');
+    expect(output).toBe('metadata-eligible=false\nmetadata-reason=coverage-artifact-unavailable\n');
     expect(output).not.toContain('attack=true');
   });
 });

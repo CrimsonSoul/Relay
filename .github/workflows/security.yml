@@ -25,23 +25,61 @@ jobs:
       pull-requests: read
     runs-on: ubuntu-latest
     outputs:
-      eligible: ${{ steps.resolve.outputs.eligible }}
-      reuse: ${{ steps.resolve.outputs.reuse }}
-      pull-request: ${{ steps.resolve.outputs.pull-request }}
-      head-sha: ${{ steps.resolve.outputs.head-sha }}
-      head-tree: ${{ steps.resolve.outputs.head-tree }}
-      security-run-id: ${{ steps.resolve.outputs.security-run-id }}
-      coverage-artifact: ${{ steps.resolve.outputs.coverage-artifact }}
+      eligible: ${{ steps.finalize.outputs.eligible }}
+      reuse: ${{ steps.finalize.outputs.reuse }}
+      reason: ${{ steps.finalize.outputs.reason }}
+      pull-request: ${{ steps.metadata.outputs.pull-request }}
+      head-sha: ${{ steps.metadata.outputs.head-sha }}
+      head-tree: ${{ steps.metadata.outputs.head-tree }}
+      security-run-id: ${{ steps.metadata.outputs.security-run-id }}
+      coverage-artifact: ${{ steps.metadata.outputs.coverage-artifact }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - name: Resolve exact-tree reuse
-        id: resolve
+      - name: Resolve exact-tree reuse metadata
+        id: metadata
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
         run: node scripts/ciTreeReuse.mjs
+
+      - name: Download candidate Build attestation
+        id: build_payload
+        if: steps.metadata.outputs.metadata-eligible == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.metadata.outputs.build-artifact }}
+          path: ${{ runner.temp }}/ci-reuse/build
+          run-id: ${{ steps.metadata.outputs.build-run-id }}
+
+      - name: Download candidate merged LCOV
+        id: coverage_payload
+        if: steps.metadata.outputs.metadata-eligible == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.metadata.outputs.coverage-artifact }}
+          path: ${{ runner.temp }}/ci-reuse/coverage
+          run-id: ${{ steps.metadata.outputs.security-run-id }}
+
+      - name: Finalize exact-tree reuse
+        id: finalize
+        if: always()
+        env:
+          BASE_SHA: ${{ steps.metadata.outputs.base-sha }}
+          BUILD_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/build
+          BUILD_DOWNLOAD_OUTCOME: ${{ steps.build_payload.outcome }}
+          COVERAGE_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/coverage
+          COVERAGE_DOWNLOAD_OUTCOME: ${{ steps.coverage_payload.outcome }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head-sha }}
+          METADATA_ELIGIBLE: ${{ steps.metadata.outputs.metadata-eligible }}
+          METADATA_REASON: ${{ steps.metadata.outputs.metadata-reason }}
+          PULL_REQUEST: ${{ steps.metadata.outputs.pull-request }}
+          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
+        run: node scripts/ciReuseArtifactValidation.mjs
 
   unit-coverage:
     name: Unit coverage
@@ -120,7 +158,7 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Generate renderer coverage shard
-        run: npm run test:renderer -- --coverage --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+        run: npm run test:renderer -- --coverage --reporter=dot --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
 
       - name: Upload renderer coverage shard
         uses: actions/upload-artifact@v7

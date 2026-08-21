@@ -165,12 +165,21 @@ describe('CI workflow contracts', () => {
       {
         continueOnError: true,
         job: 'static',
-        key: "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
+        key: "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}",
         name: 'build.yml',
-        path: '.cache/eslint\n.cache/prettier\n',
+        path: '.cache/eslint',
+        restoreKeys: undefined,
+        step: 'Cache ESLint results',
+      },
+      {
+        continueOnError: true,
+        job: 'static',
+        key: "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
+        name: 'build.yml',
+        path: '.cache/prettier',
         restoreKeys:
-          "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-",
-        step: 'Cache static analysis results',
+          "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-",
+        step: 'Cache Prettier results',
       },
       {
         continueOnError: true,
