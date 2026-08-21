@@ -14,7 +14,9 @@ on:
 
 permissions:
   actions: read
+  checks: read
   contents: read
+  pull-requests: read
 
 # Rapid pushes to the same branch cancel superseded runs instead of queueing.
 concurrency:
@@ -22,8 +24,32 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  provenance:
+    name: Resolve exact-tree reuse
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.resolve.outputs.eligible }}
+      reuse: ${{ steps.resolve.outputs.reuse }}
+      pull-request: ${{ steps.resolve.outputs.pull-request }}
+      head-sha: ${{ steps.resolve.outputs.head-sha }}
+      head-tree: ${{ steps.resolve.outputs.head-tree }}
+      security-run-id: ${{ steps.resolve.outputs.security-run-id }}
+      coverage-artifact: ${{ steps.resolve.outputs.coverage-artifact }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve exact-tree reuse
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
+        run: node scripts/ciTreeReuse.mjs
+
   static:
     name: Static checks
+    if: needs.provenance.outputs.reuse != 'true'
+    needs: provenance
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -76,6 +102,8 @@ jobs:
 
   unit-tests:
     name: Unit tests
+    if: needs.provenance.outputs.reuse != 'true'
+    needs: provenance
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -100,6 +128,8 @@ jobs:
 
   renderer-tests:
     name: Renderer tests (${{ matrix.shard-index }}/${{ matrix.shard-total }})
+    if: needs.provenance.outputs.reuse != 'true'
+    needs: provenance
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -130,16 +160,32 @@ jobs:
   quality:
     name: Build quality gate
     if: always()
-    needs: [static, unit-tests, renderer-tests]
+    needs: [provenance, static, unit-tests, renderer-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Require successful build components
         env:
+          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
+          PROVENANCE_RESULT: ${{ needs.provenance.result }}
+          REUSE: ${{ needs.provenance.outputs.reuse }}
           STATIC_RESULT: ${{ needs.static.result }}
           UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
           RENDERER_TESTS_RESULT: ${{ needs.renderer-tests.result }}
         shell: bash
         run: |
+          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
+            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
+            exit 1
+          fi
+
+          if [[ "$REUSE" == "true" ]]; then
+            if [[ "$ELIGIBLE" == "true" ]]; then
+              exit 0
+            fi
+            echo "Tree reuse was enabled without validated eligibility."
+            exit 1
+          fi
+
           if [[ "$STATIC_RESULT" != "success" ||
                 "$UNIT_TESTS_RESULT" != "success" ||
                 "$RENDERER_TESTS_RESULT" != "success" ]]; then

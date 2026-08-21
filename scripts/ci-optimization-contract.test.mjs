@@ -11,6 +11,7 @@ const readProjectFile = async (path) => readFile(new URL(path, projectRoot), 'ut
 const readJson = async (path) => JSON.parse(await readProjectFile(path));
 const readYaml = async (path) => parse(await readProjectFile(path));
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
+const normalizeExpression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
 
 describe('CI optimization contracts', () => {
   it('keeps passing test output quiet in every Vitest suite', () => {
@@ -53,6 +54,10 @@ describe('CI optimization contracts', () => {
   it('shards renderer tests behind a fail-closed aggregate build gate', async () => {
     const build = await readYaml('.github/workflows/build.yml');
 
+    for (const jobName of ['static', 'unit-tests', 'renderer-tests']) {
+      expect(build.jobs[jobName].needs).toBe('provenance');
+      expect(build.jobs[jobName].if).toBe("needs.provenance.outputs.reuse != 'true'");
+    }
     expect(build.jobs['renderer-tests'].strategy).toEqual({
       'fail-fast': false,
       matrix: {
@@ -70,13 +75,19 @@ describe('CI optimization contracts', () => {
     const quality = build.jobs.quality;
     expect(quality.name).toBe('Build quality gate');
     expect(quality.if).toBe('always()');
-    expect(quality.needs).toEqual(['static', 'unit-tests', 'renderer-tests']);
+    expect(quality.needs).toEqual(['provenance', 'static', 'unit-tests', 'renderer-tests']);
     const aggregate = findStep(quality, 'Require successful build components');
     expect(aggregate.env).toEqual({
+      ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
+      PROVENANCE_RESULT: '${{ needs.provenance.result }}',
       RENDERER_TESTS_RESULT: '${{ needs.renderer-tests.result }}',
+      REUSE: '${{ needs.provenance.outputs.reuse }}',
       STATIC_RESULT: '${{ needs.static.result }}',
       UNIT_TESTS_RESULT: '${{ needs.unit-tests.result }}',
     });
+    expect(aggregate.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
+    expect(aggregate.run).toContain('[[ "$REUSE" == "true" ]]');
+    expect(aggregate.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
     expect(aggregate.run.replaceAll(/\s+/gu, ' ')).toContain(
       'if [[ "$STATIC_RESULT" != "success" || "$UNIT_TESTS_RESULT" != "success" || "$RENDERER_TESTS_RESULT" != "success" ]]; then',
     );
@@ -100,11 +111,136 @@ describe('CI optimization contracts', () => {
 
     const sonar = security.jobs.sonarqube;
     expect(sonar.name).toBe('SonarQube quality gate');
-    expect(sonar.needs).toEqual(['unit-coverage', 'renderer-coverage']);
+    expect(sonar.needs).toEqual(['provenance', 'unit-coverage', 'renderer-coverage']);
     const merge = findStep(sonar, 'Merge renderer coverage');
+    expect(merge.if).toBe("needs.provenance.outputs.reuse != 'true'");
     expect(merge.run).toContain('--merge-reports');
     expect(merge.run).toContain('--coverage.reporter=lcov');
     expect(merge.run).toContain('--coverage.reportsDirectory=coverage/renderer');
+  });
+
+  it('resolves exact-tree provenance in both workflows with least read authority', async () => {
+    const [build, security] = await Promise.all([
+      readYaml('.github/workflows/build.yml'),
+      readYaml('.github/workflows/security.yml'),
+    ]);
+
+    for (const workflow of [build, security]) {
+      expect(workflow.permissions).toEqual({
+        actions: 'read',
+        checks: 'read',
+        contents: 'read',
+        'pull-requests': 'read',
+      });
+      const provenance = workflow.jobs.provenance;
+      expect(provenance.outputs).toEqual({
+        'coverage-artifact': '${{ steps.resolve.outputs.coverage-artifact }}',
+        eligible: '${{ steps.resolve.outputs.eligible }}',
+        'head-sha': '${{ steps.resolve.outputs.head-sha }}',
+        'head-tree': '${{ steps.resolve.outputs.head-tree }}',
+        'pull-request': '${{ steps.resolve.outputs.pull-request }}',
+        reuse: '${{ steps.resolve.outputs.reuse }}',
+        'security-run-id': '${{ steps.resolve.outputs.security-run-id }}',
+      });
+      const resolve = findStep(provenance, 'Resolve exact-tree reuse');
+      expect(resolve.id).toBe('resolve');
+      expect(resolve.env).toEqual({
+        GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+        RELAY_CI_TREE_REUSE_MODE: '${{ vars.RELAY_CI_TREE_REUSE_MODE }}',
+      });
+      expect(resolve.run).toBe('node scripts/ciTreeReuse.mjs');
+    }
+  });
+
+  it('keeps shadow mode on the full security path and reuses only exact validated outputs', async () => {
+    const security = await readYaml('.github/workflows/security.yml');
+    const unit = security.jobs['unit-coverage'];
+    const renderer = security.jobs['renderer-coverage'];
+
+    for (const coverage of [unit, renderer]) {
+      expect(coverage.needs).toBe('provenance');
+      expect(normalizeExpression(coverage.if)).toContain(
+        "needs.provenance.outputs.reuse != 'true'",
+      );
+    }
+
+    const sonar = security.jobs.sonarqube;
+    const preflight = findStep(sonar, 'Require valid provenance or successful coverage');
+    expect(sonar.if).toContain('always()');
+    expect(preflight.env).toEqual({
+      ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
+      PROVENANCE_RESULT: '${{ needs.provenance.result }}',
+      RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
+      REUSE: '${{ needs.provenance.outputs.reuse }}',
+      UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+    });
+    expect(preflight.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
+    expect(preflight.run).toContain('[[ "$REUSE" == "true" ]]');
+    expect(preflight.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
+    expect(preflight.run).toContain('[[ "$UNIT_COVERAGE_RESULT" != "success"');
+
+    expect(findStep(sonar, 'Checkout exact commit').with).toEqual({
+      'fetch-depth': 0,
+      ref: '${{ github.sha }}',
+    });
+    expect(findStep(sonar, 'Download validated PR LCOV')).toMatchObject({
+      if: "needs.provenance.outputs.reuse == 'true'",
+      uses: 'actions/download-artifact@v8',
+      with: {
+        'github-token': '${{ secrets.GITHUB_TOKEN }}',
+        name: '${{ needs.provenance.outputs.coverage-artifact }}',
+        path: 'coverage',
+        'run-id': '${{ needs.provenance.outputs.security-run-id }}',
+      },
+    });
+    expect(findStep(sonar, 'Download unit coverage').if).toBe(
+      "needs.provenance.outputs.reuse != 'true'",
+    );
+    expect(findStep(sonar, 'Download renderer coverage shards').if).toBe(
+      "needs.provenance.outputs.reuse != 'true'",
+    );
+    expect(findStep(sonar, 'Validate merged LCOV').run).toContain(
+      'test -s coverage/unit/lcov.info',
+    );
+    expect(findStep(sonar, 'Validate merged LCOV').run).toContain(
+      'test -s coverage/renderer/lcov.info',
+    );
+    expect(findStep(sonar, 'Upload merged LCOV')).toEqual({
+      name: 'Upload merged LCOV',
+      if: "needs.provenance.outputs.reuse != 'true'",
+      uses: 'actions/upload-artifact@v7',
+      with: {
+        name: 'relay-merged-lcov',
+        path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
+        'if-no-files-found': 'error',
+        'retention-days': 1,
+      },
+    });
+    expect(findStep(sonar, 'Run Sonar finding gate').run).toContain('npm run security:sonar:ci --');
+  });
+
+  it('keeps the required Snyk check materialized behind a fail-closed aggregator', async () => {
+    const security = await readYaml('.github/workflows/security.yml');
+    const scan = security.jobs['snyk-scan'];
+    const gate = security.jobs.snyk;
+
+    expect(scan.needs).toBe('provenance');
+    expect(normalizeExpression(scan.if)).toContain("needs.provenance.outputs.reuse != 'true'");
+    expect(findStep(scan, 'Run Snyk finding gate').run).toBe('npm run security:snyk:ci');
+    expect(gate.name).toBe('Snyk security gate');
+    expect(gate.if).toContain('always()');
+    expect(gate.needs).toEqual(['provenance', 'snyk-scan']);
+    const aggregate = findStep(gate, 'Require valid provenance or successful Snyk scan');
+    expect(aggregate.env).toEqual({
+      ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
+      PROVENANCE_RESULT: '${{ needs.provenance.result }}',
+      REUSE: '${{ needs.provenance.outputs.reuse }}',
+      SNYK_SCAN_RESULT: '${{ needs.snyk-scan.result }}',
+    });
+    expect(aggregate.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
+    expect(aggregate.run).toContain('[[ "$REUSE" == "true" ]]');
+    expect(aggregate.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
+    expect(aggregate.run).toContain('[[ "$SNYK_SCAN_RESULT" != "success" ]]');
   });
 
   it('caches Sonar packages independently of scanner credentials', async () => {

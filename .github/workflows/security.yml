@@ -9,20 +9,48 @@ on:
       - test
 
 permissions:
+  actions: read
+  checks: read
   contents: read
+  pull-requests: read
 
 concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  provenance:
+    name: Resolve exact-tree reuse
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.resolve.outputs.eligible }}
+      reuse: ${{ steps.resolve.outputs.reuse }}
+      pull-request: ${{ steps.resolve.outputs.pull-request }}
+      head-sha: ${{ steps.resolve.outputs.head-sha }}
+      head-tree: ${{ steps.resolve.outputs.head-tree }}
+      security-run-id: ${{ steps.resolve.outputs.security-run-id }}
+      coverage-artifact: ${{ steps.resolve.outputs.coverage-artifact }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Resolve exact-tree reuse
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
+        run: node scripts/ciTreeReuse.mjs
+
   unit-coverage:
     name: Unit coverage
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.base.ref == 'test' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+      needs.provenance.outputs.reuse != 'true' && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.base.ref == 'test' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
+    needs: provenance
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -57,10 +85,13 @@ jobs:
   renderer-coverage:
     name: Renderer coverage (${{ matrix.shard-index }}/${{ matrix.shard-total }})
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.base.ref == 'test' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+      needs.provenance.outputs.reuse != 'true' && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.base.ref == 'test' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
+    needs: provenance
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -107,28 +138,48 @@ jobs:
          github.event.pull_request.base.ref == 'test' &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
-    needs: [unit-coverage, renderer-coverage]
+    needs: [provenance, unit-coverage, renderer-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
-      - name: Require successful coverage jobs
+      - name: Require valid provenance or successful coverage
         env:
+          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
+          PROVENANCE_RESULT: ${{ needs.provenance.result }}
+          REUSE: ${{ needs.provenance.outputs.reuse }}
           UNIT_COVERAGE_RESULT: ${{ needs.unit-coverage.result }}
           RENDERER_COVERAGE_RESULT: ${{ needs.renderer-coverage.result }}
         shell: bash
         run: |
+          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
+            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
+            exit 1
+          fi
+
+          if [[ "$REUSE" == "true" ]]; then
+            if [[ "$ELIGIBLE" == "true" ]]; then
+              exit 0
+            fi
+            echo "Tree reuse was enabled without validated eligibility."
+            exit 1
+          fi
+
           if [[ "$UNIT_COVERAGE_RESULT" != "success" ||
                 "$RENDERER_COVERAGE_RESULT" != "success" ]]; then
             echo "Coverage jobs did not both succeed: unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT"
             exit 1
           fi
 
-      - name: Checkout full repository history
+      - name: Checkout exact commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Verify exact checked-out commit
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -150,12 +201,14 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Download unit coverage
+        if: needs.provenance.outputs.reuse != 'true'
         uses: actions/download-artifact@v8
         with:
           name: unit-coverage
           path: coverage/unit
 
       - name: Download renderer coverage shards
+        if: needs.provenance.outputs.reuse != 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: renderer-coverage-*
@@ -163,7 +216,34 @@ jobs:
           merge-multiple: true
 
       - name: Merge renderer coverage
+        if: needs.provenance.outputs.reuse != 'true'
         run: npx vitest --merge-reports --config vitest.renderer.config.ts --coverage --coverage.reporter=lcov --coverage.reportsDirectory=coverage/renderer --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
+
+      - name: Download validated PR LCOV
+        if: needs.provenance.outputs.reuse == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.provenance.outputs.coverage-artifact }}
+          path: coverage
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.provenance.outputs.security-run-id }}
+
+      - name: Validate merged LCOV
+        shell: bash
+        run: |
+          test -s coverage/unit/lcov.info
+          test -s coverage/renderer/lcov.info
+
+      - name: Upload merged LCOV
+        if: needs.provenance.outputs.reuse != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-merged-lcov
+          path: |
+            coverage/unit/lcov.info
+            coverage/renderer/lcov.info
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Run Sonar finding gate
         shell: bash
@@ -180,13 +260,16 @@ jobs:
 
           npm run security:sonar:ci -- "${SONAR_SCOPE[@]}"
 
-  snyk:
-    name: Snyk security gate
+  snyk-scan:
+    name: Snyk scan
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.base.ref == 'test' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+      needs.provenance.outputs.reuse != 'true' && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.base.ref == 'test' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
+    needs: provenance
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -212,3 +295,41 @@ jobs:
           SNYK_ORG: ${{ vars.SNYK_ORG }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: npm run security:snyk:ci
+
+  snyk:
+    name: Snyk security gate
+    if: >-
+      always() && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.base.ref == 'test' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
+    needs: [provenance, snyk-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require valid provenance or successful Snyk scan
+        env:
+          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
+          PROVENANCE_RESULT: ${{ needs.provenance.result }}
+          REUSE: ${{ needs.provenance.outputs.reuse }}
+          SNYK_SCAN_RESULT: ${{ needs.snyk-scan.result }}
+        shell: bash
+        run: |
+          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
+            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
+            exit 1
+          fi
+
+          if [[ "$REUSE" == "true" ]]; then
+            if [[ "$ELIGIBLE" == "true" ]]; then
+              exit 0
+            fi
+            echo "Tree reuse was enabled without validated eligibility."
+            exit 1
+          fi
+
+          if [[ "$SNYK_SCAN_RESULT" != "success" ]]; then
+            echo "Snyk scan did not succeed: snyk-scan=$SNYK_SCAN_RESULT"
+            exit 1
+          fi
