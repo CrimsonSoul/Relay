@@ -172,7 +172,7 @@ Persistence remains split for compatibility:
 - `cloud_status_snapshot` keeps the original ten-provider contract.
 - `cloud_status_mist_snapshot` contains four Juniper Mist region rows.
 - `cloud_status_extension_snapshot` contains post-compatibility providers: Dynatrace, Proofpoint,
-  and CrowdStrike.
+  CrowdStrike, and Dropbox.
 
 Updated clients merge all three records. Older clients retain the original or original-plus-Mist
 shapes, and updated clients connected to an older server keep missing Mist or extension providers
@@ -192,9 +192,14 @@ display provider; its dedicated Status.io adapter maps affected cloud and region
 same bounded affected-scope metadata. Proofpoint is also one display provider. Its dedicated adapter
 uses Proofpoint's public enterprise current-incidents flow, validates the Salesforce response and
 official article URLs, and maps products marked `Currently Impacted` into affected scopes. Service
-Status presents fourteen rows: the original ten providers, Juniper Mist, Dynatrace, Proofpoint, and
-CrowdStrike. Mist details expose All, Global, EMEA, APAC, and Federal filters while preserving the
-single overview row and deduplicated All view.
+Status presents fifteen rows: the original ten providers, Juniper Mist, Dynatrace, Proofpoint,
+CrowdStrike, and Dropbox. Mist details expose All, Global, EMEA, APAC, and Federal filters while
+preserving the single overview row and deduplicated All view.
+
+Dropbox uses its credential-free official Atlassian Statuspage summary endpoint for the primary
+Dropbox service, not the separate Dropbox Sign page. Unresolved incidents follow the shared impact
+mapping, while a non-operational aggregate with no incident remains visible as a degradation rather
+than being treated as an outage.
 
 CrowdStrike has no unauthenticated official status feed in this integration. Its dedicated adapter
 reads the bounded public StatusGator service page and anchors parsing to the CrowdStrike status
@@ -221,10 +226,11 @@ otherwise operational public page.
 
 Cloud notifications consume the display aggregation rather than the raw regional buckets, so a Mist
 incident produces one stable notification regardless of how many regions it affects. Dynatrace and
-Proofpoint public-status incidents use normal cloud-notification priority. A CrowdStrike outage uses
-that same queue but retains its StatusGator attribution; CrowdStrike warnings are visible as
-degraded without generating a toast. The separate Dynatrace Problems notification manager remains
-authoritative for tenant problems and keeps priority over cloud notifications.
+Proofpoint public-status incidents and Dropbox status incidents use normal cloud-notification
+priority. A CrowdStrike outage uses that same queue but retains its StatusGator attribution;
+CrowdStrike warnings are visible as degraded without generating a toast. The separate Dynatrace
+Problems notification manager remains authoritative for tenant problems and keeps priority over
+cloud notifications.
 
 ### Dynatrace Problems
 

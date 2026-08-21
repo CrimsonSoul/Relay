@@ -257,6 +257,11 @@ describe('windowHandlers', () => {
         'https://supportportal.crowdstrike.com/s/get-help',
         'https://supportportal.crowdstrike.com.evil.example/s/get-help',
       ],
+      [
+        'Dropbox status',
+        'https://status.dropbox.com/incidents/example',
+        'https://status.dropbox.com.evil.example/incidents/example',
+      ],
     ])(
       'opens exact-host %s URLs and blocks lookalike hosts',
       async (_label, trusted, lookalike) => {

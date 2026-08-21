@@ -165,6 +165,16 @@ function extensionStatus(items: CloudStatusItem[] = []): ExtensionCloudStatusDat
   return { providers, errors: [], lastUpdated: Date.now() };
 }
 
+function dropboxItem(overrides: Partial<CloudStatusItem> = {}): CloudStatusItem {
+  return item({
+    id: 'dropbox-incident-1',
+    provider: 'dropbox',
+    title: 'Dropbox is not working as expected for some users',
+    link: 'https://status.dropbox.com/incidents/example',
+    ...overrides,
+  });
+}
+
 function snapshot(data: CloudStatusData): CloudStatusSnapshotRecord {
   return {
     id: 'snapshot-1',
@@ -368,6 +378,11 @@ describe('useAppCloudStatus', () => {
       message: 'CrowdStrike status is unavailable from this Relay server.',
     });
     expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'dropbox',
+      message: 'Dropbox status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.dropbox).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -400,6 +415,11 @@ describe('useAppCloudStatus', () => {
       message: 'CrowdStrike status is unavailable from this Relay server.',
     });
     expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'dropbox',
+      message: 'Dropbox status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.dropbox).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -558,11 +578,12 @@ describe('useAppCloudStatus', () => {
 
     const { result } = renderHook(() => useAppCloudStatus(showToast));
 
-    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(7));
+    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(8));
     expect(result.current.statusData?.providers.mist_federal).toEqual([]);
     expect(result.current.statusData?.providers.dynatrace).toEqual([]);
     expect(result.current.statusData?.providers.proofpoint).toEqual([]);
     expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
+    expect(result.current.statusData?.providers.dropbox).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -784,6 +805,38 @@ describe('useAppCloudStatus', () => {
     await publishStatus(rerender, { ...status([warning]), lastUpdated: 130_000 });
 
     expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses extension snapshot timestamps when qualifying a Dropbox degradation', async () => {
+    const baselineTimestamp = Date.now();
+    legacyState.data = [legacySnapshot({ ...legacyStatus(), lastUpdated: baselineTimestamp })];
+    mistState.data = [mistSnapshot({ ...mistStatus(), lastUpdated: baselineTimestamp })];
+    extensionState.data = [
+      extensionSnapshot({ ...extensionStatus(), lastUpdated: baselineTimestamp }),
+    ];
+    legacyState.hasLoadedSnapshot = true;
+    mistState.hasLoadedSnapshot = true;
+    extensionState.hasLoadedSnapshot = true;
+    const { rerender } = renderHook(() => useAppCloudStatus(showToast));
+    await act(async () => Promise.resolve());
+    const warning = dropboxItem({ severity: 'warning', title: 'Dropbox sync delays' });
+
+    for (const offset of [60_000, 120_000, 180_000]) {
+      extensionState.data = [
+        extensionSnapshot({
+          ...extensionStatus([warning]),
+          lastUpdated: baselineTimestamp + offset,
+        }),
+      ];
+      rerender();
+      await act(async () => Promise.resolve());
+    }
+
+    expect(showToast).toHaveBeenCalledWith(
+      'Dropbox Degraded: Dropbox sync delays',
+      'warning',
+      expect.objectContaining({ delivery: 'cloud-degradation' }),
+    );
   });
 
   it('does not let duplicate or older reconnect snapshots advance degradation', async () => {

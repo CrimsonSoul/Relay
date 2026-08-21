@@ -38,6 +38,7 @@ describe('cloud status partitions', () => {
       'dynatrace',
       'proofpoint',
       'crowdstrike',
+      'dropbox',
     ]);
     expectTypeOf<CloudStatusItem & { provider: 'mist_global' }>().not.toExtend<
       LegacyCloudStatusData['providers']['aws'][number]
@@ -125,7 +126,7 @@ describe('cloud status partitions', () => {
     expect(Object.keys(split.legacy.providers)).toHaveLength(10);
     expect(Object.keys(split.mist.providers)).toHaveLength(4);
     expect(split.extension).toEqual({
-      providers: { dynatrace: [dynatraceItem], proofpoint: [], crowdstrike: [] },
+      providers: { dynatrace: [dynatraceItem], proofpoint: [], crowdstrike: [], dropbox: [] },
       errors: [{ provider: 'dynatrace', message: 'Dynatrace unavailable' }],
       lastUpdated: 30,
     });
@@ -161,6 +162,7 @@ describe('cloud status partitions', () => {
     expect(merged.providers.dynatrace).toEqual([]);
     expect(merged.providers.proofpoint).toEqual([]);
     expect(merged.providers.crowdstrike).toEqual([]);
+    expect(merged.providers.dropbox).toEqual([]);
     expect(merged.errors).toContainEqual({
       provider: 'proofpoint',
       message: 'Proofpoint status is unavailable from this Relay server.',
@@ -168,6 +170,10 @@ describe('cloud status partitions', () => {
     expect(merged.errors).toContainEqual({
       provider: 'crowdstrike',
       message: 'CrowdStrike status is unavailable from this Relay server.',
+    });
+    expect(merged.errors).toContainEqual({
+      provider: 'dropbox',
+      message: 'Dropbox status is unavailable from this Relay server.',
     });
   });
 

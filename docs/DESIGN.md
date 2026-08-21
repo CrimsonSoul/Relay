@@ -84,9 +84,9 @@ responsible for their domain content.
 Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
 keeps one scannable row per operator-facing provider, ordered by outage, unknown, degraded, then
 operational. Juniper Mist is one row even though the server retains four regional buckets for
-compatibility; Dynatrace, Proofpoint, and CrowdStrike are also one row each. The summary, provider
-count, keyboard order, and status bar use the displayed fourteen-provider list rather than the raw storage bucket
-count.
+compatibility; Dropbox, Dynatrace, Proofpoint, and CrowdStrike are also one row each. The summary,
+provider count, keyboard order, and status bar use the displayed fifteen-provider list rather than
+the raw storage bucket count.
 
 Selecting Juniper Mist uses the existing provider-detail workspace with compact `All`, `Global`,
 `EMEA`, `APAC`, and `Federal` filters. Each filter includes accessible posture text. `All` is the
@@ -104,9 +104,9 @@ secondary link, never an automated health input.
 An active outage outranks feed uncertainty in the visible posture. Feed uncertainty outranks a
 retained degradation, so an old warning cannot be presented as current after a failed refresh. With
 no active outage, an unavailable or incomplete feed reads Unknown and retains any last-good detail
-without implying it is current. Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use the same
-row geometry, focus return, responsive behavior, and accessible status text as every other provider;
-the regional filter introduces no modal or nested navigation.
+without implying it is current. Dropbox, Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use
+the same row geometry, focus return, responsive behavior, and accessible status text as every other
+provider; the regional filter introduces no modal or nested navigation.
 
 Workflow actions state only outcomes Relay can observe. Compose may say it opened a Teams draft or
 copied recipients, but not that Teams created or sent a meeting. Alerts follows the same rule for

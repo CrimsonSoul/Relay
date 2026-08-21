@@ -103,7 +103,9 @@ import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
 import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
 import { configureE2EDesktopIsolation } from './app/e2eSafety';
+import { installMacOsTypeOfServiceGuard } from './app/typeOfServiceGuard';
 
+installMacOsTypeOfServiceGuard();
 const startupState = createStartupStateController();
 const startupTimeline = createStartupTimeline();
 

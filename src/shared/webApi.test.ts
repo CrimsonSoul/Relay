@@ -108,6 +108,7 @@ describe('Relay Web API operational schemas', () => {
         'aws',
         'azure',
         'm365',
+        'dropbox',
         'proofpoint',
         'crowdstrike',
         'jira',
@@ -138,6 +139,17 @@ describe('Relay Web API operational schemas', () => {
               link: 'https://dynatrace.status.io/',
               severity: 'warning',
               affectedScopes: ['AWS · Americas'],
+            },
+          ],
+          dropbox: [
+            {
+              id: 'dropbox-incident-1',
+              provider: 'dropbox',
+              title: 'Dropbox is not working as expected for some users',
+              description: 'Dropbox is investigating the issue.',
+              pubDate: '2026-08-21T15:12:53.480Z',
+              link: 'https://status.dropbox.com/incidents/example',
+              severity: 'error',
             },
           ],
           proofpoint: [

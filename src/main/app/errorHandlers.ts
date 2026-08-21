@@ -1,7 +1,8 @@
 import { app, dialog } from 'electron';
 import { loggers } from '../logger';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
-import { requestAppRelaunch } from './relaunch';
+import { requestAppQuit, requestAppRelaunch } from './relaunch';
+import { shouldSuppressDesktopSideEffects } from './e2eSafety';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 const REJECTION_WINDOW_MS = 60_000;
@@ -11,6 +12,7 @@ type ErrorHandlerOptions = {
   platform?: NodeJS.Platform;
   isPackaged?: boolean;
   nodeEnv?: string;
+  suppressDesktopSideEffects?: boolean;
 };
 
 function shouldAutoRelaunchFatalError(options: ErrorHandlerOptions): boolean {
@@ -20,6 +22,10 @@ function shouldAutoRelaunchFatalError(options: ErrorHandlerOptions): boolean {
     (options.nodeEnv ?? process.env.NODE_ENV) !== 'test' &&
     process.env.RELAY_DISABLE_FATAL_RELAUNCH !== '1'
   );
+}
+
+function shouldSuppressFatalErrorDialog(options: ErrorHandlerOptions): boolean {
+  return options.suppressDesktopSideEffects ?? shouldSuppressDesktopSideEffects();
 }
 
 /** Install global process error handlers (uncaughtException, unhandledRejection). */
@@ -36,6 +42,14 @@ export function setupErrorHandlers(options: ErrorHandlerOptions = {}): void {
         message: 'Relay hit a critical background error and will restart automatically.',
       });
       requestAppRelaunch('fatal-main-process-error', { exitCode: 1 });
+      return;
+    }
+
+    if (shouldSuppressFatalErrorDialog(options)) {
+      if (fatalRecoveryStarted) return;
+      fatalRecoveryStarted = true;
+      process.exitCode = 1;
+      requestAppQuit('fatal-main-process-error-e2e');
       return;
     }
 

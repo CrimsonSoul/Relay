@@ -47,6 +47,11 @@ function fetchExtensionProvider(
       return import('./crowdstrikeProvider').then(({ fetchCrowdStrikeProvider }) =>
         fetchCrowdStrikeProvider(),
       );
+    case 'dropbox': {
+      const statuspageUrl = STATUSPAGE_FEEDS.dropbox;
+      if (!statuspageUrl) return Promise.reject(new Error('Dropbox status feed is not configured'));
+      return fetchStatuspageProvider(statuspageUrl, provider);
+    }
   }
 }
 

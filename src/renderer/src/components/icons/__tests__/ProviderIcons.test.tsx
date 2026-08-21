@@ -9,4 +9,11 @@ describe('ProviderIcon', () => {
     expect(container.querySelector('svg')).toHaveAttribute('width', '20');
     expect(container.querySelector('svg')).toHaveAttribute('height', '20');
   });
+
+  it('renders an icon for the Dropbox cloud-status provider', () => {
+    const { container } = render(<ProviderIcon provider="dropbox" size={20} />);
+
+    expect(container.querySelector('svg')).toHaveAttribute('width', '20');
+    expect(container.querySelector('svg')).toHaveAttribute('height', '20');
+  });
 });

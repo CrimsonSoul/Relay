@@ -222,6 +222,7 @@ describe('CloudStatusManager', () => {
       dynatrace: [expect.objectContaining({ provider: 'dynatrace' })],
       proofpoint: [],
       crowdstrike: [],
+      dropbox: [],
     });
   });
 

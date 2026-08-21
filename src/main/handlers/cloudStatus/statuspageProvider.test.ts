@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchStatuspageProvider } from './statuspageProvider';
+import { fetchStatuspageProvider, STATUSPAGE_FEEDS } from './statuspageProvider';
 
 const CLOUDFLARE_SUMMARY_URL = 'https://www.cloudflarestatus.com/api/v2/summary.json';
 
@@ -82,5 +82,41 @@ describe('Statuspage providers', () => {
         severity: 'error',
       }),
     ]);
+  });
+
+  it('maps the official Dropbox aggregate status into a degraded provider item', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          page: {
+            id: 't34htyd6jblf',
+            name: 'Dropbox',
+            url: 'https://status.dropbox.com',
+            updated_at: '2026-08-21T15:12:53.480Z',
+          },
+          status: { indicator: 'minor', description: 'Partially Degraded Service' },
+          components: [{ name: 'Website', status: 'degraded_performance' }],
+          incidents: [],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchStatuspageProvider(STATUSPAGE_FEEDS.dropbox!, 'dropbox')).resolves.toEqual([
+      {
+        id: 'dropbox-status-2026-08-21T15:12:53.480Z',
+        provider: 'dropbox',
+        title: 'Partially Degraded Service',
+        description: 'Website: degraded performance',
+        pubDate: '2026-08-21T15:12:53.480Z',
+        link: 'https://status.dropbox.com',
+        severity: 'warning',
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://status.dropbox.com/api/v2/summary.json',
+      expect.objectContaining({ redirect: 'follow' }),
+    );
   });
 });

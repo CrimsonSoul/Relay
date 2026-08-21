@@ -28,6 +28,7 @@ vi.mock('./rssProvider', () => ({
 
 vi.mock('./statuspageProvider', () => ({
   STATUSPAGE_FEEDS: {
+    dropbox: 'status:dropbox',
     jira: 'status:jira',
     github: 'status:github',
     cloudflare: 'status:cloudflare',
@@ -103,6 +104,37 @@ describe('fetchCloudStatusData', () => {
     expect(result.errors).toContainEqual({
       provider: 'crowdstrike',
       message: 'StatusGator unavailable',
+    });
+  });
+
+  it('fetches Dropbox status into its extension bucket', async () => {
+    const dropbox = item('dropbox', 'dropbox-incident-1');
+    providerMocks.statuspage.mockImplementation(
+      async (_url: string, provider: CloudStatusProvider) =>
+        provider === 'dropbox' ? [dropbox] : [],
+    );
+
+    const result = await fetchCloudStatusData();
+
+    expect(result.providers.dropbox).toEqual([dropbox]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('retains the last Dropbox status when its official feed is unavailable', async () => {
+    const previous = item('dropbox', 'previous-dropbox');
+    providerMocks.statuspage.mockImplementation(
+      async (_url: string, provider: CloudStatusProvider) => {
+        if (provider === 'dropbox') throw new Error('Dropbox unavailable');
+        return [];
+      },
+    );
+
+    const result = await fetchCloudStatusData(previousStatus([previous]));
+
+    expect(result.providers.dropbox).toEqual([previous]);
+    expect(result.errors).toContainEqual({
+      provider: 'dropbox',
+      message: 'Dropbox unavailable',
     });
   });
 
