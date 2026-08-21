@@ -13,10 +13,7 @@ on:
       - test
 
 permissions:
-  actions: read
-  checks: read
   contents: read
-  pull-requests: read
 
 # Rapid pushes to the same branch cancel superseded runs instead of queueing.
 concurrency:
@@ -26,6 +23,11 @@ concurrency:
 jobs:
   provenance:
     name: Resolve exact-tree reuse
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       eligible: ${{ steps.resolve.outputs.eligible }}
@@ -192,6 +194,28 @@ jobs:
             echo "Build components did not all succeed: static=$STATIC_RESULT unit-tests=$UNIT_TESTS_RESULT renderer-tests=$RENDERER_TESTS_RESULT"
             exit 1
           fi
+
+      - name: Write PR provenance attestation
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          printf 'pull_request=%s\nbase_sha=%s\nhead_sha=%s\n' \
+            "$PR_NUMBER" "$BASE_SHA" "$HEAD_SHA" \
+            > "$RUNNER_TEMP/relay-pr-provenance.txt"
+          test -s "$RUNNER_TEMP/relay-pr-provenance.txt"
+
+      - name: Upload PR provenance attestation
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-pr-provenance-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/relay-pr-provenance.txt
+          if-no-files-found: error
+          retention-days: 1
 
   package-windows:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb'))

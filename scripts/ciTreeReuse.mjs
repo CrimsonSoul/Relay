@@ -4,9 +4,12 @@ import { pathToFileURL } from 'node:url';
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const ARTIFACT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
-const COVERAGE_ARTIFACT = 'relay-merged-lcov';
+const BUILD_ARTIFACT_PREFIX = 'relay-pr-provenance';
+const COVERAGE_ARTIFACT_PREFIX = 'relay-merged-lcov';
+const BUILD_WORKFLOW_PATH = '.github/workflows/build.yml';
 const SECURITY_WORKFLOW_PATH = '.github/workflows/security.yml';
 const REQUIRED_CHECKS = ['Build quality gate', 'SonarQube quality gate', 'Snyk security gate'];
+const MAX_COMPARE_COMMITS = 300;
 
 const blankResult = (reason) => ({
   coverageArtifact: '',
@@ -21,6 +24,14 @@ const blankResult = (reason) => ({
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isSha = (value) => typeof value === 'string' && SHA_PATTERN.test(value);
 const isPositiveId = (value) => Number.isSafeInteger(value) && value > 0;
+const isSafeRef = (value) =>
+  typeof value === 'string' &&
+  value.length >= 1 &&
+  value.length <= 255 &&
+  [...value].every((character) => {
+    const code = character.codePointAt(0);
+    return code >= 32 && code !== 127;
+  });
 
 function actionRunId(detailsUrl, repository) {
   if (typeof detailsUrl !== 'string') return null;
@@ -82,9 +93,11 @@ function pullRequestEvidence(input) {
 
   const baseSha = pullRequest.base?.sha;
   const headSha = pullRequest.head?.sha;
+  const headRef = pullRequest.head?.ref;
   if (!isSha(baseSha)) return { reason: 'base-sha-invalid' };
   if (!isSha(headSha)) return { reason: 'head-sha-invalid' };
-  return { baseSha, headSha, pullRequest, reason: null };
+  if (!isSafeRef(headRef)) return { reason: 'head-ref-invalid' };
+  return { baseSha, headRef, headSha, pullRequest, reason: null };
 }
 
 function validateCurrentCommit(input, baseSha) {
@@ -106,18 +119,24 @@ function validateCurrentCommit(input, baseSha) {
   return null;
 }
 
-function validateCompare(input, baseSha) {
+function validateCompare(input, baseSha, headSha) {
   const compare = input.compare;
+  const commits = compare?.commits;
   if (
     !isObject(compare) ||
     compare.status !== 'ahead' ||
-    compare.ahead_by !== 1 ||
-    compare.total_commits !== 1 ||
+    !Number.isSafeInteger(compare.ahead_by) ||
+    compare.ahead_by <= 0 ||
+    compare.ahead_by > MAX_COMPARE_COMMITS ||
+    compare.behind_by !== 0 ||
+    compare.total_commits !== compare.ahead_by ||
     compare.base_commit?.sha !== baseSha ||
     compare.merge_base_commit?.sha !== baseSha ||
-    !Array.isArray(compare.commits) ||
-    compare.commits.length !== 1 ||
-    compare.commits[0]?.sha !== input.currentSha
+    !Array.isArray(commits) ||
+    commits.length !== compare.total_commits ||
+    commits.some((commit) => !isSha(commit?.sha)) ||
+    new Set(commits.map((commit) => commit.sha)).size !== commits.length ||
+    commits.at(-1)?.sha !== headSha
   ) {
     return 'compare-mismatch';
   }
@@ -155,38 +174,42 @@ function requiredCheckEvidence(checkRuns, headSha) {
   return { reason: null, required };
 }
 
-function validateSecurityRun(input, headSha, sonarRunId) {
-  if (
-    sonarRunId === null ||
-    !isObject(input.securityRun) ||
-    !isPositiveId(input.securityRun.id) ||
-    input.securityRun.id !== sonarRunId ||
-    input.securityRun.repository?.full_name !== input.repository ||
-    input.securityRun.head_sha !== headSha ||
-    input.securityRun.event !== 'pull_request' ||
-    input.securityRun.path !== SECURITY_WORKFLOW_PATH ||
-    input.securityRun.status !== 'completed' ||
-    input.securityRun.conclusion !== 'success'
-  ) {
-    return 'security-run-mismatch';
-  }
-  return null;
+function validateWorkflowRun(input, pullRequest, run, runId, workflowPath) {
+  return (
+    runId !== null &&
+    isObject(run) &&
+    isPositiveId(run.id) &&
+    run.id === runId &&
+    run.repository?.full_name === input.repository &&
+    run.head_repository?.full_name === input.repository &&
+    run.head_sha === pullRequest.headSha &&
+    run.head_branch === pullRequest.headRef &&
+    run.event === 'pull_request' &&
+    run.path === workflowPath &&
+    run.status === 'completed' &&
+    run.conclusion === 'success'
+  );
 }
 
-function coverageArtifactEvidence(input) {
-  if (!Array.isArray(input.artifacts)) return { reason: 'coverage-artifact-unavailable' };
-  const artifacts = input.artifacts.filter((artifact) => artifact?.name === COVERAGE_ARTIFACT);
-  if (artifacts.length !== 1) return { reason: 'coverage-artifact-unavailable' };
+function attestationName(prefix, pullRequest) {
+  const name = `${prefix}-${pullRequest.pullRequest.number}-${pullRequest.baseSha}-${pullRequest.headSha}`;
+  return ARTIFACT_PATTERN.test(name) ? name : null;
+}
+
+function artifactEvidence(artifactsInput, expectedName, runId, reason) {
+  if (!Array.isArray(artifactsInput) || expectedName === null) return { reason };
+  const artifacts = artifactsInput.filter((artifact) => artifact?.name === expectedName);
+  if (artifacts.length !== 1) return { reason };
   const artifact = artifacts[0];
   if (
     !isPositiveId(artifact.id) ||
     artifact.expired !== false ||
     !Number.isSafeInteger(artifact.size_in_bytes) ||
     artifact.size_in_bytes <= 0 ||
-    artifact.workflow_run?.id !== input.securityRun.id ||
+    artifact.workflow_run?.id !== runId ||
     !ARTIFACT_PATTERN.test(artifact.name)
   ) {
-    return { reason: 'coverage-artifact-unavailable' };
+    return { reason };
   }
   return { artifact, reason: null };
 }
@@ -199,19 +222,47 @@ export function evaluateTreeReuse(input) {
   if (pullRequest.reason !== null) return blankResult(pullRequest.reason);
   const currentReason = validateCurrentCommit(input, pullRequest.baseSha);
   if (currentReason !== null) return blankResult(currentReason);
-  const compareReason = validateCompare(input, pullRequest.baseSha);
+  const compareReason = validateCompare(input, pullRequest.baseSha, pullRequest.headSha);
   if (compareReason !== null) return blankResult(compareReason);
   const headTree = headTreeEvidence(input, pullRequest.headSha);
   if (headTree.reason !== null) return blankResult(headTree.reason);
   const checks = requiredCheckEvidence(input.checkRuns, pullRequest.headSha);
   if (checks.reason !== null) return blankResult(checks.reason);
+  const buildRunId = actionRunId(
+    checks.required.get('Build quality gate')?.details_url,
+    input.repository,
+  );
+  if (!validateWorkflowRun(input, pullRequest, input.buildRun, buildRunId, BUILD_WORKFLOW_PATH)) {
+    return blankResult('build-run-mismatch');
+  }
+  const buildAttestation = artifactEvidence(
+    input.buildArtifacts,
+    attestationName(BUILD_ARTIFACT_PREFIX, pullRequest),
+    input.buildRun.id,
+    'build-attestation-unavailable',
+  );
+  if (buildAttestation.reason !== null) return blankResult(buildAttestation.reason);
+
   const sonarRunId = actionRunId(
     checks.required.get('SonarQube quality gate')?.details_url,
     input.repository,
   );
-  const securityReason = validateSecurityRun(input, pullRequest.headSha, sonarRunId);
-  if (securityReason !== null) return blankResult(securityReason);
-  const coverage = coverageArtifactEvidence(input);
+  const snykRunId = actionRunId(
+    checks.required.get('Snyk security gate')?.details_url,
+    input.repository,
+  );
+  if (
+    sonarRunId !== snykRunId ||
+    !validateWorkflowRun(input, pullRequest, input.securityRun, sonarRunId, SECURITY_WORKFLOW_PATH)
+  ) {
+    return blankResult('security-run-mismatch');
+  }
+  const coverage = artifactEvidence(
+    input.artifacts,
+    attestationName(COVERAGE_ARTIFACT_PREFIX, pullRequest),
+    input.securityRun.id,
+    'coverage-artifact-unavailable',
+  );
   if (coverage.reason !== null) return blankResult(coverage.reason);
 
   return {
@@ -295,6 +346,56 @@ async function collectPages({ requestJson, path, field }) {
   throw new Error('GitHub API pagination exceeded the bounded limit.');
 }
 
+const compareIdentity = (compare) => ({
+  ahead_by: compare.ahead_by,
+  baseSha: compare.base_commit?.sha,
+  behind_by: compare.behind_by,
+  mergeBaseSha: compare.merge_base_commit?.sha,
+  status: compare.status,
+  total_commits: compare.total_commits,
+});
+
+function parseComparePage(response, identity) {
+  const compare = requireObject(response);
+  if (
+    !Array.isArray(compare.commits) ||
+    compare.commits.length > PAGE_SIZE ||
+    !Number.isSafeInteger(compare.total_commits) ||
+    compare.total_commits <= 0 ||
+    compare.total_commits > MAX_COMPARE_COMMITS
+  ) {
+    throw new Error('GitHub compare response schema mismatch.');
+  }
+  const currentIdentity = compareIdentity(compare);
+  if (identity !== null && JSON.stringify(currentIdentity) !== JSON.stringify(identity)) {
+    throw new Error('GitHub compare pagination is ambiguous.');
+  }
+  return { compare, identity: currentIdentity };
+}
+
+async function collectCompare({ requestJson, path }) {
+  const commits = [];
+  let firstPage = null;
+  let identity = null;
+
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const url = new URL(`${API_ROOT}${path}`);
+    url.searchParams.set('per_page', String(PAGE_SIZE));
+    url.searchParams.set('page', String(page));
+    const parsed = parseComparePage(await requestJson(url.href), identity);
+    firstPage ??= parsed.compare;
+    identity = parsed.identity;
+    commits.push(...parsed.compare.commits);
+
+    if (commits.length === identity.total_commits) return { ...firstPage, commits };
+    if (parsed.compare.commits.length === 0 || commits.length > identity.total_commits) {
+      throw new Error('GitHub compare pagination is ambiguous.');
+    }
+  }
+
+  throw new Error('GitHub compare pagination exceeded the bounded limit.');
+}
+
 async function resolveFromGitHub({ env, fetchJson }) {
   const common = {
     currentSha: env.GITHUB_SHA,
@@ -343,27 +444,44 @@ async function resolveFromGitHub({ env, fetchJson }) {
   const headCommit = requireObject(
     await requestJson(`${API_ROOT}${repoPath}/commits/${pullRequest.head.sha}`),
   );
-  const compare = requireObject(
-    await requestJson(
-      `${API_ROOT}${repoPath}/compare/${pullRequest.base.sha}...${common.currentSha}`,
-    ),
-  );
+  const compare = await collectCompare({
+    path: `${repoPath}/compare/${pullRequest.base.sha}...${pullRequest.head.sha}`,
+    requestJson,
+  });
   const checkRuns = await collectPages({
     field: 'check_runs',
     path: `${repoPath}/commits/${pullRequest.head.sha}/check-runs`,
     requestJson,
   });
 
-  const sonarChecks = checkRuns.filter((check) => check?.name === 'SonarQube quality gate');
-  const runId =
-    sonarChecks.length === 1 ? actionRunId(sonarChecks[0].details_url, common.repository) : null;
+  const checkRunId = (name) => {
+    const checks = checkRuns.filter((check) => check?.name === name);
+    return checks.length === 1 ? actionRunId(checks[0].details_url, common.repository) : null;
+  };
+  const buildRunId = checkRunId('Build quality gate');
+  let buildRun = null;
+  let buildArtifacts = [];
+  if (buildRunId !== null) {
+    buildRun = requireObject(
+      await requestJson(`${API_ROOT}${repoPath}/actions/runs/${buildRunId}`),
+    );
+    buildArtifacts = await collectPages({
+      field: 'artifacts',
+      path: `${repoPath}/actions/runs/${buildRunId}/artifacts`,
+      requestJson,
+    });
+  }
+
+  const securityRunId = checkRunId('SonarQube quality gate');
   let securityRun = null;
   let artifacts = [];
-  if (runId !== null) {
-    securityRun = requireObject(await requestJson(`${API_ROOT}${repoPath}/actions/runs/${runId}`));
+  if (securityRunId !== null) {
+    securityRun = requireObject(
+      await requestJson(`${API_ROOT}${repoPath}/actions/runs/${securityRunId}`),
+    );
     artifacts = await collectPages({
       field: 'artifacts',
-      path: `${repoPath}/actions/runs/${runId}/artifacts`,
+      path: `${repoPath}/actions/runs/${securityRunId}/artifacts`,
       requestJson,
     });
   }
@@ -371,6 +489,8 @@ async function resolveFromGitHub({ env, fetchJson }) {
   return evaluateTreeReuse({
     ...common,
     artifacts,
+    buildArtifacts,
+    buildRun,
     checkRuns,
     compare,
     currentCommit,

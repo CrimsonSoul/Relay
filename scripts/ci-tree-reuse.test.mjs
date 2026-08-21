@@ -9,8 +9,12 @@ const currentSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const baseSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const headSha = 'cccccccccccccccccccccccccccccccccccccccc';
 const treeSha = 'dddddddddddddddddddddddddddddddddddddddd';
+const buildRunId = 1234;
 const securityRunId = 4321;
-const coverageArtifactName = 'relay-merged-lcov';
+const pullRequestNumber = 243;
+const headRef = 'codex/ci-pipeline-optimization';
+const buildArtifactName = `relay-pr-provenance-${pullRequestNumber}-${baseSha}-${headSha}`;
+const coverageArtifactName = `relay-merged-lcov-${pullRequestNumber}-${baseSha}-${headSha}`;
 
 const requiredCheck = (name, runId) => ({
   app: { slug: 'github-actions' },
@@ -31,15 +35,36 @@ const validFixture = {
       workflow_run: { id: securityRunId },
     },
   ],
+  buildArtifacts: [
+    {
+      expired: false,
+      id: 8765,
+      name: buildArtifactName,
+      size_in_bytes: 123,
+      workflow_run: { id: buildRunId },
+    },
+  ],
+  buildRun: {
+    conclusion: 'success',
+    event: 'pull_request',
+    head_branch: headRef,
+    head_repository: { full_name: repository },
+    head_sha: headSha,
+    id: buildRunId,
+    path: '.github/workflows/build.yml',
+    repository: { full_name: repository },
+    status: 'completed',
+  },
   checkRuns: [
-    requiredCheck('Build quality gate', 1234),
+    requiredCheck('Build quality gate', buildRunId),
     requiredCheck('SonarQube quality gate', securityRunId),
-    requiredCheck('Snyk security gate', 2345),
+    requiredCheck('Snyk security gate', securityRunId),
   ],
   compare: {
     ahead_by: 1,
     base_commit: { sha: baseSha },
-    commits: [{ sha: currentSha }],
+    behind_by: 0,
+    commits: [{ sha: headSha }],
     merge_base_commit: { sha: baseSha },
     status: 'ahead',
     total_commits: 1,
@@ -58,7 +83,7 @@ const validFixture = {
   },
   pullRequest: {
     base: { ref: 'test', repo: { full_name: repository }, sha: baseSha },
-    head: { repo: { full_name: repository }, sha: headSha },
+    head: { ref: headRef, repo: { full_name: repository }, sha: headSha },
     merge_commit_sha: currentSha,
     merged: true,
     merged_at: '2026-08-21T12:00:00Z',
@@ -71,6 +96,8 @@ const validFixture = {
   securityRun: {
     conclusion: 'success',
     event: 'pull_request',
+    head_branch: headRef,
+    head_repository: { full_name: repository },
     head_sha: headSha,
     id: securityRunId,
     path: '.github/workflows/security.yml',
@@ -174,7 +201,35 @@ describe('evaluateTreeReuse', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
-        compare: { ...validFixture.compare, commits: [{ sha: headSha }] },
+        compare: { ...validFixture.compare, commits: [{ sha: currentSha }] },
+      }).reason,
+    ).toBe('compare-mismatch');
+  });
+
+  it('accepts complete bounded ancestry evidence for a multi-commit pull request head', () => {
+    const intermediateSha = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        compare: {
+          ...validFixture.compare,
+          ahead_by: 2,
+          commits: [{ sha: intermediateSha }, { sha: headSha }],
+          total_commits: 2,
+        },
+      }).eligible,
+    ).toBe(true);
+  });
+
+  it('rejects a PR head not descended from its preserved base even when squash and tree evidence pass', () => {
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        compare: {
+          ...validFixture.compare,
+          merge_base_commit: { sha: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' },
+          status: 'diverged',
+        },
       }).reason,
     ).toBe('compare-mismatch');
   });
@@ -227,6 +282,95 @@ describe('evaluateTreeReuse', () => {
         securityRun: { ...validFixture.securityRun, event: 'push' },
       }).reason,
     ).toBe('security-run-mismatch');
+  });
+
+  it('binds all required checks to the exact Build and shared Security workflow runs', () => {
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        buildRun: { ...validFixture.buildRun, path: '.github/workflows/security.yml' },
+      }).reason,
+    ).toBe('build-run-mismatch');
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        securityRun: { ...validFixture.securityRun, path: '.github/workflows/build.yml' },
+      }).reason,
+    ).toBe('security-run-mismatch');
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        buildRun: { ...validFixture.buildRun, id: 9999 },
+      }).reason,
+    ).toBe('build-run-mismatch');
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        checkRuns: validFixture.checkRuns.map((check) =>
+          check.name === 'Snyk security gate' ? requiredCheck('Snyk security gate', 9999) : check,
+        ),
+      }).reason,
+    ).toBe('security-run-mismatch');
+  });
+
+  it('requires exact head ref and repository metadata on both workflow runs', () => {
+    for (const field of ['buildRun', 'securityRun']) {
+      expect(
+        evaluateTreeReuse({
+          ...validFixture,
+          [field]: { ...validFixture[field], head_branch: 'same-sha-different-branch' },
+        }).reason,
+      ).toBe(field === 'buildRun' ? 'build-run-mismatch' : 'security-run-mismatch');
+      expect(
+        evaluateTreeReuse({
+          ...validFixture,
+          [field]: {
+            ...validFixture[field],
+            head_repository: { full_name: 'other/repository' },
+          },
+        }).reason,
+      ).toBe(field === 'buildRun' ? 'build-run-mismatch' : 'security-run-mismatch');
+      expect(
+        evaluateTreeReuse({
+          ...validFixture,
+          [field]: {
+            ...validFixture[field],
+            repository: { full_name: 'other/repository' },
+          },
+        }).reason,
+      ).toBe(field === 'buildRun' ? 'build-run-mismatch' : 'security-run-mismatch');
+    }
+  });
+
+  it('requires exact PR and preserved-base attestations even when the head SHA is reused', () => {
+    const otherPullRequest = 244;
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        pullRequest: { ...validFixture.pullRequest, number: otherPullRequest },
+        pullRequests: [{ number: otherPullRequest }],
+      }).reason,
+    ).toBe('build-attestation-unavailable');
+
+    const otherBaseSha = 'ffffffffffffffffffffffffffffffffffffffff';
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        compare: {
+          ...validFixture.compare,
+          base_commit: { sha: otherBaseSha },
+          merge_base_commit: { sha: otherBaseSha },
+        },
+        currentCommit: {
+          ...validFixture.currentCommit,
+          parents: [{ sha: otherBaseSha }],
+        },
+        pullRequest: {
+          ...validFixture.pullRequest,
+          base: { ...validFixture.pullRequest.base, sha: otherBaseSha },
+        },
+      }).reason,
+    ).toBe('build-attestation-unavailable');
   });
 
   it('requires exactly one nonexpired nonempty merged LCOV artifact from that run', () => {
@@ -293,16 +437,27 @@ const validFetchJson = async (rawUrl) => {
   if (url.pathname === `/repos/${repository}/commits/${currentSha}/pulls`) {
     return validFixture.pullRequests;
   }
-  if (url.pathname === `/repos/${repository}/pulls/243`) return validFixture.pullRequest;
+  if (url.pathname === `/repos/${repository}/pulls/${pullRequestNumber}`) {
+    return validFixture.pullRequest;
+  }
   if (url.pathname === `/repos/${repository}/commits/${currentSha}`) {
     return validFixture.currentCommit;
   }
   if (url.pathname === `/repos/${repository}/commits/${headSha}`) return validFixture.headCommit;
-  if (url.pathname === `/repos/${repository}/compare/${baseSha}...${currentSha}`) {
+  if (url.pathname === `/repos/${repository}/compare/${baseSha}...${headSha}`) {
     return validFixture.compare;
   }
   if (url.pathname === `/repos/${repository}/commits/${headSha}/check-runs`) {
     return { check_runs: validFixture.checkRuns, total_count: validFixture.checkRuns.length };
+  }
+  if (url.pathname === `/repos/${repository}/actions/runs/${buildRunId}`) {
+    return validFixture.buildRun;
+  }
+  if (url.pathname === `/repos/${repository}/actions/runs/${buildRunId}/artifacts`) {
+    return {
+      artifacts: validFixture.buildArtifacts,
+      total_count: validFixture.buildArtifacts.length,
+    };
   }
   if (url.pathname === `/repos/${repository}/actions/runs/${securityRunId}`) {
     return validFixture.securityRun;
@@ -349,7 +504,10 @@ describe('runCiTreeReuse adapter', () => {
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
     expect(result).toMatchObject({ eligible: true, reuse: false });
-    expect(requests).toHaveLength(8);
+    expect(requests).toHaveLength(10);
+    expect(requests).toContain(
+      `https://api.github.com/repos/${repository}/compare/${baseSha}...${headSha}?per_page=100&page=1`,
+    );
     expect(output).toContain('eligible=true\n');
     expect(output).toContain('reuse=false\n');
   });
@@ -410,7 +568,7 @@ describe('runCiTreeReuse adapter', () => {
       env,
       fetchJson: async (rawUrl) => {
         const url = new URL(rawUrl);
-        if (url.pathname.endsWith('/artifacts')) {
+        if (url.pathname === `/repos/${repository}/actions/runs/${securityRunId}/artifacts`) {
           return {
             artifacts: [{ ...validFixture.artifacts[0], name: 'unsafe value\nattack=true' }],
             total_count: 1,

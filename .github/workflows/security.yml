@@ -9,10 +9,7 @@ on:
       - test
 
 permissions:
-  actions: read
-  checks: read
   contents: read
-  pull-requests: read
 
 concurrency:
   group: security-${{ github.workflow }}-${{ github.ref }}
@@ -21,6 +18,11 @@ concurrency:
 jobs:
   provenance:
     name: Resolve exact-tree reuse
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       eligible: ${{ steps.resolve.outputs.eligible }}
@@ -139,6 +141,9 @@ jobs:
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: [provenance, unit-coverage, renderer-coverage]
+    permissions:
+      actions: read
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -235,10 +240,10 @@ jobs:
           test -s coverage/renderer/lcov.info
 
       - name: Upload merged LCOV
-        if: needs.provenance.outputs.reuse != 'true'
+        if: needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: relay-merged-lcov
+          name: relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
           path: |
             coverage/unit/lcov.info
             coverage/renderer/lcov.info

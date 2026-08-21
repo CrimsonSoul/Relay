@@ -126,13 +126,14 @@ describe('CI optimization contracts', () => {
     ]);
 
     for (const workflow of [build, security]) {
-      expect(workflow.permissions).toEqual({
+      expect(workflow.permissions).toEqual({ contents: 'read' });
+      const provenance = workflow.jobs.provenance;
+      expect(provenance.permissions).toEqual({
         actions: 'read',
         checks: 'read',
         contents: 'read',
         'pull-requests': 'read',
       });
-      const provenance = workflow.jobs.provenance;
       expect(provenance.outputs).toEqual({
         'coverage-artifact': '${{ steps.resolve.outputs.coverage-artifact }}',
         eligible: '${{ steps.resolve.outputs.eligible }}',
@@ -150,6 +151,45 @@ describe('CI optimization contracts', () => {
       });
       expect(resolve.run).toBe('node scripts/ciTreeReuse.mjs');
     }
+
+    expect(security.jobs.sonarqube.permissions).toEqual({
+      actions: 'read',
+      contents: 'read',
+    });
+    for (const jobName of ['unit-coverage', 'renderer-coverage', 'snyk-scan', 'snyk']) {
+      expect(security.jobs[jobName]).not.toHaveProperty('permissions');
+    }
+  });
+
+  it('stores a nonempty exact PR/base/head attestation only after a successful Build gate', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const quality = build.jobs.quality;
+    const write = findStep(quality, 'Write PR provenance attestation');
+    const upload = findStep(quality, 'Upload PR provenance attestation');
+
+    expect(write.if).toBe("github.event_name == 'pull_request'");
+    expect(write.env).toEqual({
+      BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+      HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+      PR_NUMBER: '${{ github.event.pull_request.number }}',
+    });
+    expect(write.run).toContain('printf');
+    expect(write.run).toContain('$RUNNER_TEMP/relay-pr-provenance.txt');
+    expect(upload).toEqual({
+      name: 'Upload PR provenance attestation',
+      if: "github.event_name == 'pull_request'",
+      uses: 'actions/upload-artifact@v7',
+      with: {
+        name: 'relay-pr-provenance-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
+        path: '${{ runner.temp }}/relay-pr-provenance.txt',
+        'if-no-files-found': 'error',
+        'retention-days': 1,
+      },
+    });
+    expect(quality.steps.indexOf(write)).toBeGreaterThan(
+      quality.steps.indexOf(findStep(quality, 'Require successful build components')),
+    );
+    expect(quality.steps.indexOf(upload)).toBeGreaterThan(quality.steps.indexOf(write));
   });
 
   it('keeps shadow mode on the full security path and reuses only exact validated outputs', async () => {
@@ -207,10 +247,10 @@ describe('CI optimization contracts', () => {
     );
     expect(findStep(sonar, 'Upload merged LCOV')).toEqual({
       name: 'Upload merged LCOV',
-      if: "needs.provenance.outputs.reuse != 'true'",
+      if: "needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'",
       uses: 'actions/upload-artifact@v7',
       with: {
-        name: 'relay-merged-lcov',
+        name: 'relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
         path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
         'if-no-files-found': 'error',
         'retention-days': 1,

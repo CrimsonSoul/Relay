@@ -21,6 +21,13 @@ const findStep = (job, name) => {
 
 test('test pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.on.pull_request.branches, ['main', 'test']);
+  assert.deepEqual(build.permissions, { contents: 'read' });
+  assert.deepEqual(build.jobs.provenance.permissions, {
+    actions: 'read',
+    checks: 'read',
+    contents: 'read',
+    'pull-requests': 'read',
+  });
   assert.equal(build.jobs.quality.name, 'Build quality gate');
   assert.equal(build.jobs.quality.if, 'always()');
   assert.deepEqual(build.jobs.quality.needs, [
@@ -100,6 +107,17 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
   assert.match(merge.run, /--config vitest\.renderer\.config\.ts/u);
   assert.match(merge.run, /--coverage\.reporter=lcov/u);
   assert.match(merge.run, /--coverage\.reportsDirectory=coverage\/renderer/u);
+  assert.deepEqual(findStep(sonar, 'Upload merged LCOV'), {
+    name: 'Upload merged LCOV',
+    if: "needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'",
+    uses: 'actions/upload-artifact@v7',
+    with: {
+      name: 'relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
+      path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
+      'if-no-files-found': 'error',
+      'retention-days': 1,
+    },
+  });
 });
 
 test('Sonar runs on the exact commit and fails closed without valid reuse or fresh coverage', () => {
@@ -149,6 +167,17 @@ test('scanner jobs retain stable required names and bounded CI entrypoints', () 
   assert.equal(security.jobs.snyk.name, 'Snyk security gate');
   assert.equal(security.jobs.sonarqube['timeout-minutes'], 25);
   assert.equal(security.jobs['snyk-scan']['timeout-minutes'], 25);
+  assert.deepEqual(security.permissions, { contents: 'read' });
+  assert.deepEqual(security.jobs.provenance.permissions, {
+    actions: 'read',
+    checks: 'read',
+    contents: 'read',
+    'pull-requests': 'read',
+  });
+  assert.deepEqual(security.jobs.sonarqube.permissions, {
+    actions: 'read',
+    contents: 'read',
+  });
   assert.match(
     findStep(security.jobs.sonarqube, 'Run Sonar finding gate').run,
     /security:sonar:ci/u,
