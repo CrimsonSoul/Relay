@@ -4,6 +4,7 @@ import { parse } from 'yaml';
 import unitConfig from '../vitest.config.ts';
 import cacheConfig from '../vitest.cache.config.ts';
 import rendererConfig from '../vitest.renderer.config.ts';
+import verificationConfig from '../vitest.verify.config.ts';
 
 const projectRoot = new URL('../', import.meta.url);
 const readProjectFile = async (path) => readFile(new URL(path, projectRoot), 'utf8');
@@ -13,7 +14,7 @@ const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('CI optimization contracts', () => {
   it('keeps passing test output quiet in every Vitest suite', () => {
-    for (const config of [unitConfig, cacheConfig, rendererConfig]) {
+    for (const config of [unitConfig, cacheConfig, rendererConfig, verificationConfig]) {
       expect(config.test.silent).toBe('passed-only');
     }
   });
