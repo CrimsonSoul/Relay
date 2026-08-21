@@ -88,13 +88,13 @@ describe('release workflow authority boundary', () => {
     const assetStep = findStep(release, 'Create versioned release assets');
     const existingAssetStep = findStep(determine, 'Verify existing release assets');
 
-    expect(determine.needs).toBe('gates');
+    expect(determine).not.toHaveProperty('needs');
     expect(determine.outputs['should-package']).toBe(
       '${{ steps.existing-assets.outputs.should-package || steps.release-state.outputs.should-package }}',
     );
     expect(findStep(determine, 'Checkout exact test commit').with).toEqual({
       'fetch-depth': 0,
-      ref: '${{ needs.gates.outputs.source-sha }}',
+      ref: '${{ github.sha }}',
     });
     expect(findStep(determine, 'Determine semantic version').run).toBe(
       'node scripts/release-version.mjs',
@@ -130,6 +130,8 @@ describe('release workflow authority boundary', () => {
       'release-version': '${{ needs.determine.outputs.version }}',
       'source-sha': '${{ needs.determine.outputs.source-sha }}',
     });
+    expect(release.needs).toEqual(['gates', 'determine', 'package-windows']);
+    expect(release.if).toContain("needs.gates.result == 'success'");
     expect(release.permissions).toEqual({ actions: 'read', contents: 'write' });
     expect(assetStep.run).toContain('Relay-${TAG}-windows-x64.zip');
     expect(assetStep.run).toContain('zip -j "$asset_name" Relay.exe');

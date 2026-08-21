@@ -275,7 +275,7 @@ describe('CI workflow contracts', () => {
       'source-sha': '${{ needs.determine.outputs.source-sha }}',
     });
     expect(releasePackage.secrets).toEqual({ 'github-token': '${{ secrets.GITHUB_TOKEN }}' });
-    expect(release.jobs.release.needs).toEqual(['determine', 'package-windows']);
+    expect(release.jobs.release.needs).toEqual(['gates', 'determine', 'package-windows']);
     expect(findStep(release.jobs.release, 'Download Windows artifact').with.name).toBe(
       '${{ needs.package-windows.outputs.artifact-name }}',
     );
