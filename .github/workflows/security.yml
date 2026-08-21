@@ -101,16 +101,30 @@ jobs:
   sonarqube:
     name: SonarQube quality gate
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.base.ref == 'test' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+      always() && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.base.ref == 'test' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
     needs: [unit-coverage, renderer-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
+      - name: Require successful coverage jobs
+        env:
+          UNIT_COVERAGE_RESULT: ${{ needs.unit-coverage.result }}
+          RENDERER_COVERAGE_RESULT: ${{ needs.renderer-coverage.result }}
+        shell: bash
+        run: |
+          if [[ "$UNIT_COVERAGE_RESULT" != "success" ||
+                "$RENDERER_COVERAGE_RESULT" != "success" ]]; then
+            echo "Coverage jobs did not both succeed: unit-coverage=$UNIT_COVERAGE_RESULT renderer-coverage=$RENDERER_COVERAGE_RESULT"
+            exit 1
+          fi
+
       - name: Checkout full repository history
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

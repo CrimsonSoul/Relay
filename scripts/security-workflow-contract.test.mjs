@@ -93,6 +93,34 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
   assert.match(merge.run, /--coverage\.reportsDirectory=coverage\/renderer/u);
 });
 
+test('Sonar runs after coverage dependencies and fails closed on every non-success result', () => {
+  const sonar = security.jobs.sonarqube;
+
+  assert.equal(
+    normalizeExpression(sonar.if),
+    normalizeExpression(`
+      always() && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.base.ref == 'test' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
+    `),
+  );
+
+  const coverageGate = findStep(sonar, 'Require successful coverage jobs');
+  assert.equal(sonar.steps.indexOf(coverageGate), 0);
+  assert.deepEqual(coverageGate.env, {
+    RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
+    UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+  });
+  assert.match(
+    normalizeExpression(coverageGate.run),
+    /if \[\[ "\$UNIT_COVERAGE_RESULT" != "success" \|\| "\$RENDERER_COVERAGE_RESULT" != "success" \]\]; then/u,
+  );
+  assert.match(coverageGate.run, /exit 1/u);
+});
+
 test('scanner jobs retain stable required names and bounded CI entrypoints', () => {
   assert.equal(security.jobs.sonarqube.name, 'SonarQube quality gate');
   assert.equal(security.jobs.snyk.name, 'Snyk security gate');
