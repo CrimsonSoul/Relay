@@ -51,6 +51,16 @@ jobs:
           path: ~/.cache/electron
           key: electron-linux-x64-${{ steps.electron-version.outputs.version }}
 
+      - name: Cache static analysis results
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: |
+            .cache/eslint
+            .cache/prettier
+          key: static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-${{ github.sha }}
+          restore-keys: static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-
+
       - name: Install dependencies
         env:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'

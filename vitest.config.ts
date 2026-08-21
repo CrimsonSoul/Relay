@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   test: {
     environment: 'node',
+    silent: 'passed-only',
     include: [
       'src/main/**/*.test.ts',
       'src/preload/**/*.test.ts',
@@ -32,6 +33,7 @@ export default defineConfig({
       },
       exclude: [
         'node_modules/**',
+        'vendor/**',
         'dist/**',
         '**/*.test.ts',
         '**/*.test.tsx',

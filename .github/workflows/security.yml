@@ -40,6 +40,13 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Cache Sonar packages
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
         env:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'

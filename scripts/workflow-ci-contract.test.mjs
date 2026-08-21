@@ -164,6 +164,16 @@ describe('CI workflow contracts', () => {
       },
       {
         continueOnError: true,
+        job: 'quality',
+        key: "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
+        name: 'build.yml',
+        path: '.cache/eslint\n.cache/prettier\n',
+        restoreKeys:
+          "static-analysis-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', '.prettierrc', '.prettierignore') }}-",
+        step: 'Cache static analysis results',
+      },
+      {
+        continueOnError: true,
         job: 'package',
         key: 'electron-win-x64-${{ steps.electron-version.outputs.version }}',
         name: 'reusable-windows-package.yml',
@@ -206,6 +216,15 @@ describe('CI workflow contracts', () => {
         path: 'node_modules/better-sqlite3/build/Release',
         restoreKeys: undefined,
         step: 'Cache rebuilt better-sqlite3',
+      },
+      {
+        continueOnError: true,
+        job: 'sonarqube',
+        key: "sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}",
+        name: 'security.yml',
+        path: '~/.sonar/cache',
+        restoreKeys: undefined,
+        step: 'Cache Sonar packages',
       },
       {
         continueOnError: true,
