@@ -13,6 +13,8 @@ const headSha = 'cccccccccccccccccccccccccccccccccccccccc';
 const attestation = `pull_request=${pullRequest}\nbase_sha=${baseSha}\nhead_sha=${headSha}\n`;
 const unitLcov = 'TN:\nSF:src/unit.ts\nDA:1,1\nLF:1\nLH:1\nend_of_record\n';
 const rendererLcov = 'TN:\nSF:src/renderer.tsx\nDA:4,0\nLF:1\nLH:0\nend_of_record\n';
+const zeroLineCssRecord =
+  'TN:\nSF:src/renderer/styles.css\nFNF:0\nFNH:0\nBRF:0\nBRH:0\nLF:0\nLH:0\nend_of_record\n';
 
 const validInput = {
   baseSha,
@@ -118,6 +120,48 @@ describe('evaluateReuseArtifacts', () => {
         ],
       }),
     ).toMatchObject({ eligible: false, reason: 'coverage-members-invalid', reuse: false });
+  });
+
+  it('accepts a renderer tracefile with covered code and a valid zero-line CSS source', () => {
+    expect(
+      evaluateReuseArtifacts({
+        ...validInput,
+        coverageFiles: [
+          validInput.coverageFiles[0],
+          { content: `${rendererLcov}${zeroLineCssRecord}`, path: 'renderer/lcov.info' },
+        ],
+      }),
+    ).toEqual({ eligible: true, mode: 'enabled', reason: 'eligible', reuse: true });
+  });
+
+  it('rejects no-DA records with missing, nonzero, or incompatible line summaries', () => {
+    for (const invalidRecord of [
+      'TN:\nSF:src/renderer/missing.css\nend_of_record\n',
+      'TN:\nSF:src/renderer/nonzero.css\nLF:1\nLH:0\nend_of_record\n',
+      'TN:\nSF:src/renderer/incompatible.css\nLF:0\nLH:1\nend_of_record\n',
+    ]) {
+      expect(
+        evaluateReuseArtifacts({
+          ...validInput,
+          coverageFiles: [
+            validInput.coverageFiles[0],
+            { content: `${rendererLcov}${invalidRecord}`, path: 'renderer/lcov.info' },
+          ],
+        }),
+      ).toMatchObject({ eligible: false, reason: 'coverage-format-invalid', reuse: false });
+    }
+  });
+
+  it('rejects a renderer tracefile made entirely of zero-line sources', () => {
+    expect(
+      evaluateReuseArtifacts({
+        ...validInput,
+        coverageFiles: [
+          validInput.coverageFiles[0],
+          { content: zeroLineCssRecord, path: 'renderer/lcov.info' },
+        ],
+      }),
+    ).toMatchObject({ eligible: false, reason: 'coverage-format-invalid', reuse: false });
   });
 
   it('rejects empty, oversized, binary, and malformed LCOV text', () => {

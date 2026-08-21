@@ -65,6 +65,9 @@ function openLcovSource(payload, state) {
   if (state.sourceOpen || payload.length === 0 || containsControlCharacter(payload)) return false;
   state.sourceOpen = true;
   state.sourceHasData = false;
+  state.sourceLineFound = null;
+  state.sourceSummaryCompatible = true;
+  state.sourceSummaryTags = new Set();
   return true;
 }
 
@@ -77,11 +80,13 @@ function recordLcovData(payload, state) {
     return false;
   }
   state.sourceHasData = true;
+  state.dataRecords += 1;
   return true;
 }
 
 function closeLcovSource(state) {
-  if (!state.sourceOpen || !state.sourceHasData) return false;
+  const validZeroLineSource = state.sourceLineFound === 0 && state.sourceSummaryCompatible === true;
+  if (!state.sourceOpen || (!state.sourceHasData && !validZeroLineSource)) return false;
   state.sourceOpen = false;
   state.sourceHasData = false;
   state.records += 1;
@@ -93,11 +98,33 @@ function validNamedLcovRecord(line, pattern) {
   return match !== null && !containsControlCharacter(match[1]);
 }
 
-function validSupplementalLcovRecord(line) {
-  if (/^(?:FNF|FNH|BRF|BRH|LF|LH):\d+$/u.test(line)) return true;
-  if (/^BRDA:[1-9]\d*,\d+,\d+,(?:\d+|-)$/u.test(line)) return true;
-  if (validNamedLcovRecord(line, /^FN:\d+(?:,\d+)?,(.+)$/u)) return true;
-  if (validNamedLcovRecord(line, /^FNDA:\d+,(.+)$/u)) return true;
+function recordLcovSummary(line, state) {
+  const match = /^(FNF|FNH|BRF|BRH|LF|LH):(\d+)$/u.exec(line);
+  if (match === null) return null;
+  const [, tag, rawValue] = match;
+  const value = Number(rawValue);
+  if (!Number.isSafeInteger(value) || state.sourceSummaryTags.has(tag)) return false;
+  state.sourceSummaryTags.add(tag);
+  if (tag === 'LF') state.sourceLineFound = value;
+  if (value !== 0) state.sourceSummaryCompatible = false;
+  return true;
+}
+
+function validSemanticLcovRecord(line) {
+  return (
+    /^BRDA:[1-9]\d*,\d+,\d+,(?:\d+|-)$/u.test(line) ||
+    validNamedLcovRecord(line, /^FN:\d+(?:,\d+)?,(.+)$/u) ||
+    validNamedLcovRecord(line, /^FNDA:\d+,(.+)$/u)
+  );
+}
+
+function validSupplementalLcovRecord(line, state) {
+  const summary = recordLcovSummary(line, state);
+  if (summary !== null) return summary;
+  if (validSemanticLcovRecord(line)) {
+    state.sourceSummaryCompatible = false;
+    return true;
+  }
   return validNamedLcovRecord(line, /^VER:(.+)$/u);
 }
 
@@ -111,7 +138,7 @@ function validLcovLine(line, state) {
   if (tag === 'SF') return openLcovSource(payload, state);
   if (tag === 'DA') return recordLcovData(payload, state);
   if (tag === 'TN') return !state.sourceOpen && !containsControlCharacter(payload);
-  return state.sourceOpen && validSupplementalLcovRecord(line);
+  return state.sourceOpen && validSupplementalLcovRecord(line, state);
 }
 
 function validLcov(text) {
@@ -125,10 +152,21 @@ function validLcov(text) {
     return false;
   }
 
-  const state = { records: 0, sourceHasData: false, sourceOpen: false };
+  const state = {
+    dataRecords: 0,
+    records: 0,
+    sourceHasData: false,
+    sourceLineFound: null,
+    sourceOpen: false,
+    sourceSummaryCompatible: false,
+    sourceSummaryTags: new Set(),
+  };
   const lines = text.replaceAll('\r\n', '\n').split('\n');
   return (
-    lines.every((line) => validLcovLine(line, state)) && state.records > 0 && !state.sourceOpen
+    lines.every((line) => validLcovLine(line, state)) &&
+    state.records > 0 &&
+    state.dataRecords > 0 &&
+    !state.sourceOpen
   );
 }
 
