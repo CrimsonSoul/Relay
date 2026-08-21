@@ -21,6 +21,23 @@ Dependency and runtime declarations live in `package.json`, `package-lock.json`,
 `.node-version`. Release versions are derived from conventional commits on `test` and injected into
 the packaged application by the gated GitHub release workflow.
 
+## Delivery and CI Trust Boundaries
+
+Release version resolution and Windows packaging may run in parallel with the exact-commit gate
+wait, but versioned assets, tags, drafts, and publication remain blocked until the exact required
+Build, SonarQube, and Snyk gates and the Windows package have succeeded. Build uses two renderer
+test shards; security uses two renderer-coverage shards and merges their LCOV reports before
+Sonar. Passing Vitest output is suppressed while failure output remains visible.
+
+Content-addressed ESLint, Prettier, and Sonar caches are advisory and cannot establish correctness.
+Exact-tree reuse is shadow-only by default. It can run only when
+`RELAY_CI_TREE_REUSE_MODE=enabled` exactly and full merged-internal-PR/base/head/parent/tree/check/
+workflow-run/artifact provenance validates; missing, malformed, ambiguous, stale, expired, or
+mismatched evidence falls back to full Build, Snyk, and coverage work. Required Build and Snyk
+aggregates stay fail closed. Sonar runs on the exact final `test` commit and performs reviewed-issue
+reconciliation. One-day PR attestations and merged LCOV artifacts are optimization evidence, not
+release authority.
+
 ## Runtime Model
 
 Relay has four application layers:

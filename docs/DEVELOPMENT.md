@@ -42,9 +42,11 @@ These files define the current workflow and should win over stale assumptions:
 ## Automated Releases
 
 Relay publishes normal GitHub Releases automatically from the protected `test` branch. A push to
-`test` starts `.github/workflows/release.yml`, which waits for `Build quality gate`,
-`SonarQube quality gate`, and `Snyk security gate` to succeed on that exact commit. A failed,
-cancelled, skipped, neutral, stale, or missing gate blocks publication.
+`test` starts `.github/workflows/release.yml`. Version resolution and Windows packaging can begin
+while the workflow waits for `Build quality gate`, `SonarQube quality gate`, and `Snyk security
+gate` on that exact commit, but no versioned asset, tag, draft, or published release is created
+until all three gates and the Windows package succeed. A failed, cancelled, skipped, neutral,
+stale, or missing gate blocks publication.
 
 `scripts/release-version.mjs` derives the next normal semantic version from conventional commits
 since the highest reachable `vX.Y.Z` tag:
@@ -105,6 +107,28 @@ published release is never repaired or overwritten: incomplete, mutable, corrupt
 invalid published state fails closed and requires a new version. Older releases keep their original
 asset format. Do not publish through a local npm script or tag a commit outside `test`; merge the
 release-worthy conventional commit through the protected `test` pull-request workflow.
+
+## CI Verification and Exact-Tree Reuse
+
+The Build workflow keeps the required `Build quality gate` as a fail-closed aggregate of static
+checks, unit tests, and two renderer-test shards. The security workflow similarly runs unit
+coverage and two renderer-coverage shards, merges their reports before Sonar analysis, and keeps
+the required `Snyk security gate` fail closed. Sonar always runs for the exact final `test` commit,
+including its reviewed-issue reconciliation; optimization never turns a post-merge branch Sonar
+scan into a reused PR result.
+
+Vitest suppresses console output from passing tests while retaining failure output. The ESLint,
+Prettier, and Sonar content-addressed caches are advisory and failure-tolerant: they can improve
+runtime but cannot supply correctness, credentials, dependencies, build outputs, or release
+assets.
+
+Merged internal pull requests can be evaluated for exact-tree reuse. The resolver remains in
+shadow mode by default; only the exact repository variable value
+`RELAY_CI_TREE_REUSE_MODE=enabled` permits reuse. Enabling it still requires matching internal PR,
+base, head, parent, recursive tree, required-check, workflow-run, and artifact provenance. Any
+missing, malformed, ambiguous, stale, expired, or mismatched signal selects the normal full Build,
+Snyk, and coverage work instead. The PR provenance attestation and merged LCOV artifact last one
+day and are optimization evidence only, never a release or branch-protection authority.
 
 ## Startup Performance
 

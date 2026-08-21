@@ -16,6 +16,7 @@ const windowsWorkflowUrl = new URL(
 const readWorkflowText = () => readFile(workflowUrl, 'utf8');
 const readWorkflow = async () => parse(await readWorkflowText());
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
+const expression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
 
 describe('release workflow authority boundary', () => {
   it('selects the reviewed immutable release action revision', async () => {
@@ -42,7 +43,7 @@ describe('release workflow authority boundary', () => {
     expect(workflow.permissions).toEqual({ actions: 'read', checks: 'read', contents: 'read' });
   });
 
-  it('waits for all protected gates on the exact test commit before versioning', async () => {
+  it('waits for all protected gates on the exact test commit before publication', async () => {
     const workflow = await readWorkflow();
     const gate = workflow.jobs.gates;
     const waitStep = findStep(gate, 'Wait for exact commit gates');
@@ -131,7 +132,9 @@ describe('release workflow authority boundary', () => {
       'source-sha': '${{ needs.determine.outputs.source-sha }}',
     });
     expect(release.needs).toEqual(['gates', 'determine', 'package-windows']);
-    expect(release.if).toContain("needs.gates.result == 'success'");
+    expect(expression(release.if)).toBe(
+      "needs.gates.result == 'success' && needs.determine.outputs.should-package == 'true' && needs.package-windows.result == 'success'",
+    );
     expect(release.permissions).toEqual({ actions: 'read', contents: 'write' });
     expect(assetStep.run).toContain('Relay-${TAG}-windows-x64.zip');
     expect(assetStep.run).toContain('zip -j "$asset_name" Relay.exe');
