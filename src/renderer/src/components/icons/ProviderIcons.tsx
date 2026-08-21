@@ -24,6 +24,13 @@ export const M365Icon = ({ size = 18 }: IconProps) => (
   </svg>
 );
 
+/** Dropbox — official logo mark (Simple Icons, CC0) */
+export const DropboxIcon = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6 1.807 0 5.629l6 3.822 6.001-3.822L6 1.807Zm12 0-6 3.822 6 3.822 6-3.822-6-3.822ZM0 13.274l6 3.822 6.001-3.822L6 9.452l-6 3.822Zm18-3.822-6 3.822 6 3.822 6-3.822-6-3.822ZM6 18.371l6.001 3.822 6-3.822-6-3.822L6 18.371Z" />
+  </svg>
+);
+
 /** Proofpoint — security shield mark */
 export const ProofpointIcon = ({ size = 18 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -110,6 +117,7 @@ const PROVIDER_ICON_MAP: Record<
   aws: AWSIcon,
   azure: AzureIcon,
   m365: M365Icon,
+  dropbox: DropboxIcon,
   proofpoint: ProofpointIcon,
   crowdstrike: CrowdStrikeIcon,
   jira: JiraIcon,

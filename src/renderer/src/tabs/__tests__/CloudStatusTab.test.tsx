@@ -72,7 +72,7 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
     expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
-    expect(screen.getAllByText('Unknown')).toHaveLength(14);
+    expect(screen.getAllByText('Unknown')).toHaveLength(15);
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
     expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
@@ -99,14 +99,14 @@ describe('CloudStatusTab', () => {
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(14);
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(15);
     expect(
       screen.getByRole('button', { name: 'View AWS status details' }),
     ).toHaveAccessibleDescription('Operational No active issues');
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
-  it('renders one Proofpoint row and keeps the combined Mist and Dynatrace rows', () => {
+  it('renders Dropbox and Proofpoint rows and keeps the combined Mist and Dynatrace rows', () => {
     const { container } = render(
       <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
     );
@@ -119,6 +119,7 @@ describe('CloudStatusTab', () => {
       'AWS',
       'Azure',
       'Microsoft 365',
+      'Dropbox',
       'Proofpoint',
       'CrowdStrike',
       'Jira',
@@ -131,7 +132,8 @@ describe('CloudStatusTab', () => {
       'ChatGPT',
       'Salesforce',
     ]);
-    expect(screen.getByText('across 14 monitored providers')).toBeInTheDocument();
+    expect(screen.getByText('across 15 monitored providers')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Dropbox status details' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'View Proofpoint status details' }),
     ).toBeInTheDocument();
@@ -727,7 +729,7 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '14 providers monitored · 1 active outage · 1 degraded issue',
+      '15 providers monitored · 1 active outage · 1 degraded issue',
     );
   });
 });

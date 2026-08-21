@@ -60,7 +60,7 @@ export function emptyMistCloudStatusProviders(): MistCloudStatusData['providers'
 }
 
 export function emptyExtensionCloudStatusProviders(): ExtensionCloudStatusData['providers'] {
-  return { dynatrace: [], proofpoint: [], crowdstrike: [] };
+  return { dynatrace: [], proofpoint: [], crowdstrike: [], dropbox: [] };
 }
 
 function emptyExtensionCloudStatusData(): ExtensionCloudStatusData {
@@ -76,6 +76,7 @@ export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
     aws: [],
     azure: [],
     m365: [],
+    dropbox: [],
     proofpoint: [],
     crowdstrike: [],
     jira: [],
@@ -113,6 +114,7 @@ export function splitCloudStatusData(data: CloudStatusData): {
       case 'dynatrace':
       case 'proofpoint':
       case 'crowdstrike':
+      case 'dropbox':
         extensionErrors.push({ provider: error.provider, message: error.message });
         break;
       case 'aws':
@@ -162,6 +164,7 @@ export function splitCloudStatusData(data: CloudStatusData): {
         dynatrace: matchingProviderItems(data, 'dynatrace'),
         proofpoint: matchingProviderItems(data, 'proofpoint'),
         crowdstrike: matchingProviderItems(data, 'crowdstrike'),
+        dropbox: matchingProviderItems(data, 'dropbox'),
       },
       errors: extensionErrors,
       lastUpdated: data.lastUpdated,
@@ -180,6 +183,7 @@ export function mergeCloudStatusData(
       aws: legacy.providers.aws,
       azure: legacy.providers.azure,
       m365: legacy.providers.m365,
+      dropbox: normalizedExtension.providers.dropbox,
       proofpoint: normalizedExtension.providers.proofpoint,
       crowdstrike: normalizedExtension.providers.crowdstrike,
       jira: legacy.providers.jira,

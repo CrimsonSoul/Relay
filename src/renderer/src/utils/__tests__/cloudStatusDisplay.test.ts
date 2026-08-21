@@ -68,6 +68,7 @@ describe('cloud status display aggregation', () => {
       'aws',
       'azure',
       'm365',
+      'dropbox',
       'proofpoint',
       'crowdstrike',
       'jira',
@@ -85,6 +86,7 @@ describe('cloud status display aggregation', () => {
   it('copies ordinary providers and folds regional errors into display-provider errors', () => {
     const providers = emptyCloudStatusProviders();
     providers.aws = [item('aws', 'aws-1')];
+    providers.dropbox = [item('dropbox', 'dropbox-1')];
     providers.proofpoint = [
       item('proofpoint', 'proofpoint-1', { affectedScopes: ['Email Protection'] }),
     ];
@@ -107,6 +109,9 @@ describe('cloud status display aggregation', () => {
 
     expect(display.providers.aws).toEqual([
       expect.objectContaining({ id: 'aws-1', provider: 'aws', affectedScopes: [] }),
+    ]);
+    expect(display.providers.dropbox).toEqual([
+      expect.objectContaining({ id: 'dropbox-1', provider: 'dropbox', affectedScopes: [] }),
     ]);
     expect(display.providers.proofpoint).toEqual([
       expect.objectContaining({

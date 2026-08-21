@@ -219,12 +219,14 @@ export const EXTENSION_CLOUD_STATUS_PROVIDER_ORDER = [
   'dynatrace',
   'proofpoint',
   'crowdstrike',
+  'dropbox',
 ] as const;
 
 export const CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
   'azure',
   'm365',
+  'dropbox',
   'proofpoint',
   'crowdstrike',
   'jira',
@@ -386,6 +388,10 @@ export const CLOUD_STATUS_PROVIDERS: Record<
     statusUrl: 'https://status.cloud.microsoft',
     twitterHandle: 'MSFT365Status',
     downdetectorSlug: 'microsoft-365',
+  },
+  dropbox: {
+    label: 'Dropbox',
+    statusUrl: 'https://status.dropbox.com/',
   },
   proofpoint: {
     label: 'Proofpoint',

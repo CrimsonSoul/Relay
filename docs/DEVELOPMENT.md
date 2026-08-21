@@ -201,6 +201,8 @@ Rules:
 Service Status is aggregated in the main process from official RSS feeds, Statuspage JSON, or a
 documented status API. Juniper Mist uses the credential-free SorryApp API at `status.mist.com` and
 is fetched once per poll before notices are routed to Global, EMEA, APAC, and Federal buckets.
+Primary Dropbox availability uses the official credential-free Statuspage summary endpoint at
+`status.dropbox.com`; Dropbox Sign remains outside this provider row.
 
 Provider-family additions must preserve existing renderer/server contracts. When older clients do
 not recognize a new provider union, keep the existing snapshot exact and add a separate

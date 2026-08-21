@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RecordModel } from 'pocketbase';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
+  EXTENSION_CLOUD_STATUS_PROVIDER_ORDER,
   MIST_CLOUD_STATUS_PROVIDER_ORDER,
   type CloudStatusData,
   type CloudStatusItem,
@@ -39,6 +40,10 @@ import type { ShowToast } from '../components/Toast';
 import { useCollection } from './useCollection';
 
 const CACHE_KEY = 'cached_cloud_status';
+
+const EXTENSION_DISPLAY_PROVIDERS = new Set<DisplayCloudStatusProvider>(
+  EXTENSION_CLOUD_STATUS_PROVIDER_ORDER,
+);
 
 export const DEGRADATION_REQUIRED_OBSERVATIONS = 3;
 export const DEGRADATION_MIN_DURATION_MS = 120_000;
@@ -114,9 +119,7 @@ function observationTimestampFor(
   observations: StatusObservationTimestamps,
 ): number {
   if (provider === 'mist') return observations.mist;
-  return provider === 'dynatrace' || provider === 'proofpoint' || provider === 'crowdstrike'
-    ? observations.extension
-    : observations.legacy;
+  return EXTENSION_DISPLAY_PROVIDERS.has(provider) ? observations.extension : observations.legacy;
 }
 
 function currentStatusState(data: CloudStatusData): CurrentStatusState {
