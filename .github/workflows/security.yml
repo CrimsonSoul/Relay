@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+      - test
 
 permissions:
   contents: read
@@ -100,7 +101,8 @@ jobs:
       needs.provenance.outputs.reuse != 'true' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: provenance
@@ -141,7 +143,8 @@ jobs:
       needs.provenance.outputs.reuse != 'true' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: provenance
@@ -188,7 +191,8 @@ jobs:
       always() && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: [provenance, unit-coverage, renderer-coverage]
@@ -322,7 +326,8 @@ jobs:
       needs.provenance.outputs.reuse != 'true' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: provenance
@@ -358,7 +363,8 @@ jobs:
       always() && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'main' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: [provenance, snyk-scan]
