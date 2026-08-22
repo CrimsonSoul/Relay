@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { evaluateTreeReuse, runCiTreeReuse } from './ciTreeReuse.mjs';
+import { evaluateTreeReuse, runCiTreeReuse, validateGitHubApiUrl } from './ciTreeReuse.mjs';
 
 const repository = 'relaycorp/relay';
 const currentSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -414,6 +414,30 @@ describe('evaluateTreeReuse', () => {
   });
 });
 
+describe('validateGitHubApiUrl', () => {
+  it.each([
+    `https://api.github.com/repos/${repository}/commits/${currentSha}/pulls?per_page=100&page=1`,
+    `https://api.github.com/repos/${repository}/pulls/${pullRequestNumber}`,
+    `https://api.github.com/repos/${repository}/commits/${headSha}`,
+    `https://api.github.com/repos/${repository}/compare/${baseSha}...${headSha}?per_page=100&page=2`,
+    `https://api.github.com/repos/${repository}/commits/${headSha}/check-runs?per_page=100&page=2`,
+    `https://api.github.com/repos/${repository}/actions/runs/${buildRunId}`,
+    `https://api.github.com/repos/${repository}/actions/runs/${securityRunId}/artifacts?per_page=100&page=3`,
+  ])('allows an exact GitHub API route used by the resolver: %s', (url) => {
+    expect(validateGitHubApiUrl(url)).toBe(url);
+  });
+
+  it.each([
+    'https://api.github.com/repos/relaycorp/relay/../actions/secrets',
+    'https://api.github.com/repos/relaycorp/relay/actions/secrets',
+    `https://api.github.com/repos/${repository}/commits/not-a-sha`,
+    `https://api.github.com/repos/${repository}/commits/${headSha}?per_page=100&page=4`,
+    `https://api.github.com@evil.example/repos/${repository}/commits/${headSha}`,
+  ])('rejects an unapproved or malformed URL: %s', (url) => {
+    expect(() => validateGitHubApiUrl(url)).toThrow('GitHub API URL is invalid.');
+  });
+});
+
 const temporaryDirectories = [];
 
 afterEach(async () => {
@@ -541,6 +565,21 @@ describe('runCiTreeReuse adapter', () => {
     expect(output).not.toContain(responseBody);
   });
 
+  it('rejects malformed repository paths before making a GitHub API request', async () => {
+    const env = { ...(await adapterEnv()), GITHUB_REPOSITORY: '../relay' };
+    const requests = [];
+    const result = await runCiTreeReuse({
+      env,
+      fetchJson: async (rawUrl) => {
+        requests.push(rawUrl);
+        throw new Error('request must not be sent');
+      },
+    });
+
+    expect(result).toMatchObject({ eligible: false, reason: 'repository-invalid' });
+    expect(requests).toEqual([]);
+  });
+
   it('fails closed on malformed paginated response schemas', async () => {
     const env = await adapterEnv();
     const result = await runCiTreeReuse({
@@ -575,6 +614,29 @@ describe('runCiTreeReuse adapter', () => {
     expect(await readFile(env.GITHUB_OUTPUT, 'utf8')).toBe(
       'metadata-eligible=false\nmetadata-reason=pull-request-invalid\n',
     );
+  });
+
+  it('rejects tainted pull request SHAs before constructing a commit API path', async () => {
+    const env = await adapterEnv();
+    const requests = [];
+    const result = await runCiTreeReuse({
+      env,
+      fetchJson: async (rawUrl) => {
+        const url = new URL(rawUrl);
+        requests.push(url.href);
+        if (url.pathname === `/repos/${repository}/pulls/${pullRequestNumber}`) {
+          return {
+            ...validFixture.pullRequest,
+            head: { ...validFixture.pullRequest.head, sha: '../../actions/secrets' },
+          };
+        }
+        return validFetchJson(rawUrl);
+      },
+    });
+
+    expect(result).toMatchObject({ eligible: false, reason: 'head-sha-invalid' });
+    expect(requests).toHaveLength(3);
+    expect(requests.join('\n')).not.toContain('../../actions/secrets');
   });
 
   it('bounds pagination and falls back instead of accepting truncated evidence', async () => {

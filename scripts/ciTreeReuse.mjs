@@ -58,6 +58,10 @@ function validateRequest(input) {
   if (typeof input.repository !== 'string' || !REPOSITORY_PATTERN.test(input.repository)) {
     return 'repository-invalid';
   }
+  const [owner, repository] = input.repository.split('/');
+  if (owner === '.' || owner === '..' || repository === '.' || repository === '..') {
+    return 'repository-invalid';
+  }
   return isSha(input.currentSha) ? null : 'current-sha-invalid';
 }
 
@@ -285,9 +289,37 @@ export function evaluateTreeReuse(input) {
 const API_ROOT = 'https://api.github.com';
 const PAGE_SIZE = 100;
 const MAX_PAGES = 3;
+const GITHUB_API_PATH_PATTERNS = [
+  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/commits\/[0-9a-f]{40}(?:\/pulls|\/check-runs)?$/u,
+  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pulls\/[1-9]\d*$/u,
+  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/compare\/[0-9a-f]{40}\.\.\.[0-9a-f]{40}$/u,
+  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[1-9]\d*(?:\/artifacts)?$/u,
+];
+
+export function validateGitHubApiUrl(value) {
+  if (typeof value !== 'string') throw new Error('GitHub API URL is invalid.');
+  const candidate = new URL(value);
+  const page = candidate.searchParams.get('page');
+  const paginated =
+    candidate.searchParams.size === 2 &&
+    candidate.searchParams.get('per_page') === String(PAGE_SIZE) &&
+    typeof page === 'string' &&
+    /^[1-3]$/u.test(page);
+  if (
+    candidate.origin !== API_ROOT ||
+    candidate.username !== '' ||
+    candidate.password !== '' ||
+    candidate.hash !== '' ||
+    !GITHUB_API_PATH_PATTERNS.some((pattern) => pattern.test(candidate.pathname)) ||
+    (candidate.search !== '' && !paginated)
+  ) {
+    throw new Error('GitHub API URL is invalid.');
+  }
+  return candidate.href;
+}
 
 async function defaultFetchJson(url, options) {
-  const response = await fetch(url, options);
+  const response = await fetch(validateGitHubApiUrl(url), options);
   if (!response.ok) {
     throw new Error(`GitHub API request failed with status ${response.status}.`);
   }
@@ -412,6 +444,8 @@ async function resolveFromGitHub({ env, fetchJson }) {
   if (common.eventName !== 'push' || common.ref !== 'refs/heads/test') {
     return evaluateTreeReuse(common);
   }
+  const requestReason = validateRequest(common);
+  if (requestReason !== null) return blankResult(requestReason);
   if (typeof env.GITHUB_TOKEN !== 'string' || env.GITHUB_TOKEN.length === 0) {
     return blankResult('token-unavailable');
   }
@@ -424,10 +458,11 @@ async function resolveFromGitHub({ env, fetchJson }) {
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
-  const repoPath = `/repos/${common.repository}`;
+  const [owner, repository] = common.repository.split('/');
+  const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`;
   const pullRequests = await collectPages({
     field: null,
-    path: `${repoPath}/commits/${common.currentSha}/pulls`,
+    path: `${repoPath}/commits/${encodeURIComponent(common.currentSha)}/pulls`,
     requestJson,
   });
   const pullRequestNumber = pullRequests[0]?.number;
@@ -444,21 +479,28 @@ async function resolveFromGitHub({ env, fetchJson }) {
     await requestJson(`${API_ROOT}${repoPath}/pulls/${pullRequestNumber}`),
   );
   const currentCommit = requireObject(
-    await requestJson(`${API_ROOT}${repoPath}/commits/${common.currentSha}`),
+    await requestJson(`${API_ROOT}${repoPath}/commits/${encodeURIComponent(common.currentSha)}`),
   );
-  if (!isSha(pullRequest.base?.sha) || !isSha(pullRequest.head?.sha)) {
+  const pullRequestBaseSha = pullRequest.base?.sha;
+  const pullRequestHeadSha = pullRequest.head?.sha;
+  if (
+    typeof pullRequestBaseSha !== 'string' ||
+    !/^[0-9a-f]{40}$/u.test(pullRequestBaseSha) ||
+    typeof pullRequestHeadSha !== 'string' ||
+    !/^[0-9a-f]{40}$/u.test(pullRequestHeadSha)
+  ) {
     return evaluateTreeReuse({ ...common, currentCommit, pullRequest, pullRequests });
   }
   const headCommit = requireObject(
-    await requestJson(`${API_ROOT}${repoPath}/commits/${pullRequest.head.sha}`),
+    await requestJson(`${API_ROOT}${repoPath}/commits/${encodeURIComponent(pullRequestHeadSha)}`),
   );
   const compare = await collectCompare({
-    path: `${repoPath}/compare/${pullRequest.base.sha}...${pullRequest.head.sha}`,
+    path: `${repoPath}/compare/${encodeURIComponent(pullRequestBaseSha)}...${encodeURIComponent(pullRequestHeadSha)}`,
     requestJson,
   });
   const checkRuns = await collectPages({
     field: 'check_runs',
-    path: `${repoPath}/commits/${pullRequest.head.sha}/check-runs`,
+    path: `${repoPath}/commits/${encodeURIComponent(pullRequestHeadSha)}/check-runs`,
     requestJson,
   });
 
@@ -469,13 +511,15 @@ async function resolveFromGitHub({ env, fetchJson }) {
   const buildRunId = checkRunId('Build quality gate');
   let buildRun = null;
   let buildArtifacts = [];
-  if (buildRunId !== null) {
+  if (Number.isSafeInteger(buildRunId) && buildRunId > 0) {
     buildRun = requireObject(
-      await requestJson(`${API_ROOT}${repoPath}/actions/runs/${buildRunId}`),
+      await requestJson(
+        `${API_ROOT}${repoPath}/actions/runs/${encodeURIComponent(String(buildRunId))}`,
+      ),
     );
     buildArtifacts = await collectPages({
       field: 'artifacts',
-      path: `${repoPath}/actions/runs/${buildRunId}/artifacts`,
+      path: `${repoPath}/actions/runs/${encodeURIComponent(String(buildRunId))}/artifacts`,
       requestJson,
     });
   }
@@ -483,13 +527,15 @@ async function resolveFromGitHub({ env, fetchJson }) {
   const securityRunId = checkRunId('SonarQube quality gate');
   let securityRun = null;
   let artifacts = [];
-  if (securityRunId !== null) {
+  if (Number.isSafeInteger(securityRunId) && securityRunId > 0) {
     securityRun = requireObject(
-      await requestJson(`${API_ROOT}${repoPath}/actions/runs/${securityRunId}`),
+      await requestJson(
+        `${API_ROOT}${repoPath}/actions/runs/${encodeURIComponent(String(securityRunId))}`,
+      ),
     );
     artifacts = await collectPages({
       field: 'artifacts',
-      path: `${repoPath}/actions/runs/${securityRunId}/artifacts`,
+      path: `${repoPath}/actions/runs/${encodeURIComponent(String(securityRunId))}/artifacts`,
       requestJson,
     });
   }

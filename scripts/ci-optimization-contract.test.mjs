@@ -382,6 +382,9 @@ describe('CI optimization contracts', () => {
     expect(treeReuse).toContain('const pullRequestNumber = pullRequests[0]?.number;');
     expect(treeReuse).toContain('!Number.isSafeInteger(pullRequestNumber)');
     expect(treeReuse).not.toContain('${pullRequests[0].number}');
+    expect(treeReuse).toContain('!/^[0-9a-f]{40}$/u.test(pullRequestHeadSha)');
+    expect(treeReuse).toContain('${encodeURIComponent(pullRequestHeadSha)}');
+    expect(treeReuse).not.toContain('${pullRequest.head.sha}');
     expect(treeReuse).toContain('await runCiTreeReuse();');
     expect(treeReuse).not.toContain('runCiTreeReuse().catch(');
     expect(artifactValidation).toContain('await runCiReuseArtifactValidation();');
