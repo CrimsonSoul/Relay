@@ -41,8 +41,8 @@ These files define the current workflow and should win over stale assumptions:
 
 ## Automated Releases
 
-Relay publishes normal GitHub Releases automatically from the protected `test` branch. A push to
-`test` starts `.github/workflows/release.yml`. Version resolution and Windows packaging can begin
+Relay publishes normal GitHub Releases automatically from the protected `main` branch. A push to
+`main` starts `.github/workflows/release.yml`. Version resolution and Windows packaging can begin
 while the workflow waits for `Build quality gate`, `SonarQube quality gate`, and `Snyk security
 gate` on that exact commit, but no versioned asset, tag, draft, or published release is created
 until all three gates and the Windows package succeed. A failed, cancelled, skipped, neutral,
@@ -105,15 +105,15 @@ exact member list is `Relay.exe`, and GitHub reports the release immutable. An i
 deleted and rebuilt cleanly before publication; asset uploads are never overwritten in place. A
 published release is never repaired or overwritten: incomplete, mutable, corrupt, or structurally
 invalid published state fails closed and requires a new version. Older releases keep their original
-asset format. Do not publish through a local npm script or tag a commit outside `test`; merge the
-release-worthy conventional commit through the protected `test` pull-request workflow.
+asset format. Do not publish through a local npm script or tag a commit outside `main`; merge the
+release-worthy conventional commit through the protected `main` pull-request workflow.
 
 ## CI Verification and Exact-Tree Reuse
 
 The Build workflow keeps the required `Build quality gate` as a fail-closed aggregate of static
 checks, unit tests, and two renderer-test shards. The security workflow similarly runs unit
 coverage and two renderer-coverage shards, merges their reports before Sonar analysis, and keeps
-the required `Snyk security gate` fail closed. Sonar always runs for the exact final `test` commit,
+the required `Snyk security gate` fail closed. Sonar always runs for the exact final `main` commit,
 including its reviewed-issue reconciliation; optimization never turns a post-merge branch Sonar
 scan into a reused PR result.
 
@@ -521,7 +521,7 @@ environment or an OS secret store, never command arguments:
 ```bash
 npm run test:coverage:sonar
 npm run security:sonar:ci -- --pull-request=<number>
-npm run security:sonar:ci -- --branch=test
+npm run security:sonar:ci -- --branch=main
 npm run security:snyk:ci
 ```
 
@@ -531,9 +531,9 @@ Use lower-level commands only when diagnosing one phase:
 
 ```bash
 npm run security:sonar -- -Dsonar.organization=<organization>
-npm run security:sonar:quality-gate -- wait-analysis --branch=test
-npm run security:sonar:issues -- --branch=test
-npm run security:sonar:quality-gate -- check-quality-gate --branch=test
+npm run security:sonar:quality-gate -- wait-analysis --branch=main
+npm run security:sonar:issues -- --branch=main
+npm run security:sonar:quality-gate -- check-quality-gate --branch=main
 npm run security:snyk
 ```
 
@@ -546,12 +546,12 @@ scope, authorization failures, malformed responses, and unknown failures are Con
 aggregate local thresholds. Use `npm run test:coverage` when you need the local aggregate-threshold
 decision.
 
-`.github/workflows/security.yml` owns the exact pull-request and `test`-branch gate sequence.
+`.github/workflows/security.yml` owns the exact pull-request and `main`-branch gate sequence.
 Publishing requires successful Build, SonarQube, and Snyk checks plus resolved review findings.
 If a fixed CodeRabbit review has not resumed, comment `@coderabbitai review` on the pull request and
 wait for its Request Changes state and review conversations to clear.
 See `docs/SECURITY.md` for security policy and gate interpretation. The reviewed-finding reconciler
-is a restricted `test`-branch write operation and is not part of normal local development.
+is a restricted `main`-branch write operation and is not part of normal local development.
 
 ### Screenshot Refresh
 

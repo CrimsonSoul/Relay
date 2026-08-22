@@ -53,7 +53,7 @@ function actionRunId(detailsUrl, repository) {
 
 function validateRequest(input) {
   if (!isObject(input)) return 'input-invalid';
-  if (input.eventName !== 'push' || input.ref !== 'refs/heads/test') return 'event-ineligible';
+  if (input.eventName !== 'push' || input.ref !== 'refs/heads/main') return 'event-ineligible';
   if (typeof input.repository !== 'string' || !REPOSITORY_PATTERN.test(input.repository)) {
     return 'repository-invalid';
   }
@@ -86,7 +86,7 @@ function pullRequestEvidence(input) {
   ) {
     return { reason: 'pull-request-not-merged' };
   }
-  if (pullRequest.base?.ref !== 'test') return { reason: 'pull-request-target-mismatch' };
+  if (pullRequest.base?.ref !== 'main') return { reason: 'pull-request-target-mismatch' };
   if (
     pullRequest.base?.repo?.full_name !== input.repository ||
     pullRequest.head?.repo?.full_name !== input.repository
@@ -411,7 +411,7 @@ async function resolveFromGitHub({ env, requestJson }) {
     ref: env.GITHUB_REF,
     repository: env.GITHUB_REPOSITORY,
   };
-  if (common.eventName !== 'push' || common.ref !== 'refs/heads/test') {
+  if (common.eventName !== 'push' || common.ref !== 'refs/heads/main') {
     return evaluateTreeReuse(common);
   }
   const requestReason = validateRequest(common);

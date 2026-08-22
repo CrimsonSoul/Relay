@@ -55,12 +55,12 @@ jobs:
       RELAY_BUILD_ID: r1-${{ inputs.source-sha }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ inputs.source-sha }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
           cache: npm
@@ -75,7 +75,7 @@ jobs:
 
       - name: Cache Electron binary
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/AppData/Local/electron/Cache
@@ -85,7 +85,7 @@ jobs:
       # electron-builder re-downloads NSIS/winCodeSign tooling every run otherwise.
       - name: Cache electron-builder tooling
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/AppData/Local/electron-builder/Cache
           key: electron-builder-win-${{ hashFiles('package-lock.json') }}
@@ -94,7 +94,7 @@ jobs:
       # Native-module rebuild (better-sqlite3) compiles against Electron headers.
       - name: Cache Electron headers
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.electron-gyp
           key: electron-gyp-win-${{ steps.electron-version.outputs.version }}
@@ -109,7 +109,7 @@ jobs:
       - name: Cache PocketBase binary
         id: pocketbase-cache
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: resources/pocketbase/win32-x64
           key: pocketbase-win32-x64-${{ steps.pocketbase-version.outputs.version }}
@@ -128,7 +128,7 @@ jobs:
       - name: Cache rebuilt better-sqlite3
         id: better-sqlite-cache
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: node_modules/better-sqlite3/build/Release
           key: better-sqlite3-electron-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload packaged startup diagnostics
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: relay-windows-startup-diagnostics
           path: ${{ runner.temp }}/relay-startup-diagnostics
@@ -315,7 +315,7 @@ jobs:
           Move-Item -LiteralPath "$env:RUNNER_TEMP\RelayProduction.exe" -Destination ./release/Relay.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ inputs.artifact-name }}
           path: release/*.exe

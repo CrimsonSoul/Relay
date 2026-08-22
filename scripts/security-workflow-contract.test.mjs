@@ -19,7 +19,8 @@ const findStep = (job, name) => {
   return step;
 };
 
-test('test pull requests emit the stable build quality gate', () => {
+test('main pull requests emit the stable build quality gate', () => {
+  assert.deepEqual(build.on.push.branches, ['main']);
   assert.deepEqual(build.on.pull_request.branches, ['main', 'test']);
   assert.deepEqual(build.permissions, { contents: 'read' });
   assert.deepEqual(build.jobs.provenance.permissions, {
@@ -66,7 +67,7 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
   );
   assert.deepEqual(findStep(unitCoverage, 'Upload unit coverage'), {
     name: 'Upload unit coverage',
-    uses: 'actions/upload-artifact@v7',
+    uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
     with: {
       name: 'unit-coverage',
       path: 'coverage/unit/lcov.info',
@@ -85,7 +86,7 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
   );
   assert.deepEqual(findStep(rendererCoverage, 'Upload renderer coverage shard'), {
     name: 'Upload renderer coverage shard',
-    uses: 'actions/upload-artifact@v7',
+    uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
     with: {
       name: 'renderer-coverage-${{ matrix.shard-index }}',
       path: '.vitest-reports/',
@@ -113,7 +114,7 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
   assert.deepEqual(findStep(sonar, 'Upload merged LCOV'), {
     name: 'Upload merged LCOV',
     if: "needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'",
-    uses: 'actions/upload-artifact@v7',
+    uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
     with: {
       name: 'relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
       path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
@@ -130,9 +131,10 @@ test('Sonar runs on the exact commit and fails closed without valid reuse or fre
     normalizeExpression(sonar.if),
     normalizeExpression(`
       always() && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     `),
@@ -194,16 +196,17 @@ test('scanner jobs retain stable required names and bounded CI entrypoints', () 
   );
 });
 
-test('Snyk delegates internal test pull requests and merged pushes to its CI gate', () => {
+test('Snyk delegates internal main pull requests and merged pushes to its CI gate', () => {
   const snyk = security.jobs['snyk-scan'];
   assert.equal(snyk.needs, 'provenance');
   assert.equal(
     normalizeExpression(snyk.if),
     normalizeExpression(`
       needs.provenance.outputs.reuse != 'true' && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     `),

@@ -3,9 +3,10 @@ name: Security and Code Quality
 on:
   push:
     branches:
-      - test
+      - main
   pull_request:
     branches:
+      - main
       - test
 
 permissions:
@@ -41,7 +42,7 @@ jobs:
         id: metadata
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -60,7 +61,7 @@ jobs:
         id: build_payload
         if: steps.metadata.outputs.metadata-eligible == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           name: ${{ steps.metadata.outputs.build-artifact }}
@@ -71,7 +72,7 @@ jobs:
         id: coverage_payload
         if: steps.metadata.outputs.metadata-eligible == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           name: ${{ steps.metadata.outputs.coverage-artifact }}
@@ -98,9 +99,10 @@ jobs:
     name: Unit coverage
     if: >-
       needs.provenance.outputs.reuse != 'true' && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: provenance
@@ -128,7 +130,7 @@ jobs:
         run: npm run test:coverage -- --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
 
       - name: Upload unit coverage
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: unit-coverage
           path: coverage/unit/lcov.info
@@ -139,9 +141,10 @@ jobs:
     name: Renderer coverage (${{ matrix.shard-index }}/${{ matrix.shard-total }})
     if: >-
       needs.provenance.outputs.reuse != 'true' && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: provenance
@@ -174,7 +177,7 @@ jobs:
         run: npm run test:renderer -- --coverage --reporter=dot --reporter=blob --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }} --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0
 
       - name: Upload renderer coverage shard
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: renderer-coverage-${{ matrix.shard-index }}
           path: .vitest-reports/
@@ -186,9 +189,10 @@ jobs:
     name: SonarQube quality gate
     if: >-
       always() && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: [provenance, unit-coverage, renderer-coverage]
@@ -246,7 +250,7 @@ jobs:
 
       - name: Cache Sonar packages
         continue-on-error: true
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.sonar/cache
           key: sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -258,14 +262,14 @@ jobs:
 
       - name: Download unit coverage
         if: needs.provenance.outputs.reuse != 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: unit-coverage
           path: coverage/unit
 
       - name: Download renderer coverage shards
         if: needs.provenance.outputs.reuse != 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: renderer-coverage-*
           path: .vitest-reports
@@ -277,7 +281,7 @@ jobs:
 
       - name: Download validated PR LCOV
         if: needs.provenance.outputs.reuse == 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ${{ needs.provenance.outputs.coverage-artifact }}
           path: coverage
@@ -292,7 +296,7 @@ jobs:
 
       - name: Upload merged LCOV
         if: needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
           path: |
@@ -311,7 +315,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             SONAR_SCOPE=(--pull-request="${{ github.event.pull_request.number }}")
           else
-            SONAR_SCOPE=(--branch=test)
+            SONAR_SCOPE=(--branch=main)
           fi
 
           npm run security:sonar:ci -- "${SONAR_SCOPE[@]}"
@@ -320,9 +324,10 @@ jobs:
     name: Snyk scan
     if: >-
       needs.provenance.outputs.reuse != 'true' && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: provenance
@@ -356,9 +361,10 @@ jobs:
     name: Snyk security gate
     if: >-
       always() && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/test') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         github.event.pull_request.base.ref == 'test' &&
+         (github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.base.ref == 'test') &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     needs: [provenance, snyk-scan]

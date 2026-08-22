@@ -18,7 +18,7 @@ tests remain authoritative when details change.
 | Testing       | Vitest 4.1.10 and Playwright 1.62.0                     |
 
 Dependency and runtime declarations live in `package.json`, `package-lock.json`, and
-`.node-version`. Release versions are derived from conventional commits on `test` and injected into
+`.node-version`. Release versions are derived from conventional commits on `main` and injected into
 the packaged application by the gated GitHub release workflow.
 
 ## Delivery and CI Trust Boundaries
@@ -34,7 +34,7 @@ Exact-tree reuse is shadow-only by default. It can run only when
 `RELAY_CI_TREE_REUSE_MODE=enabled` exactly and full merged-internal-PR/base/head/parent/tree/check/
 workflow-run/artifact provenance validates; missing, malformed, ambiguous, stale, expired, or
 mismatched evidence falls back to full Build, Snyk, and coverage work. Required Build and Snyk
-aggregates stay fail closed. Sonar runs on the exact final `test` commit and performs reviewed-issue
+aggregates stay fail closed. Sonar runs on the exact final `main` commit and performs reviewed-issue
 reconciliation. One-day PR attestations and merged LCOV artifacts are optimization evidence, not
 release authority.
 

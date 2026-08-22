@@ -32,18 +32,18 @@ describe('release workflow authority boundary', () => {
     expect(releaseAction).toMatch(/^[a-f0-9]{40}$/u);
   });
 
-  it('runs only for test pushes and queues releases without cancelling an older commit', async () => {
+  it('runs only for main pushes and queues releases without cancelling an older commit', async () => {
     const workflow = await readWorkflow();
 
-    expect(workflow.on).toEqual({ push: { branches: ['test'] } });
+    expect(workflow.on).toEqual({ push: { branches: ['main'] } });
     expect(workflow.concurrency).toEqual({
-      group: 'relay-release-test',
+      group: 'relay-release-main',
       'cancel-in-progress': false,
     });
     expect(workflow.permissions).toEqual({ actions: 'read', checks: 'read', contents: 'read' });
   });
 
-  it('waits for all protected gates on the exact test commit before publication', async () => {
+  it('waits for all protected gates on the exact main commit before publication', async () => {
     const workflow = await readWorkflow();
     const gate = workflow.jobs.gates;
     const waitStep = findStep(gate, 'Wait for exact commit gates');
@@ -51,8 +51,8 @@ describe('release workflow authority boundary', () => {
 
     expect(gate.outputs['source-sha']).toBe('${{ steps.required.outputs.source-sha }}');
     expect(waitStep.id).toBe('required');
-    expect(waitStep.uses).toBe('actions/github-script@v8');
-    expect(script).toContain("context.ref !== 'refs/heads/test'");
+    expect(waitStep.uses).toBe('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd');
+    expect(script).toContain("context.ref !== 'refs/heads/main'");
     expect(script).toContain('context.sha');
     expect(script).toContain("'Build quality gate'");
     expect(script).toContain("'SonarQube quality gate'");
@@ -93,7 +93,7 @@ describe('release workflow authority boundary', () => {
     expect(determine.outputs['should-package']).toBe(
       '${{ steps.existing-assets.outputs.should-package || steps.release-state.outputs.should-package }}',
     );
-    expect(findStep(determine, 'Checkout exact test commit').with).toEqual({
+    expect(findStep(determine, 'Checkout exact main commit').with).toEqual({
       'fetch-depth': 0,
       ref: '${{ github.sha }}',
     });
@@ -126,7 +126,7 @@ describe('release workflow authority boundary', () => {
     expect(packageJob.if).toBe("needs.determine.outputs.should-package == 'true'");
     expect(packageJob.with).toMatchObject({
       'artifact-name': 'relay-windows',
-      'baseline-branch': 'test',
+      'baseline-branch': 'main',
       'baseline-workflow': 'release.yml',
       'release-version': '${{ needs.determine.outputs.version }}',
       'source-sha': '${{ needs.determine.outputs.source-sha }}',
@@ -153,13 +153,17 @@ describe('release workflow authority boundary', () => {
     });
     expect(releaseStep.with.files).toContain('.sha256');
     expect(releaseStep.with).not.toHaveProperty('overwrite_files');
-    expect(replaceDraftStep.uses).toBe('actions/github-script@v8');
+    expect(replaceDraftStep.uses).toBe(
+      'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
+    );
     expect(replaceDraftStep.with.script).toContain('release.draft !== true');
     expect(replaceDraftStep.with.script).toContain("!['create', 'verify'].includes(action)");
     expect(replaceDraftStep.with.script).not.toContain("action !== 'verify'");
     expect(replaceDraftStep.with.script).toContain('deleteRelease');
     expect(replaceDraftStep.with.script).not.toContain('release.assets');
-    expect(finalizeStep.uses).toBe('actions/github-script@v8');
+    expect(finalizeStep.uses).toBe(
+      'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
+    );
     expect(finalizeStep.with.script).toContain('draft !== true');
     expect(finalizeStep.with.script).toContain('assets.length !== 2');
     expect(finalizeStep.with.script).toContain('digest');
@@ -296,7 +300,7 @@ describe('release workflow authority boundary', () => {
     }
   });
 
-  it('documents the public download and automatic test-branch release contract in living docs', async () => {
+  it('documents the public download and automatic main-branch release contract in living docs', async () => {
     const [readme, development, architecture, design, security] = await Promise.all([
       readFile(new URL('../README.md', import.meta.url), 'utf8'),
       readFile(new URL('../docs/DEVELOPMENT.md', import.meta.url), 'utf8'),
@@ -315,7 +319,7 @@ describe('release workflow authority boundary', () => {
     expect(development).toContain('draft release');
     expect(development).toContain('Download update');
     expect(architecture).toContain(
-      'Release versions are derived from conventional commits on `test`',
+      'Release versions are derived from conventional commits on `main`',
     );
     expect(architecture).toContain('ReleaseUpdateManager');
     expect(design).toContain('Update Relay');

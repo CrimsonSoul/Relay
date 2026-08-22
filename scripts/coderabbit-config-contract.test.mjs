@@ -21,7 +21,7 @@ function collectKeys(value, keys = []) {
 }
 
 describe('CodeRabbit review contract', () => {
-  it('automatically reviews test pull requests after GitHub quality checks finish', () => {
+  it('automatically reviews main pull requests after GitHub quality checks finish', () => {
     expect(existsSync(configPath)).toBe(true);
 
     const config = parse(readFileSync(configPath, 'utf8'));
@@ -34,7 +34,7 @@ describe('CodeRabbit review contract', () => {
           drafts: false,
           auto_incremental_review: true,
           auto_pause_after_reviewed_commits: 2,
-          base_branches: ['test'],
+          base_branches: ['main'],
         },
         tools: {
           'github-checks': {

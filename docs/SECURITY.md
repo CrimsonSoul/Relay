@@ -259,11 +259,11 @@ Currently enforced limits include:
 
 ## Automated Security And Quality Gates
 
-Relay's pull-request and `test`-branch controls are defined by the checked-in workflows. The required jobs are:
+Relay's pull-request and `main`-branch controls are defined by the checked-in workflows. The required jobs are:
 
 - **Build quality gate**: formatting, linting, type checking, tests, and the production build.
 - **SonarQube quality gate**: first-party quality and security analysis, imported unit and renderer coverage, unresolved-issue enforcement, and validation of the exact uploaded analysis.
-- **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `test` push publishes the canonical monitored snapshot for `test`.
+- **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `main` push publishes the canonical monitored snapshot for `main`.
 
 The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
 
@@ -276,7 +276,7 @@ The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
 
 A completed finding is a release blocker. A documented scanner outage may be classified as **Unavailable** so CI can distinguish missing evidence from a negative decision, but an Unavailable result is not a clean scan. Retry it and require a real scanner decision before release. Missing credentials, authorization failures, malformed responses, identity drift, and unknown errors fail closed as Configuration failures.
 
-Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `test` push may apply the pinned Sonar review manifest and update the `test` Snyk snapshot. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
+Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `main` push may apply the pinned Sonar review manifest and update the `main` Snyk snapshot. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
 
 CodeRabbit findings remain blocking through its review state and unresolved review conversations even though CodeRabbit availability is not a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
 

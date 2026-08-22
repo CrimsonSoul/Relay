@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     branches:
-      - test
+      - main
 
 permissions:
   actions: read
@@ -11,12 +11,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: relay-release-test
+  group: relay-release-main
   cancel-in-progress: false
 
 jobs:
   gates:
-    name: Verify required test gates
+    name: Verify required main gates
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Wait for exact commit gates
         id: required
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const requiredNames = [
@@ -32,7 +32,7 @@ jobs:
               'SonarQube quality gate',
               'Snyk security gate',
             ];
-            if (context.ref !== 'refs/heads/test') {
+            if (context.ref !== 'refs/heads/main') {
               throw new Error(`Release workflow rejected unexpected ref ${context.ref}`);
             }
 
@@ -93,14 +93,14 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Checkout exact test commit
-        uses: actions/checkout@v6
+      - name: Checkout exact main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
 
@@ -110,7 +110,7 @@ jobs:
 
       - name: Resolve existing release state
         id: release-state
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           RELEASE_ACTION: ${{ steps.version.outputs.action }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -258,7 +258,7 @@ jobs:
     uses: ./.github/workflows/reusable-windows-package.yml
     with:
       artifact-name: relay-windows
-      baseline-branch: test
+      baseline-branch: main
       baseline-workflow: release.yml
       compression: normal
       publish: never
@@ -279,14 +279,14 @@ jobs:
       actions: read
       contents: write
     steps:
-      - name: Checkout exact test commit
-        uses: actions/checkout@v6
+      - name: Checkout exact main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           ref: ${{ needs.determine.outputs.source-sha }}
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ${{ needs.package-windows.outputs.artifact-name }}
           path: release/
@@ -313,7 +313,7 @@ jobs:
           echo "checksum_sha256=$checksum_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Replace incomplete draft release
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           RELEASE_ACTION: ${{ needs.determine.outputs.action }}
           TAG: ${{ needs.determine.outputs.tag }}
@@ -362,7 +362,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Finalize immutable GitHub release
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           ARCHIVE_SHA256: ${{ steps.assets.outputs.archive_sha256 }}
           ASSET_NAME: ${{ steps.assets.outputs.asset_name }}
@@ -394,7 +394,7 @@ jobs:
               throw new Error(`${tag} was not a normal draft release`);
             }
             if (release.target_commitish !== sourceSha) {
-              throw new Error(`${tag} did not target the verified test commit`);
+              throw new Error(`${tag} did not target the verified main commit`);
             }
             if (release.assets.length !== 2) {
               throw new Error(`${tag} did not contain exactly two assets`);
@@ -430,7 +430,7 @@ jobs:
                 ref: `refs/tags/${tag}`,
                 sha: sourceSha,
               });
-              core.info(`Created ${tag} at the verified test commit.`);
+              core.info(`Created ${tag} at the verified main commit.`);
             }
             let object = tagRef.data.object;
             for (let depth = 0; object.type === 'tag' && depth < 5; depth += 1) {
@@ -442,7 +442,7 @@ jobs:
               object = annotated.data.object;
             }
             if (object.type !== 'commit' || object.sha !== sourceSha) {
-              throw new Error(`Tag ${tag} did not resolve to the verified test commit`);
+              throw new Error(`Tag ${tag} did not resolve to the verified main commit`);
             }
 
             await github.rest.repos.updateRelease({

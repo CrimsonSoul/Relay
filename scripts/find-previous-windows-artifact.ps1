@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) {
   throw 'GITHUB_OUTPUT is required.'
 }
 
-$baselineBranch = if ($Branch -in @('main', 'pb', 'test')) { $Branch } else { 'test' }
+$baselineBranch = if ($Branch -eq 'main') { $Branch } else { 'main' }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 $downloadRoot = Join-Path $env:RUNNER_TEMP 'relay-previous-artifact'
 
