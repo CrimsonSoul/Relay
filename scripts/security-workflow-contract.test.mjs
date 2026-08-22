@@ -21,7 +21,7 @@ const findStep = (job, name) => {
 
 test('main pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.on.push.branches, ['main']);
-  assert.deepEqual(build.on.pull_request.branches, ['main', 'test']);
+  assert.deepEqual(build.on.pull_request.branches, ['main']);
   assert.deepEqual(build.permissions, { contents: 'read' });
   assert.deepEqual(build.jobs.provenance.permissions, {
     actions: 'read',
@@ -133,8 +133,7 @@ test('Sonar runs on the exact commit and fails closed without valid reuse or fre
       always() && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         (github.event.pull_request.base.ref == 'main' ||
-          github.event.pull_request.base.ref == 'test') &&
+         github.event.pull_request.base.ref == 'main' &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     `),
@@ -205,8 +204,7 @@ test('Snyk delegates internal main pull requests and merged pushes to its CI gat
       needs.provenance.outputs.reuse != 'true' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'pull_request' &&
-         (github.event.pull_request.base.ref == 'main' ||
-          github.event.pull_request.base.ref == 'test') &&
+         github.event.pull_request.base.ref == 'main' &&
          github.event.pull_request.head.repo.full_name == github.repository)
       )
     `),
