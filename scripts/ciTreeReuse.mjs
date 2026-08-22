@@ -476,7 +476,9 @@ async function resolveFromGitHub({ env, fetchJson }) {
   }
 
   const pullRequest = requireObject(
-    await requestJson(`${API_ROOT}${repoPath}/pulls/${pullRequestNumber}`),
+    await requestJson(
+      `${API_ROOT}${repoPath}/pulls/${encodeURIComponent(String(pullRequestNumber))}`,
+    ),
   );
   const currentCommit = requireObject(
     await requestJson(`${API_ROOT}${repoPath}/commits/${encodeURIComponent(common.currentSha)}`),
