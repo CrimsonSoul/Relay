@@ -372,4 +372,19 @@ describe('CI optimization contracts', () => {
     );
     expect(unitConfigText).toContain("'vendor/**'");
   });
+
+  it('keeps GitHub response IDs visibly sanitized and CLI entrypoints on top-level await', async () => {
+    const [treeReuse, artifactValidation] = await Promise.all([
+      readProjectFile('scripts/ciTreeReuse.mjs'),
+      readProjectFile('scripts/ciReuseArtifactValidation.mjs'),
+    ]);
+
+    expect(treeReuse).toContain('const pullRequestNumber = pullRequests[0]?.number;');
+    expect(treeReuse).toContain('!Number.isSafeInteger(pullRequestNumber)');
+    expect(treeReuse).not.toContain('${pullRequests[0].number}');
+    expect(treeReuse).toContain('await runCiTreeReuse();');
+    expect(treeReuse).not.toContain('runCiTreeReuse().catch(');
+    expect(artifactValidation).toContain('await runCiReuseArtifactValidation();');
+    expect(artifactValidation).not.toContain('runCiReuseArtifactValidation().catch(');
+  });
 });

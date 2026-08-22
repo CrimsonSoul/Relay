@@ -430,16 +430,18 @@ async function resolveFromGitHub({ env, fetchJson }) {
     path: `${repoPath}/commits/${common.currentSha}/pulls`,
     requestJson,
   });
+  const pullRequestNumber = pullRequests[0]?.number;
   if (
     pullRequests.length !== 1 ||
     !isObject(pullRequests[0]) ||
-    !isPositiveId(pullRequests[0].number)
+    !Number.isSafeInteger(pullRequestNumber) ||
+    pullRequestNumber <= 0
   ) {
     return evaluateTreeReuse({ ...common, pullRequests });
   }
 
   const pullRequest = requireObject(
-    await requestJson(`${API_ROOT}${repoPath}/pulls/${pullRequests[0].number}`),
+    await requestJson(`${API_ROOT}${repoPath}/pulls/${pullRequestNumber}`),
   );
   const currentCommit = requireObject(
     await requestJson(`${API_ROOT}${repoPath}/commits/${common.currentSha}`),
@@ -554,8 +556,10 @@ export async function runCiTreeReuse({ env = process.env, fetchJson = defaultFet
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runCiTreeReuse().catch(() => {
+  try {
+    await runCiTreeReuse();
+  } catch {
     process.stderr.write('CI tree reuse resolver failed.\n');
     process.exitCode = 1;
-  });
+  }
 }

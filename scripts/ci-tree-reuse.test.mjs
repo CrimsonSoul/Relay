@@ -558,6 +558,25 @@ describe('runCiTreeReuse adapter', () => {
     );
   });
 
+  it('rejects tainted associated pull request IDs before constructing another API path', async () => {
+    const env = await adapterEnv();
+    const requests = [];
+    const result = await runCiTreeReuse({
+      env,
+      fetchJson: async (rawUrl) => {
+        requests.push(rawUrl);
+        if (requests.length === 1) return [{ number: '243/../../actions/secrets' }];
+        throw new Error('unsafe follow-up request');
+      },
+    });
+
+    expect(result).toMatchObject({ eligible: false, reason: 'pull-request-invalid' });
+    expect(requests).toHaveLength(1);
+    expect(await readFile(env.GITHUB_OUTPUT, 'utf8')).toBe(
+      'metadata-eligible=false\nmetadata-reason=pull-request-invalid\n',
+    );
+  });
+
   it('bounds pagination and falls back instead of accepting truncated evidence', async () => {
     const env = await adapterEnv();
     const pages = [];

@@ -335,8 +335,10 @@ export async function runCiReuseArtifactValidation({ env = process.env } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runCiReuseArtifactValidation().catch(() => {
+  try {
+    await runCiReuseArtifactValidation();
+  } catch {
     process.stderr.write('CI tree reuse artifact validation failed.\n');
     process.exitCode = 1;
-  });
+  }
 }
