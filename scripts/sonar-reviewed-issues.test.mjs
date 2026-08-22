@@ -739,7 +739,7 @@ test('requires environment authentication and never emits the token sentinel', a
   assert.equal(output.join('\n').includes(TOKEN), false);
 });
 
-test('the Sonar CI runner reconciles reviewed issues only on test-branch pushes', async () => {
+test('the Sonar CI runner reconciles reviewed issues only on main-branch pushes', async () => {
   const [workflow, packageText, runner] = await Promise.all([
     readFile(new URL('../.github/workflows/security.yml', import.meta.url), 'utf8'),
     readFile(new URL('../package.json', import.meta.url), 'utf8'),

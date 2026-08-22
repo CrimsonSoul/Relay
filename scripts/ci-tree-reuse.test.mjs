@@ -82,7 +82,7 @@ const validFixture = {
     sha: headSha,
   },
   pullRequest: {
-    base: { ref: 'test', repo: { full_name: repository }, sha: baseSha },
+    base: { ref: 'main', repo: { full_name: repository }, sha: baseSha },
     head: { ref: headRef, repo: { full_name: repository }, sha: headSha },
     merge_commit_sha: currentSha,
     merged: true,
@@ -91,7 +91,7 @@ const validFixture = {
     state: 'closed',
   },
   pullRequests: [{ number: 243 }],
-  ref: 'refs/heads/test',
+  ref: 'refs/heads/main',
   repository,
   securityRun: {
     conclusion: 'success',
@@ -122,11 +122,11 @@ describe('evaluateTreeReuse', () => {
     });
   });
 
-  it('rejects events other than a push to test before considering provenance', () => {
+  it('rejects events other than a push to main before considering provenance', () => {
     expect(evaluateTreeReuse({ ...validFixture, eventName: 'pull_request' }).reason).toBe(
       'event-ineligible',
     );
-    expect(evaluateTreeReuse({ ...validFixture, ref: 'refs/heads/main' }).reason).toBe(
+    expect(evaluateTreeReuse({ ...validFixture, ref: 'refs/heads/test' }).reason).toBe(
       'event-ineligible',
     );
   });
@@ -143,7 +143,7 @@ describe('evaluateTreeReuse', () => {
     ).toBe('pull-request-count');
   });
 
-  it('requires a merged internal pull request targeting test and the current merge SHA', () => {
+  it('requires a merged internal pull request targeting main and the current merge SHA', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
@@ -430,7 +430,7 @@ const adapterEnv = async (mode = 'enabled') => {
   return {
     GITHUB_EVENT_NAME: 'push',
     GITHUB_OUTPUT: join(directory, 'github-output'),
-    GITHUB_REF: 'refs/heads/test',
+    GITHUB_REF: 'refs/heads/main',
     GITHUB_REPOSITORY: repository,
     GITHUB_SHA: currentSha,
     GITHUB_TOKEN: 'token-that-must-never-be-output',

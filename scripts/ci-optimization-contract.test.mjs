@@ -41,7 +41,7 @@ describe('CI optimization contracts', () => {
     expect(eslintCache).toEqual({
       name: 'Cache ESLint results',
       'continue-on-error': true,
-      uses: 'actions/cache@v5',
+      uses: 'actions/cache@caa296126883cff596d87d8935842f9db880ef25',
       with: {
         path: '.cache/eslint',
         key: "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}",
@@ -52,7 +52,7 @@ describe('CI optimization contracts', () => {
     expect(prettierCache).toEqual({
       name: 'Cache Prettier results',
       'continue-on-error': true,
-      uses: 'actions/cache@v5',
+      uses: 'actions/cache@caa296126883cff596d87d8935842f9db880ef25',
       with: {
         path: '.cache/prettier',
         key: "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
@@ -161,7 +161,7 @@ describe('CI optimization contracts', () => {
       const metadata = findStep(provenance, 'Resolve exact-tree reuse metadata');
       expect(metadata.id).toBe('metadata');
       expect(metadata.env).toEqual({ GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' });
-      expect(metadata.uses).toBe('actions/github-script@v8');
+      expect(metadata.uses).toBe('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd');
       expect(metadata).not.toHaveProperty('run');
       expect(metadata.with['github-token']).toBe('${{ secrets.GITHUB_TOKEN }}');
       expect(metadata.with.script).toContain('await import(');
@@ -178,7 +178,7 @@ describe('CI optimization contracts', () => {
         id: 'build_payload',
         if: "steps.metadata.outputs.metadata-eligible == 'true'",
         'continue-on-error': true,
-        uses: 'actions/download-artifact@v8',
+        uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
         with: {
           'github-token': '${{ secrets.GITHUB_TOKEN }}',
           name: '${{ steps.metadata.outputs.build-artifact }}',
@@ -192,7 +192,7 @@ describe('CI optimization contracts', () => {
         id: 'coverage_payload',
         if: "steps.metadata.outputs.metadata-eligible == 'true'",
         'continue-on-error': true,
-        uses: 'actions/download-artifact@v8',
+        uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
         with: {
           'github-token': '${{ secrets.GITHUB_TOKEN }}',
           name: '${{ steps.metadata.outputs.coverage-artifact }}',
@@ -248,7 +248,7 @@ describe('CI optimization contracts', () => {
     expect(upload).toEqual({
       name: 'Upload PR provenance attestation',
       if: "github.event_name == 'pull_request'",
-      uses: 'actions/upload-artifact@v7',
+      uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
       with: {
         name: 'relay-pr-provenance-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
         path: '${{ runner.temp }}/relay-pr-provenance.txt',
@@ -295,7 +295,7 @@ describe('CI optimization contracts', () => {
     });
     expect(findStep(sonar, 'Download validated PR LCOV')).toMatchObject({
       if: "needs.provenance.outputs.reuse == 'true'",
-      uses: 'actions/download-artifact@v8',
+      uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
       with: {
         'github-token': '${{ secrets.GITHUB_TOKEN }}',
         name: '${{ needs.provenance.outputs.coverage-artifact }}',
@@ -318,7 +318,7 @@ describe('CI optimization contracts', () => {
     expect(findStep(sonar, 'Upload merged LCOV')).toEqual({
       name: 'Upload merged LCOV',
       if: "needs.provenance.outputs.reuse != 'true' && github.event_name == 'pull_request'",
-      uses: 'actions/upload-artifact@v7',
+      uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
       with: {
         name: 'relay-merged-lcov-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}',
         path: 'coverage/unit/lcov.info\ncoverage/renderer/lcov.info\n',
@@ -360,7 +360,7 @@ describe('CI optimization contracts', () => {
     expect(cache).toEqual({
       name: 'Cache Sonar packages',
       'continue-on-error': true,
-      uses: 'actions/cache@v5',
+      uses: 'actions/cache@caa296126883cff596d87d8935842f9db880ef25',
       with: {
         path: '~/.sonar/cache',
         key: "sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}",
