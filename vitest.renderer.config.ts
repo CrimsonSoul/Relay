@@ -15,6 +15,7 @@ export default defineConfig({
     // globals required for @testing-library/jest-dom which expects global `expect`
     globals: true,
     environment: 'jsdom',
+    silent: 'passed-only',
     include: ['src/renderer/**/*.test.tsx', 'src/renderer/**/*.test.ts'],
     setupFiles: ['src/renderer/test/setup.ts'],
     coverage: {

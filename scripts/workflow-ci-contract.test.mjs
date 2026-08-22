@@ -155,12 +155,31 @@ describe('CI workflow contracts', () => {
     expect(caches).toEqual([
       {
         continueOnError: true,
-        job: 'quality',
+        job: 'static',
         key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
         name: 'build.yml',
         path: '~/.cache/electron',
         restoreKeys: undefined,
         step: 'Cache Electron binary',
+      },
+      {
+        continueOnError: true,
+        job: 'static',
+        key: "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}",
+        name: 'build.yml',
+        path: '.cache/eslint',
+        restoreKeys: undefined,
+        step: 'Cache ESLint results',
+      },
+      {
+        continueOnError: true,
+        job: 'static',
+        key: "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-${{ github.sha }}",
+        name: 'build.yml',
+        path: '.cache/prettier',
+        restoreKeys:
+          "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-",
+        step: 'Cache Prettier results',
       },
       {
         continueOnError: true,
@@ -206,6 +225,15 @@ describe('CI workflow contracts', () => {
         path: 'node_modules/better-sqlite3/build/Release',
         restoreKeys: undefined,
         step: 'Cache rebuilt better-sqlite3',
+      },
+      {
+        continueOnError: true,
+        job: 'sonarqube',
+        key: "sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}",
+        name: 'security.yml',
+        path: '~/.sonar/cache',
+        restoreKeys: undefined,
+        step: 'Cache Sonar packages',
       },
       {
         continueOnError: true,
@@ -275,7 +303,7 @@ describe('CI workflow contracts', () => {
       'source-sha': '${{ needs.determine.outputs.source-sha }}',
     });
     expect(releasePackage.secrets).toEqual({ 'github-token': '${{ secrets.GITHUB_TOKEN }}' });
-    expect(release.jobs.release.needs).toEqual(['determine', 'package-windows']);
+    expect(release.jobs.release.needs).toEqual(['gates', 'determine', 'package-windows']);
     expect(findStep(release.jobs.release, 'Download Windows artifact').with.name).toBe(
       '${{ needs.package-windows.outputs.artifact-name }}',
     );

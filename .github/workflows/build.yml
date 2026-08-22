@@ -13,7 +13,6 @@ on:
       - test
 
 permissions:
-  actions: read
   contents: read
 
 # Rapid pushes to the same branch cancel superseded runs instead of queueing.
@@ -22,8 +21,88 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
-  quality:
-    name: Build quality gate
+  provenance:
+    name: Resolve exact-tree reuse
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.finalize.outputs.eligible }}
+      reuse: ${{ steps.finalize.outputs.reuse }}
+      reason: ${{ steps.finalize.outputs.reason }}
+      pull-request: ${{ steps.metadata.outputs.pull-request }}
+      head-sha: ${{ steps.metadata.outputs.head-sha }}
+      head-tree: ${{ steps.metadata.outputs.head-tree }}
+      security-run-id: ${{ steps.metadata.outputs.security-run-id }}
+      coverage-artifact: ${{ steps.metadata.outputs.coverage-artifact }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve exact-tree reuse metadata
+        id: metadata
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { runCiTreeReuse } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`
+            );
+            await runCiTreeReuse({
+              env: process.env,
+              requestJson: async (route, parameters) => {
+                const response = await github.request(route, parameters);
+                return response.data;
+              },
+            });
+
+      - name: Download candidate Build attestation
+        id: build_payload
+        if: steps.metadata.outputs.metadata-eligible == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.metadata.outputs.build-artifact }}
+          path: ${{ runner.temp }}/ci-reuse/build
+          run-id: ${{ steps.metadata.outputs.build-run-id }}
+
+      - name: Download candidate merged LCOV
+        id: coverage_payload
+        if: steps.metadata.outputs.metadata-eligible == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ steps.metadata.outputs.coverage-artifact }}
+          path: ${{ runner.temp }}/ci-reuse/coverage
+          run-id: ${{ steps.metadata.outputs.security-run-id }}
+
+      - name: Finalize exact-tree reuse
+        id: finalize
+        if: always()
+        env:
+          BASE_SHA: ${{ steps.metadata.outputs.base-sha }}
+          BUILD_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/build
+          BUILD_DOWNLOAD_OUTCOME: ${{ steps.build_payload.outcome }}
+          COVERAGE_ARTIFACT_DIRECTORY: ${{ runner.temp }}/ci-reuse/coverage
+          COVERAGE_DOWNLOAD_OUTCOME: ${{ steps.coverage_payload.outcome }}
+          HEAD_SHA: ${{ steps.metadata.outputs.head-sha }}
+          METADATA_ELIGIBLE: ${{ steps.metadata.outputs.metadata-eligible }}
+          METADATA_REASON: ${{ steps.metadata.outputs.metadata-reason }}
+          PULL_REQUEST: ${{ steps.metadata.outputs.pull-request }}
+          RELAY_CI_TREE_REUSE_MODE: ${{ vars.RELAY_CI_TREE_REUSE_MODE }}
+        run: node scripts/ciReuseArtifactValidation.mjs
+
+  static:
+    name: Static checks
+    if: needs.provenance.outputs.reuse != 'true'
+    needs: provenance
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -51,6 +130,21 @@ jobs:
           path: ~/.cache/electron
           key: electron-linux-x64-${{ steps.electron-version.outputs.version }}
 
+      - name: Cache ESLint results
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: .cache/eslint
+          key: eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}
+
+      - name: Cache Prettier results
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: .cache/prettier
+          key: prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-${{ github.sha }}
+          restore-keys: prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-
+
       - name: Install dependencies
         env:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
@@ -64,8 +158,120 @@ jobs:
           npm audit --audit-level=high --omit=dev & AUDIT=$!
           wait $TYPECHECK && wait $LINT && wait $FORMAT && wait $AUDIT
 
-      - name: Run tests
-        run: npm test
+  unit-tests:
+    name: Unit tests
+    if: needs.provenance.outputs.reuse != 'true'
+    needs: provenance
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Run unit tests
+        run: npm run test:unit && npm run test:cache
+
+  renderer-tests:
+    name: Renderer tests (${{ matrix.shard-index }}/${{ matrix.shard-total }})
+    if: needs.provenance.outputs.reuse != 'true'
+    needs: provenance
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        shard-index: [1, 2]
+        shard-total: [2]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Run renderer tests
+        run: npm run test:renderer -- --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}
+
+  quality:
+    name: Build quality gate
+    if: always()
+    needs: [provenance, static, unit-tests, renderer-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful build components
+        env:
+          ELIGIBLE: ${{ needs.provenance.outputs.eligible }}
+          PROVENANCE_RESULT: ${{ needs.provenance.result }}
+          REUSE: ${{ needs.provenance.outputs.reuse }}
+          STATIC_RESULT: ${{ needs.static.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          RENDERER_TESTS_RESULT: ${{ needs.renderer-tests.result }}
+        shell: bash
+        run: |
+          if [[ "$PROVENANCE_RESULT" != "success" ]]; then
+            echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
+            exit 1
+          fi
+
+          if [[ "$REUSE" == "true" ]]; then
+            if [[ "$ELIGIBLE" == "true" ]]; then
+              exit 0
+            fi
+            echo "Tree reuse was enabled without validated eligibility."
+            exit 1
+          fi
+
+          if [[ "$STATIC_RESULT" != "success" ||
+                "$UNIT_TESTS_RESULT" != "success" ||
+                "$RENDERER_TESTS_RESULT" != "success" ]]; then
+            echo "Build components did not all succeed: static=$STATIC_RESULT unit-tests=$UNIT_TESTS_RESULT renderer-tests=$RENDERER_TESTS_RESULT"
+            exit 1
+          fi
+
+      - name: Write PR provenance attestation
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          printf 'pull_request=%s\nbase_sha=%s\nhead_sha=%s\n' \
+            "$PR_NUMBER" "$BASE_SHA" "$HEAD_SHA" \
+            > "$RUNNER_TEMP/relay-pr-provenance.txt"
+          test -s "$RUNNER_TEMP/relay-pr-provenance.txt"
+
+      - name: Upload PR provenance attestation
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-pr-provenance-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/relay-pr-provenance.txt
+          if-no-files-found: error
+          retention-days: 1
 
   package-windows:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb'))

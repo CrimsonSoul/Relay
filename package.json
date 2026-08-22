@@ -18,7 +18,7 @@
     "seed:dynatrace:clear": "node scripts/seed.mjs --clear-dynatrace",
     "test:pocketbase": "vitest run -c vitest.verify.config.ts",
     "typecheck": "node scripts/typecheck.mjs",
-    "lint": "eslint .",
+    "lint": "eslint . --cache --cache-location .cache/eslint --cache-strategy content",
     "lint:fix": "eslint . --fix",
     "build:renderer": "vite build --config vite.renderer.config.ts",
     "benchmark:startup": "npm run build && node scripts/benchmark-startup.mjs",
@@ -44,7 +44,7 @@
     "security:snyk": "npm run security:snyk:open-source && npm run security:snyk:code",
     "security:snyk:ci": "node scripts/run-snyk-ci.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --check . --cache --cache-location .cache/prettier --cache-strategy content",
     "prepare": "husky",
     "download:pocketbase": "node scripts/download-pocketbase.mjs",
     "postinstall": "node scripts/download-pocketbase.mjs"

@@ -85,7 +85,6 @@ jobs:
 
   determine:
     name: Determine release version
-    needs: gates
     runs-on: ubuntu-latest
     outputs:
       action: ${{ steps.version.outputs.action }}
@@ -98,7 +97,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ needs.gates.outputs.source-sha }}
+          ref: ${{ github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -270,8 +269,11 @@ jobs:
 
   release:
     name: Publish GitHub release
-    needs: [determine, package-windows]
-    if: needs.determine.outputs.should-package == 'true' && needs.package-windows.result == 'success'
+    needs: [gates, determine, package-windows]
+    if: >-
+      needs.gates.result == 'success' &&
+      needs.determine.outputs.should-package == 'true' &&
+      needs.package-windows.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       actions: read

@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   test: {
     environment: 'node',
+    silent: 'passed-only',
     include: ['src/main/cache/**/*.test.ts'],
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
