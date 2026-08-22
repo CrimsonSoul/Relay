@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { evaluateTreeReuse, runCiTreeReuse, validateGitHubApiUrl } from './ciTreeReuse.mjs';
+import { evaluateTreeReuse, runCiTreeReuse } from './ciTreeReuse.mjs';
 
 const repository = 'relaycorp/relay';
 const currentSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -414,30 +414,6 @@ describe('evaluateTreeReuse', () => {
   });
 });
 
-describe('validateGitHubApiUrl', () => {
-  it.each([
-    `https://api.github.com/repos/${repository}/commits/${currentSha}/pulls?per_page=100&page=1`,
-    `https://api.github.com/repos/${repository}/pulls/${pullRequestNumber}`,
-    `https://api.github.com/repos/${repository}/commits/${headSha}`,
-    `https://api.github.com/repos/${repository}/compare/${baseSha}...${headSha}?per_page=100&page=2`,
-    `https://api.github.com/repos/${repository}/commits/${headSha}/check-runs?per_page=100&page=2`,
-    `https://api.github.com/repos/${repository}/actions/runs/${buildRunId}`,
-    `https://api.github.com/repos/${repository}/actions/runs/${securityRunId}/artifacts?per_page=100&page=3`,
-  ])('allows an exact GitHub API route used by the resolver: %s', (url) => {
-    expect(validateGitHubApiUrl(url)).toBe(url);
-  });
-
-  it.each([
-    'https://api.github.com/repos/relaycorp/relay/../actions/secrets',
-    'https://api.github.com/repos/relaycorp/relay/actions/secrets',
-    `https://api.github.com/repos/${repository}/commits/not-a-sha`,
-    `https://api.github.com/repos/${repository}/commits/${headSha}?per_page=100&page=4`,
-    `https://api.github.com@evil.example/repos/${repository}/commits/${headSha}`,
-  ])('rejects an unapproved or malformed URL: %s', (url) => {
-    expect(() => validateGitHubApiUrl(url)).toThrow('GitHub API URL is invalid.');
-  });
-});
-
 const temporaryDirectories = [];
 
 afterEach(async () => {
@@ -498,10 +474,39 @@ const validFetchJson = async (rawUrl) => {
   throw new Error(`unexpected fixture URL: ${url.pathname}${url.search}`);
 };
 
+const endpointUrl = (route, parameters) => {
+  const [method, template] = route.split(' ');
+  if (method !== 'GET' || typeof template !== 'string') throw new Error('invalid fixture route');
+  const pathParameters = new Set();
+  let pathname = template;
+  for (const [name, value] of Object.entries(parameters)) {
+    const placeholder = `{${name}}`;
+    if (pathname.includes(placeholder)) {
+      pathParameters.add(name);
+      pathname = pathname.replaceAll(placeholder, encodeURIComponent(String(value)));
+    }
+  }
+  if (pathname.includes('{') || pathname.includes('}'))
+    throw new Error('missing fixture parameter');
+  const url = new URL(pathname, 'https://api.github.com');
+  for (const [name, value] of Object.entries(parameters)) {
+    if (name !== 'headers' && !pathParameters.has(name)) {
+      url.searchParams.set(name, String(value));
+    }
+  }
+  return url.href;
+};
+
+const asRequestJson = (fetchJson) => async (route, parameters) => {
+  return fetchJson(endpointUrl(route, parameters), parameters);
+};
+
+const validRequestJson = asRequestJson(validFetchJson);
+
 describe('runCiTreeReuse adapter', () => {
   it('writes only sanitized candidate identities and cannot claim final reuse', async () => {
     const env = await adapterEnv();
-    const result = await runCiTreeReuse({ env, fetchJson: validFetchJson });
+    const result = await runCiTreeReuse({ env, requestJson: validRequestJson });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
     expect(result).toMatchObject({ eligible: true, reason: 'eligible' });
@@ -530,19 +535,26 @@ describe('runCiTreeReuse adapter', () => {
     const requests = [];
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (...args) => {
+      requestJson: asRequestJson(async (...args) => {
         requests.push(args[0]);
         return validFetchJson(...args);
-      },
+      }),
     });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
     expect(result).toMatchObject({ eligible: true, reason: 'eligible' });
     expect(result).not.toHaveProperty('reuse');
     expect(requests).toHaveLength(10);
-    expect(requests).toContain(
-      `https://api.github.com/repos/${repository}/compare/${baseSha}...${headSha}?per_page=100&page=1`,
-    );
+    expect(
+      requests.some((rawUrl) => {
+        const url = new URL(rawUrl);
+        return (
+          url.pathname === `/repos/${repository}/compare/${baseSha}...${headSha}` &&
+          url.searchParams.get('per_page') === '100' &&
+          url.searchParams.get('page') === '1'
+        );
+      }),
+    ).toBe(true);
     expect(output).toContain('metadata-eligible=true\n');
     expect(output).not.toMatch(/^reuse=/mu);
   });
@@ -552,9 +564,9 @@ describe('runCiTreeReuse adapter', () => {
     const responseBody = 'private-response-body-that-must-never-be-output';
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async () => {
+      requestJson: asRequestJson(async () => {
         throw new Error(responseBody);
-      },
+      }),
     });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 
@@ -570,10 +582,10 @@ describe('runCiTreeReuse adapter', () => {
     const requests = [];
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (rawUrl) => {
+      requestJson: asRequestJson(async (rawUrl) => {
         requests.push(rawUrl);
         throw new Error('request must not be sent');
-      },
+      }),
     });
 
     expect(result).toMatchObject({ eligible: false, reason: 'repository-invalid' });
@@ -584,11 +596,11 @@ describe('runCiTreeReuse adapter', () => {
     const env = await adapterEnv();
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (rawUrl) => {
+      requestJson: asRequestJson(async (rawUrl) => {
         const url = new URL(rawUrl);
         if (url.pathname.endsWith('/check-runs')) return { check_runs: 'not-an-array' };
         return validFetchJson(rawUrl);
-      },
+      }),
     });
 
     expect(result).toMatchObject({ eligible: false, reason: 'api-failure' });
@@ -602,11 +614,11 @@ describe('runCiTreeReuse adapter', () => {
     const requests = [];
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (rawUrl) => {
+      requestJson: asRequestJson(async (rawUrl) => {
         requests.push(rawUrl);
         if (requests.length === 1) return [{ number: '243/../../actions/secrets' }];
         throw new Error('unsafe follow-up request');
-      },
+      }),
     });
 
     expect(result).toMatchObject({ eligible: false, reason: 'pull-request-invalid' });
@@ -621,7 +633,7 @@ describe('runCiTreeReuse adapter', () => {
     const requests = [];
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (rawUrl) => {
+      requestJson: asRequestJson(async (rawUrl) => {
         const url = new URL(rawUrl);
         requests.push(url.href);
         if (url.pathname === `/repos/${repository}/pulls/${pullRequestNumber}`) {
@@ -631,7 +643,7 @@ describe('runCiTreeReuse adapter', () => {
           };
         }
         return validFetchJson(rawUrl);
-      },
+      }),
     });
 
     expect(result).toMatchObject({ eligible: false, reason: 'head-sha-invalid' });
@@ -644,11 +656,11 @@ describe('runCiTreeReuse adapter', () => {
     const pages = [];
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (rawUrl) => {
+      requestJson: asRequestJson(async (rawUrl) => {
         const url = new URL(rawUrl);
         pages.push(url.searchParams.get('page'));
         return Array.from({ length: 100 }, (_, index) => ({ number: index + 1 }));
-      },
+      }),
     });
 
     expect(result).toMatchObject({ eligible: false, reason: 'api-failure' });
@@ -659,7 +671,7 @@ describe('runCiTreeReuse adapter', () => {
     const env = await adapterEnv();
     const result = await runCiTreeReuse({
       env,
-      fetchJson: async (rawUrl) => {
+      requestJson: asRequestJson(async (rawUrl) => {
         const url = new URL(rawUrl);
         if (url.pathname === `/repos/${repository}/actions/runs/${securityRunId}/artifacts`) {
           return {
@@ -668,7 +680,7 @@ describe('runCiTreeReuse adapter', () => {
           };
         }
         return validFetchJson(rawUrl);
-      },
+      }),
     });
     const output = await readFile(env.GITHUB_OUTPUT, 'utf8');
 

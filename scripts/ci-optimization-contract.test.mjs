@@ -161,7 +161,16 @@ describe('CI optimization contracts', () => {
       const metadata = findStep(provenance, 'Resolve exact-tree reuse metadata');
       expect(metadata.id).toBe('metadata');
       expect(metadata.env).toEqual({ GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' });
-      expect(metadata.run).toBe('node scripts/ciTreeReuse.mjs');
+      expect(metadata.uses).toBe('actions/github-script@v8');
+      expect(metadata).not.toHaveProperty('run');
+      expect(metadata.with['github-token']).toBe('${{ secrets.GITHUB_TOKEN }}');
+      expect(metadata.with.script).toContain('await import(');
+      expect(metadata.with.script).toContain(
+        '`${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`',
+      );
+      expect(metadata.with.script).toContain('requestJson: async (route, parameters) =>');
+      expect(metadata.with.script).toContain('github.request(route, parameters)');
+      expect(provenance.steps.some((step) => step.name === 'Install dependencies')).toBe(false);
 
       const buildPayload = findStep(provenance, 'Download candidate Build attestation');
       expect(buildPayload).toEqual({
@@ -373,21 +382,26 @@ describe('CI optimization contracts', () => {
     expect(unitConfigText).toContain("'vendor/**'");
   });
 
-  it('keeps GitHub response IDs visibly sanitized and CLI entrypoints on top-level await', async () => {
+  it('keeps GitHub response IDs sanitized and uses only an injected request client', async () => {
     const [treeReuse, artifactValidation] = await Promise.all([
       readProjectFile('scripts/ciTreeReuse.mjs'),
       readProjectFile('scripts/ciReuseArtifactValidation.mjs'),
     ]);
 
+    expect(treeReuse).not.toContain('@octokit/request');
+    expect(treeReuse).not.toContain('await fetch(');
     expect(treeReuse).toContain('const pullRequestNumber = pullRequests[0]?.number;');
     expect(treeReuse).toContain('!Number.isSafeInteger(pullRequestNumber)');
     expect(treeReuse).not.toContain('${pullRequests[0].number}');
-    expect(treeReuse).toContain('${encodeURIComponent(String(pullRequestNumber))}');
-    expect(treeReuse).not.toContain('/pulls/${pullRequestNumber}');
+    expect(treeReuse).toContain("'GET /repos/{owner}/{repo}/pulls/{pull_number}'");
+    expect(treeReuse).toContain('pull_number: pullRequestNumber');
     expect(treeReuse).toContain('!/^[0-9a-f]{40}$/u.test(pullRequestHeadSha)');
-    expect(treeReuse).toContain('${encodeURIComponent(pullRequestHeadSha)}');
+    expect(treeReuse).toContain('ref: pullRequestHeadSha');
     expect(treeReuse).not.toContain('${pullRequest.head.sha}');
-    expect(treeReuse).toContain('await runCiTreeReuse();');
+    expect(treeReuse).toContain(
+      'export async function runCiTreeReuse({ env = process.env, requestJson } = {})',
+    );
+    expect(treeReuse).not.toContain('await runCiTreeReuse();');
     expect(treeReuse).not.toContain('runCiTreeReuse().catch(');
     expect(artifactValidation).toContain('await runCiReuseArtifactValidation();');
     expect(artifactValidation).not.toContain('runCiReuseArtifactValidation().catch(');

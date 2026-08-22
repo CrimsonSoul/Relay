@@ -41,7 +41,20 @@ jobs:
         id: metadata
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/ciTreeReuse.mjs
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { runCiTreeReuse } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`
+            );
+            await runCiTreeReuse({
+              env: process.env,
+              requestJson: async (route, parameters) => {
+                const response = await github.request(route, parameters);
+                return response.data;
+              },
+            });
 
       - name: Download candidate Build attestation
         id: build_payload

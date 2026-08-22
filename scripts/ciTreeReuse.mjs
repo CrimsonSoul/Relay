@@ -1,5 +1,4 @@
 import { appendFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
@@ -286,49 +285,15 @@ export function evaluateTreeReuse(input) {
   };
 }
 
-const API_ROOT = 'https://api.github.com';
 const PAGE_SIZE = 100;
 const MAX_PAGES = 3;
-const GITHUB_API_PATH_PATTERNS = [
-  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/commits\/[0-9a-f]{40}(?:\/pulls|\/check-runs)?$/u,
-  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pulls\/[1-9]\d*$/u,
-  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/compare\/[0-9a-f]{40}\.\.\.[0-9a-f]{40}$/u,
-  /^\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/[1-9]\d*(?:\/artifacts)?$/u,
-];
-
-export function validateGitHubApiUrl(value) {
-  if (typeof value !== 'string') throw new Error('GitHub API URL is invalid.');
-  const candidate = new URL(value);
-  const page = candidate.searchParams.get('page');
-  const paginated =
-    candidate.searchParams.size === 2 &&
-    candidate.searchParams.get('per_page') === String(PAGE_SIZE) &&
-    typeof page === 'string' &&
-    /^[1-3]$/u.test(page);
-  if (
-    candidate.origin !== API_ROOT ||
-    candidate.username !== '' ||
-    candidate.password !== '' ||
-    candidate.hash !== '' ||
-    !GITHUB_API_PATH_PATTERNS.some((pattern) => pattern.test(candidate.pathname)) ||
-    (candidate.search !== '' && !paginated)
-  ) {
-    throw new Error('GitHub API URL is invalid.');
-  }
-  return candidate.href;
-}
-
-async function defaultFetchJson(url, options) {
-  const response = await fetch(validateGitHubApiUrl(url), options);
-  if (!response.ok) {
-    throw new Error(`GitHub API request failed with status ${response.status}.`);
-  }
-  try {
-    return await response.json();
-  } catch {
-    throw new Error('GitHub API returned invalid JSON.');
-  }
-}
+const ASSOCIATED_PULL_REQUESTS_ROUTE = 'GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls';
+const PULL_REQUEST_ROUTE = 'GET /repos/{owner}/{repo}/pulls/{pull_number}';
+const COMMIT_ROUTE = 'GET /repos/{owner}/{repo}/commits/{ref}';
+const COMPARE_ROUTE = 'GET /repos/{owner}/{repo}/compare/{basehead}';
+const CHECK_RUNS_ROUTE = 'GET /repos/{owner}/{repo}/commits/{ref}/check-runs';
+const WORKFLOW_RUN_ROUTE = 'GET /repos/{owner}/{repo}/actions/runs/{run_id}';
+const ARTIFACTS_ROUTE = 'GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts';
 
 const requireObject = (value) => {
   if (!isObject(value)) throw new Error('GitHub API response schema mismatch.');
@@ -361,15 +326,16 @@ const pageIsComplete = (field, values, collected, total) =>
 const pageIsAmbiguous = (field, values, collected, total) =>
   field !== null && (values.length === 0 || collected.length > total);
 
-async function collectPages({ requestJson, path, field }) {
+async function collectPages({ requestJson, route, parameters, field }) {
   const collected = [];
   let expectedTotal = null;
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const url = new URL(`${API_ROOT}${path}`);
-    url.searchParams.set('per_page', String(PAGE_SIZE));
-    url.searchParams.set('page', String(page));
-    const response = await requestJson(url.href);
+    const response = await requestJson(route, {
+      ...parameters,
+      page,
+      per_page: PAGE_SIZE,
+    });
     const { total, values } = parsePage(response, field, expectedTotal);
     expectedTotal = total;
 
@@ -411,16 +377,20 @@ function parseComparePage(response, identity) {
   return { compare, identity: currentIdentity };
 }
 
-async function collectCompare({ requestJson, path }) {
+async function collectCompare({ requestJson, route, parameters }) {
   const commits = [];
   let firstPage = null;
   let identity = null;
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const url = new URL(`${API_ROOT}${path}`);
-    url.searchParams.set('per_page', String(PAGE_SIZE));
-    url.searchParams.set('page', String(page));
-    const parsed = parseComparePage(await requestJson(url.href), identity);
+    const parsed = parseComparePage(
+      await requestJson(route, {
+        ...parameters,
+        page,
+        per_page: PAGE_SIZE,
+      }),
+      identity,
+    );
     firstPage ??= parsed.compare;
     identity = parsed.identity;
     commits.push(...parsed.compare.commits);
@@ -434,7 +404,7 @@ async function collectCompare({ requestJson, path }) {
   throw new Error('GitHub compare pagination exceeded the bounded limit.');
 }
 
-async function resolveFromGitHub({ env, fetchJson }) {
+async function resolveFromGitHub({ env, requestJson }) {
   const common = {
     currentSha: env.GITHUB_SHA,
     eventName: env.GITHUB_EVENT_NAME,
@@ -450,8 +420,9 @@ async function resolveFromGitHub({ env, fetchJson }) {
     return blankResult('token-unavailable');
   }
 
-  const requestJson = (url) =>
-    fetchJson(url, {
+  const githubRequest = (route, parameters) =>
+    requestJson(route, {
+      ...parameters,
       headers: {
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${env.GITHUB_TOKEN}`,
@@ -459,11 +430,12 @@ async function resolveFromGitHub({ env, fetchJson }) {
       },
     });
   const [owner, repository] = common.repository.split('/');
-  const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`;
+  const repositoryParameters = { owner, repo: repository };
   const pullRequests = await collectPages({
     field: null,
-    path: `${repoPath}/commits/${encodeURIComponent(common.currentSha)}/pulls`,
-    requestJson,
+    parameters: { ...repositoryParameters, commit_sha: common.currentSha },
+    requestJson: githubRequest,
+    route: ASSOCIATED_PULL_REQUESTS_ROUTE,
   });
   const pullRequestNumber = pullRequests[0]?.number;
   if (
@@ -476,12 +448,13 @@ async function resolveFromGitHub({ env, fetchJson }) {
   }
 
   const pullRequest = requireObject(
-    await requestJson(
-      `${API_ROOT}${repoPath}/pulls/${encodeURIComponent(String(pullRequestNumber))}`,
-    ),
+    await githubRequest(PULL_REQUEST_ROUTE, {
+      ...repositoryParameters,
+      pull_number: pullRequestNumber,
+    }),
   );
   const currentCommit = requireObject(
-    await requestJson(`${API_ROOT}${repoPath}/commits/${encodeURIComponent(common.currentSha)}`),
+    await githubRequest(COMMIT_ROUTE, { ...repositoryParameters, ref: common.currentSha }),
   );
   const pullRequestBaseSha = pullRequest.base?.sha;
   const pullRequestHeadSha = pullRequest.head?.sha;
@@ -494,16 +467,21 @@ async function resolveFromGitHub({ env, fetchJson }) {
     return evaluateTreeReuse({ ...common, currentCommit, pullRequest, pullRequests });
   }
   const headCommit = requireObject(
-    await requestJson(`${API_ROOT}${repoPath}/commits/${encodeURIComponent(pullRequestHeadSha)}`),
+    await githubRequest(COMMIT_ROUTE, { ...repositoryParameters, ref: pullRequestHeadSha }),
   );
   const compare = await collectCompare({
-    path: `${repoPath}/compare/${encodeURIComponent(pullRequestBaseSha)}...${encodeURIComponent(pullRequestHeadSha)}`,
-    requestJson,
+    parameters: {
+      ...repositoryParameters,
+      basehead: `${pullRequestBaseSha}...${pullRequestHeadSha}`,
+    },
+    requestJson: githubRequest,
+    route: COMPARE_ROUTE,
   });
   const checkRuns = await collectPages({
     field: 'check_runs',
-    path: `${repoPath}/commits/${encodeURIComponent(pullRequestHeadSha)}/check-runs`,
-    requestJson,
+    parameters: { ...repositoryParameters, ref: pullRequestHeadSha },
+    requestJson: githubRequest,
+    route: CHECK_RUNS_ROUTE,
   });
 
   const checkRunId = (name) => {
@@ -515,14 +493,16 @@ async function resolveFromGitHub({ env, fetchJson }) {
   let buildArtifacts = [];
   if (Number.isSafeInteger(buildRunId) && buildRunId > 0) {
     buildRun = requireObject(
-      await requestJson(
-        `${API_ROOT}${repoPath}/actions/runs/${encodeURIComponent(String(buildRunId))}`,
-      ),
+      await githubRequest(WORKFLOW_RUN_ROUTE, {
+        ...repositoryParameters,
+        run_id: buildRunId,
+      }),
     );
     buildArtifacts = await collectPages({
       field: 'artifacts',
-      path: `${repoPath}/actions/runs/${encodeURIComponent(String(buildRunId))}/artifacts`,
-      requestJson,
+      parameters: { ...repositoryParameters, run_id: buildRunId },
+      requestJson: githubRequest,
+      route: ARTIFACTS_ROUTE,
     });
   }
 
@@ -531,14 +511,16 @@ async function resolveFromGitHub({ env, fetchJson }) {
   let artifacts = [];
   if (Number.isSafeInteger(securityRunId) && securityRunId > 0) {
     securityRun = requireObject(
-      await requestJson(
-        `${API_ROOT}${repoPath}/actions/runs/${encodeURIComponent(String(securityRunId))}`,
-      ),
+      await githubRequest(WORKFLOW_RUN_ROUTE, {
+        ...repositoryParameters,
+        run_id: securityRunId,
+      }),
     );
     artifacts = await collectPages({
       field: 'artifacts',
-      path: `${repoPath}/actions/runs/${encodeURIComponent(String(securityRunId))}/artifacts`,
-      requestJson,
+      parameters: { ...repositoryParameters, run_id: securityRunId },
+      requestJson: githubRequest,
+      route: ARTIFACTS_ROUTE,
     });
   }
 
@@ -589,10 +571,10 @@ async function writeOutputs(outputPath, result) {
   await appendFile(outputPath, `${lines.join('\n')}\n`, 'utf8');
 }
 
-export async function runCiTreeReuse({ env = process.env, fetchJson = defaultFetchJson } = {}) {
+export async function runCiTreeReuse({ env = process.env, requestJson } = {}) {
   let result;
   try {
-    result = await resolveFromGitHub({ env, fetchJson });
+    result = await resolveFromGitHub({ env, requestJson });
   } catch {
     result = blankResult('api-failure');
   }
@@ -601,13 +583,4 @@ export async function runCiTreeReuse({ env = process.env, fetchJson = defaultFet
   }
   await writeOutputs(env.GITHUB_OUTPUT, result);
   return result;
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try {
-    await runCiTreeReuse();
-  } catch {
-    process.stderr.write('CI tree reuse resolver failed.\n');
-    process.exitCode = 1;
-  }
 }
