@@ -58,14 +58,34 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <Modal isOpen={isOpen} onClose={handleClose}>
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title={title}
+      subtitle={description}
+      variant="standard"
+      footer={
+        <>
+          <TactileButton variant="secondary" onClick={handleClose}>
+            Cancel
+          </TactileButton>
+          <TactileButton
+            variant="primary"
+            onClick={() => {
+              handleSave().catch((error_) => {
+                loggers.app.error('[SaveGroupModal] Failed to save group on click', {
+                  error: error_,
+                });
+              });
+            }}
+          >
+            Save
+          </TactileButton>
+        </>
+      }
+    >
       <div className="save-group-content">
-        <h2 className="save-group-title">{title}</h2>
-        <p className="save-group-description">{description}</p>
-
         {contacts && contacts.length > 0 && (
           <div className="save-group-contacts">
             <div className="save-group-contacts-header">
@@ -100,24 +120,6 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
             }}
           />
           {error && <p className="save-group-error">{error}</p>}
-        </div>
-
-        <div className="save-group-actions">
-          <TactileButton variant="secondary" onClick={handleClose}>
-            Cancel
-          </TactileButton>
-          <TactileButton
-            variant="primary"
-            onClick={() => {
-              handleSave().catch((error_) => {
-                loggers.app.error('[SaveGroupModal] Failed to save group on click', {
-                  error: error_,
-                });
-              });
-            }}
-          >
-            Save
-          </TactileButton>
         </div>
       </div>
     </Modal>

@@ -64,6 +64,7 @@ describe('validateDataPath', () => {
     expect(fs.existsSync(testDir)).toBe(true);
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Permission failure, home-boundary rejection, and empty input exercise distinct validation branches and diagnostics.
   it('should return error for invalid path (mocked failure)', async () => {
     // Spy on fsPromises.writeFile to throw EACCES
     const spy = vi

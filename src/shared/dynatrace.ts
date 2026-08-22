@@ -1,9 +1,5 @@
 export type DynatraceRuntimeState =
-  | 'live'
-  | 'authenticating'
-  | 'blocked'
-  | 'load-failed'
-  | 'closed';
+  'live' | 'authenticating' | 'blocked' | 'load-failed' | 'closed';
 
 export type DynatraceNavigationKind = 'dynatrace' | 'microsoft-auth' | 'blocked';
 
@@ -75,7 +71,7 @@ export function getDynatraceStartUrlError(value: string): string | null {
 
 export function classifyDynatraceNavigation(value: string): DynatraceNavigationKind {
   const parsed = parseUrl(value);
-  if (!parsed || parsed.protocol !== 'https:') return 'blocked';
+  if (parsed?.protocol !== 'https:') return 'blocked';
   if (isDynatraceHost(parsed.hostname)) return 'dynatrace';
   if (isMicrosoftAuthHost(parsed.hostname)) return 'microsoft-auth';
   return 'blocked';

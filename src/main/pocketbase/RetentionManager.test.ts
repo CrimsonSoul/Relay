@@ -54,10 +54,13 @@ describe('RetentionManager', () => {
       await manager.runCleanup();
 
       // Each of the three cleaners calls getFullList at least once
-      const collections = pb.collection.mock.calls.map((c) => c[0]);
+      const collections = vi.mocked(pb.collection).mock.calls.map(([name]) => name);
       expect(collections).toContain('bridge_history');
       expect(collections).toContain('alert_history');
       expect(collections).toContain('conflict_log');
+      expect(collections).toContain('knowledge_uploads');
+      expect(collections).toContain('knowledge_audit_events');
+      expect(collections).not.toContain('knowledge_documents');
     });
 
     it('logs completion after cleanup', async () => {
@@ -72,6 +75,21 @@ describe('RetentionManager', () => {
   });
 
   describe('startSchedule()', () => {
+    it('supports a delayed first run followed by the unchanged recurring interval', async () => {
+      const manager = new RetentionManager(makePb());
+      const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+
+      manager.startSchedule(60_000, undefined, 30_000);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(cleanupSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(cleanupSpy).toHaveBeenCalledTimes(2);
+    });
+
     it('runs cleanup immediately on start', async () => {
       const getFullList = vi.fn().mockResolvedValue([]);
       const pb = makePb({ getFullList });
@@ -145,7 +163,7 @@ describe('RetentionManager', () => {
       const callsAfterStop = getFullList.mock.calls.length;
       await vi.advanceTimersByTimeAsync(intervalMs * 2);
 
-      expect(getFullList.mock.calls.length).toBe(callsAfterStop);
+      expect(getFullList.mock.calls).toHaveLength(callsAfterStop);
     });
 
     it('skips overlapping runs and logs a warning', async () => {
@@ -184,6 +202,17 @@ describe('RetentionManager', () => {
   });
 
   describe('stop()', () => {
+    it('cancels a pending delayed first run', async () => {
+      const manager = new RetentionManager(makePb());
+      const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+
+      manager.startSchedule(60_000, undefined, 30_000);
+      manager.stop();
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expect(cleanupSpy).not.toHaveBeenCalled();
+    });
+
     it('clears the interval so cleanup no longer fires', async () => {
       const getFullList = vi.fn().mockResolvedValue([]);
       const pb = makePb({ getFullList });
@@ -197,7 +226,7 @@ describe('RetentionManager', () => {
       const callsAfterStop = getFullList.mock.calls.length;
       await vi.advanceTimersByTimeAsync(intervalMs * 5);
 
-      expect(getFullList.mock.calls.length).toBe(callsAfterStop);
+      expect(getFullList.mock.calls).toHaveLength(callsAfterStop);
     });
 
     it('is safe to call when not started', () => {

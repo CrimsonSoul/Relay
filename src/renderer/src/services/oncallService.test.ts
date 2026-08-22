@@ -17,6 +17,8 @@ vi.mock('./pocketbase', () => ({
   handleApiError: vi.fn(),
   escapeFilter: (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"'),
   requireOnline: vi.fn(),
+  getConnectionState: vi.fn(() => 'online'),
+  isOnline: vi.fn(() => true),
 }));
 
 import {
@@ -118,7 +120,7 @@ describe('deleteOnCallByTeam', () => {
     mockGetFullList.mockResolvedValueOnce([sampleRecord, record2]);
     mockDelete.mockResolvedValue(undefined);
     await deleteOnCallByTeam('TeamA');
-    expect(mockRequireOnline).toHaveBeenCalledOnce();
+    expect(mockRequireOnline).toHaveBeenCalledTimes(2);
     expect(mockGetFullList).toHaveBeenCalledWith({ filter: 'team="TeamA"' });
     expect(mockDelete).toHaveBeenCalledTimes(2);
     expect(mockDelete).toHaveBeenCalledWith('oc1');
@@ -220,10 +222,19 @@ describe('renameTeam', () => {
     mockGetFullList.mockResolvedValueOnce([sampleRecord, record2]);
     mockUpdate.mockResolvedValue(undefined);
     await renameTeam('TeamA', 'TeamB');
-    expect(mockRequireOnline).toHaveBeenCalledOnce();
+    expect(mockRequireOnline).toHaveBeenCalledTimes(2);
     expect(mockUpdate).toHaveBeenCalledTimes(2);
-    expect(mockUpdate).toHaveBeenCalledWith('oc1', { team: 'TeamB' });
-    expect(mockUpdate).toHaveBeenCalledWith('oc2', { team: 'TeamB' });
+    expect(mockUpdate).toHaveBeenCalledWith('oc1', { team: 'TeamB', teamId: 'teamb' });
+    expect(mockUpdate).toHaveBeenCalledWith('oc2', { team: 'TeamB', teamId: 'teamb' });
+  });
+
+  it('re-derives teamId so the old name is no longer claimed by the renamed rows', async () => {
+    mockGetFullList.mockResolvedValueOnce([{ ...sampleRecord, team: 'SQL', teamId: 'sql' }]);
+    mockUpdate.mockResolvedValue(undefined);
+
+    await renameTeam('SQL', 'Oracle');
+
+    expect(mockUpdate).toHaveBeenCalledWith('oc1', { team: 'Oracle', teamId: 'oracle' });
   });
 
   it('calls handleApiError and re-throws on failure', async () => {
@@ -243,7 +254,7 @@ describe('reorderTeams', () => {
       .mockResolvedValueOnce([teamBRecord]); // TeamB at index 1
     mockUpdate.mockResolvedValue(undefined);
     await reorderTeams(['TeamA', 'TeamB']);
-    expect(mockRequireOnline).toHaveBeenCalledOnce();
+    expect(mockRequireOnline).toHaveBeenCalledTimes(2);
     expect(mockUpdate).toHaveBeenCalledWith('oc1', { sortOrder: 0 });
     expect(mockUpdate).toHaveBeenCalledWith('oc2', { sortOrder: 1 });
   });

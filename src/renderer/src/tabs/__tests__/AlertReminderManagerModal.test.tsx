@@ -8,11 +8,18 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+  }) =>
+    isOpen ? (
+      <div role="dialog" data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/TactileButton', () => ({
@@ -88,6 +95,7 @@ describe('AlertReminderManagerModal', () => {
     });
 
     expect(screen.getByTestId('modal-Alarms')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'wide');
     expect(screen.getByText('Soon reminder')).toBeInTheDocument();
     expect(screen.getByText('Short note')).toBeInTheDocument();
     expect(screen.getByText('Snoozed reminder')).toBeInTheDocument();
@@ -119,7 +127,7 @@ describe('AlertReminderManagerModal', () => {
   });
 
   it('shows empty, loading, and error states with actions', () => {
-    const props = renderModal({ loading: true, error: new Error('load failed') });
+    const props = renderModal({ loading: true, error: 'load failed' });
 
     expect(screen.getByText('Loading alarms...')).toBeInTheDocument();
     expect(screen.getByText('Could not load alarms.')).toBeInTheDocument();
@@ -128,6 +136,22 @@ describe('AlertReminderManagerModal', () => {
 
     expect(props.onRetry).toHaveBeenCalledOnce();
     expect(props.onScheduleNew).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['loading', { loading: true, error: null }],
+    ['errored', { loading: false, error: 'load failed' }],
+    ['both loading and errored', { loading: true, error: 'load failed' }],
+  ])('does not claim there are no pending alarms while %s', (_caseName, overrides) => {
+    renderModal({ pendingReminders: [], ...overrides });
+
+    expect(screen.queryByText('No pending alarms.')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state once loading has settled without an error', () => {
+    renderModal({ pendingReminders: [], loading: false, error: null });
+
+    expect(screen.getByText('No pending alarms.')).toBeInTheDocument();
   });
 
   it('shows reminder sound controls and calls selection actions', () => {
@@ -142,5 +166,17 @@ describe('AlertReminderManagerModal', () => {
 
     expect(props.onChooseAlarmSound).toHaveBeenCalledOnce();
     expect(props.onResetAlarmSound).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the active alarm label but hides native sound controls in the browser', () => {
+    renderModal({
+      alarmSoundLabel: 'Default alarm',
+      hasCustomAlarmSound: true,
+      canCustomizeAlarmSound: false,
+    });
+
+    expect(screen.getByText('Alarm sound: Default alarm')).toBeInTheDocument();
+    expect(screen.queryByText('Choose MP3')).not.toBeInTheDocument();
+    expect(screen.queryByText('Use default')).not.toBeInTheDocument();
   });
 });

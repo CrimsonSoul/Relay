@@ -1,0 +1,83 @@
+import { createCanvas } from '@napi-rs/canvas';
+import {
+  getDocument,
+  type PDFDocumentProxy,
+  type PDFPageProxy,
+} from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { KNOWLEDGE_MAX_COVER_BYTES } from '@shared/knowledge';
+
+const MAX_COVER_WIDTH = 480;
+const MAX_COVER_HEIGHT = 620;
+
+async function renderPage(page: PDFPageProxy): Promise<Uint8Array> {
+  const baseViewport = page.getViewport({ scale: 1 });
+  const scale = Math.min(
+    MAX_COVER_WIDTH / baseViewport.width,
+    MAX_COVER_HEIGHT / baseViewport.height,
+    2,
+  );
+  const viewport = page.getViewport({ scale });
+  const canvas = createCanvas(
+    Math.max(1, Math.ceil(viewport.width)),
+    Math.max(1, Math.ceil(viewport.height)),
+  );
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  // pdf.js 6 requires `canvas`; passing null tells it to render straight into the
+  // supplied 2D context. `context` is @napi-rs/canvas's context, which is structurally
+  // compatible at runtime but shares no nominal type with the DOM one.
+  await page.render({ canvas: null, canvasContext: context as never, viewport }).promise;
+  const png = new Uint8Array(await canvas.encode('png'));
+  if (png.byteLength === 0 || png.byteLength > KNOWLEDGE_MAX_COVER_BYTES) {
+    throw new Error('render-failed');
+  }
+  return png;
+}
+
+/**
+ * Blank sheet used when page one cannot be rasterized. A missing thumbnail is a cosmetic loss,
+ * so callers can keep a structurally valid PDF instead of failing the whole document.
+ */
+export async function renderKnowledgeCoverPlaceholder(): Promise<Uint8Array> {
+  const canvas = createCanvas(MAX_COVER_WIDTH, MAX_COVER_HEIGHT);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  return new Uint8Array(await canvas.encode('png'));
+}
+
+export async function renderKnowledgeDocumentCover(
+  document: PDFDocumentProxy,
+): Promise<Uint8Array> {
+  const page = await document.getPage(1);
+  try {
+    return await renderPage(page);
+  } finally {
+    page.cleanup();
+  }
+}
+
+export async function renderKnowledgeCover(data: Uint8Array): Promise<Uint8Array> {
+  const loadingTask = getDocument({
+    data: data.slice(),
+    // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
+    // `new Function` font/pattern path it used to gate, so passing it now only reads like
+    // an active control that no longer exists.
+    useWorkerFetch: false,
+    useSystemFonts: false,
+    disableAutoFetch: true,
+    disableStream: true,
+    enableXfa: false,
+    stopAtErrors: true,
+  });
+  let document: PDFDocumentProxy | null = null;
+  try {
+    document = await loadingTask.promise;
+    return await renderKnowledgeDocumentCover(document);
+  } catch {
+    throw new Error('render-failed');
+  } finally {
+    await loadingTask.destroy();
+  }
+}

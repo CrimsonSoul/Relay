@@ -14,7 +14,7 @@ const cssBlockFor = (selector: string) => {
 };
 
 describe('list row rhythm', () => {
-  it('keeps People and Servers row surfaces inside the 72px virtual row', () => {
+  it('keeps People and Servers row surfaces inside the 67px virtual row', () => {
     expect(cssBlockFor('.contact-entry')).toContain('height: 100%');
     expect(cssBlockFor('.server-card-body')).toContain('height: 100%');
   });
@@ -24,5 +24,12 @@ describe('list row rhythm', () => {
     expect(cssBlockFor('.contact-entry-line2')).toContain('line-height: 1.15');
     expect(cssBlockFor('.server-card-name')).toContain('line-height: 1.1');
     expect(cssBlockFor('.server-card-meta')).toContain('line-height: 1.15');
+  });
+
+  it('uses matched semantic typography inside the unchanged compact rows', () => {
+    expect(cssBlockFor('.contact-entry-name')).toContain('font-size: var(--text-md)');
+    expect(cssBlockFor('.server-card-name')).toContain('font-size: var(--text-md)');
+    expect(cssBlockFor('.contact-entry-line2')).toContain('font-size: var(--text-xs)');
+    expect(cssBlockFor('.server-card-meta')).toContain('font-size: var(--text-xs)');
   });
 });

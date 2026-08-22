@@ -1,9 +1,29 @@
 import { useEffect, useRef, useCallback } from 'react';
 
 const FOCUSABLE_SELECTOR =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: boolean = true) {
+/**
+ * Elements the browser will actually focus. Disabled and hidden controls match
+ * a plain selector but can never become document.activeElement — treating one
+ * as the cycle boundary silently broke the trap, letting Tab escape the dialog,
+ * and a disabled first match made the initial focus() call a no-op.
+ */
+function focusableWithin(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
+    (element) => !element.hidden && !element.closest('[hidden],[aria-hidden="true"],[inert]'),
+  );
+}
+
+type FocusTrapOptions = Readonly<{
+  restoreOnDeactivate?: boolean;
+  restoreWhen?: boolean;
+}>;
+
+export function useFocusTrap<T extends HTMLElement = HTMLElement>(
+  isActive: boolean = true,
+  { restoreOnDeactivate = true, restoreWhen = false }: FocusTrapOptions = {},
+) {
   const containerRef = useRef<T>(null);
   const previousActiveElement = useRef<Element | null>(null);
   const focusRestored = useRef(false);
@@ -11,16 +31,23 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
   // Store/restore focus as the trap toggles, not only on mount/unmount.
   useEffect(() => {
     if (isActive) {
-      previousActiveElement.current = document.activeElement;
+      if (previousActiveElement.current === null || focusRestored.current) {
+        previousActiveElement.current = document.activeElement;
+      }
       focusRestored.current = false;
       return;
     }
 
-    if (!focusRestored.current && previousActiveElement.current instanceof HTMLElement) {
+    const shouldRestore = restoreWhen || (restoreOnDeactivate && !isActive);
+    if (
+      shouldRestore &&
+      !focusRestored.current &&
+      previousActiveElement.current instanceof HTMLElement
+    ) {
       previousActiveElement.current.focus();
       focusRestored.current = true;
     }
-  }, [isActive]);
+  }, [isActive, restoreOnDeactivate, restoreWhen]);
 
   // Fallback restoration for true unmount cases.
   useEffect(() => {
@@ -35,14 +62,12 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const focusableElements =
-      containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusableElements.length > 0) {
-      // Small delay to ensure modal content is rendered
-      requestAnimationFrame(() => {
-        focusableElements[0]!.focus();
-      });
-    }
+    const focusableElements = focusableWithin(containerRef.current);
+    if (focusableElements.length === 0) return;
+    // Small delay to ensure modal content is rendered. Cancelled on teardown so
+    // a modal closed within the same frame cannot steal focus back afterwards.
+    const frame = requestAnimationFrame(() => focusableElements[0]!.focus());
+    return () => cancelAnimationFrame(frame);
   }, [isActive]);
 
   // Handle Tab key to trap focus
@@ -51,12 +76,11 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
       if (!isActive || !containerRef.current) return;
       if (e.key !== 'Tab') return;
 
-      const focusableElements =
-        containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      const focusableElements = focusableWithin(containerRef.current);
       if (focusableElements.length === 0) return;
 
       const firstElement = focusableElements[0]!;
-      const lastElement = focusableElements[focusableElements.length - 1]!;
+      const lastElement = focusableElements.at(-1)!;
 
       // Shift+Tab on first element -> go to last
       if (e.shiftKey && document.activeElement === (firstElement as Element)) {

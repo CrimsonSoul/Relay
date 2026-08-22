@@ -36,7 +36,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
   }, [contacts, optimisticAdds, optimisticUpdates, optimisticDeletes]);
 
   const handleCreateContact = async (contact: Partial<Contact>) => {
-    const newContact = {
+    const newContact: Contact = {
       name: contact.name || '',
       email: contact.email || '',
       phone: contact.phone || '',
@@ -47,8 +47,10 @@ export function useDirectoryContacts(contacts: Contact[]) {
         (contact.title || '') +
         (contact.phone || '')
       ).toLowerCase(),
-      avatar: undefined,
-    } as Contact;
+      // The optimistic row has no PocketBase record yet, so `raw` carries no id
+      // until the create resolves and the real record replaces it.
+      raw: {},
+    };
 
     setOptimisticAdds((prev) => [newContact, ...prev]);
 
@@ -69,17 +71,24 @@ export function useDirectoryContacts(contacts: Contact[]) {
   };
 
   const handleUpdateContact = async (updated: Partial<Contact>) => {
-    if (updated.email) setOptimisticUpdates((prev) => new Map(prev).set(updated.email!, updated));
+    // Identify the record by the address it had when editing opened. Looking it
+    // up by the *submitted* email misses the record whenever the user changed
+    // it, and the not-found branch below would then create a second contact
+    // instead of renaming the first. The optimistic map is keyed the same way,
+    // since the rendered list still carries the original address.
+    const originalEmail = editingContact?.email || updated.email || '';
+    if (originalEmail) setOptimisticUpdates((prev) => new Map(prev).set(originalEmail, updated));
 
     try {
-      // Find existing record by email to get the PocketBase id
-      const existing = await findContactByEmail(updated.email || '');
+      const existing = await findContactByEmail(originalEmail);
       if (existing) {
         await pbUpdateContact(existing.id, {
           name: updated.name || existing.name,
           email: updated.email || existing.email,
-          phone: updated.phone || existing.phone,
-          title: updated.title || existing.title,
+          // Optional fields use ?? so a deliberately cleared phone or title is
+          // written through instead of silently reverting to the stored value.
+          phone: updated.phone ?? existing.phone,
+          title: updated.title ?? existing.title,
         });
       } else {
         // If not found, create it
@@ -92,10 +101,10 @@ export function useDirectoryContacts(contacts: Contact[]) {
       }
       showToast('Contact updated successfully', 'success');
     } catch (error) {
-      if (updated.email)
+      if (originalEmail)
         setOptimisticUpdates((prev) => {
           const next = new Map(prev);
-          next.delete(updated.email!);
+          next.delete(originalEmail);
           return next;
         });
       const errorMsg = error instanceof Error ? error.message : 'Failed to update contact';

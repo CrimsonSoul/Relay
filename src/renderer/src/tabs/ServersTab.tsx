@@ -1,9 +1,10 @@
-import React, { memo, useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { List } from 'react-window';
+import { List, useListRef } from 'react-window';
 import type { RowComponentProps } from 'react-window';
 import { Server, Contact } from '@shared/ipc';
 import { ContextMenu } from '../components/ContextMenu';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { AddServerModal } from '../components/AddServerModal';
 import { TactileButton } from '../components/TactileButton';
 import { ServerCard } from '../components/ServerCard';
@@ -16,10 +17,17 @@ import { useServers } from '../hooks/useServers';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { SearchInput } from '../components/SearchInput';
+import {
+  serverRecordKey,
+  type KnowledgeRecordOpenRequest,
+} from '../features/knowledge/knowledgeRecordNavigation';
 
 interface ServersTabProps {
   servers: Server[];
   contacts: Contact[];
+  selectionRequest?: KnowledgeRecordOpenRequest | null;
+  onSelectionUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
 }
 
 /** Minimal mouse-event shape shared by native MouseEvent and React.MouseEvent */
@@ -34,7 +42,7 @@ interface ServerVirtualRowData {
 }
 
 // Matches DirectoryTab's ROW_HEIGHT so People and Servers rows are identical.
-const ROW_HEIGHT = 72;
+const ROW_HEIGHT = 67;
 
 const normalizeServerField = (value: string | undefined) => {
   const trimmed = value?.trim();
@@ -47,6 +55,13 @@ const getContactDisplayName = (email: string, contactLookup: Map<string, Contact
   if (!normalized) return '';
   return contactLookup.get(normalized)?.name || email;
 };
+
+function focusRenderedRecord(container: HTMLElement | null, recordKey: string): void {
+  const row = Array.from(container?.querySelectorAll<HTMLElement>('[data-record-key]') ?? []).find(
+    (node) => node.dataset.recordKey === recordKey,
+  );
+  row?.focus();
+}
 
 const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string) => boolean }> = [
   {
@@ -61,28 +76,45 @@ const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string)
   },
 ];
 
-const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) => {
+// Not wrapped in React.memo: react-window already memoises whatever it is handed, with a
+// comparator that understands its own `style`/`ariaAttributes` props. A MemoExoticComponent also
+// widens the return type to ReactNode, which its `rowComponent` prop rejects.
+function VirtualRow({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) {
   const { servers, contactLookup, onContextMenu, selectedIndex, onRowClick } = data;
-  if (index >= servers.length) return null;
   const server = servers[index];
+  if (!server) return null;
   return (
     <ServerCard
       style={style}
       server={server}
       ownerName={getContactDisplayName(server.owner, contactLookup)}
       supportName={getContactDisplayName(server.contact, contactLookup)}
+      recordKey={serverRecordKey(server)}
       onContextMenu={onContextMenu}
       selected={index === selectedIndex}
       onRowClick={() => onRowClick(index)}
     />
   );
-});
+}
 
-export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
-  const h = useServers(servers, contacts);
+export const ServersTab: React.FC<ServersTabProps> = ({
+  servers,
+  contacts,
+  selectionRequest,
+  onSelectionUnavailable,
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const h = useServers(servers, contacts, searchQuery);
+  const listRef = useListRef(null);
+  const listContainerRef = useRef<HTMLElement>(null);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // The detail panel is bound to the stable navigation key, never a row position or name:
+  // filters reorder the list, and duplicate names must not redirect edit or delete actions.
+  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
+  const lastConsumedRequestIdRef = useRef<number | null>(null);
+  const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
+  const [serverPendingDeletion, setServerPendingDeletion] = useState<Server | null>(null);
 
   const serverExtraFilters = useMemo<FilterDef<Server>[]>(() => {
     const availableOperatingSystems = new Set(
@@ -184,20 +216,58 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   });
 
   const displayedServers = filters.filteredItems;
+  const clearAllFilters = filters.clearAll;
 
-  // Clamp selection when list changes
   useEffect(() => {
-    if (displayedServers.length === 0) {
-      setSelectedIndex(0);
-    } else if (selectedIndex >= displayedServers.length) {
-      setSelectedIndex(displayedServers.length - 1);
+    if (
+      selectionRequest?.destination !== 'servers' ||
+      lastConsumedRequestIdRef.current === selectionRequest.requestId
+    ) {
+      return;
     }
-  }, [displayedServers.length, selectedIndex]);
 
-  const selectedServer =
-    selectedIndex >= 0 && selectedIndex < displayedServers.length
-      ? displayedServers[selectedIndex]
-      : null;
+    lastConsumedRequestIdRef.current = selectionRequest.requestId;
+    const hasRequestedServer = servers.some(
+      (server) => serverRecordKey(server) === selectionRequest.recordKey,
+    );
+    if (!hasRequestedServer) {
+      setPendingSelectionKey(null);
+      setSelectedRecordKey('');
+      onSelectionUnavailable?.(selectionRequest);
+      return;
+    }
+
+    setSearchQuery('');
+    clearAllFilters();
+    setPendingSelectionKey(selectionRequest.recordKey);
+  }, [clearAllFilters, onSelectionUnavailable, selectionRequest, servers]);
+
+  useEffect(() => {
+    if (!pendingSelectionKey) return;
+    const requestedIndex = displayedServers.findIndex(
+      (server) => serverRecordKey(server) === pendingSelectionKey,
+    );
+    if (requestedIndex < 0) return;
+
+    const requestedServer = displayedServers[requestedIndex];
+    if (!requestedServer) return;
+    setSelectedRecordKey(serverRecordKey(requestedServer));
+    listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
+
+    const frame = requestAnimationFrame(() => {
+      focusRenderedRecord(listContainerRef.current, pendingSelectionKey);
+      setPendingSelectionKey(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [displayedServers, listRef, pendingSelectionKey]);
+
+  const selectedServer = useMemo(() => {
+    // Before anything is picked we land on the first record, matching the previous
+    // index-0 default. Once chosen, stable-key resolution keeps duplicate names exact.
+    if (selectedRecordKey === null) return displayedServers[0] ?? null;
+    return displayedServers.find((server) => serverRecordKey(server) === selectedRecordKey) ?? null;
+  }, [displayedServers, selectedRecordKey]);
+  const selectedIndex = selectedServer ? displayedServers.indexOf(selectedServer) : -1;
   const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
 
   const rowProps = useMemo(
@@ -206,10 +276,20 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
       selectedIndex,
-      onRowClick: (i: number) => setSelectedIndex(i),
+      onRowClick: (i: number) => {
+        const server = displayedServers[i];
+        setSelectedRecordKey(server ? serverRecordKey(server) : null);
+      },
     }),
     [displayedServers, h.contactLookup, h.handleContextMenu, selectedIndex],
   );
+
+  const { deleteServer } = h;
+  const handleConfirmDeleteServer = useCallback(() => {
+    if (!serverPendingDeletion) return;
+    // Returned so ConfirmModal keeps itself open and reports a rejected delete inline
+    return deleteServer(serverPendingDeletion);
+  }, [deleteServer, serverPendingDeletion]);
 
   return (
     <div className="tab-layout">
@@ -235,7 +315,18 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               onSortKeyChange={(key) =>
                 h.setSortKey(key as 'name' | 'businessArea' | 'lob' | 'owner' | 'os')
               }
-            />
+            >
+              <div className="directory-search-control scoped-search-control">
+                <SearchInput
+                  type="search"
+                  aria-label="Filter servers"
+                  placeholder="Filter servers"
+                  className="scoped-search-input"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+            </ListToolbar>
             <TactileButton
               onClick={h.openAddModal}
               variant="primary"
@@ -275,13 +366,16 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               onToggleTag={filters.toggleTag}
               onToggleExtra={filters.toggleExtra}
               onClearAll={filters.clearAll}
+              showNotesFilter={false}
+              showTagFilters={false}
             />
           )}
 
-          <section className="tab-list-container" aria-label="Servers list">
+          <section ref={listContainerRef} className="tab-list-container" aria-label="Servers list">
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List
+                  listRef={listRef}
                   style={{ height: height ?? 0, width: width ?? 0 }}
                   rowCount={displayedServers.length}
                   rowHeight={ROW_HEIGHT}
@@ -309,10 +403,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             tags={selectedNote?.tags}
             onEditNotes={() => setNotesServer(selectedServer)}
             onEdit={() => h.editServer(selectedServer)}
-            onDelete={() => {
-              void h.deleteServer(selectedServer);
-              setSelectedIndex(0);
-            }}
+            onDelete={() => setServerPendingDeletion(selectedServer)}
           />
         ) : (
           <div className="detail-panel detail-panel--empty">
@@ -387,7 +478,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             {
               label: 'Delete Server',
               onClick: () => {
-                void h.handleDelete();
+                setServerPendingDeletion(h.contextMenu!.server);
+                h.setContextMenu(null);
               },
               danger: true,
               icon: (
@@ -413,6 +505,18 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         serverToEdit={h.editingServer}
       />
 
+      {/* Both delete paths land here — contacts and on-call cards already confirm, and a
+          server record is no cheaper to lose */}
+      <ConfirmModal
+        isOpen={!!serverPendingDeletion}
+        onClose={() => setServerPendingDeletion(null)}
+        onConfirm={handleConfirmDeleteServer}
+        title="Delete Server"
+        message={`Delete ${serverPendingDeletion?.name ?? ''}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDanger
+      />
+
       <NotesModal
         isOpen={!!notesServer}
         onClose={() => setNotesServer(null)}
@@ -420,7 +524,13 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         entityId={notesServer?.name || ''}
         entityName={notesServer?.name || ''}
         existingNote={notesServer ? getServerNote(notesServer.name) : undefined}
-        onSave={(note, tags) => setServerNote(notesServer!.name, note, tags)}
+        // setServerNote resolves an IpcResult, which is truthy even when it reports a failure.
+        // Returning it unchanged made NotesModal close on a failed save and drop the note.
+        onSave={async (note, tags) => {
+          if (!notesServer) return false;
+          const saved = await setServerNote(notesServer.name, note, tags);
+          return saved?.success;
+        }}
       />
 
       <StatusBar

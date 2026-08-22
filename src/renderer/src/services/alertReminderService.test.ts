@@ -14,6 +14,7 @@ vi.mock('./pocketbase', () => ({
   }),
   handleApiError: vi.fn(),
   requireOnline: vi.fn(),
+  getConnectionState: vi.fn(() => 'online'),
   escapeFilter: (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"'),
 }));
 
@@ -27,10 +28,11 @@ import {
   type AlertReminderInput,
   type AlertReminderRecord,
 } from './alertReminderService';
-import { handleApiError, requireOnline } from './pocketbase';
+import { getConnectionState, handleApiError, requireOnline } from './pocketbase';
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
+const mockGetConnectionState = vi.mocked(getConnectionState);
 
 const sampleRecord: AlertReminderRecord = {
   id: 'rem-1',
@@ -42,7 +44,9 @@ const sampleRecord: AlertReminderRecord = {
   severity: 'ISSUE',
   alertSubject: 'POS outage',
   alertBodyHtml: '<p>Details</p>',
-  createdBy: 'IT',
+  operatorId: 'operator-ryan',
+  createdBy: 'Ryan Bell',
+  alertSender: 'IT',
   completedAt: '',
   dismissedAt: '',
   created: '2026-05-28T19:00:00.000Z',
@@ -56,15 +60,17 @@ const sampleInput: AlertReminderInput = {
   severity: 'ISSUE',
   alertSubject: 'POS outage',
   alertBodyHtml: '<p>Details</p>',
-  createdBy: 'IT',
+  alertSender: 'IT',
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetConnectionState.mockReturnValue('online');
+  globalThis.api = undefined as never;
 });
 
 describe('addAlertReminder', () => {
-  it('creates a pending reminder', async () => {
+  it('creates a pending reminder without an operator identity', async () => {
     mockCreate.mockResolvedValueOnce(sampleRecord);
 
     const result = await addAlertReminder(sampleInput);
@@ -75,6 +81,9 @@ describe('addAlertReminder', () => {
       note: 'Use the prepared template',
       status: 'pending',
     });
+    expect(mockCreate.mock.calls[0]![0]).not.toEqual(
+      expect.objectContaining({ operatorId: expect.anything(), createdBy: expect.anything() }),
+    );
     expect(result).toEqual(sampleRecord);
   });
 
@@ -83,7 +92,7 @@ describe('addAlertReminder', () => {
 
     await addAlertReminder(sampleInput);
 
-    const payload = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    const payload = mockCreate.mock.calls[0]![0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty('snoozeUntil');
     expect(payload).not.toHaveProperty('completedAt');
     expect(payload).not.toHaveProperty('dismissedAt');
@@ -95,6 +104,40 @@ describe('addAlertReminder', () => {
 
     await expect(addAlertReminder(sampleInput)).rejects.toThrow('create failed');
     expect(mockHandleApiError).toHaveBeenCalledWith(error);
+  });
+
+  it('queues the independent cosmetic sender without operator attribution while offline', async () => {
+    mockGetConnectionState.mockReturnValue('offline');
+    const queuedRecord = {
+      ...sampleRecord,
+      alertSender: 'Network Operations',
+    };
+    const mutateOffline = vi.fn().mockResolvedValue({
+      ok: true,
+      mutationId: 'mutation-reminder-1',
+      collection: 'alert_reminders',
+      action: 'create',
+      record: queuedRecord,
+      pendingCount: 1,
+    });
+    globalThis.api = { mutateOffline } as never;
+
+    await addAlertReminder({ ...sampleInput, alertSender: '  Network Operations  ' });
+
+    expect(mutateOffline).toHaveBeenCalledWith({
+      collection: 'alert_reminders',
+      action: 'create',
+      data: {
+        title: 'Send outage alert',
+        note: 'Use the prepared template',
+        dueAt: '2026-05-28T20:00:00.000Z',
+        status: 'pending',
+        severity: 'ISSUE',
+        alertSubject: 'POS outage',
+        alertBodyHtml: '<p>Details</p>',
+        alertSender: 'Network Operations',
+      },
+    });
   });
 });
 

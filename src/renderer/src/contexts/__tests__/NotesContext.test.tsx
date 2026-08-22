@@ -44,14 +44,47 @@ describe('NotesContext', () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it('provides setContactNote function', () => {
+  it('forwards setContactNote arguments to useNotes', async () => {
+    mockNotesState.setContactNote.mockResolvedValue(true);
     const { result } = renderHook(() => useNotesContext(), { wrapper });
-    expect(result.current.setContactNote).toBe(mockNotesState.setContactNote);
+    await result.current.setContactNote('a@b.com', 'note', ['tag']);
+    expect(mockNotesState.setContactNote).toHaveBeenCalledWith('a@b.com', 'note', ['tag']);
   });
 
-  it('provides setServerNote function', () => {
+  it('forwards setServerNote arguments to useNotes', async () => {
+    mockNotesState.setServerNote.mockResolvedValue(true);
     const { result } = renderHook(() => useNotesContext(), { wrapper });
-    expect(result.current.setServerNote).toBe(mockNotesState.setServerNote);
+    await result.current.setServerNote('Alpha', 'note', ['tag']);
+    expect(mockNotesState.setServerNote).toHaveBeenCalledWith('Alpha', 'note', ['tag']);
+  });
+
+  // Regression: `useNotes` reports success as a bare boolean while every
+  // consumer reads `result.success`. Passing the boolean through unchanged made
+  // `saved?.success` undefined on a *successful* write, so the notes dialog
+  // treated every save as a failure and never closed.
+  it.each([
+    ['setContactNote' as const, 'a@b.com'],
+    ['setServerNote' as const, 'Alpha'],
+  ])('reports %s success as an IpcResult, not a bare boolean', async (method, key) => {
+    mockNotesState[method].mockResolvedValue(true);
+    const { result } = renderHook(() => useNotesContext(), { wrapper });
+
+    const saved = await result.current[method](key, 'note', []);
+
+    expect(saved).toEqual({ success: true });
+    expect(saved?.success).toBe(true);
+  });
+
+  it.each([
+    ['setContactNote' as const, 'a@b.com'],
+    ['setServerNote' as const, 'Alpha'],
+  ])('reports %s failure as an unsuccessful IpcResult', async (method, key) => {
+    mockNotesState[method].mockResolvedValue(false);
+    const { result } = renderHook(() => useNotesContext(), { wrapper });
+
+    const saved = await result.current[method](key, 'note', []);
+
+    expect(saved?.success).toBe(false);
   });
 
   it('provides getContactNote function', () => {

@@ -117,4 +117,118 @@ describe('SidebarButton', () => {
     expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
     expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
   });
+
+  it('keeps status buttons inside the standard navigation footprint', () => {
+    const buttonStyles = cssBlockFor('.sidebar-button');
+    const statusStyles = cssBlockFor('.sidebar-button--status');
+
+    expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
+    expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
+    expect(statusStyles).not.toContain('display: grid');
+    expect(statusStyles).not.toContain('grid-template');
+    expect(sidebarCss).not.toContain('.sidebar-button-detail');
+  });
+
+  it('centers the status pip on the standard button axis', () => {
+    const dotStyles = cssBlockFor('.sidebar-button-status-dot');
+
+    expect(dotStyles).toContain('top: 50%');
+    expect(dotStyles).toContain('transform: translateY(-50%)');
+    expect(dotStyles).toContain('width: 10px');
+    expect(dotStyles).toContain('height: 10px');
+  });
+
+  it('does not give status buttons a health wash or health rail', () => {
+    expect(sidebarCss).not.toContain('--sidebar-status-wash');
+    expect(sidebarCss).not.toContain('--sidebar-status-rail');
+  });
+
+  it('keeps the Relay accent rail as the active-state signal', () => {
+    const activeStyles = cssBlockFor('.sidebar-button--active');
+    expect(activeStyles).toContain('border-left-color: var(--accent)');
+  });
+});
+
+describe('SidebarButton status', () => {
+  const baseProps = {
+    icon: <span>icon</span>,
+    label: 'Radar',
+    isActive: false,
+    onClick: vi.fn(),
+  };
+
+  it('stays a plain button when it reports no status', () => {
+    render(<SidebarButton {...baseProps} />);
+
+    const button = screen.getByRole('button', { name: 'Radar' });
+    expect(button).not.toHaveAttribute('data-status-tone');
+    expect(button).not.toHaveClass('sidebar-button--status');
+  });
+
+  it('renders one semantic dot without a persistent detail row', () => {
+    const { container } = render(
+      <SidebarButton
+        {...baseProps}
+        status={{
+          tone: 'yellow',
+          announcement: 'Warning. XCenter OK 2,000, Pending 1,807',
+        }}
+      />,
+    );
+
+    const dots = container.querySelectorAll('.sidebar-button-status-dot');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveAttribute('data-status-tone', 'yellow');
+    expect(dots[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('.sidebar-button-detail')).toBeNull();
+    expect(screen.getByText('Radar')).toBeInTheDocument();
+  });
+
+  it('renders no semantic dot for an ordinary navigation button', () => {
+    const { container } = render(<SidebarButton {...baseProps} status={null} />);
+    expect(container.querySelector('.sidebar-button-status-dot')).toBeNull();
+  });
+
+  it('folds the status and exact figures into the accessible name', () => {
+    render(
+      <SidebarButton
+        {...baseProps}
+        status={{
+          tone: 'red',
+          announcement: 'Critical. XCenter OK 5, Pending 9,000',
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Radar — Critical. XCenter OK 5, Pending 9,000' }),
+    ).toBeInTheDocument();
+  });
+
+  it('carries the tone as data so the tint is styleable', () => {
+    render(<SidebarButton {...baseProps} status={{ tone: 'yellow', announcement: 'Warning' }} />);
+
+    const button = screen.getByRole('button', { name: 'Radar — Warning' });
+    expect(button).toHaveAttribute('data-status-tone', 'yellow');
+    expect(button).toHaveClass('sidebar-button--status');
+  });
+
+  it('still reports the pressed state while showing a status', () => {
+    render(
+      <SidebarButton {...baseProps} isActive status={{ tone: 'green', announcement: 'Healthy' }} />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Radar — Healthy' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('shows the status in the tooltip too', () => {
+    render(<SidebarButton {...baseProps} status={{ tone: 'red', announcement: 'Critical' }} />);
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Radar — Critical' }));
+
+    expect(document.body.querySelector('.tooltip-popup')).toHaveTextContent('Radar — Critical');
+  });
 });

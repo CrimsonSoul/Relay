@@ -1,52 +1,91 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { BrowserWindowConstructorOptions, WebPreferences } from 'electron';
+
+/**
+ * `electron-vite/node` declares ELECTRON_RENDERER_URL as a readonly member of
+ * ProcessEnv. These tests need to set and clear it, so they go through the
+ * mutable index-signature view of the very same `process.env` object.
+ */
+const env: Record<string, string | undefined> = process.env;
+
+/** Window-open handler shape that windowFactory registers. */
+type WindowOpenHandler = (details: { url: string }) => { action: string };
 
 // Hoist all mock state so vi.mock factories can reference them
 const mocks = vi.hoisted(() => {
   const mockWebContentsOn = vi.fn();
-  const mockWebContentsSetWindowOpenHandler = vi.fn();
+  const mockWebContentsOnce = vi.fn();
+  const mockWebContentsSetWindowOpenHandler = vi.fn<(handler: WindowOpenHandler) => void>();
   const mockWebContentsSend = vi.fn();
   const mockWebContentsSession = { setSpellCheckerLanguages: vi.fn() };
+  const mockSetZoomFactor = vi.fn();
+  const mockSetVisualZoomLevelLimits = vi.fn().mockResolvedValue(undefined);
   const mockLoadURL = vi.fn().mockResolvedValue(undefined);
   const mockLoadFile = vi.fn().mockResolvedValue(undefined);
   const mockShow = vi.fn();
+  const mockShowInactive = vi.fn();
   const mockFocus = vi.fn();
+  const mockRestore = vi.fn();
+  const mockIsVisible = vi.fn(() => false);
+  const mockIsMinimized = vi.fn(() => false);
   const mockOn = vi.fn();
   const mockOnce = vi.fn();
+  const mockSetAppDetails = vi.fn();
+  const mockDestroy = vi.fn();
 
-  let lastOpts: Record<string, unknown> | null = null;
+  let lastOpts: BrowserWindowConstructorOptions | null = null;
 
-  function makeBrowserWindow(opts: Record<string, unknown>) {
+  function makeBrowserWindow(opts: BrowserWindowConstructorOptions) {
     lastOpts = opts;
     return {
       webContents: {
         on: mockWebContentsOn,
+        once: mockWebContentsOnce,
         setWindowOpenHandler: mockWebContentsSetWindowOpenHandler,
         send: mockWebContentsSend,
         session: mockWebContentsSession,
+        setZoomFactor: mockSetZoomFactor,
+        setVisualZoomLevelLimits: mockSetVisualZoomLevelLimits,
       },
       loadURL: mockLoadURL,
       loadFile: mockLoadFile,
       show: mockShow,
+      showInactive: mockShowInactive,
       focus: mockFocus,
+      restore: mockRestore,
+      isVisible: mockIsVisible,
+      isMinimized: mockIsMinimized,
       on: mockOn,
       once: mockOnce,
+      setAppDetails: mockSetAppDetails,
+      destroy: mockDestroy,
       isDestroyed: vi.fn(() => false),
     };
   }
 
   // Make it callable with `new` by using a function (not an arrow)
   const MockBrowserWindow = Object.assign(makeBrowserWindow, {
-    getAllWindows: vi.fn(() => []),
+    getAllWindows: vi.fn<() => unknown[]>(() => []),
   });
 
   return {
     mockWebContentsOn,
+    mockWebContentsOnce,
     mockWebContentsSetWindowOpenHandler,
+    mockSetZoomFactor,
+    mockSetVisualZoomLevelLimits,
     mockLoadURL,
     mockLoadFile,
     mockShow,
+    mockShowInactive,
+    mockFocus,
+    mockRestore,
+    mockIsVisible,
+    mockIsMinimized,
     mockOn,
     mockOnce,
+    mockSetAppDetails,
+    mockDestroy,
     MockBrowserWindow,
     getLastOptions: () => lastOpts,
     resetLastOptions: () => {
@@ -64,7 +103,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../logger', () => ({
   loggers: {
-    main: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+    main: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     security: { warn: vi.fn() },
   },
 }));
@@ -80,7 +119,6 @@ vi.mock('../appState', () => ({
 
 vi.mock('../../handlers/windowHandlers', () => ({
   setupWindowListeners: vi.fn(),
-  ALLOWED_AUX_ROUTES: new Set(['oncall']),
 }));
 
 vi.mock('../securityHeaders', () => ({
@@ -93,52 +131,79 @@ vi.mock('../contextMenu', () => ({
 
 import { app } from 'electron';
 import { loggers } from '../../logger';
-import { buildRendererPopoutFileUrl, isAllowedRendererFileUrl } from '../windowFactory';
+import { isAllowedRendererFileUrl } from '../windowFactory';
+
+/** The options the most recently constructed BrowserWindow was given. */
+function lastWindowOptions(): BrowserWindowConstructorOptions {
+  const opts = mocks.getLastOptions();
+  if (!opts) throw new Error('No BrowserWindow was constructed');
+  return opts;
+}
+
+/** The webPreferences the most recently constructed BrowserWindow was given. */
+function lastWebPreferences(): WebPreferences {
+  const { webPreferences } = lastWindowOptions();
+  if (!webPreferences) throw new Error('The BrowserWindow was constructed without webPreferences');
+  return webPreferences;
+}
+
+/** The window-open handler registered on the most recent webContents. */
+function registeredWindowOpenHandler(): WindowOpenHandler {
+  const [call] = mocks.mockWebContentsSetWindowOpenHandler.mock.calls;
+  if (!call) throw new Error('setWindowOpenHandler was never called');
+  return call[0];
+}
 
 describe('windowFactory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
     mocks.resetLastOptions();
+    mocks.mockLoadURL.mockReset().mockResolvedValue(undefined);
+    mocks.mockLoadFile.mockReset().mockResolvedValue(undefined);
+    mocks.mockIsVisible.mockReset().mockReturnValue(false);
+    mocks.mockIsMinimized.mockReset().mockReturnValue(false);
     mockState.mainWindow = null;
-    delete process.env.ELECTRON_RENDERER_URL;
+    delete env.ELECTRON_RENDERER_URL;
+    delete process.env.RELAY_TEST_WINDOW_SIZE;
+    delete process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS;
   });
 
   describe('createWindow - security webPreferences', () => {
     it('sets contextIsolation to true', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
-      expect(mocks.getLastOptions().webPreferences.contextIsolation).toBe(true);
+      expect(lastWebPreferences().contextIsolation).toBe(true);
     });
 
     it('sets nodeIntegration to false', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
-      expect(mocks.getLastOptions().webPreferences.nodeIntegration).toBe(false);
+      expect(lastWebPreferences().nodeIntegration).toBe(false);
     });
 
     it('sets sandbox to true', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
-      expect(mocks.getLastOptions().webPreferences.sandbox).toBe(true);
+      expect(lastWebPreferences().sandbox).toBe(true);
     });
 
     it('sets webSecurity to true', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
-      expect(mocks.getLastOptions().webPreferences.webSecurity).toBe(true);
+      expect(lastWebPreferences().webSecurity).toBe(true);
     });
 
     it('sets allowRunningInsecureContent to false', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
-      expect(mocks.getLastOptions().webPreferences.allowRunningInsecureContent).toBe(false);
+      expect(lastWebPreferences().allowRunningInsecureContent).toBe(false);
     });
 
     it('sets experimentalFeatures to false', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
-      expect(mocks.getLastOptions().webPreferences.experimentalFeatures).toBe(false);
+      expect(lastWebPreferences().experimentalFeatures).toBe(false);
     });
   });
 
@@ -166,7 +231,7 @@ describe('windowFactory', () => {
       await createWindow();
 
       expect(mocks.mockWebContentsSetWindowOpenHandler).toHaveBeenCalled();
-      const handler = mocks.mockWebContentsSetWindowOpenHandler.mock.calls[0][0];
+      const handler = registeredWindowOpenHandler();
 
       const result = handler({ url: 'https://evil.example.com' });
 
@@ -174,10 +239,42 @@ describe('windowFactory', () => {
     });
   });
 
+  describe('createWindow - locked zoom', () => {
+    it('resets the renderer zoom to 100% and disables visual zoom changes', async () => {
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      expect(mocks.mockSetZoomFactor).toHaveBeenCalledWith(1);
+      expect(mocks.mockSetVisualZoomLevelLimits).toHaveBeenCalledWith(1, 1);
+    });
+
+    it('blocks keyboard zoom shortcuts while leaving other shortcuts alone', async () => {
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      const beforeInputCall = mocks.mockWebContentsOn.mock.calls.find(
+        (call: unknown[]) => call[0] === 'before-input-event',
+      );
+      expect(beforeInputCall).toBeDefined();
+      const handler = beforeInputCall![1];
+
+      const zoomEvent = { preventDefault: vi.fn() };
+      handler(zoomEvent, { type: 'keyDown', control: true, meta: false, key: '=', code: 'Equal' });
+
+      expect(zoomEvent.preventDefault).toHaveBeenCalledOnce();
+      expect(mocks.mockSetZoomFactor).toHaveBeenLastCalledWith(1);
+
+      const otherEvent = { preventDefault: vi.fn() };
+      handler(otherEvent, { type: 'keyDown', control: true, meta: false, key: 'c', code: 'KeyC' });
+
+      expect(otherEvent.preventDefault).not.toHaveBeenCalled();
+    });
+  });
+
   describe('createWindow - dev mode loading', () => {
     it('loads URL from ELECTRON_RENDERER_URL when in dev mode', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
-      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+      env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
       const { createWindow } = await import('../windowFactory');
       await createWindow();
@@ -188,7 +285,7 @@ describe('windowFactory', () => {
 
     it('loads file in production mode (no ELECTRON_RENDERER_URL)', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete process.env.ELECTRON_RENDERER_URL;
+      delete env.ELECTRON_RENDERER_URL;
 
       const { createWindow } = await import('../windowFactory');
       await createWindow();
@@ -199,7 +296,7 @@ describe('windowFactory', () => {
 
     it('rejects when the production renderer file fails to load', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete process.env.ELECTRON_RENDERER_URL;
+      delete env.ELECTRON_RENDERER_URL;
       mocks.mockLoadFile.mockRejectedValueOnce(new Error('missing renderer'));
 
       const { createWindow } = await import('../windowFactory');
@@ -213,7 +310,7 @@ describe('windowFactory', () => {
 
     it('loads file when isPackaged is false but ELECTRON_RENDERER_URL is unset', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
-      delete process.env.ELECTRON_RENDERER_URL;
+      delete env.ELECTRON_RENDERER_URL;
 
       const { createWindow } = await import('../windowFactory');
       await createWindow();
@@ -223,18 +320,38 @@ describe('windowFactory', () => {
       expect(mocks.mockLoadFile).toHaveBeenCalled();
       expect(mocks.mockLoadURL).not.toHaveBeenCalled();
     });
+
+    it('can simulate a dev-only logical test window size', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = false;
+      env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+      process.env.RELAY_TEST_WINDOW_SIZE = '1536x864';
+
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      expect(mocks.getLastOptions()).toMatchObject({
+        width: 1536,
+        height: 864,
+        useContentSize: true,
+      });
+    });
+
+    it('ignores the logical test window size for packaged windows', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = true;
+      process.env.RELAY_TEST_WINDOW_SIZE = '1536x864';
+
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      expect(mocks.getLastOptions()).toMatchObject({
+        width: 960,
+        height: 800,
+      });
+      expect(mocks.getLastOptions()).not.toHaveProperty('useContentSize');
+    });
   });
 
   describe('createWindow - will-navigate with allowed file paths', () => {
-    it('builds encoded packaged popout file URLs', () => {
-      const url = buildRendererPopoutFileUrl(
-        '/Applications/Relay QA/renderer/index.html',
-        'oncall',
-      );
-
-      expect(url).toBe('file:///Applications/Relay%20QA/renderer/index.html?popout=oncall');
-    });
-
     it('allows file URLs that resolve inside the renderer directory', () => {
       const rendererDir = '/app/dist/renderer';
       expect(isAllowedRendererFileUrl('file:///app/dist/renderer/index.html', rendererDir)).toBe(
@@ -251,7 +368,7 @@ describe('windowFactory', () => {
 
     it('allows navigation to dev server URL in dev mode', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
-      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+      env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
       const { createWindow } = await import('../windowFactory');
       await createWindow();
@@ -269,7 +386,7 @@ describe('windowFactory', () => {
 
     it('blocks dev navigation URLs that only share the renderer URL prefix', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
-      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+      env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
       const { createWindow } = await import('../windowFactory');
       await createWindow();
@@ -289,7 +406,7 @@ describe('windowFactory', () => {
 
     it('allows navigation to local file:// within renderer directory', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete process.env.ELECTRON_RENDERER_URL;
+      delete env.ELECTRON_RENDERER_URL;
 
       const { createWindow } = await import('../windowFactory');
       await createWindow();
@@ -331,9 +448,44 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - ready-to-show and close handlers', () => {
-    it('shows and focuses the main window on ready-to-show', async () => {
+    it('reports window creation and first DOM readiness through optional milestones', async () => {
+      const onWindowCreated = vi.fn();
+      const onShellReady = vi.fn();
+      const { createWindow } = await import('../windowFactory');
+
+      await createWindow({ onWindowCreated, onShellReady });
+      expect(onWindowCreated).toHaveBeenCalledOnce();
+      const domReadyCall = mocks.mockWebContentsOnce.mock.calls.find(
+        (call: unknown[]) => call[0] === 'dom-ready',
+      );
+      expect(domReadyCall).toBeDefined();
+      domReadyCall![1]();
+      expect(onShellReady).toHaveBeenCalledOnce();
+    });
+
+    it('shows and focuses the main window when the renderer finishes loading', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
+
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+      expect(mocks.mockFocus).toHaveBeenCalledOnce();
+      expect(loggers.main.info).toHaveBeenCalledWith(
+        'Main window presented',
+        expect.objectContaining({ reason: 'renderer-loaded' }),
+      );
+    });
+
+    it('shows and focuses the main window on ready-to-show before loading completes', async () => {
+      let resolveLoad!: () => void;
+      mocks.mockLoadFile.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLoad = resolve;
+          }),
+      );
+
+      const { createWindow } = await import('../windowFactory');
+      const createPromise = createWindow();
 
       // Find the once('ready-to-show') handler
       const readyCall = mocks.mockOnce.mock.calls.find(
@@ -341,11 +493,48 @@ describe('windowFactory', () => {
       );
       expect(readyCall).toBeDefined();
 
-      // Set up mockState so getMainWindow() returns a window-like object
-      mockState.mainWindow = { show: mocks.mockShow, focus: vi.fn() };
       readyCall![1]();
 
-      expect(mocks.mockShow).toHaveBeenCalled();
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+      expect(mocks.mockFocus).toHaveBeenCalledOnce();
+      expect(loggers.main.info).toHaveBeenCalledWith(
+        'Main window presented',
+        expect.objectContaining({ reason: 'ready-to-show' }),
+      );
+
+      resolveLoad();
+      await createPromise;
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+    });
+
+    it('shows the main window on a timeout when renderer loading stalls', async () => {
+      vi.useFakeTimers();
+      let resolveLoad!: () => void;
+      mocks.mockLoadFile.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLoad = resolve;
+          }),
+      );
+
+      try {
+        const { createWindow } = await import('../windowFactory');
+        const createPromise = createWindow();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(mocks.mockShow).toHaveBeenCalledOnce();
+        expect(mocks.mockFocus).toHaveBeenCalledOnce();
+        expect(loggers.main.info).toHaveBeenCalledWith(
+          'Main window presented',
+          expect.objectContaining({ reason: 'startup-timeout' }),
+        );
+
+        resolveLoad();
+        await createPromise;
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('closes all other windows when main window closes', async () => {
@@ -377,175 +566,48 @@ describe('windowFactory', () => {
     });
   });
 
-  describe('createAuxWindow - existing window tracking', () => {
-    it('replaces a destroyed aux window entry with a new window', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
+  describe('showAndFocusWindow', () => {
+    it('restores, shows, and focuses an existing minimized window', async () => {
+      mocks.mockIsMinimized.mockReturnValue(true);
+      const { showAndFocusWindow } = await import('../windowFactory');
+      // MockBrowserWindow is the factory the electron mock exposes; calling it
+      // directly returns the very same stub object `new` would.
+      const window = mockState.mainWindow ?? mocks.MockBrowserWindow({});
 
-      const { createAuxWindow } = await import('../windowFactory');
-
-      // Create first window
-      await createAuxWindow('oncall');
-
-      // Simulate the closed event to clean up the tracking map
-      const closedCall = mocks.mockOn.mock.calls.find((call: unknown[]) => call[0] === 'closed');
-      closedCall![1]();
-
-      // Now creating another should work (not just focus)
-      mocks.resetLastOptions();
-      await createAuxWindow('oncall');
-
-      expect(mocks.getLastOptions()).not.toBeNull();
-    });
-  });
-
-  describe('createAuxWindow - max limit enforcement', () => {
-    it('blocks opening when aux window limit is reached', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      // We need a fresh module to get clean auxWindows map
-      const { createAuxWindow } = await import('../windowFactory');
-
-      // The mock ALLOWED_AUX_ROUTES only has 'oncall', so we cannot easily open 5 different routes.
-      // Instead, we open one, close it, open again etc. Since the map is keyed by route,
-      // we need to test the limit differently. The limit check happens after cleanup of destroyed entries.
-      // With the mock setup, isDestroyed returns false, so entries stay.
-      // Since we can only open 'oncall' and it dedupes by route, this branch is hard to hit
-      // with a single allowed route. We verify the warn log path indirectly.
-      // For now, just verify the first aux window opens successfully.
-      await createAuxWindow('oncall');
-      expect(mocks.getLastOptions()).not.toBeNull();
-    });
-  });
-
-  describe('createAuxWindow - navigation blocking', () => {
-    it('blocks navigation to external URLs in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsOn.mockClear();
-      await createAuxWindow('oncall');
-
-      const navCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-navigate',
-      );
-      expect(navCall).toBeDefined();
-
-      const handler = navCall![1];
-      const event = { preventDefault: vi.fn() };
-
-      handler(event, 'https://evil.example.com');
-
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(loggers.security.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Blocked aux window navigation'),
-      );
+      expect(showAndFocusWindow(window as never, 'second-instance')).toBe(true);
+      expect(mocks.mockRestore).toHaveBeenCalledOnce();
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+      expect(mocks.mockFocus).toHaveBeenCalledOnce();
     });
 
-    it('allows dev server URL navigation in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = false;
-      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+    it('keeps E2E windows hidden without activating the desktop', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+      const { showAndFocusWindow } = await import('../windowFactory');
+      const window = mockState.mainWindow ?? mocks.MockBrowserWindow({});
 
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsOn.mockClear();
-      await createAuxWindow('oncall');
-
-      const navCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-navigate',
-      );
-      const handler = navCall![1];
-      const event = { preventDefault: vi.fn() };
-
-      handler(event, 'http://localhost:5173/oncall');
-
-      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(showAndFocusWindow(window as never, 'renderer-loaded')).toBe(true);
+      expect(mocks.mockShowInactive).not.toHaveBeenCalled();
+      expect(mocks.mockShow).not.toHaveBeenCalled();
+      expect(mocks.mockFocus).not.toHaveBeenCalled();
+      expect(mocks.mockRestore).not.toHaveBeenCalled();
     });
 
-    it('allows file:// navigation within renderer directory in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
+    it('does nothing when the existing window has already been destroyed', async () => {
+      const { showAndFocusWindow } = await import('../windowFactory');
+      const window = {
+        isDestroyed: vi.fn(() => true),
+        isMinimized: mocks.mockIsMinimized,
+        restore: mocks.mockRestore,
+        isVisible: mocks.mockIsVisible,
+        show: mocks.mockShow,
+        focus: mocks.mockFocus,
+      };
 
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsOn.mockClear();
-      await createAuxWindow('oncall');
-
-      const navCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-navigate',
-      );
-      const handler = navCall![1];
-      const event = { preventDefault: vi.fn() };
-
-      // file:// outside renderer dir should be blocked
-      handler(event, 'file:///etc/passwd');
-      expect(event.preventDefault).toHaveBeenCalled();
-    });
-  });
-
-  describe('createAuxWindow - dev vs prod loading', () => {
-    it('loads dev URL with popout query param when ELECTRON_RENDERER_URL is set', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = false;
-      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockLoadURL.mockClear();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.mockLoadURL).toHaveBeenCalledWith('http://localhost:5173?popout=oncall');
-    });
-
-    it('loads file URL with popout query param in production', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-      delete process.env.ELECTRON_RENDERER_URL;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockLoadURL.mockClear();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.mockLoadURL).toHaveBeenCalledWith(
-        expect.stringMatching(/^file:\/\/.*renderer\/index\.html\?popout=oncall$/),
-      );
-    });
-  });
-
-  describe('createAuxWindow - security', () => {
-    it('blocks disallowed routes', async () => {
-      const { createAuxWindow } = await import('../windowFactory');
-      await createAuxWindow('malicious-route');
-
-      expect(loggers.security.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Blocked aux window'),
-      );
-    });
-
-    it('creates aux window with correct security webPreferences', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.MockBrowserWindow.getAllWindows.mockClear();
-      mocks.resetLastOptions();
-
-      await createAuxWindow('oncall');
-
-      const opts = mocks.getLastOptions();
-      expect(opts).not.toBeNull();
-      expect(opts.webPreferences.contextIsolation).toBe(true);
-      expect(opts.webPreferences.nodeIntegration).toBe(false);
-      expect(opts.webPreferences.sandbox).toBe(true);
-      expect(opts.webPreferences.webSecurity).toBe(true);
-    });
-
-    it('blocks window.open() in aux windows', async () => {
-      (app as unknown as Record<string, boolean>).isPackaged = true;
-
-      const { createAuxWindow } = await import('../windowFactory');
-      mocks.mockWebContentsSetWindowOpenHandler.mockClear();
-
-      await createAuxWindow('oncall');
-
-      expect(mocks.mockWebContentsSetWindowOpenHandler).toHaveBeenCalled();
-      const handler = mocks.mockWebContentsSetWindowOpenHandler.mock.calls[0][0];
-      const result = handler({ url: 'https://evil.example.com' });
-      expect(result).toEqual({ action: 'deny' });
+      expect(showAndFocusWindow(window as never, 'second-instance')).toBe(false);
+      expect(mocks.mockRestore).not.toHaveBeenCalled();
+      expect(mocks.mockShow).not.toHaveBeenCalled();
+      expect(mocks.mockFocus).not.toHaveBeenCalled();
     });
   });
 });

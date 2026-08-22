@@ -12,6 +12,8 @@ interface TeamRowProps {
   tick?: number;
 }
 
+type OnCallRoleKind = 'primary' | 'backup' | 'member';
+
 const getRoleLabel = (role: string) => {
   const r = (role || '').toLowerCase();
   if (r.includes('primary')) return 'Primary';
@@ -27,34 +29,59 @@ const getRoleLabel = (role: string) => {
   return role;
 };
 
+const getRoleKind = (role: string): OnCallRoleKind => {
+  const r = (role || '').toLowerCase();
+  if (r.includes('primary') || r === 'pri' || r.includes('network') || r.includes('telecom')) {
+    return 'primary';
+  }
+  if (r.includes('secondary') || r.includes('backup') || r.includes('weekend')) {
+    return 'backup';
+  }
+  return 'member';
+};
+
+const getRoleCode = (roleKind: OnCallRoleKind) => {
+  if (roleKind === 'primary') return 'PRI';
+  if (roleKind === 'backup') return 'BKP';
+  return 'MEM';
+};
+
 export const TeamRow: React.FC<TeamRowProps> = React.memo(
   ({ row, hasAnyTimeWindow, gridTemplate: _gridTemplate, tick: _tick }) => {
     const { showToast } = useToast();
     const isActive = isTimeWindowActive(row.timeWindow || '');
 
-    const isPrimary = useMemo(() => {
-      const r = (row.role || '').toLowerCase();
-      return r.includes('primary') || r === 'pri' || r.includes('network') || r.includes('telecom');
-    }, [row.role]);
+    const roleKind = useMemo(() => getRoleKind(row.role), [row.role]);
 
     const handleCopyContact = async () => {
       if (!row.contact) return;
       const success = await globalThis.api?.writeClipboard(row.contact);
       if (success) {
         showToast(`Copied ${row.contact}`, 'success');
+      } else {
+        // Silence here reads as success — the user pastes whatever was on the
+        // clipboard before into a dialer. The Web runtime has no bridge at all.
+        showToast('Failed to copy', 'error');
       }
     };
 
     const roleText = getRoleLabel(row.role);
+    const roleCode = getRoleCode(roleKind);
     const displayName = row.name || '—';
     const phoneDisplay = formatPhoneNumber(row.contact);
-    const rowClassName = `team-row${isActive ? ' team-row--active' : ''}${isPrimary ? ' team-row--primary' : ''}`;
+    const rowClassName = `team-row${isActive ? ' team-row--active' : ''}${roleKind === 'primary' ? ' team-row--primary' : ''}${roleKind === 'backup' ? ' team-row--backup' : ''}`;
     const timeClasses = `team-row-time-window${isActive ? ' team-row-time-window--active' : ''}${row.timeWindow ? '' : ' team-row-time-window--hidden'}`;
 
     return (
       <div className={rowClassName}>
         <div className="team-row-top">
           <div className="team-row-name-wrapper">
+            <span
+              className={`team-row-role-code team-row-role-code--${roleKind}`}
+              aria-label={`${roleText} assignment`}
+            >
+              {roleCode}
+            </span>
             {isActive && <span className="team-row-active-indicator" />}
             <Tooltip content={row.name || ''}>
               <span className={`team-row-name${row.name ? '' : ' team-row-name--empty'}`}>
@@ -82,11 +109,8 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
             </button>
           </Tooltip>
         </div>
-        <div className="team-row-bottom">
-          <Tooltip content={roleText}>
-            <span className="team-row-role">{roleText}</span>
-          </Tooltip>
-          {hasAnyTimeWindow && (
+        {hasAnyTimeWindow && (
+          <div className="team-row-bottom team-row-bottom--time-only">
             <Tooltip content={row.timeWindow || ''}>
               <span className={isActive ? 'team-row-time-status' : timeClasses}>
                 {isActive ? (
@@ -101,8 +125,8 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
                 )}
               </span>
             </Tooltip>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     );
   },

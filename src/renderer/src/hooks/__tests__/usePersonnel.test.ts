@@ -203,8 +203,9 @@ describe('usePersonnel', () => {
       await result.current.handleRenameTeam('Database', 'DB Team');
     });
 
-    // teamId stays the same, display name changes
-    expect(result.current.teamIdToName.get('database')).toBe('DB Team');
+    // teamId is re-derived from the new name so "Database" can be added back
+    expect(result.current.teamIdToName.get('db team')).toBe('DB Team');
+    expect(result.current.teamIdToName.has('database')).toBe(false);
   });
 
   it('does not rename team on API failure', async () => {

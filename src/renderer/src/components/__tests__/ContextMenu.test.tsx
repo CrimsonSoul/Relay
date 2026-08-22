@@ -87,6 +87,85 @@ describe('ContextMenu', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('closes on Escape pressed anywhere, not just inside the never-focused menu', () => {
+    const onClose = vi.fn();
+    render(
+      <ContextMenu x={0} y={0} onClose={onClose} items={[{ label: 'Item', onClick: vi.fn() }]} />,
+    );
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does not let Escape reach an underlying dialog listener', () => {
+    const onDialogEscape = vi.fn();
+    document.addEventListener('keydown', onDialogEscape);
+
+    try {
+      render(
+        <ContextMenu x={0} y={0} onClose={vi.fn()} items={[{ label: 'Item', onClick: vi.fn() }]} />,
+      );
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+
+      expect(onDialogEscape).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', onDialogEscape);
+    }
+  });
+
+  it('focuses the first enabled item on mount', () => {
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        onClose={vi.fn()}
+        items={[
+          { label: 'Locked', onClick: vi.fn(), disabled: true },
+          { label: 'Edit', onClick: vi.fn() },
+        ]}
+      />,
+    );
+
+    expect(document.activeElement).toBe(screen.getByText('Edit').closest('button'));
+  });
+
+  it('moves focus between items with the arrow keys', () => {
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        onClose={vi.fn()}
+        items={[
+          { label: 'Edit', onClick: vi.fn() },
+          { label: 'Delete', onClick: vi.fn() },
+        ]}
+      />,
+    );
+
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByText('Delete').closest('button'));
+
+    fireEvent.keyDown(document.body, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(screen.getByText('Edit').closest('button'));
+  });
+
+  it('restores focus to the trigger when the menu closes', () => {
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+
+    const { unmount } = render(
+      <ContextMenu x={0} y={0} onClose={vi.fn()} items={[{ label: 'Edit', onClick: vi.fn() }]} />,
+    );
+    expect(document.activeElement).not.toBe(trigger);
+
+    unmount();
+
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
   it('renders item icon when provided', () => {
     const items = [
       { label: 'Rename', onClick: vi.fn(), icon: <span data-testid="rename-icon">R</span> },
@@ -107,6 +186,49 @@ describe('ContextMenu', () => {
     const menu = document.querySelector('.context-menu') as HTMLElement;
     expect(menu.style.top).toBe('150px');
     expect(menu.style.left).toBe('200px');
+  });
+
+  it('keeps the menu inside the viewport near the lower-right edge', () => {
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 120,
+      top: 0,
+      right: 200,
+      bottom: 120,
+      left: 0,
+      toJSON: () => ({}),
+    });
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });
+
+    try {
+      render(
+        <ContextMenu
+          x={740}
+          y={560}
+          onClose={vi.fn()}
+          items={[{ label: 'Create Calendar Invite', onClick: vi.fn() }]}
+        />,
+      );
+
+      const menu = document.querySelector('.context-menu') as HTMLElement;
+      expect(menu.style.left).toBe('592px');
+      expect(menu.style.top).toBe('472px');
+    } finally {
+      rectSpy.mockRestore();
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: originalInnerWidth,
+      });
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: originalInnerHeight,
+      });
+    }
   });
 
   it('calls onClose when window is resized', () => {

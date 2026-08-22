@@ -1,0 +1,327 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BridgeAPI } from '@shared/ipc';
+import { ELECTRON_RUNTIME } from '@shared/runtime';
+
+const electronMocks = vi.hoisted(() => ({
+  exposeInMainWorld: vi.fn(),
+  invoke: vi.fn(),
+  on: vi.fn(),
+  removeListener: vi.fn(),
+  send: vi.fn(),
+}));
+
+vi.mock('electron', () => ({
+  contextBridge: {
+    exposeInMainWorld: electronMocks.exposeInMainWorld,
+  },
+  ipcRenderer: {
+    invoke: electronMocks.invoke,
+    on: electronMocks.on,
+    removeListener: electronMocks.removeListener,
+    send: electronMocks.send,
+  },
+}));
+
+describe('preload Knowledge web link bridge', () => {
+  let api: BridgeAPI;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    electronMocks.invoke.mockResolvedValue({ ok: true });
+
+    await import('./index');
+
+    expect(electronMocks.exposeInMainWorld).toHaveBeenCalledWith('api', expect.any(Object));
+    const exposeCall = electronMocks.exposeInMainWorld.mock.calls[0];
+    if (!exposeCall) throw new Error('Expected preload API to be exposed');
+    api = exposeCall[1] as BridgeAPI;
+  });
+
+  it('invokes the dedicated Knowledge web link channel with the URL', async () => {
+    const url = 'https://docs.example.com/runbook?incident=123';
+
+    expect(api.openKnowledgeWebLink).toBeTypeOf('function');
+    await expect(api.openKnowledgeWebLink(url)).resolves.toEqual({ ok: true });
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:openWebLink', url);
+  });
+
+  it('identifies the existing preload as the full desktop runtime', () => {
+    expect(api.runtime).toEqual(ELECTRON_RUNTIME);
+  });
+
+  it('exposes only dedicated application release actions', async () => {
+    expect(api.getAppVersion).toBeTypeOf('function');
+    expect(api.checkForUpdates).toBeTypeOf('function');
+    expect(api.getUpdateState).toBeTypeOf('function');
+    expect(api.downloadUpdate).toBeTypeOf('function');
+    expect(api.cancelUpdateDownload).toBeTypeOf('function');
+    expect(api.installUpdate).toBeTypeOf('function');
+    expect(api.restartToUpdate).toBeTypeOf('function');
+    expect(api.onUpdateStateChanged).toBeTypeOf('function');
+    expect(api.openReleasesPage).toBeTypeOf('function');
+
+    await api.getAppVersion!();
+    await api.checkForUpdates!();
+    await api.getUpdateState!();
+    await api.downloadUpdate!();
+    await api.cancelUpdateDownload!();
+    await api.installUpdate!();
+    await api.restartToUpdate!();
+    await api.openReleasesPage!();
+
+    const callback = vi.fn();
+    const unsubscribe = api.onUpdateStateChanged!(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'app:updateStateChanged',
+    )?.[1] as (_event: unknown, snapshot: unknown) => void;
+    const update = {
+      phase: 'downloading',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      installable: true,
+      downloadedBytes: 10,
+      totalBytes: 100,
+      failureCode: null,
+    };
+    handler({}, update);
+    unsubscribe();
+
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'app:getVersion');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'app:checkForUpdates');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'app:updateGetState');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, 'app:updateDownload');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, 'app:updateCancelDownload');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, 'app:updateInstall');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, 'app:updateRestart');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, 'app:openReleases');
+    expect(callback).toHaveBeenCalledWith(update);
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('app:updateStateChanged', handler);
+  });
+
+  it('uses the dedicated Service Desk URL channel', async () => {
+    const url = 'https://servicedesk.example.com/incidents/INC0012345';
+
+    await api.openServiceDeskUrl(url);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('shell:openServiceDeskUrl', url);
+  });
+
+  it('forwards query-scoped offline cache membership over dedicated channels', async () => {
+    const membership = { recordIds: ['problem-1'], totalItems: 250, complete: false };
+    electronMocks.invoke.mockResolvedValueOnce(membership);
+
+    await expect(api.cacheQueryRead('dynatrace_problems', '0123456789abcdef')).resolves.toEqual(
+      membership,
+    );
+    await api.cacheQuerySnapshot('dynatrace_problems', '0123456789abcdef', membership);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      'cache:queryRead',
+      'dynatrace_problems',
+      '0123456789abcdef',
+    );
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      'cache:querySnapshot',
+      'dynatrace_problems',
+      '0123456789abcdef',
+      membership,
+    );
+  });
+
+  it('does not expose a generic file-path opening capability', () => {
+    const bridge = api as unknown as Record<string, unknown>;
+
+    expect(bridge.openPath).toBeUndefined();
+    expect(electronMocks.invoke).not.toHaveBeenCalledWith('fs:openPath', expect.anything());
+  });
+
+  it('exposes race-safe startup state coordination', async () => {
+    const snapshot = {
+      generation: 1,
+      sequence: 2,
+      phase: 'preparing-data' as const,
+      message: 'Preparing Relay data…',
+    };
+    electronMocks.invoke.mockResolvedValueOnce(snapshot);
+    const callback = vi.fn();
+
+    await expect(api.getStartupState?.()).resolves.toEqual(snapshot);
+    const unsubscribe = api.onStartupStateChanged?.(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'startup:stateChanged',
+    )?.[1] as (_event: unknown, value: unknown) => void;
+    handler({}, snapshot);
+    api.markStartupRendererMounted?.();
+    unsubscribe?.();
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('startup:getState');
+    expect(callback).toHaveBeenCalledWith(snapshot);
+    expect(electronMocks.send).toHaveBeenCalledWith('startup:rendererMounted');
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('startup:stateChanged', handler);
+  });
+
+  it('forwards Relay Web settings controls over dedicated IPC channels', async () => {
+    await api.getWebServerState();
+    await api.saveWebServerConfig({ enabled: true, port: 8091 });
+    await api.retryWebServer();
+
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'webServer:getState');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'webServer:saveConfig', {
+      enabled: true,
+      port: 8091,
+    });
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'webServer:retry');
+  });
+
+  it('exposes cover bytes through the narrow Knowledge cover channel', async () => {
+    const request = { documentId: 'document1', checksum: 'a'.repeat(64) };
+    await api.getKnowledgeCover(request);
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:getCover', request);
+  });
+
+  it('exposes only validated-request search and identifier-only cancellation methods', async () => {
+    const request = {
+      requestId: 'search-request-1',
+      query: 'failover',
+      scope: { kind: 'all' as const },
+      categoryId: null,
+      documentType: null,
+      limit: 20,
+    };
+
+    await api.searchKnowledge(request);
+    api.cancelKnowledgeSearch(request.requestId);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:search', request);
+    expect(electronMocks.send).toHaveBeenCalledWith('knowledge:searchCancel', request.requestId);
+  });
+
+  it('exposes only selection, safe queue state, and identifier-based Knowledge controls', async () => {
+    const callback = vi.fn();
+    await api.selectAndQueueKnowledgePdfs();
+    await api.selectAndQueueKnowledgePdfs('document-1');
+    await api.getKnowledgeUploadQueue();
+    await api.pauseKnowledgeUploadBatch('batch-1');
+    await api.resumeKnowledgeUploadBatch('batch-1');
+    await api.retryKnowledgeUpload('upload-1');
+    await api.reselectKnowledgeUploadSource('upload-1');
+    await api.cancelKnowledgeUpload('upload-1');
+    await api.cancelKnowledgeUploadBatch('batch-1');
+    const unsubscribe = api.onKnowledgeUploadQueueChanged(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'knowledge:uploadQueueChanged',
+    )?.[1] as (_event: unknown, queue: unknown) => void;
+    const queue = {
+      restartRecovery: false,
+      activeBatchId: 'batch-1',
+      totalBytes: 100,
+      acknowledgedBytes: 20,
+      items: [],
+    };
+    handler({}, queue);
+    unsubscribe();
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:selectAndStage');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:selectAndStage', 'document-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadQueue');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchPause', 'batch-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchResume', 'batch-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadRetry', 'upload-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadReselect', 'upload-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadFileCancel', 'upload-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchCancel', 'batch-1');
+    expect(callback).toHaveBeenCalledWith(queue);
+    expect(electronMocks.removeListener).toHaveBeenCalledWith(
+      'knowledge:uploadQueueChanged',
+      handler,
+    );
+  });
+
+  it('exposes the narrow privileged bridge and forwards only its approved arguments', async () => {
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the preload bridge forwards exact login arguments.
+    const login = { username: 'ryan', password: 'Test-access-value-123!' };
+    // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies the distinct reauthentication bridge method.
+    const reauthentication = { password: 'Test-access-value-123!' };
+    const pairing = {
+      challengeId: 'challenge-1',
+      code: 'ABCD2345',
+      deviceLabel: 'Ryan work laptop',
+    };
+    const command = {
+      command: 'privileged.status.read' as const,
+      payload: { clientVersion: '1.0.0' },
+      expectedRevision: null,
+    };
+
+    await api.getPrivilegedSession();
+    await api.loginPrivileged(login);
+    await api.logoutPrivileged();
+    await api.reauthenticatePrivileged(reauthentication);
+    await api.createPrivilegedPairingChallenge('account-publisher');
+    await api.completePrivilegedPairing(pairing);
+    await api.submitPrivilegedCommand(command);
+    const initialOwnerCredential = {
+      username: 'Ryan',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies initial-owner bridge forwarding.
+      password: 'Test-access-value-123!',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation verifies the boundary preserves both fields.
+      passwordConfirm: 'Test-access-value-123!',
+    };
+    const credential = {
+      accountId: 'account-admin',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Deliberate fake credential verifies account credential bridge forwarding.
+      password: 'Test-access-value-123!',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Matching fake confirmation verifies the boundary preserves both fields.
+      passwordConfirm: 'Test-access-value-123!',
+    };
+    await api.setupInitialAdministratorCredential(initialOwnerCredential);
+    await api.setupPrivilegedCredential(credential);
+
+    expect(electronMocks.invoke.mock.calls).toEqual(
+      expect.arrayContaining([
+        ['privileged:getSession'],
+        ['privileged:login', login],
+        ['privileged:logout'],
+        ['privileged:reauthenticate', reauthentication],
+        ['privileged:createPairingChallenge', 'account-publisher'],
+        ['privileged:completePairing', pairing],
+        ['privileged:submitCommand', command],
+        ['privileged:setupInitialAdministrator', initialOwnerCredential],
+        ['privileged:setupCredential', credential],
+      ]),
+    );
+  });
+
+  it('does not expose retired roster management methods', () => {
+    const bridge = api as unknown as Record<string, unknown>;
+
+    expect(bridge.lockPrivileged).toBeUndefined();
+    expect(bridge.createRelayOperator).toBeUndefined();
+    expect(bridge.renameRelayOperator).toBeUndefined();
+    expect(bridge.setRelayOperatorActive).toBeUndefined();
+  });
+
+  it('subscribes and unsubscribes from public privileged session changes', () => {
+    const callback = vi.fn();
+    const unsubscribe = api.onPrivilegedSessionChanged(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'privileged:sessionChanged',
+    )?.[1] as (_event: unknown, view: unknown) => void;
+    const view = {
+      state: 'signed-out',
+      accountId: null,
+      username: null,
+      displayName: null,
+      role: null,
+      capabilities: [],
+      deviceId: null,
+      expiresAt: null,
+    };
+
+    handler({}, view);
+    expect(callback).toHaveBeenCalledWith(view);
+    unsubscribe();
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('privileged:sessionChanged', handler);
+  });
+});

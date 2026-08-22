@@ -1,4 +1,6 @@
 export const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const MAX_EXTERNAL_URL_LENGTH = 2_081;
+const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
 
 function isPrivateIpv4(hostname: string): boolean {
   const parts = hostname.split('.').map((part) => Number.parseInt(part, 10));
@@ -6,7 +8,9 @@ function isPrivateIpv4(hostname: string): boolean {
     return false;
   }
 
-  const [first, second] = parts;
+  // The length check above guarantees both octets exist; NaN defaults fail closed
+  // (every comparison below is false for NaN) if that ever stops holding.
+  const [first = Number.NaN, second = Number.NaN] = parts;
   return (
     first === 10 ||
     (first === 172 && second >= 16 && second <= 31) ||
@@ -108,6 +112,30 @@ export function describeUrlForLog(url: string): string {
   } catch {
     return '<unparseable-url>';
   }
+}
+
+/** A deliberately narrow external-navigation shape for operator-entered ticket links. */
+export function normalizeServiceDeskUrl(value: unknown): string | null {
+  if (
+    typeof value !== 'string' ||
+    value.length > MAX_EXTERNAL_URL_LENGTH ||
+    value.trim() !== value ||
+    CONTROL_CHARACTER_PATTERN.test(value)
+  ) {
+    return null;
+  }
+  const parsed = parseUrl(value);
+  if (
+    parsed?.protocol !== 'https:' ||
+    parsed.username ||
+    parsed.password ||
+    parsed.port ||
+    !parsed.hostname
+  ) {
+    return null;
+  }
+  const canonical = parsed.toString();
+  return CONTROL_CHARACTER_PATTERN.test(canonical) ? null : canonical;
 }
 
 function isRelayServerOriginUrl(parsed: URL): boolean {

@@ -1,4 +1,5 @@
-import { AppData, Contact, Server } from '@shared/ipc';
+import { AppData, Contact, OnCallRow, Server } from '@shared/ipc';
+import { createClientId } from './clientId';
 
 // Dev-only mock data for browser preview (no Electron API available)
 
@@ -15,7 +16,7 @@ function mkContact(
     phone,
     title,
     _searchString: `${name} ${email} ${phone} ${title}`.toLowerCase(),
-    raw: { id: crypto.randomUUID(), createdAt: now, updatedAt: now },
+    raw: { id: createClientId(), createdAt: now, updatedAt: now },
   };
 }
 
@@ -39,7 +40,7 @@ function mkServer(opts: {
     contact,
     os,
     _searchString: `${name} ${ba} ${lob} ${comment} ${owner} ${contact} ${os}`.toLowerCase(),
-    raw: { id: crypto.randomUUID(), createdAt: now, updatedAt: now },
+    raw: { id: createClientId(), createdAt: now, updatedAt: now },
   };
 }
 
@@ -210,10 +211,11 @@ export function getDevMockData(): AppData {
     }),
   ];
 
-  const onCall = [
+  const onCall: OnCallRow[] = [
     {
       id: 'oc1',
       team: 'SRE',
+      teamId: 'team-sre',
       role: 'Primary',
       name: 'Ian Clark',
       contact: '555-0108',
@@ -222,6 +224,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc2',
       team: 'SRE',
+      teamId: 'team-sre',
       role: 'Secondary',
       name: 'Kyle Reese',
       contact: '555-0110',
@@ -230,6 +233,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc3',
       team: 'SRE',
+      teamId: 'team-sre',
       role: 'Backup',
       name: 'Bob Smith',
       contact: '555-0101',
@@ -238,6 +242,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc4',
       team: 'Platform',
+      teamId: 'team-platform',
       role: 'Primary',
       name: 'Alice Johnson',
       contact: '555-0100',
@@ -246,6 +251,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc5',
       team: 'Platform',
+      teamId: 'team-platform',
       role: 'Shadow',
       name: 'Steve Rogers',
       contact: '555-0118',
@@ -254,6 +260,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc6',
       team: 'Security',
+      teamId: 'team-security',
       role: 'Primary',
       name: 'Diana Prince',
       contact: '555-0103',
@@ -262,6 +269,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc7',
       team: 'Security',
+      teamId: 'team-security',
       role: 'Escalation',
       name: 'Tony Stark',
       contact: '555-0119',
@@ -270,6 +278,7 @@ export function getDevMockData(): AppData {
     {
       id: 'oc8',
       team: 'Data',
+      teamId: 'team-data',
       role: 'Primary',
       name: 'Evan Wright',
       contact: '555-0104',

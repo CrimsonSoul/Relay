@@ -6,6 +6,7 @@ import {
   type ConnectionState,
 } from '../services/pocketbase';
 import './statusbar.css';
+import { usePendingSyncStatus } from '../hooks/usePendingSyncStatus';
 
 interface StatusBarProps {
   readonly left?: ReactNode;
@@ -38,6 +39,8 @@ const connectionLabels: Record<ConnectionState, string> = {
 
 export function StatusBarLive({ label }: { readonly label?: string }) {
   const [state, setState] = useState<ConnectionState>(getConnectionState());
+  const pendingStatus = usePendingSyncStatus();
+  const { pendingCount, issueCount = 0 } = pendingStatus;
   const resolvedLabel = label ?? connectionLabels[state];
 
   useEffect(() => {
@@ -48,6 +51,9 @@ export function StatusBarLive({ label }: { readonly label?: string }) {
     <span className={`status-bar-live status-bar-live--${state}`} data-connection-state={state}>
       <span className="status-bar-live-dot" />
       {resolvedLabel}
+      {pendingCount > 0 &&
+        ` · ${pendingCount} ${pendingCount === 1 ? 'change' : 'changes'} pending`}
+      {issueCount > 0 && ` · ${issueCount} need attention`}
     </span>
   );
 }

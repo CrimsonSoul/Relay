@@ -7,18 +7,32 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSuperuserPassword } from './seedConfig.mjs';
+import { seedKnowledgeDocuments } from './seedKnowledge.mjs';
 
-const PB = 'http://localhost:8090';
+const PB = process.env.RELAY_SEED_PB_URL ?? 'http://localhost:8090';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const seedSuperuserEmail = 'relay-seed@relay.local';
 const seedSuperuserPassword = `relay-seed-${randomUUID()}-Passphrase`;
+const dynatraceOnly = process.argv.includes('--dynatrace-only');
+const clearDynatraceOnly = process.argv.includes('--clear-dynatrace');
+const DYNATRACE_DEMO_PREFIX = 'RELAY-DEMO-';
 let token = '';
 let seedSuperuserId = '';
+const failedRecords = [];
 
 function resolvePocketBaseBinary() {
   const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
-  const binaryPath = join(__dirname, '..', 'resources', 'pocketbase', binaryName);
+  const platformBinaryPath = join(
+    __dirname,
+    '..',
+    'resources',
+    'pocketbase',
+    `${process.platform}-${process.arch}`,
+    binaryName,
+  );
+  const legacyBinaryPath = join(__dirname, '..', 'resources', 'pocketbase', binaryName);
+  const binaryPath = existsSync(platformBinaryPath) ? platformBinaryPath : legacyBinaryPath;
   if (!existsSync(binaryPath)) {
     throw new Error(`PocketBase binary not found at ${binaryPath}. Run npm install first.`);
   }
@@ -69,9 +83,10 @@ async function authWith(identity, password) {
   });
   const data = await res.json();
   if (!res.ok) {
-    console.error(`Auth failed with status ${res.status}`);
+    // Throwing (rather than exiting here) lets the top-level finally clean up
+    // the temporary seed superuser that ensureSeedSuperuser may have created.
     console.error(JSON.stringify(data, null, 2));
-    process.exit(1);
+    throw new Error(`Auth failed with status ${res.status}`);
   }
   token = data.token;
   return data;
@@ -80,9 +95,19 @@ async function authWith(identity, password) {
 async function auth() {
   const configuredPassword = process.env.RELAY_SEED_SUPERUSER_PASSWORD;
   if (configuredPassword) {
-    await authWith('admin@relay.app', getSuperuserPassword(process.env));
+    const identity = process.env.RELAY_SEED_SUPERUSER_IDENTITY ?? 'admin@relay.app';
+    const data = await authWith(identity, getSuperuserPassword(process.env));
+    if (process.env.RELAY_SEED_CLEANUP_SUPERUSER === '1') {
+      seedSuperuserId = data.record?.id ?? '';
+    }
     console.log('Authenticated as configured superuser');
     return;
+  }
+
+  if (dynatraceOnly || clearDynatraceOnly) {
+    throw new Error(
+      'Set RELAY_SEED_SUPERUSER_PASSWORD to the Relay server passphrase before seeding Dynatrace demo data.',
+    );
   }
 
   ensureSeedSuperuser();
@@ -108,8 +133,20 @@ async function create(collection, data) {
   const body = await res.text();
   if (!res.ok) {
     console.error(`  FAIL ${collection}:`, body);
+    failedRecords.push(`${collection} (HTTP ${res.status})`);
     return {};
   }
+  return JSON.parse(body);
+}
+
+async function createRequired(collection, data) {
+  const res = await fetch(`${PB}/api/collections/${collection}/records`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: token },
+    body: JSON.stringify(data),
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`Could not create ${collection}: ${body}`);
   return JSON.parse(body);
 }
 
@@ -120,20 +157,285 @@ async function clearCollection(collection) {
       headers: { Authorization: token },
     });
     const data = await res.json();
+    if (!res.ok) {
+      throw new Error(`Could not list ${collection}: ${JSON.stringify(data)}`);
+    }
     if (!data.items?.length) break;
+    let deletedThisPass = 0;
     for (const item of data.items) {
       const del = await fetch(`${PB}/api/collections/${collection}/records/${item.id}`, {
         method: 'DELETE',
         headers: { Authorization: token },
       });
-      if (del.ok) removed++;
+      if (del.ok) deletedThisPass++;
     }
+    // Without this guard an undeletable record loops forever on the same page.
+    if (deletedThisPass === 0) {
+      throw new Error(`Could not delete any of ${data.items.length} records from ${collection}`);
+    }
+    removed += deletedThisPass;
   }
   console.log(`  Cleared ${removed} records from ${collection}`);
 }
 
+async function listCollection(collection) {
+  const records = [];
+  let page = 1;
+  while (true) {
+    const url = new URL(`${PB}/api/collections/${collection}/records`);
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('perPage', '500');
+    const res = await fetch(url, { headers: { Authorization: token } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`Could not list ${collection}: ${JSON.stringify(data)}`);
+    records.push(...(data.items ?? []));
+    if (page >= (data.totalPages ?? 1)) break;
+    page += 1;
+  }
+  return records;
+}
+
+async function deleteRecord(collection, id) {
+  const res = await fetch(`${PB}/api/collections/${collection}/records/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: token },
+  });
+  if (!res.ok) throw new Error(`Could not delete ${collection}/${id}: ${await res.text()}`);
+}
+
+async function clearDynatraceDemoData() {
+  let removed = 0;
+  for (const collection of [
+    'dynatrace_problem_notes',
+    'dynatrace_problem_states',
+    'dynatrace_problems',
+    'knowledge_documents',
+  ]) {
+    const records = await listCollection(collection);
+    const demoRecords = records.filter((record) =>
+      String(record.problemId ?? '').startsWith(DYNATRACE_DEMO_PREFIX),
+    );
+    for (const record of demoRecords) await deleteRecord(collection, record.id);
+    removed += demoRecords.length;
+    console.log(`  Cleared ${demoRecords.length} demo records from ${collection}`);
+  }
+  return removed;
+}
+
+function makeDynatraceProblemData(now = Date.now()) {
+  const minutesAgo = (minutes) => now - minutes * 60_000;
+  const hoursAgo = (hours) => now - hours * 60 * 60_000;
+  const syncedAt = new Date(minutesAgo(1)).toISOString();
+  const environmentUrl = 'https://relay-demo.live.dynatrace.com';
+
+  const problems = [
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1001`,
+      displayId: 'P-DEMO-1001',
+      title: 'Checkout service availability below SLO',
+      status: 'OPEN',
+      severity: 'AVAILABILITY',
+      impactLevel: 'APPLICATION',
+      startTime: minutesAgo(18),
+      endTime: -1,
+      rootCauseName: 'checkout-web',
+      affectedEntities: [
+        { id: 'APPLICATION-DEMO-1', type: 'APPLICATION', name: 'Checkout Web' },
+        { id: 'SERVICE-DEMO-1', type: 'SERVICE', name: 'checkout-api' },
+      ],
+      impactedEntities: [{ id: 'APPLICATION-DEMO-1', type: 'APPLICATION', name: 'Checkout Web' }],
+      managementZones: [{ id: 'ZONE-DEMO-1', name: 'Payments Production' }],
+      alertingProfiles: ['Payments Production'],
+      environmentUrl,
+      syncedAt,
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1002`,
+      displayId: 'P-DEMO-1002',
+      title: 'Payment API response time degradation',
+      status: 'OPEN',
+      severity: 'PERFORMANCE',
+      impactLevel: 'SERVICES',
+      startTime: minutesAgo(47),
+      endTime: -1,
+      rootCauseName: 'payments-api',
+      affectedEntities: [
+        { id: 'SERVICE-DEMO-2', type: 'SERVICE', name: 'payments-api' },
+        { id: 'HOST-DEMO-7', type: 'HOST', name: 'prod-api-07' },
+      ],
+      impactedEntities: [
+        { id: 'SERVICE-DEMO-3', type: 'SERVICE', name: 'order-submit' },
+        { id: 'SERVICE-DEMO-4', type: 'SERVICE', name: 'refunds-api' },
+      ],
+      managementZones: [{ id: 'ZONE-DEMO-1', name: 'Payments Production' }],
+      alertingProfiles: ['Payments Production'],
+      environmentUrl,
+      syncedAt,
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1003`,
+      displayId: 'P-DEMO-1003',
+      title: 'Database connection pool saturation',
+      status: 'OPEN',
+      severity: 'RESOURCE_CONTENTION',
+      impactLevel: 'INFRASTRUCTURE',
+      startTime: hoursAgo(2.4),
+      endTime: -1,
+      rootCauseName: 'orders-db-02',
+      affectedEntities: [
+        { id: 'PROCESS-GROUP-DEMO-2', type: 'PROCESS_GROUP', name: 'orders-postgres' },
+        { id: 'HOST-DEMO-9', type: 'HOST', name: 'orders-db-02' },
+      ],
+      impactedEntities: [{ id: 'SERVICE-DEMO-5', type: 'SERVICE', name: 'orders-api' }],
+      managementZones: [{ id: 'ZONE-DEMO-2', name: 'Order Platform' }],
+      alertingProfiles: ['Order Platform'],
+      environmentUrl,
+      syncedAt,
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1004`,
+      displayId: 'P-DEMO-1004',
+      title: 'Synthetic checkout monitors stopped reporting from three locations',
+      status: 'OPEN',
+      severity: 'MONITORING_UNAVAILABLE',
+      impactLevel: 'ENVIRONMENT',
+      startTime: hoursAgo(4.1),
+      endTime: -1,
+      rootCauseName: '',
+      affectedEntities: [
+        { id: 'SYNTHETIC-DEMO-1', type: 'SYNTHETIC_TEST', name: 'Global Checkout Journey' },
+      ],
+      impactedEntities: [],
+      managementZones: [],
+      alertingProfiles: ['Synthetic Monitoring'],
+      environmentUrl,
+      syncedAt,
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1005`,
+      displayId: 'P-DEMO-1005',
+      title: 'TLS certificate expires within 14 days',
+      status: 'OPEN',
+      severity: 'CUSTOM_ALERT',
+      impactLevel: 'INFRASTRUCTURE',
+      startTime: hoursAgo(9.5),
+      endTime: -1,
+      rootCauseName: 'edge-lb-prod',
+      affectedEntities: [
+        { id: 'HOST-DEMO-11', type: 'HOST', name: 'edge-lb-prod-01' },
+        { id: 'HOST-DEMO-12', type: 'HOST', name: 'edge-lb-prod-02' },
+      ],
+      impactedEntities: [],
+      managementZones: [{ id: 'ZONE-DEMO-3', name: 'Network Edge' }],
+      alertingProfiles: ['Network Edge'],
+      environmentUrl,
+      syncedAt,
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1006`,
+      displayId: 'P-DEMO-1006',
+      title: 'Elevated login failure rate',
+      status: 'CLOSED',
+      severity: 'ERROR',
+      impactLevel: 'SERVICES',
+      startTime: hoursAgo(7.2),
+      endTime: hoursAgo(5.8),
+      rootCauseName: 'identity-gateway',
+      affectedEntities: [{ id: 'SERVICE-DEMO-9', type: 'SERVICE', name: 'identity-gateway' }],
+      impactedEntities: [
+        { id: 'APPLICATION-DEMO-6', type: 'APPLICATION', name: 'Customer Portal' },
+      ],
+      managementZones: [{ id: 'ZONE-DEMO-4', name: 'Customer Identity' }],
+      alertingProfiles: ['Customer Identity'],
+      environmentUrl,
+      syncedAt,
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1007`,
+      displayId: 'P-DEMO-1007',
+      title: 'Deployment health event completed successfully',
+      status: 'CLOSED',
+      severity: 'INFO',
+      impactLevel: 'ENVIRONMENT',
+      startTime: hoursAgo(14),
+      endTime: hoursAgo(13.5),
+      rootCauseName: 'catalog-api',
+      affectedEntities: [{ id: 'SERVICE-DEMO-12', type: 'SERVICE', name: 'catalog-api' }],
+      impactedEntities: [],
+      managementZones: [{ id: 'ZONE-DEMO-5', name: 'Catalog Production' }],
+      alertingProfiles: ['Catalog Production'],
+      environmentUrl,
+      syncedAt,
+    },
+  ];
+
+  const states = [
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1003`,
+      addressed: true,
+      addressedAt: new Date(minutesAgo(52)).toISOString(),
+      addressedBy: 'noc-demo-west-03',
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1006`,
+      addressed: true,
+      addressedAt: new Date(minutesAgo(370)).toISOString(),
+      addressedBy: 'noc-demo-east-01',
+    },
+  ];
+
+  const notes = [
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1002`,
+      author: 'noc-demo-central-02',
+      note: 'Confirmed impact in the checkout path. Payments team is reviewing the last deployment.',
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1002`,
+      author: 'noc-demo-central-02',
+      note: 'Error rate is stable; latency remains above baseline. Continue monitoring before escalation.',
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1003`,
+      author: 'noc-demo-west-03',
+      note: 'Connection pool was raised from 180 to 220 while the database team investigates long-running sessions.',
+    },
+    {
+      problemId: `${DYNATRACE_DEMO_PREFIX}1006`,
+      author: 'noc-demo-east-01',
+      note: 'Identity team rolled back the gateway policy change. Dynatrace confirmed recovery.',
+    },
+  ];
+
+  return { problems, states, notes };
+}
+
+async function seedDynatraceProblems() {
+  const { problems, states, notes } = makeDynatraceProblemData();
+  console.log('Seeding Dynatrace Problems demo data...');
+  for (const problem of problems) await createRequired('dynatrace_problems', problem);
+  for (const state of states) await createRequired('dynatrace_problem_states', state);
+  for (const note of notes) await createRequired('dynatrace_problem_notes', note);
+  console.log(
+    `  Created ${problems.length} problems, ${states.length} local state, and ${notes.length} notes`,
+  );
+}
+
 async function seed() {
   await auth();
+
+  if (clearDynatraceOnly) {
+    const removed = await clearDynatraceDemoData();
+    console.log(`\n✅ Removed ${removed} Dynatrace demo records.`);
+    return;
+  }
+
+  if (dynatraceOnly) {
+    await clearDynatraceDemoData();
+    await seedDynatraceProblems();
+    console.log('\n✅ Dynatrace Problems demo seed complete!');
+    return;
+  }
 
   // Clear all app-facing collections so the seed is repeatable.
   for (const col of [
@@ -144,10 +446,12 @@ async function seed() {
     'bridge_history',
     'alert_history',
     'notes',
-    'standalone_notes',
     'oncall_dismissals',
     'conflict_log',
     'oncall_board_settings',
+    'dynatrace_problem_notes',
+    'dynatrace_problem_states',
+    'dynatrace_problems',
   ]) {
     console.log(`Clearing ${col}...`);
     await clearCollection(col);
@@ -638,59 +942,6 @@ async function seed() {
   ];
   for (const n of attachedNotes) await create('notes', n);
 
-  console.log('Seeding standalone_notes...');
-  const notes = [
-    {
-      title: 'Runbook — API Failover',
-      content:
-        '1. Verify health check failures on prod-api-01\n2. Confirm prod-api-02 is healthy\n3. Update Route53 to point to secondary\n4. Notify #incidents channel\n5. Begin root cause analysis on primary',
-      color: 'red',
-      tags: ['runbook', 'api', 'failover'],
-      sortOrder: 1,
-    },
-    {
-      title: 'Q2 Capacity Planning',
-      content:
-        'Current utilization:\n- API: 68% peak\n- DB: 45% peak (read replicas at 30%)\n- Workers: 82% peak — need 2 more\n- Cache: 55% memory usage\n\nAction items:\n- Scale worker pool by 2 nodes\n- Evaluate DB vertical scale vs horizontal',
-      color: 'blue',
-      tags: ['planning', 'capacity', 'q2'],
-      sortOrder: 2,
-    },
-    {
-      title: 'Incident Postmortem — 3/15 Outage',
-      content:
-        'Duration: 47 minutes\nImpact: 100% API failures\nRoot cause: Certificate expiration on load balancer\nContributing: No monitoring on cert expiry dates\n\nAction items:\n- Add cert expiry monitoring (Carlos)\n- Document renewal process (Diana)\n- Set up auto-renewal where possible (Alex)',
-      color: 'amber',
-      tags: ['postmortem', 'incident', 'certs'],
-      sortOrder: 3,
-    },
-    {
-      title: 'New Hire Onboarding Checklist',
-      content:
-        '- [ ] VPN access setup\n- [ ] GitHub org invite\n- [ ] PagerDuty account\n- [ ] Slack channels (#ops, #incidents, #platform)\n- [ ] AWS IAM role assignment\n- [ ] Runbook review session\n- [ ] Shadow on-call shift',
-      color: 'green',
-      tags: ['onboarding', 'hr', 'checklist'],
-      sortOrder: 4,
-    },
-    {
-      title: 'Vendor Contacts',
-      content:
-        'AWS TAM: Jennifer Liu — jliu@aws.amazon.com — (206) 555-0190\nCloudflare SE: Mike Torres — mtorres@cloudflare.com\nPagerDuty CSM: Alisha Grant — agrant@pagerduty.com\nDatadog AE: Chris Nguyen — cnguyen@datadoghq.com',
-      color: 'purple',
-      tags: ['vendors', 'contacts'],
-      sortOrder: 5,
-    },
-    {
-      title: 'Weekend Maintenance Window',
-      content:
-        'Saturday 2:00 AM–6:00 AM ET\n\n1. PostgreSQL minor version upgrade (prod-db-primary)\n2. Kernel patches on all Ubuntu hosts\n3. Redis cluster rebalance\n4. Rotate TLS certificates on LB\n\nRollback plan: snapshot before each step, 15-min checkpoint',
-      color: 'slate',
-      tags: ['maintenance', 'weekend', 'planned'],
-      sortOrder: 6,
-    },
-  ];
-  for (const n of notes) await create('standalone_notes', n);
-
   console.log('Seeding alert_history...');
   const alerts = [
     {
@@ -815,6 +1066,18 @@ async function seed() {
     overwrittenBy: 'seed-script',
   });
 
+  console.log('Seeding Knowledge Base documents...');
+  const knowledgeDocuments = await seedKnowledgeDocuments({ baseUrl: PB, token });
+  console.log(`  Created ${knowledgeDocuments.length} protected PDF documents`);
+
+  await seedDynatraceProblems();
+
+  // create() reports per-record failures without aborting; a partial seed must
+  // still exit non-zero instead of printing a success banner.
+  if (failedRecords.length > 0) {
+    throw new Error(`${failedRecords.length} records failed: ${failedRecords.join(', ')}`);
+  }
+
   console.log('\n✅ Seed complete!');
 }
 
@@ -822,7 +1085,9 @@ try {
   await seed();
 } catch (err) {
   console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
-  process.exit(1);
+  // Exiting immediately here would skip the finally block below and strand the
+  // temporary seed superuser in PocketBase; setting exitCode lets cleanup run.
+  process.exitCode = 1;
 } finally {
   await cleanupSeedSuperuser();
 }

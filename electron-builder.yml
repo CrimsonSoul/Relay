@@ -11,7 +11,6 @@ electronFuses:
   # signed build. Re-enable once builder computes integrity post-signing.
   enableEmbeddedAsarIntegrityValidation: false
   onlyLoadAppFromAsar: true
-  resetAdHocDarwinSignature: true
 electronLanguages:
   - en-US
 files:
@@ -33,49 +32,35 @@ files:
 directories:
   output: release
   buildResources: resources
+toolsets:
+  nsis: '1.2.1'
 npmRebuild: true
 removePackageScripts: true
 win:
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
   artifactName: 'Relay.exe'
   icon: build/icon.ico
   requestedExecutionLevel: 'asInvoker'
   extraResources:
+    - from: 'release/windows-bootstrap/relay-build-id.txt'
+      to: 'relay-build-id.txt'
     - from: resources
       to: data
       filter:
         - '**/*'
         - '!pocketbase/**'
+    - from: 'resources/pocketbase/hooks/'
+      to: 'pocketbase/hooks/'
     - from: 'resources/pocketbase/win32-x64/'
       to: 'pocketbase/win32-x64/'
-compression: 'maximum'
+nsis:
+  script: 'build/windows/relay-bootstrap.nsi'
+  packElevateHelper: false
+  useZip: false
+  artifactName: 'Relay.exe'
+compression: 'normal'
 electronDownload:
   cache: '.electron'
-
-mac:
-  target:
-    - target: dmg
-      arch:
-        - arm64
-        - x64
-  artifactName: 'Relay-${arch}.dmg'
-  category: public.app-category.developer-tools
-  icon: build/icon.icns
-  hardenedRuntime: true
-  gatekeeperAssess: true
-  notarize: true
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
-  extraResources:
-    - from: resources
-      to: data
-      filter:
-        - '**/*'
-        - '!pocketbase/**'
-    - from: 'resources/pocketbase/darwin-arm64/'
-      to: 'pocketbase/darwin-arm64/'
-    - from: 'resources/pocketbase/darwin-x64/'
-      to: 'pocketbase/darwin-x64/'

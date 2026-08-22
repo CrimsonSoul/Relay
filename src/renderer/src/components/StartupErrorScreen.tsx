@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { TactileButton } from './TactileButton';
+import { hasRelayCapability } from '../runtime/relayRuntime';
 
 const AUTO_RETRY_INTERVAL_MS = 10_000;
 
@@ -17,6 +18,7 @@ export function StartupErrorScreen({
   onRetry,
   onReconfigure,
 }: StartupErrorScreenProps) {
+  const canConfigureConnection = hasRelayCapability('connectionConfiguration');
   useEffect(() => {
     if (!retryable) return;
     const timer = setInterval(onRetry, AUTO_RETRY_INTERVAL_MS);
@@ -25,13 +27,16 @@ export function StartupErrorScreen({
 
   return (
     <div className="app-state">
-      <button
-        className="app-state__close-btn"
-        onClick={() => globalThis.window.api?.windowClose()}
-        aria-label="Close"
-      >
-        &#10005;
-      </button>
+      {canConfigureConnection && (
+        <button
+          type="button"
+          className="app-state__close-btn"
+          onClick={() => globalThis.window.api?.windowClose()}
+          aria-label="Close"
+        >
+          &#10005;
+        </button>
+      )}
       <div className="app-state__error-icon" aria-hidden="true">
         !
       </div>
@@ -43,9 +48,11 @@ export function StartupErrorScreen({
             Retry
           </TactileButton>
         )}
-        <TactileButton variant={retryable ? 'secondary' : 'primary'} onClick={onReconfigure}>
-          Reconfigure
-        </TactileButton>
+        {canConfigureConnection && (
+          <TactileButton variant={retryable ? 'secondary' : 'primary'} onClick={onReconfigure}>
+            Reconfigure
+          </TactileButton>
+        )}
       </div>
     </div>
   );

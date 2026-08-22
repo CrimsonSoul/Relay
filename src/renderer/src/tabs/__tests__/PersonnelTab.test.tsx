@@ -1,8 +1,20 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import type { OnCallRow, Contact } from '@shared/ipc';
 import type { BoardSettingsState } from '../../hooks/useAppData';
+
+/**
+ * Reads one element out of a `getAllBy*` result, failing loudly rather than
+ * handing `undefined` to a DOM helper when the query matched fewer elements.
+ */
+const elementAt = (elements: HTMLElement[], index: number, label: string): HTMLElement => {
+  const element = elements.at(index);
+  if (!element) {
+    throw new Error(`Expected a ${label} at index ${index}, but only found ${elements.length}`);
+  }
+  return element;
+};
 
 // ---------- mocks ----------
 
@@ -31,9 +43,13 @@ vi.mock('../../hooks/usePersonnel', () => ({
   }),
 }));
 
+// useAutoAnimate — and therefore useOnCallBoard — hands back a ref *callback*, not a ref object.
+// The stub mirrors that so the board cannot regress to assigning `.current` onto it.
+const mockAnimationParent = vi.fn<(node: Element | null) => void>();
+
 vi.mock('../../hooks/useOnCallBoard', () => ({
   useOnCallBoard: () => ({
-    animationParent: { current: null },
+    animationParent: mockAnimationParent,
     enableAnimations: vi.fn(),
     handleCopyTeamInfo: vi.fn(),
     handleCopyAllOnCall: vi.fn(),
@@ -94,6 +110,48 @@ const defaultRows: OnCallRow[] = [
 ];
 const defaultContacts: Contact[] = [];
 
+describe('PersonnelTab — page header and command toolbar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses the shared tab hierarchy without dropping or restyling its actions', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    const { container } = render(
+      <PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />,
+    );
+
+    const heading = screen.getByRole('heading', { name: 'On-Call Coverage' });
+    expect(heading).toHaveClass('tab-page-header__title');
+    expect(
+      screen.getByText('March 30 - April 5, 2026').closest('.tab-page-header__meta'),
+    ).not.toBeNull();
+
+    const toolbar = screen.getByRole('toolbar', { name: 'On-call actions' });
+    const utilityGroup = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    const workflowGroup = container.querySelector<HTMLElement>('.tab-command-group--workflow');
+    expect(toolbar).toContainElement(utilityGroup);
+    expect(toolbar).toContainElement(workflowGroup);
+    expect(toolbar).toContainElement(
+      screen.getByRole('group', { name: 'On-call board font scale' }),
+    );
+
+    for (const name of ['Copy All On-Call Info', 'Export to CSV']) {
+      const button = screen.getByRole('button', { name });
+      expect(toolbar).toContainElement(button);
+      expect(button).toHaveClass('tactile-button--secondary', 'oncall-command-action');
+    }
+
+    expect(utilityGroup).toContainElement(screen.getByRole('button', { name: 'Export to CSV' }));
+    expect(workflowGroup).toContainElement(screen.getByRole('button', { name: 'Lock Board' }));
+    expect(screen.getByRole('button', { name: 'Lock Board' })).toHaveTextContent('Unlocked');
+
+    const addCard = screen.getByRole('button', { name: 'Add Card' });
+    expect(toolbar).toContainElement(addCard);
+    expect(addCard).toHaveClass('tactile-button--primary');
+  });
+});
+
 describe('PersonnelTab — board lock button', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -105,7 +163,7 @@ describe('PersonnelTab — board lock button', () => {
 
     const btn = screen.getByRole('button', { name: 'Lock Board' });
     expect(btn).toBeDefined();
-    expect(btn.textContent).toContain('UNLOCKED');
+    expect(btn.textContent).toContain('Unlocked');
   });
 
   it('renders a locked lock button when board is locked', () => {
@@ -114,7 +172,7 @@ describe('PersonnelTab — board lock button', () => {
 
     const btn = screen.getByRole('button', { name: 'Unlock Board' });
     expect(btn).toBeDefined();
-    expect(btn.textContent).toContain('LOCKED');
+    expect(btn.textContent).toContain('Locked');
   });
 
   it('calls toggleBoardLock when clicked', async () => {
@@ -184,9 +242,10 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
 
     expect(screen.getByText('Add New Card')).toBeDefined();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
   });
 
-  it('closes the Add New Card modal when Cancel is clicked', () => {
+  it('closes the Add New Card modal when Cancel is clicked', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
@@ -196,10 +255,10 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.click(screen.getByText('Cancel'));
 
     // Modal should be closed after Cancel
-    expect(screen.queryByText('Add New Card')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
   });
 
-  it('submits the Add Card form on Enter key', () => {
+  it('submits the Add Card form on Enter key', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
@@ -209,7 +268,7 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     // Modal should close after successful submission
-    expect(screen.queryByText('Add New Card')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
   });
 
   it('does not submit the Add Card form on Enter when name is blank', () => {
@@ -225,7 +284,7 @@ describe('PersonnelTab — Add Card modal', () => {
     expect(screen.getByText('Add New Card')).toBeDefined();
   });
 
-  it('submits via the Add Card button click', () => {
+  it('submits via the Add Card button click', async () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
@@ -234,12 +293,11 @@ describe('PersonnelTab — Add Card modal', () => {
     fireEvent.change(input, { target: { value: 'SRE' } });
 
     // Click the modal's Add Card button (not the header one)
-    const addCardBtns = screen.getAllByText('Add Card');
-    const modalAddBtn = addCardBtns[addCardBtns.length - 1];
+    const modalAddBtn = elementAt(screen.getAllByText('Add Card'), -1, 'Add Card button');
     fireEvent.click(modalAddBtn);
 
     // Modal should close after successful submission
-    expect(screen.queryByText('Add New Card')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Add New Card')).toBeNull());
   });
 
   it('does not submit via Add Card button when name is blank', () => {
@@ -248,8 +306,7 @@ describe('PersonnelTab — Add Card modal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
     // Don't enter any text, just click the Add Card button in the modal
-    const addCardBtns = screen.getAllByText('Add Card');
-    const modalAddBtn = addCardBtns[addCardBtns.length - 1];
+    const modalAddBtn = elementAt(screen.getAllByText('Add Card'), -1, 'Add Card button');
     fireEvent.click(modalAddBtn);
 
     // Modal should still be open
@@ -283,27 +340,19 @@ describe('PersonnelTab — Copy All button', () => {
   });
 });
 
-describe('PersonnelTab — Pop Out button', () => {
+describe('PersonnelTab — command bar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders POP OUT button when not in popout mode', () => {
+  // The board no longer opens in a second window: the aux-window IPC route it
+  // used was removed along with it, so a reintroduced button would send to a
+  // channel the main process does not register.
+  it('offers no pop-out control', () => {
     const bs = makeReadyBoardSettings(['network']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    expect(screen.getByRole('button', { name: 'Pop Out Board' })).toBeDefined();
-  });
-
-  it('calls openAuxWindow when POP OUT is clicked', () => {
-    const bs = makeReadyBoardSettings(['network']);
-    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pop Out Board' }));
-    expect(
-      (globalThis as Record<string, unknown> & { api: { openAuxWindow: ReturnType<typeof vi.fn> } })
-        .api.openAuxWindow,
-    ).toHaveBeenCalledWith('popout/board');
+    expect(screen.queryByRole('button', { name: /pop ?out/i })).toBeNull();
   });
 });
 
@@ -312,12 +361,60 @@ describe('PersonnelTab — team rendering', () => {
     vi.clearAllMocks();
   });
 
+  it('applies the selected board font scale as a scoped CSS variable', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    const { container } = render(
+      <PersonnelTab
+        onCall={defaultRows}
+        contacts={defaultContacts}
+        boardSettings={bs}
+        onCallFontScale={125}
+      />,
+    );
+
+    expect(container.querySelector('.personnel-tab-root')).toHaveStyle({
+      '--oncall-font-scale': '1.25',
+    });
+  });
+
+  it('renders an adjustable board font scale control that reports stepper changes', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    const onOnCallFontScaleChange = vi.fn();
+    render(
+      <PersonnelTab
+        onCall={defaultRows}
+        contacts={defaultContacts}
+        boardSettings={bs}
+        onCallFontScale={125}
+        onOnCallFontScaleChange={onOnCallFontScaleChange}
+      />,
+    );
+
+    const group = screen.getByRole('group', { name: 'On-call board font scale' });
+    expect(within(group).getByText('125%')).toBeInTheDocument();
+
+    fireEvent.click(within(group).getByRole('button', { name: 'Increase board font size' }));
+
+    expect(onOnCallFontScaleChange).toHaveBeenCalledWith(130);
+  });
+
   it('renders team cards for each team in the board settings', () => {
     const bs = makeReadyBoardSettings(['network', 'database']);
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
     const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
     expect(list).toBeDefined();
+  });
+
+  // Regression: the board used to assign `animationParent.current = node`. useAutoAnimate hands
+  // back a ref callback, so that only decorated the function object and auto-animate never saw
+  // the grid — the board silently lost every reorder/add/remove transition.
+  it('registers the masonry grid with auto-animate by calling the ref callback', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
+    expect(mockAnimationParent).toHaveBeenCalledWith(list);
   });
 
   it('renders no team cards when there are no teams', () => {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 
 const mocks = vi.hoisted(() => ({
   authWithPassword: vi.fn(),
@@ -14,9 +15,37 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('pocketbase', () => ({
+  BaseAuthStore: class MockBaseAuthStore {},
   default: class MockPocketBase {
+    authStore = {
+      token: '',
+      record: null as Record<string, unknown> | null,
+      get isValid() {
+        return Boolean(this.token);
+      },
+      save(token: string, record?: Record<string, unknown> | null) {
+        this.token = token;
+        this.record = record ?? null;
+      },
+      clear() {
+        this.token = '';
+        this.record = null;
+      },
+    };
+
     collection() {
-      return { authWithPassword: mocks.authWithPassword };
+      return {
+        authWithPassword: async (...args: unknown[]) => {
+          const result = await mocks.authWithPassword(...args);
+          this.authStore.save('valid-token-offline', {
+            id: 'relay-user',
+            email: 'relay@relay.app',
+            collectionId: '_pb_users_auth_',
+            collectionName: 'users',
+          });
+          return result;
+        },
+      };
     }
   },
 }));
@@ -49,14 +78,13 @@ vi.mock('../../handlers/loggerHandlers', () => ({
 vi.mock('../../dataUtils', () => ({
   ensureDataDirectoryAsync: vi.fn().mockResolvedValue(undefined),
   loadConfigAsync: vi.fn().mockResolvedValue({ dataRoot: '' }),
-  saveConfigAsync: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../utils/pathValidation', () => ({
-  validateDataPath: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 import { initializeClientOfflineInfrastructure } from '../clientOfflineInfrastructure';
+import {
+  clearRelayAppUserAuthCoordinator,
+  primeRelayAppUserAuth,
+} from '../../pocketbase/RelayAppUserAuthCoordinator';
 import {
   getOfflineCache,
   getPendingChanges,
@@ -73,6 +101,7 @@ describe('initializeClientOfflineInfrastructure', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'relay-offline-'));
+    clearRelayAppUserAuthCoordinator();
     mocks.authWithPassword.mockReset();
   });
 
@@ -86,11 +115,12 @@ describe('initializeClientOfflineInfrastructure', () => {
   });
 
   it('opens the offline cache even when server auth fails', async () => {
-    mocks.authWithPassword.mockRejectedValue(new Error('ECONNREFUSED'));
+    const secret = createFixtureCredential();
+    mocks.authWithPassword.mockRejectedValue(new Error(`server reflected ${secret}`));
 
     await initializeClientOfflineInfrastructure(dir, {
       serverUrl: 'https://192.168.1.10:8090',
-      secret: createFixtureCredential(),
+      secret,
     });
 
     expect(getOfflineCache()).not.toBeNull();
@@ -98,8 +128,9 @@ describe('initializeClientOfflineInfrastructure', () => {
     expect(getSyncManager()).not.toBeNull();
     expect(mocks.loggers.pocketbase.warn).toHaveBeenCalledWith(
       'Offline infrastructure ready; server auth deferred',
-      expect.objectContaining({ error: expect.any(Error) }),
+      { authFailure: { category: 'unknown' } },
     );
+    expect(JSON.stringify(mocks.loggers.pocketbase.warn.mock.calls)).not.toContain(secret);
   });
 
   it('opens the offline cache when auth succeeds (unchanged behavior)', async () => {
@@ -114,5 +145,88 @@ describe('initializeClientOfflineInfrastructure', () => {
     expect(getPendingChanges()).not.toBeNull();
     expect(getSyncManager()).not.toBeNull();
     expect(mocks.authWithPassword).toHaveBeenCalled();
+  });
+
+  it('does not consume the startup auth budget when authentication is deferred', async () => {
+    mocks.authWithPassword.mockResolvedValue({});
+
+    await initializeClientOfflineInfrastructure(
+      dir,
+      {
+        serverUrl: 'https://192.168.1.10:8090',
+        secret: createFixtureCredential(),
+      },
+      { deferAuthentication: true },
+    );
+    await Promise.resolve();
+
+    expect(getOfflineCache()).not.toBeNull();
+    expect(getPendingChanges()).not.toBeNull();
+    expect(getSyncManager()).not.toBeNull();
+    expect(mocks.authWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('reuses the startup snapshot when deferred pending sync re-authenticates', async () => {
+    const serverUrl = 'https://192.168.1.10:8090';
+    const secret = createFixtureCredential();
+    primeRelayAppUserAuth(
+      {
+        authStore: {
+          token: 'valid-token-bootstrap',
+          record: {
+            id: 'relay-user',
+            email: 'relay@relay.app',
+            collectionId: '_pb_users_auth_',
+            collectionName: 'users',
+          },
+          isValid: true,
+          save: vi.fn(),
+          clear: vi.fn(),
+        },
+      } as never,
+      serverUrl,
+      secret,
+    );
+    await initializeClientOfflineInfrastructure(
+      dir,
+      { serverUrl, secret },
+      { deferAuthentication: true },
+    );
+    const syncManager = getSyncManager();
+
+    expect(syncManager?.isAuthenticated()).toBe(false);
+    await syncManager?.reauthenticate(RELAY_APP_USER_EMAIL, secret);
+
+    expect(syncManager?.isAuthenticated()).toBe(true);
+    expect(mocks.authWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('hydrates non-deferred startup from the shared app-user authentication window', async () => {
+    primeRelayAppUserAuth(
+      {
+        authStore: {
+          token: 'valid-token-bootstrap',
+          record: {
+            id: 'relay-user',
+            email: 'relay@relay.app',
+            collectionId: '_pb_users_auth_',
+            collectionName: 'users',
+          },
+          isValid: true,
+          save: vi.fn(),
+          clear: vi.fn(),
+        },
+      } as never,
+      'https://192.168.1.10:8090',
+      createFixtureCredential(),
+    );
+
+    await initializeClientOfflineInfrastructure(dir, {
+      serverUrl: 'https://192.168.1.10:8090',
+      secret: createFixtureCredential(),
+    });
+
+    expect(getSyncManager()).not.toBeNull();
+    expect(mocks.authWithPassword).not.toHaveBeenCalled();
   });
 });

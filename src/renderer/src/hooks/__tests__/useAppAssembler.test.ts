@@ -5,7 +5,7 @@ import type { Contact } from '@shared/ipc';
 
 describe('useAppAssembler', () => {
   const makeContact = (email: string): Contact => ({
-    name: email.split('@')[0],
+    name: email.split('@')[0] ?? email,
     email,
     phone: '',
     title: '',
@@ -20,7 +20,6 @@ describe('useAppAssembler', () => {
     expect(result.current.selectedGroupIds).toEqual([]);
     expect(result.current.manualAdds).toEqual([]);
     expect(result.current.manualRemoves).toEqual([]);
-    expect(result.current.settingsOpen).toBe(false);
   });
 
   it('toggles group selection on and off', () => {

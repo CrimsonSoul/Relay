@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { RecordModel } from 'pocketbase';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
   getPb,
@@ -7,12 +8,13 @@ import {
   onConnectionStateChange,
   onPocketBaseClientChange,
 } from '../services/pocketbase';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 export const CLIENT_PRESENCE_COLLECTION = 'client_presence';
 export const CLIENT_PRESENCE_SESSION_STORAGE_KEY = 'relay:client-presence-session-id';
-export const CLIENT_PRESENCE_TTL_MS = 45_000;
-const CLIENT_PRESENCE_HEARTBEAT_MS = 15_000;
-const CLIENT_PRESENCE_REFRESH_MS = 5_000;
+export const CLIENT_PRESENCE_TTL_MS = 90_000;
+const CLIENT_PRESENCE_HEARTBEAT_MS = 30_000;
+const MAX_TIMEOUT_MS = 2_147_000_000;
 let fallbackSessionCounter = 0;
 
 export type ClientPresenceRecord = {
@@ -46,6 +48,20 @@ function getRecordTime(record: ClientPresenceRecord): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+export function getNextPresenceExpiry(
+  records: ClientPresenceRecord[],
+  nowMs = Date.now(),
+): number | null {
+  let nextExpiry: number | null = null;
+  for (const record of records) {
+    if (record.mode !== 'client') continue;
+    const expiresAt = getRecordTime(record) + CLIENT_PRESENCE_TTL_MS;
+    if (expiresAt <= nowMs) continue;
+    if (nextExpiry === null || expiresAt < nextExpiry) nextExpiry = expiresAt;
+  }
+  return nextExpiry;
+}
+
 function sortPresence(a: ClientPresenceRecord, b: ClientPresenceRecord): number {
   const host = a.hostname.localeCompare(b.hostname);
   if (host !== 0) return host;
@@ -53,7 +69,13 @@ function sortPresence(a: ClientPresenceRecord, b: ClientPresenceRecord): number 
 }
 
 function sanitizeHostname(hostname: string | null | undefined): string {
-  const trimmed = hostname?.trim();
+  const trimmed = [...(hostname?.trim() ?? '')]
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint > 31 && codePoint !== 127;
+    })
+    .join('')
+    .slice(0, 160);
   return trimmed || 'unknown-client';
 }
 
@@ -98,6 +120,22 @@ function upsertPresenceRecord(
   const next = [...records];
   next[existingIndex] = record;
   return next;
+}
+
+/**
+ * Realtime hands back an untyped PocketBase record. Keep the fields this hook
+ * reads and default the rest rather than trusting the wire shape.
+ */
+function toPresenceRecord(record: RecordModel): ClientPresenceRecord {
+  return {
+    id: record.id,
+    sessionId: typeof record.sessionId === 'string' ? record.sessionId : '',
+    hostname: typeof record.hostname === 'string' ? record.hostname : '',
+    mode: 'client',
+    lastSeen: typeof record.lastSeen === 'string' ? record.lastSeen : '',
+    created: typeof record.created === 'string' ? record.created : undefined,
+    updated: typeof record.updated === 'string' ? record.updated : undefined,
+  };
 }
 
 function applyPresenceEvent(
@@ -152,17 +190,32 @@ async function writeClientHeartbeat(sessionId: string, hostname: string): Promis
   }
 }
 
+async function removeClientHeartbeat(sessionId: string): Promise<void> {
+  const collection = getPb().collection(CLIENT_PRESENCE_COLLECTION);
+  try {
+    const existing = await collection.getFirstListItem<ClientPresenceRecord>(
+      `sessionId="${sessionId}"`,
+      { requestKey: null },
+    );
+    await collection.delete(existing.id);
+  } catch (error) {
+    if (!isNotFoundError(error)) handleApiError(error);
+  }
+}
+
 export function useClientPresence(
   relayConfig: PublicRelayConfig | null | undefined,
   onClientConnected?: (hostname: string) => void,
   options: { enabled?: boolean } = {},
 ): ClientPresenceState {
   const enabled = options.enabled !== false;
+  const publishesPresence = relayConfig?.mode === 'client' || getRelayRuntime().kind === 'web';
   const [records, setRecords] = useState<ClientPresenceRecord[]>([]);
   const [loading, setLoading] = useState(enabled && isOnline());
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const recordsRef = useRef<ClientPresenceRecord[]>([]);
+  const loadGenerationRef = useRef(0);
   const initializedRef = useRef(false);
   const previousActiveSessionsRef = useRef<Set<string>>(new Set());
   const onClientConnectedRef = useRef(onClientConnected);
@@ -178,6 +231,7 @@ export function useClientPresence(
   }, []);
 
   const loadPresence = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
     if (!enabled || !isOnline()) {
       setLoading(false);
       return;
@@ -185,18 +239,24 @@ export function useClientPresence(
 
     setLoading(true);
     try {
-      commitRecords(await fetchPresenceRecords());
+      const next = await fetchPresenceRecords();
+      if (generation === loadGenerationRef.current) commitRecords(next);
     } catch (error) {
-      handleApiError(error);
-      commitRecords([]);
+      if (generation === loadGenerationRef.current) {
+        handleApiError(error);
+        commitRecords([]);
+      }
     } finally {
-      setLoading(false);
-      setSnapshotReady(true);
+      if (generation === loadGenerationRef.current) {
+        setLoading(false);
+        setSnapshotReady(true);
+      }
     }
   }, [commitRecords, enabled]);
 
   useEffect(() => {
     if (!enabled) {
+      loadGenerationRef.current += 1;
       setLoading(false);
       setSnapshotReady(false);
       initializedRef.current = false;
@@ -207,9 +267,11 @@ export function useClientPresence(
 
     let cancelled = false;
     let unsubscribeRealtime: (() => void | Promise<void>) | null = null;
+    let subscriptionGeneration = 0;
 
     async function subscribe(): Promise<void> {
       if (!isOnline()) return;
+      const generation = ++subscriptionGeneration;
       const unsubscribe = await getPb()
         .collection(CLIENT_PRESENCE_COLLECTION)
         .subscribe('*', (event) => {
@@ -217,12 +279,15 @@ export function useClientPresence(
           const next = applyPresenceEvent(
             recordsRef.current,
             event.action,
-            event.record as ClientPresenceRecord,
+            toPresenceRecord(event.record),
           );
           commitRecords(next);
         });
 
-      if (cancelled) {
+      // Startup emits 'connecting' then 'online', so resubscribes overlap.
+      // Without the generation check the later handle overwrites the earlier
+      // one and the orphan leaks for the lifetime of the window.
+      if (cancelled || generation !== subscriptionGeneration) {
         void unsubscribe();
         return;
       }
@@ -231,6 +296,7 @@ export function useClientPresence(
     }
 
     function unsubscribe(): void {
+      subscriptionGeneration += 1;
       void unsubscribeRealtime?.();
       unsubscribeRealtime = null;
     }
@@ -246,6 +312,7 @@ export function useClientPresence(
         unsubscribe();
         void subscribe().catch(handleApiError);
       } else {
+        loadGenerationRef.current += 1;
         unsubscribe();
         setLoading(false);
         setSnapshotReady(false);
@@ -269,40 +336,45 @@ export function useClientPresence(
   }, [commitRecords, enabled, loadPresence]);
 
   useEffect(() => {
-    if (!enabled || relayConfig?.mode !== 'client') return;
+    if (!enabled || !publishesPresence) return;
 
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
     const sessionId = getClientPresenceSessionId();
     ownSessionIdRef.current = sessionId;
 
-    async function heartbeat(): Promise<void> {
+    async function heartbeat(refreshSnapshot = false): Promise<void> {
       if (cancelled || !isOnline()) return;
       try {
         await writeClientHeartbeat(sessionId, await getClientHostname());
+        if (refreshSnapshot && !cancelled) await loadPresence();
       } catch (error) {
         handleApiError(error);
       }
     }
 
-    void heartbeat();
+    void heartbeat(true);
     interval = setInterval(() => void heartbeat(), CLIENT_PRESENCE_HEARTBEAT_MS);
 
     const unsubscribeConnection = onConnectionStateChange((state) => {
-      if (state === 'online') void heartbeat();
+      if (state === 'online') void heartbeat(true);
     });
 
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
       unsubscribeConnection();
+      if (isOnline()) void removeClientHeartbeat(sessionId);
     };
-  }, [enabled, relayConfig?.mode]);
+  }, [enabled, loadPresence, publishesPresence]);
 
   useEffect(() => {
-    const interval = setInterval(() => setNowMs(Date.now()), CLIENT_PRESENCE_REFRESH_MS);
-    return () => clearInterval(interval);
-  }, []);
+    const expiresAt = getNextPresenceExpiry(records);
+    if (expiresAt === null) return;
+    const delay = Math.min(Math.max(1, expiresAt - Date.now() + 1), MAX_TIMEOUT_MS);
+    const timeout = setTimeout(() => setNowMs(Date.now()), delay);
+    return () => clearTimeout(timeout);
+  }, [records, nowMs]);
 
   const activeClients = useMemo(() => getActiveClientPresence(records, nowMs), [records, nowMs]);
 

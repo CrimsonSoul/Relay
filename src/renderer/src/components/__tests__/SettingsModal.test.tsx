@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SettingsModal } from '../SettingsModal';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 // Mock Modal to a simple wrapper
 vi.mock('../Modal', () => ({
@@ -9,17 +10,22 @@ vi.mock('../Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
+    title?: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
   }) =>
     isOpen
       ? React.createElement(
           'div',
-          { role: 'dialog' },
+          { role: 'dialog', 'data-variant': variant },
           title && React.createElement('h2', null, title),
           children,
+          footer,
         )
       : null,
 }));
@@ -45,6 +51,26 @@ vi.mock('../TactileButton', () => ({
   }) => React.createElement('button', { onClick, disabled, type }, children),
 }));
 
+vi.mock('../../hooks/useRelayAdministration', () => ({
+  useRelayAdministration: () => ({ snapshot: null, canAdminister: true }),
+}));
+
+vi.mock('../settings/PrivilegedAccessPanel', () => ({
+  PrivilegedAccessPanel: () => React.createElement('h2', null, 'Privileged access'),
+}));
+
+const { mockUsePrivilegedAccess } = vi.hoisted(() => ({
+  mockUsePrivilegedAccess: vi.fn(),
+}));
+
+vi.mock('../../contexts/PrivilegedAccessContext', () => ({
+  usePrivilegedAccess: mockUsePrivilegedAccess,
+}));
+
+vi.mock('../settings/AdministrationSettings', () => ({
+  AdministrationSettings: () => React.createElement('h2', null, 'Relay administration'),
+}));
+
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
@@ -62,20 +88,45 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+/**
+ * `globalThis.api` is typed as the complete preload bridge; SettingsModal only reaches for
+ * these members. Tests assert against this object rather than re-reading `globalThis.api`,
+ * so the spies they inspect are provably the ones the component was handed.
+ */
+function createBridgeMock() {
+  return {
+    runtime: ELECTRON_RUNTIME,
+    getConfig: vi.fn().mockResolvedValue({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      lanIp: LAN_SERVER_ADDRESS,
+    }),
+    getConnectionSecret: vi.fn().mockResolvedValue(CONNECTION_SECRET),
+    clearConfig: vi.fn().mockResolvedValue(true),
+    getWebServerState: vi.fn().mockResolvedValue({
+      enabled: false,
+      status: 'disabled',
+      port: 8091,
+    }),
+    saveWebServerConfig: vi.fn(),
+    retryWebServer: vi.fn(),
+    writeClipboard: vi.fn(),
+    getAppVersion: vi.fn().mockResolvedValue('1.0.0'),
+    openReleasesPage: vi.fn().mockResolvedValue(true),
+  };
+}
+
 describe('SettingsModal', () => {
+  let mockApi: ReturnType<typeof createBridgeMock>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    const mockApi = {
-      getConfig: vi.fn().mockResolvedValue({
-        mode: 'server',
-        port: 8090,
-        bindHost: '0.0.0.0',
-        lanIp: LAN_SERVER_ADDRESS,
-      }),
-      getConnectionSecret: vi.fn().mockResolvedValue(CONNECTION_SECRET),
-      clearConfig: vi.fn().mockResolvedValue(true),
-    };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi;
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'admin' },
+    });
+    mockApi = createBridgeMock();
+    vi.stubGlobal('api', mockApi);
   });
 
   it('renders nothing when closed', () => {
@@ -85,7 +136,140 @@ describe('SettingsModal', () => {
 
   it('renders modal when open', () => {
     render(<SettingsModal {...defaultProps} />);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+  });
+
+  it('shows Relay Web controls only for the desktop server role', async () => {
+    const { unmount } = render(<SettingsModal {...defaultProps} />);
+    expect(await screen.findByText('Relay Web')).toBeVisible();
+    unmount();
+
+    (globalThis.api as Record<string, unknown>).getConfig = vi.fn().mockResolvedValue({
+      mode: 'client',
+      serverUrl: ['http', '://', LAN_SERVER_ADDRESS, ':8090'].join(''),
+      allowInsecureHttp: true,
+    });
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => expect(screen.getByText('Mode: Remote Client')).toBeVisible());
+    expect(screen.queryByText('Relay Web')).toBeNull();
+  });
+
+  it('renders focused sections when used as the Settings page', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" onOpenDataManager={vi.fn()} />);
+
+    expect(
+      screen.getByText('Manage this workstation, shared data, account access, and Dynatrace.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/operator access/i)).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Appearance' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('radiogroup', { name: 'Accent color' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+
+    expect(screen.getByText('Open Data Manager...')).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
+  });
+
+  it('removes the obsolete Operator roster section', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    expect(screen.queryByRole('tab', { name: 'Operators' })).toBeNull();
+  });
+
+  it('offers Access as a peer Settings page section', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    expect(screen.getByRole('tab', { name: 'Access' })).toHaveAttribute('aria-selected', 'false');
+    fireEvent.click(screen.getByRole('tab', { name: 'Access' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Access' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Privileged access' })).toBeVisible();
+  });
+
+  it('offers the installed Relay version and releases action in About', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'About' })).toBeInTheDocument();
+    expect(await screen.findByText('v1.0.0')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'View releases' }));
+    await waitFor(() => expect(mockApi.openReleasesPage).toHaveBeenCalledOnce());
+  });
+
+  it('offers Administration to the authenticated Relay administrator', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Administration' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
+  });
+
+  it('offers Administration to the authenticated Relay owner', () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'owner', accountId: 'account-owner' },
+    });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
+
+    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
+  });
+
+  it('keeps the full-width operator roster out of the compact legacy modal', () => {
+    render(<SettingsModal {...defaultProps} />);
+
+    expect(screen.queryByRole('heading', { name: 'Operator roster' })).toBeNull();
+  });
+
+  it('tests Dynatrace Problems with a read-only platform token', async () => {
+    const getSettings = vi.fn().mockResolvedValue({
+      configured: false,
+      environmentUrl: '',
+      profileFilterConfigured: false,
+      selectedAlertingProfiles: [],
+    });
+    const testSettings = vi.fn().mockResolvedValue({
+      success: true,
+      data: { reachable: true, problemCount: 4 },
+    });
+    Object.assign(mockApi, {
+      getDynatraceProblemsSettings: getSettings,
+      testDynatraceProblemsSettings: testSettings,
+    });
+
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
+
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    expect(screen.getByText(/Requires storage:events:read and storage:buckets:read/)).toBeVisible();
+
+    fireEvent.change(screen.getByPlaceholderText('https://abc123.apps.dynatrace.com'), {
+      target: { value: 'https://abc123.apps.dynatrace.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Platform token · read-only Grail access'), {
+      target: { value: 'dt0s16.platform-read-only-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test access' }));
+
+    await waitFor(() => {
+      expect(testSettings).toHaveBeenCalledWith({
+        environmentUrl: 'https://abc123.apps.dynatrace.com',
+        apiToken: 'dt0s16.platform-read-only-token',
+      });
+      expect(screen.getByText(/Connected with platform-token access/)).toBeVisible();
+    });
+  });
+
+  it('does not render the on-call board size selector inside settings', () => {
+    render(<SettingsModal {...defaultProps} />);
+
+    expect(screen.queryByRole('radiogroup', { name: 'On-call board size' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'On-call board text size' })).toBeNull();
   });
 
   it('shows "Open Data Manager..." when onOpenDataManager is provided', () => {
@@ -135,11 +319,39 @@ describe('SettingsModal', () => {
     expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeInTheDocument();
   });
 
+  it('preserves revealed connection state across Settings page navigation without reloading config', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show passphrase' })).toBeVisible(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show passphrase' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+
+    expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeVisible();
+    expect(mockApi.getConfig).toHaveBeenCalledOnce();
+    expect(mockApi.getConnectionSecret).toHaveBeenCalledOnce();
+  });
+
   it('shows Reconfigure button', async () => {
     render(<SettingsModal {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
     });
+  });
+
+  it('keeps connection details but hides desktop-only secrets and controls on the web', async () => {
+    (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
+    render(<SettingsModal {...defaultProps} />);
+
+    expect(await screen.findByText('Mode: Embedded Server')).toBeInTheDocument();
+    expect(screen.queryByText(/Passphrase:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Reconfigure...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Relay Web')).not.toBeInTheDocument();
+    expect(screen.getByText(/managed by Relay Desktop/i)).toBeInTheDocument();
+    expect(mockApi.getConnectionSecret).not.toHaveBeenCalled();
   });
 
   it('shows "Not configured" when getConfig returns null', async () => {
@@ -150,7 +362,7 @@ describe('SettingsModal', () => {
     });
   });
 
-  it('calls clearConfig and onReconfigure when Reconfigure is clicked', async () => {
+  it('calls clearConfig and onReconfigure once the reconfigure warning is confirmed', async () => {
     const onClose = vi.fn();
     const onReconfigure = vi.fn();
     render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
@@ -158,11 +370,54 @@ describe('SettingsModal', () => {
       expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByText('Reconfigure...'));
+
+    fireEvent.click(await screen.findByText('Erase and reconfigure'));
+
     await waitFor(() => {
-      expect(globalThis.api.clearConfig).toHaveBeenCalled();
+      expect(mockApi.clearConfig).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
       expect(onReconfigure).toHaveBeenCalled();
     });
+  });
+
+  it('does not erase the saved config until the reconfigure warning is confirmed', async () => {
+    const onClose = vi.fn();
+    const onReconfigure = vi.fn();
+    render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
+    await waitFor(() => {
+      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Reconfigure...'));
+
+    expect(await screen.findByText('Reconfigure Relay connection?')).toBeInTheDocument();
+    expect(
+      screen.getByText(/erases the saved Relay server URL and the shared connection passphrase/i),
+    ).toBeInTheDocument();
+    expect(mockApi.clearConfig).not.toHaveBeenCalled();
+    expect(onReconfigure).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Cancel'));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Reconfigure Relay connection?')).not.toBeInTheDocument(),
+    );
+    expect(mockApi.clearConfig).not.toHaveBeenCalled();
+    expect(onReconfigure).not.toHaveBeenCalled();
+  });
+
+  it('warns how many queued offline changes a reconfigure would discard', async () => {
+    (globalThis.api as Record<string, unknown>).getPendingSyncStatus = vi
+      .fn()
+      .mockResolvedValue({ pendingCount: 3 });
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Reconfigure...'));
+
+    expect(await screen.findByText(/3 offline changes queued on this workstation/i)).toBeVisible();
   });
 
   it('shows Dynatrace dashboard settings and opens a saved dashboard', async () => {
@@ -395,7 +650,11 @@ describe('SettingsModal', () => {
 
     vi.resetModules();
     vi.doMock('react', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('react')>();
+      // The ESM namespace Vitest hands back also carries the CJS default export,
+      // which `typeof import('react')` alone does not describe.
+      const actual = await importOriginal<
+        typeof import('react') & { default: typeof import('react') }
+      >();
 
       return {
         ...actual,

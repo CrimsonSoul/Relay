@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { OfflineCache } from './OfflineCache';
+import { PendingChanges } from './PendingChanges';
 
 describe('OfflineCache', () => {
   let tempDir: string;
@@ -40,6 +41,16 @@ describe('OfflineCache', () => {
     expect((result[0] as unknown as { name: string }).name).toBe('Bob');
   });
 
+  it('skips rewriting a collection when its revision signature is unchanged', () => {
+    const signature = '1:0123456789abcdef';
+    expect(cache.writeCollection('contacts', signature, [{ id: '1', name: 'Alice' }])).toBe(true);
+
+    expect(
+      cache.writeCollection('contacts', signature, [{ id: '1', name: 'Changed unexpectedly' }]),
+    ).toBe(false);
+    expect(cache.readCollection('contacts')).toEqual([{ id: '1', name: 'Alice' }]);
+  });
+
   it('handles single record updates', () => {
     cache.writeCollection('contacts', [
       { id: '1', name: 'Alice' },
@@ -69,6 +80,58 @@ describe('OfflineCache', () => {
     ]);
     cache.updateRecord('contacts', 'delete', { id: '1' });
     expect(cache.readCollection('contacts')).toHaveLength(1);
+  });
+
+  it('atomically stores an optimistic record and its durable pending mutation', () => {
+    const dbPath = join(tempDir, 'cache.db');
+    const pending = new PendingChanges(dbPath);
+
+    expect(
+      cache.applyOfflineMutationAtomically(
+        'contacts',
+        'update',
+        { id: '1', name: 'Offline edit' },
+        '2026-07-10T12:00:00Z',
+      ),
+    ).toBe(true);
+
+    expect(cache.readCollection('contacts')).toEqual([{ id: '1', name: 'Offline edit' }]);
+    expect(pending.getAll()).toEqual([
+      expect.objectContaining({
+        collection: 'contacts',
+        action: 'update',
+        data: { id: '1', name: 'Offline edit' },
+        baseUpdated: '2026-07-10T12:00:00Z',
+      }),
+    ]);
+    pending.close();
+  });
+
+  it('coalesces chained edits in the same transaction as the optimistic cache', () => {
+    const dbPath = join(tempDir, 'cache.db');
+    const pending = new PendingChanges(dbPath);
+    cache.applyOfflineMutationAtomically(
+      'contacts',
+      'update',
+      { id: '1', name: 'First' },
+      '2026-07-10T12:00:00Z',
+    );
+    cache.applyOfflineMutationAtomically(
+      'contacts',
+      'update',
+      { id: '1', name: 'Second' },
+      '2026-07-10T12:05:00Z',
+    );
+
+    expect(cache.readCollection('contacts')).toEqual([{ id: '1', name: 'Second' }]);
+    expect(pending.getAll()).toEqual([
+      expect.objectContaining({
+        action: 'update',
+        data: { id: '1', name: 'Second' },
+        baseUpdated: '2026-07-10T12:00:00Z',
+      }),
+    ]);
+    pending.close();
   });
 
   // --- New tests ---
@@ -147,6 +210,113 @@ describe('OfflineCache', () => {
     expect(cache.readCollection('servers')).toHaveLength(1);
   });
 
+  it('stores a usable-cache marker for the authenticated server', () => {
+    const serverUrl = ['http', '://relay-noc:8090'].join('');
+    const differentServerUrl = ['http', '://different-server:8090'].join('');
+    cache.setUsableCacheMarker(`${serverUrl}/`, 100, 200);
+
+    expect(cache.getUsableCacheMarker()).toEqual({
+      serverIdentity: serverUrl,
+      authenticatedAt: 100,
+      lastSyncAt: 200,
+    });
+    expect(cache.hasUsableCacheFor(serverUrl)).toBe(true);
+    expect(cache.hasUsableCacheFor(differentServerUrl)).toBe(false);
+  });
+
+  it('removes the usable marker when cached data is cleared', () => {
+    cache.setUsableCacheMarker(['http', '://relay-noc:8090'].join(''), 100, 200);
+
+    cache.clear();
+
+    expect(cache.getUsableCacheMarker()).toBeNull();
+  });
+
+  it('stores and replaces membership for a cached collection query', () => {
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toBeNull();
+
+    expect(
+      cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
+        recordIds: ['first', 'second'],
+        totalItems: 10,
+        complete: false,
+      }),
+    ).toBe(true);
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toEqual({
+      recordIds: ['first', 'second'],
+      totalItems: 10,
+      complete: false,
+    });
+
+    expect(
+      cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
+        recordIds: ['second'],
+        totalItems: 1,
+        complete: true,
+      }),
+    ).toBe(true);
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toEqual({
+      recordIds: ['second'],
+      totalItems: 1,
+      complete: true,
+    });
+  });
+
+  it('clears cached query membership with cached data', () => {
+    cache.writeQueryMembership('dynatrace_problems', '0123456789abcdef', {
+      recordIds: ['problem'],
+      totalItems: 1,
+      complete: true,
+    });
+
+    cache.clear();
+
+    expect(cache.readQueryMembership('dynatrace_problems', '0123456789abcdef')).toBeNull();
+  });
+
+  it('bounds obsolete cached query memberships per collection', () => {
+    const now = vi.spyOn(Date, 'now');
+    for (let index = 0; index < 65; index += 1) {
+      now.mockReturnValue(index);
+      cache.writeQueryMembership('dynatrace_problems', index.toString(16).padStart(16, '0'), {
+        recordIds: [`problem-${index}`],
+        totalItems: 1,
+        complete: true,
+      });
+    }
+    now.mockRestore();
+
+    expect(cache.readQueryMembership('dynatrace_problems', '0000000000000000')).toBeNull();
+    expect(cache.readQueryMembership('dynatrace_problems', '0000000000000040')).toEqual({
+      recordIds: ['problem-64'],
+      totalItems: 1,
+      complete: true,
+    });
+  });
+
+  it('tracks Wiki search snapshot trust independently by normalized server identity', () => {
+    const serverUrl = ['HTTPS', '://Relay.Example.com/'].join('');
+
+    expect(cache.hasKnowledgeSearchSnapshotFor(serverUrl)).toBe(false);
+    expect(cache.setKnowledgeSearchSnapshotMarker(serverUrl)).toBe(true);
+    expect(cache.hasKnowledgeSearchSnapshotFor('https://relay.example.com')).toBe(true);
+    expect(cache.hasUsableCacheFor(serverUrl)).toBe(false);
+
+    expect(cache.clearKnowledgeSearchSnapshotMarker()).toBe(true);
+    expect(cache.hasKnowledgeSearchSnapshotFor(serverUrl)).toBe(false);
+  });
+
+  it('clears both global and Wiki search snapshot markers with cached data', () => {
+    const serverUrl = 'https://relay.example.com';
+    cache.setUsableCacheMarker(serverUrl, 100, 200);
+    cache.setKnowledgeSearchSnapshotMarker(serverUrl);
+
+    cache.clear();
+
+    expect(cache.hasUsableCacheFor(serverUrl)).toBe(false);
+    expect(cache.hasKnowledgeSearchSnapshotFor(serverUrl)).toBe(false);
+  });
+
   it('does not store update records without a non-empty string id', () => {
     cache.updateRecord('contacts', 'create', { name: 'NoId' });
     cache.updateRecord('contacts', 'create', { id: '', name: 'BlankId' });
@@ -168,13 +338,11 @@ describe('OfflineCache', () => {
     expect(cache.readCollection('contacts')).toEqual([{ id: 'valid', name: 'Valid' }]);
   });
 
-  it('rebuilds the database when the file is corrupt', () => {
+  it('preserves a corrupt unified database because it may contain pending mutations', () => {
     const dbPath = join(tempDir, 'corrupt.db');
     writeFileSync(dbPath, 'this is not a sqlite database, not even close');
-    const corruptCache = new OfflineCache(dbPath); // must not throw
-    corruptCache.writeCollection('contacts', [{ id: 'a1', name: 'Test' }]);
-    expect(corruptCache.readCollection('contacts')).toEqual([{ id: 'a1', name: 'Test' }]);
-    corruptCache.close();
+    expect(() => new OfflineCache(dbPath)).toThrow();
+    expect(existsSync(dbPath)).toBe(true);
   });
 
   it('rethrows non-corruption constructor errors', () => {

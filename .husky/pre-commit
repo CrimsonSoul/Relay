@@ -1,2 +1,5 @@
-npx tsc --noEmit
+# `tsc --noEmit` used to run here, but the root tsconfig is solution-style
+# (files: [] + references), so it checked nothing and passed instantly. The real
+# check now lives in `npm run typecheck` (both projects, ratcheted against
+# scripts/typecheck-baseline.json) and runs in CI, where it can afford the time.
 npx lint-staged

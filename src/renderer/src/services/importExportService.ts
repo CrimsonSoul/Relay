@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import type { Cell, Row, Sheet } from 'write-excel-file/browser';
 import type { Sheet as ReadSheet } from 'read-excel-file/browser';
+import type { ImportProgress } from '@shared/ipc';
 import { getPb, escapeFilter, requireOnline } from './pocketbase';
 
 // ---------------------------------------------------------------------------
@@ -15,7 +16,6 @@ export const ALL_COLLECTIONS = [
   'bridge_history',
   'alert_history',
   'notes',
-  'standalone_notes',
 ] as const;
 
 export type CollectionName = (typeof ALL_COLLECTIONS)[number];
@@ -25,6 +25,8 @@ export interface ImportResult {
   updated: number;
   errors: string[];
 }
+
+export type ImportProgressCallback = (progress: ImportProgress) => void;
 
 // Metadata fields stripped before create/update.
 // Includes both PocketBase format (created, updated) and legacy Relay format (createdAt, updatedAt).
@@ -87,11 +89,28 @@ function csvSafeValue(value: unknown): string {
   return spreadsheetFormulaSafeValue(valueToExportString(value));
 }
 
+const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+
 function spreadsheetFormulaSafeValue(str: string): string {
-  if (/^[=+\-@\t\r]/.test(str)) {
+  if (FORMULA_PREFIX.test(str)) {
     return `'${str}`;
   }
   return str;
+}
+
+/**
+ * Inverse of spreadsheetFormulaSafeValue. Without it an export → import round
+ * trip permanently prefixes every value the export guarded — a phone number
+ * saved as `+15555551234` comes back as `'+15555551234` and is stored that way.
+ */
+function stripFormulaGuard(value: string): string {
+  if (value.startsWith("'") && value.length > 1) {
+    const rest = value.slice(1);
+    if (FORMULA_PREFIX.test(rest)) {
+      return rest;
+    }
+  }
+  return value;
 }
 
 /** Fetch all records from a collection as plain objects. */
@@ -207,6 +226,8 @@ async function upsertOne(
 async function bulkUpsert(
   collection: CollectionName,
   records: Record<string, unknown>[],
+  onProgress?: ImportProgressCallback,
+  initialErrorCount = 0,
 ): Promise<ImportResult> {
   const limitError = getImportLimitError(records.length);
   if (limitError) {
@@ -215,7 +236,19 @@ async function bulkUpsert(
 
   let imported = 0;
   let updated = 0;
+  let processed = 0;
   const errors: string[] = [];
+  const emitProgress = (): void => {
+    onProgress?.({
+      processed,
+      total: records.length,
+      imported,
+      updated,
+      errors: initialErrorCount + errors.length,
+    });
+  };
+
+  emitProgress();
 
   for (let i = 0; i < records.length; i++) {
     try {
@@ -233,6 +266,9 @@ async function bulkUpsert(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`Row ${i + 1}: ${msg}`);
+    } finally {
+      processed++;
+      emitProgress();
     }
   }
 
@@ -315,6 +351,7 @@ export async function exportToExcel(collection: CollectionName | 'all'): Promise
 export async function importFromJson(
   collection: CollectionName,
   jsonString: string,
+  onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
   let parsed: unknown;
@@ -351,7 +388,7 @@ export async function importFromJson(
     };
   }
 
-  return bulkUpsert(collection, records);
+  return bulkUpsert(collection, records, onProgress);
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +399,7 @@ export async function importFromJson(
 export async function importFromCsv(
   collection: CollectionName,
   csvString: string,
+  onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
   const parseResult = Papa.parse<Record<string, string>>(csvString, {
@@ -369,16 +407,8 @@ export async function importFromCsv(
     preview: MAX_IMPORT_RECORDS + 1,
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),
-    transform: (value) => {
-      // Strip the formula-injection prefix we add on export
-      if (value.startsWith("'") && value.length > 1) {
-        const rest = value.slice(1);
-        if (/^[=+\-@\t\r]/.test(rest)) {
-          return rest;
-        }
-      }
-      return value;
-    },
+    // Strip the formula-injection prefix we add on export
+    transform: stripFormulaGuard,
   });
 
   const parseErrors = parseResult.errors.map((e) => `CSV parse error (row ${e.row}): ${e.message}`);
@@ -389,7 +419,7 @@ export async function importFromCsv(
     }
   }
 
-  const result = await bulkUpsert(collection, parseResult.data);
+  const result = await bulkUpsert(collection, parseResult.data, onProgress, parseErrors.length);
   return { ...result, errors: [...parseErrors, ...result.errors] };
 }
 
@@ -401,6 +431,7 @@ export async function importFromCsv(
 export async function importFromExcel(
   collection: CollectionName,
   buffer: ArrayBuffer,
+  onProgress?: ImportProgressCallback,
 ): Promise<ImportResult> {
   requireOnline();
   const sheets = await readWorkbook(buffer);
@@ -432,8 +463,8 @@ export async function importFromExcel(
       const record: Record<string, unknown> = {};
       headers.forEach((h, i) => {
         if (h) {
-          const cell = values[i];
-          record[h] = cell ?? '';
+          const cell = values[i] ?? '';
+          record[h] = typeof cell === 'string' ? stripFormulaGuard(cell) : cell;
         }
       });
       records.push(record);
@@ -444,5 +475,5 @@ export async function importFromExcel(
     return { imported: 0, updated: 0, errors: ['Excel sheet has no header row'] };
   }
 
-  return bulkUpsert(collection, records);
+  return bulkUpsert(collection, records, onProgress);
 }

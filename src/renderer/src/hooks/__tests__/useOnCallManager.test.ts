@@ -60,8 +60,10 @@ const makeReadyBoardSettings = (
 describe('useOnCallManager', () => {
   const dismissAlert = vi.fn();
 
+  const alphaPrimaryRow = makeRow({ id: 'r1', team: 'Alpha', teamId: 'alpha', name: 'Alice' });
+
   const defaultRows: OnCallRow[] = [
-    makeRow({ id: 'r1', team: 'Alpha', teamId: 'alpha', name: 'Alice' }),
+    alphaPrimaryRow,
     makeRow({ id: 'r2', team: 'Alpha', teamId: 'alpha', role: 'Secondary', name: 'Bob' }),
     makeRow({ id: 'r3', team: 'Bravo', teamId: 'bravo', name: 'Charlie' }),
   ];
@@ -265,7 +267,7 @@ describe('useOnCallManager', () => {
       );
 
       await act(async () => {
-        await result.current.handleUpdateRows('Alpha', [defaultRows[0]]);
+        await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
       });
 
       expect(dismissAlert).toHaveBeenCalledWith('general');
@@ -314,7 +316,7 @@ describe('useOnCallManager', () => {
       );
 
       await act(async () => {
-        await result.current.handleUpdateRows('Alpha', [defaultRows[0]]);
+        await result.current.handleUpdateRows('Alpha', [alphaPrimaryRow]);
       });
 
       expect(dismissAlert).not.toHaveBeenCalled();
@@ -425,6 +427,35 @@ describe('useOnCallManager', () => {
       expect(showToast).toHaveBeenCalledWith('Renamed Alpha to AlphaRenamed', 'success');
     });
 
+    it('frees the old name for reuse and migrates its board order entry', async () => {
+      mockRenameTeam.mockResolvedValue(undefined);
+      mockReplaceTeamRecords.mockResolvedValue([]);
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const rows = [makeRow({ id: 'r1', team: 'SQL', teamId: 'sql' })];
+      const boardSettings = makeReadyBoardSettings({ effectiveTeamOrder: ['sql', 'bravo'] });
+
+      const { result } = renderHook(() => useOnCallManager(rows, dismissAlert, boardSettings));
+
+      await act(async () => {
+        await result.current.handleRenameTeam('SQL', 'Oracle');
+      });
+
+      expect(result.current.localOnCall.every((r) => r.teamId === 'oracle')).toBe(true);
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        teamOrder: ['oracle', 'bravo'],
+      });
+
+      // The renamed card no longer claims "SQL", so the name can be added back.
+      await act(async () => {
+        await result.current.handleAddTeam('SQL');
+      });
+
+      expect(showToast).not.toHaveBeenCalledWith('SQL already exists', 'info');
+      expect(mockReplaceTeamRecords).toHaveBeenCalledWith('SQL', [
+        { teamId: 'sql', role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
+      ]);
+    });
+
     it('does not rename on API failure and shows error toast', async () => {
       mockRenameTeam.mockRejectedValue(new Error('Failed'));
 
@@ -444,7 +475,10 @@ describe('useOnCallManager', () => {
   });
 
   describe('handleAddTeam', () => {
-    it('adds a new team optimistically and calls API', async () => {
+    it('adds a new team in a web client without randomUUID', async () => {
+      vi.stubGlobal('crypto', {
+        getRandomValues: (bytes: Uint8Array) => bytes.fill(13),
+      });
       mockReplaceTeamRecords.mockResolvedValue([]);
       mockUpdatePrimaryBoardSettings.mockResolvedValue({});
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
@@ -18,6 +18,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableEditRow } from './oncall/SortableEditRow';
+import { createClientId } from '../utils/clientId';
 
 interface MaintainTeamModalProps {
   isOpen: boolean;
@@ -37,13 +38,20 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   onSave,
 }) => {
   const [rows, setRows] = useState<OnCallRow[]>([]);
+  const wasOpenRef = useRef(false);
   const teamId = useMemo(
     () => initialRows.find((row) => row.teamId)?.teamId ?? teamName.trim().toLowerCase(),
     [initialRows, teamName],
   );
 
+  // Seed the draft only on the closed -> open transition. `initialRows` is a
+  // fresh array on nearly every parent render (an empty team resolves through
+  // `|| []`, and any realtime on-call change rebuilds the grouping), so keying
+  // the seed on its identity silently reverted rows the operator had just added
+  // — and Save then wrote the reverted set back.
   useEffect(() => {
-    if (isOpen) setRows(initialRows.map((r) => ({ ...r })));
+    if (isOpen && !wasOpenRef.current) setRows(initialRows.map((r) => ({ ...r })));
+    wasOpenRef.current = isOpen;
   }, [isOpen, initialRows]);
 
   const sensors = useSensors(
@@ -69,7 +77,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     setRows((prev) => [
       ...prev,
       {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         team: teamName,
         teamId,
         role: 'Member',
@@ -90,7 +98,23 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="960px">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Edit Card: ${teamName}`}
+      variant="large"
+      bodyClassName="modal-body-generic--nested-scroll"
+      footer={
+        <>
+          <TactileButton variant="secondary" onClick={onClose}>
+            Cancel
+          </TactileButton>
+          <TactileButton variant="primary" onClick={handleSave}>
+            Save Changes
+          </TactileButton>
+        </>
+      }
+    >
       <div className="maintain-team-body">
         <div className="maintain-team-scroll">
           <DndContext
@@ -118,14 +142,6 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
             onClick={handleAddRow}
           >
             + Add Row
-          </TactileButton>
-        </div>
-        <div className="maintain-team-footer">
-          <TactileButton variant="secondary" onClick={onClose}>
-            Cancel
-          </TactileButton>
-          <TactileButton variant="primary" onClick={handleSave}>
-            Save Changes
           </TactileButton>
         </div>
       </div>

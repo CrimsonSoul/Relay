@@ -10,20 +10,9 @@ const RELAUNCH_HISTORY_FILE = 'relaunch-history.json';
 const RELAUNCH_LOOP_WINDOW_MS = 10 * 60_000;
 const RELAUNCH_LOOP_LIMIT = 3;
 
-export type AppRelaunchReason =
-  | 'app-reconfigure'
-  | 'fatal-main-process-error'
-  | 'repeated-gpu-process-failures'
-  | string;
+export type AppRelaunchReason = string & Record<never, never>;
 
-export type AppQuitReason =
-  | 'activate-window-create-failed'
-  | 'all-windows-closed'
-  | 'bootstrap-failed'
-  | 'critical-startup-data-root'
-  | 'single-instance-lock-unavailable'
-  | 'startup-failed'
-  | string;
+export type AppQuitReason = string & Record<never, never>;
 
 type AppRelaunchOptions = {
   exitCode?: number;
@@ -70,7 +59,7 @@ export function appendToRelaunchHistory(history: number[], now: number): number[
   return [...history.filter((t) => now - t <= RELAUNCH_LOOP_WINDOW_MS), now];
 }
 
-function readRelaunchHistory(): number[] {
+export function readRelaunchHistory(): number[] {
   try {
     const historyPath = join(app.getPath('userData'), RELAUNCH_HISTORY_FILE);
     if (!existsSync(historyPath)) return [];
@@ -81,7 +70,7 @@ function readRelaunchHistory(): number[] {
   }
 }
 
-function writeRelaunchHistory(history: number[]): void {
+export function writeRelaunchHistory(history: number[]): void {
   try {
     const userDataPath = app.getPath('userData');
     mkdirSync(userDataPath, { recursive: true });
@@ -106,13 +95,18 @@ function recordRelaunch(reason: AppRelaunchReason, exitCode: number): void {
   writeLifecycleMarker(EXIT_MARKER_FILE, getBaseMarkerPayload(`relaunch:${reason}`), { reason });
 }
 
-function recordQuit(reason: AppQuitReason): void {
+/**
+ * Record that this exit was intentional. The crash watchdog reads this marker,
+ * so every controlled shutdown path — including ones Electron starts itself,
+ * like before-quit and Windows session-end — has to write it.
+ */
+export function recordAppExitMarker(reason: AppQuitReason): void {
   writeLifecycleMarker(EXIT_MARKER_FILE, getBaseMarkerPayload(reason), { reason });
 }
 
 export function requestAppQuit(reason: AppQuitReason): void {
   loggers.main.error('Quitting Relay', { reason });
-  recordQuit(reason);
+  recordAppExitMarker(reason);
   app.quit();
 }
 

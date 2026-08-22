@@ -88,7 +88,7 @@ export const ServersIcon = () => (
   </svg>
 );
 
-export const NotesIcon = () => (
+export const KnowledgeIcon = () => (
   <svg
     width="20"
     height="20"
@@ -99,11 +99,9 @@ export const NotesIcon = () => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" />
-    <line x1="16" y1="17" x2="8" y2="17" />
-    <line x1="10" y1="9" x2="8" y2="9" />
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+    <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" />
+    <path d="M7 7h2M15 7h2M7 11h2M15 11h2" />
   </svg>
 );
 
@@ -172,6 +170,23 @@ export const StatusIcon = () => (
   </svg>
 );
 
+export const ProblemsIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z" />
+    <path d="M12 9v4" />
+    <path d="M12 17h.01" />
+  </svg>
+);
+
 export function AppIcon() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
@@ -220,3 +235,20 @@ export function AppIcon() {
     </svg>
   );
 }
+
+export const RadarIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="4.5" />
+    <line x1="12" y1="12" x2="18.4" y2="7.6" />
+  </svg>
+);

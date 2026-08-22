@@ -28,11 +28,17 @@ const isValidName = (name: string) => {
 
 export const getInitials = (name: string, email: string) => {
   if (isValidName(name)) {
-    const parts = name.trim().split(' ');
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    // Empty segments must be dropped before pairing: "John  Doe" splits into
+    // ['John', '', 'Doe'], and reading [0] of the empty middle segment produced
+    // the literal string "JUNDEFINED".
+    const [first, second] = name
+      .trim()
+      .split(' ')
+      .filter((part) => part.length > 0);
+    if (first && second) return (first.charAt(0) + second.charAt(0)).toUpperCase();
     return name.slice(0, 2).toUpperCase();
   }
-  return email && email.length > 0 ? email[0].toUpperCase() : '?';
+  return email.length > 0 ? email.charAt(0).toUpperCase() : '?';
 };
 
 interface AvatarProps {

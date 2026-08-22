@@ -1,0 +1,316 @@
+import { Activity, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import type { BridgeGroup, Contact, PublicRelayConfig, Server } from '@shared/ipc';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { TabFallback } from '../../components/TabFallback';
+import { TactileButton } from '../../components/TactileButton';
+import { KnowledgeHome } from './KnowledgeHome';
+import {
+  acknowledgeKnowledgeDestinationOpen,
+  getPendingKnowledgeDestinationOpen,
+  isKnowledgeContentDestination,
+  loadLastKnowledgeDestination,
+  OPEN_KNOWLEDGE_DESTINATION_EVENT,
+  persistLastKnowledgeDestination,
+  type KnowledgeDestination,
+} from './knowledgeWorkspaceNavigation';
+import {
+  getPendingKnowledgeDocumentOpen,
+  OPEN_KNOWLEDGE_DOCUMENT_EVENT,
+} from './knowledgeNavigation';
+import type { KnowledgeRecordOpenRequest } from './knowledgeRecordNavigation';
+import './knowledgeWorkspace.css';
+
+const WikiSurface = lazy(() =>
+  import('./KnowledgeTab').then(({ KnowledgeTab }) => ({ default: KnowledgeTab })),
+);
+const ContactsSurface = lazy(() =>
+  import('../../tabs/DirectoryTab').then(({ DirectoryTab }) => ({ default: DirectoryTab })),
+);
+const ServersSurface = lazy(() =>
+  import('../../tabs/ServersTab').then(({ ServersTab }) => ({ default: ServersTab })),
+);
+
+export type KnowledgeWorkspaceProps = Readonly<{
+  active: boolean;
+  contacts: Contact[];
+  groups: BridgeGroup[];
+  servers: Server[];
+  relayMode?: PublicRelayConfig['mode'];
+  onAddToAssembler: (contact: Contact) => void;
+  onDestinationChange?: (destination: KnowledgeDestination) => void;
+  recordOpenRequest?: KnowledgeRecordOpenRequest | null;
+  onRecordUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
+}>;
+
+type ContentDestination = Exclude<KnowledgeDestination, 'home'>;
+
+const CONTENT_DESTINATIONS: ReadonlyArray<{
+  id: ContentDestination;
+  label: string;
+}> = [
+  { id: 'wiki', label: 'Wiki' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'servers', label: 'Servers' },
+];
+
+function WorkspacePanel({
+  destination,
+  activeDestination,
+  retainEffects = false,
+  children,
+}: Readonly<{
+  destination: KnowledgeDestination;
+  activeDestination: KnowledgeDestination;
+  retainEffects?: boolean;
+  children: ReactNode;
+}>) {
+  const isActive = destination === activeDestination;
+  const panel = (
+    <section
+      className="knowledge-workspace-shell__panel"
+      data-knowledge-panel
+      data-destination={destination}
+      data-state={isActive ? 'active' : 'retained'}
+      data-motion={isActive ? 'panel' : undefined}
+      hidden={retainEffects && !isActive}
+      inert={retainEffects && !isActive ? true : undefined}
+      aria-label={destination === 'home' ? 'Knowledge home' : `${destination} workspace`}
+    >
+      {children}
+    </section>
+  );
+  if (retainEffects) return panel;
+  return <Activity mode={isActive ? 'visible' : 'hidden'}>{panel}</Activity>;
+}
+
+function KnowledgeDestinationNav({
+  destination,
+  onOpen,
+}: Readonly<{
+  destination: ContentDestination;
+  onOpen: (destination: KnowledgeDestination) => void;
+}>) {
+  return (
+    <nav className="knowledge-workspace-shell__navigation" aria-label="Knowledge destinations">
+      <button
+        type="button"
+        className="knowledge-workspace-shell__home"
+        onClick={() => onOpen('home')}
+        aria-label="Knowledge Home"
+      >
+        <span className="knowledge-workspace-shell__home-icon" aria-hidden="true">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m3 11 9-8 9 8" />
+            <path d="M5 10v10h14V10" />
+            <path d="M9 20v-6h6v6" />
+          </svg>
+        </span>
+        <span className="knowledge-workspace-shell__home-context">Knowledge</span>
+        {' ' /* Keep the breadcrumb boundary explicit for JSX whitespace semantics. */}Home
+      </button>
+      <span className="knowledge-workspace-shell__navigation-divider" aria-hidden="true" />
+      {CONTENT_DESTINATIONS.map(({ id, label }) => (
+        <button
+          type="button"
+          key={id}
+          className="knowledge-workspace-shell__destination"
+          aria-current={destination === id ? 'page' : undefined}
+          onClick={() => onOpen(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function DestinationFailure({
+  label,
+  onHome,
+  onRetry,
+}: Readonly<{
+  label: string;
+  onHome: () => void;
+  onRetry: () => void;
+}>) {
+  return (
+    <div className="knowledge-workspace-shell__failure" role="alert">
+      <span className="knowledge-workspace-shell__failure-eyebrow">Workspace interrupted</span>
+      <h2>{label} unavailable</h2>
+      <p>
+        This destination hit an unexpected error. Other Knowledge destinations remain available.
+      </p>
+      <div className="knowledge-workspace-shell__failure-actions">
+        <TactileButton variant="primary" onClick={onRetry}>
+          Try {label} again
+        </TactileButton>
+        <TactileButton variant="secondary" onClick={onHome}>
+          Return to Knowledge
+        </TactileButton>
+      </div>
+    </div>
+  );
+}
+
+function DestinationBoundary({
+  label,
+  onHome,
+  children,
+}: Readonly<{
+  label: string;
+  onHome: () => void;
+  children: ReactNode;
+}>) {
+  return (
+    <ErrorBoundary
+      fallback={(resetErrorBoundary) => (
+        <DestinationFailure label={label} onHome={onHome} onRetry={resetErrorBoundary} />
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
+
+export function KnowledgeWorkspace({
+  active,
+  contacts,
+  groups,
+  servers,
+  relayMode,
+  onAddToAssembler,
+  onDestinationChange,
+  recordOpenRequest,
+  onRecordUnavailable,
+}: KnowledgeWorkspaceProps) {
+  const initialDestination: KnowledgeDestination =
+    (getPendingKnowledgeDocumentOpen() && 'wiki') ||
+    getPendingKnowledgeDestinationOpen() ||
+    loadLastKnowledgeDestination();
+  const [destination, setDestination] = useState<KnowledgeDestination>(initialDestination);
+  const [mountedDestinations, setMountedDestinations] = useState(
+    () => new Set<KnowledgeDestination>(['home', initialDestination]),
+  );
+  const [wikiCount, setWikiCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    persistLastKnowledgeDestination(destination);
+    onDestinationChange?.(destination);
+  }, [destination, onDestinationChange]);
+
+  const open = useCallback((next: KnowledgeDestination) => {
+    setMountedDestinations((current) => {
+      if (current.has(next)) return current;
+      const updated = new Set(current);
+      updated.add(next);
+      return updated;
+    });
+    setDestination(next);
+  }, []);
+  const openHome = useCallback(() => open('home'), [open]);
+
+  useEffect(() => {
+    const handleDestinationRequest = (event: Event) => {
+      const requested = (event as CustomEvent<unknown>).detail;
+      if (!isKnowledgeContentDestination(requested)) return;
+      open(requested);
+      acknowledgeKnowledgeDestinationOpen(requested);
+    };
+    const handleDocumentRequest = () => open('wiki');
+
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, handleDestinationRequest);
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, handleDocumentRequest);
+
+    const pendingDestination = getPendingKnowledgeDestinationOpen();
+    if (pendingDestination) {
+      if (getPendingKnowledgeDocumentOpen()) {
+        open('wiki');
+      } else {
+        open(pendingDestination);
+      }
+      acknowledgeKnowledgeDestinationOpen(pendingDestination);
+    }
+    return () => {
+      globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, handleDestinationRequest);
+      globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, handleDocumentRequest);
+    };
+  }, [open]);
+
+  return (
+    <div className="knowledge-workspace-shell" data-active={active}>
+      {destination !== 'home' && (
+        <KnowledgeDestinationNav destination={destination} onOpen={open} />
+      )}
+
+      <div className="knowledge-workspace-shell__content">
+        <WorkspacePanel destination="home" activeDestination={destination}>
+          <KnowledgeHome
+            wikiCount={wikiCount}
+            contactCount={contacts.length}
+            serverCount={servers.length}
+            onOpen={open}
+          />
+        </WorkspacePanel>
+
+        {mountedDestinations.has('wiki') && (
+          <WorkspacePanel destination="wiki" activeDestination={destination} retainEffects>
+            <DestinationBoundary label="Wiki" onHome={openHome}>
+              <Suspense fallback={<TabFallback />}>
+                <WikiSurface
+                  active={active && destination === 'wiki'}
+                  relayMode={relayMode}
+                  onLibraryCountChange={setWikiCount}
+                />
+              </Suspense>
+            </DestinationBoundary>
+          </WorkspacePanel>
+        )}
+
+        {mountedDestinations.has('contacts') && (
+          <WorkspacePanel destination="contacts" activeDestination={destination}>
+            <DestinationBoundary label="Contacts" onHome={openHome}>
+              <Suspense fallback={<TabFallback />}>
+                <ContactsSurface
+                  contacts={contacts}
+                  groups={groups}
+                  servers={servers}
+                  onAddToAssembler={onAddToAssembler}
+                  selectionRequest={
+                    recordOpenRequest?.destination === 'contacts' ? recordOpenRequest : null
+                  }
+                  onSelectionUnavailable={onRecordUnavailable}
+                />
+              </Suspense>
+            </DestinationBoundary>
+          </WorkspacePanel>
+        )}
+
+        {mountedDestinations.has('servers') && (
+          <WorkspacePanel destination="servers" activeDestination={destination}>
+            <DestinationBoundary label="Servers" onHome={openHome}>
+              <Suspense fallback={<TabFallback />}>
+                <ServersSurface
+                  servers={servers}
+                  contacts={contacts}
+                  selectionRequest={
+                    recordOpenRequest?.destination === 'servers' ? recordOpenRequest : null
+                  }
+                  onSelectionUnavailable={onRecordUnavailable}
+                />
+              </Suspense>
+            </DestinationBoundary>
+          </WorkspacePanel>
+        )}
+      </div>
+    </div>
+  );
+}

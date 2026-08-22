@@ -1,14 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Modal } from './Modal';
-import { TactileButton } from './TactileButton';
-import type { PublicRelayConfig } from '@shared/ipc';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  getDynatraceApiTokenError,
+  getDynatraceEnvironmentUrlError,
+  type DynatraceProblemsPublicSettings,
+} from '@shared/dynatraceProblems';
 import {
   getDynatraceStartUrlError,
   type DynatraceDashboardInput,
   type DynatraceDashboardState,
   type DynatraceRuntimeState,
 } from '@shared/dynatrace';
-import { ACCENT_SCHEMES, getStoredAccent, setAccent, type AccentId } from '../theme/accent';
+import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
+import { Modal } from './Modal';
+import { TactileButton } from './TactileButton';
+import { AdministrationSettings } from './settings/AdministrationSettings';
+import { AboutSettings } from './settings/AboutSettings';
+import { AppearanceSettings, AppearanceSettingsProvider } from './settings/AppearanceSettings';
+import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
+import {
+  RelayConfigurationProvider,
+  useRelayConfiguration,
+} from './settings/RelayConfigurationContext';
+import {
+  RelayConnectionSettings,
+  RelayConnectionUiProvider,
+} from './settings/RelayConnectionSettings';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -25,9 +41,9 @@ type Props = {
   onOpenDataManager?: () => void;
   onReconfigure?: () => void;
   dynatrace?: DynatraceSettingsProps;
+  presentation?: 'modal' | 'page';
 };
 
-type PbConfig = PublicRelayConfig | null;
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
 type DynatraceValidationError = {
   field: 'name' | 'url';
@@ -42,29 +58,294 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   closed: 'Closed',
 };
 
-function getPocketBaseIp(config: PublicRelayConfig): string | null {
-  if (config.mode === 'server') {
-    if (config.bindHost === '127.0.0.1') return '127.0.0.1';
-    return config.lanIp ?? null;
+type SettingsSectionId =
+  'appearance' | 'connection' | 'access' | 'administration' | 'dynatrace' | 'about';
+
+const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'connection', label: 'Relay data' },
+  { id: 'access', label: 'Access' },
+  { id: 'administration', label: 'Administration' },
+  { id: 'dynatrace', label: 'Dynatrace' },
+  { id: 'about', label: 'About' },
+];
+
+type SettingsShellProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  presentation: 'modal' | 'page';
+  activeSection: SettingsSectionId;
+  sections: { id: SettingsSectionId; label: string }[];
+  onSectionChange: (section: SettingsSectionId) => void;
+  children: React.ReactNode;
+};
+
+function SettingsShell({
+  isOpen,
+  onClose,
+  presentation,
+  activeSection,
+  sections,
+  onSectionChange,
+  children,
+}: Readonly<SettingsShellProps>) {
+  if (presentation === 'modal') {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Settings" variant="standard">
+        {children}
+      </Modal>
+    );
   }
 
-  try {
-    return new URL(config.serverUrl).hostname;
-  } catch {
-    return config.serverUrl || null;
-  }
+  if (!isOpen) return null;
+
+  return (
+    <section className="settings-page" aria-labelledby="settings-page-title">
+      <header className="settings-page__header">
+        <div>
+          <div className="settings-page__context">Settings</div>
+          <h1 id="settings-page-title" className="settings-page__title">
+            Relay configuration
+          </h1>
+          <p className="settings-page__description">
+            Manage this workstation, shared data, account access, and Dynatrace.
+          </p>
+        </div>
+      </header>
+
+      <div className="settings-page__tabs" aria-label="Settings sections" role="tablist">
+        {sections.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            role="tab"
+            aria-selected={activeSection === section.id}
+            className={`settings-page__tab${
+              activeSection === section.id ? ' settings-page__tab--active' : ''
+            }`}
+            onClick={() => onSectionChange(section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="settings-page__workspace"
+        role="tabpanel"
+        aria-label={sections.find((section) => section.id === activeSection)?.label}
+      >
+        {children}
+      </div>
+    </section>
+  );
 }
 
-function getPocketBaseUrl(config: PublicRelayConfig): string | null {
-  if (config.mode === 'client') return config.serverUrl;
+function DynatraceProblemsSettingsSection() {
+  const [settings, setSettings] = useState<DynatraceProblemsPublicSettings>({
+    configured: false,
+    environmentUrl: '',
+    profileFilterConfigured: false,
+    selectedAlertingProfiles: [],
+  });
+  const [environmentUrl, setEnvironmentUrl] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [busy, setBusy] = useState<'load' | 'test' | 'save' | 'clear' | null>('load');
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
 
-  const ip = getPocketBaseIp(config);
-  if (!ip) return null;
-  return `http://${ip}:${config.port ?? 8090}`;
-}
+  useEffect(() => {
+    let cancelled = false;
+    void globalThis.api
+      ?.getDynatraceProblemsSettings?.()
+      .then((loaded) => {
+        if (cancelled) return;
+        setSettings(loaded);
+        setEnvironmentUrl(loaded.environmentUrl);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFeedback({ type: 'error', message: 'Could not load Dynatrace Problems settings.' });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-function getMaskedSecret(secret: string): string {
-  return '•'.repeat(secret.length);
+  const validate = () => {
+    const urlError = getDynatraceEnvironmentUrlError(environmentUrl);
+    if (urlError) return urlError;
+    if (!settings.configured || apiToken.trim()) return getDynatraceApiTokenError(apiToken);
+    return null;
+  };
+
+  const handleTest = async () => {
+    const validation = validate();
+    if (validation) {
+      setFeedback({ type: 'error', message: validation });
+      return;
+    }
+    setBusy('test');
+    setFeedback({ type: 'info', message: 'Testing read-only Grail Problems access…' });
+    try {
+      const result = await globalThis.api?.testDynatraceProblemsSettings?.({
+        environmentUrl,
+        ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
+      });
+      if (!result?.success || !result.data) {
+        throw new Error(result?.error || 'Dynatrace connection test failed.');
+      }
+      setFeedback({
+        type: 'success',
+        message: `Connected with platform-token access. ${result.data.problemCount.toLocaleString()} problems found in the last two hours.`,
+      });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Dynatrace connection test failed.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleSave = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    const validation = validate();
+    if (validation) {
+      setFeedback({ type: 'error', message: validation });
+      return;
+    }
+    setBusy('save');
+    setFeedback(null);
+    try {
+      const result = await globalThis.api?.saveDynatraceProblemsSettings?.({
+        environmentUrl,
+        ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
+      });
+      if (!result?.success || !result.data) {
+        throw new Error(result?.error || 'Could not save Dynatrace Problems settings.');
+      }
+      setSettings(result.data);
+      setEnvironmentUrl(result.data.environmentUrl);
+      setApiToken('');
+      setFeedback({
+        type: 'success',
+        message: 'Saved. The Relay server will refresh Dynatrace Problems every minute.',
+      });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not save Dynatrace settings.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleClear = async () => {
+    setBusy('clear');
+    setFeedback(null);
+    try {
+      const result = await globalThis.api?.clearDynatraceProblemsSettings?.();
+      if (!result?.success) throw new Error(result?.error || 'Could not remove configuration.');
+      setSettings({
+        configured: false,
+        environmentUrl: '',
+        profileFilterConfigured: false,
+        selectedAlertingProfiles: [],
+      });
+      setEnvironmentUrl('');
+      setApiToken('');
+      setFeedback({ type: 'success', message: 'Dynatrace Problems sync disabled.' });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not remove configuration.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const disabled = busy !== null;
+  let saveButtonLabel = 'Enable sync';
+  if (settings.configured) saveButtonLabel = 'Save changes';
+  if (busy === 'save') saveButtonLabel = 'Saving…';
+
+  return (
+    <div className="settings-section">
+      <div className="settings-section-heading">Dynatrace Problems</div>
+      <div className="settings-data-path">
+        Server-only Grail access. The platform token is encrypted locally and is never sent to Relay
+        clients. Requires storage:events:read and storage:buckets:read.
+      </div>
+      <form className="dynatrace-dashboard-form" onSubmit={(event) => void handleSave(event)}>
+        <label className="dynatrace-dashboard-field">
+          <span className="dynatrace-dashboard-label">Environment URL</span>
+          <input
+            className="tactile-input"
+            value={environmentUrl}
+            placeholder="https://abc123.apps.dynatrace.com"
+            spellCheck={false}
+            autoCapitalize="none"
+            disabled={disabled}
+            onChange={(event) => {
+              setEnvironmentUrl(event.target.value);
+              setFeedback(null);
+            }}
+          />
+        </label>
+        <label className="dynatrace-dashboard-field">
+          <span className="dynatrace-dashboard-label">Platform token · read-only Grail access</span>
+          <input
+            className="tactile-input"
+            type="password"
+            value={apiToken}
+            placeholder={
+              settings.configured
+                ? 'Leave blank to keep the stored platform token'
+                : 'Paste platform token'
+            }
+            autoComplete="new-password"
+            spellCheck={false}
+            disabled={disabled}
+            onChange={(event) => {
+              setApiToken(event.target.value);
+              setFeedback(null);
+            }}
+          />
+        </label>
+        {feedback && (
+          <div
+            className={`dynatrace-problems-settings-feedback dynatrace-problems-settings-feedback--${feedback.type}`}
+            role={feedback.type === 'error' ? 'alert' : 'status'}
+          >
+            {feedback.message}
+          </div>
+        )}
+        <div className="settings-button-row">
+          <TactileButton type="submit" variant="primary" disabled={disabled}>
+            {saveButtonLabel}
+          </TactileButton>
+          <TactileButton type="button" disabled={disabled} onClick={() => void handleTest()}>
+            {busy === 'test' ? 'Testing…' : 'Test access'}
+          </TactileButton>
+          {settings.configured && (
+            <TactileButton type="button" disabled={disabled} onClick={() => void handleClear()}>
+              {busy === 'clear' ? 'Disabling…' : 'Disable'}
+            </TactileButton>
+          )}
+        </div>
+      </form>
+    </div>
+  );
 }
 
 function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: DynatraceSettingsProps }>) {
@@ -291,185 +572,112 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
   );
 }
 
-export const SettingsModal: React.FC<Props> = ({
+const SettingsModalContent: React.FC<Props> = ({
   isOpen,
   onClose,
   onOpenDataManager,
   onReconfigure,
   dynatrace,
+  presentation = 'modal',
 }) => {
-  const [pbConfig, setPbConfig] = useState<PbConfig>(null);
-  const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
-  const [pbConfigLoading, setPbConfigLoading] = useState(false);
-  const [showConnectionSecret, setShowConnectionSecret] = useState(false);
-  const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
-
-  const handleAccentSelect = (id: AccentId) => {
-    setAccent(id);
-    setAccentState(id);
-  };
+  const { session: privilegedSession } = usePrivilegedAccess();
+  const { relayMode, loading: relayConfigLoading } = useRelayConfiguration();
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
+  const settingsSections = useMemo(
+    () =>
+      SETTINGS_SECTIONS.filter((section) => {
+        if (section.id === 'about') {
+          return presentation === 'page' && Boolean(globalThis.api?.getAppVersion);
+        }
+        return (
+          section.id !== 'administration' ||
+          (privilegedSession.state === 'active' &&
+            (privilegedSession.role === 'owner' || privilegedSession.role === 'admin'))
+        );
+      }),
+    [presentation, privilegedSession.role, privilegedSession.state],
+  );
 
   useEffect(() => {
-    if (!isOpen) return;
-
-    let cancelled = false;
-    setPbConfigLoading(true);
-    setConnectionSecret(null);
-    setShowConnectionSecret(false);
-    globalThis.api
-      ?.getConfig()
-      .then((config) => {
-        if (!cancelled) setPbConfig(config);
-      })
-      .catch(() => {
-        if (!cancelled) setPbConfig(null);
-      })
-      .finally(() => {
-        if (!cancelled) setPbConfigLoading(false);
-      });
-    globalThis.api
-      ?.getConnectionSecret?.()
-      .then((secret) => {
-        if (!cancelled) setConnectionSecret(secret);
-      })
-      .catch(() => {
-        if (!cancelled) setConnectionSecret(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
-
-  const handleReconfigure = async () => {
-    // Delete config on disk so the app returns to the setup screen on restart.
-    try {
-      await globalThis.api?.clearConfig();
-    } catch {
-      // Best-effort — onReconfigure() transitions to setup regardless.
+    if (
+      activeSection === 'administration' &&
+      !(
+        privilegedSession.state === 'active' &&
+        (privilegedSession.role === 'owner' || privilegedSession.role === 'admin')
+      )
+    ) {
+      setActiveSection('access');
     }
-    onClose();
-    onReconfigure?.();
-  };
+  }, [activeSection, privilegedSession.role, privilegedSession.state]);
 
-  const pbUrl = pbConfig ? getPocketBaseUrl(pbConfig) : null;
-  let displayedConnectionSecret: string | null = null;
-  if (connectionSecret) {
-    displayedConnectionSecret = showConnectionSecret
-      ? connectionSecret
-      : getMaskedSecret(connectionSecret);
-  }
+  const dynatraceSections = (
+    <>
+      {presentation === 'modal' && <div className="settings-divider" />}
+      {!relayConfigLoading && relayMode === 'server' && <DynatraceProblemsSettingsSection />}
 
-  const copyText = async (text: string) => {
-    await globalThis.api?.writeClipboard(text);
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
-      <div className="settings-body">
+      {!relayConfigLoading && relayMode === 'client' && (
         <div className="settings-section">
-          <div className="settings-section-heading">Accent Color</div>
-          <div className="accent-picker" role="radiogroup" aria-label="Accent color">
-            {ACCENT_SCHEMES.map((scheme) => (
-              <button
-                key={scheme.id}
-                type="button"
-                role="radio"
-                aria-checked={accent === scheme.id}
-                title={scheme.label}
-                className={`accent-picker-swatch${accent === scheme.id ? ' accent-picker-swatch--active' : ''}`}
-                style={{ ['--swatch' as string]: scheme.swatch }}
-                onClick={() => handleAccentSelect(scheme.id)}
-              >
-                <span className="accent-picker-swatch-label">{scheme.label}</span>
-              </button>
-            ))}
+          <div className="settings-section-heading">Dynatrace Problems</div>
+          <div className="settings-data-path">
+            Problems sync is configured and secured on the Relay server.
           </div>
         </div>
+      )}
 
-        <div className="settings-divider" />
+      {dynatrace && (
+        <>
+          {presentation === 'modal' && <div className="settings-divider" />}
+          <DynatraceSettingsSection dynatrace={dynatrace} />
+        </>
+      )}
+    </>
+  );
 
-        {onOpenDataManager && (
-          <>
-            <div className="settings-section">
-              <div className="settings-section-heading">Data Management</div>
-              <TactileButton
-                onClick={() => {
-                  onClose();
-                  onOpenDataManager();
-                }}
-                variant="primary"
-                className="btn-center"
-              >
-                Open Data Manager...
-              </TactileButton>
-            </div>
+  const settingsContent = (
+    <div
+      className={`settings-body${
+        presentation === 'page' ? ` settings-body--${activeSection}` : ''
+      }`}
+    >
+      <AppearanceSettings active={presentation === 'modal' || activeSection === 'appearance'} />
+      <RelayConnectionSettings
+        active={presentation === 'modal' || activeSection === 'connection'}
+        onClose={onClose}
+        onOpenDataManager={onOpenDataManager}
+        onReconfigure={onReconfigure}
+        presentation={presentation}
+      />
+      {presentation === 'page' && activeSection === 'access' && (
+        <PrivilegedAccessPanel relayMode={relayMode} />
+      )}
+      {presentation === 'page' && activeSection === 'administration' && (
+        <AdministrationSettings relayMode={relayMode} />
+      )}
+      {presentation === 'page' && activeSection === 'about' && <AboutSettings />}
+      {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
+    </div>
+  );
 
-            <div className="settings-divider" />
-          </>
-        )}
-
-        <div className="settings-section">
-          <div className="settings-section-heading">PocketBase</div>
-          {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
-          {!pbConfigLoading && !pbConfig && (
-            <div className="settings-data-path">Not configured</div>
-          )}
-          {!pbConfigLoading && pbConfig && (
-            <>
-              <div className="settings-data-path">
-                Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
-              </div>
-              {pbUrl && (
-                <div className="settings-data-path settings-copy-row">
-                  <span>URL: {pbUrl}</span>
-                  <button
-                    type="button"
-                    className="settings-inline-action"
-                    onClick={() => void copyText(pbUrl)}
-                  >
-                    Copy
-                  </button>
-                </div>
-              )}
-              {displayedConnectionSecret && (
-                <div className="settings-data-path settings-copy-row">
-                  <span>Passphrase: {displayedConnectionSecret}</span>
-                  <span className="settings-inline-actions">
-                    <button
-                      type="button"
-                      className="settings-inline-action"
-                      aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
-                      onClick={() => setShowConnectionSecret((current) => !current)}
-                    >
-                      {showConnectionSecret ? 'Hide' : 'Show'}
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-inline-action"
-                      onClick={() => void copyText(connectionSecret)}
-                    >
-                      Copy
-                    </button>
-                  </span>
-                </div>
-              )}
-              <div className="settings-button-row">
-                <TactileButton onClick={handleReconfigure} className="btn-flex-center">
-                  Reconfigure...
-                </TactileButton>
-              </div>
-            </>
-          )}
-        </div>
-
-        {dynatrace && (
-          <>
-            <div className="settings-divider" />
-            <DynatraceSettingsSection dynatrace={dynatrace} />
-          </>
-        )}
-      </div>
-    </Modal>
+  return (
+    <SettingsShell
+      isOpen={isOpen}
+      onClose={onClose}
+      presentation={presentation}
+      activeSection={activeSection}
+      sections={settingsSections}
+      onSectionChange={setActiveSection}
+    >
+      {settingsContent}
+    </SettingsShell>
   );
 };
+
+export const SettingsModal: React.FC<Props> = (props) => (
+  <AppearanceSettingsProvider>
+    <RelayConnectionUiProvider isOpen={props.isOpen}>
+      <RelayConfigurationProvider isOpen={props.isOpen}>
+        <SettingsModalContent {...props} />
+      </RelayConfigurationProvider>
+    </RelayConnectionUiProvider>
+  </AppearanceSettingsProvider>
+);

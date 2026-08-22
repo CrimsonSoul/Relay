@@ -1,7 +1,7 @@
-import React, { useState, useReducer, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 // html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
-import { CollapsibleHeader } from '../components/CollapsibleHeader';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
@@ -11,14 +11,22 @@ import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertReminderModal } from './AlertReminderModal';
 import { AlertReminderManagerModal } from './AlertReminderManagerModal';
-import { AlertForm } from './AlertForm';
+import {
+  AlertForm,
+  type AlertOptionalAttentionRequest,
+  type AlertOptionalField,
+} from './AlertForm';
 import { AlertCard } from './AlertCard';
-import { sanitizeHtml } from './alertUtils';
-import type { AlertBodyFontSize, Severity } from './alertUtils';
+import { AlertActionsMenu } from './alerts/AlertActionsMenu';
+import { isAlertMessageComplete } from './alertUtils';
+import type { Severity } from './alertUtils';
+import { buildAlertOutlookEml, sanitizeAlertClickUrl } from './alertLinks';
 import { localToIso } from './alertTimeUtils';
-import { compactText } from './alerts/compactEngine';
-import { enhanceHtml } from './alerts/enhanceEngine';
-import type { AlertFormHandle } from './AlertForm';
+import {
+  AlertDraftProvider,
+  initialAlertDraftState,
+  useAlertDraft,
+} from './alerts/AlertDraftContext';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import {
   getReminderAlarmLabel,
@@ -27,84 +35,15 @@ import {
   saveReminderAlarmSource,
 } from '../services/reminderAlarmSoundService';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
-import type { AlertHistoryEntry } from '@shared/ipc';
-
-import '@fontsource/ibm-plex-sans/400.css';
-import '@fontsource/ibm-plex-sans/600.css';
-import '@fontsource/ibm-plex-mono/400.css';
-import '@fontsource/ibm-plex-mono/600.css';
-import '@fontsource/montserrat/800.css';
+import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
+import { getRelayRuntime, hasRelayCapability } from '../runtime/relayRuntime';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 
 const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
-const ALERT_OUTLOOK_CAPTURE_SCALE = 1;
-const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
-
-interface AlertFormState {
-  severity: Severity;
-  subject: string;
-  bodyHtml: string;
-  sender: string;
-  recipient: string;
-  updateNumber: number;
-  eventTimeStart: string;
-  eventTimeEnd: string;
-  eventTimeSourceTz: string;
-  isCompact: boolean;
-  isEnhanced: boolean;
-  alertBodyFontSize: AlertBodyFontSize;
-}
-
-type AlertFormAction =
-  | { type: 'SET_FIELD'; field: keyof AlertFormState; value: AlertFormState[keyof AlertFormState] }
-  | { type: 'RESET' }
-  | { type: 'LOAD_HISTORY'; entry: AlertHistoryEntry };
-
-const initialFormState: AlertFormState = {
-  severity: 'INFO',
-  subject: '',
-  bodyHtml: '',
-  sender: '',
-  recipient: '',
-  updateNumber: 0,
-  eventTimeStart: '',
-  eventTimeEnd: '',
-  eventTimeSourceTz: 'America/Chicago',
-  isCompact: false,
-  isEnhanced: false,
-  alertBodyFontSize: 'normal',
-};
-
-function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormState {
-  switch (action.type) {
-    case 'SET_FIELD':
-      return { ...state, [action.field]: action.value };
-    case 'RESET':
-      return initialFormState;
-    case 'LOAD_HISTORY':
-      return {
-        ...initialFormState,
-        severity: action.entry.severity,
-        subject: action.entry.subject,
-        bodyHtml: sanitizeHtml(action.entry.bodyHtml),
-        sender: action.entry.sender,
-        recipient: action.entry.recipient ?? '',
-      };
-    default:
-      return state;
-  }
-}
-
-function compactHtml(html: string): string {
-  // eslint-disable-next-line sonarjs/slow-regex -- splitting on HTML tags; input is sanitized, no ReDoS risk
-  const parts = html.split(/(<[^>]*>)/g);
-  return parts
-    .map((part) => {
-      if (part.startsWith('<')) return part;
-      return compactText(part);
-    })
-    .join('');
-}
+const ALERT_OUTLOOK_CAPTURE_SCALE = 2;
+const ALERT_OUTLOOK_FALLBACK_SCALE = 1;
+const ALERT_SEVERITIES = new Set<Severity>(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']);
 
 function readCssValue(element: HTMLElement, property: string): string {
   return (
@@ -194,83 +133,37 @@ type AlertsTabProps = {
 };
 
 function normalizeLoadedSeverity(severity: ReminderAlertLoadDetail['severity']): Severity {
-  return ALERT_SEVERITIES.includes(severity as Severity) ? (severity as Severity) : 'INFO';
+  return ALERT_SEVERITIES.has(severity as Severity) ? (severity as Severity) : 'INFO';
 }
 
-export const AlertsTab: React.FC<AlertsTabProps> = ({
+const AlertsTabContent: React.FC<AlertsTabProps> = ({
   loadedReminderAlert = null,
   onLoadedReminderAlertConsumed,
 }) => {
+  const isWebRuntime = getRelayRuntime().kind === 'web';
+  const canCustomizeReminderSound = hasRelayCapability('customReminderSound');
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
-  const formRef = useRef<AlertFormHandle>(null);
 
-  const [form, dispatch] = useReducer(formReducer, initialFormState);
+  const { state: form, load, reset } = useAlertDraft();
   const {
     severity,
     subject,
     bodyHtml,
     sender,
     recipient,
+    clickThroughUrl,
     updateNumber,
     eventTimeStart,
     eventTimeEnd,
     eventTimeSourceTz,
-    isCompact,
-    isEnhanced,
-    alertBodyFontSize,
   } = form;
-
-  const setSeverity = useCallback(
-    (v: Severity) => dispatch({ type: 'SET_FIELD', field: 'severity', value: v }),
-    [],
-  );
-  const setSubject = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'subject', value: v }),
-    [],
-  );
-  const setBodyHtml = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: v }),
-    [],
-  );
-  const setSender = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'sender', value: v }),
-    [],
-  );
-  const setRecipient = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'recipient', value: v }),
-    [],
-  );
-  const setUpdateNumber = useCallback(
-    (v: number) => dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: v }),
-    [],
-  );
-  const setEventTimeStart = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeStart', value: v }),
-    [],
-  );
-  const setEventTimeEnd = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeEnd', value: v }),
-    [],
-  );
-  const setEventTimeSourceTz = useCallback(
-    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeSourceTz', value: v }),
-    [],
-  );
-  const setIsCompact = useCallback(
-    (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isCompact', value: v }),
-    [],
-  );
-  const setIsEnhanced = useCallback(
-    (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: v }),
-    [],
-  );
-  const setAlertBodyFontSize = useCallback(
-    (v: AlertBodyFontSize) => dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: v }),
-    [],
-  );
+  const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
 
   const [isCapturing, setIsCapturing] = useState(false);
+  const optionalAttentionSequenceRef = useRef(0);
+  const [optionalAttentionRequest, setOptionalAttentionRequest] =
+    useState<AlertOptionalAttentionRequest | null>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
@@ -281,7 +174,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const [hasCustomReminderAlarm, setHasCustomReminderAlarm] = useState(
     hasCustomReminderAlarmSource,
   );
-  const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
@@ -301,31 +193,73 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const displaySender = sender.trim() || 'IT';
   const displayRecipient = recipient.trim() || 'All Employees';
+  const alertClickHref = useMemo(
+    () => sanitizeAlertClickUrl(clickThroughUrl) ?? undefined,
+    [clickThroughUrl],
+  );
+  const requestOptionalFieldAttention = useCallback((field: AlertOptionalField) => {
+    optionalAttentionSequenceRef.current += 1;
+    setOptionalAttentionRequest({
+      requestId: optionalAttentionSequenceRef.current,
+      field,
+    });
+  }, []);
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
+
+  // History is only written on Save Image / Open in Outlook / Pin Template, so anything
+  // still being composed exists nowhere else. Both destructive paths — RESET and loading
+  // an alert off an alarm — have to ask before discarding it.
+  const hasComposition = useMemo(
+    () =>
+      (Object.keys(initialAlertDraftState) as Array<keyof typeof initialAlertDraftState>).some(
+        (field) => form[field] !== initialAlertDraftState[field],
+      ),
+    [form],
+  );
+  const hasCompositionRef = useRef(hasComposition);
+  useEffect(() => {
+    hasCompositionRef.current = hasComposition;
+  }, [hasComposition]);
+
+  const resetConfirmModal = useModalState();
+  const [pendingReminderAlert, setPendingReminderAlert] = useState<ReminderAlertLoadDetail | null>(
+    null,
+  );
+
+  const clearComposition = useCallback(() => {
+    reset();
+    // logoDataUrl is intentionally NOT cleared — it's a persistent setting
+  }, [reset]);
+
+  const applyReminderAlert = useCallback(
+    (detail: ReminderAlertLoadDetail) => {
+      load((currentState) => ({
+        ...currentState,
+        severity: normalizeLoadedSeverity(detail.severity),
+        subject: detail.subject.trim(),
+        bodyHtml: detail.bodyHtml,
+        sender: detail.sender.trim(),
+        recipient: '',
+        clickThroughUrl: '',
+        updateNumber: 0,
+      }));
+      showToast('Alert loaded from alarm', 'success');
+    },
+    [load, showToast],
+  );
 
   useEffect(() => {
     if (!loadedReminderAlert) return;
 
-    const nextBodyHtml = sanitizeHtml(loadedReminderAlert.bodyHtml);
-    dispatch({
-      type: 'SET_FIELD',
-      field: 'severity',
-      value: normalizeLoadedSeverity(loadedReminderAlert.severity),
-    });
-    dispatch({ type: 'SET_FIELD', field: 'subject', value: loadedReminderAlert.subject.trim() });
-    dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: nextBodyHtml });
-    dispatch({ type: 'SET_FIELD', field: 'sender', value: loadedReminderAlert.sender.trim() });
-    dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
-    dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
-    dispatch({ type: 'SET_FIELD', field: 'isCompact', value: false });
-    dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: false });
-    dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: 'normal' });
-    formRef.current?.setEditorContent(nextBodyHtml);
-    originalBodyRef.current = null;
-    showToast('Alert loaded from alarm', 'success');
+    // Read the dirty flag through a ref so composing does not re-trigger this effect
+    if (hasCompositionRef.current) {
+      setPendingReminderAlert(loadedReminderAlert);
+    } else {
+      applyReminderAlert(loadedReminderAlert);
+    }
     onLoadedReminderAlertConsumed?.();
-  }, [loadedReminderAlert, onLoadedReminderAlertConsumed, showToast]);
+  }, [applyReminderAlert, loadedReminderAlert, onLoadedReminderAlertConsumed]);
 
   // Load persisted logo on mount
   useEffect(() => {
@@ -400,31 +334,31 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [captureCard, showToast],
   );
 
-  const copyCurrentAlertImage = useCallback(
-    async (dataUrl: string): Promise<boolean> => {
-      const success = await globalThis.api?.writeClipboardImage(dataUrl);
-      if (success) {
-        showToast('Image copied — paste into Outlook!', 'success');
-        void addHistory({ severity, subject, bodyHtml, sender, recipient });
-        return true;
-      }
-      showToast('Failed to copy image to clipboard', 'error');
-      return false;
-    },
-    [showToast, addHistory, severity, subject, bodyHtml, sender, recipient],
-  );
+  const prepareOutlookDraftImage = useCallback(async () => {
+    let canvas = await captureCard(ALERT_OUTLOOK_CAPTURE_SCALE);
+    let dataUrl = canvas.toDataURL('image/png');
 
-  const handleCopyImage = useCallback(
-    () => withCapture(copyCurrentAlertImage, ALERT_OUTLOOK_CAPTURE_SCALE),
-    [withCapture, copyCurrentAlertImage],
-  );
+    // Inline body images can push a 2x PNG past IPC limits. Preserve the draft
+    // path by falling back to a native-size image.
+    if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+      canvas = await captureCard(ALERT_OUTLOOK_FALLBACK_SCALE);
+      dataUrl = canvas.toDataURL('image/png');
+    }
 
-  const handleSetReminder = useCallback(() => {
+    const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
+    return {
+      dataUrl: optimized?.success && optimized.data ? optimized.data : dataUrl,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }, [captureCard]);
+
+  const openNewReminderModal = useCallback(() => {
     setEditingReminder(null);
     reminderModal.open();
   }, [reminderModal]);
 
-  const handleSavePNG = useCallback(
+  const handleSaveImage = useCallback(
     () =>
       withCapture(async (dataUrl) => {
         const slug =
@@ -444,18 +378,39 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [withCapture, showToast, subject, addHistory, severity, bodyHtml, sender, recipient],
   );
 
-  const handleLoadFromHistory = useCallback((entry: AlertHistoryEntry) => {
-    dispatch({ type: 'LOAD_HISTORY', entry });
-    formRef.current?.setEditorContent(sanitizeHtml(entry.bodyHtml));
-    originalBodyRef.current = null;
-  }, []);
+  const handleLoadFromHistory = useCallback(
+    (entry: AlertHistoryEntry) => {
+      load({
+        ...initialAlertDraftState,
+        severity: entry.severity,
+        subject: entry.subject,
+        bodyHtml: entry.bodyHtml,
+        sender: entry.sender,
+        recipient: entry.recipient ?? '',
+      });
+    },
+    [load],
+  );
 
   const handleClear = useCallback(() => {
-    dispatch({ type: 'RESET' });
-    formRef.current?.setEditorContent('');
-    originalBodyRef.current = null;
-    // logoDataUrl is intentionally NOT cleared — it's a persistent setting
-  }, []);
+    // RESET sits right next to HISTORY and there is no undo, so an unexported
+    // composition only goes away after the operator says so.
+    if (hasComposition) {
+      resetConfirmModal.open();
+      return;
+    }
+    clearComposition();
+  }, [clearComposition, hasComposition, resetConfirmModal]);
+
+  const handleConfirmReset = useCallback(() => {
+    resetConfirmModal.close();
+    clearComposition();
+  }, [clearComposition, resetConfirmModal]);
+
+  const handleConfirmLoadReminderAlert = useCallback(() => {
+    if (pendingReminderAlert) applyReminderAlert(pendingReminderAlert);
+    setPendingReminderAlert(null);
+  }, [applyReminderAlert, pendingReminderAlert]);
 
   const handleSetLogo = useCallback(async () => {
     const result = await globalThis.api?.saveCompanyLogo();
@@ -543,6 +498,56 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
   }, [subject, updateNumber]);
 
+  const handleOpenOutlookDraft = useCallback(async () => {
+    if (clickThroughUrl.trim() && !alertClickHref) {
+      requestOptionalFieldAttention('clickThroughUrl');
+      showToast('Enter a valid HTTP or HTTPS click-through URL', 'error');
+      return false;
+    }
+
+    setIsCapturing(true);
+    try {
+      const image = await prepareOutlookDraftImage();
+      const content = buildAlertOutlookEml({
+        subject: displaySubject,
+        imageDataUrl: image.dataUrl,
+        imageHref: alertClickHref,
+        width: image.width,
+        height: image.height,
+      });
+      const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
+      if (success) {
+        showToast(isWebRuntime ? 'Alert draft downloaded' : 'Outlook draft opened', 'success');
+        void addHistory({ severity, subject, bodyHtml, sender, recipient });
+        return true;
+      }
+      showToast(
+        isWebRuntime ? 'Failed to download alert draft' : 'Failed to open Outlook draft',
+        'error',
+      );
+      return false;
+    } catch {
+      showToast('Failed to prepare Outlook draft', 'error');
+      return false;
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [
+    clickThroughUrl,
+    alertClickHref,
+    showToast,
+    prepareOutlookDraftImage,
+    displaySubject,
+    addHistory,
+    severity,
+    subject,
+    bodyHtml,
+    sender,
+    recipient,
+    isWebRuntime,
+    requestOptionalFieldAttention,
+  ]);
+
   const reminderDraft = useMemo(
     () => ({
       severity,
@@ -560,21 +565,22 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const handleReminderSubmit = useCallback(
     async (input: AlertReminderInput): Promise<boolean> => {
-      if (!editingReminder) return await scheduleReminder(input);
-      return await updateReminder(editingReminder.id, {
-        title: input.title,
-        note: input.note,
-        dueAt: input.dueAt,
-      });
+      if (editingReminder) {
+        return await updateReminder(editingReminder.id, {
+          title: input.title,
+          note: input.note,
+          dueAt: input.dueAt,
+        });
+      }
+      return await scheduleReminder(input);
     },
     [editingReminder, scheduleReminder, updateReminder],
   );
 
   const handleScheduleFromManager = useCallback(() => {
     reminderManagerModal.close();
-    setEditingReminder(null);
-    reminderModal.open();
-  }, [reminderManagerModal, reminderModal]);
+    openNewReminderModal();
+  }, [openNewReminderModal, reminderManagerModal]);
 
   const handleEditReminder = useCallback(
     (reminder: AlertReminderRecord) => {
@@ -610,214 +616,108 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     showToast('Alarm sound reset', 'success');
   }, [refreshReminderAlarmState, showToast]);
 
-  const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
-    let result = sanitizeHtml(html);
-    if (compact) result = compactHtml(result);
-    if (enhanced) result = enhanceHtml(result);
-    return result;
-  }, []);
-
-  const handleToggleCompact = useCallback(() => {
-    const nextCompact = !isCompact;
-    if (!nextCompact && !isEnhanced) {
-      // Both off — restore original
-      const original = originalBodyRef.current ?? bodyHtml;
-      originalBodyRef.current = null;
-      setBodyHtml(original);
-      formRef.current?.setEditorContent(original);
-    } else {
-      // Save original if first toggle on
-      originalBodyRef.current ??= bodyHtml;
-      const transformed = applyTransforms(originalBodyRef.current, nextCompact, isEnhanced);
-      setBodyHtml(transformed);
-      formRef.current?.setEditorContent(transformed);
-    }
-    setIsCompact(nextCompact);
-  }, [isCompact, isEnhanced, bodyHtml, applyTransforms, setBodyHtml, setIsCompact]);
-
-  const handleToggleEnhanced = useCallback(() => {
-    const nextEnhanced = !isEnhanced;
-    if (!isCompact && !nextEnhanced) {
-      // Both off — restore original
-      const original = originalBodyRef.current ?? bodyHtml;
-      originalBodyRef.current = null;
-      setBodyHtml(original);
-      formRef.current?.setEditorContent(original);
-    } else {
-      // Save original if first toggle on
-      originalBodyRef.current ??= bodyHtml;
-      const transformed = applyTransforms(originalBodyRef.current, isCompact, nextEnhanced);
-      setBodyHtml(transformed);
-      formRef.current?.setEditorContent(transformed);
-    }
-    setIsEnhanced(nextEnhanced);
-  }, [isCompact, isEnhanced, bodyHtml, applyTransforms, setBodyHtml, setIsEnhanced]);
-
   return (
     <div className="alerts-tab">
-      <CollapsibleHeader>
-        <TactileButton
-          variant="ghost"
-          onClick={handleClear}
-          tooltip="Reset alert composer"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M23 4v6h-6" />
-              <path d="M1 20v-6h6" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-          }
-        >
-          RESET
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={historyModal.open}
-          tooltip="Open alert history"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-          }
-        >
-          HISTORY
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={reminderManagerModal.open}
-          tooltip="Manage alert alarms"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
-              <path d="M9 21h6" />
-              <path d="M8 11h8" />
-              <path d="M8 14h5" />
-            </svg>
-          }
-        >
-          ALARMS
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={handlePinTemplate}
-          tooltip="Pin current alert as a template"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 17v5" />
-              <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1z" />
-            </svg>
-          }
-        >
-          PIN TEMPLATE
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={handleSavePNG}
-          loading={isCapturing}
-          tooltip="Save alert preview as PNG"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          }
-        >
-          SAVE PNG
-        </TactileButton>
-        <TactileButton
-          variant="secondary"
-          onClick={handleSetReminder}
-          tooltip="Schedule an alarm for this alert"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M19 9a7 7 0 10-14 0c0 6-2 6-2 8h18c0-2-2-2-2-8" />
-              <path d="M9 21h6" />
-              <path d="M12 6v4l3 2" />
-            </svg>
-          }
-        >
-          SCHEDULE ALERT ALARM
-        </TactileButton>
-        <TactileButton
-          variant="primary"
-          onClick={handleCopyImage}
-          loading={isCapturing}
-          tooltip="Copy alert preview for Outlook"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-            </svg>
-          }
-        >
-          COPY FOR OUTLOOK
-        </TactileButton>
-      </CollapsibleHeader>
+      <TabPageHeader
+        context="Alerts"
+        title="Operational Alert Utility"
+        metadata={
+          <span className="tab-page-status" role="status" aria-live="polite">
+            <span className="tab-page-status__dot alerts-page-state-dot" aria-hidden="true" />
+            <span>Draft · {severity}</span>
+          </span>
+        }
+      />
+
+      <TabCommandBar ariaLabel="Alert actions">
+        <TabCommandGroup kind="utility">
+          <TactileButton
+            variant="secondary"
+            onClick={historyModal.open}
+            disabled={isCapturing}
+            tooltip="Open alert history"
+            icon={
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            }
+          >
+            History
+          </TactileButton>
+        </TabCommandGroup>
+        <TabCommandGroup kind="workflow">
+          <TactileButton
+            variant="secondary"
+            className="alerts-save-image-action"
+            onClick={handleSaveImage}
+            loading={isCapturing}
+            tooltip="Save a high-resolution PNG image"
+            icon={
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            }
+          >
+            Save Image
+          </TactileButton>
+          <TactileButton
+            variant="primary"
+            onClick={() => void handleOpenOutlookDraft()}
+            loading={isCapturing}
+            tooltip={
+              isWebRuntime
+                ? 'Download an editable EML draft with a crisp inline alert'
+                : 'Open an editable Outlook draft with a crisp inline alert'
+            }
+            icon={
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="1" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+            }
+          >
+            {isWebRuntime ? 'Download Draft' : 'Open in Outlook'}
+          </TactileButton>
+          <AlertActionsMenu
+            captureBusy={isCapturing}
+            onScheduleAlarm={openNewReminderModal}
+            onOpenAlarms={reminderManagerModal.open}
+            onPinTemplate={handlePinTemplate}
+            onReset={handleClear}
+          />
+        </TabCommandGroup>
+      </TabCommandBar>
 
       {nextReminder && (
         <button
@@ -843,55 +743,41 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
       )}
 
       <div className="alerts-layout">
-        {/* Left Panel — Composer */}
-        <AlertForm
-          ref={formRef}
-          severity={severity}
-          setSeverity={setSeverity}
-          subject={subject}
-          setSubject={setSubject}
-          bodyHtml={bodyHtml}
-          setBodyHtml={setBodyHtml}
-          sender={sender}
-          setSender={setSender}
-          recipient={recipient}
-          setRecipient={setRecipient}
-          updateNumber={updateNumber}
-          setUpdateNumber={setUpdateNumber}
-          eventTimeStart={eventTimeStart}
-          setEventTimeStart={setEventTimeStart}
-          eventTimeEnd={eventTimeEnd}
-          setEventTimeEnd={setEventTimeEnd}
-          eventTimeSourceTz={eventTimeSourceTz}
-          setEventTimeSourceTz={setEventTimeSourceTz}
-          logoDataUrl={logoDataUrl}
-          onSetLogo={handleSetLogo}
-          onRemoveLogo={handleRemoveLogo}
-          footerLogoDataUrl={footerLogoDataUrl}
-          onSetFooterLogo={handleSetFooterLogo}
-          onRemoveFooterLogo={handleRemoveFooterLogo}
-          isCompact={isCompact}
-          onToggleCompact={handleToggleCompact}
-          isEnhanced={isEnhanced}
-          onToggleEnhanced={handleToggleEnhanced}
-          alertBodyFontSize={alertBodyFontSize}
-          setAlertBodyFontSize={setAlertBodyFontSize}
-        />
-
-        {/* Right Panel — Preview */}
-        <AlertCard
-          cardRef={cardRef}
-          severity={severity}
-          displaySubject={displaySubject}
-          displaySender={displaySender}
-          displayRecipient={displayRecipient}
-          bodyHtml={bodyHtml}
-          logoDataUrl={logoDataUrl}
-          footerLogoDataUrl={footerLogoDataUrl}
-          eventTimeStart={eventTimeStartIso}
-          eventTimeEnd={eventTimeEndIso}
-          alertBodyFontSize={alertBodyFontSize}
-        />
+        <section className="alerts-pane alerts-definition-pane" aria-label="Alert definition">
+          <div className="alerts-pane-header">
+            <span>Alert definition</span>
+            <span>{requiredStepsReady} of 2 required ready</span>
+          </div>
+          <AlertForm
+            logoDataUrl={logoDataUrl}
+            onSetLogo={handleSetLogo}
+            onRemoveLogo={handleRemoveLogo}
+            footerLogoDataUrl={footerLogoDataUrl}
+            onSetFooterLogo={handleSetFooterLogo}
+            onRemoveFooterLogo={handleRemoveFooterLogo}
+            attentionRequest={optionalAttentionRequest}
+          />
+        </section>
+        <section className="alerts-pane alerts-preview-pane" aria-label="Live email preview">
+          <div className="alerts-pane-header">
+            <span>Live email preview</span>
+            <span>
+              {severity} · {ALERT_EXPORT_WIDTH_PX}px
+            </span>
+          </div>
+          <AlertCard
+            cardRef={cardRef}
+            severity={severity}
+            displaySubject={displaySubject}
+            displaySender={displaySender}
+            displayRecipient={displayRecipient}
+            bodyHtml={bodyHtml}
+            logoDataUrl={logoDataUrl}
+            footerLogoDataUrl={footerLogoDataUrl}
+            eventTimeStart={eventTimeStartIso}
+            eventTimeEnd={eventTimeEndIso}
+          />
+        </section>
       </div>
 
       <AlertHistoryModal
@@ -928,12 +814,47 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         hasCustomAlarmSound={hasCustomReminderAlarm}
         onChooseAlarmSound={() => void handleChooseReminderAlarmSound()}
         onResetAlarmSound={handleResetReminderAlarmSound}
+        canCustomizeAlarmSound={canCustomizeReminderSound}
       />
+      <ConfirmModal
+        isOpen={resetConfirmModal.isOpen}
+        onClose={resetConfirmModal.close}
+        onConfirm={handleConfirmReset}
+        title="Reset Alert"
+        message="Discard this alert? The severity, subject, body, recipients, and event times are cleared, and an alert that has not been saved or opened in Outlook cannot be recovered."
+        confirmLabel="Discard Alert"
+        isDanger
+      />
+
+      <ConfirmModal
+        isOpen={pendingReminderAlert !== null}
+        onClose={() => setPendingReminderAlert(null)}
+        onConfirm={handleConfirmLoadReminderAlert}
+        title="Load Alert From Alarm"
+        message={`Load "${pendingReminderAlert?.subject.trim() || 'the stored alert'}"? This overwrites the alert you are composing, which cannot be recovered.`}
+        confirmLabel="Load Alert"
+        isDanger
+      />
+
       <Modal
         isOpen={pinPromptModal.isOpen}
         onClose={pinPromptModal.close}
+        variant="confirmation"
         title="Pin Template"
-        width="400px"
+        footer={
+          <>
+            <TactileButton variant="ghost" size="sm" onClick={pinPromptModal.close}>
+              CANCEL
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              size="sm"
+              onClick={() => void handlePinTemplateConfirm()}
+            >
+              PIN
+            </TactileButton>
+          </>
+        }
       >
         <div className="pin-template-form">
           <label className="alerts-field-label" htmlFor="pin-template-name">
@@ -951,22 +872,16 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
             }}
             autoFocus
           />
-          <div className="pin-template-actions">
-            <TactileButton variant="ghost" size="sm" onClick={pinPromptModal.close}>
-              CANCEL
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              size="sm"
-              onClick={() => void handlePinTemplateConfirm()}
-            >
-              PIN
-            </TactileButton>
-          </div>
         </div>
       </Modal>
 
-      <StatusBar left={<StatusBarLive />} right={<span>Alert Composer</span>} />
+      <StatusBar left={<StatusBarLive />} right={<span>Alert Utility</span>} />
     </div>
   );
 };
+
+export const AlertsTab: React.FC<AlertsTabProps> = (props) => (
+  <AlertDraftProvider>
+    <AlertsTabContent {...props} />
+  </AlertDraftProvider>
+);

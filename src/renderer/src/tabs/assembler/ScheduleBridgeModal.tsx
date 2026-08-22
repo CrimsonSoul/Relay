@@ -3,7 +3,11 @@ import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { useToast } from '../../components/Toast';
 import { buildBridgeIcs, IcsAttendee } from '../../utils/ics';
-import { getOrganizerEmail, setOrganizerEmail } from '../../utils/organizerEmail';
+import {
+  getOrganizerEmail,
+  setOrganizerEmail as persistOrganizerEmail,
+} from '../../utils/organizerEmail';
+import { getRelayRuntime } from '../../runtime/relayRuntime';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const DURATION_OPTIONS = [30, 60, 90, 120];
@@ -37,11 +41,12 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
   attendees,
 }) => {
   const { showToast } = useToast();
+  const isWebRuntime = getRelayRuntime().kind === 'web';
   const fieldId = useId();
   const [startValue, setStartValue] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [subject, setSubject] = useState('');
-  const [organizerEmail, setOrganizerEmailValue] = useState('');
+  const [organizerEmail, setOrganizerEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [subjectError, setSubjectError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,7 +58,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       setStartValue(toDateTimeLocalValue(nextHalfHour()));
       setDurationMinutes(60);
       setSubject(`${now.getMonth() + 1}/${now.getDate()} – Bridge`);
-      setOrganizerEmailValue(getOrganizerEmail());
+      setOrganizerEmail(getOrganizerEmail());
       setEmailError('');
       setSubjectError('');
       setIsSubmitting(false);
@@ -74,7 +79,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
     setSubjectError('');
     setIsSubmitting(true);
     try {
-      setOrganizerEmail(organizerEmail);
+      persistOrganizerEmail(organizerEmail);
       const ics = buildBridgeIcs({
         subject,
         start: new Date(startValue),
@@ -84,19 +89,49 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       });
       const success = await globalThis.api?.saveAndOpenIcs(ics);
       if (success) {
-        showToast('Invite created — review and send in your calendar', 'success');
+        showToast(
+          isWebRuntime
+            ? 'Invite downloaded — import it into your calendar'
+            : 'Invite created — review and send in your calendar',
+          'success',
+        );
         onClose();
       } else {
         showToast('Failed to create invite', 'error');
       }
+    } catch {
+      // A rejected saveAndOpenIcs (denied file write, no calendar handler) otherwise
+      // becomes an unhandled rejection: the spinner clears and the operator sees
+      // nothing. Report it the same way the falsy-result branch above does.
+      showToast('Failed to create invite', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Schedule Bridge" width="440px">
-      <form onSubmit={handleSubmit}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Schedule Bridge"
+      variant="standard"
+      footer={
+        <>
+          <TactileButton type="button" onClick={onClose}>
+            Cancel
+          </TactileButton>
+          <TactileButton
+            type="submit"
+            form={`${fieldId}-form`}
+            loading={isSubmitting}
+            variant="primary"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Invite'}
+          </TactileButton>
+        </>
+      }
+    >
+      <form id={`${fieldId}-form`} className="schedule-bridge-form" onSubmit={handleSubmit}>
         <div className="schedule-bridge-field">
           <label htmlFor={`${fieldId}-start`} className="schedule-bridge-label">
             Date &amp; Time
@@ -152,19 +187,10 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
             type="text"
             className="tactile-input"
             value={organizerEmail}
-            onChange={(e) => setOrganizerEmailValue(e.target.value)}
+            onChange={(e) => setOrganizerEmail(e.target.value)}
             placeholder="you@example.com"
           />
           {emailError && <div className="schedule-bridge-error">{emailError}</div>}
-        </div>
-
-        <div className="schedule-bridge-actions">
-          <TactileButton type="button" onClick={onClose}>
-            Cancel
-          </TactileButton>
-          <TactileButton type="submit" disabled={isSubmitting} variant="primary">
-            {isSubmitting ? 'Creating...' : 'Create Invite'}
-          </TactileButton>
         </div>
       </form>
     </Modal>

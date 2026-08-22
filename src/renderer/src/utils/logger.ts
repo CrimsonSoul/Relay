@@ -16,6 +16,23 @@ import {
 } from '@shared/logging';
 import { redactSensitiveData } from '@shared/logRedaction';
 
+/** Every level that can actually be emitted; `NONE` is a threshold, not a label. */
+type LoggableLevel = Exclude<LogLevel, LogLevel.NONE>;
+
+const LEVEL_NAMES: Record<LoggableLevel, LogEntry['level']> = {
+  [LogLevel.DEBUG]: 'DEBUG',
+  [LogLevel.INFO]: 'INFO',
+  [LogLevel.WARN]: 'WARN',
+  [LogLevel.ERROR]: 'ERROR',
+  [LogLevel.FATAL]: 'FATAL',
+};
+
+/**
+ * `LogEntry.data` is declared as `unknown` on the IPC boundary; internally the
+ * renderer only ever stores an already-redacted `LogData`.
+ */
+type RendererLogEntry = Omit<LogEntry, 'data'> & { data: LogData };
+
 class RendererLogger implements ILogger {
   private level: LogLevel = LogLevel.INFO;
   private errorCount = 0;
@@ -96,7 +113,7 @@ class RendererLogger implements ILogger {
     return context;
   }
 
-  private formatLogEntry(entry: LogEntry): string {
+  private formatLogEntry(entry: RendererLogEntry): string {
     const parts: string[] = [
       `[${entry.timestamp}]`,
       `[${entry.level.padEnd(5)}]`,
@@ -142,18 +159,18 @@ class RendererLogger implements ILogger {
     return level >= this.level;
   }
 
-  private log(level: LogLevel, module: string, message: string, data?: LogData): void {
+  private log(level: LoggableLevel, module: string, message: string, data?: LogData): void {
     if (!this.shouldLog(level)) return;
 
     // Track counts
     if (level === LogLevel.ERROR || level === LogLevel.FATAL) this.errorCount++;
     if (level === LogLevel.WARN) this.warnCount++;
 
-    const levelName = LogLevel[level];
+    const levelName = LEVEL_NAMES[level];
     const errorContext = level >= LogLevel.WARN ? this.extractErrorContext(data) : undefined;
     const sanitizedData = data ? redactSensitiveData(data) : undefined;
 
-    const entry: LogEntry = {
+    const entry: RendererLogEntry = {
       timestamp: this.formatTimestamp(),
       level: levelName,
       module,

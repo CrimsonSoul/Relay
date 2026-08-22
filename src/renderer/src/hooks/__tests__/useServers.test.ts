@@ -4,12 +4,6 @@ import { useServers } from '../useServers';
 import type { Contact, Server } from '@shared/ipc';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
-// Mock SearchContext
-const mockServerDebouncedQuery = { value: '' };
-vi.mock('../../contexts/SearchContext', () => ({
-  useSearchContext: () => ({ debouncedQuery: mockServerDebouncedQuery.value }),
-}));
-
 // Mock PocketBase server service
 const mockDeleteServer = vi.fn();
 vi.mock('../../services/serverService', () => ({
@@ -17,7 +11,9 @@ vi.mock('../../services/serverService', () => ({
 }));
 
 describe('useServers', () => {
-  const servers: Server[] = [
+  // Tuple-typed so the individual fixtures stay directly addressable under
+  // `noUncheckedIndexedAccess` when a test hands one server to the hook.
+  const servers: [Server, Server] = [
     {
       name: 'Alpha',
       businessArea: 'Finance',
@@ -59,23 +55,23 @@ describe('useServers', () => {
   });
 
   it('builds contact lookup and filters/sorts servers', () => {
-    const { result, rerender } = renderHook(() => useServers(servers, contacts));
+    const { result } = renderHook(() => useServers(servers, contacts));
 
     expect(result.current.contactLookup.get('alpha@test.com')?.name).toBe('Alice');
     expect(result.current.contactLookup.get('alice')?.email).toBe('alpha@test.com');
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Alpha', 'Bravo']);
 
-    mockServerDebouncedQuery.value = 'bravo';
-    rerender();
-    expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo']);
-
-    mockServerDebouncedQuery.value = '';
-    rerender();
     act(() => {
       result.current.setSortKey('name');
       result.current.setSortOrder('desc');
     });
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo', 'Alpha']);
+  });
+
+  it('filters servers only from its explicit local query', () => {
+    const { result } = renderHook(() => useServers(servers, contacts, 'BRAVO'));
+
+    expect(result.current.filteredServers.map((server) => server.name)).toEqual(['Bravo']);
   });
 
   it('opens context menu and clears it on global click', () => {
@@ -99,20 +95,10 @@ describe('useServers', () => {
     expect(result.current.contextMenu).toBeNull();
   });
 
-  it('handles delete/edit flows and modal helpers', async () => {
+  it('handles edit flows and modal helpers', async () => {
     mockDeleteServer.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useServers(servers, contacts));
-
-    act(() => {
-      result.current.setContextMenu({ x: 1, y: 1, server: servers[0] });
-    });
-
-    await act(async () => {
-      await result.current.handleDelete();
-    });
-    expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
-    expect(result.current.contextMenu).toBeNull();
 
     act(() => {
       result.current.setContextMenu({ x: 2, y: 2, server: servers[1] });
@@ -130,14 +116,15 @@ describe('useServers', () => {
     expect(result.current.editingServer).toBeUndefined();
   });
 
-  it('swallows server delete errors', async () => {
+  it('propagates server delete errors so the caller can report them', async () => {
+    // Previously swallowed here, which made a failed delete look identical to a
+    // successful one: no realtime event fires for a rejected delete, so the row
+    // simply stayed in the list with no message.
     mockDeleteServer.mockRejectedValue(new Error('boom'));
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
-    await act(async () => {
-      await result.current.deleteServer(servers[0]);
-    });
+    await expect(result.current.deleteServer(servers[0])).rejects.toThrow('boom');
 
     expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
   });

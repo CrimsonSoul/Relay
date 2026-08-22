@@ -26,7 +26,7 @@ describe('AppConfig', () => {
     expect(config.load()).toBeNull();
   });
 
-  it('writes and reads server config', () => {
+  it('enables browser backup when server config omits web settings', () => {
     const config = new AppConfig(tempDir);
     const serverConfig: RelayConfig = {
       mode: 'server',
@@ -36,7 +36,90 @@ describe('AppConfig', () => {
     };
     config.save(serverConfig);
     const loaded = config.load();
-    expect(loaded).toEqual(serverConfig);
+    expect(loaded).toEqual({
+      ...serverConfig,
+      web: { enabled: true, port: 8091 },
+    });
+  });
+
+  it('enables browser backup for legacy server configs without rewriting on load', () => {
+    const stored = {
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      lanAccessConfigured: true,
+      secret: 'legacy-secret',
+    };
+    writeFileSync(join(tempDir, 'config.json'), JSON.stringify(stored, null, 2), 'utf-8');
+
+    const loaded = new AppConfig(tempDir).load();
+
+    expect(loaded).toMatchObject({
+      mode: 'server',
+      web: { enabled: true, port: 8091 },
+    });
+    expect(JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'))).toEqual(stored);
+  });
+
+  it('preserves an explicit browser backup opt-out', () => {
+    const config = new AppConfig(tempDir);
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'server-secret',
+      web: { enabled: false, port: 8091 },
+    });
+
+    expect(config.load()).toMatchObject({ web: { enabled: false, port: 8091 } });
+  });
+
+  it('persists explicit web access settings with server configuration', () => {
+    const config = new AppConfig(tempDir);
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'server-secret',
+      web: { enabled: true, port: 9081 },
+    });
+
+    expect(config.load()).toMatchObject({ web: { enabled: true, port: 9081 } });
+    expect(JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8')).web).toEqual({
+      enabled: true,
+      port: 9081,
+    });
+  });
+
+  it('updates only web settings while preserving the server passphrase', () => {
+    const config = new AppConfig(tempDir);
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'preserved-secret',
+    });
+
+    expect(config.updateServerWebConfig({ enabled: true, port: 8091 })).toBe(true);
+    expect(config.load()).toEqual({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'preserved-secret',
+      web: { enabled: true, port: 8091 },
+    });
+  });
+
+  it('refuses to attach web settings to client mode', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'client', serverUrl: remoteHttpsUrl, secret: 'client-secret' });
+
+    expect(config.updateServerWebConfig({ enabled: true, port: 8091 })).toBe(false);
+    expect(config.load()).toEqual({
+      mode: 'client',
+      serverUrl: remoteHttpsUrl,
+      secret: 'client-secret',
+    });
   });
 
   it('writes and reads client config', () => {
@@ -89,6 +172,68 @@ describe('AppConfig', () => {
     expect(config.load()).toBeNull();
   });
 
+  it('reports an absent config separately from one it cannot decrypt', () => {
+    expect(new AppConfig(tempDir).readState()).toEqual({ status: 'absent' });
+
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+        decryptString: () => {
+          throw new Error('decryption failed after OS profile change');
+        },
+      },
+    } as never);
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        lanAccessConfigured: true,
+        encryptedSecret: Buffer.from('encrypted:workspace-secret').toString('base64'),
+      }),
+      'utf-8',
+    );
+
+    const state = new AppConfig(tempDir).readState();
+
+    expect(state.status).toBe('unreadable');
+    expect(state).toMatchObject({ reason: expect.stringMatching(/could not read/i) });
+  });
+
+  it('refuses to overwrite a configuration it cannot decrypt', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+        decryptString: () => {
+          throw new Error('decryption failed after OS profile change');
+        },
+      },
+    } as never);
+    const configPath = join(tempDir, 'config.json');
+    const serialized = JSON.stringify({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      lanAccessConfigured: true,
+      encryptedSecret: Buffer.from('encrypted:workspace-secret').toString('base64'),
+    });
+    writeFileSync(configPath, serialized, 'utf-8');
+    const config = new AppConfig(tempDir);
+
+    // Completing setup here would mint a new secret and invalidate every remote
+    // client's stored credential.
+    expect(() =>
+      config.save({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'replacement' }),
+    ).toThrow(/could not read/i);
+    expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
+    expect(existsSync(`${configPath}.tmp`)).toBe(false);
+  });
+
   it('load uses plaintext secret when encryptedSecret absent', () => {
     writeFileSync(
       join(tempDir, 'config.json'),
@@ -100,6 +245,49 @@ describe('AppConfig', () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.secret).toBe('plain-secret');
     expect((loaded as { port: number }).port).toBe(9000);
+  });
+
+  it('rejects a plaintext secret in packaged builds when encryption is unavailable', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: { isEncryptionAvailable: () => false },
+    } as never);
+    const configPath = join(tempDir, 'config.json');
+    const serialized = JSON.stringify(
+      {
+        mode: 'client',
+        serverUrl: 'https://relay.invalid:8090',
+        secret: 'plain-secret',
+      },
+      null,
+      2,
+    );
+    writeFileSync(configPath, serialized, 'utf-8');
+
+    const config = new AppConfig(tempDir);
+
+    expect(config.load()).toBeNull();
+    expect(config.isConfigured()).toBe(false);
+    expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
+    expect(existsSync(`${configPath}.tmp`)).toBe(false);
+  });
+
+  it('does not downgrade to plaintext when packaged config contains both secret forms', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: { isEncryptionAvailable: () => false },
+    } as never);
+    const configPath = join(tempDir, 'config.json');
+    const serialized = JSON.stringify({
+      mode: 'client',
+      serverUrl: 'https://relay.invalid:8090',
+      encryptedSecret: Buffer.from('encrypted-secret').toString('base64'),
+      secret: 'plain-secret',
+    });
+    writeFileSync(configPath, serialized, 'utf-8');
+
+    expect(new AppConfig(tempDir).load()).toBeNull();
+    expect(readFileSync(configPath, 'utf-8')).toBe(serialized);
   });
 
   it('migrates plaintext secret to encrypted storage when encryption is available', () => {

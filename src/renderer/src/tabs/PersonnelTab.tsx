@@ -25,16 +25,29 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableTeamCard } from '../components/oncall/SortableTeamCard';
+import { OnCallDisplayControl } from '../components/oncall/OnCallDisplayControl';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
+import { useOnCallBoardLayout } from '../hooks/useOnCallBoardLayout';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import type { BoardSettingsState } from '../hooks/useAppData';
+import { DEFAULT_ON_CALL_FONT_SCALE } from '../theme/onCallDisplay';
+import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
   boardSettings: BoardSettingsState;
   onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
-}> = ({ onCall, contacts, boardSettings, onBoardSettingsChange }) => {
+  onCallFontScale?: number;
+  onOnCallFontScaleChange?: (scale: number) => void;
+}> = ({
+  onCall,
+  contacts,
+  boardSettings,
+  onBoardSettingsChange,
+  onCallFontScale = DEFAULT_ON_CALL_FONT_SCALE,
+  onOnCallFontScaleChange,
+}) => {
   const {
     localOnCall,
     weekRange,
@@ -125,38 +138,37 @@ export const PersonnelTab: React.FC<{
     setLastUpdated(new Date());
   }, [localOnCall]);
 
-  // Masonry column distribution
-  const gridRef = React.useRef<HTMLUListElement | null>(null);
-  const [columnCount, setColumnCount] = useState(3);
+  // Font scale + masonry column distribution
+  const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
+    useOnCallBoardLayout(onCallFontScale);
 
-  const updateColumnCount = useCallback(() => {
-    const node = gridRef.current;
-    if (!node) return;
-    const width = node.clientWidth;
-    if (width < 1) return;
-    const minCol = 320;
-    const gap = 24;
-    const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
-    setColumnCount((prev) => (prev === next ? prev : next));
-  }, []);
-
-  React.useEffect(() => {
-    updateColumnCount();
-    const node = gridRef.current;
-    if (!node) return;
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
-    observer?.observe(node);
-    globalThis.addEventListener('resize', updateColumnCount);
-    return () => {
-      observer?.disconnect();
-      globalThis.removeEventListener('resize', updateColumnCount);
-    };
-  }, [updateColumnCount]);
+  /**
+   * useAutoAnimate hands back a ref *callback*, not a ref object — assigning
+   * `.current` onto it only decorated the function, so the library never saw the
+   * node and the board never animated. It must be *called*, but its body sets
+   * state, so it has to keep a stable identity: an inline arrow here is a new
+   * ref every render, which React re-invokes (null, then node) on each pass,
+   * setting state each time and looping until React gives up and the tab falls
+   * into its error boundary.
+   */
+  const setMasonryRef = useCallback(
+    (node: HTMLUListElement | null) => {
+      gridRef.current = node;
+      animationParent(node);
+    },
+    [animationParent, gridRef],
+  );
 
   const teamColumns = useMemo(() => {
-    const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);
-    teams.forEach((teamId, i) => cols[i % cols.length].push(teamId));
+    const cols = Array.from({ length: Math.max(1, columnCount) }, (_, columnIndex) => ({
+      id: `on-call-column-${columnIndex + 1}`,
+      teamIds: [] as string[],
+    }));
+    teams.forEach((teamId, i) => {
+      const column = cols[i % cols.length];
+      // cols always holds at least one entry (Math.max(1, columnCount) above).
+      if (column) column.teamIds.push(teamId);
+    });
     return cols;
   }, [teams, columnCount]);
 
@@ -170,8 +182,6 @@ export const PersonnelTab: React.FC<{
       globalThis.api?.notifyDragStop();
     };
   }, []);
-
-  const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -242,171 +252,158 @@ export const PersonnelTab: React.FC<{
   const isAnyModalOpen = !!(addTeamModal.isOpen || renamingTeam || confirmDelete);
 
   return (
-    <div ref={scrollContainerRef} className="personnel-tab-root">
-      <CollapsibleHeader isCollapsed={isCollapsed}>
-        <div className="oncall-header-info">
-          <div className="oncall-header-stack">
-            <span className="oncall-header-date">{weekRange}</span>
-            <span className="oncall-header-updated">Last updated {lastUpdatedLabel}</span>
-          </div>
-          {renderAlerts()}
-        </div>
-        <TactileButton
-          variant="ghost"
-          onClick={handleCopyAllOnCall}
-          title="Copy All On-Call Info"
-          aria-label="Copy All On-Call Info"
-          tooltip="Copy all on-call info"
-          className="header-btn-mr"
-          icon={
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+    <div ref={scrollContainerRef} className="personnel-tab-root" style={boardStyle}>
+      <TabPageHeader
+        context="On-Call"
+        title="On-Call Coverage"
+        metadata={
+          <span className="oncall-page-meta" role="status" aria-live="polite">
+            <span className="oncall-page-state-dot" aria-hidden="true" />
+            <span>{weekRange}</span>
+            <span aria-hidden="true">·</span>
+            <span>Last updated {lastUpdatedLabel}</span>
+          </span>
+        }
+      />
+
+      <TabCommandBar ariaLabel="On-call actions" className="oncall-command-bar">
+        <CollapsibleHeader isCollapsed={isCollapsed}>
+          <TabCommandGroup kind="utility">
+            {renderAlerts()}
+            <OnCallDisplayControl
+              value={effectiveOnCallFontScale}
+              onChange={onOnCallFontScaleChange}
+            />
+            <TactileButton
+              variant="secondary"
+              onClick={handleCopyAllOnCall}
+              title="Copy All On-Call Info"
+              aria-label="Copy All On-Call Info"
+              tooltip="Copy all on-call info"
+              className="oncall-command-action"
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              }
             >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          }
-        >
-          COPY ALL
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={handleExportCsv}
-          title="Export to CSV (Excel)"
-          aria-label="Export to CSV"
-          tooltip="Export to CSV"
-          className="header-btn-mr"
-          icon={
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              Copy All
+            </TactileButton>
+            <TactileButton
+              variant="secondary"
+              onClick={handleExportCsv}
+              title="Export to CSV (Excel)"
+              aria-label="Export to CSV"
+              tooltip="Export to CSV"
+              className="oncall-command-action"
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+              }
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-          }
-        >
-          EXPORT
-        </TactileButton>
-        {!isPopout && (
-          <TactileButton
-            variant="ghost"
-            onClick={() => {
-              globalThis.api?.openAuxWindow('popout/board');
-            }}
-            title="Pop Out Board"
-            aria-label="Pop Out Board"
-            tooltip="Pop out board"
-            className="header-btn-mr"
-            icon={
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
-            }
-          >
-            POP OUT
-          </TactileButton>
-        )}
-        <TactileButton
-          variant="ghost"
-          onClick={toggleBoardLock}
-          disabled={isBoardLockTogglePending}
-          title={
-            bs.effectiveLocked
-              ? 'Unlock Board (enable drag reorder)'
-              : 'Lock Board (disable drag reorder)'
-          }
-          aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
-          tooltip={
-            bs.effectiveLocked
-              ? 'Unlock board to enable drag reorder'
-              : 'Lock board to disable drag reorder'
-          }
-          className="header-btn-mr"
-          icon={
-            bs.effectiveLocked ? (
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-            ) : (
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-              </svg>
-            )
-          }
-        >
-          {bs.effectiveLocked ? 'LOCKED' : 'UNLOCKED'}
-        </TactileButton>
-        <TactileButton
-          variant="primary"
-          aria-label="Add Card"
-          tooltip="Add card"
-          className="btn-collapsible"
-          onClick={addTeamModal.open}
-          icon={
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              Export
+            </TactileButton>
+          </TabCommandGroup>
+          <TabCommandGroup kind="workflow">
+            <TactileButton
+              variant="secondary"
+              onClick={toggleBoardLock}
+              disabled={isBoardLockTogglePending}
+              title={
+                bs.effectiveLocked
+                  ? 'Unlock Board (enable drag reorder)'
+                  : 'Lock Board (disable drag reorder)'
+              }
+              aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
+              tooltip={
+                bs.effectiveLocked
+                  ? 'Unlock board to enable drag reorder'
+                  : 'Lock board to disable drag reorder'
+              }
+              className="oncall-command-action"
+              icon={
+                bs.effectiveLocked ? (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                  </svg>
+                )
+              }
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          }
-        >
-          ADD CARD
-        </TactileButton>
-      </CollapsibleHeader>
+              {bs.effectiveLocked ? 'Locked' : 'Unlocked'}
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              aria-label="Add Card"
+              tooltip="Add card"
+              className="btn-collapsible"
+              onClick={addTeamModal.open}
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              }
+            >
+              Add Card
+            </TactileButton>
+          </TabCommandGroup>
+        </CollapsibleHeader>
+      </TabCommandBar>
 
       <DndContext
         id="personnel-board-dnd"
@@ -440,20 +437,13 @@ export const PersonnelTab: React.FC<{
         }}
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
-          <ul
-            ref={(node) => {
-              gridRef.current = node;
-              if (animationParent) animationParent.current = node;
-            }}
-            className="oncall-masonry stagger-children"
-            aria-label="Sortable On-Call Teams"
-          >
-            {teamColumns.map((column, colIdx) => (
-              <div className="oncall-masonry-column" key={colIdx}>
-                {column.map((teamId) => {
+          <ul ref={setMasonryRef} className="oncall-masonry" aria-label="Sortable On-Call Teams">
+            {teamColumns.map((column) => (
+              <div className="oncall-masonry-column" key={column.id}>
+                {column.teamIds.map((teamId) => {
                   const teamName = teamIdToName.get(teamId) || teamId;
                   return (
-                    <li key={teamId} className="oncall-masonry-item animate-card-entrance">
+                    <li key={teamId} className="oncall-masonry-item">
                       <SortableTeamCard
                         id={teamId}
                         team={teamName}
@@ -482,25 +472,12 @@ export const PersonnelTab: React.FC<{
       </DndContext>
 
       <Modal
-        isOpen={!!renamingTeam}
+        isOpen={Boolean(renamingTeam)}
         onClose={() => setRenamingTeam(null)}
+        variant="confirmation"
         title="Rename Card"
-        width="400px"
-      >
-        <div className="modal-form-body">
-          <Input
-            value={renamingTeam?.new || ''}
-            onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && renamingTeam) {
-                void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() =>
-                  setRenamingTeam(null),
-                );
-              }
-            }}
-          />
-          <div className="modal-form-actions">
+        footer={
+          <>
             <TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>
               Cancel
             </TactileButton>
@@ -516,15 +493,49 @@ export const PersonnelTab: React.FC<{
             >
               Rename
             </TactileButton>
-          </div>
+          </>
+        }
+      >
+        <div className="modal-form-body">
+          <Input
+            value={renamingTeam?.new || ''}
+            onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && renamingTeam) {
+                void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() =>
+                  setRenamingTeam(null),
+                );
+              }
+            }}
+          />
         </div>
       </Modal>
 
       <Modal
         isOpen={addTeamModal.isOpen}
         onClose={addTeamModal.close}
+        variant="standard"
         title="Add New Card"
-        width="400px"
+        footer={
+          <>
+            <TactileButton variant="secondary" onClick={addTeamModal.close}>
+              Cancel
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              onClick={() => {
+                if (newTeamName.trim()) {
+                  void handleAddTeam(newTeamName.trim());
+                  setNewTeamName('');
+                  addTeamModal.close();
+                }
+              }}
+            >
+              Add Card
+            </TactileButton>
+          </>
+        }
       >
         <div className="modal-form-body">
           <Input
@@ -540,37 +551,22 @@ export const PersonnelTab: React.FC<{
               }
             }}
           />
-          <div className="modal-form-actions">
-            <TactileButton variant="secondary" onClick={() => addTeamModal.close()}>
-              Cancel
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              onClick={() => {
-                if (newTeamName.trim()) {
-                  void handleAddTeam(newTeamName.trim());
-                  setNewTeamName('');
-                  addTeamModal.close();
-                }
-              }}
-            >
-              Add Card
-            </TactileButton>
-          </div>
         </div>
       </Modal>
 
-      {confirmDelete && (
-        <ConfirmModal
-          isOpen={!!confirmDelete}
-          onClose={() => setConfirmDelete(null)}
-          onConfirm={confirmDelete.onConfirm}
-          title="Remove Card"
-          message={`Are you sure you want to remove the card "${confirmDelete.team}"? This will delete all members in this card.`}
-          confirmLabel="Remove"
-          isDanger
-        />
-      )}
+      <ConfirmModal
+        isOpen={Boolean(confirmDelete)}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => confirmDelete?.onConfirm()}
+        title="Remove Card"
+        message={
+          confirmDelete
+            ? `Are you sure you want to remove the card "${confirmDelete.team}"? This will delete all members in this card.`
+            : ''
+        }
+        confirmLabel="Remove"
+        isDanger
+      />
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}

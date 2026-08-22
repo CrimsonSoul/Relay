@@ -4,6 +4,7 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const BUILD_OUTPUT_CONTRACT_MANIFEST = 'build-output-contract-manifest.json';
 
 // Mirrors the production header CSP in src/main/app/securityHeaders.ts as a
 // defense-in-depth <meta> fallback for the packaged file:// load. connect-src
@@ -34,6 +35,44 @@ function injectCspMeta(): import('vite').Plugin {
   };
 }
 
+function rendererManualChunk(id: string): string | undefined {
+  const normalizedId = id.replaceAll('\\', '/');
+
+  if (normalizedId.includes('/node_modules/pdfjs-dist/build/pdf.mjs')) {
+    return 'pdf-vendor';
+  }
+  if (
+    normalizedId === '\0commonjsHelpers.js' ||
+    normalizedId.includes('/node_modules/react/') ||
+    normalizedId.includes('/node_modules/react-dom/') ||
+    normalizedId.includes('/node_modules/scheduler/')
+  ) {
+    return 'react-vendor';
+  }
+  if (normalizedId.includes('/node_modules/@dnd-kit/')) {
+    return 'dnd-vendor';
+  }
+  if (
+    normalizedId.includes('/node_modules/react-window/') ||
+    normalizedId.includes('/node_modules/react-virtualized-auto-sizer/')
+  ) {
+    return 'virtual-vendor';
+  }
+
+  return undefined;
+}
+
+function mainManualChunk(id: string): string | undefined {
+  const normalizedId = id.replaceAll('\\', '/');
+  if (
+    normalizedId.endsWith('/src/main/dynatrace/DynatraceProblemsClient.ts') ||
+    normalizedId.endsWith('/src/shared/dynatraceProblems.ts')
+  ) {
+    return 'dynatrace-problems-client';
+  }
+  return undefined;
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -49,10 +88,17 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          knowledgeExtractorWorker: resolve(
+            __dirname,
+            'src/main/knowledge/knowledgeExtractor.worker.ts',
+          ),
         },
         output: {
           format: 'es',
           entryFileNames: '[name].js',
+          chunkFileNames: '[name]-[hash].js',
+          manualChunks: mainManualChunk,
+          onlyExplicitManualChunks: true,
         },
       },
     },
@@ -95,17 +141,17 @@ export default defineConfig({
       },
     },
     build: {
+      ...(process.env.RELAY_BUILD_OUTPUT_CONTRACT === '1'
+        ? { manifest: BUILD_OUTPUT_CONTRACT_MANIFEST }
+        : {}),
       outDir: 'dist/renderer',
       minify: 'esbuild',
       cssCodeSplit: true,
       chunkSizeWarningLimit: 500,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'react-vendor': ['react', 'react-dom'],
-            'dnd-vendor': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
-            'virtual-vendor': ['react-window', 'react-virtualized-auto-sizer'],
-          },
+          manualChunks: rendererManualChunk,
+          onlyExplicitManualChunks: true,
           chunkFileNames: 'js/[name]-[hash].js',
           entryFileNames: 'js/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash].[ext]',

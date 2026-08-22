@@ -5,8 +5,29 @@ import { SaveGroupModal } from '../SaveGroupModal';
 
 // Mock Modal to avoid portal issues in jsdom
 vi.mock('../../../components/Modal', () => ({
-  Modal: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
-    isOpen ? React.createElement('div', { 'data-testid': 'modal' }, children) : null,
+  Modal: ({
+    isOpen,
+    children,
+    title,
+    subtitle,
+    variant,
+    footer,
+  }: {
+    isOpen: boolean;
+    children: React.ReactNode;
+    title?: React.ReactNode;
+    subtitle?: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
+  }) =>
+    isOpen ? (
+      <div role="dialog" data-testid="modal" data-variant={variant}>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+        {children}
+        {footer && <footer className="modal-footer-generic">{footer}</footer>}
+      </div>
+    ) : null,
 }));
 
 describe('SaveGroupModal', () => {
@@ -21,6 +42,8 @@ describe('SaveGroupModal', () => {
     render(<SaveGroupModal {...defaultProps} />);
     expect(screen.getByText('Save Group')).toBeInTheDocument();
     expect(screen.getByText('Save the current selection as a reusable group.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+    expect(screen.getByRole('dialog').querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('renders with custom title and description', () => {

@@ -9,7 +9,7 @@
   flex-direction: column;
   border-left: 1px solid var(--color-border);
   background-color: transparent;
-  animation: detailPanelFadeIn 0.2s ease-out;
+  animation: relay-panel-in var(--motion-duration-state) var(--motion-ease-out);
   overflow: hidden;
   margin-left: 16px;
 }
@@ -31,7 +31,8 @@
 
 .detail-panel-body {
   flex: 1;
-  overflow-y: overlay;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 24px 28px 28px 28px;
   display: flex;
   flex-direction: column;
@@ -64,11 +65,10 @@
 }
 
 .detail-panel-name {
-  font-size: 20px;
+  font-size: var(--text-lg);
   font-weight: 700;
   color: var(--color-text-primary);
-  overflow-wrap: break-word;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .detail-panel-title {
@@ -101,7 +101,7 @@
 }
 
 .detail-panel-field-label {
-  font-size: 12px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.12em;
   color: var(--color-text-tertiary);
@@ -109,7 +109,7 @@
 }
 
 .detail-panel-field-value {
-  font-size: 16px;
+  font-size: var(--text-base);
   font-weight: 500;
   color: var(--color-text-primary);
 }
@@ -301,7 +301,7 @@
 }
 
 .server-card-name {
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   font-weight: 700;
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
@@ -313,7 +313,7 @@
 }
 
 .server-card-meta {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   font-weight: 400;
   display: flex;
@@ -330,7 +330,7 @@
 
 .server-card-meta-separator {
   opacity: 0.3;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   flex-shrink: 0;
 }
 
@@ -420,7 +420,7 @@
   min-width: 0;
 }
 .contact-entry-name {
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.1;
@@ -431,7 +431,7 @@
 .contact-entry-line2 {
   display: flex;
   gap: 8px;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   align-items: center;
   line-height: 1.15;

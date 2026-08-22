@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(() => '[]'),
-  existsSync: vi.fn(() => false),
+  existsSync: vi.fn<(path: unknown) => boolean>(() => false),
   loggers: {
     main: {
       warn: vi.fn(),

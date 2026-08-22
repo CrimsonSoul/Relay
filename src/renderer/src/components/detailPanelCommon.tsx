@@ -23,7 +23,11 @@ export const DetailActionButton: React.FC<DetailActionButtonProps> = ({
   variant = 'default',
 }) => (
   <Tooltip content={label}>
-    <button className={`detail-panel-action-btn${VARIANT_CLASS[variant]}`} onClick={onClick}>
+    <button
+      type="button"
+      className={`detail-panel-action-btn${VARIANT_CLASS[variant]}`}
+      onClick={onClick}
+    >
       {icon}
       {label}
     </button>

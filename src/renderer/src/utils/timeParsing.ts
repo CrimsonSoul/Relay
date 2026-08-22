@@ -4,6 +4,20 @@ const WEEKDAYS = { MONDAY: 1, FRIDAY: 5 };
 const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const dayAbbrevs = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
+/**
+ * Matches a day range written with abbreviations or full names, in any mix:
+ * "mon-fri", "Monday-Friday", "monday to fri", "mon through friday".
+ * The capture groups stay the three-letter abbreviations so callers can index
+ * straight into `dayAbbrevs`. Full names are accepted via the optional suffix —
+ * without it, "monday-friday" matched nothing and only the two endpoint days
+ * were treated as in-window.
+ */
+function dayRangeRegex(): RegExp {
+  const day = '(mon|tue|wed|thu|fri|sat|sun)(?:day|sday|nesday|rsday|urday)?';
+  const separator = String.raw`\s*(?:-|to|through)\s*`;
+  return new RegExp(`${day}${separator}${day}`);
+}
+
 function checkDayConstraints(
   tw: string,
   currentDay: number,
@@ -15,8 +29,7 @@ function checkDayConstraints(
   if (!hasDayMention) return { hasDayMention, dayMatch };
 
   dayMatch = false;
-  const rangeRegex = /(mon|tue|wed|thu|fri|sat|sun)\s*-\s*(mon|tue|wed|thu|fri|sat|sun)/;
-  const rangeMatch = rangeRegex.exec(tw);
+  const rangeMatch = dayRangeRegex().exec(tw);
   if (rangeMatch) {
     const startDay = dayAbbrevs.indexOf(rangeMatch[1]!);
     const endDay = dayAbbrevs.indexOf(rangeMatch[2]!);
@@ -61,7 +74,7 @@ function parseTimeStr(timeStr: string): number {
 function checkTimeConstraints(tw: string, currentTime: number): boolean {
   // Composed RegExp to avoid SonarJS complexity complaints while fixing ReDoS
   const timeP = String.raw`(\d{1,2}[:.]?\d{2}|\d{1,4})`;
-  const meridiem = String.raw`(am|pm)?`;
+  const meridiem = `(am|pm)?`;
   const sep = String.raw`\s*(?:-|to|through)\s*`;
   const timeRegex = new RegExp(String.raw`${timeP}\s*${meridiem}${sep}${timeP}\s*${meridiem}`);
 

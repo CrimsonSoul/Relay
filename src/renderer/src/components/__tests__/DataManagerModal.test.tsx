@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DataManagerModal } from '../DataManagerModal';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 const mockExportData = vi.fn().mockResolvedValue(true);
 const mockImportData = vi.fn().mockResolvedValue({ success: true, imported: 5, updated: 2 });
@@ -14,6 +15,13 @@ vi.mock('../../hooks/useDataManager', () => ({
     stats: { contacts: 10, servers: 5, groups: 3, oncall: 8 },
     exporting: false,
     importing: false,
+    importProgress: {
+      processed: 12,
+      total: 20,
+      imported: 10,
+      updated: 1,
+      errors: 1,
+    },
     lastImportResult: null,
     loadStats: mockLoadStats,
     exportData: mockExportData,
@@ -42,10 +50,23 @@ vi.mock('../data-manager/DataManagerOverview', () => ({
 }));
 
 vi.mock('../data-manager/DataManagerImport', () => ({
-  DataManagerImport: ({ onImport }: { onImport: () => void }) => (
-    <button data-testid="import-btn" onClick={onImport}>
-      Run Import
-    </button>
+  DataManagerImport: ({
+    onImport,
+    importProgress,
+  }: {
+    onImport: () => void;
+    importProgress?: { processed: number; total: number } | null;
+  }) => (
+    <div>
+      <button data-testid="import-btn" onClick={onImport}>
+        Run Import
+      </button>
+      {importProgress && (
+        <span data-testid="import-progress-prop">
+          {importProgress.processed}/{importProgress.total}
+        </span>
+      )}
+    </div>
   ),
 }));
 
@@ -61,22 +82,6 @@ vi.mock('../data-manager/DataManagerBackups', () => ({
   DataManagerBackups: () => <div data-testid="backups">Backups content</div>,
 }));
 
-vi.mock('../data-manager/SharedComponents', () => ({
-  TabButton: ({
-    children,
-    onClick,
-    active,
-  }: {
-    children: React.ReactNode;
-    onClick: () => void;
-    active: boolean;
-  }) => (
-    <button onClick={onClick} data-active={active}>
-      {children}
-    </button>
-  ),
-}));
-
 describe('DataManagerModal', () => {
   const onClose = vi.fn();
 
@@ -84,6 +89,7 @@ describe('DataManagerModal', () => {
     vi.clearAllMocks();
     mockExportData.mockResolvedValue(true);
     mockImportData.mockResolvedValue({ success: true, imported: 5, updated: 2 });
+    globalThis.api = { runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
   });
 
   it('does not render when isOpen is false', () => {
@@ -97,22 +103,38 @@ describe('DataManagerModal', () => {
     expect(screen.getByText('Data Manager')).toBeInTheDocument();
   });
 
+  it('uses the wide shared shell and stable tab rail', () => {
+    render(<DataManagerModal isOpen onClose={onClose} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Data Manager' });
+    expect(dialog).toHaveAttribute('data-variant', 'wide');
+    expect(dialog.querySelector('.modal-tabs-generic')).not.toBeNull();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keys the active panel for the shared 160ms content transition', () => {
+    render(<DataManagerModal isOpen onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Import' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Import' })).toHaveAttribute(
+      'data-motion',
+      'panel',
+    );
+  });
+
   it('shows the Overview tab by default', () => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     expect(screen.getByTestId('overview')).toBeInTheDocument();
   });
 
-  it('switches to Import tab when Import is clicked', () => {
+  it.each([
+    ['Import', 'import-btn'],
+    ['Export', 'export-btn'],
+  ])('switches to the %s tab when clicked', (tabName, expectedTestId) => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
-    fireEvent.click(screen.getByText('Import'));
-    expect(screen.getByTestId('import-btn')).toBeInTheDocument();
-    expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
-  });
-
-  it('switches to Export tab when Export is clicked', () => {
-    render(<DataManagerModal isOpen={true} onClose={onClose} />);
-    fireEvent.click(screen.getByText('Export'));
-    expect(screen.getByTestId('export-btn')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(tabName));
+    expect(screen.getByTestId(expectedTestId)).toBeInTheDocument();
     expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
   });
 
@@ -123,18 +145,35 @@ describe('DataManagerModal', () => {
     expect(screen.getByTestId('overview')).toBeInTheDocument();
   });
 
-  it('triggers export when export button is clicked', () => {
+  it('triggers export with the exact selected payload', async () => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Export'));
     fireEvent.click(screen.getByTestId('export-btn'));
-    expect(screen.getByTestId('export-btn')).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(mockExportData).toHaveBeenCalledWith({
+        format: 'json',
+        category: 'all',
+        includeMetadata: false,
+      });
+    });
   });
 
-  it('triggers import when import button is clicked', () => {
+  it('triggers import with the exact selected category', async () => {
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Import'));
     fireEvent.click(screen.getByTestId('import-btn'));
-    expect(screen.getByTestId('import-btn')).toBeInTheDocument();
+
+    await vi.waitFor(() => {
+      expect(mockImportData).toHaveBeenCalledWith('contacts');
+    });
+  });
+
+  it('passes live import progress to the Import panel', () => {
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Import'));
+
+    expect(screen.getByTestId('import-progress-prop')).toHaveTextContent('12/20');
   });
 
   it('switches to Backups tab', () => {
@@ -142,6 +181,15 @@ describe('DataManagerModal', () => {
     fireEvent.click(screen.getByText('Backups'));
     expect(screen.getByTestId('backups')).toBeInTheDocument();
     expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
+  });
+
+  it('keeps import and export but removes backup controls in the web runtime', () => {
+    globalThis.api = { runtime: WEB_RUNTIME } as typeof globalThis.api;
+    render(<DataManagerModal isOpen onClose={onClose} />);
+
+    expect(screen.getByRole('tab', { name: 'Import' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Export' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Backups' })).not.toBeInTheDocument();
   });
 
   it('shows error toast when export returns false', async () => {
@@ -195,16 +243,15 @@ describe('DataManagerModal', () => {
     });
   });
 
-  it('shows error toast when import returns no success and no errors', async () => {
-    mockImportData.mockResolvedValue({ success: false });
+  it('does not show an error toast when the file picker is cancelled', async () => {
+    mockImportData.mockResolvedValue(null);
 
     render(<DataManagerModal isOpen={true} onClose={onClose} />);
     fireEvent.click(screen.getByText('Import'));
     fireEvent.click(screen.getByTestId('import-btn'));
 
-    await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Import failed. Please try again.', 'error');
-    });
+    await vi.waitFor(() => expect(mockImportData).toHaveBeenCalledOnce());
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it('shows error toast when import throws', async () => {

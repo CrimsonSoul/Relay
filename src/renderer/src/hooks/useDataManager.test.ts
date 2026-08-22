@@ -134,7 +134,7 @@ describe('useDataManager', () => {
 
     expect(success).toBe(true);
     // Should call exportToCsv for each exportable collection.
-    expect(mockedExportToCsv).toHaveBeenCalledTimes(8);
+    expect(mockedExportToCsv).toHaveBeenCalledTimes(7);
   });
 
   it('exportData with csv format and specific category', async () => {
@@ -164,7 +164,7 @@ describe('useDataManager', () => {
 
     expect(success).toBe(true);
     // CSV was called for each exportable collection but downloadBlob skipped since csvStr is empty
-    expect(mockedExportToCsv).toHaveBeenCalledTimes(8);
+    expect(mockedExportToCsv).toHaveBeenCalledTimes(7);
   });
 
   it('exportData with excel format calls exportToExcel', async () => {

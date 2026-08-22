@@ -25,6 +25,11 @@ type IpcHandler = (event: unknown, ...args: unknown[]) => unknown;
 
 describe('setupDynatraceHandlers', () => {
   const handlers: Record<string, IpcHandler> = {};
+  const getHandler = (channel: string): IpcHandler => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
   const dashboard: DynatraceDashboardState = {
     id: 'dt_1',
     name: 'SRE Overview',
@@ -66,27 +71,27 @@ describe('setupDynatraceHandlers', () => {
   });
 
   it('returns dashboard state from the manager', async () => {
-    const result = await handlers[IPC_CHANNELS.DYNATRACE_LIST_DASHBOARDS]({});
+    const result = await getHandler(IPC_CHANNELS.DYNATRACE_LIST_DASHBOARDS)({});
 
     expect(result).toEqual([dashboard]);
     expect(manager.listDashboards).toHaveBeenCalled();
   });
 
   it('wraps dashboard mutations in IpcResult envelopes', async () => {
-    const added = (await handlers[IPC_CHANNELS.DYNATRACE_ADD_DASHBOARD](
+    const added = (await getHandler(IPC_CHANNELS.DYNATRACE_ADD_DASHBOARD)(
       {},
       input,
     )) as IpcResult<DynatraceDashboardState>;
-    const updated = (await handlers[IPC_CHANNELS.DYNATRACE_UPDATE_DASHBOARD](
+    const updated = (await getHandler(IPC_CHANNELS.DYNATRACE_UPDATE_DASHBOARD)(
       {},
       'dt_1',
       input,
     )) as IpcResult<DynatraceDashboardState>;
-    const removed = (await handlers[IPC_CHANNELS.DYNATRACE_REMOVE_DASHBOARD](
+    const removed = (await getHandler(IPC_CHANNELS.DYNATRACE_REMOVE_DASHBOARD)(
       {},
       'dt_1',
     )) as IpcResult;
-    const cleared = (await handlers[IPC_CHANNELS.DYNATRACE_CLEAR_SESSION]({})) as IpcResult;
+    const cleared = (await getHandler(IPC_CHANNELS.DYNATRACE_CLEAR_SESSION)({})) as IpcResult;
 
     expect(added).toEqual({ success: true, data: dashboard });
     expect(updated).toEqual({ success: true, data: dashboard });
@@ -101,9 +106,11 @@ describe('setupDynatraceHandlers', () => {
   it('returns safe defaults for untrusted senders', async () => {
     mocks.assertTrustedIpcSender.mockReturnValue(false);
 
-    await expect(handlers[IPC_CHANNELS.DYNATRACE_LIST_DASHBOARDS]({})).resolves.toEqual([]);
-    await expect(handlers[IPC_CHANNELS.DYNATRACE_OPEN_DASHBOARD]({}, 'dt_1')).resolves.toBe(false);
-    await expect(handlers[IPC_CHANNELS.DYNATRACE_ADD_DASHBOARD]({}, input)).resolves.toEqual({
+    await expect(getHandler(IPC_CHANNELS.DYNATRACE_LIST_DASHBOARDS)({})).resolves.toEqual([]);
+    await expect(getHandler(IPC_CHANNELS.DYNATRACE_OPEN_DASHBOARD)({}, 'dt_1')).resolves.toBe(
+      false,
+    );
+    await expect(getHandler(IPC_CHANNELS.DYNATRACE_ADD_DASHBOARD)({}, input)).resolves.toEqual({
       success: false,
       error: 'Untrusted sender',
     });
@@ -112,7 +119,7 @@ describe('setupDynatraceHandlers', () => {
   it('broadcasts manager state changes to all windows', () => {
     expect(manager.onStateChange).toHaveBeenCalledWith(expect.any(Function));
 
-    const listener = manager.onStateChange.mock.calls[0][0] as (
+    const listener = manager.onStateChange.mock.calls[0]![0] as (
       dashboards: DynatraceDashboardState[],
     ) => void;
     listener([dashboard]);

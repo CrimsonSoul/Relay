@@ -16,7 +16,7 @@ export function hasLoadableReminderAlert(reminder: AlertReminderRecord): boolean
 }
 
 export function dispatchReminderAlertLoad(reminder: AlertReminderRecord): void {
-  window.dispatchEvent(
+  globalThis.dispatchEvent(
     new CustomEvent<ReminderAlertLoadDetail>(REMINDER_ALERT_LOAD_EVENT, {
       detail: {
         reminderId: reminder.id,
@@ -24,7 +24,12 @@ export function dispatchReminderAlertLoad(reminder: AlertReminderRecord): void {
         severity: reminder.severity,
         subject: reminder.alertSubject,
         bodyHtml: reminder.alertBodyHtml,
-        sender: reminder.createdBy,
+        // `createdBy` is optional, so a reminder with no operator, no sender and
+        // no creator used to publish `sender: undefined` — and the Alerts
+        // composer calls `.trim()` on it as soon as the alert is loaded.
+        sender: reminder.operatorId
+          ? (reminder.alertSender ?? '')
+          : reminder.alertSender || reminder.createdBy || '',
       },
     }),
   );

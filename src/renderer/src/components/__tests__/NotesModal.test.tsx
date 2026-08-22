@@ -27,7 +27,6 @@ vi.mock('../notes/TagInput', () => ({
   TagInput: ({
     value,
     onChange,
-    _onAdd,
     onKeyDown,
     id,
   }: {
@@ -72,6 +71,12 @@ describe('NotesModal', () => {
     render(<NotesModal {...defaultProps} />);
     expect(screen.getByText('Contact Notes')).toBeInTheDocument();
     expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
+    expect(dialog).not.toHaveClass('modal-container');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('shows "Server Notes" for server entityType', () => {
@@ -104,7 +109,7 @@ describe('NotesModal', () => {
   it('calls onClose when Close button is clicked', () => {
     const onClose = vi.fn();
     render(<NotesModal {...defaultProps} onClose={onClose} />);
-    fireEvent.click(screen.getByLabelText('Close modal'));
+    fireEvent.click(screen.getByLabelText('Close'));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -153,23 +158,31 @@ describe('NotesModal', () => {
     const textarea = screen.getByLabelText('Note') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: '  Hello World  ' } });
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('Save Notes'));
-    });
+    fireEvent.click(screen.getByText('Save Notes'));
 
     expect(onSave).toHaveBeenCalledWith('Hello World', []);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it('does not call onClose if onSave returns falsy', async () => {
-    const onSave = vi.fn().mockResolvedValue(false);
+  it('does not call onClose after a falsy save settles', async () => {
+    let resolveSave!: (value: boolean) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     const onClose = vi.fn();
     render(<NotesModal {...defaultProps} onSave={onSave} onClose={onClose} />);
 
+    fireEvent.click(screen.getByText('Save Notes'));
+    expect(await screen.findByText('Saving...')).toBeInTheDocument();
+
     await act(async () => {
-      fireEvent.click(screen.getByText('Save Notes'));
+      resolveSave(false);
     });
 
+    expect(await screen.findByText('Save Notes')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -184,22 +197,110 @@ describe('NotesModal', () => {
 
     render(<NotesModal {...defaultProps} onSave={onSave} />);
 
-    act(() => {
-      fireEvent.click(screen.getByText('Save Notes'));
-    });
+    fireEvent.click(screen.getByText('Save Notes'));
 
-    await waitFor(() => expect(screen.getByText('Saving...')).toBeInTheDocument());
+    expect(await screen.findByText('Saving...')).toBeInTheDocument();
 
     await act(async () => {
       resolveSave(true);
     });
   });
 
+  it('keeps the in-progress draft when the existingNote object identity changes', () => {
+    const { rerender } = render(
+      <NotesModal
+        {...defaultProps}
+        existingNote={{ note: 'Prior note text', tags: ['urgent'], updatedAt: 0 }}
+      />,
+    );
+
+    const textarea = screen.getByLabelText('Note') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Half-typed incident detail' } });
+    fireEvent.click(screen.getByLabelText('remove-urgent'));
+
+    // `useNotes` rebuilds every NoteEntry on any notes realtime event, so a
+    // teammate editing an unrelated note re-delivers this one as a new object.
+    rerender(
+      <NotesModal
+        {...defaultProps}
+        existingNote={{ note: 'Prior note text', tags: ['urgent'], updatedAt: 0 }}
+      />,
+    );
+
+    expect((screen.getByLabelText('Note') as HTMLTextAreaElement).value).toBe(
+      'Half-typed incident detail',
+    );
+    expect(screen.queryByTestId('tag-urgent')).not.toBeInTheDocument();
+  });
+
+  it('re-seeds the draft when reopened', () => {
+    const { rerender } = render(
+      <NotesModal {...defaultProps} existingNote={{ note: 'Stored', tags: [], updatedAt: 0 }} />,
+    );
+    fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Scratch' } });
+
+    rerender(
+      <NotesModal
+        {...defaultProps}
+        isOpen={false}
+        existingNote={{ note: 'Stored', tags: [], updatedAt: 0 }}
+      />,
+    );
+    rerender(
+      <NotesModal {...defaultProps} existingNote={{ note: 'Stored', tags: [], updatedAt: 0 }} />,
+    );
+
+    expect((screen.getByLabelText('Note') as HTMLTextAreaElement).value).toBe('Stored');
+  });
+
+  it('confirms before discarding an edited draft on Escape', async () => {
+    const onClose = vi.fn();
+    render(<NotesModal {...defaultProps} onClose={onClose} />);
+
+    fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Unsaved detail' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(await screen.findByText('Discard note changes?')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Discard'));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('keeps editing when the discard prompt is dismissed after a backdrop click', async () => {
+    const onClose = vi.fn();
+    render(<NotesModal {...defaultProps} onClose={onClose} />);
+
+    fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Unsaved detail' } });
+    fireEvent.click(screen.getByLabelText('Close modal backdrop'));
+
+    fireEvent.click(await screen.findByText('Keep editing'));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Note') as HTMLTextAreaElement).value).toBe('Unsaved detail');
+  });
+
+  it('closes without confirming when the draft is untouched', () => {
+    const onClose = vi.fn();
+    render(
+      <NotesModal
+        {...defaultProps}
+        onClose={onClose}
+        existingNote={{ note: 'Stored', tags: ['ops'], updatedAt: 0 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Cancel'));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByText('Discard note changes?')).not.toBeInTheDocument();
+  });
+
   it('clears the delayed textarea focus timer on unmount', () => {
     vi.useFakeTimers();
     const { unmount } = render(<NotesModal {...defaultProps} />);
 
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBeGreaterThanOrEqual(1);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });

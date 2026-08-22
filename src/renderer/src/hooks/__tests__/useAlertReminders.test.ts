@@ -9,7 +9,7 @@ vi.mock('../../components/Toast', () => ({
 
 const mockCollectionData = { current: [] as unknown[] };
 const mockRefetch = vi.fn();
-const mockUseCollection = vi.fn(() => ({
+const mockUseCollection = vi.fn((..._args: unknown[]) => ({
   data: mockCollectionData.current,
   loading: false,
   error: null,
@@ -47,7 +47,9 @@ const makeRecord = (overrides: Partial<AlertReminderRecord> = {}): AlertReminder
   severity: 'INFO',
   alertSubject: 'Subject',
   alertBodyHtml: '<p>Body</p>',
-  createdBy: 'IT',
+  operatorId: 'operator-ryan',
+  createdBy: 'Ryan Bell',
+  alertSender: 'IT',
   completedAt: '',
   dismissedAt: '',
   created: '2026-05-28T19:00:00.000Z',

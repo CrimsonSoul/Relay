@@ -77,6 +77,25 @@ describe('redactSensitiveData', () => {
     expect(redactedErr.message).toContain('[REDACTED]');
   });
 
+  it('does not retain flag-like or multiline passphrase suffixes from PocketBase errors', () => {
+    const visibleSuffix = ['visible', 'suffix'].join('-');
+    const multilineSuffix = ['second', 'secret', 'line'].join('-');
+    const cliSecret = `x --${visibleSuffix}\n${multilineSuffix}`;
+    const error = new Error(
+      `Command failed: pocketbase superuser upsert admin@relay.app ${cliSecret} --dir=/tmp/pb`,
+    );
+
+    const redacted = redactSensitiveData({ error }) as Record<string, unknown>;
+    const redactedErr = redacted.error as Record<string, string>;
+
+    expect(redactedErr.message).not.toContain(cliSecret);
+    expect(redactedErr.message).not.toContain(visibleSuffix);
+    expect(redactedErr.message).not.toContain(multilineSuffix);
+    expect(redactedErr.stack).not.toContain(visibleSuffix);
+    expect(redactedErr.stack).not.toContain(multilineSuffix);
+    expect(redactedErr.message).toContain('[REDACTED]');
+  });
+
   it('passes null through unchanged', () => {
     expect(redactSensitiveData(null)).toBeNull();
   });
@@ -96,8 +115,11 @@ describe('redactSensitiveData', () => {
   it('handles arrays at the top level', () => {
     const input = [{ token: 'abc' }, { name: 'Bob' }];
     const redacted = redactSensitiveData(input) as Array<Record<string, unknown>>;
-    expect(redacted[0].token).toBe('[REDACTED]');
-    expect(redacted[1].name).toBe('Bob');
+    expect(redacted).toHaveLength(2);
+    const [firstEntry, secondEntry] = redacted;
+    // Both entries exist: the length is asserted immediately above.
+    expect(firstEntry!.token).toBe('[REDACTED]');
+    expect(secondEntry!.name).toBe('Bob');
   });
 
   it('redacts api-key and api_key patterns', () => {
@@ -117,5 +139,49 @@ describe('redactSensitiveData', () => {
     const input = { clientSecret: 'xyz' };
     const redacted = redactSensitiveData(input) as Record<string, unknown>;
     expect(redacted.clientSecret).toBe('[REDACTED]');
+  });
+
+  it('redacts short country-code email addresses in log strings', () => {
+    const redacted = redactSensitiveData({ message: 'Contact a@b.co for help.' }) as Record<
+      string,
+      unknown
+    >;
+
+    expect(redacted.message).toBe('Contact [REDACTED_EMAIL] for help.');
+  });
+
+  it('redacts email addresses with modern long top-level domains in log strings', () => {
+    const redacted = redactSensitiveData({
+      message: 'Contact deployment@relay.technology for help.',
+    }) as Record<string, unknown>;
+
+    expect(redacted.message).toBe('Contact [REDACTED_EMAIL] for help.');
+  });
+
+  it('redacts multiple punctuated email addresses independently in log strings', () => {
+    const redacted = redactSensitiveData({
+      message: 'Primary (ops@relay.io), backup support@help.dev; thank you.',
+    }) as Record<string, unknown>;
+
+    expect(redacted.message).toBe(
+      'Primary ([REDACTED_EMAIL]), backup [REDACTED_EMAIL]; thank you.',
+    );
+  });
+
+  it('leaves a 20,000-character non-matching log string unchanged', () => {
+    const message = 'x'.repeat(20_000);
+    const redacted = redactSensitiveData({ message }) as Record<string, unknown>;
+
+    expect(redacted.message).toBe(message);
+  });
+
+  it('processes a long non-matching email candidate with bounded regex work', () => {
+    const message = 'a'.repeat(100_000);
+    const startedAt = performance.now();
+    const redacted = redactSensitiveData({ message }) as Record<string, unknown>;
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(redacted.message).toBe(message);
+    expect(elapsedMs).toBeLessThan(500);
   });
 });

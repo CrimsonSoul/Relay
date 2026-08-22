@@ -1,48 +1,529 @@
-export type AccentId = 'red' | 'orange' | 'blue' | 'green' | 'pink' | 'purple';
+export type PresetAccentId =
+  'red' | 'orange' | 'yellow' | 'blue' | 'cyan' | 'green' | 'lime' | 'pink' | 'purple' | 'violet';
+
+export type AccentId = PresetAccentId | 'custom';
+export type AccentScheduleSlotId = 'day' | 'swing' | 'night';
+export type AccentScheduleChoice = PresetAccentId | `custom:${string}`;
+
+export type AccentSchedule = {
+  enabled: boolean;
+  slots: Record<AccentScheduleSlotId, AccentScheduleChoice>;
+};
+
+export interface AccentScheduleSlot {
+  id: AccentScheduleSlotId;
+  label: string;
+  rangeLabel: string;
+  startMinutes: number;
+  endMinutes: number;
+}
 
 export interface AccentScheme {
-  id: AccentId;
+  id: PresetAccentId;
   label: string;
   /** Base accent color — used for picker swatches. */
   swatch: string;
 }
 
 export const ACCENT_STORAGE_KEY = 'relay-accent';
-export const DEFAULT_ACCENT: AccentId = 'red';
+export const CUSTOM_ACCENT_STORAGE_KEY = 'relay-custom-accent';
+export const CUSTOM_ACCENTS_STORAGE_KEY = 'relay-custom-accents';
+export const ACCENT_SCHEDULE_STORAGE_KEY = 'relay-accent-schedule';
+export const DEFAULT_ACCENT: PresetAccentId = 'red';
+export const MAX_CUSTOM_ACCENTS = 4;
 
 export const ACCENT_SCHEMES: AccentScheme[] = [
   { id: 'red', label: 'Signal Red', swatch: '#e63946' },
   { id: 'orange', label: 'Orange', swatch: '#f97316' },
+  { id: 'yellow', label: 'Yellow', swatch: '#facc15' },
   { id: 'blue', label: 'Blue', swatch: '#3b82f6' },
+  { id: 'cyan', label: 'Cyan', swatch: '#06b6d4' },
   { id: 'green', label: 'Green', swatch: '#22c55e' },
-  { id: 'pink', label: 'Pink', swatch: '#ec4899' },
+  { id: 'lime', label: 'Lime', swatch: '#84cc16' },
+  { id: 'pink', label: 'Pink', swatch: '#fc8da9' },
   { id: 'purple', label: 'Purple', swatch: '#a855f7' },
+  { id: 'violet', label: 'Violet', swatch: '#8b5cf6' },
 ];
 
-const isAccentId = (value: unknown): value is AccentId =>
+const DAY_ACCENT_SCHEDULE_SLOT: AccentScheduleSlot = {
+  id: 'day',
+  label: 'Day',
+  rangeLabel: '6 AM-2 PM CT',
+  startMinutes: 6 * 60,
+  endMinutes: 14 * 60,
+};
+
+export const ACCENT_SCHEDULE_SLOTS: AccentScheduleSlot[] = [
+  DAY_ACCENT_SCHEDULE_SLOT,
+  {
+    id: 'swing',
+    label: 'Swing',
+    rangeLabel: '2 PM-10 PM CT',
+    startMinutes: 14 * 60,
+    endMinutes: 22 * 60,
+  },
+  {
+    id: 'night',
+    label: 'Night',
+    rangeLabel: '10 PM-6 AM CT',
+    startMinutes: 22 * 60,
+    endMinutes: 6 * 60,
+  },
+];
+
+export const DEFAULT_ACCENT_SCHEDULE: AccentSchedule = {
+  enabled: false,
+  slots: {
+    day: 'red',
+    swing: 'yellow',
+    night: 'blue',
+  },
+};
+
+type Rgb = {
+  r: number;
+  g: number;
+  b: number;
+};
+
+const CUSTOM_ACCENT_PROPERTIES = ['--accent', '--accent-hover', '--accent-bright', '--on-accent'];
+const CENTRAL_TIME_ZONE = 'America/Chicago';
+const CUSTOM_CHOICE_PREFIX = 'custom:';
+const FIRST_SCHEDULE_BOUNDARY_MINUTES = 6 * 60;
+const SCHEDULE_BOUNDARY_MINUTES = [FIRST_SCHEDULE_BOUNDARY_MINUTES, 14 * 60, 22 * 60];
+
+const isPresetAccentId = (value: unknown): value is PresetAccentId =>
   ACCENT_SCHEMES.some((s) => s.id === value);
+
+function accentFromStoredValue(value: unknown): AccentId {
+  if (value === 'custom' && getStoredCustomAccent()) return 'custom';
+  return isPresetAccentId(value) ? value : DEFAULT_ACCENT;
+}
+
+export function normalizeHexAccent(value: string): string | null {
+  const normalized = value.trim().replace(/^#/, '').toLowerCase();
+  if (!/^([0-9a-f]{3}|[0-9a-f]{6})$/.test(normalized)) return null;
+  if (normalized.length === 3) {
+    const [r, g, b] = normalized;
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return `#${normalized}`;
+}
+
+function defaultAccentSchedule(): AccentSchedule {
+  return {
+    enabled: DEFAULT_ACCENT_SCHEDULE.enabled,
+    slots: { ...DEFAULT_ACCENT_SCHEDULE.slots },
+  };
+}
+
+function normalizeAccentScheduleChoice(value: unknown): AccentScheduleChoice | null {
+  if (isPresetAccentId(value)) return value;
+  const hex = customHexFromScheduleChoice(value);
+  return hex ? customAccentScheduleChoice(hex) : null;
+}
+
+/** Build the stored wire format for a custom-color schedule choice. */
+export function customAccentScheduleChoice(hex: string): AccentScheduleChoice | null {
+  const normalized = normalizeHexAccent(hex);
+  return normalized ? `${CUSTOM_CHOICE_PREFIX}${normalized}` : null;
+}
+
+/** Extract the normalized hex from a custom schedule choice, or null for presets/invalid values. */
+export function customHexFromScheduleChoice(choice: unknown): string | null {
+  if (typeof choice !== 'string' || !choice.startsWith(CUSTOM_CHOICE_PREFIX)) return null;
+  return normalizeHexAccent(choice.slice(CUSTOM_CHOICE_PREFIX.length));
+}
+
+const centralTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: CENTRAL_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function centralTimeMinutes(date: Date): number {
+  const parts = centralTimeFormatter.formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}
+
+function isMinuteInScheduleSlot(minutes: number, slot: AccentScheduleSlot): boolean {
+  if (slot.startMinutes < slot.endMinutes) {
+    return minutes >= slot.startMinutes && minutes < slot.endMinutes;
+  }
+  return minutes >= slot.startMinutes || minutes < slot.endMinutes;
+}
+
+export function getCurrentAccentScheduleSlot(date = new Date()): AccentScheduleSlot {
+  const minutes = centralTimeMinutes(date);
+  // The three slots tile the whole 24h clock, so the find always matches.
+  return (
+    ACCENT_SCHEDULE_SLOTS.find((slot) => isMinuteInScheduleSlot(minutes, slot)) ??
+    DAY_ACCENT_SCHEDULE_SLOT
+  );
+}
+
+function minutesUntilNextScheduleBoundary(date = new Date()): number {
+  const minutes = centralTimeMinutes(date);
+  const next = SCHEDULE_BOUNDARY_MINUTES.find((boundary) => boundary > minutes);
+  return (next ?? FIRST_SCHEDULE_BOUNDARY_MINUTES + 24 * 60) - minutes;
+}
+
+function hexToRgb(hex: string): Rgb {
+  return {
+    r: Number.parseInt(hex.slice(1, 3), 16),
+    g: Number.parseInt(hex.slice(3, 5), 16),
+    b: Number.parseInt(hex.slice(5, 7), 16),
+  };
+}
+
+function rgbToHex({ r, g, b }: Rgb): string {
+  const channelToHex = (channel: number) => Math.round(channel).toString(16).padStart(2, '0');
+  return `#${channelToHex(r)}${channelToHex(g)}${channelToHex(b)}`;
+}
+
+function mixRgb(from: Rgb, to: Rgb, amount: number): Rgb {
+  return {
+    r: from.r + (to.r - from.r) * amount,
+    g: from.g + (to.g - from.g) * amount,
+    b: from.b + (to.b - from.b) * amount,
+  };
+}
+
+function relativeLuminance({ r, g, b }: Rgb): number {
+  const toLinear = (value: number) => {
+    const channel = value / 255;
+    return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function contrastRatio(first: Rgb, second: Rgb): number {
+  const lighter = Math.max(relativeLuminance(first), relativeLuminance(second));
+  const darker = Math.min(relativeLuminance(first), relativeLuminance(second));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function readableOnAccent(hex: string): '#000000' | '#ffffff' {
+  const accent = hexToRgb(hex);
+  const black = hexToRgb('#000000');
+  const white = hexToRgb('#ffffff');
+  return contrastRatio(accent, black) >= contrastRatio(accent, white) ? '#000000' : '#ffffff';
+}
+
+function liftForDarkSurface(hex: string): string {
+  const surface = hexToRgb('#09090b');
+  const white = hexToRgb('#ffffff');
+  const accent = hexToRgb(hex);
+  if (contrastRatio(accent, surface) >= 4.5) return hex;
+
+  for (let amount = 0.1; amount <= 1; amount += 0.05) {
+    const lifted = mixRgb(accent, white, amount);
+    if (contrastRatio(lifted, surface) >= 4.5) return rgbToHex(lifted);
+  }
+  return '#ffffff';
+}
+
+function createCustomAccentTokens(hex: string) {
+  const accent = hexToRgb(hex);
+  const white = hexToRgb('#ffffff');
+  return {
+    accent: hex,
+    hover: rgbToHex(mixRgb(accent, white, 0.16)),
+    bright: liftForDarkSurface(rgbToHex(mixRgb(accent, white, 0.32))),
+    onAccent: readableOnAccent(hex),
+  };
+}
+
+function clearCustomAccentProperties(): void {
+  CUSTOM_ACCENT_PROPERTIES.forEach((property) => {
+    document.documentElement.style.removeProperty(property);
+  });
+}
+
+function applyCustomAccent(hex: string): void {
+  const tokens = createCustomAccentTokens(hex);
+  document.documentElement.style.setProperty('--accent', tokens.accent);
+  document.documentElement.style.setProperty('--accent-hover', tokens.hover);
+  document.documentElement.style.setProperty('--accent-bright', tokens.bright);
+  document.documentElement.style.setProperty('--on-accent', tokens.onAccent);
+  document.documentElement.dataset.accent = 'custom';
+}
+
+/**
+ * Apply a scheduled choice for this window only — never persist it. The user's
+ * stored accent selection and saved palette must survive schedule boundaries
+ * so disabling the schedule restores their own choice.
+ */
+function applyAccentScheduleChoice(choice: AccentScheduleChoice): void {
+  const customHex = customHexFromScheduleChoice(choice);
+  if (customHex) {
+    applyCustomAccent(customHex);
+    return;
+  }
+  apply(choice as AccentId);
+}
+
+export function getStoredCustomAccent(): string | null {
+  try {
+    const stored = localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY);
+    return stored ? normalizeHexAccent(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+function uniqueNormalizedCustomAccents(values: unknown[]): string[] {
+  const normalized: string[] = [];
+  values.forEach((value) => {
+    if (typeof value !== 'string') return;
+    const hex = normalizeHexAccent(value);
+    if (hex && !normalized.includes(hex)) normalized.push(hex);
+  });
+  return normalized.slice(-MAX_CUSTOM_ACCENTS);
+}
+
+export function getStoredCustomAccents(): string[] {
+  try {
+    const stored = localStorage.getItem(CUSTOM_ACCENTS_STORAGE_KEY);
+    if (stored) {
+      const parsed: unknown = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        const normalized = uniqueNormalizedCustomAccents(parsed);
+        if (normalized.length > 0) return normalized;
+      }
+    }
+  } catch {
+    // Invalid saved palette falls through to legacy migration.
+  }
+
+  const legacyCustomAccent = getStoredCustomAccent();
+  return legacyCustomAccent ? [legacyCustomAccent] : [];
+}
+
+function saveCustomAccents(values: string[]): void {
+  if (values.length === 0) {
+    localStorage.removeItem(CUSTOM_ACCENTS_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(CUSTOM_ACCENTS_STORAGE_KEY, JSON.stringify(values));
+}
+
+function selectCustomAccent(hex: string): void {
+  localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, hex);
+  localStorage.setItem(ACCENT_STORAGE_KEY, 'custom');
+  applyCustomAccent(hex);
+}
 
 export function getStoredAccent(): AccentId {
   try {
     const stored = localStorage.getItem(ACCENT_STORAGE_KEY);
-    return isAccentId(stored) ? stored : DEFAULT_ACCENT;
+    return accentFromStoredValue(stored);
   } catch {
     return DEFAULT_ACCENT;
   }
 }
 
+export function getStoredAccentSchedule(): AccentSchedule {
+  try {
+    const stored = localStorage.getItem(ACCENT_SCHEDULE_STORAGE_KEY);
+    if (!stored) return defaultAccentSchedule();
+
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== 'object') return defaultAccentSchedule();
+    const maybeSchedule = parsed as Partial<AccentSchedule>;
+    const day = normalizeAccentScheduleChoice(maybeSchedule.slots?.day);
+    const swing = normalizeAccentScheduleChoice(maybeSchedule.slots?.swing);
+    const night = normalizeAccentScheduleChoice(maybeSchedule.slots?.night);
+    if (!day || !swing || !night) return defaultAccentSchedule();
+
+    return {
+      enabled: maybeSchedule.enabled === true,
+      slots: { day, swing, night },
+    };
+  } catch {
+    return defaultAccentSchedule();
+  }
+}
+
+function saveAccentSchedule(schedule: AccentSchedule): void {
+  localStorage.setItem(ACCENT_SCHEDULE_STORAGE_KEY, JSON.stringify(schedule));
+}
+
+export function applyScheduledAccent(date = new Date()): boolean {
+  const schedule = getStoredAccentSchedule();
+  if (!schedule.enabled) return false;
+  const slot = getCurrentAccentScheduleSlot(date);
+  applyAccentScheduleChoice(schedule.slots[slot.id]);
+  return true;
+}
+
+export function setAccentScheduleEnabled(enabled: boolean, date = new Date()): AccentSchedule {
+  const schedule = { ...getStoredAccentSchedule(), enabled };
+  saveAccentSchedule(schedule);
+  if (enabled) {
+    applyScheduledAccent(date);
+  } else {
+    apply(getStoredAccent());
+  }
+  scheduleNextAccentCheck(date);
+  return schedule;
+}
+
+export function setAccentScheduleSlot(
+  slotId: AccentScheduleSlotId,
+  choice: AccentScheduleChoice,
+  date = new Date(),
+): AccentSchedule {
+  const normalized = normalizeAccentScheduleChoice(choice);
+  const schedule = getStoredAccentSchedule();
+  const nextSchedule = normalized
+    ? {
+        ...schedule,
+        slots: {
+          ...schedule.slots,
+          [slotId]: normalized,
+        },
+      }
+    : schedule;
+  saveAccentSchedule(nextSchedule);
+  if (nextSchedule.enabled) applyScheduledAccent(date);
+  scheduleNextAccentCheck(date);
+  return nextSchedule;
+}
+
 function apply(id: AccentId): void {
-  document.documentElement.setAttribute('data-accent', id);
+  if (id === 'custom') {
+    const customAccent = getStoredCustomAccent();
+    if (customAccent) {
+      applyCustomAccent(customAccent);
+      return;
+    }
+  }
+  clearCustomAccentProperties();
+  document.documentElement.dataset.accent = id;
+}
+
+let scheduleTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+function clearAccentScheduleTimer(): void {
+  if (!scheduleTimer) return;
+  globalThis.clearTimeout(scheduleTimer);
+  scheduleTimer = null;
+}
+
+// Wall-clock minute deltas drift from real elapsed time across DST shifts and
+// system sleep, so never trust a long sleep: cap it and re-check, letting the
+// callback recompute from the actual current time.
+const MAX_SCHEDULE_TIMER_MS = 15 * 60_000;
+
+function scheduleNextAccentCheck(date = new Date()): void {
+  clearAccentScheduleTimer();
+  if (!getStoredAccentSchedule().enabled) return;
+
+  const now = date;
+  const delayMs = Math.min(
+    MAX_SCHEDULE_TIMER_MS,
+    Math.max(
+      1000,
+      minutesUntilNextScheduleBoundary(now) * 60_000 -
+        now.getSeconds() * 1000 -
+        now.getMilliseconds(),
+    ),
+  );
+  scheduleTimer = globalThis.setTimeout(() => {
+    applyScheduledAccent();
+    scheduleNextAccentCheck();
+  }, delayMs);
 }
 
 /** Set, persist, and apply an accent scheme. */
 export function setAccent(id: AccentId): void {
+  const safeId = id === 'custom' && !getStoredCustomAccent() ? DEFAULT_ACCENT : id;
   try {
-    localStorage.setItem(ACCENT_STORAGE_KEY, id);
+    localStorage.setItem(ACCENT_STORAGE_KEY, safeId);
   } catch {
     // Persistence is best-effort; still apply for this window.
   }
-  apply(id);
+  apply(safeId);
+}
+
+export function setCustomAccent(value: string): string | null {
+  const normalized = normalizeHexAccent(value);
+  if (!normalized) return null;
+
+  const savedCustomAccents = getStoredCustomAccents().filter((hex) => hex !== normalized);
+  const nextCustomAccents = [...savedCustomAccents, normalized].slice(-MAX_CUSTOM_ACCENTS);
+
+  try {
+    saveCustomAccents(nextCustomAccents);
+    selectCustomAccent(normalized);
+  } catch {
+    // Persistence is best-effort; still apply for this window.
+    applyCustomAccent(normalized);
+  }
+  return normalized;
+}
+
+export function setSavedCustomAccent(value: string): string | null {
+  const normalized = normalizeHexAccent(value);
+  if (!normalized || !getStoredCustomAccents().includes(normalized)) return null;
+
+  try {
+    selectCustomAccent(normalized);
+  } catch {
+    applyCustomAccent(normalized);
+  }
+  return normalized;
+}
+
+function reselectAfterCustomAccentRemoval(
+  nextCustomAccents: string[],
+  onCustomAccent: boolean,
+): void {
+  const nextActiveCustomAccent = nextCustomAccents.at(-1);
+  if (nextActiveCustomAccent) {
+    if (onCustomAccent) {
+      selectCustomAccent(nextActiveCustomAccent);
+    } else {
+      localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, nextActiveCustomAccent);
+    }
+    return;
+  }
+  localStorage.removeItem(CUSTOM_ACCENT_STORAGE_KEY);
+  if (onCustomAccent) {
+    localStorage.setItem(ACCENT_STORAGE_KEY, DEFAULT_ACCENT);
+    apply(DEFAULT_ACCENT);
+  }
+}
+
+export function removeCustomAccent(value: string): string[] {
+  const normalized = normalizeHexAccent(value);
+  if (!normalized) return getStoredCustomAccents();
+
+  const nextCustomAccents = getStoredCustomAccents().filter((hex) => hex !== normalized);
+  const isRemovingActive = getStoredCustomAccent() === normalized;
+  // Only re-select a replacement when the custom accent is what's actually in
+  // use — relay-custom-accent lingers after switching to a preset, and deleting
+  // a swatch then must not hijack the preset selection.
+  const onCustomAccent = getStoredAccent() === 'custom';
+
+  try {
+    saveCustomAccents(nextCustomAccents);
+    if (isRemovingActive) reselectAfterCustomAccentRemoval(nextCustomAccents, onCustomAccent);
+  } catch {
+    if (isRemovingActive && onCustomAccent) {
+      const nextActiveCustomAccent = nextCustomAccents.at(-1);
+      if (nextActiveCustomAccent) {
+        applyCustomAccent(nextActiveCustomAccent);
+      } else {
+        apply(DEFAULT_ACCENT);
+      }
+    }
+  }
+  return nextCustomAccents;
 }
 
 /**
@@ -52,12 +533,23 @@ export function setAccent(id: AccentId): void {
 let initialized = false;
 
 export function initAccent(): void {
-  apply(getStoredAccent());
+  if (!applyScheduledAccent()) apply(getStoredAccent());
+  scheduleNextAccentCheck();
   if (initialized) return;
   initialized = true;
-  window.addEventListener('storage', (e) => {
+  globalThis.addEventListener('storage', (e) => {
     if (e.key === ACCENT_STORAGE_KEY) {
-      apply(isAccentId(e.newValue) ? e.newValue : DEFAULT_ACCENT);
+      if (!applyScheduledAccent()) apply(accentFromStoredValue(e.newValue));
+    }
+    if (e.key === CUSTOM_ACCENT_STORAGE_KEY && getStoredAccent() === 'custom') {
+      if (!applyScheduledAccent()) apply(getStoredAccent());
+    }
+    if (e.key === CUSTOM_ACCENTS_STORAGE_KEY && getStoredAccent() === 'custom') {
+      if (!applyScheduledAccent()) apply(getStoredAccent());
+    }
+    if (e.key === ACCENT_SCHEDULE_STORAGE_KEY) {
+      if (!applyScheduledAccent()) apply(getStoredAccent());
+      scheduleNextAccentCheck();
     }
   });
 }

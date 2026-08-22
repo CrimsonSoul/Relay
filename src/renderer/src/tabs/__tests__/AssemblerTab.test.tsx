@@ -1,25 +1,38 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssemblerTab } from '../AssemblerTab';
+import type { useAssembler } from '../../hooks/useAssembler';
 import type { BridgeGroup, Contact, BridgeHistoryEntry } from '@shared/ipc';
+
+const assemblerCssPath = resolve(__dirname, '../assembler/assembler.css');
 
 // ── mock sub-components ─────────────────────────────────────────────────────
 vi.mock('../assembler', () => ({
   AssemblerSidebar: () => <div data-testid="assembler-sidebar" />,
-  BridgeReminderModal: ({
+  BridgeHandoffModal: ({
     isOpen,
     onClose,
-    onConfirm,
+    onCopy,
+    onOpenTeams,
+    subject,
   }: {
     isOpen: boolean;
     onClose: () => void;
-    onConfirm: () => void;
+    onCopy: () => void;
+    onOpenTeams: () => void;
+    subject: string;
   }) =>
     isOpen ? (
-      <div data-testid="bridge-reminder-modal">
-        <button onClick={onClose}>close-reminder</button>
-        <button onClick={onConfirm}>confirm-reminder</button>
+      <div data-testid="bridge-handoff-modal">
+        <span>{subject}</span>
+        <button onClick={onClose}>close-handoff</button>
+        <button onClick={onCopy}>copy-from-handoff</button>
+        <button data-testid="confirm-teams-handoff" onClick={onOpenTeams}>
+          confirm-teams-handoff
+        </button>
       </div>
     ) : null,
   SaveGroupModal: ({
@@ -44,7 +57,10 @@ vi.mock('../assembler', () => ({
     isOpen,
     onClose,
     onLoad,
+    onDelete,
+    onClear,
     onSaveAsGroup,
+    history,
   }: {
     isOpen: boolean;
     onClose: () => void;
@@ -57,6 +73,8 @@ vi.mock('../assembler', () => ({
     isOpen ? (
       <div data-testid="bridge-history-modal">
         <button onClick={onClose}>close-history</button>
+        <button onClick={() => onDelete(history[0]?.id ?? 'missing')}>delete-history</button>
+        <button onClick={() => onClear()}>clear-history</button>
         <button
           onClick={() =>
             onLoad({
@@ -65,7 +83,7 @@ vi.mock('../assembler', () => ({
               groups: ['Alpha'],
               contacts: ['a@example.com'],
               recipientCount: 1,
-              createdAt: Date.now(),
+              timestamp: Date.now(),
             })
           }
         >
@@ -79,7 +97,7 @@ vi.mock('../assembler', () => ({
               groups: ['Alpha'],
               contacts: ['a@example.com', 'manual@example.com'],
               recipientCount: 2,
-              createdAt: Date.now(),
+              timestamp: Date.now(),
             })
           }
         >
@@ -93,7 +111,7 @@ vi.mock('../assembler', () => ({
               groups: [],
               contacts: ['x@example.com'],
               recipientCount: 1,
-              createdAt: Date.now(),
+              timestamp: Date.now(),
             })
           }
         >
@@ -140,6 +158,7 @@ vi.mock('../../components/ListToolbar', () => ({
     disabled?: boolean;
   }) => (
     <div data-testid="list-toolbar">
+      <span>Sort By</span>
       <button disabled={disabled} onClick={onToggleSortDirection}>
         toggle-sort-dir
       </button>
@@ -186,14 +205,16 @@ vi.mock('../../components/Modal', () => ({
     onClose,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     onClose: () => void;
     children: React.ReactNode;
     title: string;
+    variant?: string;
   }) =>
     isOpen ? (
-      <div data-testid="modal">
+      <div data-testid="modal" data-variant={variant}>
         <span>{title}</span>
         <button onClick={onClose}>close-modal</button>
         {children}
@@ -229,11 +250,12 @@ vi.mock('../../hooks/useGroups', () => ({
 }));
 
 const mockAddHistory = vi.fn().mockResolvedValue(undefined);
-const mockDeleteHistory = vi.fn();
-const mockClearHistory = vi.fn();
+const mockDeleteHistory = vi.fn().mockResolvedValue(true);
+const mockClearHistory = vi.fn().mockResolvedValue(true);
+let mockHistoryEntries: BridgeHistoryEntry[] = [];
 vi.mock('../../hooks/useBridgeHistory', () => ({
   useBridgeHistory: () => ({
-    history: [],
+    history: mockHistoryEntries,
     addHistory: mockAddHistory,
     deleteHistory: mockDeleteHistory,
     clearHistory: mockClearHistory,
@@ -241,21 +263,54 @@ vi.mock('../../hooks/useBridgeHistory', () => ({
 }));
 
 // useAssembler returns a rich object — we mock selected fields
-const mockSetIsBridgeReminderOpen = vi.fn();
 const mockSetIsAddContactModalOpen = vi.fn();
 const mockSetCompositionContextMenu = vi.fn();
 const mockSetIsHeaderCollapsed = vi.fn();
 const mockSetSearch = vi.fn();
 const mockSetSortConfig = vi.fn();
-const mockHandleCopy = vi.fn().mockResolvedValue(undefined);
-const mockExecuteDraftBridge = vi.fn();
+const mockHandleCopy = vi.fn().mockResolvedValue(true);
+const mockExecuteDraftBridge = vi.fn().mockResolvedValue(true);
+const mockPrepareDraftBridgeSubject = vi.fn(() => '8/5 -');
 const mockHandleAddToContacts = vi.fn();
 
-const baseAsm = {
+type AssemblerHookState = ReturnType<typeof useAssembler>;
+
+/**
+ * The subset of `useAssembler`'s state that `AssemblerTab` actually consumes,
+ * typed from the real hook so fixtures cannot drift from production shapes.
+ */
+type MockAssemblerState = Pick<
+  AssemblerHookState,
+  | 'sortConfig'
+  | 'setSortConfig'
+  | 'isAddContactModalOpen'
+  | 'setIsAddContactModalOpen'
+  | 'pendingEmail'
+  | 'compositionContextMenu'
+  | 'setCompositionContextMenu'
+  | 'isHeaderCollapsed'
+  | 'setIsHeaderCollapsed'
+  | 'contactMap'
+  | 'handoffSummary'
+  | 'bridgeSubject'
+  | 'allRecipients'
+  | 'log'
+  | 'itemData'
+  | 'isCopying'
+  | 'isOpeningTeams'
+  | 'handleCopy'
+  | 'executeDraftBridge'
+  | 'handleAddToContacts'
+  | 'handleContactSaved'
+> & {
+  search: string;
+  setSearch: (value: string) => void;
+  prepareDraftBridgeSubject: () => string;
+};
+
+const baseAsm: MockAssemblerState = {
   sortConfig: { key: 'name', direction: 'asc' },
   setSortConfig: mockSetSortConfig,
-  isBridgeReminderOpen: false,
-  setIsBridgeReminderOpen: mockSetIsBridgeReminderOpen,
   isAddContactModalOpen: false,
   setIsAddContactModalOpen: mockSetIsAddContactModalOpen,
   pendingEmail: '',
@@ -265,10 +320,29 @@ const baseAsm = {
   setIsHeaderCollapsed: mockSetIsHeaderCollapsed,
   search: '',
   setSearch: mockSetSearch,
+  handoffSummary: {
+    recipients: [],
+    invalidRecipients: [],
+    duplicateCount: 0,
+    manualCount: 0,
+    groupNames: [],
+    isValid: false,
+  },
+  bridgeSubject: '8/4 -',
+  prepareDraftBridgeSubject: mockPrepareDraftBridgeSubject,
   allRecipients: [],
   log: [],
   contactMap: new Map(),
-  itemData: {},
+  itemData: {
+    log: [],
+    contactMap: new Map(),
+    groupMap: new Map(),
+    onRemoveManual: vi.fn(),
+    onAddToContacts: vi.fn(),
+    onContextMenu: vi.fn(),
+  },
+  isCopying: false,
+  isOpeningTeams: false,
   handleCopy: mockHandleCopy,
   executeDraftBridge: mockExecuteDraftBridge,
   handleAddToContacts: mockHandleAddToContacts,
@@ -286,8 +360,8 @@ const makeGroup = (id: string, name: string, contacts: string[] = []): BridgeGro
   id,
   name,
   contacts,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
 });
 
 const defaultProps = {
@@ -306,9 +380,36 @@ const defaultProps = {
   setManualAdds: vi.fn(),
 };
 
+const withRecipientState = (): MockAssemblerState => ({
+  ...baseAsm,
+  allRecipients: [{ email: 'a@example.com', source: 'group' }],
+  log: [{ email: 'a@example.com', source: 'group' }],
+  handoffSummary: {
+    recipients: [
+      {
+        email: 'a@example.com',
+        normalizedEmail: 'a@example.com',
+        source: 'group',
+        valid: true,
+      },
+    ],
+    invalidRecipients: [],
+    duplicateCount: 0,
+    manualCount: 0,
+    groupNames: ['Alpha'],
+    isValid: true,
+  },
+});
+
 describe('AssemblerTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHandleCopy.mockResolvedValue(true);
+    mockExecuteDraftBridge.mockResolvedValue(true);
+    mockAddHistory.mockResolvedValue({ id: 'history-1' });
+    mockDeleteHistory.mockResolvedValue(true);
+    mockClearHistory.mockResolvedValue(true);
+    mockHistoryEntries = [];
     asmState = { ...baseAsm };
   });
 
@@ -319,15 +420,86 @@ describe('AssemblerTab', () => {
     expect(screen.getByTestId('list-toolbar')).toBeInTheDocument();
   });
 
+  it('renders the approved Compose operational hierarchy', () => {
+    const { container } = render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('heading', { name: 'Bridge Recipient Assembly' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Compose actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    const workflow = container.querySelector<HTMLElement>('.tab-command-group--workflow');
+    expect(toolbar).toContainElement(utility);
+    expect(toolbar).toContainElement(workflow);
+    expect(within(utility as HTMLElement).getByRole('button', { name: 'Reset' })).toBeVisible();
+    expect(within(utility as HTMLElement).getByRole('button', { name: 'History' })).toBeVisible();
+    expect(
+      within(workflow as HTMLElement).getByRole('button', { name: 'Copy Recipients' }),
+    ).toBeVisible();
+    expect(
+      within(workflow as HTMLElement).getByRole('button', { name: 'Open Teams Draft' }),
+    ).toBeVisible();
+    expect(
+      within(workflow as HTMLElement).getByRole('button', { name: 'More Compose actions' }),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
+    expect(screen.getByText('0 recipients')).toBeInTheDocument();
+  });
+
+  it('uses the approved lean Compose action hierarchy', () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} />);
+
+    const copy = screen.getByRole('button', { name: 'Copy Recipients' });
+    const teams = screen.getByRole('button', { name: 'Open Teams Draft' });
+
+    expect(screen.getByRole('button', { name: 'History' })).toHaveClass(
+      'assembler-utility-action',
+      'tactile-button--secondary',
+    );
+    expect(teams).toHaveClass('tactile-button--primary');
+    expect(copy).toHaveClass('tactile-button--secondary');
+    expect(copy.compareDocumentPosition(teams)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByRole('button', { name: /^Schedule$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Ready ·/)).not.toBeInTheDocument();
+  });
+
+  it('defines a prominent non-blocking recording notice and recipient-pane sort layout', () => {
+    const css = readFileSync(assemblerCssPath, 'utf8');
+    const recording = /\.bridge-handoff-recording\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+    const paneTools = /\.assembler-pane-tools\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+
+    expect(recording).toContain('border-left: 4px solid');
+    expect(recording).toContain('var(--color-warning');
+    expect(paneTools).toContain('display: flex');
+    expect(css).not.toContain('.assembler-page-state-dot');
+  });
+
+  it('places sorting inside the Recipients region rather than the command toolbar', () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} />);
+
+    const recipients = screen.getByRole('region', { name: 'Recipients' });
+    const actionsToolbar = screen.getByRole('toolbar', { name: 'Compose actions' });
+    expect(within(recipients).getByTestId('list-toolbar')).toBeInTheDocument();
+    expect(within(actionsToolbar).queryByTestId('list-toolbar')).not.toBeInTheDocument();
+  });
+
+  it('derives Compose header and pane counts from current recipients', () => {
+    asmState = withRecipientState();
+
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByText('1 recipient')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recipients' })).toHaveTextContent('1 selected');
+  });
+
   it('shows recipient count when there are recipients', () => {
-    asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
     expect(screen.getByText('Recipients')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('1 recipient')).toBeInTheDocument();
   });
 
   it('shows UNDO button when there are manual removes', () => {
@@ -337,11 +509,7 @@ describe('AssemblerTab', () => {
 
   it('calls onResetManual when RESET is clicked', () => {
     const onResetManual = vi.fn();
-    asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} onResetManual={onResetManual} />);
     fireEvent.click(screen.getByText('Reset'));
     expect(onResetManual).toHaveBeenCalled();
@@ -351,39 +519,79 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
 
     expect(screen.getByRole('button', { name: /Reset/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Copy All/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Start Bridge/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Schedule Bridge/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Open Teams Draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More Compose actions' })).toBeDisabled();
     expect(screen.getByText('toggle-sort-dir')).toBeDisabled();
     expect(screen.getByText('sort-by-email')).toBeDisabled();
   });
 
   it('enables recipient actions once recipients exist', () => {
-    asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
 
     expect(screen.getByRole('button', { name: /Reset/i })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Copy All/i })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Start Bridge/i })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Schedule Bridge/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Copy Recipients' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Open Teams Draft' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More Compose actions' })).not.toBeDisabled();
   });
 
-  it('opens ScheduleBridgeModal with current recipients when Schedule Bridge is clicked', () => {
+  it('opens review for invalid recipients so they can be removed', () => {
     asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
+      ...withRecipientState(),
+      handoffSummary: {
+        recipients: [
+          {
+            email: 'broken-address',
+            normalizedEmail: 'broken-address',
+            source: 'manual',
+            valid: false,
+          },
+        ],
+        invalidRecipients: [
+          {
+            email: 'broken-address',
+            normalizedEmail: 'broken-address',
+            source: 'manual',
+            valid: false,
+          },
+        ],
+        duplicateCount: 0,
+        manualCount: 1,
+        groupNames: [],
+        isValid: false,
+      },
+    };
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: 'Copy Recipients' })).toBeDisabled();
+    const teams = screen.getByRole('button', { name: 'Open Teams Draft' });
+    expect(teams).not.toBeDisabled();
+    fireEvent.click(teams);
+    expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
+  });
+
+  it('opens Create Calendar Invite from the accessible More menu', () => {
+    asmState = {
+      ...withRecipientState(),
       contactMap: new Map([
-        ['a@example.com', { name: 'Alice', email: 'a@example.com', phone: '', title: '' }],
+        [
+          'a@example.com',
+          {
+            name: 'Alice',
+            email: 'a@example.com',
+            phone: '',
+            title: '',
+            _searchString: 'alice a@example.com',
+            raw: {},
+          },
+        ],
       ]),
     };
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByText('Schedule Bridge'));
+    fireEvent.click(screen.getByRole('button', { name: 'More Compose actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Calendar Invite' }));
 
     expect(screen.getByTestId('schedule-bridge-modal')).toBeInTheDocument();
     expect(screen.getByText('Alice<a@example.com>')).toBeInTheDocument();
@@ -405,39 +613,107 @@ describe('AssemblerTab', () => {
     expect(screen.queryByTestId('bridge-history-modal')).not.toBeInTheDocument();
   });
 
-  it('calls setIsBridgeReminderOpen when Start Bridge is clicked', () => {
-    asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
+  it('opens the review before requesting Teams', () => {
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('Start Bridge'));
-    expect(mockSetIsBridgeReminderOpen).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
+    expect(mockExecuteDraftBridge).not.toHaveBeenCalled();
   });
 
-  it('opens BridgeReminderModal when isBridgeReminderOpen is true', () => {
-    asmState = { ...baseAsm, isBridgeReminderOpen: true };
+  it('prepares a current subject when the Teams review opens', () => {
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
-    expect(screen.getByTestId('bridge-reminder-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+
+    expect(mockPrepareDraftBridgeSubject).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('8/5 -')).toBeInTheDocument();
   });
 
-  it('calls executeDraftBridge when BridgeReminderModal is confirmed', () => {
-    asmState = { ...baseAsm, isBridgeReminderOpen: true };
+  it('calls handleCopy when Copy Recipients is clicked', () => {
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('confirm-reminder'));
-    expect(mockExecuteDraftBridge).toHaveBeenCalled();
-  });
-
-  it('calls handleCopy when COPY is clicked', () => {
-    asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
-    render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('Copy All'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
     expect(mockHandleCopy).toHaveBeenCalled();
+  });
+
+  it('saves history only after a successful copy', async () => {
+    mockHandleCopy.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockHandleCopy).toHaveBeenCalledTimes(1));
+    expect(mockAddHistory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+  });
+
+  it('closes the review after an accepted Teams request and does not save failure', async () => {
+    mockExecuteDraftBridge.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
+    await waitFor(() => expect(mockExecuteDraftBridge).toHaveBeenCalledTimes(1));
+    expect(mockAddHistory).not.toHaveBeenCalled();
+    expect(screen.getByTestId('bridge-handoff-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('bridge-handoff-modal')).not.toBeInTheDocument();
+  });
+
+  it('saves an unchanged composition only once across copy and Teams actions', async () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
+    await waitFor(() => expect(mockExecuteDraftBridge).toHaveBeenCalledTimes(1));
+    expect(mockAddHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves the same composition again after its history entry is deleted', async () => {
+    mockHistoryEntries = [
+      {
+        id: 'history-1',
+        note: '',
+        groups: ['Alpha'],
+        contacts: ['a@example.com'],
+        recipientCount: 1,
+        timestamp: Date.now(),
+      },
+    ];
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    fireEvent.click(screen.getByText('delete-history'));
+    await waitFor(() => expect(mockDeleteHistory).toHaveBeenCalledWith('history-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(2));
+  });
+
+  it('saves the same composition again after history is cleared', async () => {
+    asmState = withRecipientState();
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    fireEvent.click(screen.getByText('clear-history'));
+    await waitFor(() => expect(mockClearHistory).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
+    await waitFor(() => expect(mockAddHistory).toHaveBeenCalledTimes(2));
   });
 
   it('opens SaveGroupModal when "save-as-group" is triggered from history', () => {
@@ -532,48 +808,36 @@ describe('AssemblerTab', () => {
     render(<AssemblerTab {...defaultProps} />);
     fireEvent.click(screen.getByText('Manage Groups'));
     expect(screen.getByTestId('modal')).toBeInTheDocument();
+    expect(screen.getByTestId('modal')).toHaveAttribute('data-variant', 'confirmation');
     expect(screen.getByTestId('group-selector')).toBeInTheDocument();
   });
 
-  it('handles copy and history save failures with error toasts', async () => {
-    const error = new Error('copy failed');
-    mockHandleCopy.mockRejectedValueOnce(error);
+  it('reports a history failure after recipients were copied', async () => {
     mockAddHistory.mockRejectedValueOnce(new Error('history failed'));
-    asmState = {
-      ...baseAsm,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
+    asmState = withRecipientState();
 
     render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1', 'missing-group']} />);
-    fireEvent.click(screen.getByText('Copy All'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Recipients' }));
 
-    await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Copy failed: copy failed', 'error');
-    });
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Could not save bridge history: history failed',
+        'Recipients copied, but history could not be saved: history failed',
         'error',
       );
     });
   });
 
-  it('shows history save error when confirming draft bridge', async () => {
+  it('reports a history failure after an accepted Teams request', async () => {
     mockAddHistory.mockRejectedValueOnce(new Error('draft history failed'));
-    asmState = {
-      ...baseAsm,
-      isBridgeReminderOpen: true,
-      allRecipients: [{ email: 'a@example.com', source: 'group' }],
-      log: [{ email: 'a@example.com', source: 'group' }],
-    };
+    asmState = withRecipientState();
 
     render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
-    fireEvent.click(screen.getByText('confirm-reminder'));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByTestId('confirm-teams-handoff'));
 
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Could not save bridge history: draft history failed',
+        'Teams draft requested, but history could not be saved: draft history failed',
         'error',
       );
     });
@@ -618,12 +882,13 @@ describe('AssemblerTab', () => {
     expect(mockSetIsAddContactModalOpen).toHaveBeenCalledWith(false);
   });
 
-  it('closes bridge reminder modal when close callback fires', () => {
-    asmState = { ...baseAsm, isBridgeReminderOpen: true };
+  it('closes the Teams handoff review from its close callback', () => {
+    asmState = withRecipientState();
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByText('close-reminder'));
-    expect(mockSetIsBridgeReminderOpen).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Teams Draft' }));
+    fireEvent.click(screen.getByText('close-handoff'));
+    expect(screen.queryByTestId('bridge-handoff-modal')).not.toBeInTheDocument();
   });
 
   it('closes save-group modal from history action', () => {

@@ -89,6 +89,10 @@ beforeEach(() => {
   mockToBlob.mockResolvedValue(new Blob([new Uint8Array([1, 2, 3, 4])]));
 });
 
+it('does not expose archived standalone notes as an import/export collection', () => {
+  expect(ALL_COLLECTIONS).not.toContain('standalone_notes');
+});
+
 // ---------------------------------------------------------------------------
 // exportToJson
 // ---------------------------------------------------------------------------
@@ -138,7 +142,8 @@ describe('exportToCsv', () => {
     mockGetFullList.mockResolvedValueOnce([dangerous]);
     mockPapaUnparse.mockImplementationOnce(({ data }: { data: string[][] }) => data[0]![1]!);
     await exportToCsv('contacts');
-    const unparseCall = mockPapaUnparse.mock.calls[0][0] as { data: string[][] };
+    expect(mockPapaUnparse).toHaveBeenCalledOnce();
+    const unparseCall = mockPapaUnparse.mock.calls[0]![0] as { data: string[][] };
     expect(unparseCall.data[0]![1]).toBe('\'=HYPERLINK("evil")');
   });
 });
@@ -153,7 +158,7 @@ describe('exportToExcel', () => {
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(result).toBeInstanceOf(ArrayBuffer);
     expect(mockWriteExcelFile).toHaveBeenCalledOnce();
-    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    const sheets = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]?.data[0]).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ value: 'id', fontWeight: 'bold' }),
@@ -166,7 +171,8 @@ describe('exportToExcel', () => {
   it('writes an empty sheet for empty collections', async () => {
     mockGetFullList.mockResolvedValueOnce([]);
     await exportToExcel('contacts');
-    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(mockWriteExcelFile).toHaveBeenCalledOnce();
+    const sheets = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]).toMatchObject({ sheet: 'contacts', data: [] });
   });
 
@@ -180,7 +186,8 @@ describe('exportToExcel', () => {
 
     await exportToExcel('contacts');
 
-    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(mockWriteExcelFile).toHaveBeenCalledOnce();
+    const sheets = mockWriteExcelFile.mock.calls[0]![0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]?.data[1]?.[1]).toBe('\'=HYPERLINK("https://evil.example")');
     expect(sheets[0]?.data[1]?.[2]).toBe("'@SUM(1,1)");
   });
@@ -190,6 +197,41 @@ describe('exportToExcel', () => {
 // importFromJson
 // ---------------------------------------------------------------------------
 describe('importFromJson', () => {
+  it('reports cumulative progress for created, updated, invalid, and failed rows', async () => {
+    const created = { email: 'created@example.com', name: 'Created' };
+    const updated = { email: 'updated@example.com', name: 'Updated' };
+    const failed = { email: 'failed@example.com', name: 'Failed' };
+    const notFound = Object.assign(new Error('Not found'), { status: 404 });
+    mockGetFirstListItem
+      .mockRejectedValueOnce(notFound)
+      .mockResolvedValueOnce({ ...sampleRecord, id: 'existing-id' })
+      .mockRejectedValueOnce(notFound);
+    mockCreate.mockResolvedValueOnce(created).mockRejectedValueOnce(new Error('write failed'));
+    mockUpdate.mockResolvedValueOnce(updated);
+    const onProgress = vi.fn();
+
+    const result = await importFromJson(
+      'contacts',
+      JSON.stringify([created, updated, 123, failed]),
+      onProgress,
+    );
+
+    expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
+      { processed: 0, total: 4, imported: 0, updated: 0, errors: 0 },
+      { processed: 1, total: 4, imported: 1, updated: 0, errors: 0 },
+      { processed: 2, total: 4, imported: 1, updated: 1, errors: 0 },
+      { processed: 3, total: 4, imported: 1, updated: 1, errors: 1 },
+      { processed: 4, total: 4, imported: 1, updated: 1, errors: 2 },
+    ]);
+    expect(result).toEqual({
+      imported: 1,
+      updated: 1,
+      errors: ['Row 3: expected an object record', 'Row 4: write failed'],
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockUpdate).toHaveBeenCalledOnce();
+  });
+
   it('imports records from a JSON array', async () => {
     const notFound = Object.assign(new Error('Not found'), { status: 404 });
     mockGetFirstListItem.mockRejectedValueOnce(notFound);
@@ -300,6 +342,25 @@ describe('importFromJson', () => {
 // importFromCsv
 // ---------------------------------------------------------------------------
 describe('importFromCsv', () => {
+  it('includes parse warnings in every progress snapshot', async () => {
+    mockPapaParse.mockReturnValueOnce({
+      data: [{ email: 'alice@example.com', name: 'Alice' }],
+      errors: [{ row: 2, message: 'Too few fields' }],
+    });
+    mockGetFirstListItem.mockRejectedValueOnce(
+      Object.assign(new Error('Not found'), { status: 404 }),
+    );
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+    const onProgress = vi.fn();
+
+    await importFromCsv('contacts', 'email,name\nalice@example.com,Alice\nbroken', onProgress);
+
+    expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
+      { processed: 0, total: 1, imported: 0, updated: 0, errors: 1 },
+      { processed: 1, total: 1, imported: 1, updated: 0, errors: 1 },
+    ]);
+  });
+
   it('parses CSV and imports records', async () => {
     mockPapaParse.mockReturnValueOnce({
       data: [{ email: 'alice@example.com', name: 'Alice' }],
@@ -341,7 +402,8 @@ describe('importFromCsv', () => {
   it('strips formula-injection prefix on import via transform function', async () => {
     mockPapaParse.mockReturnValueOnce({ data: [], errors: [] });
     await importFromCsv('contacts', 'email\n=test');
-    const parseOptions = mockPapaParse.mock.calls[0][1] as { transform: (v: string) => string };
+    expect(mockPapaParse).toHaveBeenCalledOnce();
+    const parseOptions = mockPapaParse.mock.calls[0]![1] as { transform: (v: string) => string };
     // Strips leading ' before injection characters
     expect(parseOptions.transform('\'=HYPERLINK("evil")')).toBe('=HYPERLINK("evil")');
     // Normal values unchanged
@@ -375,6 +437,30 @@ describe('importFromCsv', () => {
 // importFromExcel
 // ---------------------------------------------------------------------------
 describe('importFromExcel', () => {
+  it('reports parsed worksheet progress through the shared bulk path', async () => {
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'contacts',
+        data: [
+          ['email', 'name'],
+          ['alice@example.com', 'Alice'],
+        ],
+      },
+    ]);
+    mockGetFirstListItem.mockRejectedValueOnce(
+      Object.assign(new Error('Not found'), { status: 404 }),
+    );
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+    const onProgress = vi.fn();
+
+    await importFromExcel('contacts', new ArrayBuffer(8), onProgress);
+
+    expect(onProgress.mock.calls.map(([progress]) => progress)).toEqual([
+      { processed: 0, total: 1, imported: 0, updated: 0, errors: 0 },
+      { processed: 1, total: 1, imported: 1, updated: 0, errors: 0 },
+    ]);
+  });
+
   it('reads rows from the matching worksheet and imports records', async () => {
     mockReadExcelFile.mockResolvedValueOnce([
       {
@@ -391,6 +477,30 @@ describe('importFromExcel', () => {
     const result = await importFromExcel('contacts', new ArrayBuffer(8));
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(result.imported).toBe(1);
+  });
+
+  it('strips the export formula guard so a round trip does not corrupt values', async () => {
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'contacts',
+        data: [
+          ['email', 'phone', 'note'],
+          ['alice@example.com', "'+15555551234", "'hello"],
+        ],
+      },
+    ]);
+    const notFound = Object.assign(new Error('Not found'), { status: 404 });
+    mockGetFirstListItem.mockRejectedValueOnce(notFound);
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+
+    await importFromExcel('contacts', new ArrayBuffer(8));
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      email: 'alice@example.com',
+      phone: '+15555551234',
+      // A quote that does not guard a formula character is user content.
+      note: "'hello",
+    });
   });
 
   it('falls back to the first worksheet when named worksheet is not found', async () => {

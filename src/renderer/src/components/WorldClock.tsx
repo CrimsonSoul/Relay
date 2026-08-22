@@ -43,15 +43,39 @@ export const WorldClock: React.FC = () => {
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const updateTime = () => {
       const now = new Date();
       const nowMinuteKey = getMinuteKey(now);
       if (nowMinuteKey !== minuteKeyRef.current) {
         minuteKeyRef.current = nowMinuteKey;
         setTime(now);
       }
-    }, 1000);
-    return () => clearInterval(timer);
+    };
+    const scheduleNextMinute = () => {
+      if (document.visibilityState !== 'visible') return;
+      const remainder = Date.now() % 60_000;
+      const delay = remainder === 0 ? 60_000 : 60_000 - remainder;
+      timer = setTimeout(() => {
+        updateTime();
+        scheduleNextMinute();
+      }, delay);
+    };
+    const handleVisibilityChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (document.visibilityState !== 'visible') return;
+      updateTime();
+      scheduleNextMinute();
+    };
+
+    scheduleNextMinute();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Position the popover centered under the trigger
@@ -133,6 +157,7 @@ export const WorldClock: React.FC = () => {
     <div className="world-clock-container">
       <Tooltip content="Show world clocks" position="bottom">
         <button
+          type="button"
           ref={triggerRef}
           className={`world-clock-trigger${isOpen ? ' world-clock-trigger--active' : ''}`}
           onClick={toggle}
@@ -157,6 +182,7 @@ export const WorldClock: React.FC = () => {
             <div
               ref={popoverRef}
               className="world-clock-popover"
+              data-motion="popover"
               style={{ top: popoverPos.top, left: popoverPos.left }}
             >
               {secondaryZoneItems}

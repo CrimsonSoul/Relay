@@ -44,10 +44,44 @@ export const ServerIcon: React.FC = () => (
   </div>
 );
 
+export const KnowledgeIcon: React.FC = () => (
+  <div className="cmd-icon cmd-icon--knowledge">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+      <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" />
+    </svg>
+  </div>
+);
+
 export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
   const iconMap: Record<string, React.ReactNode> = {
+    alerts: (
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
+      </svg>
+    ),
     compose: (
       <svg
+        aria-hidden="true"
         width="14"
         height="14"
         viewBox="0 0 24 24"
@@ -91,6 +125,55 @@ export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
       >
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
         <circle cx="12" cy="7" r="4" />
+      </svg>
+    ),
+    problems: (
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 2 20 6.5v9L12 22l-8-6.5v-9z" />
+        <path d="M7 12h2.5l1.5-3 2 6 1.5-3H17" />
+      </svg>
+    ),
+    servers: (
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2" y="2" width="20" height="8" rx="2" />
+        <rect x="2" y="14" width="20" height="8" rx="2" />
+        <path d="M6 6h.01M6 18h.01" />
+      </svg>
+    ),
+    wiki: (
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+        <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" />
       </svg>
     ),
     add: (

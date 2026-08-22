@@ -3,9 +3,12 @@
 @import './styles/theme.css';
 @import './styles/animations.css';
 @import './styles/components.css';
+@import './components/settings/settings.css';
+@import './styles/components-after-settings.css';
+@import './styles/tab-chrome.css';
 @import './tabs/alerts.css';
-@import './tabs/notes/notes.css';
 @import './tabs/cloud-status.css';
+@import './features/knowledge/knowledge.css';
 @import './components/oncall/oncall.css';
 @import './tabs/assembler/assembler.css';
 @import './components/directory/directory.css';

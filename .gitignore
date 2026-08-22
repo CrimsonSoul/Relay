@@ -26,6 +26,7 @@ playwright-report/
 # Static analysis working directories
 .scannerwork/
 coderabbit-reports/
+.cache/
 
 # Generated data files
 *.xlsx
@@ -49,8 +50,10 @@ data/*.json
 # Local git worktrees
 .worktrees/
 
-# PocketBase
-resources/pocketbase/
+# PocketBase binaries are local build inputs; server hooks are source.
+resources/pocketbase/*
+!resources/pocketbase/version.json
+!resources/pocketbase/hooks/
+!resources/pocketbase/hooks/**
 dev-data/
 .superpowers/
-docs/superpowers/

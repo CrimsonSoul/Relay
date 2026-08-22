@@ -13,7 +13,7 @@ export const SearchInput: React.FC<SearchInputProps> = (props) => {
           height="18"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="var(--color-accent)"
+          stroke="currentColor"
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { List, useListRef } from 'react-window';
-import type { ListImperativeAPI } from 'react-window';
+import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { Contact, BridgeGroup, Server } from '@shared/ipc';
 
@@ -11,7 +11,7 @@ import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { ListToolbar } from '../components/ListToolbar';
 import { ListFilters } from '../components/ListFilters';
 import { GroupSelector } from '../components/directory/GroupSelector';
-import { VirtualRow } from '../components/directory/VirtualRow';
+import { VirtualRow, type DirectoryVirtualRowData } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
 import { DirectoryContextMenu } from '../components/directory/DirectoryContextMenu';
 import { ContactDetailPanel } from '../components/ContactDetailPanel';
@@ -21,22 +21,43 @@ import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { SearchInput } from '../components/SearchInput';
+import {
+  contactRecordKey,
+  type KnowledgeRecordOpenRequest,
+} from '../features/knowledge/knowledgeRecordNavigation';
 
 type Props = {
   contacts: Contact[];
   groups: BridgeGroup[];
   servers?: Server[];
   onAddToAssembler: (contact: Contact) => void;
+  selectionRequest?: KnowledgeRecordOpenRequest | null;
+  onSelectionUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
 };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
-const ROW_HEIGHT = 72;
+const ROW_HEIGHT = 67;
+
+// components/directory/VirtualRow is wrapped in React.memo, whose call signature is typed as
+// returning ReactNode; react-window's `rowComponent` prop requires ReactElement | null. Rendering
+// it as an element keeps the memo boundary while satisfying that prop type.
+const DirectoryVirtualRow = (props: RowComponentProps<DirectoryVirtualRowData>) => (
+  <VirtualRow {...props} />
+);
 
 const normalizeRelationshipEmail = (value: string | undefined) => {
   const trimmed = value?.trim().toLowerCase();
   if (!trimmed || trimmed === '-' || trimmed === '0') return '';
   return trimmed;
 };
+
+function focusRenderedRecord(container: HTMLElement | null, recordKey: string): void {
+  const row = Array.from(container?.querySelectorAll<HTMLElement>('[data-record-key]') ?? []).find(
+    (node) => node.dataset.recordKey === recordKey,
+  );
+  row?.focus();
+}
 
 const ScrollController = ({
   listRef,
@@ -60,9 +81,12 @@ export const DirectoryTab: React.FC<Props> = ({
   groups,
   servers = [],
   onAddToAssembler,
+  selectionRequest,
+  onSelectionUnavailable,
 }) => {
-  const dir = useDirectory(contacts, groups, onAddToAssembler);
-  const listRef = useListRef();
+  const [searchQuery, setSearchQuery] = useState('');
+  const dir = useDirectory(contacts, groups, onAddToAssembler, searchQuery);
+  const listRef = useListRef(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
   const { getContactNote, setContactNote } = useNotesContext();
   const [notesContact, setNotesContact] = useState<Contact | null>(null);
@@ -198,6 +222,7 @@ export const DirectoryTab: React.FC<Props> = ({
   });
 
   const filtered = filters.filteredItems;
+  const clearAllFilters = filters.clearAll;
 
   useDirectoryKeyboard({
     listRef,
@@ -221,8 +246,71 @@ export const DirectoryTab: React.FC<Props> = ({
 
   const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
 
-  const selectedContact =
-    focusedIndex >= 0 && focusedIndex < filtered.length ? filtered[focusedIndex] : null;
+  // The detail panel follows the stable navigation key, not its row or display identity.
+  // Re-filtering can clear the panel but cannot rebind edit or delete actions to another
+  // record that happens to share the same email address.
+  const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
+  const lastConsumedRequestIdRef = useRef<number | null>(null);
+  const [pendingSelectionKey, setPendingSelectionKey] = useState<string | null>(null);
+  const lastFocusedIndex = useRef<number | null>(null);
+  useEffect(() => {
+    if (lastFocusedIndex.current === focusedIndex) return;
+    lastFocusedIndex.current = focusedIndex;
+    const focusedContact = filtered[focusedIndex];
+    setSelectedRecordKey(focusedContact ? contactRecordKey(focusedContact) : null);
+  }, [filtered, focusedIndex]);
+
+  useEffect(() => {
+    if (
+      selectionRequest?.destination !== 'contacts' ||
+      lastConsumedRequestIdRef.current === selectionRequest.requestId
+    ) {
+      return;
+    }
+
+    lastConsumedRequestIdRef.current = selectionRequest.requestId;
+    const hasRequestedContact = contacts.some(
+      (contact) => contactRecordKey(contact) === selectionRequest.recordKey,
+    );
+    if (!hasRequestedContact) {
+      setPendingSelectionKey(null);
+      setSelectedRecordKey('');
+      setFocusedIndex(-1);
+      onSelectionUnavailable?.(selectionRequest);
+      return;
+    }
+
+    setSearchQuery('');
+    clearAllFilters();
+    setPendingSelectionKey(selectionRequest.recordKey);
+  }, [clearAllFilters, contacts, onSelectionUnavailable, selectionRequest, setFocusedIndex]);
+
+  useEffect(() => {
+    if (!pendingSelectionKey) return;
+    const requestedIndex = filtered.findIndex(
+      (contact) => contactRecordKey(contact) === pendingSelectionKey,
+    );
+    if (requestedIndex < 0) return;
+
+    const requestedContact = filtered[requestedIndex];
+    if (!requestedContact) return;
+    setSelectedRecordKey(contactRecordKey(requestedContact));
+    setFocusedIndex(requestedIndex);
+    listRef.current?.scrollToRow({ index: requestedIndex, align: 'smart' });
+
+    const frame = requestAnimationFrame(() => {
+      focusRenderedRecord(listContainerRef.current, pendingSelectionKey);
+      setPendingSelectionKey(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [filtered, listRef, pendingSelectionKey, setFocusedIndex]);
+
+  const selectedContact = useMemo(() => {
+    // Nothing has been picked yet (the list was still empty when focus first landed),
+    // so keep the old behaviour of showing whatever row is focused.
+    if (selectedRecordKey === null) return filtered[focusedIndex] ?? null;
+    return filtered.find((contact) => contactRecordKey(contact) === selectedRecordKey) ?? null;
+  }, [filtered, focusedIndex, selectedRecordKey]);
   const selectedGroups = selectedContact
     ? groupMap.get(selectedContact.email.toLowerCase()) || []
     : [];
@@ -278,7 +366,18 @@ export const DirectoryTab: React.FC<Props> = ({
                   key: key as 'name' | 'email' | 'title' | 'phone',
                 }))
               }
-            />
+            >
+              <div className="directory-search-control scoped-search-control">
+                <SearchInput
+                  type="search"
+                  aria-label="Filter contacts"
+                  placeholder="Filter contacts"
+                  className="scoped-search-input"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+            </ListToolbar>
             <TactileButton
               variant="primary"
               className="btn-collapsible"
@@ -318,6 +417,8 @@ export const DirectoryTab: React.FC<Props> = ({
               onToggleTag={filters.toggleTag}
               onToggleExtra={filters.toggleExtra}
               onClearAll={filters.clearAll}
+              showNotesFilter={false}
+              showTagFilters={false}
             />
           )}
 
@@ -328,7 +429,7 @@ export const DirectoryTab: React.FC<Props> = ({
                   listRef={listRef}
                   rowCount={filtered.length}
                   rowHeight={ROW_HEIGHT}
-                  rowComponent={VirtualRow}
+                  rowComponent={DirectoryVirtualRow}
                   rowProps={itemData}
                   style={{ height: height ?? 0, width: width ?? 0, outline: 'none' }}
                   onScroll={(e) =>
@@ -435,20 +536,20 @@ export const DirectoryTab: React.FC<Props> = ({
           hasNotes={!!getContactNote(dir.contextMenu.contact.email)}
         />
       )}
-      {dir.groupSelectorContact && (
-        <Modal
-          isOpen={true}
-          onClose={() => dir.setGroupSelectorContact(null)}
-          title="Manage Groups"
-          width="400px"
-        >
+      <Modal
+        isOpen={Boolean(dir.groupSelectorContact)}
+        onClose={() => dir.setGroupSelectorContact(null)}
+        title="Manage Groups"
+        variant="confirmation"
+      >
+        {dir.groupSelectorContact && (
           <GroupSelector
             contact={dir.groupSelectorContact}
             groups={groups}
             onClose={() => dir.setGroupSelectorContact(null)}
           />
-        </Modal>
-      )}
+        )}
+      </Modal>
 
       <NotesModal
         isOpen={!!notesContact}
@@ -457,7 +558,13 @@ export const DirectoryTab: React.FC<Props> = ({
         entityId={notesContact?.email || ''}
         entityName={notesContact?.name || notesContact?.email || ''}
         existingNote={notesContact ? getContactNote(notesContact.email) : undefined}
-        onSave={(note, tags) => setContactNote(notesContact!.email, note, tags)}
+        // setContactNote resolves an IpcResult, which is truthy even when it reports a failure.
+        // Returning it unchanged made NotesModal close on a failed save and drop the note.
+        onSave={async (note, tags) => {
+          if (!notesContact) return false;
+          const saved = await setContactNote(notesContact.email, note, tags);
+          return saved?.success;
+        }}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import { describeUrlForLog } from '../../shared/urlSecurity';
 import { setupWindowListeners } from '../handlers/windowHandlers';
 import { loggers } from '../logger';
 import { isAllowedRendererFileUrl } from '../utils/trustedSender';
+import { configureWindowsTaskbarWindow } from '../app/windowsTaskbarIdentity';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
 
 const mainDir = dirname(fileURLToPath(import.meta.url));
@@ -36,9 +37,20 @@ type DynatraceWindowEntry = {
   view: WebContentsView;
 };
 
+const CHROMIUM_NAVIGATION_ERROR_PATTERN = /^(?:Error:\s*)?(ERR_[A-Z0-9_]{1,63})(?=\s|$)/;
+const SAFE_NAVIGATION_ERROR_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/;
+
+function describeNavigationError(error: unknown): string {
+  const message = getErrorMessage(error).trim();
+  const chromiumError = CHROMIUM_NAVIGATION_ERROR_PATTERN.exec(message)?.[1];
+  if (chromiumError) return chromiumError;
+  if (SAFE_NAVIGATION_ERROR_PATTERN.test(message)) return message;
+  return 'Navigation failed';
+}
+
 function isNavigationAbortError(error: unknown): boolean {
   const message = getErrorMessage(error);
-  return message.includes('ERR_ABORTED') || message.includes('(-3)');
+  return describeNavigationError(message) === 'ERR_ABORTED';
 }
 
 function isAllowedDevRendererUrl(url: string, rendererUrl: string): boolean {
@@ -81,7 +93,7 @@ function hardenDynatraceSession(dynatraceSession: Session): void {
   dynatraceSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
     loggers.security.warn('Blocked Dynatrace permission request', {
       permission,
-      requestingUrl: details.requestingUrl,
+      requestingOrigin: describeUrlForLog(details.requestingUrl),
     });
     callback(false);
   });
@@ -89,7 +101,7 @@ function hardenDynatraceSession(dynatraceSession: Session): void {
   dynatraceSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
     loggers.security.warn('Blocked Dynatrace permission check', {
       permission,
-      requestingOrigin,
+      requestingOrigin: describeUrlForLog(requestingOrigin),
     });
     return false;
   });
@@ -151,7 +163,7 @@ export class DynatraceWindowManager {
     const window = new BrowserWindow({
       ...(dashboard.bounds ?? DEFAULT_WINDOW_OPTIONS),
       backgroundColor: DEFAULT_WINDOW_OPTIONS.backgroundColor,
-      title: `Relay - Dynatrace - ${dashboard.name}`,
+      title: `Relay - ${dashboard.name}`,
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 24, y: 16 },
       autoHideMenuBar: true,
@@ -164,6 +176,11 @@ export class DynatraceWindowManager {
         allowRunningInsecureContent: false,
         spellcheck: false,
       },
+    });
+    configureWindowsTaskbarWindow(window, {
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
     });
     const view = new WebContentsView({
       webPreferences: {
@@ -189,14 +206,14 @@ export class DynatraceWindowManager {
       if (isNavigationAbortError(error)) {
         loggers.main.info('Dynatrace initial navigation was superseded; keeping popout open', {
           id,
-          error: getErrorMessage(error),
+          error: describeNavigationError(error),
         });
         return true;
       }
 
       this.updateRuntime(id, 'load-failed', {
         lastUrl: dashboard.url,
-        error: getErrorMessage(error),
+        error: describeNavigationError(error),
       });
       this.windows.delete(id);
       if (!window.isDestroyed()) {
@@ -249,6 +266,17 @@ export class DynatraceWindowManager {
 
     window.on('closed', () => {
       this.windows.delete(id);
+
+      // 'closed' arrives asynchronously, so removeDashboard() has already dropped
+      // the store and runtime entries by the time it fires. Recording state here
+      // would resurrect an id nothing can ever read or delete again.
+      if (!this.options.store.list().some((dashboard) => dashboard.id === id)) return;
+
+      // A load failure is terminal and carries the only explanation the user gets
+      // (DNS failure, VPN down). openDashboard() closes the window it just failed
+      // to load, so a bare 'closed' here would erase that reason immediately.
+      if (this.runtime.get(id)?.state === 'load-failed') return;
+
       this.updateRuntime(id, 'closed');
     });
   }
@@ -278,7 +306,7 @@ export class DynatraceWindowManager {
         if (!isMainFrame) return;
         this.updateRuntime(id, 'load-failed', {
           lastUrl: validatedURL,
-          error: errorDescription,
+          error: describeNavigationError(errorDescription),
         });
       },
     );
@@ -289,14 +317,14 @@ export class DynatraceWindowManager {
           if (isNavigationAbortError(error)) {
             loggers.main.info('Dynatrace popup navigation was superseded; keeping popout open', {
               id,
-              error: getErrorMessage(error),
+              error: describeNavigationError(error),
             });
             return;
           }
 
           this.updateRuntime(id, 'load-failed', {
             lastUrl: url,
-            error: getErrorMessage(error),
+            error: describeNavigationError(error),
           });
         });
       } else {
@@ -367,7 +395,12 @@ export class DynatraceWindowManager {
     state: DynatraceRuntimeState,
     details: Omit<RuntimeDetails, 'state'> = {},
   ): void {
-    this.runtime.set(id, { state, ...details });
+    this.runtime.set(id, {
+      state,
+      ...details,
+      ...(details.lastUrl ? { lastUrl: describeUrlForLog(details.lastUrl) } : {}),
+      ...(details.error ? { error: describeNavigationError(details.error) } : {}),
+    });
     this.broadcastStateChange();
   }
 

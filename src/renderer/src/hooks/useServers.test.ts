@@ -2,20 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { Server, Contact } from '@shared/ipc';
 
-// Mock dependencies
-vi.mock('../contexts/SearchContext', () => ({
-  useSearchContext: vi.fn(() => ({ debouncedQuery: '' })),
-}));
-
 vi.mock('../services/serverService', () => ({
   deleteServer: vi.fn(() => Promise.resolve()),
 }));
 
 import { useServers } from './useServers';
-import { useSearchContext } from '../contexts/SearchContext';
 import { deleteServer as pbDeleteServer } from '../services/serverService';
 
-const mockedUseSearchContext = vi.mocked(useSearchContext);
 const mockedPbDeleteServer = vi.mocked(pbDeleteServer);
 
 function makeServer(overrides: Partial<Server> = {}): Server {
@@ -48,16 +41,6 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
 describe('useServers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedUseSearchContext.mockReturnValue({
-      debouncedQuery: '',
-      query: '',
-      setQuery: vi.fn(),
-      isSearchFocused: false,
-      setIsSearchFocused: vi.fn(),
-      searchInputRef: { current: null },
-      focusSearch: vi.fn(),
-      clearSearch: vi.fn(),
-    });
   });
 
   // --- contactLookup branches ---
@@ -89,26 +72,15 @@ describe('useServers', () => {
 
   // --- filteredServers search + sort branches ---
 
-  it('filters servers by debouncedSearch', () => {
-    mockedUseSearchContext.mockReturnValue({
-      debouncedQuery: 'server-a',
-      query: 'server-a',
-      setQuery: vi.fn(),
-      isSearchFocused: false,
-      setIsSearchFocused: vi.fn(),
-      searchInputRef: { current: null },
-      focusSearch: vi.fn(),
-      clearSearch: vi.fn(),
-    });
-
+  it('filters servers by its explicit local query', () => {
     const servers = [
       makeServer({ name: 'server-a', _searchString: 'server-a' }),
       makeServer({ name: 'server-b', _searchString: 'server-b' }),
     ];
-    const { result } = renderHook(() => useServers(servers, []));
+    const { result } = renderHook(() => useServers(servers, [], 'server-a'));
 
     expect(result.current.filteredServers).toHaveLength(1);
-    expect(result.current.filteredServers[0].name).toBe('server-a');
+    expect(result.current.filteredServers[0]?.name).toBe('server-a');
   });
 
   it('sorts servers ascending by default', () => {
@@ -118,8 +90,8 @@ describe('useServers', () => {
     ];
     const { result } = renderHook(() => useServers(servers, []));
 
-    expect(result.current.filteredServers[0].name).toBe('Alpha');
-    expect(result.current.filteredServers[1].name).toBe('Zeta');
+    expect(result.current.filteredServers[0]?.name).toBe('Alpha');
+    expect(result.current.filteredServers[1]?.name).toBe('Zeta');
   });
 
   it('sorts servers descending when sortOrder is desc', () => {
@@ -133,8 +105,8 @@ describe('useServers', () => {
       result.current.setSortOrder('desc');
     });
 
-    expect(result.current.filteredServers[0].name).toBe('Zeta');
-    expect(result.current.filteredServers[1].name).toBe('Alpha');
+    expect(result.current.filteredServers[0]?.name).toBe('Zeta');
+    expect(result.current.filteredServers[1]?.name).toBe('Alpha');
   });
 
   it('handles sort when values are equal', () => {
@@ -155,20 +127,21 @@ describe('useServers', () => {
     const { result } = renderHook(() => useServers(servers, []));
 
     // Empty string sorts before 'Alpha'
-    expect(result.current.filteredServers[0].name).toBe('');
+    expect(result.current.filteredServers[0]?.name).toBe('');
   });
 
   // --- contextMenu effect (click to dismiss) ---
 
   it('clears contextMenu on global click', () => {
-    const servers = [makeServer()];
+    const server = makeServer();
+    const servers = [server];
     const { result } = renderHook(() => useServers(servers, []));
 
     // Open context menu
     act(() => {
       result.current.handleContextMenu(
         { preventDefault: vi.fn(), clientX: 100, clientY: 200 },
-        servers[0],
+        server,
       );
     });
     expect(result.current.contextMenu).not.toBeNull();
@@ -190,87 +163,17 @@ describe('useServers', () => {
     addSpy.mockRestore();
   });
 
-  // --- handleDelete branches ---
-
-  it('handleDelete deletes server when contextMenu has server with id', async () => {
-    const servers = [makeServer({ raw: { id: 'srv-123' } })];
-    const { result } = renderHook(() => useServers(servers, []));
-
-    // Open context menu
-    act(() => {
-      result.current.handleContextMenu(
-        { preventDefault: vi.fn(), clientX: 10, clientY: 20 },
-        servers[0],
-      );
-    });
-
-    await act(async () => {
-      await result.current.handleDelete();
-    });
-
-    expect(mockedPbDeleteServer).toHaveBeenCalledWith('srv-123');
-    expect(result.current.contextMenu).toBeNull();
-  });
-
-  it('handleDelete does nothing when contextMenu is null', async () => {
-    const { result } = renderHook(() => useServers([], []));
-
-    await act(async () => {
-      await result.current.handleDelete();
-    });
-
-    expect(mockedPbDeleteServer).not.toHaveBeenCalled();
-  });
-
-  it('handleDelete skips pbDeleteServer when server has no id', async () => {
-    const servers = [makeServer({ raw: {} })];
-    const { result } = renderHook(() => useServers(servers, []));
-
-    act(() => {
-      result.current.handleContextMenu(
-        { preventDefault: vi.fn(), clientX: 10, clientY: 20 },
-        servers[0],
-      );
-    });
-
-    await act(async () => {
-      await result.current.handleDelete();
-    });
-
-    expect(mockedPbDeleteServer).not.toHaveBeenCalled();
-    expect(result.current.contextMenu).toBeNull();
-  });
-
-  it('handleDelete catches errors gracefully', async () => {
-    mockedPbDeleteServer.mockRejectedValueOnce(new Error('network error'));
-    const servers = [makeServer({ raw: { id: 'srv-err' } })];
-    const { result } = renderHook(() => useServers(servers, []));
-
-    act(() => {
-      result.current.handleContextMenu(
-        { preventDefault: vi.fn(), clientX: 10, clientY: 20 },
-        servers[0],
-      );
-    });
-
-    await act(async () => {
-      await result.current.handleDelete();
-    });
-
-    // Should not throw, contextMenu cleared
-    expect(result.current.contextMenu).toBeNull();
-  });
-
   // --- handleEdit branches ---
 
   it('handleEdit sets editing server and opens modal when contextMenu exists', () => {
-    const servers = [makeServer()];
+    const server = makeServer();
+    const servers = [server];
     const { result } = renderHook(() => useServers(servers, []));
 
     act(() => {
       result.current.handleContextMenu(
         { preventDefault: vi.fn(), clientX: 10, clientY: 20 },
-        servers[0],
+        server,
       );
     });
 
@@ -278,7 +181,7 @@ describe('useServers', () => {
       result.current.handleEdit();
     });
 
-    expect(result.current.editingServer).toBe(servers[0]);
+    expect(result.current.editingServer).toBe(server);
     expect(result.current.isAddModalOpen).toBe(true);
     expect(result.current.contextMenu).toBeNull();
   });
@@ -316,14 +219,15 @@ describe('useServers', () => {
     expect(mockedPbDeleteServer).not.toHaveBeenCalled();
   });
 
-  it('deleteServer catches errors', async () => {
+  it('deleteServer propagates errors so the caller can report them', async () => {
+    // A rejected delete emits no realtime event, so swallowing here made a
+    // failure indistinguishable from a success — the row just stayed put.
     mockedPbDeleteServer.mockRejectedValueOnce(new Error('fail'));
     const { result } = renderHook(() => useServers([], []));
 
-    // Should not throw
-    await act(async () => {
-      await result.current.deleteServer(makeServer({ raw: { id: 'srv-fail' } }));
-    });
+    await expect(
+      result.current.deleteServer(makeServer({ raw: { id: 'srv-fail' } })),
+    ).rejects.toThrow('fail');
 
     expect(mockedPbDeleteServer).toHaveBeenCalled();
   });

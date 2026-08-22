@@ -1,4 +1,5 @@
 import { type CloudStatusItem, type CloudStatusSeverity } from '@shared/ipc';
+import { fetchNoStore } from './fetchNoStore';
 import type { GoogleCloudIncident } from './types';
 
 export const GOOGLE_CLOUD_INCIDENTS_URL = 'https://status.cloud.google.com/incidents.json';
@@ -17,8 +18,7 @@ export function googleImpactToSeverity(impact: string, ended: boolean): CloudSta
 
 /** Fetch from Google Cloud status incidents JSON. */
 export async function fetchGoogleCloudProvider(): Promise<CloudStatusItem[]> {
-  const res = await fetch(GOOGLE_CLOUD_INCIDENTS_URL, {
-    cache: 'no-store',
+  const res = await fetchNoStore(GOOGLE_CLOUD_INCIDENTS_URL, {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
   });

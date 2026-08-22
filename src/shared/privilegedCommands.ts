@@ -1,0 +1,1208 @@
+import {
+  MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
+  isPrivilegedRole,
+  isRelayAdministrableSetting,
+  type PrivilegedRole,
+  type RelayAdministrableSetting,
+  type RelayAdministrationSettingValueMap,
+} from './privilegedAccess';
+import {
+  getRoleDisplayNameError,
+  getRoleUsernameError,
+  normalizeRoleDisplayName,
+  normalizeRoleUsername,
+} from './roleAccounts';
+import {
+  MAX_DYNATRACE_ALERTING_PROFILES,
+  MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
+  getDynatraceCustomDqlMatcherError,
+  getDynatraceApiTokenError,
+  getDynatraceEnvironmentUrlError,
+  normalizeDynatraceCustomDqlMatcher,
+  normalizeDynatraceEnvironmentUrl,
+} from './dynatraceProblems';
+import {
+  KNOWLEDGE_MAX_CATEGORY_LENGTH,
+  KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
+  isKnowledgeChecksum,
+  type KnowledgeDocumentType,
+} from './knowledge';
+
+export const MAX_PRIVILEGED_COMMAND_BYTES = 64 * 1024;
+export const MAX_PRIVILEGED_REQUEST_ID_LENGTH = 128;
+export const PRIVILEGED_COMMAND_MAX_CLOCK_SKEW_MS = 60 * 1_000;
+export const PRIVILEGED_COMMAND_MAX_LIFETIME_MS = 90 * 1_000;
+
+const MAX_CANONICAL_DEPTH = 16;
+const MAX_CANONICAL_NODES = 2_000;
+const MAX_CANONICAL_STRING_LENGTH = 32 * 1024;
+const MAX_CANONICAL_ARRAY_LENGTH = 1_000;
+const MAX_CANONICAL_OBJECT_KEYS = 200;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{64,512}$/;
+
+export type RelayAdministrationSettingReplacePayload = {
+  [K in RelayAdministrableSetting]: {
+    setting: K;
+    value: RelayAdministrationSettingValueMap[K];
+    expectedRevision: number;
+    reauthRequestId?: string;
+  };
+}[RelayAdministrableSetting];
+
+export type PrivilegedCommandPayloadMap = {
+  'privileged.status.read': { clientVersion: string };
+  'privileged.reauth.confirm': { authenticatedAt: string };
+  'administration.snapshot.read': Record<string, never>;
+  'administration.dynatrace-problem-scope.test': {
+    profiles: string[];
+    customDqlMatcher: string;
+  };
+  'account.admin.create': { username: string; displayName: string; expectedStateRevision: number };
+  'account.publisher.create': {
+    username: string;
+    displayName: string;
+    expectedStateRevision: number;
+  };
+  'account.display-name.update': {
+    accountId: string;
+    displayName: string;
+    expectedRevision: number;
+  };
+  'account.active.set': { accountId: string; active: boolean; expectedRevision: number };
+  'ownership.transfer': {
+    accountId: string;
+    expectedStateRevision: number;
+    reauthRequestId: string;
+  };
+  'publisher.assign': {
+    accountId: string | null;
+    expectedStateRevision: number;
+    reauthRequestId: string;
+  };
+  'privileged.device.rename': { deviceId: string; label: string; expectedRevision: number };
+  'privileged.device.revoke': {
+    deviceId: string;
+    expectedRevision: number;
+    reauthRequestId: string;
+  };
+  'administration.setting.replace': RelayAdministrationSettingReplacePayload;
+  'knowledge.upload.batch.begin': {
+    requestId: string;
+    fileCount: number;
+    totalBytes: number;
+  };
+  'knowledge.upload.file.begin': {
+    batchId: string;
+    fileName: string;
+    byteSize: number;
+    checksum: string;
+    chunkCount: number;
+    replacementDocumentId?: string | null;
+  };
+  'knowledge.upload.status': { batchId: string };
+  'knowledge.upload.file.finalize': { uploadId: string; expectedRevision: number };
+  'knowledge.upload.file.cancel': { uploadId: string; expectedRevision: number };
+  'knowledge.upload.batch.cancel': { batchId: string; expectedRevision: number };
+  'knowledge.upload.validate': { uploadId: string; preliminaryChecksum: string };
+  'knowledge.snapshot.read': { query: string; cursor: string | null; pageSize: number };
+  'knowledge.document.publish': {
+    uploadId: string;
+    title: string;
+    category: string;
+    documentType: KnowledgeDocumentType;
+  };
+  'knowledge.document.replace': {
+    uploadId: string;
+    documentId: string;
+    expectedRevision: number;
+  };
+  'knowledge.document.title.set': {
+    documentId: string;
+    title: string;
+    expectedRevision: number;
+  };
+  'knowledge.document.category.set': {
+    documentId: string;
+    category: string;
+    expectedRevision: number;
+  };
+  'knowledge.category.rename': {
+    from: string;
+    to: string;
+    expectedDocumentRevisions: Record<string, number>;
+  };
+  'knowledge.category.create': { name: string; afterCategoryId: string | null };
+  'knowledge.category.name.set': {
+    categoryId: string;
+    name: string;
+    expectedRevision: number;
+  };
+  'knowledge.category.order.set': {
+    orderedCategoryIds: string[];
+    expectedRevisions: Record<string, number>;
+  };
+  'knowledge.category.delete': {
+    categoryId: string;
+    replacementCategoryId: string;
+    expectedRevision: number;
+    expectedDocumentRevisions: Record<string, number>;
+  };
+  'knowledge.document.metadata.set': {
+    documentId: string;
+    title: string;
+    categoryId: string;
+    documentType: KnowledgeDocumentType;
+    expectedRevision: number;
+  };
+  'knowledge.documents.category.assign': {
+    categoryId: string;
+    documents: Array<{ documentId: string; expectedRevision: number }>;
+  };
+  'knowledge.document.trash': { documentId: string; expectedRevision: number };
+  'knowledge.document.restore': { documentId: string; expectedRevision: number };
+  'knowledge.document.search-index.retry': { documentId: string };
+  'knowledge.document.delete': {
+    documentId: string;
+    expectedRevision: number;
+    reauthRequestId: string;
+  };
+  'knowledge.audit.read': { cursor: string | null; pageSize: number; targetId: string | null };
+};
+
+export type PrivilegedCommandName = keyof PrivilegedCommandPayloadMap;
+export type InternalPrivilegedCommandName = 'privileged.reauth.confirm';
+export type PublicPrivilegedCommandName = Exclude<
+  PrivilegedCommandName,
+  InternalPrivilegedCommandName
+>;
+
+export type PrivilegedCommandSigningBody<K extends PrivilegedCommandName = PrivilegedCommandName> =
+  {
+    version: 1;
+    requestId: string;
+    accountId: string;
+    deviceId: string;
+    roleClaim: PrivilegedRole;
+    displayNameSnapshot: string;
+    command: K;
+    payload: PrivilegedCommandPayloadMap[K];
+    payloadHash: string;
+    expectedRevision: number | null;
+    issuedAt: string;
+    expiresAt: string;
+  };
+
+export type SignedPrivilegedCommandEnvelope<
+  K extends PrivilegedCommandName = PrivilegedCommandName,
+> = PrivilegedCommandSigningBody<K> & {
+  signature: string;
+};
+
+export type PrivilegedCommandError =
+  | 'unauthorized'
+  | 'locked'
+  | 'offline'
+  | 'pairing-required'
+  | 'invalid-request'
+  | 'insufficient-storage'
+  | 'duplicate-file-name'
+  | 'expired'
+  | 'replayed'
+  | 'conflict'
+  // Distinct from 'conflict': a throttled request has not lost a race, so
+  // telling the admin to refresh and retry only spends more of the budget.
+  | 'rate-limited'
+  | 'server-error';
+
+export type PrivilegedCommandResult<T = unknown> =
+  | { ok: true; requestId: string; value: T }
+  | {
+      ok: false;
+      requestId?: string;
+      error: PrivilegedCommandError;
+      message?: string;
+      currentRevision?: number;
+      refresh?: true;
+    };
+
+export type PrivilegedEnvelopeValidationResult =
+  | { ok: true; envelope: SignedPrivilegedCommandEnvelope }
+  | { ok: false; error: 'invalid-request' | 'expired' };
+
+type CanonicalizationState = {
+  nodes: number;
+};
+
+function assertCanonicalNode(state: CanonicalizationState, depth: number): void {
+  if (depth > MAX_CANONICAL_DEPTH) {
+    throw new TypeError('Privileged command values are nested too deeply.');
+  }
+  state.nodes += 1;
+  if (state.nodes > MAX_CANONICAL_NODES) {
+    throw new TypeError('Privileged command contains too many values.');
+  }
+}
+
+function compareCanonicalKeys(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function canonicalizeArray(value: unknown[], state: CanonicalizationState, depth: number): string {
+  if (value.length > MAX_CANONICAL_ARRAY_LENGTH) {
+    throw new TypeError('Privileged command array is too long.');
+  }
+  return `[${value.map((entry) => canonicalize(entry, state, depth + 1)).join(',')}]`;
+}
+
+function canonicalizeObject(value: object, state: CanonicalizationState, depth: number): string {
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError('Privileged command contains an unsupported object.');
+  }
+  const record = value as Record<string, unknown>;
+  // Locale-aware sorting is intentionally avoided: signatures require identical UTF-16 ordering.
+  const keys = Object.keys(record).sort(compareCanonicalKeys);
+  if (keys.length > MAX_CANONICAL_OBJECT_KEYS) {
+    throw new TypeError('Privileged command object has too many keys.');
+  }
+  return `{${keys
+    .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key], state, depth + 1)}`)
+    .join(',')}}`;
+}
+
+function canonicalize(value: unknown, state: CanonicalizationState, depth: number): string {
+  assertCanonicalNode(state, depth);
+
+  if (value === null || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new TypeError('Privileged command numbers must be finite.');
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'string') {
+    if (value.length > MAX_CANONICAL_STRING_LENGTH) {
+      throw new TypeError('Privileged command string is too long.');
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return canonicalizeArray(value, state, depth);
+  if (typeof value === 'object') return canonicalizeObject(value, state, depth);
+  throw new TypeError('Privileged command contains an unsupported value.');
+}
+
+export function canonicalizePrivilegedValue(value: unknown): string {
+  return canonicalize(value, { nodes: 0 }, 0);
+}
+
+export function canonicalPrivilegedSigningBytes(
+  envelope: SignedPrivilegedCommandEnvelope,
+): Uint8Array {
+  const body: PrivilegedCommandSigningBody = {
+    version: envelope.version,
+    requestId: envelope.requestId,
+    accountId: envelope.accountId,
+    deviceId: envelope.deviceId,
+    roleClaim: envelope.roleClaim,
+    displayNameSnapshot: envelope.displayNameSnapshot,
+    command: envelope.command,
+    payload: envelope.payload,
+    payloadHash: envelope.payloadHash,
+    expectedRevision: envelope.expectedRevision,
+    issuedAt: envelope.issuedAt,
+    expiresAt: envelope.expiresAt,
+  };
+  const bytes = new TextEncoder().encode(canonicalizePrivilegedValue(body));
+  if (bytes.byteLength > MAX_PRIVILEGED_COMMAND_BYTES) {
+    throw new TypeError('Privileged command exceeds the maximum size.');
+  }
+  return bytes;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+  // Exact command schemas use the same locale-independent key order as canonical signing.
+  const actual = Object.keys(record).sort(compareCanonicalKeys);
+  const sortedExpected = [...expected].sort(compareCanonicalKeys);
+  return (
+    actual.length === sortedExpected.length &&
+    actual.every((key, index) => key === sortedExpected[index])
+  );
+}
+
+function boundedIdentifier(value: unknown, max: number): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= max &&
+    IDENTIFIER_PATTERN.test(value)
+  );
+}
+
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 100) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+export function isPrivilegedSha256(value: unknown): value is string {
+  return typeof value === 'string' && SHA256_PATTERN.test(value);
+}
+
+export function isPublicPrivilegedCommandName(
+  value: unknown,
+): value is PublicPrivilegedCommandName {
+  return typeof value === 'string' && PUBLIC_PRIVILEGED_COMMANDS.has(value);
+}
+
+const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
+  'privileged.status.read',
+  'administration.snapshot.read',
+  'administration.dynatrace-problem-scope.test',
+  'account.admin.create',
+  'account.publisher.create',
+  'account.display-name.update',
+  'account.active.set',
+  'ownership.transfer',
+  'publisher.assign',
+  'privileged.device.rename',
+  'privileged.device.revoke',
+  'administration.setting.replace',
+  'knowledge.upload.batch.begin',
+  'knowledge.upload.file.begin',
+  'knowledge.upload.status',
+  'knowledge.upload.file.finalize',
+  'knowledge.upload.file.cancel',
+  'knowledge.upload.batch.cancel',
+  'knowledge.upload.validate',
+  'knowledge.snapshot.read',
+  'knowledge.document.publish',
+  'knowledge.document.replace',
+  'knowledge.document.title.set',
+  'knowledge.document.category.set',
+  'knowledge.category.rename',
+  'knowledge.category.create',
+  'knowledge.category.name.set',
+  'knowledge.category.order.set',
+  'knowledge.category.delete',
+  'knowledge.document.metadata.set',
+  'knowledge.documents.category.assign',
+  'knowledge.document.trash',
+  'knowledge.document.restore',
+  'knowledge.document.search-index.retry',
+  'knowledge.document.delete',
+  'knowledge.audit.read',
+]);
+
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function normalizeDeviceLabel(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized && normalized.length <= MAX_PRIVILEGED_DEVICE_LABEL_LENGTH ? normalized : null;
+}
+
+function normalizedKnowledgeText(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized && normalized.length <= max ? normalized : null;
+}
+
+function normalizeKnowledgePdfFileName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  const characters = Array.from(normalized);
+  const hasControlCharacters = characters.some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 32 || code === 127;
+  });
+  if (
+    !normalized ||
+    characters.length > 240 ||
+    !normalized.toLocaleLowerCase('en').endsWith('.pdf') ||
+    normalized.includes('/') ||
+    normalized.includes('\\') ||
+    hasControlCharacters ||
+    normalized === '.' ||
+    normalized === '..'
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeKnowledgeUploadRevision(
+  payload: Record<string, unknown>,
+  idKey: 'uploadId' | 'batchId',
+):
+  | { uploadId: string; expectedRevision: number }
+  | { batchId: string; expectedRevision: number }
+  | null {
+  if (!hasExactKeys(payload, [idKey, 'expectedRevision'])) return null;
+  const id = payload[idKey];
+  if (!boundedIdentifier(id, 200) || !nonNegativeInteger(payload.expectedRevision)) return null;
+  return { [idKey]: id, expectedRevision: payload.expectedRevision } as
+    { uploadId: string; expectedRevision: number } | { batchId: string; expectedRevision: number };
+}
+
+function normalizeKnowledgeCursor(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return boundedIdentifier(value, 200) ? value : undefined;
+}
+
+function normalizeKnowledgeDocumentRevision(
+  payload: Record<string, unknown>,
+): { documentId: string; expectedRevision: number } | null {
+  return boundedIdentifier(payload.documentId, 200) && nonNegativeInteger(payload.expectedRevision)
+    ? { documentId: payload.documentId, expectedRevision: payload.expectedRevision }
+    : null;
+}
+
+function normalizeOptionalReplacementDocumentId(
+  payload: Record<string, unknown>,
+  present: boolean,
+): string | null | undefined {
+  if (!present || payload.replacementDocumentId === null) return null;
+  return boundedIdentifier(payload.replacementDocumentId, 200)
+    ? payload.replacementDocumentId
+    : undefined;
+}
+
+function normalizeKnowledgeRevisions(
+  value: unknown,
+  maxEntries = 500,
+): Record<string, number> | null {
+  if (!isRecord(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length > maxEntries) return null;
+  const revisions: Record<string, number> = {};
+  for (const [id, revision] of entries) {
+    if (!boundedIdentifier(id, 200) || !nonNegativeInteger(revision)) return null;
+    revisions[id] = revision;
+  }
+  return revisions;
+}
+
+function normalizeKnowledgeDocumentAssignments(
+  value: unknown,
+): Array<{ documentId: string; expectedRevision: number }> | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100) return null;
+  const seen = new Set<string>();
+  const documents: Array<{ documentId: string; expectedRevision: number }> = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || !hasExactKeys(entry, ['documentId', 'expectedRevision'])) return null;
+    const document = normalizeKnowledgeDocumentRevision(entry);
+    if (!document || seen.has(document.documentId)) return null;
+    seen.add(document.documentId);
+    documents.push(document);
+  }
+  return documents;
+}
+
+type KnowledgeCatalogPayload = PrivilegedCommandPayloadMap[PrivilegedCommandName] | null;
+type KnowledgeCatalogNormalizer = (payload: Record<string, unknown>) => KnowledgeCatalogPayload;
+
+function normalizeKnowledgeCategoryCreate(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['name', 'afterCategoryId'])) return null;
+  const name = normalizedKnowledgeText(payload.name, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+  const afterCategoryId = payload.afterCategoryId;
+  return name && (afterCategoryId === null || boundedIdentifier(afterCategoryId, 200))
+    ? { name, afterCategoryId }
+    : null;
+}
+
+function normalizeKnowledgeCategoryNameSet(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['categoryId', 'name', 'expectedRevision'])) return null;
+  const name = normalizedKnowledgeText(payload.name, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+  return boundedIdentifier(payload.categoryId, 200) &&
+    name &&
+    nonNegativeInteger(payload.expectedRevision)
+    ? { categoryId: payload.categoryId, name, expectedRevision: payload.expectedRevision }
+    : null;
+}
+
+function normalizeKnowledgeCategoryOrderSet(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['orderedCategoryIds', 'expectedRevisions'])) return null;
+  if (
+    !Array.isArray(payload.orderedCategoryIds) ||
+    payload.orderedCategoryIds.length < 1 ||
+    payload.orderedCategoryIds.length > 500 ||
+    payload.orderedCategoryIds.some((id) => !boundedIdentifier(id, 200))
+  ) {
+    return null;
+  }
+  const orderedCategoryIds = payload.orderedCategoryIds as string[];
+  if (new Set(orderedCategoryIds).size !== orderedCategoryIds.length) return null;
+  const expectedRevisions = normalizeKnowledgeRevisions(payload.expectedRevisions);
+  if (
+    !expectedRevisions ||
+    Object.keys(expectedRevisions).length !== orderedCategoryIds.length ||
+    orderedCategoryIds.some((id) => !(id in expectedRevisions))
+  ) {
+    return null;
+  }
+  return { orderedCategoryIds, expectedRevisions };
+}
+
+function normalizeKnowledgeCategoryDelete(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (
+    !hasExactKeys(payload, [
+      'categoryId',
+      'replacementCategoryId',
+      'expectedRevision',
+      'expectedDocumentRevisions',
+    ])
+  ) {
+    return null;
+  }
+  const expectedDocumentRevisions = normalizeKnowledgeRevisions(
+    payload.expectedDocumentRevisions,
+    100,
+  );
+  return boundedIdentifier(payload.categoryId, 200) &&
+    boundedIdentifier(payload.replacementCategoryId, 200) &&
+    payload.categoryId !== payload.replacementCategoryId &&
+    nonNegativeInteger(payload.expectedRevision) &&
+    expectedDocumentRevisions
+    ? {
+        categoryId: payload.categoryId,
+        replacementCategoryId: payload.replacementCategoryId,
+        expectedRevision: payload.expectedRevision,
+        expectedDocumentRevisions,
+      }
+    : null;
+}
+
+function normalizeKnowledgeDocumentMetadataSet(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (
+    !hasExactKeys(payload, [
+      'documentId',
+      'title',
+      'categoryId',
+      'documentType',
+      'expectedRevision',
+    ])
+  ) {
+    return null;
+  }
+  const revision = normalizeKnowledgeDocumentRevision(payload);
+  const title = normalizedKnowledgeText(payload.title, 240);
+  const documentType = payload.documentType;
+  return revision &&
+    title &&
+    boundedIdentifier(payload.categoryId, 200) &&
+    (documentType === 'sop' || documentType === 'cheatsheet')
+    ? { ...revision, title, categoryId: payload.categoryId, documentType }
+    : null;
+}
+
+function normalizeKnowledgeDocumentsCategoryAssign(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['categoryId', 'documents'])) return null;
+  const documents = normalizeKnowledgeDocumentAssignments(payload.documents);
+  return boundedIdentifier(payload.categoryId, 200) && documents
+    ? { categoryId: payload.categoryId, documents }
+    : null;
+}
+
+const KNOWLEDGE_CATALOG_NORMALIZERS = new Map<string, KnowledgeCatalogNormalizer>([
+  ['knowledge.category.create', normalizeKnowledgeCategoryCreate],
+  ['knowledge.category.name.set', normalizeKnowledgeCategoryNameSet],
+  ['knowledge.category.order.set', normalizeKnowledgeCategoryOrderSet],
+  ['knowledge.category.delete', normalizeKnowledgeCategoryDelete],
+  ['knowledge.document.metadata.set', normalizeKnowledgeDocumentMetadataSet],
+  ['knowledge.documents.category.assign', normalizeKnowledgeDocumentsCategoryAssign],
+]);
+
+function normalizeKnowledgeCatalogPayload(
+  command: PrivilegedCommandName,
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload | undefined {
+  return KNOWLEDGE_CATALOG_NORMALIZERS.get(command)?.(payload);
+}
+
+function normalizeAlertingProfiles(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > MAX_DYNATRACE_ALERTING_PROFILES) return null;
+  const profiles: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') return null;
+    const profile = entry.trim().replace(/\s+/g, ' ');
+    const key = profile.toLocaleLowerCase('en');
+    if (!profile || profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH || seen.has(key)) {
+      return null;
+    }
+    seen.add(key);
+    profiles.push(profile);
+  }
+  return profiles;
+}
+
+function normalizeEnvironmentSettingValue(value: Record<string, unknown>): {
+  environmentUrl: string;
+} | null {
+  if (!hasExactKeys(value, ['environmentUrl'])) return null;
+  const { environmentUrl } = value;
+  if (typeof environmentUrl !== 'string' || getDynatraceEnvironmentUrlError(environmentUrl)) {
+    return null;
+  }
+  return { environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl) };
+}
+
+function normalizeTokenSettingValue(value: Record<string, unknown>): {
+  apiToken: string;
+  environmentUrl?: string;
+} | null {
+  if (!hasExactKeys(value, ['apiToken']) && !hasExactKeys(value, ['apiToken', 'environmentUrl'])) {
+    return null;
+  }
+  const { apiToken, environmentUrl } = value;
+  if (typeof apiToken !== 'string' || getDynatraceApiTokenError(apiToken)) return null;
+  if (
+    environmentUrl !== undefined &&
+    (typeof environmentUrl !== 'string' || getDynatraceEnvironmentUrlError(environmentUrl))
+  ) {
+    return null;
+  }
+  return {
+    apiToken: apiToken.trim(),
+    ...(environmentUrl === undefined
+      ? {}
+      : { environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl) }),
+  };
+}
+
+function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSetting>(
+  setting: K,
+  value: unknown,
+): RelayAdministrationSettingValueMap[K] | null {
+  if (!isRecord(value)) return null;
+  if (setting === 'dynatrace.environment-url') {
+    return normalizeEnvironmentSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
+  }
+  if (setting === 'dynatrace.platform-token') {
+    return normalizeTokenSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
+  }
+  const hasProfilesOnly = hasExactKeys(value, ['profiles']);
+  const hasCustomMatcher = hasExactKeys(value, ['profiles', 'customDqlMatcher']);
+  if (!hasProfilesOnly && !hasCustomMatcher) return null;
+  const profiles = normalizeAlertingProfiles(value.profiles);
+  if (!profiles) return null;
+  if (!hasCustomMatcher) return { profiles } as RelayAdministrationSettingValueMap[K];
+  if (
+    typeof value.customDqlMatcher !== 'string' ||
+    getDynatraceCustomDqlMatcherError(value.customDqlMatcher)
+  ) {
+    return null;
+  }
+  return {
+    profiles,
+    customDqlMatcher: normalizeDynatraceCustomDqlMatcher(value.customDqlMatcher),
+  } as RelayAdministrationSettingValueMap[K];
+}
+
+export function getRelayAdministrationSettingValueError(
+  setting: RelayAdministrableSetting,
+  value: unknown,
+): string | null {
+  if (
+    setting === 'dynatrace.alerting-profiles' &&
+    isRecord(value) &&
+    Array.isArray(value.profiles)
+  ) {
+    const normalized = value.profiles.map((entry) =>
+      typeof entry === 'string' ? entry.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en') : '',
+    );
+    if (new Set(normalized).size !== normalized.length)
+      return 'Remove duplicate alerting profiles.';
+  }
+  if (
+    setting === 'dynatrace.alerting-profiles' &&
+    isRecord(value) &&
+    Object.hasOwn(value, 'customDqlMatcher') &&
+    typeof value.customDqlMatcher === 'string'
+  ) {
+    const matcherError = getDynatraceCustomDqlMatcherError(value.customDqlMatcher);
+    if (matcherError) return matcherError;
+  }
+  return normalizeRelayAdministrationSettingValue(setting, value)
+    ? null
+    : 'Enter a supported value for this Relay setting.';
+}
+
+type NormalizedCommandPayload = PrivilegedCommandPayloadMap[PrivilegedCommandName];
+
+function normalizeStatusPayload(payload: Record<string, unknown>): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['clientVersion'])) return null;
+  const { clientVersion } = payload;
+  if (typeof clientVersion !== 'string' || !clientVersion || clientVersion.length > 100)
+    return null;
+  return { clientVersion };
+}
+
+function normalizeReauthenticationPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['authenticatedAt'])) return null;
+  const { authenticatedAt } = payload;
+  return canonicalTimestamp(authenticatedAt) ? { authenticatedAt } : null;
+}
+
+function normalizeAccountCreatePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['username', 'displayName', 'expectedStateRevision'])) return null;
+  if (
+    typeof payload.username !== 'string' ||
+    typeof payload.displayName !== 'string' ||
+    !nonNegativeInteger(payload.expectedStateRevision)
+  )
+    return null;
+  const username = normalizeRoleUsername(payload.username);
+  const displayName = normalizeRoleDisplayName(payload.displayName);
+  return getRoleUsernameError(username) || getRoleDisplayNameError(displayName)
+    ? null
+    : { username, displayName, expectedStateRevision: payload.expectedStateRevision };
+}
+
+function normalizeAccountDisplayNamePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['accountId', 'displayName', 'expectedRevision'])) return null;
+  const { accountId, displayName: rawDisplayName, expectedRevision } = payload;
+  if (
+    !boundedIdentifier(accountId, 200) ||
+    typeof rawDisplayName !== 'string' ||
+    !nonNegativeInteger(expectedRevision)
+  ) {
+    return null;
+  }
+  const displayName = normalizeRoleDisplayName(rawDisplayName);
+  return getRoleDisplayNameError(displayName) ? null : { accountId, displayName, expectedRevision };
+}
+
+function normalizeAccountActivePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['accountId', 'active', 'expectedRevision'])) return null;
+  const { accountId, active, expectedRevision } = payload;
+  return boundedIdentifier(accountId, 200) &&
+    typeof active === 'boolean' &&
+    nonNegativeInteger(expectedRevision)
+    ? { accountId, active, expectedRevision }
+    : null;
+}
+
+function normalizeOwnershipTransferPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['accountId', 'expectedStateRevision', 'reauthRequestId']))
+    return null;
+  const { accountId, expectedStateRevision, reauthRequestId } = payload;
+  return boundedIdentifier(accountId, 200) &&
+    nonNegativeInteger(expectedStateRevision) &&
+    boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+    ? { accountId, expectedStateRevision, reauthRequestId }
+    : null;
+}
+
+function normalizePublisherAssignmentPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['accountId', 'expectedStateRevision', 'reauthRequestId']))
+    return null;
+  const { accountId, expectedStateRevision, reauthRequestId } = payload;
+  return (accountId === null || boundedIdentifier(accountId, 200)) &&
+    nonNegativeInteger(expectedStateRevision) &&
+    boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+    ? { accountId, expectedStateRevision, reauthRequestId }
+    : null;
+}
+
+function normalizeDeviceRenamePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['deviceId', 'label', 'expectedRevision'])) return null;
+  const { deviceId, expectedRevision } = payload;
+  const label = normalizeDeviceLabel(payload.label);
+  return boundedIdentifier(deviceId, 200) && label && nonNegativeInteger(expectedRevision)
+    ? { deviceId, label, expectedRevision }
+    : null;
+}
+
+function normalizeDeviceRevokePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['deviceId', 'expectedRevision', 'reauthRequestId'])) return null;
+  const { deviceId, expectedRevision, reauthRequestId } = payload;
+  return boundedIdentifier(deviceId, 200) &&
+    nonNegativeInteger(expectedRevision) &&
+    boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+    ? { deviceId, expectedRevision, reauthRequestId }
+    : null;
+}
+
+function normalizeSettingReplacementPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  const hasRequiredKeys = hasExactKeys(payload, ['setting', 'value', 'expectedRevision']);
+  const hasReauthentication = hasExactKeys(payload, [
+    'setting',
+    'value',
+    'expectedRevision',
+    'reauthRequestId',
+  ]);
+  if (!hasRequiredKeys && !hasReauthentication) return null;
+  const { setting, expectedRevision, reauthRequestId } = payload;
+  if (!isRelayAdministrableSetting(setting) || !nonNegativeInteger(expectedRevision)) return null;
+  if (
+    reauthRequestId !== undefined &&
+    !boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+  ) {
+    return null;
+  }
+  const normalizedValue = normalizeRelayAdministrationSettingValue(setting, payload.value);
+  if (!normalizedValue) return null;
+  return {
+    setting,
+    value: normalizedValue,
+    expectedRevision,
+    ...(reauthRequestId === undefined ? {} : { reauthRequestId }),
+  } as PrivilegedCommandPayloadMap['administration.setting.replace'];
+}
+
+function normalizeDynatraceProblemScopeTestPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['profiles', 'customDqlMatcher'])) return null;
+  const profiles = normalizeAlertingProfiles(payload.profiles);
+  if (
+    !profiles ||
+    typeof payload.customDqlMatcher !== 'string' ||
+    getDynatraceCustomDqlMatcherError(payload.customDqlMatcher)
+  ) {
+    return null;
+  }
+  return {
+    profiles,
+    customDqlMatcher: normalizeDynatraceCustomDqlMatcher(payload.customDqlMatcher),
+  };
+}
+
+// Exact-key validation across the full signed command union is intentionally centralized.
+// eslint-disable-next-line sonarjs/cognitive-complexity
+function normalizePayload(
+  command: PrivilegedCommandName,
+  payload: unknown,
+): PrivilegedCommandPayloadMap[PrivilegedCommandName] | null {
+  if (!isRecord(payload)) return null;
+  const catalogPayload = normalizeKnowledgeCatalogPayload(command, payload);
+  if (catalogPayload !== undefined) return catalogPayload;
+  switch (command) {
+    case 'privileged.status.read':
+      return normalizeStatusPayload(payload);
+    case 'privileged.reauth.confirm':
+      return normalizeReauthenticationPayload(payload);
+    case 'administration.snapshot.read':
+      return hasExactKeys(payload, []) ? {} : null;
+    case 'administration.dynatrace-problem-scope.test':
+      return normalizeDynatraceProblemScopeTestPayload(payload);
+    case 'account.admin.create':
+    case 'account.publisher.create':
+      return normalizeAccountCreatePayload(payload);
+    case 'account.display-name.update':
+      return normalizeAccountDisplayNamePayload(payload);
+    case 'account.active.set':
+      return normalizeAccountActivePayload(payload);
+    case 'ownership.transfer':
+      return normalizeOwnershipTransferPayload(payload);
+    case 'publisher.assign':
+      return normalizePublisherAssignmentPayload(payload);
+    case 'privileged.device.rename':
+      return normalizeDeviceRenamePayload(payload);
+    case 'privileged.device.revoke':
+      return normalizeDeviceRevokePayload(payload);
+    case 'administration.setting.replace':
+      return normalizeSettingReplacementPayload(payload);
+    case 'knowledge.upload.batch.begin': {
+      if (!hasExactKeys(payload, ['requestId', 'fileCount', 'totalBytes'])) return null;
+      const maxBatchBytes = KNOWLEDGE_UPLOAD_MAX_FILES * KNOWLEDGE_MAX_PDF_BYTES;
+      return boundedIdentifier(payload.requestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH) &&
+        Number.isInteger(payload.fileCount) &&
+        (payload.fileCount as number) >= 1 &&
+        (payload.fileCount as number) <= KNOWLEDGE_UPLOAD_MAX_FILES &&
+        Number.isInteger(payload.totalBytes) &&
+        (payload.totalBytes as number) >= 1 &&
+        (payload.totalBytes as number) <= maxBatchBytes
+        ? {
+            requestId: payload.requestId,
+            fileCount: payload.fileCount as number,
+            totalBytes: payload.totalBytes as number,
+          }
+        : null;
+    }
+    case 'knowledge.upload.file.begin': {
+      const hasReplacementDocumentId = Object.hasOwn(payload, 'replacementDocumentId');
+      if (
+        !hasExactKeys(
+          payload,
+          hasReplacementDocumentId
+            ? ['batchId', 'fileName', 'byteSize', 'checksum', 'chunkCount', 'replacementDocumentId']
+            : ['batchId', 'fileName', 'byteSize', 'checksum', 'chunkCount'],
+        ) ||
+        !boundedIdentifier(payload.batchId, 200) ||
+        !Number.isInteger(payload.byteSize) ||
+        (payload.byteSize as number) < 1 ||
+        (payload.byteSize as number) > KNOWLEDGE_MAX_PDF_BYTES ||
+        !isKnowledgeChecksum(payload.checksum) ||
+        !Number.isInteger(payload.chunkCount) ||
+        payload.chunkCount !==
+          Math.ceil((payload.byteSize as number) / KNOWLEDGE_UPLOAD_CHUNK_BYTES)
+      ) {
+        return null;
+      }
+      const fileName = normalizeKnowledgePdfFileName(payload.fileName);
+      const replacementDocumentId = normalizeOptionalReplacementDocumentId(
+        payload,
+        hasReplacementDocumentId,
+      );
+      return fileName && replacementDocumentId !== undefined
+        ? {
+            batchId: payload.batchId,
+            fileName,
+            byteSize: payload.byteSize as number,
+            checksum: payload.checksum,
+            chunkCount: payload.chunkCount as number,
+            ...(hasReplacementDocumentId ? { replacementDocumentId } : {}),
+          }
+        : null;
+    }
+    case 'knowledge.upload.status':
+      return hasExactKeys(payload, ['batchId']) && boundedIdentifier(payload.batchId, 200)
+        ? { batchId: payload.batchId }
+        : null;
+    case 'knowledge.upload.file.finalize':
+    case 'knowledge.upload.file.cancel':
+      return normalizeKnowledgeUploadRevision(payload, 'uploadId');
+    case 'knowledge.upload.batch.cancel':
+      return normalizeKnowledgeUploadRevision(payload, 'batchId');
+    case 'knowledge.upload.validate':
+      return hasExactKeys(payload, ['uploadId', 'preliminaryChecksum']) &&
+        boundedIdentifier(payload.uploadId, 200) &&
+        isPrivilegedSha256(payload.preliminaryChecksum)
+        ? { uploadId: payload.uploadId, preliminaryChecksum: payload.preliminaryChecksum }
+        : null;
+    case 'knowledge.snapshot.read': {
+      if (!hasExactKeys(payload, ['query', 'cursor', 'pageSize'])) return null;
+      const cursor = normalizeKnowledgeCursor(payload.cursor);
+      return typeof payload.query === 'string' &&
+        payload.query.length <= 200 &&
+        cursor !== undefined &&
+        Number.isInteger(payload.pageSize) &&
+        (payload.pageSize as number) >= 1 &&
+        (payload.pageSize as number) <= 100
+        ? { query: payload.query.trim(), cursor, pageSize: payload.pageSize as number }
+        : null;
+    }
+    case 'knowledge.document.publish': {
+      if (!hasExactKeys(payload, ['uploadId', 'title', 'category', 'documentType'])) return null;
+      const title = normalizedKnowledgeText(payload.title, 240);
+      const category = normalizedKnowledgeText(payload.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const documentType = payload.documentType;
+      return boundedIdentifier(payload.uploadId, 200) &&
+        title &&
+        category &&
+        (documentType === 'sop' || documentType === 'cheatsheet')
+        ? { uploadId: payload.uploadId, title, category, documentType }
+        : null;
+    }
+    case 'knowledge.document.replace': {
+      if (!hasExactKeys(payload, ['uploadId', 'documentId', 'expectedRevision'])) return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      return revision && boundedIdentifier(payload.uploadId, 200)
+        ? { uploadId: payload.uploadId, ...revision }
+        : null;
+    }
+    case 'knowledge.document.title.set':
+    case 'knowledge.document.category.set': {
+      const key = command === 'knowledge.document.title.set' ? 'title' : 'category';
+      if (!hasExactKeys(payload, ['documentId', key, 'expectedRevision'])) return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      const text = normalizedKnowledgeText(
+        payload[key],
+        key === 'title' ? 240 : KNOWLEDGE_MAX_CATEGORY_LENGTH,
+      );
+      return revision && text ? { ...revision, [key]: text } : null;
+    }
+    case 'knowledge.category.rename': {
+      if (!hasExactKeys(payload, ['from', 'to', 'expectedDocumentRevisions'])) return null;
+      const from = normalizedKnowledgeText(payload.from, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const to = normalizedKnowledgeText(payload.to, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const expectedDocumentRevisions = normalizeKnowledgeRevisions(
+        payload.expectedDocumentRevisions,
+      );
+      return from && to && expectedDocumentRevisions
+        ? { from, to, expectedDocumentRevisions }
+        : null;
+    }
+    case 'knowledge.document.trash':
+    case 'knowledge.document.restore':
+      return hasExactKeys(payload, ['documentId', 'expectedRevision'])
+        ? normalizeKnowledgeDocumentRevision(payload)
+        : null;
+    case 'knowledge.document.search-index.retry':
+      return hasExactKeys(payload, ['documentId']) && boundedIdentifier(payload.documentId, 200)
+        ? { documentId: payload.documentId }
+        : null;
+    case 'knowledge.document.delete': {
+      if (!hasExactKeys(payload, ['documentId', 'expectedRevision', 'reauthRequestId']))
+        return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      return revision &&
+        boundedIdentifier(payload.reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+        ? { ...revision, reauthRequestId: payload.reauthRequestId }
+        : null;
+    }
+    case 'knowledge.audit.read': {
+      if (!hasExactKeys(payload, ['cursor', 'pageSize', 'targetId'])) return null;
+      const cursor = normalizeKnowledgeCursor(payload.cursor);
+      const targetId = normalizeKnowledgeCursor(payload.targetId);
+      return cursor !== undefined &&
+        targetId !== undefined &&
+        Number.isInteger(payload.pageSize) &&
+        (payload.pageSize as number) >= 1 &&
+        (payload.pageSize as number) <= 100
+        ? { cursor, pageSize: payload.pageSize as number, targetId }
+        : null;
+    }
+  }
+  // The switch above covers every command that KNOWLEDGE_CATALOG_NORMALIZERS does not.
+  // Fail closed rather than returning `undefined` if a new command is ever added to
+  // PrivilegedCommandPayloadMap without a normalizer.
+  return null;
+}
+
+export function normalizePrivilegedCommandPayload<K extends PrivilegedCommandName>(
+  command: K,
+  payload: unknown,
+): PrivilegedCommandPayloadMap[K] | null {
+  return normalizePayload(command, payload) as PrivilegedCommandPayloadMap[K] | null;
+}
+
+const ENVELOPE_KEYS = [
+  'version',
+  'requestId',
+  'accountId',
+  'deviceId',
+  'roleClaim',
+  'displayNameSnapshot',
+  'command',
+  'payload',
+  'payloadHash',
+  'expectedRevision',
+  'issuedAt',
+  'expiresAt',
+  'signature',
+] as const;
+
+export function validateSignedPrivilegedCommandEnvelope(
+  value: unknown,
+  nowMs = Date.now(),
+): PrivilegedEnvelopeValidationResult {
+  if (!isRecord(value) || !hasExactKeys(value, ENVELOPE_KEYS)) {
+    return { ok: false, error: 'invalid-request' };
+  }
+
+  const {
+    version,
+    requestId,
+    accountId,
+    deviceId,
+    roleClaim,
+    displayNameSnapshot,
+    command,
+    payload,
+    payloadHash,
+    expectedRevision,
+    issuedAt,
+    expiresAt,
+    signature,
+  } = value;
+
+  if (
+    version !== 1 ||
+    !boundedIdentifier(requestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH) ||
+    !boundedIdentifier(accountId, 200) ||
+    !boundedIdentifier(deviceId, 200) ||
+    !isPrivilegedRole(roleClaim) ||
+    typeof displayNameSnapshot !== 'string' ||
+    displayNameSnapshot.length === 0 ||
+    displayNameSnapshot.length > 120 ||
+    !isPublicPrivilegedCommandName(command) ||
+    !isPrivilegedSha256(payloadHash) ||
+    (expectedRevision !== null &&
+      (!Number.isInteger(expectedRevision) || (expectedRevision as number) < 0)) ||
+    !canonicalTimestamp(issuedAt) ||
+    !canonicalTimestamp(expiresAt) ||
+    typeof signature !== 'string' ||
+    !SIGNATURE_PATTERN.test(signature)
+  ) {
+    return { ok: false, error: 'invalid-request' };
+  }
+
+  const normalizedPayload = normalizePayload(command, payload);
+  if (!normalizedPayload) return { ok: false, error: 'invalid-request' };
+
+  const issuedAtMs = Date.parse(issuedAt);
+  const expiresAtMs = Date.parse(expiresAt);
+  if (expiresAtMs <= nowMs) return { ok: false, error: 'expired' };
+  if (
+    issuedAtMs > nowMs + PRIVILEGED_COMMAND_MAX_CLOCK_SKEW_MS ||
+    expiresAtMs <= issuedAtMs ||
+    expiresAtMs - issuedAtMs > PRIVILEGED_COMMAND_MAX_LIFETIME_MS
+  ) {
+    return { ok: false, error: 'invalid-request' };
+  }
+
+  const envelope = {
+    version: 1,
+    requestId,
+    accountId,
+    deviceId,
+    roleClaim,
+    displayNameSnapshot,
+    command,
+    payload: normalizedPayload,
+    payloadHash,
+    expectedRevision: expectedRevision as number | null,
+    issuedAt,
+    expiresAt,
+    signature,
+  } as SignedPrivilegedCommandEnvelope;
+
+  try {
+    canonicalPrivilegedSigningBytes(envelope);
+  } catch {
+    return { ok: false, error: 'invalid-request' };
+  }
+  return { ok: true, envelope };
+}

@@ -9,15 +9,27 @@ vi.mock('../Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
+    headerActions,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
+    title?: React.ReactNode;
+    variant?: string;
+    headerActions?: React.ReactNode;
+    footer?: React.ReactNode;
   }) =>
     isOpen ? (
-      <div data-testid="modal">
+      <div
+        role="dialog"
+        aria-label={typeof title === 'string' ? title : undefined}
+        data-variant={variant}
+      >
         {title && <h2>{title}</h2>}
+        {headerActions}
         {children}
+        {footer}
       </div>
     ) : null,
 }));
@@ -106,6 +118,15 @@ describe('HistoryModal', () => {
   it('renders entries when open', () => {
     render(<HistoryModal {...defaultProps} />);
     expect(screen.getByText(/Test Entry/)).toBeInTheDocument();
+  });
+
+  it('uses the shared large dialog anatomy', () => {
+    render(<HistoryModal {...defaultProps} title="Alert History" />);
+
+    expect(screen.getByRole('dialog', { name: 'Alert History' })).toHaveAttribute(
+      'data-variant',
+      'large',
+    );
   });
 
   it('shows empty state when history is empty', () => {

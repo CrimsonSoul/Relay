@@ -1,0 +1,112 @@
+name: Windows Startup Compression Comparison
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: windows-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Get Electron version
+        id: electron-version
+        shell: bash
+        run: |
+          ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
+          echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron and packaging tools
+        continue-on-error: true
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            ~/.electron-gyp
+            .electron
+          key: startup-comparison-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Download PocketBase binary
+        run: node scripts/download-pocketbase.mjs --platform=win32 --arch=x64
+
+      - name: Install Electron native dependencies
+        run: npx electron-builder install-app-deps --platform=win32 --arch=x64
+
+      - name: Build Relay once
+        run: npm run build
+
+      - name: Build store candidate
+        env:
+          RELAY_BUILD_ID: cmp-store-${{ github.run_id }}
+        run: node scripts/package-windows.mjs --config.compression=store --config.npmRebuild=false
+
+      - name: Preserve store candidate
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\Relay-store.exe"
+
+      - name: Build normal candidate
+        env:
+          RELAY_BUILD_ID: cmp-normal-${{ github.run_id }}
+        run: node scripts/package-windows.mjs --config.compression=normal --config.npmRebuild=false
+
+      - name: Preserve normal candidate
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\Relay-normal.exe"
+
+      - name: Build maximum candidate
+        env:
+          RELAY_BUILD_ID: cmp-maximum-${{ github.run_id }}
+        run: node scripts/package-windows.mjs --config.compression=maximum --config.npmRebuild=false
+
+      - name: Preserve maximum candidate
+        shell: pwsh
+        run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\Relay-maximum.exe"
+
+      - name: Build former maximum-compression portable baseline
+        run: >-
+          npx electron-builder --win portable
+          --x64
+          --config electron-builder.yml
+          --config.win.target=portable
+          --config.win.artifactName=Relay-portable.exe
+          --config.compression=maximum
+          --config.npmRebuild=false
+          --publish never
+
+      - name: Compare repeated startup measurements on this runner
+        shell: pwsh
+        env:
+          RELAY_BOOTSTRAP_BENCHMARK_CONFIRM: 1
+          RELAY_STARTUP_COMPARISON_CONFIRM: 1
+        run: >-
+          ./scripts/windows-startup-comparison.ps1
+          -StoreArtifact "$env:RUNNER_TEMP\Relay-store.exe"
+          -NormalArtifact "$env:RUNNER_TEMP\Relay-normal.exe"
+          -MaximumArtifact "$env:RUNNER_TEMP\Relay-maximum.exe"
+          -PortableArtifact ./release/Relay-portable.exe
+          -Output ./release/windows-startup-comparison.json
+
+      - name: Upload comparison report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-startup-comparison-${{ github.run_id }}
+          path: release/windows-startup-comparison.json

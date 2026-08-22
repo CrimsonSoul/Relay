@@ -56,15 +56,20 @@ vi.mock('../utils/trustedSender', () => ({
 
 describe('loggerHandlers', () => {
   const onHandlers: Record<string, (...args: unknown[]) => void> = {};
+  const getOnHandler = (channel: string): ((...args: unknown[]) => void) => {
+    const handler = onHandlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(ipcMain.on).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => void) => {
-        onHandlers[channel] = handler;
-        return ipcMain;
-      },
-    );
+    vi.mocked(ipcMain.on).mockImplementation((channel, handler) => {
+      onHandlers[channel] = (...args: unknown[]) => {
+        Reflect.apply(handler, undefined, args);
+      };
+      return ipcMain;
+    });
     vi.mocked(rateLimiters.rendererLogging.tryConsume).mockReturnValue({
       allowed: true,
       retryAfterMs: 0,
@@ -74,7 +79,7 @@ describe('loggerHandlers', () => {
 
   describe('LOG_BRIDGE', () => {
     it('logs bridge info for valid string array', () => {
-      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, ['SRE', 'Platform']);
+      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE', 'Platform']);
       expect(loggers.bridge.info).toHaveBeenCalledWith('Bridge composed', {
         groups: ['SRE', 'Platform'],
         groupCount: 2,
@@ -87,7 +92,7 @@ describe('loggerHandlers', () => {
         retryAfterMs: 100,
       });
 
-      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, ['SRE']);
+      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE']);
 
       expect(loggers.bridge.info).not.toHaveBeenCalled();
     });
@@ -97,7 +102,7 @@ describe('loggerHandlers', () => {
         index === 0 ? 'x'.repeat(3000) : `group-${index}`,
       );
 
-      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, groups);
+      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, groups);
 
       const logged = vi.mocked(loggers.bridge.info).mock.calls[0]?.[1] as {
         groups?: string[];
@@ -111,7 +116,7 @@ describe('loggerHandlers', () => {
     });
 
     it('warns for non-array payload', () => {
-      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, 'not-an-array');
+      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, 'not-an-array');
       expect(loggers.ipc.warn).toHaveBeenCalledWith(
         'Invalid LOG_BRIDGE payload — expected string[]',
       );
@@ -119,7 +124,7 @@ describe('loggerHandlers', () => {
     });
 
     it('warns for array containing non-strings', () => {
-      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, ['SRE', 123]);
+      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE', 123]);
       expect(loggers.ipc.warn).toHaveBeenCalledWith(
         'Invalid LOG_BRIDGE payload — expected string[]',
       );
@@ -130,7 +135,7 @@ describe('loggerHandlers', () => {
       vi.mocked(loggers.bridge.info).mockImplementationOnce(() => {
         throw new Error('log failed');
       });
-      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, ['SRE']);
+      getOnHandler(IPC_CHANNELS.LOG_BRIDGE)(null, ['SRE']);
       expect(loggers.ipc.error).toHaveBeenCalledWith(
         'Failed to process bridge log',
         expect.any(Object),
@@ -144,12 +149,16 @@ describe('loggerHandlers', () => {
         allowed: false,
         retryAfterMs: 100,
       });
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, { level: 'INFO', module: 'test', message: 'hi' });
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
+        level: 'INFO',
+        module: 'test',
+        message: 'hi',
+      });
       expect(loggers.bridge.info).not.toHaveBeenCalled();
     });
 
     it('warns for invalid log entry schema', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, { invalid: true });
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, { invalid: true });
       expect(loggers.ipc.warn).toHaveBeenCalledWith(
         'Invalid log entry received from renderer',
         expect.any(Object),
@@ -157,7 +166,7 @@ describe('loggerHandlers', () => {
     });
 
     it('logs DEBUG level', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'debug',
         module: 'comp',
         message: 'msg',
@@ -166,17 +175,25 @@ describe('loggerHandlers', () => {
     });
 
     it('logs INFO level', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, { level: 'info', module: 'comp', message: 'msg' });
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+      });
       expect(loggers.bridge.info).toHaveBeenCalledWith('[comp] msg', undefined);
     });
 
     it('logs WARN level', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, { level: 'warn', module: 'comp', message: 'msg' });
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
+        level: 'warn',
+        module: 'comp',
+        message: 'msg',
+      });
       expect(loggers.bridge.warn).toHaveBeenCalledWith('[comp] msg', undefined);
     });
 
     it('logs ERROR level', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'error',
         module: 'comp',
         message: 'msg',
@@ -185,7 +202,7 @@ describe('loggerHandlers', () => {
     });
 
     it('logs FATAL level', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'fatal',
         module: 'comp',
         message: 'msg',
@@ -194,7 +211,7 @@ describe('loggerHandlers', () => {
     });
 
     it('logs unknown level as INFO', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'trace',
         module: 'comp',
         message: 'msg',
@@ -204,7 +221,7 @@ describe('loggerHandlers', () => {
 
     it('passes data field to logger', () => {
       const data = { key: 'value' };
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'info',
         module: 'comp',
         message: 'msg',
@@ -216,7 +233,7 @@ describe('loggerHandlers', () => {
     it('bounds deeply nested renderer log data before writing to main logs', () => {
       const deepPayload = { level0: { level1: { level2: { level3: { level4: 'too deep' } } } } };
 
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'info',
         module: 'comp',
         message: 'msg',
@@ -236,7 +253,7 @@ describe('loggerHandlers', () => {
     });
 
     it('truncates oversized renderer log strings before writing to main logs', () => {
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
         level: 'info',
         module: 'comp',
         message: 'msg',
@@ -250,11 +267,42 @@ describe('loggerHandlers', () => {
       expect(loggedData.huge?.endsWith('...[truncated]')).toBe(true);
     });
 
+    // Electron's structured clone carries BigInt across IPC, and the main logger
+    // formats data with JSON.stringify — which throws on a BigInt and drops the whole
+    // log line. Bounding must hand the logger something JSON can serialize.
+    it('renders bigint renderer log values as text so the log line survives', () => {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+        data: { total: 9007199254740993n, nested: { count: 1n } },
+      });
+
+      const loggedData = vi.mocked(loggers.bridge.info).mock.calls[0]?.[1];
+      expect(loggedData).toEqual({ total: '9007199254740993', nested: { count: '1' } });
+      expect(() => JSON.stringify(loggedData)).not.toThrow();
+    });
+
+    it('renders a top-level bigint payload as text', () => {
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+        data: 42n,
+      });
+
+      expect(loggers.bridge.info).toHaveBeenCalledWith('[comp] msg', '42');
+    });
+
     it('handles error thrown during processing gracefully', () => {
       vi.mocked(loggers.bridge.info).mockImplementationOnce(() => {
         throw new Error('crash');
       });
-      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, { level: 'info', module: 'comp', message: 'msg' });
+      getOnHandler(IPC_CHANNELS.LOG_TO_MAIN)(null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+      });
       expect(loggers.ipc.error).toHaveBeenCalledWith(
         'Failed to process log from renderer',
         expect.any(Object),

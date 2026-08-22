@@ -10,14 +10,12 @@ vi.mock('../../Tooltip', () => ({
 }));
 
 const makeContact = (name: string, id: string): Contact => ({
-  id,
   name,
   title: '',
   email: '',
   phone: '',
-  callSign: '',
-  groups: [],
-  servers: [],
+  _searchString: name.toLowerCase(),
+  raw: { id },
 });
 
 describe('getPlatformColor', () => {
@@ -77,6 +75,20 @@ describe('PersonInfo', () => {
     render(<PersonInfo label="Tech" value="0" contactLookup={new Map()} />);
     expect(screen.getByText('-')).toBeInTheDocument();
   });
+
+  // Regression: the placeholder checks above only reject '', '-' and '0', so a
+  // separator-only value reached `parts[0].toLowerCase()` on an empty array and
+  // threw, taking the whole card render down with it.
+  it.each([[';'], ['; ;'], ['   '], [' ; '], [';;;']])(
+    'renders the empty state instead of throwing for separator-only value %j',
+    (value) => {
+      expect(() =>
+        render(<PersonInfo label="Primary" value={value} contactLookup={new Map()} />),
+      ).not.toThrow();
+      expect(screen.getByText('Primary')).toBeInTheDocument();
+      expect(screen.getByText('-')).toBeInTheDocument();
+    },
+  );
 
   it('renders display name for a found contact', () => {
     const contact = makeContact('Alice Smith', '1');

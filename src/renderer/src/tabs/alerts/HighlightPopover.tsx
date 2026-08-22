@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Tooltip } from '../../components/Tooltip';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
+import { toolbarActivationProps } from './toolbarActivation';
 
 interface HighlightPopoverProps {
   onApply: (type: HighlightType) => void;
@@ -46,10 +47,7 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
           aria-label="Highlight text"
           aria-haspopup="menu"
           aria-expanded={isOpen}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            setIsOpen((v) => !v);
-          }}
+          {...toolbarActivationProps(() => setIsOpen((v) => !v))}
         >
           <svg
             width="13"
@@ -74,17 +72,19 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
       </Tooltip>
 
       {isOpen && (
-        <div className="alerts-hl-popover" role="menu" aria-label="Highlight options">
+        <div
+          className="alerts-hl-popover"
+          role="menu"
+          aria-label="Highlight options"
+          data-motion="popover"
+        >
           {HIGHLIGHTS.map((h) => (
             <button
               key={h.type}
               type="button"
               className="alerts-hl-popover-row"
               role="menuitem"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                handleApply(h.type);
-              }}
+              {...toolbarActivationProps(() => handleApply(h.type))}
             >
               <span className="alerts-hl-popover-swatch" style={{ background: h.bg }} />
               <span className="alerts-hl-popover-label">{h.label}</span>
@@ -99,10 +99,7 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
             type="button"
             className="alerts-hl-popover-row"
             role="menuitem"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              handleClear();
-            }}
+            {...toolbarActivationProps(handleClear)}
           >
             <span className="alerts-hl-popover-swatch alerts-hl-popover-clear-swatch">✕</span>
             <span className="alerts-hl-popover-label">Remove</span>

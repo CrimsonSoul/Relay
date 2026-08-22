@@ -12,17 +12,18 @@ describe('download-pocketbase script', () => {
       await writeFile(zipPath, 'fake zip');
       const scriptUrl = pathToFileURL(resolve('scripts/download-pocketbase.mjs')).href;
       const mod = await import(scriptUrl);
+      const windowsAsset = `pocketbase_${mod.POCKETBASE_VERSION}_windows_amd64.zip`;
       let checksumUrl = '';
 
       await expect(
-        mod.verifyChecksum(zipPath, 'pocketbase_0.25.9_windows_amd64.zip', async (url) => {
+        mod.verifyChecksum(zipPath, windowsAsset, async (url: string) => {
           checksumUrl = url;
           throw new Error('stop after url capture');
         }),
       ).rejects.toThrow(/checksums file not available/i);
 
       expect(checksumUrl).toBe(
-        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/checksums.txt',
+        `https://github.com/pocketbase/pocketbase/releases/download/v${mod.POCKETBASE_VERSION}/checksums.txt`,
       );
     } finally {
       await rm(tmp, { recursive: true, force: true });
@@ -36,9 +37,10 @@ describe('download-pocketbase script', () => {
       await writeFile(zipPath, 'fake zip');
       const scriptUrl = pathToFileURL(resolve('scripts/download-pocketbase.mjs')).href;
       const mod = await import(scriptUrl);
+      const windowsAsset = `pocketbase_${mod.POCKETBASE_VERSION}_windows_amd64.zip`;
 
       await expect(
-        mod.verifyChecksum(zipPath, 'pocketbase_0.25.9_windows_amd64.zip', async () => {
+        mod.verifyChecksum(zipPath, windowsAsset, async () => {
           throw new Error('checksums unavailable');
         }),
       ).rejects.toThrow(/checksums file not available/i);
@@ -79,21 +81,15 @@ describe('download-pocketbase script', () => {
   it('rejects insecure redirects while allowing HTTPS redirects', async () => {
     const scriptUrl = pathToFileURL(resolve('scripts/download-pocketbase.mjs')).href;
     const mod = await import(scriptUrl);
+    const windowsAsset = `pocketbase_${mod.POCKETBASE_VERSION}_windows_amd64.zip`;
+    const releaseBase = `https://github.com/pocketbase/pocketbase/releases/download/v${mod.POCKETBASE_VERSION}/`;
 
-    expect(
-      mod.__downloadTestHooks.resolveRedirect(
-        'pocketbase_0.25.9_windows_amd64.zip',
-        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/',
-      ),
-    ).toBe(
-      'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/pocketbase_0.25.9_windows_amd64.zip',
+    expect(mod.__downloadTestHooks.resolveRedirect(windowsAsset, releaseBase)).toBe(
+      `${releaseBase}${windowsAsset}`,
     );
 
     expect(() =>
-      mod.__downloadTestHooks.resolveRedirect(
-        'http://example.test/pocketbase_0.25.9_windows_amd64.zip',
-        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/',
-      ),
+      mod.__downloadTestHooks.resolveRedirect(`http://example.test/${windowsAsset}`, releaseBase),
     ).toThrow(/refusing insecure pocketbase download url/i);
   });
 

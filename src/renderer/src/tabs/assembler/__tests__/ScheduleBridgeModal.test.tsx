@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ScheduleBridgeModal } from '../ScheduleBridgeModal';
 import { getOrganizerEmail } from '../../../utils/organizerEmail';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 // Mock Modal to avoid portal issues in jsdom
 vi.mock('../../../components/Modal', () => ({
@@ -10,16 +11,28 @@ vi.mock('../../../components/Modal', () => ({
     isOpen,
     title,
     children,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
-    title?: string;
+    title?: React.ReactNode;
     children: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
   }) =>
     isOpen
-      ? React.createElement('div', { 'data-testid': 'modal' }, [
+      ? React.createElement(
+          'div',
+          { 'data-testid': 'modal', role: 'dialog', 'data-variant': variant },
           React.createElement('h2', { key: 'title' }, title),
           React.createElement('div', { key: 'body' }, children),
-        ])
+          footer &&
+            React.createElement(
+              'footer',
+              { key: 'footer', className: 'modal-footer-generic' },
+              footer,
+            ),
+        )
       : null,
 }));
 
@@ -42,7 +55,8 @@ describe('ScheduleBridgeModal', () => {
     vi.clearAllMocks();
     localStorage.clear();
     vi.useFakeTimers({ now: new Date(2026, 5, 12, 10, 12, 0), toFake: ['Date'] });
-    (globalThis as Window & { api?: unknown }).api = {
+    globalThis.api = {
+      runtime: ELECTRON_RUNTIME,
       saveAndOpenIcs: mockSaveAndOpenIcs,
     } as unknown as typeof globalThis.api;
   });
@@ -61,6 +75,8 @@ describe('ScheduleBridgeModal', () => {
     expect(screen.getByLabelText(/duration/i)).toHaveValue('60');
     expect(screen.getByLabelText(/subject/i)).toHaveValue('6/12 – Bridge');
     expect(screen.getByLabelText(/your email/i)).toHaveValue('me@test.com');
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'standard');
+    expect(screen.getByRole('dialog').querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('does not render when closed', () => {
@@ -99,7 +115,7 @@ describe('ScheduleBridgeModal', () => {
 
     await waitFor(() => expect(mockSaveAndOpenIcs).toHaveBeenCalledTimes(1));
     // Unfold RFC 5545 folded lines before asserting on content
-    const ics = (mockSaveAndOpenIcs.mock.calls[0][0] as string).replaceAll('\r\n ', '');
+    const ics = (mockSaveAndOpenIcs.mock.calls[0]?.[0] as string).replaceAll('\r\n ', '');
     expect(ics).toContain('BEGIN:VCALENDAR');
     expect(ics).toContain('mailto:alice@test.com');
     expect(ics).toContain('mailto:bob@test.com');
@@ -123,6 +139,36 @@ describe('ScheduleBridgeModal', () => {
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith('Failed to create invite', 'error'),
+    );
+  });
+
+  it('shows an error toast when saving the invite rejects', async () => {
+    mockSaveAndOpenIcs.mockRejectedValue(new Error('EACCES: calendar file write denied'));
+    render(<ScheduleBridgeModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText(/your email/i), { target: { value: 'me@test.com' } });
+    fireEvent.click(screen.getByText('Create Invite'));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to create invite', 'error'),
+    );
+    // The modal stays usable rather than hanging on a cleared spinner
+    expect(screen.getByText('Create Invite')).toBeInTheDocument();
+  });
+
+  it('describes the downloaded calendar file in the web runtime', async () => {
+    (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
+    mockSaveAndOpenIcs.mockResolvedValue(true);
+    render(<ScheduleBridgeModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText(/your email/i), { target: { value: 'me@test.com' } });
+    fireEvent.click(screen.getByText('Create Invite'));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Invite downloaded — import it into your calendar',
+        'success',
+      ),
     );
   });
 });

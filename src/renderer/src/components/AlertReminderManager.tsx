@@ -1,21 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RecordModel } from 'pocketbase';
 import { TactileButton } from './TactileButton';
 import { useToast } from './Toast';
 import {
   dismissAlertReminder,
-  listDueAlertReminders,
   markAlertReminderDone,
   snoozeAlertReminder,
   type AlertReminderRecord,
 } from '../services/alertReminderService';
+import { useCollection } from '../hooks/useCollection';
 import { getReminderAlarmSource } from '../services/reminderAlarmSoundService';
+import { nextReminderDelay, reminderEffectiveTime } from '../services/reminderScheduler';
 import {
   dispatchReminderAlertLoad,
   hasLoadableReminderAlert,
 } from '../services/reminderAlertLoadEvent';
 
-const POLL_INTERVAL_MS = 30_000;
+declare global {
+  /** Safari (and the Relay web runtime running on it) only exposes the
+   *  vendor-prefixed constructor. */
+  var webkitAudioContext: typeof AudioContext | undefined;
+}
+
+const RECONCILIATION_INTERVAL_MS = 5 * 60_000;
 const SNOOZE_MS = 10 * 60_000;
+/** Local quiet period after a failed reminder write — long enough to free the
+ *  UI, short enough that the still-pending reminder returns on its own. */
+const FAILED_ACTION_RETRY_MS = 60_000;
 const FALLBACK_ALARM_REPEAT_MS = 1_500;
 const REMINDER_ALARM_GAIN = 0.38;
 const REMINDER_ALARM_PULSES = [
@@ -24,11 +35,6 @@ const REMINDER_ALARM_PULSES = [
   { frequency: 740, offset: 0.36 },
   { frequency: 988, offset: 0.54 },
 ];
-
-function getReminderEffectiveTime(reminder: AlertReminderRecord): number {
-  const timestamp = new Date(reminder.snoozeUntil || reminder.dueAt).getTime();
-  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
-}
 
 function stopReminderAudio(audio: HTMLAudioElement): void {
   try {
@@ -58,7 +64,7 @@ async function playFallbackReminderAlarm(): Promise<void> {
   void globalThis.api?.playAlertSound?.().catch(() => undefined);
 
   try {
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AudioContextCtor) return;
     const audio = new AudioContextCtor();
     if (audio.state === 'suspended') {
@@ -83,7 +89,7 @@ async function playFallbackReminderAlarm(): Promise<void> {
       oscillator.stop(stopAt);
     });
 
-    window.setTimeout(() => void Promise.resolve(audio.close()).catch(() => undefined), 1_200);
+    globalThis.setTimeout(() => void Promise.resolve(audio.close()).catch(() => undefined), 1_200);
   } catch {
     // Visual reminder stays active when browser audio policy blocks playback.
   }
@@ -108,12 +114,17 @@ function pruneChimedReminderIds(chimedIds: Set<string>, dueReminders: AlertRemin
 
 export function AlertReminderManager() {
   const { showToast } = useToast();
+  const { data: reminderRecords, refetch } = useCollection<AlertReminderRecord & RecordModel>(
+    'alert_reminders',
+    { sort: 'dueAt' },
+  );
+  const reminders = reminderRecords as AlertReminderRecord[];
   const [current, setCurrent] = useState<AlertReminderRecord | null>(null);
   const currentRef = useRef<AlertReminderRecord | null>(null);
-  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const activeAlarmIdRef = useRef<string | null>(null);
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
-  const fallbackIntervalRef = useRef<number | null>(null);
+  const fallbackIntervalRef = useRef<ReturnType<typeof globalThis.setInterval> | null>(null);
   const chimedIdsRef = useRef(new Set<string>());
   const mutedUntilRef = useRef(new Map<string, number>());
 
@@ -121,30 +132,33 @@ export function AlertReminderManager() {
     currentRef.current = current;
   }, [current]);
 
-  const refreshDue = useCallback(async () => {
-    try {
-      const now = Date.now();
-      const dueReminders = (await listDueAlertReminders()).filter((reminder) => {
-        if (getReminderEffectiveTime(reminder) > now) return false;
-        const mutedUntil = mutedUntilRef.current.get(reminder.id);
-        if (!mutedUntil || mutedUntil <= now) {
-          mutedUntilRef.current.delete(reminder.id);
-          return true;
-        }
-        return false;
-      });
-      pruneChimedReminderIds(chimedIdsRef.current, dueReminders);
-      setCurrent((previous) => chooseCurrentReminder(previous, dueReminders));
-    } catch {
-      // PocketBase connection health is surfaced elsewhere; polling retries quietly.
+  const refreshDue = useCallback(() => {
+    const now = Date.now();
+    const pendingIds = new Set(
+      reminders.filter((reminder) => reminder.status === 'pending').map((reminder) => reminder.id),
+    );
+    for (const id of mutedUntilRef.current.keys()) {
+      if (!pendingIds.has(id)) mutedUntilRef.current.delete(id);
     }
-  }, []);
+
+    const dueReminders = reminders.filter((reminder) => {
+      if (reminder.status !== 'pending' || reminderEffectiveTime(reminder) > now) return false;
+      const mutedUntil = mutedUntilRef.current.get(reminder.id);
+      if (!mutedUntil || mutedUntil <= now) {
+        mutedUntilRef.current.delete(reminder.id);
+        return true;
+      }
+      return false;
+    });
+    pruneChimedReminderIds(chimedIdsRef.current, dueReminders);
+    setCurrent((previous) => chooseCurrentReminder(previous, dueReminders));
+  }, [reminders]);
 
   const stopReminderAlarm = useCallback(() => {
     activeAlarmIdRef.current = null;
 
     if (fallbackIntervalRef.current !== null) {
-      window.clearInterval(fallbackIntervalRef.current);
+      globalThis.clearInterval(fallbackIntervalRef.current);
       fallbackIntervalRef.current = null;
     }
 
@@ -154,26 +168,78 @@ export function AlertReminderManager() {
     }
   }, []);
 
-  const releaseReminderTracking = useCallback((id: string) => {
+  const suppressResolvedReminder = useCallback((id: string) => {
     chimedIdsRef.current.delete(id);
-    mutedUntilRef.current.delete(id);
+    mutedUntilRef.current.set(id, Number.POSITIVE_INFINITY);
   }, []);
+
+  /**
+   * Release the alarm after a write fails. Without this, a reminder action that
+   * cannot reach the server (reconnecting, offline, auth-failed) leaves the
+   * looping audio playing behind a focus-trapped dialog with no way out.
+   * The reminder is deliberately *not* marked resolved — it stays pending and
+   * re-alarms after a short quiet period, so nothing is silently dropped.
+   */
+  const releaseAlarmAfterFailure = useCallback(
+    (id: string, message: string) => {
+      stopReminderAlarm();
+      chimedIdsRef.current.delete(id);
+      mutedUntilRef.current.set(id, Date.now() + FAILED_ACTION_RETRY_MS);
+      setCurrent(null);
+      showToast(message, 'error');
+    },
+    [showToast, stopReminderAlarm],
+  );
 
   const startRepeatingFallbackAlarm = useCallback(() => {
     if (fallbackIntervalRef.current !== null) return;
 
     void playFallbackReminderAlarm();
-    fallbackIntervalRef.current = window.setInterval(
+    fallbackIntervalRef.current = globalThis.setInterval(
       () => void playFallbackReminderAlarm(),
       FALLBACK_ALARM_REPEAT_MS,
     );
   }, []);
 
   useEffect(() => {
-    void refreshDue();
-    const intervalId = window.setInterval(() => void refreshDue(), POLL_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [refreshDue]);
+    refreshDue();
+    const delay = nextReminderDelay(reminders);
+    if (delay === null || delay === 0) return;
+    const timeoutId = globalThis.setTimeout(refreshDue, delay);
+    return () => globalThis.clearTimeout(timeoutId);
+  }, [refreshDue, reminders]);
+
+  useEffect(() => {
+    let active = true;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const reconcile = async () => {
+      await refetch().catch(() => undefined);
+      if (active)
+        timeoutId = globalThis.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
+    };
+    timeoutId = globalThis.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
+    return () => {
+      active = false;
+      if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
+    };
+  }, [refetch]);
+
+  useEffect(() => {
+    const refreshOnResume = () => {
+      if (document.visibilityState === 'visible') {
+        refreshDue();
+        void refetch().catch(() => undefined);
+      }
+    };
+    document.addEventListener('visibilitychange', refreshOnResume);
+    globalThis.addEventListener('focus', refreshOnResume);
+    globalThis.addEventListener('online', refreshOnResume);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshOnResume);
+      globalThis.removeEventListener('focus', refreshOnResume);
+      globalThis.removeEventListener('online', refreshOnResume);
+    };
+  }, [refetch, refreshDue]);
 
   useEffect(() => {
     if (!current) {
@@ -256,9 +322,12 @@ export function AlertReminderManager() {
       mutedUntilRef.current.set(reminder.id, snoozeUntil);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
-      showToast('Failed to snooze alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Could not snooze the alarm — it will sound again shortly.',
+      );
     }
   };
 
@@ -268,12 +337,15 @@ export function AlertReminderManager() {
     dispatchReminderAlertLoad(reminder);
     try {
       await dismissAlertReminder(reminder.id);
-      releaseReminderTracking(reminder.id);
+      suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
-      showToast('Failed to dismiss alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Alert loaded, but the alarm could not be dismissed — it will sound again shortly.',
+      );
     }
   };
 
@@ -282,12 +354,15 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await markAlertReminderDone(reminder.id);
-      releaseReminderTracking(reminder.id);
+      suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
-      showToast('Failed to complete alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Could not mark the alarm done — it will sound again shortly.',
+      );
     }
   };
 
@@ -296,12 +371,15 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await dismissAlertReminder(reminder.id);
-      releaseReminderTracking(reminder.id);
+      suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
-      showToast('Failed to dismiss alarm', 'error');
+      releaseAlarmAfterFailure(
+        reminder.id,
+        'Could not dismiss the alarm — it will sound again shortly.',
+      );
     }
   };
 

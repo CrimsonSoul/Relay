@@ -5,9 +5,78 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Relay</title>
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+      }
+      html {
+        color-scheme: dark;
+        background: #09090b;
+      }
+      body {
+        background: #09090b;
+        color: #eee9ec;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      .startup-shell {
+        box-sizing: border-box;
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        background: #09090b;
+        -webkit-app-region: drag;
+      }
+      .startup-shell__content {
+        width: min(320px, 100%);
+      }
+      .startup-shell__wordmark {
+        margin: 0;
+        color: #eee9ec;
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+      .startup-shell__wordmark span {
+        color: #ff7b85;
+      }
+      .startup-shell__rail {
+        height: 2px;
+        margin-top: 20px;
+        overflow: hidden;
+        background: #232126;
+      }
+      .startup-shell__rail span {
+        display: block;
+        width: 38%;
+        height: 100%;
+        background: #e63946;
+      }
+      .startup-shell__status {
+        margin: 12px 0 0;
+        color: #beb6bb;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="startup-shell" role="status" aria-live="polite">
+        <div class="startup-shell__content">
+          <p class="startup-shell__wordmark" aria-label="Relay">
+            relay<span aria-hidden="true">.</span>
+          </p>
+          <div class="startup-shell__rail" aria-hidden="true"><span></span></div>
+          <p class="startup-shell__status">Starting Relay…</p>
+        </div>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

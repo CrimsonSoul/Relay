@@ -1,4 +1,4 @@
-import PocketBase from 'pocketbase';
+import PocketBase, { type AuthRecord } from 'pocketbase';
 import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
 import { loggers } from '../utils/logger';
 
@@ -44,7 +44,7 @@ export function initPocketBase(url: string): PocketBase {
     void runProbeAndReschedule();
   };
   setConnectionState('connecting');
-  if (previousUrl !== null && previousUrl !== url) {
+  if (previousUrl !== null) {
     clientGeneration++;
     clientListeners.forEach((fn) => fn(clientGeneration));
   }
@@ -80,12 +80,33 @@ function setConnectionState(state: ConnectionState): void {
   stateListeners.forEach((fn) => fn(state));
 }
 
+/**
+ * `PbAuthSession.record` crosses IPC as a loose bag; PocketBase's own auth store
+ * wants a `RecordModel`. Keep every field the server sent and only fill in the
+ * identifiers PocketBase itself reads.
+ */
+function toAuthRecord(record: PbAuthSession['record']): AuthRecord {
+  if (!record) return null;
+  return {
+    ...record,
+    id: typeof record.id === 'string' ? record.id : '',
+    collectionId: typeof record.collectionId === 'string' ? record.collectionId : '',
+    collectionName: typeof record.collectionName === 'string' ? record.collectionName : '',
+  };
+}
+
 export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false): void {
   authRejected = false;
   const pb = getPb();
-  pb.authStore.save(auth.token, auth.record);
+  pb.authStore.save(auth.token, toAuthRecord(auth.record));
   setConnectionState('online');
   if (!skipHealthRestart) startHealthCheck();
+}
+
+/** Start health retries without an auth session while rendering cached client data. */
+export function startOfflineMode(): void {
+  setConnectionState('offline');
+  startHealthCheck();
 }
 
 export type RefreshResult = 'ok' | 'auth-failed' | 'unavailable';
@@ -115,9 +136,25 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<Ref
   }
 }
 
+let pendingAuthRefresh: Promise<RefreshResult> | null = null;
+
+/**
+ * Collapse concurrent session refreshes. A single expired token fails every
+ * in-flight collection request at once, and each 401 would otherwise fire its
+ * own refresh IPC call plus its own startHealthCheck() restart — a burst
+ * against the server's rate-limited auth endpoint that also thrashes the
+ * health loop.
+ */
+function refreshAuthSessionOnce(): Promise<RefreshResult> {
+  pendingAuthRefresh ??= refreshAuthSession().finally(() => {
+    pendingAuthRefresh = null;
+  });
+  return pendingAuthRefresh;
+}
+
 function applyRefreshFailure(result: RefreshResult): void {
   if (result === 'auth-failed') authRejected = true;
-  setConnectionState(result === 'auth-failed' ? 'auth-failed' : 'offline');
+  setConnectionState(authRejected ? 'auth-failed' : 'offline');
 }
 
 function beginHealthCheckProbe(): AbortController | null {
@@ -177,7 +214,7 @@ function handleFailedProbe(): void {
     connectionState === 'auth-failed' ||
     connectionState === 'reconnecting'
   ) {
-    setConnectionState('offline');
+    setConnectionState(authRejected ? 'auth-failed' : 'offline');
   }
 }
 
@@ -276,8 +313,9 @@ export function handleApiError(error: unknown): void {
     'status' in error &&
     ((error as { status: number }).status === 401 || (error as { status: number }).status === 403)
   ) {
-    setConnectionState('reconnecting');
-    void refreshAuthSession().then((refreshed) => {
+    authRejected = true;
+    setConnectionState('auth-failed');
+    void refreshAuthSessionOnce().then((refreshed) => {
       if (refreshed !== 'ok') applyRefreshFailure(refreshed);
     });
   }
@@ -302,5 +340,5 @@ export function requireOnline(): void {
 
 /** Escape a value for use in PocketBase filter strings to prevent injection. */
 export function escapeFilter(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  return value.replaceAll('\\', '\\\\').replaceAll('"', String.raw`\"`);
 }

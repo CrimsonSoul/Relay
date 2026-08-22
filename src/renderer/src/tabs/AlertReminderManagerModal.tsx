@@ -9,7 +9,8 @@ interface AlertReminderManagerModalProps {
   pendingReminders: AlertReminderRecord[];
   completedReminders: AlertReminderRecord[];
   loading: boolean;
-  error: Error | null;
+  // useCollection (and therefore useAlertReminders) reports failures as a message string.
+  error: string | null;
   onRetry: () => void;
   onScheduleNew: () => void;
   onEdit: (reminder: AlertReminderRecord) => void;
@@ -19,6 +20,7 @@ interface AlertReminderManagerModalProps {
   hasCustomAlarmSound: boolean;
   onChooseAlarmSound: () => void;
   onResetAlarmSound: () => void;
+  canCustomizeAlarmSound?: boolean;
 }
 
 interface ReminderRowProps {
@@ -138,11 +140,12 @@ export function AlertReminderManagerModal({
   hasCustomAlarmSound,
   onChooseAlarmSound,
   onResetAlarmSound,
+  canCustomizeAlarmSound = true,
 }: Readonly<AlertReminderManagerModalProps>) {
   const [showCompleted, setShowCompleted] = useState(false);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Alarms" width="640px">
+    <Modal isOpen={isOpen} onClose={onClose} title="Alarms" variant="wide">
       <div className="alert-reminder-manager">
         <div className="alert-reminder-manager-toolbar">
           <label className="alert-reminder-manager-toggle">
@@ -150,7 +153,7 @@ export function AlertReminderManagerModal({
               type="checkbox"
               checked={showCompleted}
               onChange={(event) => setShowCompleted(event.target.checked)}
-            />
+            />{' '}
             Show completed alarms
           </label>
           <TactileButton variant="primary" size="sm" onClick={onScheduleNew}>
@@ -160,16 +163,18 @@ export function AlertReminderManagerModal({
 
         <div className="alert-reminder-manager-sound">
           <div className="alert-reminder-manager-sound-label">Alarm sound: {alarmSoundLabel}</div>
-          <div className="alert-reminder-manager-sound-actions">
-            <TactileButton variant="secondary" size="sm" onClick={onChooseAlarmSound}>
-              Choose MP3
-            </TactileButton>
-            {hasCustomAlarmSound && (
-              <TactileButton variant="ghost" size="sm" onClick={onResetAlarmSound}>
-                Use default
+          {canCustomizeAlarmSound && (
+            <div className="alert-reminder-manager-sound-actions">
+              <TactileButton variant="secondary" size="sm" onClick={onChooseAlarmSound}>
+                Choose MP3
               </TactileButton>
-            )}
-          </div>
+              {hasCustomAlarmSound && (
+                <TactileButton variant="ghost" size="sm" onClick={onResetAlarmSound}>
+                  Use default
+                </TactileButton>
+              )}
+            </div>
+          )}
         </div>
 
         {loading && <div className="alert-reminder-manager-state">Loading alarms...</div>}
@@ -183,9 +188,7 @@ export function AlertReminderManagerModal({
           </div>
         )}
 
-        {pendingReminders.length === 0 ? (
-          <div className="alert-reminder-manager-empty">No pending alarms.</div>
-        ) : (
+        {pendingReminders.length > 0 && (
           <ul className="alert-reminder-manager-list">
             {pendingReminders.map((reminder) => (
               <ReminderRow
@@ -197,6 +200,12 @@ export function AlertReminderManagerModal({
               />
             ))}
           </ul>
+        )}
+
+        {/* Loading and error already explain the missing rows. Claiming there are no
+            pending alarms alongside either state contradicts what the modal just said. */}
+        {!loading && !error && pendingReminders.length === 0 && (
+          <div className="alert-reminder-manager-empty">No pending alarms.</div>
         )}
 
         {showCompleted && completedReminders.length > 0 && (

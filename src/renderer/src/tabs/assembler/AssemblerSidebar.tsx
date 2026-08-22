@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { BridgeGroup } from '@shared/ipc';
 import { ContextMenu } from '../../components/ContextMenu';
+import { ConfirmModal } from '../../components/ConfirmModal';
 import { Tooltip } from '../../components/Tooltip';
 import { SaveGroupModal } from './SaveGroupModal';
 import { loggers } from '../../utils/logger';
@@ -26,21 +27,13 @@ type AssemblerSidebarProps = {
 };
 
 const getGroupToken = (name: string): string => {
-  const parts = name
-    .trim()
-    .split(/[\s_-]+/)
-    .filter(Boolean);
+  const [firstWord, secondWord] = name.match(/[a-zA-Z0-9]+/g) ?? [];
 
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  if (firstWord && secondWord) {
+    return `${firstWord.charAt(0)}${secondWord.charAt(0)}`.toUpperCase();
   }
 
-  return (
-    name
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 2)
-      .toUpperCase() || '?'
-  );
+  return firstWord?.slice(0, 2).toUpperCase() || '?';
 };
 
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
@@ -57,6 +50,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   } | null>(null);
   const [isSaveGroupOpen, setIsSaveGroupOpen] = useState(false);
   const [groupToRename, setGroupToRename] = useState<BridgeGroup | null>(null);
+  // Both overwrite and delete replace saved membership that nothing else in Relay can
+  // restore, so each one waits on an explicit confirmation before it runs.
+  const [groupToOverwrite, setGroupToOverwrite] = useState<BridgeGroup | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<BridgeGroup | null>(null);
 
   const sortedGroups = useMemo(
     () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
@@ -111,11 +108,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     async (group: BridgeGroup) => {
       try {
         const success = await onUpdateGroup(group.id, { contacts: currentEmails });
-        if (!success) {
-          loggers.app.error('[AssemblerSidebar] Failed to update group');
-        }
+        if (!success) throw new Error(`Could not replace the members of ${group.name}.`);
       } catch (e) {
         loggers.app.error('[AssemblerSidebar] Error updating group', { error: e });
+        // Rethrow so the confirmation reports the failure instead of closing as if it worked
+        throw e;
       }
     },
     [onUpdateGroup, currentEmails],
@@ -125,11 +122,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     async (group: BridgeGroup) => {
       try {
         const success = await onDeleteGroup(group.id);
-        if (!success) {
-          loggers.app.error('[AssemblerSidebar] Failed to delete group');
-        }
+        if (!success) throw new Error(`Could not delete ${group.name}.`);
       } catch (e) {
         loggers.app.error('[AssemblerSidebar] Error deleting group', { error: e });
+        throw e;
       }
     },
     [onDeleteGroup],
@@ -153,9 +149,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
           <div className="assembler-sidebar-panel">
             <div className="assembler-sidebar-groups">
               <div className="assembler-sidebar-groups-header">
-                <span className="assembler-sidebar-groups-title">Groups</span>
+                <span className="assembler-sidebar-groups-title">Contact groups</span>
                 <Tooltip content="Create new group">
                   <button
+                    type="button"
                     onClick={() => setIsSaveGroupOpen(true)}
                     className="assembler-sidebar-add-btn"
                     title="Create new group"
@@ -193,6 +190,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
                         title={group.name}
                         aria-label={`${group.name} group, ${group.contacts.length} contacts`}
+                        aria-pressed={isSelected}
                       >
                         <div className="sig-grp-check">
                           <svg viewBox="0 0 16 16" className="sig-grp-checkmark">
@@ -245,7 +243,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
           onClose={() => setGroupContextMenu(null)}
           items={[
             {
-              label: 'Load Group',
+              // The item toggles, so it has to say which way it will go — a loaded group
+              // offered "Load Group" silently unloads it.
+              label: selectedGroupIds.includes(groupContextMenu.group.id)
+                ? 'Unload Group'
+                : 'Load Group',
               onClick: () => {
                 onToggleGroup(groupContextMenu.group.id);
                 setGroupContextMenu(null);
@@ -270,11 +272,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
             {
               label: 'Update with Current',
               onClick: () => {
-                handleUpdateGroupWithCurrent(groupContextMenu.group).catch((error_) => {
-                  loggers.app.error('[AssemblerSidebar] Failed to update group with current', {
-                    error: error_,
-                  });
-                });
+                setGroupToOverwrite(groupContextMenu.group);
                 setGroupContextMenu(null);
               },
               icon: (
@@ -320,9 +318,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
             {
               label: 'Delete Group',
               onClick: () => {
-                handleDeleteGroup(groupContextMenu.group).catch((error_) => {
-                  loggers.app.error('[AssemblerSidebar] Failed to delete group', { error: error_ });
-                });
+                setGroupToDelete(groupContextMenu.group);
                 setGroupContextMenu(null);
               },
               danger: true,
@@ -358,6 +354,33 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
             ? `Will include ${currentEmails.length} current recipients`
             : 'Create an empty group'
         }
+      />
+
+      {/* Overwriting membership is not undoable — spell out what is being traded away */}
+      <ConfirmModal
+        isOpen={groupToOverwrite !== null}
+        onClose={() => setGroupToOverwrite(null)}
+        onConfirm={() =>
+          groupToOverwrite ? handleUpdateGroupWithCurrent(groupToOverwrite) : void 0
+        }
+        title="Replace Group Members"
+        message={`Replace all ${groupToOverwrite?.contacts.length ?? 0} members of "${
+          groupToOverwrite?.name ?? ''
+        }" with the ${currentEmails.length} recipients in the current composition? This cannot be undone.`}
+        confirmLabel="Replace Members"
+        isDanger
+      />
+
+      <ConfirmModal
+        isOpen={groupToDelete !== null}
+        onClose={() => setGroupToDelete(null)}
+        onConfirm={() => (groupToDelete ? handleDeleteGroup(groupToDelete) : void 0)}
+        title="Delete Group"
+        message={`Delete "${groupToDelete?.name ?? ''}" and its ${
+          groupToDelete?.contacts.length ?? 0
+        } members? This cannot be undone.`}
+        confirmLabel="Delete Group"
+        isDanger
       />
 
       {/* Rename Group Modal */}

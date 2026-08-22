@@ -60,7 +60,7 @@ function failureMessage(action: string, error?: string): string {
   return error ? `Failed to ${action}: ${error}` : `Failed to ${action}`;
 }
 
-function isSuccessful(result: IpcResult): boolean {
+function isSuccessful(result: IpcResult<unknown>): boolean {
   return result.success === true;
 }
 
@@ -218,7 +218,7 @@ export function useDynatraceDashboards(
   const runMutation = useCallback(
     async (
       action: string,
-      operation: (api: DynatraceBridgeApi) => Promise<IpcResult>,
+      operation: (api: DynatraceBridgeApi) => Promise<IpcResult<unknown>>,
     ): Promise<boolean> => {
       const api = withApi();
       if (!api) return false;

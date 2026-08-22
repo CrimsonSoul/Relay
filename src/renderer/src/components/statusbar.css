@@ -55,13 +55,12 @@
   color: var(--alarm);
 }
 
-/* Live / online dot — shared breathing pulse (styles/animations.css) */
+/* Static state color avoids keeping the compositor awake while Relay is idle. */
 .status-bar-live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--ok);
-  animation: breathe 2.4s ease-in-out infinite;
   flex-shrink: 0;
 }
 

@@ -1,16 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain, BrowserWindow, clipboard, nativeImage, shell, dialog } from 'electron';
+import { execFile } from 'node:child_process';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { setupWindowHandlers, setupWindowListeners, ALLOWED_AUX_ROUTES } from './windowHandlers';
+import { RADAR_URL } from '@shared/radar';
+import { setupWindowHandlers, setupWindowListeners } from './windowHandlers';
 
 const mockNativeImage = {
   isEmpty: vi.fn(() => false),
   getSize: vi.fn(() => ({ width: 100, height: 100 })),
   resize: vi.fn(),
   toPNG: vi.fn(() => Buffer.from('png-data')),
+  toJPEG: vi.fn(() => Buffer.from('jpeg-data')),
 };
 // Make resize return a new image-like object
 mockNativeImage.resize.mockReturnValue(mockNativeImage);
+
+const mockSharp = vi.hoisted(() => {
+  const withMetadata = vi.fn().mockReturnThis();
+  const metadata = vi.fn().mockResolvedValue({
+    width: 100,
+    height: 100,
+    format: 'png',
+  });
+  const resize = vi.fn().mockReturnThis();
+  const png = vi.fn().mockReturnThis();
+  const toBuffer = vi.fn().mockResolvedValue(Buffer.from('optimized-png'));
+  const sharp = vi.fn(() => ({ withMetadata, metadata, resize, png, toBuffer }));
+  return { sharp, withMetadata, metadata, resize, png, toBuffer };
+});
 
 vi.mock('electron', () => {
   const mockWin = {
@@ -60,12 +77,35 @@ vi.mock('electron', () => {
   };
 });
 
+vi.mock('sharp', () => ({
+  default: mockSharp.sharp,
+}));
+
 vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
   readFile: vi.fn(),
   stat: vi.fn(),
   mkdir: vi.fn(),
+  mkdtemp: vi.fn(),
+  rm: vi.fn(),
   unlink: vi.fn(),
+}));
+
+// node:child_process exports execFile as an overload set, so vi.mocked() cannot resolve a single
+// callback shape. The suite only exercises the (file, args, callback) form the handler uses.
+const childProcess = vi.hoisted(() => ({
+  execFile:
+    vi.fn<
+      (
+        file: string,
+        args: readonly string[],
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => unknown
+    >(),
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: childProcess.execFile,
 }));
 
 vi.mock('../logger', () => ({
@@ -84,10 +124,6 @@ vi.mock('../logger', () => ({
   },
 }));
 
-vi.mock('../utils/pathSafety', () => ({
-  validatePath: vi.fn(),
-}));
-
 vi.mock('../utils/broadcastToAllWindows', () => ({
   broadcastToAllWindows: vi.fn(),
 }));
@@ -100,10 +136,11 @@ vi.mock('../rateLimiter', () => ({
   },
 }));
 
-import { validatePath } from '../utils/pathSafety';
 import { rateLimiters } from '../rateLimiter';
-import { readFile, stat, unlink } from 'node:fs/promises';
+import { readFile, stat, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { loggers } from '../logger';
+
+const PRIVATE_TEMP_DIR = '/mock-temp/relay-a1b2c3';
 
 // Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
 // exercised for real (positive + negative) in authHandlers.test.ts.
@@ -115,15 +152,36 @@ vi.mock('../utils/trustedSender', () => ({
 
 describe('windowHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = handlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
   const onHandlers: Record<string, (...args: unknown[]) => unknown> = {};
+  const getOnHandler = (channel: string): ((...args: unknown[]) => unknown) => {
+    const handler = onHandlers[channel];
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler;
+  };
+  // Electron types the listeners against IpcMain*Event, which the suite calls with bare stubs.
+  const captureIpcRegistrations = (): void => {
+    vi.mocked(ipcMain.on).mockImplementation((channel, listener) => {
+      onHandlers[channel] = listener as (...args: unknown[]) => unknown;
+      return ipcMain;
+    });
+    vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
+      handlers[channel] = handler as (...args: unknown[]) => unknown;
+      return ipcMain;
+    });
+  };
   const getMainWindow = vi.fn(() => null as BrowserWindow | null);
-  const createAuxWindow = vi.fn();
   const getDataRoot = vi.fn(async () => '/data/root');
 
-  let mockWin: ReturnType<typeof BrowserWindow>;
+  let mockWin: BrowserWindow;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS;
 
     mockWin = {
       minimize: vi.fn(),
@@ -134,160 +192,42 @@ describe('windowHandlers', () => {
       isDestroyed: vi.fn(() => false),
       webContents: { send: vi.fn() },
       on: vi.fn(),
-    } as unknown as ReturnType<typeof BrowserWindow>;
+    } as unknown as BrowserWindow;
 
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWin as BrowserWindow);
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWin as BrowserWindow]);
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWin);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWin]);
+    vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
+    vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
 
-    vi.mocked(ipcMain.on).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        onHandlers[channel] = handler;
-        return ipcMain;
-      },
-    );
-    vi.mocked(ipcMain.handle).mockImplementation(
-      (channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers[channel] = handler;
-        return ipcMain;
-      },
-    );
+    captureIpcRegistrations();
 
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
+    vi.mocked(mkdtemp).mockResolvedValue(PRIVATE_TEMP_DIR as never);
+    vi.mocked(rm).mockResolvedValue(undefined);
     vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+    childProcess.execFile.mockImplementation((_file, _args, callback) => {
+      callback(null, '', '');
+      return {};
+    });
 
-    setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot);
+    setupWindowHandlers(getMainWindow, getDataRoot);
   });
 
-  describe('ALLOWED_AUX_ROUTES', () => {
-    it('contains expected routes', () => {
-      expect(ALLOWED_AUX_ROUTES.has('oncall')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('directory')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('servers')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('assembler')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('popout/board')).toBe(true);
-    });
-
-    it('does not contain disallowed routes', () => {
-      expect(ALLOWED_AUX_ROUTES.has('admin')).toBe(false);
-      expect(ALLOWED_AUX_ROUTES.has('../evil')).toBe(false);
-    });
-  });
-
-  describe('OPEN_PATH', () => {
-    it('opens a valid path with allowed extension', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'exports/report.csv');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('blocks path traversal attempts', async () => {
-      vi.mocked(validatePath).mockResolvedValue(false);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, '../../etc/passwd');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('blocks files with unsafe extensions', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'malware.exe');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('blocks .sh files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'script.sh');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('allows .pdf files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'document.pdf');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('allows .json files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'data.json');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('allows .txt files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'notes.txt');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('allows .png files', async () => {
-      vi.mocked(validatePath).mockResolvedValue(true);
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'image.png');
-
-      expect(shell.openPath).toHaveBeenCalled();
-    });
-
-    it('returns early when rate limited', async () => {
-      vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: false });
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'report.csv');
-
-      expect(validatePath).not.toHaveBeenCalled();
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('returns early when getDataRoot is not provided', async () => {
-      vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
-
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
-
-      await handlers[IPC_CHANNELS.OPEN_PATH]({}, 'report.csv');
-
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
-
-    it('returns early for non-string paths', async () => {
-      await expect(handlers[IPC_CHANNELS.OPEN_PATH]({}, 42)).resolves.toBeUndefined();
-
-      expect(validatePath).not.toHaveBeenCalled();
-      expect(shell.openPath).not.toHaveBeenCalled();
-    });
+  it('does not register a generic file-path opening channel', () => {
+    expect(handlers).not.toHaveProperty('fs:openPath');
   });
 
   describe('OPEN_EXTERNAL', () => {
+    // eslint-disable-next-line sonarjs/parameterized-tests -- Denial, trusted opening, and canonicalization assert different security outcomes and side effects.
     it('blocks unknown http URL and returns false', async () => {
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'http://example.com');
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'http://example.com');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
       expect(result).toBe(false);
     });
 
     it('opens known cloud status URL and returns true', async () => {
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
         {},
         'https://status.openai.com/incidents/1',
       );
@@ -296,48 +236,160 @@ describe('windowHandlers', () => {
       expect(result).toBe(true);
     });
 
+    it.each([
+      [
+        'Mist notice',
+        'https://status.mist.com/notices/example',
+        'https://status.mist.com.evil.example/notices/example',
+      ],
+      [
+        'Dynatrace Status.io',
+        'https://dynatrace.status.io/pages/incident/example',
+        'https://dynatrace.status.io.evil.example/pages/incident/example',
+      ],
+      [
+        'Proofpoint incident',
+        'https://proofpoint.my.site.com/community/s/article/example',
+        'https://proofpoint.my.site.com.evil.example/community/s/article/example',
+      ],
+      [
+        'CrowdStrike support',
+        'https://supportportal.crowdstrike.com/s/get-help',
+        'https://supportportal.crowdstrike.com.evil.example/s/get-help',
+      ],
+      [
+        'Dropbox status',
+        'https://status.dropbox.com/incidents/example',
+        'https://status.dropbox.com.evil.example/incidents/example',
+      ],
+    ])(
+      'opens exact-host %s URLs and blocks lookalike hosts',
+      async (_label, trusted, lookalike) => {
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, trusted)).resolves.toBe(true);
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, lookalike)).resolves.toBe(false);
+
+        expect(shell.openExternal).toHaveBeenCalledOnce();
+        expect(shell.openExternal).toHaveBeenCalledWith(trusted);
+      },
+    );
+
+    it('opens the fixed Dispatcher Radar intranet URL and returns true', async () => {
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, RADAR_URL);
+
+      expect(shell.openExternal).toHaveBeenCalledWith(RADAR_URL);
+      expect(result).toBe(true);
+    });
+
+    it('canonicalizes trusted mixed-case HTTPS URLs before opening them', async () => {
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+        {},
+        'HTTPS://STATUS.OPENAI.COM/incidents/1',
+      );
+
+      expect(shell.openExternal).toHaveBeenCalledWith('https://status.openai.com/incidents/1');
+      expect(result).toBe(true);
+    });
+
+    it.each([
+      ['credentials', 'https://user:password@status.openai.com/incidents/1'],
+      ['surrounding whitespace', ' https://status.openai.com/incidents/1 '],
+      ['control characters', 'https://status.openai.com/incidents/1\n'],
+      ['C1 control characters', 'https://status.openai.com/incidents/1\u0085'],
+      ['custom port', 'https://status.openai.com:8443/incidents/1'],
+      ['HTTP', ['http', '://status.openai.com/incidents/1'].join('')],
+      ['oversized value', `https://status.openai.com/${'a'.repeat(2_082)}`],
+    ])('blocks trusted-host web URLs with %s', async (_case, url) => {
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url);
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
     it('returns false when shell.openExternal throws (no protocol handler)', async () => {
       vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error('no handler for msteams:'));
 
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
         {},
-        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
 
       expect(result).toBe(false);
     });
 
     it('allows downdetector.com URLs', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://downdetector.com/status/github/');
+      await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'https://downdetector.com/status/github/');
 
       expect(shell.openExternal).toHaveBeenCalledWith('https://downdetector.com/status/github/');
     });
 
+    it.each(['https://x.com/relay', 'https://twitter.com/relay'])(
+      'allows trusted social URL %s',
+      async (url) => {
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url)).resolves.toBe(true);
+
+        expect(shell.openExternal).toHaveBeenCalledWith(url);
+      },
+    );
+
+    it('opens trusted HTTPS Dynatrace tenant URLs', async () => {
+      for (const url of [
+        'https://abc123.apps.dynatrace.com',
+        'https://abc123.live.dynatrace.com/ui/apps/dynatrace.classic.problems',
+      ]) {
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url)).resolves.toBe(true);
+        expect(shell.openExternal).toHaveBeenCalledWith(new URL(url).toString());
+      }
+    });
+
+    it('blocks insecure or lookalike Dynatrace URLs', async () => {
+      for (const url of [
+        ['http', '://abc123.apps.dynatrace.com'].join(''),
+        'https://dynatrace.com.evil.example/problems',
+        'https://abc123.apps.dynatrace.com@evil.example/problems',
+      ]) {
+        await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url)).resolves.toBe(false);
+      }
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
     it('opens Teams meeting draft URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+      await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
         {},
-        'https://teams.microsoft.com/l/meeting/new?subject=test',
+        'https://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
 
       expect(shell.openExternal).toHaveBeenCalledWith(
-        'https://teams.microsoft.com/l/meeting/new?subject=test',
+        'https://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
     });
 
     it('opens Teams client deep link (msteams: protocol) and returns true', async () => {
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
         {},
-        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
 
       expect(shell.openExternal).toHaveBeenCalledWith(
-        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
       );
       expect(result).toBe(true);
     });
 
+    it('accepts a valid E2E external launch without opening a desktop app', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
+        {},
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=user%40example.com',
+      );
+
+      expect(result).toBe(true);
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
     it('blocks msteams: deep links to other hosts and returns false', async () => {
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)(
         {},
         'msteams://evil.example/l/meeting/new',
       );
@@ -346,48 +398,67 @@ describe('windowHandlers', () => {
       expect(result).toBe(false);
     });
 
+    it.each([
+      [
+        'unexpected client path',
+        'msteams://teams.microsoft.com/l/chat/new?subject=test&attendees=',
+      ],
+      [
+        'unexpected client query key',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=&content=payload',
+      ],
+      [
+        'duplicate client query key',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&subject=other&attendees=',
+      ],
+      [
+        'invalid client attendee',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=not-an-email',
+      ],
+      [
+        'encoded client control character',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test%0Ainjected&attendees=',
+      ],
+      [
+        'client fragment',
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test&attendees=#fragment',
+      ],
+      ['unexpected web path', 'https://teams.microsoft.com/l/chat/new?subject=test&attendees='],
+    ])('blocks Teams meeting drafts with an %s', async (_case, url) => {
+      await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url)).resolves.toBe(false);
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
     it('blocks unknown https URL and returns false', async () => {
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://evil.example');
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'https://evil.example');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
       expect(result).toBe(false);
     });
 
-    it('opens valid mailto URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'mailto:user@example.com');
-
-      expect(shell.openExternal).toHaveBeenCalledWith('mailto:user@example.com');
-    });
-
-    it('blocks mailto URLs with extra headers', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
-        {},
-        'mailto:user@example.com?subject=Injected&body=payload',
-      );
+    it.each([
+      'mailto:user@example.com',
+      'mailto:user@example.com%0D%0ABcc%3Aattacker%40example.com',
+      'mailto:user@example.com?subject=Injected&body=payload',
+    ])('blocks unused mailto URL %s', async (url) => {
+      await expect(getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url)).resolves.toBe(false);
 
       expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
-    it('blocks file: protocol', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'file:///etc/passwd');
-
-      expect(shell.openExternal).not.toHaveBeenCalled();
-    });
-
-    it('blocks javascript: protocol', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'javascript:alert(1)');
-
-      expect(shell.openExternal).not.toHaveBeenCalled();
-    });
-
-    it('blocks ftp: protocol', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'ftp://files.example.com');
+    it.each([
+      ['file', 'file:///etc/passwd'],
+      ['javascript', 'javascript:alert(1)'],
+      ['ftp', 'ftp://files.example.com'],
+    ])('blocks the %s protocol', async (_protocol, url) => {
+      await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, url);
 
       expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
     it('handles invalid URL gracefully and returns false', async () => {
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'not a url at all');
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'not a url at all');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
       expect(result).toBe(false);
@@ -396,35 +467,111 @@ describe('windowHandlers', () => {
     it('returns false when rate limited', async () => {
       vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: false });
 
-      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://example.com');
+      const result = await getHandler(IPC_CHANNELS.OPEN_EXTERNAL)({}, 'https://example.com');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
       expect(result).toBe(false);
     });
   });
 
+  describe('OPEN_SERVICE_DESK_URL', () => {
+    it('opens a credential-free HTTPS ticket URL through the dedicated capability', async () => {
+      const url = 'https://servicedesk.example.com/incidents/INC0012345';
+
+      await expect(getHandler(IPC_CHANNELS.OPEN_SERVICE_DESK_URL)({}, url)).resolves.toBe(true);
+      expect(shell.openExternal).toHaveBeenCalledWith(url);
+    });
+
+    it.each([
+      'http://servicedesk.example.com/INC0012345',
+      'https://user:secret@servicedesk.example.com/INC0012345',
+      'https://servicedesk.example.com:8443/INC0012345',
+      ' https://servicedesk.example.com/INC0012345',
+      'https://servicedesk.example.com/INC0012345\nignored',
+    ])('blocks unsafe Service Desk URL %s', async (url) => {
+      await expect(getHandler(IPC_CHANNELS.OPEN_SERVICE_DESK_URL)({}, url)).resolves.toBe(false);
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ICS_SAVE_AND_OPEN', () => {
-    it('writes the ICS to a temp file, opens it, and returns true', async () => {
+    it('writes the ICS to a private temp directory, opens it, and returns true', async () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockResolvedValue(undefined);
       vi.mocked(shell.openPath).mockResolvedValue('');
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN](
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)(
         {},
         'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
       );
 
       expect(result).toBe(true);
-      const [filePath, content] = vi.mocked(writeFile).mock.calls[0] as [string, string];
-      expect(filePath).toMatch(/^\/mock-temp\/relay-bridge-\d+\.ics$/);
+      expect(mkdtemp).toHaveBeenCalledWith('/mock-temp/relay-');
+      const [filePath, content, options] = vi.mocked(writeFile).mock.calls[0] as [
+        string,
+        string,
+        { encoding: string; mode: number },
+      ];
+      // Never a guessable path in the shared temp dir: on Linux another local
+      // user could read the invite there, or pre-plant the path as a symlink.
+      expect(filePath).toBe(`${PRIVATE_TEMP_DIR}/relay-bridge.ics`);
       expect(content).toBe('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
+      expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
       expect(shell.openPath).toHaveBeenCalledWith(filePath);
+    });
+
+    it('sweeps a handed-off invite on the next call, never after opening it', async () => {
+      // shell.openPath resolves when the helper app is launched, not when it has
+      // read the file, so removing the payload later in the same call can race a
+      // cold-starting Outlook on Windows with a 20MB draft.
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
+      vi.mocked(rm).mockClear();
+      vi.mocked(shell.openPath).mockClear();
+
+      await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
+
+      expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
+      const [removeOrder] = vi.mocked(rm).mock.invocationCallOrder;
+      const [openOrder] = vi.mocked(shell.openPath).mock.invocationCallOrder;
+      expect(removeOrder).toBeDefined();
+      expect(openOrder).toBeDefined();
+      expect(removeOrder).toBeLessThan(openOrder!);
+    });
+
+    it('removes the temp directory even when the open fails', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('no handler registered for .ics files');
+
+      await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
+
+      expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
+    });
+
+    it('still reports success when the temp directory cannot be removed', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+      vi.mocked(rm).mockRejectedValue(new Error('EBUSY'));
+
+      // First call hands off; the deferred sweep runs on the second one.
+      await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
+
+      expect(result).toBe(true);
+      expect(loggers.ipc.warn).toHaveBeenCalledWith('Temp document cleanup failed', {
+        error: 'EBUSY',
+      });
     });
 
     it('returns false for non-string content', async () => {
       const { writeFile } = await import('node:fs/promises');
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 42);
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 42);
 
       expect(result).toBe(false);
       expect(writeFile).not.toHaveBeenCalled();
@@ -434,7 +581,7 @@ describe('windowHandlers', () => {
     it('returns false for empty content', async () => {
       const { writeFile } = await import('node:fs/promises');
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, '');
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, '');
 
       expect(result).toBe(false);
       expect(writeFile).not.toHaveBeenCalled();
@@ -443,7 +590,7 @@ describe('windowHandlers', () => {
     it('returns false for content exceeding 1MB', async () => {
       const { writeFile } = await import('node:fs/promises');
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'x'.repeat(1_048_576));
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'x'.repeat(1_048_576));
 
       expect(result).toBe(false);
       expect(writeFile).not.toHaveBeenCalled();
@@ -453,7 +600,7 @@ describe('windowHandlers', () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockRejectedValue(new Error('disk full'));
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
 
       expect(result).toBe(false);
       expect(shell.openPath).not.toHaveBeenCalled();
@@ -465,7 +612,7 @@ describe('windowHandlers', () => {
       // shell.openPath never rejects; it resolves with a non-empty error string on failure
       vi.mocked(shell.openPath).mockResolvedValue('no handler registered for .ics files');
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
 
       expect(result).toBe(false);
     });
@@ -475,15 +622,131 @@ describe('windowHandlers', () => {
       vi.mocked(writeFile).mockResolvedValue(undefined);
       vi.mocked(shell.openPath).mockResolvedValue('');
 
-      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+      const result = await getHandler(IPC_CHANNELS.ICS_SAVE_AND_OPEN)({}, 'BEGIN:VCALENDAR');
 
       expect(result).toBe(true);
     });
   });
 
+  describe('ALERT_DRAFT_SAVE_AND_OPEN', () => {
+    const validEml = [
+      'MIME-Version: 1.0',
+      'X-Unsent: 1',
+      'Content-Type: multipart/related; boundary="relay"',
+      'Content-ID: <relay-alert-image>',
+      '',
+    ].join('\r\n');
+
+    it('writes the protected EML to temp storage and opens it in Outlook', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      const result = await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, validEml);
+
+      expect(result).toBe(true);
+      const [filePath, content, options] = vi.mocked(writeFile).mock.calls[0] as [
+        string,
+        string,
+        { encoding: string; mode: number },
+      ];
+      expect(mkdtemp).toHaveBeenCalledWith('/mock-temp/relay-');
+      expect(filePath).toBe(`${PRIVATE_TEMP_DIR}/relay-alert.eml`);
+      expect(content).toBe(validEml);
+      expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
+      if (process.platform === 'darwin') {
+        expect(execFile).toHaveBeenCalledWith(
+          '/usr/bin/open',
+          ['-b', 'com.microsoft.Outlook', filePath],
+          expect.any(Function),
+        );
+        expect(shell.openPath).not.toHaveBeenCalled();
+      } else {
+        expect(shell.openPath).toHaveBeenCalledWith(filePath);
+      }
+    });
+
+    it('rejects malformed, incomplete, and oversized EML input', async () => {
+      const { writeFile } = await import('node:fs/promises');
+
+      expect(await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, 42)).toBe(false);
+      expect(await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, 'X-Unsent: 1')).toBe(
+        false,
+      );
+      expect(
+        await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, 'x'.repeat(20 * 1024 * 1024)),
+      ).toBe(false);
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(shell.openPath).not.toHaveBeenCalled();
+    });
+
+    it.skipIf(process.platform !== 'darwin')(
+      'falls back to the Outlook application name on macOS',
+      async () => {
+        const { writeFile } = await import('node:fs/promises');
+        vi.mocked(writeFile).mockResolvedValue(undefined);
+        childProcess.execFile
+          .mockImplementationOnce((_file, _args, callback) => {
+            callback(new Error('bundle missing'), '', '');
+            return {};
+          })
+          .mockImplementationOnce((_file, _args, callback) => {
+            callback(null, '', '');
+            return {};
+          });
+
+        const result = await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, validEml);
+
+        const [firstWrite] = vi.mocked(writeFile).mock.calls;
+        expect(firstWrite).toBeDefined();
+        const [filePath] = firstWrite!;
+        expect(result).toBe(true);
+        expect(execFile).toHaveBeenNthCalledWith(
+          1,
+          '/usr/bin/open',
+          ['-b', 'com.microsoft.Outlook', filePath],
+          expect.any(Function),
+        );
+        expect(execFile).toHaveBeenNthCalledWith(
+          2,
+          '/usr/bin/open',
+          ['-a', 'Microsoft Outlook', filePath],
+          expect.any(Function),
+        );
+      },
+    );
+
+    it('does not leave 20MB drafts accumulating in shared temp storage', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, validEml);
+
+      expect(rm).toHaveBeenCalledWith(PRIVATE_TEMP_DIR, { recursive: true, force: true });
+    });
+
+    it('returns false when the draft cannot be opened', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      if (process.platform === 'darwin') {
+        childProcess.execFile.mockImplementation((_file, _args, callback) => {
+          callback(new Error('Outlook unavailable'), '', '');
+          return {};
+        });
+      } else {
+        vi.mocked(shell.openPath).mockResolvedValue('no .eml handler');
+      }
+
+      const result = await getHandler(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)({}, validEml);
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('ALERT_PLAY_SOUND', () => {
     it('plays the native alert sound and returns true', async () => {
-      const result = await handlers[IPC_CHANNELS.ALERT_PLAY_SOUND]();
+      const result = await getHandler(IPC_CHANNELS.ALERT_PLAY_SOUND)();
 
       expect(shell.beep).toHaveBeenCalledTimes(1);
       expect(result).toBe(true);
@@ -494,7 +757,7 @@ describe('windowHandlers', () => {
         throw new Error('audio unavailable');
       });
 
-      const result = await handlers[IPC_CHANNELS.ALERT_PLAY_SOUND]();
+      const result = await getHandler(IPC_CHANNELS.ALERT_PLAY_SOUND)();
 
       expect(result).toBe(false);
     });
@@ -507,7 +770,7 @@ describe('windowHandlers', () => {
         filePaths: ['/mock-dir/loud-alarm.mp3'],
       });
 
-      const result = await handlers[IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND]();
+      const result = await getHandler(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND)();
 
       expect(dialog.showOpenDialog).toHaveBeenCalledWith({
         title: 'Select Reminder Alarm MP3',
@@ -523,7 +786,7 @@ describe('windowHandlers', () => {
         filePaths: [],
       });
 
-      const result = await handlers[IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND]();
+      const result = await getHandler(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND)();
 
       expect(result).toEqual({ success: false, error: 'Cancelled' });
     });
@@ -534,78 +797,59 @@ describe('windowHandlers', () => {
         filePaths: ['/mock-dir/not-audio.wav'],
       });
 
-      const result = await handlers[IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND]();
+      const result = await getHandler(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND)();
 
       expect(result).toEqual({ success: false, error: 'Select an MP3 file' });
     });
   });
 
-  describe('CLIPBOARD_WRITE_IMAGE', () => {
-    it('writes valid PNG data URL to clipboard', async () => {
-      const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
-      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
+  describe('OPTIMIZE_ALERT_IMAGE', () => {
+    it('returns a smaller optimized PNG data URL', async () => {
+      const originalDataUrl =
+        'data:image/png;base64,' + Buffer.from('larger-original-png').toString('base64');
 
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE]({}, dataUrl);
+      const result = await getHandler(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE)({}, originalDataUrl);
 
-      expect(nativeImage.createFromDataURL).toHaveBeenCalledWith(dataUrl);
-      expect(clipboard.writeImage).toHaveBeenCalled();
-      expect(result).toBe(true);
+      expect(mockSharp.sharp).toHaveBeenCalledWith(Buffer.from('larger-original-png'));
+      expect(mockSharp.withMetadata).toHaveBeenCalledWith({ density: 96 });
+      expect(mockSharp.png).toHaveBeenCalledWith({
+        adaptiveFiltering: true,
+        compressionLevel: 9,
+        effort: 10,
+      });
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('optimized-png').toString('base64'),
+      });
     });
 
-    it('returns false for non-string input', async () => {
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE]({}, 42);
+    it('keeps the prepared 96-DPI PNG even when metadata makes it larger', async () => {
+      mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('larger-than-original'));
+      const originalDataUrl = 'data:image/png;base64,' + Buffer.from('tiny').toString('base64');
 
-      expect(result).toBe(false);
+      const result = await getHandler(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE)({}, originalDataUrl);
+
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('larger-than-original').toString('base64'),
+      });
     });
 
-    it('returns false for non-PNG data URL', async () => {
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE](
+    it('rejects non-PNG data URLs', async () => {
+      const result = await getHandler(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE)(
         {},
         'data:image/jpeg;base64,abc',
       );
 
-      expect(result).toBe(false);
-    });
-
-    it('returns false for data URL exceeding 10MB', async () => {
-      const bigDataUrl = 'data:image/png;base64,' + 'A'.repeat(10 * 1024 * 1024 + 1);
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE]({}, bigDataUrl);
-
-      expect(result).toBe(false);
-    });
-
-    it('returns false when nativeImage is empty', async () => {
-      const emptyImage = { isEmpty: vi.fn(() => true) };
-      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(emptyImage as never);
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE](
-        {},
-        'data:image/png;base64,abc',
-      );
-
-      expect(result).toBe(false);
-    });
-
-    it('returns false when clipboard.writeImage throws', async () => {
-      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
-      vi.mocked(clipboard.writeImage).mockImplementationOnce(() => {
-        throw new Error('clipboard fail');
-      });
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE](
-        {},
-        'data:image/png;base64,abc',
-      );
-
-      expect(result).toBe(false);
+      expect(result).toEqual({ success: false, error: 'Invalid image data' });
+      expect(mockSharp.sharp).not.toHaveBeenCalled();
     });
   });
 
   describe('WINDOW_MINIMIZE', () => {
     it('minimizes the window', () => {
       const event = { sender: {} };
-      onHandlers[IPC_CHANNELS.WINDOW_MINIMIZE](event);
+      getOnHandler(IPC_CHANNELS.WINDOW_MINIMIZE)(event);
       expect(mockWin.minimize).toHaveBeenCalled();
     });
 
@@ -614,60 +858,25 @@ describe('windowHandlers', () => {
         null as unknown as BrowserWindow,
       );
       const event = { sender: {} };
-      expect(() => onHandlers[IPC_CHANNELS.WINDOW_MINIMIZE](event)).not.toThrow();
-    });
-  });
-
-  describe('WINDOW_OPEN_AUX', () => {
-    it('calls createAuxWindow for allowed route', () => {
-      onHandlers[IPC_CHANNELS.WINDOW_OPEN_AUX](null, 'oncall');
-      expect(createAuxWindow).toHaveBeenCalledWith('oncall');
-    });
-
-    it('ignores non-string route', () => {
-      onHandlers[IPC_CHANNELS.WINDOW_OPEN_AUX](null, 123);
-      expect(createAuxWindow).not.toHaveBeenCalled();
-    });
-
-    it('ignores disallowed route', () => {
-      onHandlers[IPC_CHANNELS.WINDOW_OPEN_AUX](null, 'admin');
-      expect(createAuxWindow).not.toHaveBeenCalled();
-    });
-
-    it('handles missing createAuxWindow gracefully', () => {
-      vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      setupWindowHandlers(getMainWindow); // no createAuxWindow
-      expect(() => onHandlers[IPC_CHANNELS.WINDOW_OPEN_AUX](null, 'oncall')).not.toThrow();
+      expect(() => getOnHandler(IPC_CHANNELS.WINDOW_MINIMIZE)(event)).not.toThrow();
     });
   });
 
   describe('DRAG_STARTED', () => {
     it('broadcasts drag started to all windows', () => {
-      expect(() => onHandlers[IPC_CHANNELS.DRAG_STARTED]()).not.toThrow();
+      expect(() => getOnHandler(IPC_CHANNELS.DRAG_STARTED)()).not.toThrow();
     });
   });
 
   describe('DRAG_STOPPED', () => {
     it('broadcasts drag stopped to all windows', () => {
-      expect(() => onHandlers[IPC_CHANNELS.DRAG_STOPPED]()).not.toThrow();
+      expect(() => getOnHandler(IPC_CHANNELS.DRAG_STOPPED)()).not.toThrow();
     });
   });
 
   describe('ONCALL_ALERT_DISMISSED', () => {
     it('broadcasts alert dismissal to all windows', () => {
-      expect(() => onHandlers[IPC_CHANNELS.ONCALL_ALERT_DISMISSED](null, 'oracle')).not.toThrow();
+      expect(() => getOnHandler(IPC_CHANNELS.ONCALL_ALERT_DISMISSED)(null, 'oracle')).not.toThrow();
     });
   });
 
@@ -712,14 +921,14 @@ describe('windowHandlers', () => {
     it('unmaximizes when window is maximized', () => {
       vi.mocked(mockWin.isMaximized).mockReturnValueOnce(true);
       const event = { sender: {} };
-      onHandlers[IPC_CHANNELS.WINDOW_MAXIMIZE](event);
+      getOnHandler(IPC_CHANNELS.WINDOW_MAXIMIZE)(event);
       expect(mockWin.unmaximize).toHaveBeenCalled();
     });
 
     it('maximizes when window is not maximized', () => {
       vi.mocked(mockWin.isMaximized).mockReturnValueOnce(false);
       const event = { sender: {} };
-      onHandlers[IPC_CHANNELS.WINDOW_MAXIMIZE](event);
+      getOnHandler(IPC_CHANNELS.WINDOW_MAXIMIZE)(event);
       expect(mockWin.maximize).toHaveBeenCalled();
     });
 
@@ -728,14 +937,14 @@ describe('windowHandlers', () => {
         null as unknown as BrowserWindow,
       );
       const event = { sender: {} };
-      expect(() => onHandlers[IPC_CHANNELS.WINDOW_MAXIMIZE](event)).not.toThrow();
+      expect(() => getOnHandler(IPC_CHANNELS.WINDOW_MAXIMIZE)(event)).not.toThrow();
     });
   });
 
   describe('WINDOW_CLOSE', () => {
     it('closes the window', () => {
       const event = { sender: {} };
-      onHandlers[IPC_CHANNELS.WINDOW_CLOSE](event);
+      getOnHandler(IPC_CHANNELS.WINDOW_CLOSE)(event);
       expect(mockWin.close).toHaveBeenCalled();
       expect(loggers.main.info).toHaveBeenCalledWith('Window close requested by renderer', {
         webContentsId: undefined,
@@ -747,7 +956,7 @@ describe('windowHandlers', () => {
         null as unknown as BrowserWindow,
       );
       const event = { sender: {} };
-      expect(() => onHandlers[IPC_CHANNELS.WINDOW_CLOSE](event)).not.toThrow();
+      expect(() => getOnHandler(IPC_CHANNELS.WINDOW_CLOSE)(event)).not.toThrow();
     });
   });
 
@@ -755,14 +964,14 @@ describe('windowHandlers', () => {
     it('returns true when window is maximized', () => {
       vi.mocked(mockWin.isMaximized).mockReturnValueOnce(true);
       const event = { sender: {} };
-      const result = handlers[IPC_CHANNELS.WINDOW_IS_MAXIMIZED](event);
+      const result = getHandler(IPC_CHANNELS.WINDOW_IS_MAXIMIZED)(event);
       expect(result).toBe(true);
     });
 
     it('returns false when window is not maximized', () => {
       vi.mocked(mockWin.isMaximized).mockReturnValueOnce(false);
       const event = { sender: {} };
-      const result = handlers[IPC_CHANNELS.WINDOW_IS_MAXIMIZED](event);
+      const result = getHandler(IPC_CHANNELS.WINDOW_IS_MAXIMIZED)(event);
       expect(result).toBe(false);
     });
 
@@ -771,7 +980,7 @@ describe('windowHandlers', () => {
         null as unknown as BrowserWindow,
       );
       const event = { sender: {} };
-      const result = handlers[IPC_CHANNELS.WINDOW_IS_MAXIMIZED](event);
+      const result = getHandler(IPC_CHANNELS.WINDOW_IS_MAXIMIZED)(event);
       expect(result).toBe(false);
     });
   });
@@ -781,7 +990,7 @@ describe('windowHandlers', () => {
       const pngBuffer = Buffer.from('fake-png-data');
       vi.mocked(readFile).mockResolvedValue(pngBuffer as never);
 
-      const result = await handlers[IPC_CHANNELS.GET_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.GET_COMPANY_LOGO)();
 
       expect(result).toBe('data:image/png;base64,' + pngBuffer.toString('base64'));
     });
@@ -789,29 +998,18 @@ describe('windowHandlers', () => {
     it('returns null when logo file does not exist', async () => {
       vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
 
-      const result = await handlers[IPC_CHANNELS.GET_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.GET_COMPANY_LOGO)();
 
       expect(result).toBeNull();
     });
 
     it('returns null when getDataRoot is not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
 
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
+      setupWindowHandlers(getMainWindow); // no getDataRoot
 
-      const result = await handlers[IPC_CHANNELS.GET_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.GET_COMPANY_LOGO)();
       expect(result).toBeNull();
     });
   });
@@ -821,7 +1019,7 @@ describe('windowHandlers', () => {
       const pngBuffer = Buffer.from('footer-png');
       vi.mocked(readFile).mockResolvedValue(pngBuffer as never);
 
-      const result = await handlers[IPC_CHANNELS.GET_FOOTER_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.GET_FOOTER_LOGO)();
 
       expect(result).toBe('data:image/png;base64,' + pngBuffer.toString('base64'));
     });
@@ -829,7 +1027,7 @@ describe('windowHandlers', () => {
     it('returns null when footer logo does not exist', async () => {
       vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
 
-      const result = await handlers[IPC_CHANNELS.GET_FOOTER_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.GET_FOOTER_LOGO)();
 
       expect(result).toBeNull();
     });
@@ -839,7 +1037,7 @@ describe('windowHandlers', () => {
     it('removes logo file successfully', async () => {
       vi.mocked(unlink).mockResolvedValue(undefined);
 
-      const result = await handlers[IPC_CHANNELS.REMOVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.REMOVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: true });
     });
@@ -848,7 +1046,7 @@ describe('windowHandlers', () => {
       const enoentErr = Object.assign(new Error('not found'), { code: 'ENOENT' });
       vi.mocked(unlink).mockRejectedValue(enoentErr);
 
-      const result = await handlers[IPC_CHANNELS.REMOVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.REMOVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: true });
     });
@@ -856,29 +1054,18 @@ describe('windowHandlers', () => {
     it('returns failure for other errors', async () => {
       vi.mocked(unlink).mockRejectedValue(new Error('Permission denied'));
 
-      const result = await handlers[IPC_CHANNELS.REMOVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.REMOVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: false, error: 'Permission denied' });
     });
 
     it('returns failure when getDataRoot is not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
 
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
+      setupWindowHandlers(getMainWindow); // no getDataRoot
 
-      const result = await handlers[IPC_CHANNELS.REMOVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.REMOVE_COMPANY_LOGO)();
       expect(result).toEqual({ success: false, error: 'Data root not available' });
     });
   });
@@ -887,7 +1074,7 @@ describe('windowHandlers', () => {
     it('removes footer logo successfully', async () => {
       vi.mocked(unlink).mockResolvedValue(undefined);
 
-      const result = await handlers[IPC_CHANNELS.REMOVE_FOOTER_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.REMOVE_FOOTER_LOGO)();
 
       expect(result).toEqual({ success: true });
     });
@@ -896,22 +1083,11 @@ describe('windowHandlers', () => {
   describe('Logo handlers - SAVE_COMPANY_LOGO', () => {
     it('returns failure when getDataRoot is not provided', async () => {
       vi.clearAllMocks();
-      vi.mocked(ipcMain.on).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          onHandlers[channel] = handler;
-          return ipcMain;
-        },
-      );
-      vi.mocked(ipcMain.handle).mockImplementation(
-        (channel: string, handler: (...args: unknown[]) => unknown) => {
-          handlers[channel] = handler;
-          return ipcMain;
-        },
-      );
+      captureIpcRegistrations();
 
-      setupWindowHandlers(getMainWindow, createAuxWindow); // no getDataRoot
+      setupWindowHandlers(getMainWindow); // no getDataRoot
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
       expect(result).toEqual({ success: false, error: 'Data root not available' });
     });
 
@@ -921,7 +1097,7 @@ describe('windowHandlers', () => {
         filePaths: [],
       });
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: false, error: 'Cancelled' });
     });
@@ -934,31 +1110,30 @@ describe('windowHandlers', () => {
       vi.mocked(stat).mockResolvedValue({ size: 2 * 1024 * 1024 + 1 } as never);
       vi.mocked(readFile).mockRejectedValue(new Error('should not read oversized logo'));
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: false, error: 'Image must be under 2MB' });
       expect(readFile).not.toHaveBeenCalled();
     });
 
-    it('returns error when image is invalid (empty)', async () => {
+    it('returns error when image metadata cannot be decoded', async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
         filePaths: ['/mock-dir/bad.png'],
       });
       vi.mocked(readFile).mockResolvedValue(Buffer.from('tiny') as never);
-      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
-        isEmpty: vi.fn(() => true),
-      } as never);
+      mockSharp.metadata.mockRejectedValueOnce(new Error('invalid image'));
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
 
-      expect(result).toEqual({ success: false, error: 'Invalid image file' });
+      expect(result).toEqual({ success: false, error: 'Invalid or oversized image' });
+      expect(nativeImage.createFromBuffer).not.toHaveBeenCalled();
     });
   });
 
   describe('SAVE_ALERT_IMAGE', () => {
     it('returns error for invalid image data', async () => {
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'not-a-data-url',
         'test.png',
@@ -970,7 +1145,7 @@ describe('windowHandlers', () => {
     it('returns error when data exceeds size limit', async () => {
       const bigDataUrl = 'data:image/png;base64,' + 'A'.repeat(10 * 1024 * 1024 + 1);
 
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE]({}, bigDataUrl, 'test.png');
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)({}, bigDataUrl, 'test.png');
 
       expect(result).toEqual({ success: false, error: 'Image data exceeds size limit' });
     });
@@ -981,7 +1156,7 @@ describe('windowHandlers', () => {
         filePath: undefined,
       } as never);
 
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'data:image/png;base64,abc',
         'test.png',
@@ -999,7 +1174,7 @@ describe('windowHandlers', () => {
       } as never);
       vi.mocked(writeFile).mockResolvedValue(undefined);
 
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'data:image/png;base64,iVBORw0KGgo=',
         'test.png',
@@ -1016,7 +1191,7 @@ describe('windowHandlers', () => {
         filePath: undefined,
       } as never);
 
-      await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'data:image/png;base64,iVBORw0KGgo=',
         '../secrets/../../owned.exe',
@@ -1034,7 +1209,7 @@ describe('windowHandlers', () => {
         isEmpty: vi.fn(() => true),
       } as never);
 
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'data:image/png;base64,not-real-image-data',
         'test.png',
@@ -1054,7 +1229,7 @@ describe('windowHandlers', () => {
       } as never);
       vi.mocked(writeFile).mockRejectedValue(new Error('Disk full'));
 
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'data:image/png;base64,iVBORw0KGgo=',
         'test.png',
@@ -1072,7 +1247,7 @@ describe('windowHandlers', () => {
       } as never);
       vi.mocked(writeFile).mockRejectedValue('string error');
 
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)(
         {},
         'data:image/png;base64,iVBORw0KGgo=',
         'test.png',
@@ -1082,8 +1257,67 @@ describe('windowHandlers', () => {
     });
 
     it('returns error for non-string dataUrl', async () => {
-      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE]({}, 42, 'test.png');
+      const result = await getHandler(IPC_CHANNELS.SAVE_ALERT_IMAGE)({}, 42, 'test.png');
       expect(result).toEqual({ success: false, error: 'Invalid image data' });
+    });
+  });
+
+  describe('SELECT_ALERT_BODY_IMAGE', () => {
+    it('returns a resized JPEG data URL for a selected JPEG image', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/dashboard.jpg'],
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+      vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
+      vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
+      mockNativeImage.getSize.mockReturnValue({ width: 1200, height: 600 });
+
+      const result = await getHandler(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE)();
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith({
+        title: 'Insert Alert Image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+        properties: ['openFile'],
+      });
+      expect(mockNativeImage.resize).toHaveBeenCalledWith({ width: 516 });
+      expect(mockNativeImage.toJPEG).toHaveBeenCalledWith(82);
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/jpeg;base64,' + Buffer.from('jpeg-data').toString('base64'),
+      });
+    });
+
+    it('keeps PNG sources as PNG so transparency survives', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/diagram.png'],
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+      vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
+      vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
+      mockNativeImage.getSize.mockReturnValue({ width: 400, height: 300 });
+
+      const result = await getHandler(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE)();
+
+      expect(mockNativeImage.toJPEG).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('png-data').toString('base64'),
+      });
+    });
+
+    it('rejects images over 5MB before reading', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/huge.png'],
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 5 * 1024 * 1024 + 1 } as never);
+
+      const result = await getHandler(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE)();
+
+      expect(result).toEqual({ success: false, error: 'Image must be under 5MB' });
+      expect(readFile).not.toHaveBeenCalledWith('/mock-dir/huge.png');
     });
   });
 
@@ -1094,54 +1328,58 @@ describe('windowHandlers', () => {
         canceled: false,
         filePaths: ['/mock-dir/logo.png'],
       });
-      // Small enough buffer
       vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
-      // Image wider than MAX_LOGO_WIDTH (400)
-      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
-        isEmpty: vi.fn(() => false),
-        getSize: vi.fn(() => ({ width: 800, height: 600 })),
-        resize: vi.fn().mockReturnValue({
-          toPNG: vi.fn(() => Buffer.from('resized-png')),
-        }),
-      } as never);
+      mockSharp.metadata.mockResolvedValueOnce({ width: 800, height: 600, format: 'png' });
+      mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('resized-png'));
       vi.mocked(mkdir).mockResolvedValue(undefined as never);
       vi.mocked(writeFile).mockResolvedValue(undefined);
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
 
       expect(result).toEqual({
         success: true,
         data: 'data:image/png;base64,' + Buffer.from('resized-png').toString('base64'),
       });
+      expect(mockSharp.resize).toHaveBeenCalledWith({
+        width: 400,
+        height: 400,
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+      expect(nativeImage.createFromBuffer).not.toHaveBeenCalled();
     });
 
-    it('saves a valid logo without resize when within width limit', async () => {
+    it('saves a valid logo without enlarging it', async () => {
       const { writeFile, mkdir } = await import('node:fs/promises');
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
         filePaths: ['/mock-dir/small-logo.png'],
       });
       vi.mocked(readFile).mockResolvedValue(Buffer.from('small-image') as never);
-      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
-        isEmpty: vi.fn(() => false),
-        getSize: vi.fn(() => ({ width: 200, height: 100 })),
-        toPNG: vi.fn(() => Buffer.from('small-png')),
-      } as never);
+      mockSharp.metadata.mockResolvedValueOnce({ width: 200, height: 100, format: 'png' });
+      mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('small-png'));
       vi.mocked(mkdir).mockResolvedValue(undefined as never);
       vi.mocked(writeFile).mockResolvedValue(undefined);
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
 
       expect(result).toEqual({
         success: true,
         data: 'data:image/png;base64,' + Buffer.from('small-png').toString('base64'),
       });
+      expect(mockSharp.resize).toHaveBeenCalledWith({
+        width: 400,
+        height: 400,
+        fit: 'inside',
+        withoutEnlargement: true,
+      });
+      expect(nativeImage.createFromBuffer).not.toHaveBeenCalled();
     });
 
     it('returns error when save throws non-Error', async () => {
       vi.mocked(dialog.showOpenDialog).mockRejectedValue('unexpected failure');
 
-      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.SAVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: false, error: 'Save failed' });
     });
@@ -1151,7 +1389,7 @@ describe('windowHandlers', () => {
     it('returns generic error message for non-Error throws', async () => {
       vi.mocked(unlink).mockRejectedValue('string throw');
 
-      const result = await handlers[IPC_CHANNELS.REMOVE_COMPANY_LOGO]();
+      const result = await getHandler(IPC_CHANNELS.REMOVE_COMPANY_LOGO)();
 
       expect(result).toEqual({ success: false, error: 'Remove failed' });
     });
@@ -1160,29 +1398,32 @@ describe('windowHandlers', () => {
 
 describe('setupWindowListeners', () => {
   it('sends WINDOW_MAXIMIZE_CHANGE true on maximize event', () => {
+    // BrowserWindow.on is an overload set, so vi.mocked() would pin mock.calls to a single event.
+    const on = vi.fn<(event: string, listener: (...args: unknown[]) => void) => void>();
     const win = {
-      on: vi.fn(),
+      on,
       webContents: { send: vi.fn() },
     } as unknown as BrowserWindow;
 
     setupWindowListeners(win);
 
     // Find the maximize callback
-    const maximizeCall = vi.mocked(win.on).mock.calls.find(([evt]) => evt === 'maximize');
+    const maximizeCall = on.mock.calls.find(([evt]) => evt === 'maximize');
     expect(maximizeCall).toBeDefined();
     maximizeCall![1]();
     expect(win.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, true);
   });
 
   it('sends WINDOW_MAXIMIZE_CHANGE false on unmaximize event', () => {
+    const on = vi.fn<(event: string, listener: (...args: unknown[]) => void) => void>();
     const win = {
-      on: vi.fn(),
+      on,
       webContents: { send: vi.fn() },
     } as unknown as BrowserWindow;
 
     setupWindowListeners(win);
 
-    const unmaximizeCall = vi.mocked(win.on).mock.calls.find(([evt]) => evt === 'unmaximize');
+    const unmaximizeCall = on.mock.calls.find(([evt]) => evt === 'unmaximize');
     expect(unmaximizeCall).toBeDefined();
     unmaximizeCall![1]();
     expect(win.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, false);

@@ -13,6 +13,11 @@ describe('ShortcutsModal', () => {
     render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
+    expect(dialog).not.toHaveClass('shortcuts-modal');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
     expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
   });
 
@@ -41,6 +46,18 @@ describe('ShortcutsModal', () => {
   it('renders shortcut descriptions', () => {
     render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
     expect(screen.getByText('Go to Compose')).toBeInTheDocument();
+    expect(screen.getByText('Go to Alerts')).toBeInTheDocument();
+    expect(screen.getByText('Go to On-Call Board')).toBeInTheDocument();
+    expect(screen.getByText('Go to Knowledge')).toBeInTheDocument();
+    expect(screen.getByText('Go to Service Status')).toBeInTheDocument();
+    expect(screen.getByText('Go to Dynatrace Problems')).toBeInTheDocument();
+    expect(screen.getByText('Go to Dispatcher Radar')).toBeInTheDocument();
+    expect(screen.getByText('Next unaddressed problem')).toBeInTheDocument();
+    expect(screen.getByText('Previous unaddressed problem')).toBeInTheDocument();
+    expect(screen.getByText('Focus selected problem note')).toBeInTheDocument();
+    expect(screen.queryByText('Go to People')).not.toBeInTheDocument();
+    expect(screen.queryByText('Go to Servers')).not.toBeInTheDocument();
+    expect(screen.queryByText('Go to Notes')).not.toBeInTheDocument();
     expect(screen.getByText('Focus Search')).toBeInTheDocument();
     expect(screen.getByText('Close modal / dialog')).toBeInTheDocument();
   });
@@ -56,7 +73,7 @@ describe('ShortcutsModal platform detection', () => {
 
   afterEach(() => {
     if (originalApi) {
-      (globalThis.window as Record<string, unknown>).api = originalApi;
+      globalThis.window.api = originalApi;
     }
   });
 

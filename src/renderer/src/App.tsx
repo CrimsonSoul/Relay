@@ -1,5 +1,15 @@
-import { NotesProvider, SearchProvider } from './contexts';
-import { useEffect, useState, useCallback, useRef, Suspense, lazy, ComponentType } from 'react';
+import { NotesProvider, PrivilegedAccessProvider, SearchProvider } from './contexts';
+import {
+  Activity,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  Suspense,
+  lazy,
+  type ComponentType,
+  type PropsWithChildren,
+} from 'react';
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
@@ -9,48 +19,125 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabFallback } from './components/TabFallback';
 import { HeaderSearch } from './components/HeaderSearch';
 import { AlertReminderManager } from './components/AlertReminderManager';
+import { DynatraceProblemNotificationManager } from './components/DynatraceProblemNotificationManager';
+import { RadarQueueNotificationManager } from './components/RadarQueueNotificationManager';
+import { ReleaseUpdateNotificationManager } from './components/ReleaseUpdateNotificationManager';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { StartupErrorScreen } from './components/StartupErrorScreen';
 import { ConnectionManager } from './components/ConnectionManager';
-import { Contact, TabName, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
+import {
+  Contact,
+  readSaveConfigResult,
+  type PbAuthSession,
+  type PublicRelayConfig,
+} from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
+import type { DisplayCloudStatusProvider } from './utils/cloudStatusDisplay';
 import { useErrorNotifications } from './hooks/useErrorNotifications';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
-import { useClientPresence } from './hooks/useClientPresence';
 import { useDynatraceDashboards } from './hooks/useDynatraceDashboards';
 import {
   REMINDER_ALERT_LOAD_EVENT,
   type ReminderAlertLoadDetail,
 } from './services/reminderAlertLoadEvent';
+import {
+  clampOnCallFontScale,
+  getStoredOnCallFontScale,
+  ON_CALL_FONT_SCALE_STORAGE_KEY,
+  setOnCallFontScale as persistOnCallFontScale,
+} from './theme/onCallDisplay';
+import {
+  requestKnowledgeDocumentOpen,
+  type KnowledgeOpenRequest,
+} from './features/knowledge/knowledgeNavigation';
+import {
+  normalizeLegacyTabRequest,
+  requestKnowledgeDestinationOpen,
+  type KnowledgeContentDestination,
+  type KnowledgeDestination,
+} from './features/knowledge/knowledgeWorkspaceNavigation';
+import type {
+  KnowledgeRecordOpenRequest,
+  KnowledgeRecordTarget,
+} from './features/knowledge/knowledgeRecordNavigation';
+import { getRelayRuntime } from './runtime/relayRuntime';
+import { WebRuntimeBanner } from './components/WebRuntimeBanner';
+import { UnsupportedViewport } from './components/UnsupportedViewport';
 
-// Lazy-load helper for named exports
-function lazyTab<T extends Record<string, ComponentType>>(
+// Lazy-load helper for named exports. Only the key being imported is
+// constrained — tab modules also export types, constants and helpers that are
+// not components. `T[K]` still resolves to the concrete component at each call
+// site, so the lazy element's props keep checking exactly. Component props are
+// contravariant, so `ComponentType<any>` — React's own constraint on `lazy` —
+// is the only bound that accepts every tab component.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyTab<K extends string, T extends Record<K, ComponentType<any>>>(
   factory: () => Promise<T>,
-  name: keyof T & string,
+  name: K,
 ) {
   return lazy(() => factory().then((m) => ({ default: m[name] })));
 }
 
 // Lazy load non-default tabs and settings modal
-const DirectoryTab = lazyTab(() => import('./tabs/DirectoryTab'), 'DirectoryTab');
-const ServersTab = lazyTab(() => import('./tabs/ServersTab'), 'ServersTab');
 const PersonnelTab = lazyTab(() => import('./tabs/PersonnelTab'), 'PersonnelTab');
-const SettingsModal = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
+const SettingsTab = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
 const DataManagerModal = lazyTab(() => import('./components/DataManagerModal'), 'DataManagerModal');
-const NotesTab = lazyTab(() => import('./tabs/NotesTab'), 'NotesTab');
+const KnowledgeWorkspace = lazyTab(
+  () => import('./features/knowledge/KnowledgeWorkspace'),
+  'KnowledgeWorkspace',
+);
 const CloudStatusTab = lazyTab(() => import('./tabs/CloudStatusTab'), 'CloudStatusTab');
+const DynatraceProblemsTab = lazyTab(
+  () => import('./tabs/DynatraceProblemsTab'),
+  'DynatraceProblemsTab',
+);
 const AlertsTab = lazyTab(() => import('./tabs/AlertsTab'), 'AlertsTab');
-const PopoutBoard = lazyTab(() => import('./components/PopoutBoard'), 'PopoutBoard');
+const RadarTab = lazyTab(() => import('./tabs/RadarTab'), 'RadarTab');
 
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
+const getTabPanelClassName = (active: boolean) => `tab-panel${active ? ' tab-panel--active' : ''}`;
 const STARTUP_CONNECTION_TIMEOUT_MS = 20_000;
+const RETIRED_LOCAL_SELECTION_KEY = ['relay', 'selectedOperatorId'].join('.');
+
+function getPreferredSearchResultType(
+  activeTab: string,
+  knowledgeDestination: KnowledgeDestination,
+): 'contact' | 'server' | 'knowledge' | undefined {
+  if (activeTab !== 'Knowledge') return undefined;
+
+  switch (knowledgeDestination) {
+    case 'contacts':
+      return 'contact';
+    case 'servers':
+      return 'server';
+    case 'wiki':
+      return 'knowledge';
+    default:
+      return undefined;
+  }
+}
+
+export function RetainedTabPanel({
+  active,
+  children,
+}: PropsWithChildren<Readonly<{ active: boolean }>>) {
+  return (
+    <div
+      className={getTabPanelClassName(active)}
+      data-motion={active ? 'panel' : undefined}
+      data-state={active ? 'active' : 'retained'}
+    >
+      <Activity mode={active ? 'visible' : 'hidden'}>{children}</Activity>
+    </div>
+  );
+}
 
 function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -87,21 +174,27 @@ export function MainApp({
   const isDynatracePopout = popoutRoute === 'dynatrace';
   const dynatracePopoutName = searchParams.get('name')?.trim() || '';
   const dynatrace = useDynatraceDashboards(showToast, { enabled: !isPopout });
+  const [onCallFontScale, setOnCallFontScale] = useState(() => getStoredOnCallFontScale());
+  const handleOnCallFontScaleChange = useCallback((scale: number) => {
+    persistOnCallFontScale(scale);
+    setOnCallFontScale(clampOnCallFontScale(scale));
+  }, []);
+
+  useEffect(() => {
+    const handleFontScaleStorage = (event: StorageEvent) => {
+      if (event.key !== ON_CALL_FONT_SCALE_STORAGE_KEY) return;
+      setOnCallFontScale(clampOnCallFontScale(event.newValue));
+    };
+
+    globalThis.addEventListener('storage', handleFontScaleStorage);
+    return () => globalThis.removeEventListener('storage', handleFontScaleStorage);
+  }, []);
+
   const handleClientConnected = useCallback(
     (hostname: string) => showToast(`${hostname} connected`, 'info'),
     [showToast],
   );
-  const clientPresence = useClientPresence(relayConfig, handleClientConnected, {
-    enabled: !isPopout,
-  });
-
   const { data, boardSettings, setBoardSettings } = useAppData(showToast);
-
-  const {
-    statusData: cloudStatusData,
-    loading: cloudStatusLoading,
-    refetch: cloudStatusRefetch,
-  } = useAppCloudStatus(showToast);
 
   const {
     activeTab,
@@ -111,8 +204,6 @@ export function MainApp({
     manualAdds,
     setManualAdds,
     manualRemoves,
-    settingsOpen,
-    setSettingsOpen,
     handleAddToAssembler,
     handleUndoRemove,
     handleReset,
@@ -120,6 +211,73 @@ export function MainApp({
     handleRemoveManual,
     handleToggleGroup,
   } = useAppAssembler();
+  const [selectedCloudStatusProvider, setSelectedCloudStatusProvider] =
+    useState<DisplayCloudStatusProvider | null>(null);
+  const handleOpenCloudStatusProvider = useCallback(
+    (provider: DisplayCloudStatusProvider) => {
+      setSelectedCloudStatusProvider(provider);
+      setActiveTab('Status');
+    },
+    [setActiveTab],
+  );
+  const {
+    statusData: cloudStatusData,
+    loading: cloudStatusLoading,
+    refetch: cloudStatusRefetch,
+  } = useAppCloudStatus(showToast, handleOpenCloudStatusProvider);
+  const [knowledgeDestination, setKnowledgeDestination] = useState<KnowledgeDestination>('home');
+  const nextKnowledgeRecordRequestId = useRef(0);
+  const [knowledgeRecordOpenRequest, setKnowledgeRecordOpenRequest] =
+    useState<KnowledgeRecordOpenRequest | null>(null);
+  const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
+  const handleOpenRadar = useCallback(() => setActiveTab('Radar'), [setActiveTab]);
+  const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
+  const handleTabRequest = useCallback(
+    (requestedTab: string) => {
+      const normalized = normalizeLegacyTabRequest(requestedTab);
+      if (normalized.knowledgeDestination) {
+        setKnowledgeDestination(normalized.knowledgeDestination);
+        requestKnowledgeDestinationOpen(normalized.knowledgeDestination);
+      }
+      setActiveTab(normalized.tab);
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeDestination = useCallback(
+    (destination: KnowledgeContentDestination) => {
+      setKnowledgeDestination(destination);
+      requestKnowledgeDestinationOpen(destination);
+      setActiveTab('Knowledge');
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeDocument = useCallback(
+    (request: KnowledgeOpenRequest) => {
+      setKnowledgeDestination('wiki');
+      requestKnowledgeDocumentOpen(request);
+      requestKnowledgeDestinationOpen('wiki');
+      setActiveTab('Knowledge');
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeRecord = useCallback(
+    (target: KnowledgeRecordTarget) => {
+      nextKnowledgeRecordRequestId.current += 1;
+      setKnowledgeRecordOpenRequest({
+        ...target,
+        requestId: nextKnowledgeRecordRequestId.current,
+      });
+      handleOpenKnowledgeDestination(target.destination);
+    },
+    [handleOpenKnowledgeDestination],
+  );
+  const handleKnowledgeRecordUnavailable = useCallback(
+    (request: KnowledgeRecordOpenRequest) => {
+      const label = request.destination === 'contacts' ? 'contact' : 'server';
+      showToast(`That ${label} is no longer available.`, 'info');
+    },
+    [showToast],
+  );
 
   // Track which tabs have been mounted at least once
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
@@ -160,7 +318,7 @@ export function MainApp({
   // Global keyboard shortcuts
   useKeyboardShortcuts({
     setActiveTab,
-    setSettingsOpen,
+    openSettings: handleOpenSettings,
     setIsShortcutsOpen: shortcutsModal.open,
     searchInputRef,
   });
@@ -207,9 +365,7 @@ export function MainApp({
       <div className={`popout-container${isDynatracePopout ? ' popout-container--dynatrace' : ''}`}>
         <div className="popout-header">
           <div className="popout-title-stack">
-            <span className="popout-title">
-              {isDynatracePopout ? 'RELAY DYNATRACE' : 'RELAY ON-CALL BOARD'}
-            </span>
+            <span className="popout-title">RELAY</span>
             {isDynatracePopout && dynatracePopoutName && (
               <span className="popout-subtitle">{dynatracePopoutName}</span>
             )}
@@ -220,18 +376,6 @@ export function MainApp({
         </div>
         <div className={`popout-body${isDynatracePopout ? ' popout-body--dynatrace' : ''}`}>
           {isDynatracePopout && <div className="dynatrace-shell-body" aria-hidden="true" />}
-          {popoutRoute?.includes('board') && (
-            <ErrorBoundary fallback={errorFallback}>
-              <Suspense fallback={<TabFallback />}>
-                <PopoutBoard
-                  onCall={data.onCall}
-                  contacts={data.contacts}
-                  boardSettings={boardSettings}
-                  onBoardSettingsChange={setBoardSettings}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
         </div>
       </div>
     );
@@ -240,12 +384,14 @@ export function MainApp({
   return (
     <SearchProvider activeTab={activeTab} searchInputRef={searchInputRef}>
       <div className="app-container">
+        <WebRuntimeBanner />
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onOpenSettings={() => setSettingsOpen(true)}
-          clientPresence={clientPresence}
+          onTabChange={handleTabRequest}
+          onOpenSettings={handleOpenSettings}
           relayMode={relayConfig?.mode}
+          relayConfig={relayConfig}
+          onClientConnected={handleClientConnected}
           dynatraceDashboards={dynatrace.dashboards}
           onOpenDynatraceDashboard={dynatrace.openDashboard}
         />
@@ -258,17 +404,19 @@ export function MainApp({
                 {{
                   Compose: 'Compose',
                   Personnel: 'On-Call',
-                  People: 'People',
-                  Servers: 'Servers',
-                  Notes: 'Notes',
+                  Knowledge: 'Knowledge',
                   Status: 'Service Status',
+                  Problems: 'Dynatrace Problems',
+                  Radar: 'Dispatcher Radar',
                   Alerts: 'Alerts',
+                  Settings: 'Settings',
                 }[activeTab] ?? activeTab}
               </span>
             </div>
             <div className="header-search-container">
               <HeaderSearch
                 activeTab={activeTab}
+                preferredResultType={getPreferredSearchResultType(activeTab, knowledgeDestination)}
                 contacts={data.contacts}
                 servers={data.servers}
                 groups={data.groups}
@@ -278,22 +426,28 @@ export function MainApp({
                     setActiveTab('Compose');
                   },
                   onToggleGroup: handleLoadGroupFromPalette,
-                  onNavigateToTab: (tab) => setActiveTab(tab as TabName),
+                  onNavigateToTab: handleTabRequest,
+                  onOpenKnowledgeDestination: handleOpenKnowledgeDestination,
+                  onOpenKnowledgeRecord: handleOpenKnowledgeRecord,
                   onOpenAddContact: (email) => {
                     setInitialContactEmail(email || '');
                     addContactModal.open();
                   },
+                  onOpenKnowledgeDocument: handleOpenKnowledgeDocument,
                 }}
               />
             </div>
             <div className="header-actions">
+              <ErrorBoundary fallback={null}>
+                <ReleaseUpdateNotificationManager />
+              </ErrorBoundary>
               <WorldClock />
             </div>
           </header>
 
           <div className="content-view">
             {mountedTabs.has('Compose') && (
-              <div className={`tab-panel${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}>
+              <RetainedTabPanel active={activeTab === 'Compose'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <AssemblerTab
                     groups={data.groups}
@@ -311,10 +465,10 @@ export function MainApp({
                     setManualAdds={setManualAdds}
                   />
                 </ErrorBoundary>
-              </div>
+              </RetainedTabPanel>
             )}
             {mountedTabs.has('Personnel') && (
-              <div className={`tab-panel${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}>
+              <RetainedTabPanel active={activeTab === 'Personnel'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <PersonnelTab
@@ -322,58 +476,70 @@ export function MainApp({
                       contacts={data.contacts}
                       boardSettings={boardSettings}
                       onBoardSettingsChange={setBoardSettings}
+                      onCallFontScale={onCallFontScale}
+                      onOnCallFontScaleChange={handleOnCallFontScaleChange}
                     />
                   </Suspense>
                 </ErrorBoundary>
-              </div>
+              </RetainedTabPanel>
             )}
-            {mountedTabs.has('People') && (
-              <div className={`tab-panel${activeTab === 'People' ? ' tab-panel--active' : ''}`}>
+            {mountedTabs.has('Knowledge') && (
+              <RetainedTabPanel active={activeTab === 'Knowledge'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <DirectoryTab
+                    <KnowledgeWorkspace
+                      active={activeTab === 'Knowledge'}
                       contacts={data.contacts}
                       groups={data.groups}
                       servers={data.servers}
+                      relayMode={relayConfig?.mode}
                       onAddToAssembler={handleAddToAssembler}
+                      onDestinationChange={setKnowledgeDestination}
+                      recordOpenRequest={knowledgeRecordOpenRequest}
+                      onRecordUnavailable={handleKnowledgeRecordUnavailable}
                     />
                   </Suspense>
                 </ErrorBoundary>
-              </div>
-            )}
-            {mountedTabs.has('Servers') && (
-              <div className={`tab-panel${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <ServersTab servers={data.servers} contacts={data.contacts} />
-                  </Suspense>
-                </ErrorBoundary>
-              </div>
-            )}
-            {mountedTabs.has('Notes') && (
-              <div className={`tab-panel${activeTab === 'Notes' ? ' tab-panel--active' : ''}`}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <NotesTab />
-                  </Suspense>
-                </ErrorBoundary>
-              </div>
+              </RetainedTabPanel>
             )}
             {mountedTabs.has('Status') && (
-              <div className={`tab-panel${activeTab === 'Status' ? ' tab-panel--active' : ''}`}>
+              <RetainedTabPanel active={activeTab === 'Status'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <CloudStatusTab
                       statusData={cloudStatusData}
                       loading={cloudStatusLoading}
                       refetch={cloudStatusRefetch}
+                      selectedProvider={selectedCloudStatusProvider}
+                      onSelectedProviderChange={setSelectedCloudStatusProvider}
                     />
                   </Suspense>
                 </ErrorBoundary>
-              </div>
+              </RetainedTabPanel>
+            )}
+            {mountedTabs.has('Problems') && (
+              <RetainedTabPanel active={activeTab === 'Problems'}>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <DynatraceProblemsTab
+                      relayMode={relayConfig?.mode}
+                      active={activeTab === 'Problems'}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
+            )}
+            {mountedTabs.has('Radar') && (
+              <RetainedTabPanel active={activeTab === 'Radar'}>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <RadarTab />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
             )}
             {mountedTabs.has('Alerts') && (
-              <div className={`tab-panel${activeTab === 'Alerts' ? ' tab-panel--active' : ''}`}>
+              <RetainedTabPanel active={activeTab === 'Alerts'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <AlertsTab
@@ -382,7 +548,23 @@ export function MainApp({
                     />
                   </Suspense>
                 </ErrorBoundary>
-              </div>
+              </RetainedTabPanel>
+            )}
+            {activeTab === 'Settings' && (
+              <RetainedTabPanel active>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <SettingsTab
+                      isOpen
+                      onClose={() => setActiveTab('Compose')}
+                      onOpenDataManager={dataManagerModal.open}
+                      onReconfigure={onReconfigure}
+                      dynatrace={dynatrace}
+                      presentation="page"
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
             )}
           </div>
         </main>
@@ -391,22 +573,13 @@ export function MainApp({
           <WindowControls />
         </div>
 
-        <ErrorBoundary fallback={errorFallback}>
-          <Suspense fallback={null}>
-            {settingsOpen && (
-              <SettingsModal
-                isOpen={settingsOpen}
-                onClose={() => setSettingsOpen(false)}
-                onOpenDataManager={dataManagerModal.open}
-                onReconfigure={onReconfigure}
-                dynatrace={dynatrace}
-              />
-            )}
-            {dataManagerModal.isOpen && (
-              <DataManagerModal isOpen={dataManagerModal.isOpen} onClose={dataManagerModal.close} />
-            )}
-          </Suspense>
-        </ErrorBoundary>
+        {dataManagerModal.isOpen && (
+          <ErrorBoundary fallback={errorFallback}>
+            <Suspense fallback={null}>
+              <DataManagerModal isOpen onClose={dataManagerModal.close} />
+            </Suspense>
+          </ErrorBoundary>
+        )}
 
         <ErrorBoundary fallback={null}>
           <ShortcutsModal isOpen={shortcutsModal.isOpen} onClose={shortcutsModal.close} />
@@ -424,6 +597,16 @@ export function MainApp({
         <ErrorBoundary fallback={null}>
           <AlertReminderManager />
         </ErrorBoundary>
+
+        <ErrorBoundary fallback={null}>
+          <DynatraceProblemNotificationManager onOpenProblems={handleOpenDynatraceProblems} />
+        </ErrorBoundary>
+
+        {!isPopout && (
+          <ErrorBoundary fallback={null}>
+            <RadarQueueNotificationManager onOpenRadar={handleOpenRadar} />
+          </ErrorBoundary>
+        )}
       </div>
     </SearchProvider>
   );
@@ -435,19 +618,34 @@ type AppPhase =
   | {
       stage: 'connecting';
       pbUrl: string;
-      pbAuth: PbAuthSession;
+      pbAuth: PbAuthSession | null;
+      offlineMode: boolean;
       relayConfig: PublicRelayConfig | null;
     }
   | { stage: 'error'; message: string; retryable: boolean };
 
-function AppWithSetup() {
+function AppWithSetup({
+  onWebSessionRequired,
+  onWebReauthenticate,
+}: {
+  readonly onWebSessionRequired?: () => void;
+  readonly onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
+}) {
   const [phase, setPhase] = useState<AppPhase>({ stage: 'checking' });
+
+  const requestSetupOrWebSession = useCallback(() => {
+    if (getRelayRuntime().kind === 'web') {
+      onWebSessionRequired?.();
+      return;
+    }
+    setPhase({ stage: 'setup' });
+  }, [onWebSessionRequired]);
 
   const checkConfig = useCallback(async () => {
     try {
       const configured = await globalThis.api!.isConfigured();
       if (!configured) {
-        setPhase({ stage: 'setup' });
+        requestSetupOrWebSession();
         return;
       }
       const relayConfig = await globalThis.api!.getConfig();
@@ -456,8 +654,18 @@ function AppWithSetup() {
         STARTUP_CONNECTION_TIMEOUT_MS,
       );
       if (!result.ok) {
+        if (result.error === 'pb-unavailable' && result.offlineAvailable) {
+          setPhase({
+            stage: 'connecting',
+            pbUrl: result.pbUrl,
+            pbAuth: null,
+            offlineMode: true,
+            relayConfig,
+          });
+          return;
+        }
         if (result.error === 'not-configured' || result.error === 'invalid-config') {
-          setPhase({ stage: 'setup' });
+          requestSetupOrWebSession();
           return;
         }
 
@@ -473,6 +681,7 @@ function AppWithSetup() {
         stage: 'connecting',
         pbUrl: result.connection.pbUrl,
         pbAuth: result.connection.auth,
+        offlineMode: false,
         relayConfig,
       });
     } catch (err) {
@@ -488,7 +697,7 @@ function AppWithSetup() {
       loggers.app.error('Failed to check configuration', { error: err });
       setPhase({ stage: 'error', message: 'Failed to read configuration.', retryable: false });
     }
-  }, []);
+  }, [requestSetupOrWebSession]);
 
   useEffect(() => {
     void checkConfig();
@@ -504,10 +713,20 @@ function AppWithSetup() {
       secret: string;
     }) => {
       try {
-        const saved = await globalThis.api!.saveConfig(config);
-        if (!saved) {
+        // The handler answers with either a bare boolean or a result object —
+        // reading it as a plain truthy value would treat `{ ok: false }` as a
+        // successful save and relaunch into a half-written configuration.
+        const saved = readSaveConfigResult(await globalThis.api!.saveConfig(config));
+        if (!saved.ok) {
           setPhase({ stage: 'error', message: 'Failed to save configuration.', retryable: false });
           return;
+        }
+        if (saved.discardedPendingCount > 0) {
+          // Retargeting the server voids the offline queue; those mutations were
+          // never accepted anywhere and cannot be replayed against the new one.
+          loggers.app.warn('Reconfiguration discarded unsynced offline changes', {
+            discardedPendingCount: saved.discardedPendingCount,
+          });
         }
         // Ask the main process to rebuild per-mode runtime state, then reload this
         // window. A plain renderer reload leaves stale state — e.g. a lingering
@@ -545,15 +764,19 @@ function AppWithSetup() {
   }, [checkConfig]);
 
   if (phase.stage === 'checking') {
+    const canConfigureConnection = getRelayRuntime().kind !== 'web';
     return (
       <div className="app-state">
-        <button
-          className="app-state__close-btn"
-          onClick={() => globalThis.window.api?.windowClose()}
-          aria-label="Close"
-        >
-          &#10005;
-        </button>
+        {canConfigureConnection && (
+          <button
+            type="button"
+            className="app-state__close-btn"
+            onClick={() => globalThis.window.api?.windowClose()}
+            aria-label="Close"
+          >
+            &#10005;
+          </button>
+        )}
         <div className="app-state__spinner" />
         <p className="app-state__text">Initializing...</p>
       </div>
@@ -579,23 +802,50 @@ function AppWithSetup() {
     <ConnectionManager
       pbUrl={phase.pbUrl}
       pbAuth={phase.pbAuth}
+      offlineMode={phase.offlineMode}
       onReconfigure={() => setPhase({ stage: 'setup' })}
+      onWebReauthenticate={onWebReauthenticate}
+      onWebSessionRequired={onWebSessionRequired}
     >
-      <MainApp onReconfigure={() => setPhase({ stage: 'setup' })} relayConfig={phase.relayConfig} />
+      <PrivilegedAccessProvider>
+        <MainApp
+          onReconfigure={() => setPhase({ stage: 'setup' })}
+          relayConfig={phase.relayConfig}
+        />
+      </PrivilegedAccessProvider>
     </ConnectionManager>
   );
 }
 
-export default function App() {
+export default function App({
+  onWebSessionRequired,
+  onWebReauthenticate,
+}: Readonly<{
+  onWebSessionRequired?: () => void;
+  onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
+}> = {}) {
   const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(RETIRED_LOCAL_SELECTION_KEY);
+    } catch {
+      // Storage cleanup must never block ordinary passwordless Relay startup.
+    }
+  }, []);
 
   return (
     <ErrorBoundary>
       <ToastWrapper>
-        <NotesProvider>
-          <AppWithSetup />
-        </NotesProvider>
+        <UnsupportedViewport>
+          <NotesProvider>
+            <AppWithSetup
+              onWebSessionRequired={onWebSessionRequired}
+              onWebReauthenticate={onWebReauthenticate}
+            />
+          </NotesProvider>
+        </UnsupportedViewport>
       </ToastWrapper>
     </ErrorBoundary>
   );

@@ -6,14 +6,7 @@
  * Flexible log data type - accepts common loggable values
  */
 export type LogData =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | Error
-  | Record<string, unknown>
-  | unknown[];
+  string | number | boolean | null | undefined | Error | Record<string, unknown> | unknown[];
 
 /**
  * Error-like object that may or may not be a proper Error instance

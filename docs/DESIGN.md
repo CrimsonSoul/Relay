@@ -4,24 +4,27 @@ Current visual and interaction conventions for the Relay renderer.
 
 ## Overview
 
-Relay uses the **Accent Ink** design language: a pure-black canvas, typography-first
-hierarchy through Outfit weight contrast, and a single swappable accent color as the
-only active-state signal. All tokens live in `src/renderer/src/styles/theme.css`.
+Relay uses the **Accent Ink** design language: a softened charcoal canvas,
+typography-first hierarchy through IBM Plex Sans weight contrast, and a single swappable
+accent color as the only active-state signal. All tokens live in
+`src/renderer/src/styles/theme.css`.
 
 ## Source Of Truth
 
-| File                                     | Purpose                                                               |
-| ---------------------------------------- | --------------------------------------------------------------------- |
-| `src/renderer/src/styles/theme.css`      | Global color, spacing, typography, radius, z-index, and motion tokens |
-| `src/renderer/src/styles/components.css` | Shared button, input, shell, and layout styles                        |
-| `src/renderer/src/styles/utilities.css`  | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
-| `src/renderer/src/styles/modals.css`     | Modal layout and overlay styling                                      |
-| `src/renderer/src/styles/responsive.css` | Breakpoints and responsive behavior                                   |
-| `src/renderer/src/styles/animations.css` | Reusable animation helpers                                            |
-| `src/renderer/src/theme/accent.ts`       | Accent scheme definitions and runtime API                             |
-| `src/renderer/src/tabs/alerts.css`       | Alert composer and preview styles (email preview fenced — see below)  |
-| `src/renderer/src/tabs/notes/notes.css`  | Notes masonry, cards, and editor styles                               |
-| `src/renderer/src/tabs/cloud-status.css` | Provider summary cards and incident feed styles                       |
+| File                                                         | Purpose                                                               |
+| ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `src/renderer/src/styles/theme.css`                          | Global color, spacing, typography, radius, z-index, and motion tokens |
+| `src/renderer/src/styles/components.css`                     | Shared button, input, shell, and layout styles                        |
+| `src/renderer/src/styles/tab-chrome.css`                     | Shared top-level page headers and command rows                        |
+| `src/renderer/src/styles/utilities.css`                      | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
+| `src/renderer/src/styles/modals.css`                         | Modal layout and overlay styling                                      |
+| `src/renderer/src/styles/responsive.css`                     | Breakpoints and responsive behavior                                   |
+| `src/renderer/src/styles/animations.css`                     | Reusable animation helpers                                            |
+| `src/renderer/src/theme/accent.ts`                           | Accent scheme definitions and runtime API                             |
+| `src/renderer/src/tabs/alerts.css`                           | Alert composer and preview styles (email preview fenced — see below)  |
+| `src/renderer/src/tabs/cloud-status.css`                     | Provider summary cards and incident feed styles                       |
+| `src/renderer/src/features/knowledge/knowledgeWorkspace.css` | Knowledge launcher and internal destination shell                     |
+| `src/renderer/src/features/knowledge/knowledge.css`          | Wiki library, management, and PDF reader                              |
 
 ---
 
@@ -29,39 +32,86 @@ only active-state signal. All tokens live in `src/renderer/src/styles/theme.css`
 
 The design rests on four principles:
 
-1. **Pure-black canvas.** App background is `#000000`. Surfaces step up only slightly
-   (`#0a0a0a`, `#111111`). Elevated floating surfaces sit at `#161616`.
-2. **Typography-first hierarchy.** Weight contrast replaces surface contrast. Display
-   headings use weight 200; body text uses 500; emphasis uses 700–800. No heading
-   background fills.
-3. **Four text-dimming tiers.** Primary `#fff` → secondary `#bdbdbd` → tertiary
-   `#8a8a8a` → quaternary `#767676`. Quaternary is the legibility floor (≥ 4.5 : 1
-   on black); do not use a lighter shade for readable text.
-4. **1 px `#1d1d1d` dividers, edge-rails over boxes.** Horizontal rules and the
+1. **Softened charcoal canvas.** App background is `#09090b`. Surfaces step up
+   gently (`#111114`, `#19191d`). Elevated floating surfaces sit at `#222227`.
+2. **Typography-first hierarchy.** Weight contrast replaces surface contrast. Rare
+   display titles use weight 200; body text uses 500; emphasis uses 700–800. No
+   heading background fills.
+3. **Four text-dimming tiers.** Primary `#eee9ec` -> secondary `#beb6bb` ->
+   tertiary `#928a90` -> quaternary `#847c82`. Quaternary is the legibility floor
+   (>= 4.5 : 1 on the charcoal canvas); do not use a lighter shade for readable
+   text.
+4. **1 px `#2b292e` dividers, edge-rails over boxes.** Horizontal rules and the
    `.ink-rail` left-border replace boxy card outlines wherever content allows.
 
 ---
 
-## 2. Display Headings
+## 2. Heading Hierarchy
 
-Large section titles follow the ink heading pattern:
+The app header breadcrumb provides top-level tab identity. Pane headings use
+`.toolbar-title`: an uppercase, `0.12em`, weight-800 accent eyebrow matching section
+labels such as the Compose sidebar's GROUPS heading.
 
-- `font-size: var(--text-display)` — fluid `clamp(34px, 3vw, 56px)`
-- `font-weight: 200`
-- `text-transform: lowercase`
-- `letter-spacing: -0.02em`
-- Accent period appended via `::after { content: '.'; color: var(--accent); font-weight: 800 }`
+The giant lowercase treatment with an accent period belongs to the `relay.` sidebar
+wordmark and is not the default for tabs or panes. `.display-heading` and
+`.collapsible-header-title` retain that older styling for compatibility, but new
+surfaces should use the breadcrumb and eyebrow hierarchy unless a design explicitly
+calls for a standalone display title.
 
-**Reference utilities** defining the canonical pattern:
+### Top-level tab chrome
 
-- **`.display-heading`** — standalone section headings (`utilities.css`); existing components implement the same declarations locally — use the utility class for new work
-- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (reference utility in `utilities.css`); existing components implement the same declarations locally — use the utility class for new work
+Compose is the visual reference for the seven top-level operational destinations. Each uses a
+three-band frame: `.tab-page-header`, an optional named `.tab-command-bar`, and the working canvas.
+`TabPageHeader`, `TabCommandBar`, and `TabCommandGroup` own this shared structure; tab styles remain
+responsible for their domain content.
 
-**Where the device lives:** the display treatment (lowercase + accent period) is
-reserved for the `relay.` wordmark in the sidebar — tab identity comes from the
-header breadcrumb. `.toolbar-title` (`components.css`) is a pane-header eyebrow
-(uppercase, 0.12em, weight 800, accent), matching section eyebrows like the
-compose sidebar's GROUPS heading.
+- Page metadata uses the UI font, tabular numerals, and a text label whenever color communicates
+  status. Live state uses the shared unboxed `.tab-page-status` treatment: an 8 px semantic dot
+  beside the text label. Metadata may wrap below the title at constrained widths but must never
+  overlap it.
+- Utility commands belong in the left group and use a 36 px control height. Workflow commands
+  belong in the right group and use a 40 px control height. Toolbars keep both groups on one row
+  while their content fits, then wrap without changing DOM or keyboard order. The compact layout
+  makes each group full width only at 720 px and below.
+- Command labels use Title Case. A command row has at most one filled primary action; supporting
+  and reversible actions remain secondary or icon-only with an accessible name.
+- Knowledge has no top-level commands, so it renders no empty command row.
+- This contract applies only to the outer tab frame. Nested pane, editor, table, PDF, filter, and
+  other domain-specific toolbars retain their own interaction and density rules.
+
+### Service Status provider rows
+
+Service Status remains an operational coverage list, not a generic vendor dashboard. Its overview
+keeps one scannable row per operator-facing provider, ordered by outage, unknown, degraded, then
+operational. Juniper Mist is one row even though the server retains four regional buckets for
+compatibility; Dropbox, Dynatrace, Proofpoint, and CrowdStrike are also one row each. The summary,
+provider count, keyboard order, and status bar use the displayed fifteen-provider list rather than
+the raw storage bucket count.
+
+Selecting Juniper Mist uses the existing provider-detail workspace with compact `All`, `Global`,
+`EMEA`, `APAC`, and `Federal` filters. Each filter includes accessible posture text. `All` is the
+default and deduplicates incidents shared by multiple regions; an `Affected` line lists the union of
+published regions. Selecting a region filters those incidents and uses that region's own outage,
+unknown, degraded, or operational posture. Dynatrace uses the same `Affected` treatment for its
+cloud and region containers. Affected scopes are text, not color-only signals or a new card layer.
+
+CrowdStrike is visibly marked `Third-party` in its overview row and detail workspace because its
+automated signal comes from StatusGator rather than CrowdStrike. The source action says
+`StatusGator`; a separate `Official support` action goes to CrowdStrike. Incident actions say
+`View StatusGator report` and must not imply official confirmation. Downdetector remains a manual
+secondary link, never an automated health input.
+
+An active outage outranks feed uncertainty in the visible posture. Feed uncertainty outranks a
+retained degradation, so an old warning cannot be presented as current after a failed refresh. With
+no active outage, an unavailable or incomplete feed reads Unknown and retains any last-good detail
+without implying it is current. Dropbox, Juniper Mist, Dynatrace, Proofpoint, and CrowdStrike use
+the same row geometry, focus return, responsive behavior, and accessible status text as every other
+provider; the regional filter introduces no modal or nested navigation.
+
+Workflow actions state only outcomes Relay can observe. Compose may say it opened a Teams draft or
+copied recipients, but not that Teams created or sent a meeting. Alerts follows the same rule for
+Outlook and downloaded drafts. Destructive and externally consequential actions retain confirmation
+or review steps owned by their feature.
 
 ---
 
@@ -80,7 +130,7 @@ background; existing components implement the same declarations locally — use 
 
 | Modifier   | Token                             | Meaning                           |
 | ---------- | --------------------------------- | --------------------------------- |
-| (default)  | `--color-border-strong` `#2a2a2a` | neutral, not active               |
+| (default)  | `--color-border-strong` `#39363c` | neutral, not active               |
 | `--accent` | swappable accent color            | active, selected, featured        |
 | `--alarm`  | `#ff4539` fixed                   | genuine problem or critical state |
 
@@ -94,8 +144,8 @@ but is superseded by `.ink-rail`.
 
 ## 4. Elevated-Surface Rule
 
-Boxes with a background fill (`#161616` + `1px #2a2a2a` border + shadow) are
-reserved exclusively for **floating surfaces** that sit above the canvas:
+The elevated combination (`--color-bg-surface-elevated` + strong border + shadow) is
+reserved for **floating surfaces** that sit above the canvas:
 
 - Modals and confirm dialogs
 - Popovers and tooltips
@@ -103,52 +153,68 @@ reserved exclusively for **floating surfaces** that sit above the canvas:
 - Toast/reminder overlays
 - Drag ghost elements
 
-Inline content areas (list rows, tab panels, cards in masonry, split-panel columns)
-use a transparent background against the `#000` canvas, differentiated only by
-typography weight and edge rails. Do not give inline surfaces an elevated background.
+Inline content should not imitate elevation. Dense rows and panels should prefer a
+transparent canvas with dividers or edge rails. When grouping needs a filled boundary,
+use the lower-level `--color-bg-surface` or `--color-bg-card` tokens with the existing
+border treatment and no shadow; Knowledge launcher cards and filter/tool surfaces are
+current examples.
 
-The relevant token is `--color-bg-surface-elevated: #161616` combined with
-`--border-strong: 1px solid #2a2a2a` and an appropriate `--shadow-*` value.
+The relevant token is `--color-bg-surface-elevated: #222227` combined with
+`--border-strong: 1px solid #39363c` and an appropriate `--shadow-*` value.
 
-**Corner radius scales with surface size:** window-scale surfaces (modals,
-dialogs) keep their soft radius; control-scale floating surfaces (toasts,
-context menus, dropdowns at chip/button size) use the same 2px corners as
-controls. A small rounded box next to square chips reads as foreign.
+Shared controls, cards, and generic modals use 2px corners. Reuse the radius already
+owned by an existing component instead of inferring more rounding from surface size.
+A rounded one-off surface next to square chips reads as foreign.
 
 ---
 
 ## 5. Accent System
 
-### Schemes
+### Preset Schemes
 
-Six schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
+Ten schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
 `:root[data-accent="…"]` overrides in `theme.css`:
 
 | ID       | Label                | `--accent` swatch |
 | -------- | -------------------- | ----------------- |
 | `red`    | Signal Red (default) | `#e63946`         |
 | `orange` | Orange               | `#f97316`         |
+| `yellow` | Yellow               | `#facc15`         |
 | `blue`   | Blue                 | `#3b82f6`         |
+| `cyan`   | Cyan                 | `#06b6d4`         |
 | `green`  | Green                | `#22c55e`         |
-| `pink`   | Pink                 | `#ec4899`         |
+| `lime`   | Lime                 | `#84cc16`         |
+| `pink`   | Pink                 | `#fc8da9`         |
 | `purple` | Purple               | `#a855f7`         |
+| `violet` | Violet               | `#8b5cf6`         |
 
-The orange scheme is deliberately a true orange so it stays distinguishable from
-the fixed `--alarm` red-orange (`#ff4539`) and `--color-warning` amber (`#ffb000`).
+The orange and yellow schemes are deliberately tuned as non-semantic operator
+preferences so they stay distinguishable from the fixed `--alarm` red-orange
+(`#ff4539`) and `--color-warning` amber (`#ffb000`).
+
+Settings can also save up to four custom hexadecimal accents. A custom accent derives
+its hover and bright variants at runtime, lifts `--accent-bright` until it meets the
+dark-canvas contrast floor, and chooses black or white for `--on-accent` according to
+which has the stronger contrast against the fill.
+
+Accent scheduling is workstation-local and optional. It assigns a preset or saved
+custom color to three fixed `America/Chicago` windows: Day (6 AM–2 PM CT), Swing
+(2 PM–10 PM CT), and Night (10 PM–6 AM CT). When enabled, the active slot overrides
+the manually stored accent and is reevaluated at the next slot boundary.
 
 ### How It Works
 
-`data-accent` on `<html>` switches the three base variables. All derived values
-recompute automatically:
+For presets, `data-accent` on `<html>` switches the base variables. Custom colors set
+the same properties inline after deriving accessible variants:
 
-| Token             | Source                                                    |
-| ----------------- | --------------------------------------------------------- |
-| `--accent`        | scheme base color                                         |
-| `--accent-hover`  | lighter midtone                                           |
-| `--accent-bright` | brightest; used for text on dark (≥ 4.5 : 1 on `#000`)    |
-| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`      |
-| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`       |
-| `--on-accent`     | `#000000` — text/icon color on a filled accent background |
+| Token             | Source                                                          |
+| ----------------- | --------------------------------------------------------------- |
+| `--accent`        | scheme base color                                               |
+| `--accent-hover`  | lighter midtone                                                 |
+| `--accent-bright` | brightest; used for text on dark (>= 4.5 : 1 on `#09090b`)      |
+| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`            |
+| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`             |
+| `--on-accent`     | `#000000` for presets; computed black or white for custom fills |
 
 Legacy aliases (`--color-accent`, `--color-accent-hover`, etc.) forward to the live
 tokens and remain functional.
@@ -158,16 +224,24 @@ tokens and remain functional.
 ```ts
 ACCENT_SCHEMES; // AccentScheme[] — id, label, swatch
 ACCENT_STORAGE_KEY; // 'relay-accent'
+CUSTOM_ACCENT_STORAGE_KEY; // 'relay-custom-accent' — active custom color
+CUSTOM_ACCENTS_STORAGE_KEY; // 'relay-custom-accents'
+ACCENT_SCHEDULE_STORAGE_KEY; // 'relay-accent-schedule'
+ACCENT_SCHEDULE_SLOTS; // Day, Swing, and Night in America/Chicago
 DEFAULT_ACCENT; // 'red'
 
 getStoredAccent(); // → AccentId — reads localStorage, falls back to 'red'
 setAccent(id); // persist + apply immediately
-initAccent(); // apply stored scheme; also wires window 'storage' listener
+setCustomAccent(hex); // normalize, save, and apply a custom accent
+setAccentScheduleEnabled(enabled); // persist and apply schedule state
+setAccentScheduleSlot(slotId, choice); // assign a preset or saved custom color
+initAccent(); // apply schedule or stored accent; wire cross-window storage sync
 ```
 
-`initAccent()` wires a `window.addEventListener('storage', …)` handler so the kiosk
-pop-out window stays in sync with the main window via the shared `localStorage` key.
-Call it once at renderer startup.
+`initAccent()` applies the scheduled slot when scheduling is enabled, otherwise it
+applies the stored manual accent. It also schedules the next boundary check and wires
+a `window.addEventListener('storage', …)` handler so the kiosk pop-out stays in sync
+with the main window. Call it once at renderer startup.
 
 ---
 
@@ -175,16 +249,16 @@ Call it once at renderer startup.
 
 These colors are **never** changed by accent scheme selection:
 
-| Token                    | Value                               | Use                                                       |
-| ------------------------ | ----------------------------------- | --------------------------------------------------------- |
-| `--alarm`                | `#ff4539`                           | Genuine system problems only                              |
-| `--alarm-bright`         | `#ff6b61`                           | Alarm hover / text on dark                                |
-| `--alarm-dim`            | `color-mix(alarm 12%, transparent)` | Alarm fill tint                                           |
-| `--ok`                   | `#2bb24c`                           | Positive / resolved / healthy                             |
-| `--color-warning`        | `#ffb000`                           | Non-critical caution                                      |
-| `--color-warning-subtle` | `rgba(255,176,0,0.12)`              | Warning tint background                                   |
-| `--info`                 | `#1565c0`                           | Informational blue (matches the email card's INFO banner) |
-| `--info-bright`          | `#42a5f5`                           | Info lifted for black-ink fills / text on dark            |
+| Token                    | Value                                               | Use                                                       |
+| ------------------------ | --------------------------------------------------- | --------------------------------------------------------- |
+| `--alarm`                | `#ff4539`                                           | Genuine system problems only                              |
+| `--alarm-bright`         | `#ff6b61`                                           | Alarm hover / text on dark                                |
+| `--alarm-dim`            | `color-mix(in srgb, var(--alarm) 12%, transparent)` | Alarm fill tint                                           |
+| `--ok`                   | `#2bb24c`                                           | Positive / resolved / healthy                             |
+| `--color-warning`        | `#ffb000`                                           | Non-critical caution                                      |
+| `--color-warning-subtle` | `rgba(255,176,0,0.12)`                              | Warning tint background                                   |
+| `--info`                 | `#1565c0`                                           | Informational blue (matches the email card's INFO banner) |
+| `--info-bright`          | `#42a5f5`                                           | Info lifted for black-ink fills / text on dark            |
 
 **Rule:** use `--alarm` only when the user has a real problem to act on. Never use it
 for decorative highlights. Never use `--accent` for severity or urgency signals.
@@ -215,12 +289,13 @@ severity fills) always use `#000` for their label text (not `--on-accent`).
 
 ### TactileButton (`src/renderer/src/components/TactileButton.tsx`)
 
-All four variants use 2 px border-radius and `font-weight: 700`:
+All four variants use 2px corners. Secondary and ghost use weight 700; primary and
+danger use weight 800:
 
 | Variant               | Background  | Border                  | Text color                                  |
 | --------------------- | ----------- | ----------------------- | ------------------------------------------- |
 | `secondary` (default) | transparent | `--color-border-strong` | `--color-text-secondary` → primary on hover |
-| `primary`             | `--accent`  | `--accent`              | `--on-accent` (`#000`), weight 800          |
+| `primary`             | `--accent`  | `--accent`              | `--on-accent`, weight 800                   |
 | `ghost`               | transparent | transparent             | `--color-text-tertiary` → primary on hover  |
 | `danger`              | `--alarm`   | `--alarm`               | `#000000`, weight 800; fixed — not themed   |
 
@@ -248,13 +323,56 @@ Focus: `border-color: --accent` + `box-shadow: 0 0 0 2px --color-accent-dim`.
 Underline-only input: `border-bottom: 2px solid --color-border-strong`, no box.
 On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 
+Search results label the action they perform. A primary row or Enter opens the exact record,
+document, workspace, or tab without changing unrelated Compose state. Actions that do change the
+bridge, such as Add group or a contact's `+ Bridge` control, remain separate and have explicit
+accessible names. Keyboard hints describe only actions available for the active result.
+
+### Persistent release update indicator (`.release-update-indicator`)
+
+When packaged desktop Relay discovers a newer normal release, the global header action area shows a
+compact `TactileButton` before the world clock. Wide and full-screen layouts use a concise state
+label: `Update`, `Downloading`, `Install`, `Installing`, `Restart`, or `Update issue`, followed by
+`· vX.Y.Z`. At the existing 1200 px compact-shell breakpoint and below, the state label contracts to
+`vX.Y.Z`. The version always comes from the latest validated release response and changes when a
+later release is discovered. Its accessible name includes both the version and current action.
+
+The indicator uses a static accent dot, accent-bright text, a restrained accent tint, the standard
+2 px control radius, and the shared focus treatment. It does not pulse, glow, use ambient
+attention-seeking animation, use warning or alarm colors, or offer a dismiss or snooze action; it
+retains the ordinary hover and press feedback of a `TactileButton`. Clicking it opens Relay's fixed
+**Update Relay** dialog when the desktop updater bridge is present. Older builds fall back to the
+fixed GitHub Releases page. The control remains visible on every tab until the installed version is
+current; a transient refresh failure or repeated same-version check does not erase a previously
+confirmed update or manual progress.
+
+The dialog uses the standard modal shell and a single three-stage line for Download, Install, and
+Restart. It names the current stage, shows bounded byte progress during download, explains the
+immutable-GitHub and SHA-256 trust model, and discloses that publisher signing is not included.
+Buttons name the exact next action. Download, install, and restart are never combined; cancellation
+is offered only while downloading, and installation temporarily prevents dismissal while the
+Windows bootstrap prepares the runtime. **View on GitHub** remains a secondary action throughout
+the flow, including download, preparation, restart-ready, and error states. Mutable releases replace
+installation controls with that review action. Failures name what failed and present only a valid recovery such as **Retry download**,
+**Retry install**, **Check again**, or **Retry restart**.
+
+The compact label must remain visible when the sidebar rests at 64 px. It may not shrink, wrap,
+overlap the centered search control or platform window controls, or disappear with the world clock.
+At 720 px and below, the breadcrumb and search shortcut badge yield space while the search field
+remains shrinkable, preserving the indicator through Relay's 400 px desktop window minimum.
+At 520 px and below, modal footer actions stack at full width while the three-stage line remains a
+single readable row. The one-time toast announces each newly discovered version with **Review
+update**; the persistent control itself is not a repeatedly announced live region. Relay Web and
+pop-out windows do not render it.
+
 ---
 
 ## 9. Typography
 
 ### Fonts
 
-- **UI font:** `Outfit Variable` — loaded as variable font; fallback `Outfit, sans-serif`
+- **UI font:** `IBM Plex Sans` — locally bundled weights 400, 500, 600, and 700 plus
+  400 italic; fallback `'Segoe UI', system-ui, sans-serif`
 - **Mono font:** `JetBrains Mono` — reserved for genuinely technical surfaces only:
   the kiosk clock (`.popout-kiosk-timestamp`), `kbd`/`code`/`pre` and keycap chips
   (`.shortcuts-modal-key`), host:port addresses (`.setup-config__discover-addr`),
@@ -308,13 +426,50 @@ preview card that matches the actual sent alert email. Its hardcoded colors (whi
 background, dark text, literal severity colors) are correct and intentional. Never
 apply ink tokens, accent variables, or theme changes inside these fences.
 
-The card's base font rides `--font-family-base` and so moved to Outfit with the
-redesign; this is intentional. The fenced rules themselves are unchanged from the
-pre-redesign baseline.
+The card's base font rides `--font-family-base` and therefore uses IBM Plex Sans. The fenced rules
+remain part of the exported-content contract.
+
+### Operator action hierarchy
+
+Alerts keeps History in the utility group and exposes one delivery primary action: Open in Outlook
+on Desktop or Download Draft in Relay Web. Save Image remains a visible secondary action; lower
+frequency actions stay in the keyboard-accessible overflow. Optional delivery details remain
+collapsed until requested.
 
 ---
 
-## 11. Styling Rules
+## 11. Knowledge Workspace
+
+Knowledge is the single sidebar destination for the Wiki, Contacts, and Servers surfaces. The app
+header always identifies the outer route as `Relay / Knowledge`; the workspace's own navigation
+identifies the active inner destination.
+
+- Launcher and keyboard order is exactly **Wiki, Contacts, Servers**. Each destination is a real
+  button with a production-shaped preview, an explicit unknown-count state, and responsive
+  three/two/one-column layout that preserves DOM order.
+- Destinations mount on first use and remain retained. Navigation preserves selected records,
+  filters, reader position, and local scroll state; opening an exact search result may reveal that
+  record but does not change bridge recipients.
+- Notes remain contextual to Contacts, Servers, or Problems. Relay has no standalone Notes
+  workspace.
+- The Wiki reader defaults to Continuous and offers Single page. Mode changes preserve the open
+  document, page, and PDF lifetime; bounded rendering, reduced-motion behavior, and page-local retry
+  states keep long documents usable without replacing the whole reader.
+- Internal PDF destinations stay in Relay. Approved HTTP(S) links require an explicit action and
+  open through the validated system-browser boundary.
+
+---
+
+## 12. Styling Rules
+
+### Compact navigation
+
+At widths at or below 1200 px, the sidebar rests at 64 px and expands labeled navigation above the
+content on hover or keyboard focus; the active tab never reflows. The overlay remains open while
+either pointer or focus is inside the rail, and reduced-motion mode removes its width animation.
+Top-level shortcuts follow sidebar order through Cmd/Ctrl+7 for Radar. While Problems is active,
+Alt+Down and Alt+Up move through unaddressed problems and Alt+N focuses the selected response note;
+editable controls and modals suppress these triage shortcuts.
 
 ### Do
 
@@ -334,7 +489,7 @@ pre-redesign baseline.
 - Do not add custom button patterns when `TactileButton` already covers the case
 - Do not use `--accent` for severity or urgency semantics
 - Do not use `--alarm` decoratively (borders, section tints, unrelated highlights)
-- Do not give inline content surfaces an elevated (`#161616`) background fill
+- Do not give inline content surfaces an elevated (`#222227`) background fill
 
 ### Inline Style Exceptions
 
@@ -349,15 +504,16 @@ Static design values must stay in CSS.
 
 ---
 
-## 12. Accessibility Baseline
+## 13. Accessibility Baseline
 
 - **Focus ring:** `box-shadow: 0 0 0 2px var(--color-accent-dim)` + accent border on
   all interactive elements via `:focus-visible`
 - **Color + shape:** State must be communicated by at least two signals — color alone
   is insufficient. Rail color is supplemented by label text or icon change.
-- **Contrast floors:** Text quaternary (`#767676`) is the minimum for any readable
-  text on `#000`. Accent-bright colors in each scheme are verified ≥ 4.5 : 1 on
-  black. `--on-accent` (`#000`) on accent-fill buttons meets contrast requirements.
+- **Contrast floors:** Text quaternary (`#847c82`) is the minimum for any readable
+  text on `#09090b`. Accent-bright colors in each preset and custom scheme meet at
+  least 4.5 : 1 on the charcoal canvas. Presets use black `--on-accent`; custom
+  accents choose black or white according to the stronger fill contrast.
 - **Reduced motion:** Animations that flash or pulse (e.g., critical reminder overlay)
   include a `@media (prefers-reduced-motion: reduce)` override.
 - Clickable non-button elements need semantic ARIA roles and keyboard handlers.
@@ -366,16 +522,28 @@ Static design values must stay in CSS.
 
 ## Layout Tokens
 
-| Token                           | Value          |
-| ------------------------------- | -------------- |
-| `--sidebar-width-collapsed`     | 110 px         |
-| `--header-height`               | 56 px          |
-| `--space-1` … `--space-12`      | 4 px … 64 px   |
-| `--radius-sm` … `--radius-pill` | 6 px … 9999 px |
-| `--z-dropdown`                  | 100            |
-| `--z-overlay`                   | 1000           |
-| `--z-popover`                   | 5000           |
-| `--z-modal`                     | 9999           |
-| `--z-window-controls`           | 10001          |
-| `--z-command-palette`           | 10002          |
-| `--z-critical`                  | 20000          |
+| Token                           | Value                  |
+| ------------------------------- | ---------------------- |
+| `--sidebar-width-collapsed`     | 136 px / 64 px compact |
+| `--header-height`               | 56 px                  |
+| `--space-1` … `--space-12`      | 4 px … 64 px           |
+| `--radius-sm` … `--radius-pill` | 6 px … 9999 px         |
+| `--z-dropdown`                  | 100                    |
+| `--z-overlay`                   | 1000                   |
+| `--z-popover`                   | 5000                   |
+| `--z-modal`                     | 9999                   |
+| `--z-window-controls`           | 10001                  |
+| `--z-command-palette`           | 10002                  |
+| `--z-critical`                  | 20000                  |
+
+### Compact workstation windows
+
+At viewport widths of 1200 px and below, Relay keeps every navigation destination available but
+rests the main sidebar at a 64 px icon rail, changes the brand to `r.`, and hides the world clock.
+Hovering the rail or moving keyboard focus into it expands the full labels over the active workflow
+without changing the content width; accessible names and hover tooltips remain available as
+fallbacks.
+
+The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
+900 px and below. Its Service Desk ticket control and primary local-disposition action also become
+full-width so they remain usable around half of a 1080p display.

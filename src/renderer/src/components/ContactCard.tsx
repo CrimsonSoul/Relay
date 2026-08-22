@@ -11,6 +11,8 @@ type ContactRowProps = {
   action?: React.ReactNode;
   style?: React.CSSProperties;
   className?: string;
+  /** Provenance badge (e.g. MANUAL) distinguishing hand-typed from group-derived rows. */
+  sourceLabel?: string;
   groups?: string[];
   selected?: boolean;
   onContextMenu?: (
@@ -25,6 +27,7 @@ type ContactRowProps = {
     owned: number;
     supported: number;
   };
+  recordKey?: string;
 };
 
 export const ContactCard = memo(
@@ -36,6 +39,7 @@ export const ContactCard = memo(
     action,
     style,
     className,
+    sourceLabel,
     groups = [],
     selected,
     onContextMenu,
@@ -44,13 +48,16 @@ export const ContactCard = memo(
     tags,
     onNotesClick,
     relationshipCounts,
+    recordKey,
   }: ContactRowProps) => {
     const displayPhone = phone ? formatPhoneNumber(phone) : '';
     const tooltipContent = [name || email, email, title, displayPhone].filter(Boolean).join('\n');
+    const primaryTag = tags?.[0];
 
     return (
       <button
         type="button"
+        data-record-key={recordKey}
         className={`contact-entry ${selected ? 'contact-entry--selected' : ''} ${className || ''}`}
         style={style}
         onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
@@ -62,7 +69,8 @@ export const ContactCard = memo(
             <div className="contact-entry-tooltip-anchor">
               <div className="contact-entry-line1">
                 <span className="contact-entry-name">{name || email}</span>
-                {tags && tags.length > 0 && <GroupPill group={tags[0]} />}
+                {primaryTag && <GroupPill group={primaryTag} />}
+                {sourceLabel && <span className="contact-entry-chip">{sourceLabel}</span>}
                 {relationshipCounts && relationshipCounts.owned > 0 && (
                   <span className="contact-entry-chip">Owner {relationshipCounts.owned}</span>
                 )}
@@ -92,6 +100,7 @@ export const ContactCard = memo(
           {action}
           {hasNotes && onNotesClick && (
             <button
+              type="button"
               className="contact-entry-notes-btn"
               onClick={(e) => {
                 e.stopPropagation();

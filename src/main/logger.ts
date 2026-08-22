@@ -20,6 +20,17 @@ const SESSION_START_BORDER_LENGTH = 80;
 const MEMORY_SAMPLE_INTERVAL_MS = 5000; // Sample memory every 5 seconds
 const MB_DIVISOR = 1024 * 1024;
 
+/** Levels that actually produce a log entry — LogLevel.NONE only ever silences output. */
+type EmittableLogLevel = Exclude<LogLevel, LogLevel.NONE>;
+
+const LOG_LEVEL_NAMES: Record<EmittableLogLevel, LogEntry['level']> = {
+  [LogLevel.DEBUG]: 'DEBUG',
+  [LogLevel.INFO]: 'INFO',
+  [LogLevel.WARN]: 'WARN',
+  [LogLevel.ERROR]: 'ERROR',
+  [LogLevel.FATAL]: 'FATAL',
+};
+
 interface LoggerConfig {
   level: LogLevel;
   console: boolean;
@@ -201,7 +212,8 @@ class Logger implements ILogger {
     return output;
   }
 
-  private appendDataToParts(parts: string[], data?: LogData): void {
+  // `LogEntry.data` is `unknown` on the IPC surface; redaction narrows it to LogData.
+  private appendDataToParts(parts: string[], data?: unknown): void {
     if (!data) return;
 
     const sanitizedData = redactSensitiveData(data);
@@ -329,14 +341,14 @@ class Logger implements ILogger {
     }
   }
 
-  private log(level: LogLevel, module: string, message: string, data?: LogData): void {
+  private log(level: EmittableLogLevel, module: string, message: string, data?: LogData): void {
     if (!this.shouldLog(level)) return;
 
     // Track error/warn counts
     if (level === LogLevel.ERROR || level === LogLevel.FATAL) this.errorCount++;
     if (level === LogLevel.WARN) this.warnCount++;
 
-    const levelName = LogLevel[level];
+    const levelName = LOG_LEVEL_NAMES[level];
     const errorContext = level >= LogLevel.WARN ? this.extractErrorContext(data) : undefined;
 
     const entry: LogEntry = {

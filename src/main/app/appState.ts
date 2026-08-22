@@ -3,8 +3,7 @@ import { join } from 'node:path';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
-import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
-import { validateDataPath } from '../utils/pathValidation';
+import { ensureDataDirectoryAsync, loadConfigAsync } from '../dataUtils';
 import { loggers } from '../logger';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
@@ -15,6 +14,18 @@ import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
 import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
+import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
+import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
+import type { RadarManager } from '../handlers/radar/RadarManager';
+import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
+import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
+import type { KnowledgeSearchService } from '../knowledge/KnowledgeSearchService';
+import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
+import type { ProductionPrivilegedHost } from '../privileged/ProductionPrivilegedHost';
+import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import type { PrivilegedApprovalRequestView } from '@shared/ipc';
+import type { RelayWebServerManager } from '../web/RelayWebServerManager';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -29,6 +40,16 @@ export interface AppState {
   pendingChanges: PendingChanges | null;
   syncManager: SyncManager | null;
   dynatraceWindowManager: DynatraceWindowManager | null;
+  dynatraceProblemsManager: DynatraceProblemsManager | null;
+  cloudStatusManager: CloudStatusManager | null;
+  radarManager: RadarManager | null;
+  knowledgePdfService: KnowledgePdfService | null;
+  knowledgeCoverService: KnowledgeCoverService | null;
+  knowledgeUploadService: KnowledgeUploadService | null;
+  knowledgeSearchService: KnowledgeSearchService | null;
+  privilegedRuntime: PrivilegedRuntime | null;
+  privilegedHost: ProductionPrivilegedHost | null;
+  relayWebServerManager: RelayWebServerManager | null;
 }
 
 const state: AppState = {
@@ -43,7 +64,22 @@ const state: AppState = {
   pendingChanges: null,
   syncManager: null,
   dynatraceWindowManager: null,
+  dynatraceProblemsManager: null,
+  cloudStatusManager: null,
+  radarManager: null,
+  knowledgePdfService: null,
+  knowledgeCoverService: null,
+  knowledgeUploadService: null,
+  knowledgeSearchService: null,
+  privilegedRuntime: null,
+  privilegedHost: null,
+  relayWebServerManager: null,
 };
+
+const privilegedSessionListeners = new Set<(view: PrivilegedSessionView) => void>();
+let stopPrivilegedRuntimeSubscription: (() => void) | null = null;
+const privilegedApprovalListeners = new Set<(requests: PrivilegedApprovalRequestView[]) => void>();
+let stopPrivilegedApprovalSubscription: (() => void) | null = null;
 
 const log = loggers.main;
 
@@ -80,6 +116,45 @@ export function getSyncManager() {
 }
 export function getDynatraceWindowManager() {
   return state.dynatraceWindowManager;
+}
+export function getDynatraceProblemsManager() {
+  return state.dynatraceProblemsManager;
+}
+export function getRadarManager() {
+  return state.radarManager;
+}
+
+export function setRadarManager(mgr: RadarManager | null) {
+  log.debug('appState.radarManager changed');
+  state.radarManager = mgr;
+}
+
+export function getCloudStatusManager() {
+  return state.cloudStatusManager;
+}
+export function getKnowledgePdfService() {
+  return state.knowledgePdfService;
+}
+export function getKnowledgeCoverService() {
+  return state.knowledgeCoverService;
+}
+export function getKnowledgeUploadService() {
+  return state.knowledgeUploadService;
+}
+export function notifyKnowledgeUploadSessionChanged(view: PrivilegedSessionView): void {
+  state.knowledgeUploadService?.handleSessionChanged(view);
+}
+export function getKnowledgeSearchService() {
+  return state.knowledgeSearchService;
+}
+export function getPrivilegedRuntime() {
+  return state.privilegedRuntime;
+}
+export function getPrivilegedHost() {
+  return state.privilegedHost;
+}
+export function getRelayWebServerManager() {
+  return state.relayWebServerManager;
 }
 
 // --- Setters ---
@@ -127,6 +202,70 @@ export function setDynatraceWindowManager(mgr: DynatraceWindowManager | null) {
   log.debug('appState.dynatraceWindowManager changed');
   state.dynatraceWindowManager = mgr;
 }
+export function setDynatraceProblemsManager(mgr: DynatraceProblemsManager | null) {
+  log.debug('appState.dynatraceProblemsManager changed');
+  state.dynatraceProblemsManager = mgr;
+}
+export function setCloudStatusManager(mgr: CloudStatusManager | null) {
+  log.debug('appState.cloudStatusManager changed');
+  state.cloudStatusManager = mgr;
+}
+export function setKnowledgePdfService(service: KnowledgePdfService | null) {
+  log.debug('appState.knowledgePdfService changed');
+  state.knowledgePdfService = service;
+}
+export function setKnowledgeCoverService(service: KnowledgeCoverService | null) {
+  log.debug('appState.knowledgeCoverService changed');
+  state.knowledgeCoverService = service;
+}
+export function setKnowledgeUploadService(service: KnowledgeUploadService | null) {
+  log.debug('appState.knowledgeUploadService changed');
+  state.knowledgeUploadService = service;
+}
+export function setKnowledgeSearchService(service: KnowledgeSearchService | null) {
+  log.debug('appState.knowledgeSearchService changed');
+  state.knowledgeSearchService = service;
+}
+export function setPrivilegedRuntime(runtime: PrivilegedRuntime | null) {
+  stopPrivilegedRuntimeSubscription?.();
+  stopPrivilegedRuntimeSubscription = null;
+  state.privilegedRuntime = runtime;
+  if (runtime) {
+    stopPrivilegedRuntimeSubscription = runtime.onSessionChanged((view) => {
+      for (const listener of privilegedSessionListeners) listener(view);
+    });
+  }
+  log.debug('appState.privilegedRuntime changed');
+}
+export function setPrivilegedHost(host: ProductionPrivilegedHost | null) {
+  stopPrivilegedApprovalSubscription?.();
+  stopPrivilegedApprovalSubscription = null;
+  state.privilegedHost = host;
+  if (host) {
+    stopPrivilegedApprovalSubscription = host.approvalCodes.subscribe((requests) => {
+      for (const listener of privilegedApprovalListeners) listener(requests);
+    });
+  }
+  log.debug('appState.privilegedHost changed');
+}
+export function setRelayWebServerManager(manager: RelayWebServerManager | null) {
+  state.relayWebServerManager = manager;
+  log.debug('appState.relayWebServerManager changed');
+}
+
+export function subscribePrivilegedSessionChanged(
+  listener: (view: PrivilegedSessionView) => void,
+): () => void {
+  privilegedSessionListeners.add(listener);
+  return () => privilegedSessionListeners.delete(listener);
+}
+
+export function subscribeWebApprovalRequestsChanged(
+  listener: (requests: PrivilegedApprovalRequestView[]) => void,
+): () => void {
+  privilegedApprovalListeners.add(listener);
+  return () => privilegedApprovalListeners.delete(listener);
+}
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
 export const getBundledDataPath = () =>
@@ -172,37 +311,29 @@ export async function getDataRoot(): Promise<string> {
   return dataRootPromise;
 }
 
-/**
- * Handles a user-initiated data path change. Fully async — saves config
- * and invalidates the cache.
- */
-export async function handleDataPathChange(newPath: string): Promise<void> {
-  if (!state.mainWindow) return;
-  const validation = await validateDataPath(newPath);
-  if (!validation.success) throw new Error(validation.error || 'Invalid data path');
-
-  await ensureDataDirectoryAsync(newPath);
-  await saveConfigAsync({ dataRoot: newPath });
-
-  // Update cached root and invalidate the deferred promise
-  state.currentDataRoot = newPath;
-  dataRootPromise = null;
-}
-
-export function setupIpc(
-  createAuxWindow?: (route: string) => void,
-  restartPb?: () => Promise<boolean>,
-) {
+export function setupIpc(restartPb?: () => Promise<boolean>) {
   setupIpcHandlers({
     getMainWindow: () => state.mainWindow,
     getDataRoot,
-    createAuxWindow,
     getAppConfig: () => state.appConfig,
     getCache: () => state.offlineCache,
     getPendingChanges: () => state.pendingChanges,
     getSyncManager: () => state.syncManager,
     getBackupManager: () => state.backupManager,
     getDynatraceWindowManager: () => state.dynatraceWindowManager,
+    getDynatraceProblemsManager: () => state.dynatraceProblemsManager,
+    getPbClient: () => state.pbClient,
+    getKnowledgePdfService: () => state.knowledgePdfService,
+    getKnowledgeCoverService: () => state.knowledgeCoverService,
+    getKnowledgeUploadService: () => state.knowledgeUploadService,
+    getKnowledgeSearchService: () => state.knowledgeSearchService,
+    getPrivilegedRuntime: () => state.privilegedRuntime,
+    getWebApprovalCodes: () => state.privilegedHost?.approvalCodes ?? null,
+    getRelayWebServerManager: () => state.relayWebServerManager,
+    subscribePrivilegedSessionChanged,
+    subscribeWebApprovalRequestsChanged,
+    onPrivilegedCredentialChanged: (accountId) =>
+      state.privilegedHost?.handleAuthorityChanged([accountId]),
     restartPb,
   });
   setupAuthHandlers();
@@ -237,8 +368,8 @@ export function setupPermissions(sess: Electron.Session) {
   sess.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
     const mainWindowWebContents = state.mainWindow?.webContents;
     const canCompareById =
-      typeof mainWindowWebContents?.id === 'number' && typeof webContents.id === 'number';
-    const isMainWindowById = canCompareById && mainWindowWebContents.id === webContents.id;
+      typeof mainWindowWebContents?.id === 'number' && typeof webContents?.id === 'number';
+    const isMainWindowById = canCompareById && mainWindowWebContents?.id === webContents?.id;
     const isMainWindow = isMainWindowById;
 
     if (permission === 'geolocation') {

@@ -16,6 +16,7 @@ vi.mock('./pocketbase', () => ({
   }),
   handleApiError: vi.fn(),
   requireOnline: vi.fn(),
+  getConnectionState: vi.fn(() => 'online'),
 }));
 
 import {

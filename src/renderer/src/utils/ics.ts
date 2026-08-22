@@ -19,10 +19,10 @@ const MAX_LINE_OCTETS = 75;
 /** Escapes a TEXT value per RFC 5545 §3.3.11 (backslash, semicolon, comma, newline). */
 function escapeText(value: string): string {
   return value
-    .replaceAll('\\', '\\\\')
-    .replaceAll(';', '\\;')
-    .replaceAll(',', '\\,')
-    .replaceAll(/\r?\n/g, '\\n');
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll(';', String.raw`\;`)
+    .replaceAll(',', String.raw`\,`)
+    .replaceAll(/\r?\n/g, String.raw`\n`);
 }
 
 /**

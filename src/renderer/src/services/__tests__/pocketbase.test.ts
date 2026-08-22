@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
+import type { BridgeAPI, PbAuthSession, PbConnectionResult } from '@shared/ipc';
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks – must be declared before any imports that reference them
@@ -71,18 +71,38 @@ function resetPbState(url = 'http://localhost:8090'): void {
   initPocketBase(url);
 }
 
+/**
+ * `PbAuthSession.record` crosses IPC as a loose bag, so the service normalises
+ * it into PocketBase's own `RecordModel` shape before handing it to the auth
+ * store. Every field the session carried is preserved; only the two identifiers
+ * PocketBase itself reads are defaulted.
+ */
+function expectedAuthRecord(auth: PbAuthSession): Record<string, unknown> | null {
+  if (!auth.record) return null;
+  return { collectionId: '', collectionName: '', ...auth.record };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+/**
+ * `globalThis.api` is declared as the complete desktop bridge, but these tests only
+ * need the handful of methods the service actually calls. `vi.stubGlobal` installs
+ * the partial stub (and is undone by `vi.unstubAllGlobals()`), while
+ * `Partial<BridgeAPI>` still type-checks every stubbed member against the real
+ * bridge contract.
+ */
+function stubBridgeApi(overrides: Partial<BridgeAPI>): void {
+  vi.stubGlobal('api', overrides);
+}
 
 describe('pocketbase service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     mockAuthStore.isValid = true;
-    globalThis.api = {
-      refreshPbConnection: vi.fn(),
-    } as typeof globalThis.api;
+    stubBridgeApi({ refreshPbConnection: vi.fn<BridgeAPI['refreshPbConnection']>() });
     // startHealthCheck probes immediately, so give tests that don't stub
     // fetch themselves a never-settling default — it avoids real network
     // calls AND can't drive state changes that would mask test assertions.
@@ -125,7 +145,7 @@ describe('pocketbase service', () => {
 
       listener.mockClear();
       initPocketBase('http://localhost:8091');
-      expect(listener).not.toHaveBeenCalled();
+      expect(listener).toHaveBeenCalledWith(before + 2);
 
       unsubscribe();
     });
@@ -190,7 +210,7 @@ describe('pocketbase service', () => {
 
       loadAuthSession(auth);
 
-      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, expectedAuthRecord(auth));
       expect(getConnectionState()).toBe('online');
     });
   });
@@ -208,14 +228,16 @@ describe('pocketbase service', () => {
           auth,
         },
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockResolvedValue(resultFromMain);
+      stubBridgeApi({ refreshPbConnection });
 
       const result = await refreshAuthSession();
 
       expect(result).toBe('ok');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
-      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, expectedAuthRecord(auth));
       expect(getConnectionState()).toBe('online');
     });
 
@@ -231,8 +253,10 @@ describe('pocketbase service', () => {
           auth,
         },
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockResolvedValue(resultFromMain);
+      stubBridgeApi({ refreshPbConnection });
 
       expect(getPb().baseURL).toBe('http://localhost:8090');
 
@@ -240,7 +264,7 @@ describe('pocketbase service', () => {
 
       expect(result).toBe('ok');
       expect(getPb().baseURL).toBe('http://localhost:8091');
-      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, expectedAuthRecord(auth));
     });
 
     it('returns auth-failed when main refresh reports an auth failure', async () => {
@@ -248,8 +272,10 @@ describe('pocketbase service', () => {
         ok: false,
         error: 'auth-failed',
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockResolvedValue(resultFromMain);
+      stubBridgeApi({ refreshPbConnection });
 
       const result = await refreshAuthSession();
 
@@ -258,8 +284,14 @@ describe('pocketbase service', () => {
     });
 
     it('returns unavailable when main refresh is unavailable', async () => {
-      const refreshPbConnection = vi.fn().mockResolvedValue(null);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      // The bridge contract never resolves to null, but `refreshAuthSession` widens
+      // the IPC result to `PbConnectionResult | null | undefined` and defends against
+      // a missing payload — this covers that branch, so the stub is deliberately
+      // typed looser than `BridgeAPI['refreshPbConnection']`.
+      const refreshPbConnection = vi
+        .fn<() => Promise<PbConnectionResult | null>>()
+        .mockResolvedValue(null);
+      vi.stubGlobal('api', { refreshPbConnection });
 
       const result = await refreshAuthSession();
 
@@ -387,14 +419,19 @@ describe('pocketbase service', () => {
           auth: refreshedAuth,
         },
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockResolvedValue(resultFromMain);
+      stubBridgeApi({ refreshPbConnection });
 
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(getConnectionState()).toBe('online');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
-      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(
+        refreshedAuth.token,
+        expectedAuthRecord(refreshedAuth),
+      );
       // Restore
       mockAuthStore.isValid = true;
     });
@@ -416,15 +453,20 @@ describe('pocketbase service', () => {
           auth: refreshedAuth,
         },
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockResolvedValue(resultFromMain);
+      stubBridgeApi({ refreshPbConnection });
 
       startHealthCheck();
       await vi.advanceTimersByTimeAsync(0);
 
       expect(getConnectionState()).toBe('online');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
-      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(
+        refreshedAuth.token,
+        expectedAuthRecord(refreshedAuth),
+      );
 
       mockAuthStore.isValid = true;
     });
@@ -448,8 +490,10 @@ describe('pocketbase service', () => {
         ok: false,
         error: 'auth-failed',
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockResolvedValue(resultFromMain);
+      stubBridgeApi({ refreshPbConnection });
       await vi.advanceTimersByTimeAsync(5000);
 
       // Should NOT have reconnected — state still offline
@@ -495,8 +539,10 @@ describe('pocketbase service', () => {
 
       // Auth invalid, main refresh will fail
       mockAuthStore.isValid = false;
-      const refreshPbConnection = vi.fn().mockRejectedValue(new Error('fail'));
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      const refreshPbConnection = vi
+        .fn<BridgeAPI['refreshPbConnection']>()
+        .mockRejectedValue(new Error('fail'));
+      stubBridgeApi({ refreshPbConnection });
 
       await vi.advanceTimersByTimeAsync(5000);
 
@@ -519,7 +565,7 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(60_000);
 
       // No further probes after the health check was stopped
-      expect(fetchMock.mock.calls.length).toBe(callsAfterStart);
+      expect(fetchMock.mock.calls).toHaveLength(callsAfterStart);
     });
 
     it('stopHealthCheck is safe to call when no health check is running', () => {
@@ -565,7 +611,7 @@ describe('pocketbase service', () => {
       const callsAfterFirst = fetchSpy.mock.calls.length;
 
       await vi.advanceTimersByTimeAsync(5_000); // degraded cadence
-      expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfterFirst + 1);
 
       fetchSpy.mockResolvedValue({ ok: true }); // server back
       await vi.advanceTimersByTimeAsync(5_000);
@@ -573,9 +619,9 @@ describe('pocketbase service', () => {
 
       const callsWhenOnline = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000); // online cadence is 30s — nothing yet
-      expect(fetchSpy.mock.calls.length).toBe(callsWhenOnline);
+      expect(fetchSpy.mock.calls).toHaveLength(callsWhenOnline);
       await vi.advanceTimersByTimeAsync(25_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsWhenOnline + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(callsWhenOnline + 1);
     });
 
     it('probes immediately on a window online event', async () => {
@@ -587,7 +633,7 @@ describe('pocketbase service', () => {
       const before = fetchSpy.mock.calls.length;
       globalThis.window.dispatchEvent(new Event('online'));
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchSpy.mock.calls.length).toBe(before + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(before + 1);
     });
 
     it('probes immediately on a window offline event', async () => {
@@ -599,7 +645,7 @@ describe('pocketbase service', () => {
       const before = fetchSpy.mock.calls.length;
       globalThis.window.dispatchEvent(new Event('offline'));
       await vi.advanceTimersByTimeAsync(0);
-      expect(fetchSpy.mock.calls.length).toBe(before + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(before + 1);
     });
   });
 
@@ -659,7 +705,7 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(states).not.toContain('reconnecting'); // no spurious teardown
-      expect(fetchSpy.mock.calls.length).toBe(before); // no extra probe
+      expect(fetchSpy.mock.calls).toHaveLength(before); // no extra probe
       expect(getConnectionState()).toBe('online');
       unsub();
     });
@@ -690,11 +736,11 @@ describe('pocketbase service', () => {
     it('enters auth-failed state when refresh reports auth-failed', async () => {
       initPocketBase('http://localhost:8090');
       loadAuthSession({ token: 't', record: null });
-      const refreshPbConnection = vi.fn().mockResolvedValue({
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
         ok: false,
         error: 'auth-failed',
       } satisfies PbConnectionResult);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      stubBridgeApi({ refreshPbConnection });
 
       handleApiError({ status: 401 });
       await vi.advanceTimersByTimeAsync(0);
@@ -702,29 +748,29 @@ describe('pocketbase service', () => {
       expect(getConnectionState()).toBe('auth-failed');
     });
 
-    it('stays offline (not auth-failed) when refresh reports pb-unavailable', async () => {
+    it('keeps a directly observed credential rejection latched if refresh is unavailable', async () => {
       initPocketBase('http://localhost:8090');
       loadAuthSession({ token: 't', record: null });
-      const refreshPbConnection = vi.fn().mockResolvedValue({
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
         ok: false,
         error: 'pb-unavailable',
       } satisfies PbConnectionResult);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      stubBridgeApi({ refreshPbConnection });
 
       handleApiError({ status: 401 });
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(getConnectionState()).toBe('offline');
+      expect(getConnectionState()).toBe('auth-failed');
     });
 
     it('uses the relaxed 30s cadence while auth-failed (no hot auth retry loop)', async () => {
       const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal('fetch', fetchSpy);
-      const refreshPbConnection = vi.fn().mockResolvedValue({
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
         ok: false,
         error: 'auth-failed',
       } satisfies PbConnectionResult);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      stubBridgeApi({ refreshPbConnection });
       // Probe path: healthy fetch, invalid token → refresh → auth-failed, so
       // scheduleNextProbe fires while state is already 'auth-failed'.
       mockAuthStore.isValid = false;
@@ -739,9 +785,9 @@ describe('pocketbase service', () => {
 
       const callsAfter = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfter); // NOT the 5s degraded cadence
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfter); // NOT the 5s degraded cadence
       await vi.advanceTimersByTimeAsync(25_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfter + 1); // 30s cadence
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfter + 1); // 30s cadence
       expect(getConnectionState()).toBe('auth-failed'); // no flap back to online
     });
 
@@ -749,53 +795,55 @@ describe('pocketbase service', () => {
       // 401 with locally-valid token → auth-failed
       const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal('fetch', fetchSpy);
-      const refreshPbConnection = vi.fn().mockResolvedValue({
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
         ok: false,
         error: 'auth-failed',
       } satisfies PbConnectionResult);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      stubBridgeApi({ refreshPbConnection });
       initPocketBase('http://localhost:8090');
       loadAuthSession({ token: 't', record: null });
       handleApiError({ status: 401 });
       await vi.advanceTimersByTimeAsync(0);
       expect(getConnectionState()).toBe('auth-failed');
 
-      // server outage → offline
+      // A server outage cannot erase a confirmed credential rejection.
       fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
       await vi.advanceTimersByTimeAsync(30_000);
-      expect(getConnectionState()).toBe('offline');
+      expect(getConnectionState()).toBe('auth-failed');
 
       // server returns, passphrase still broken: must NOT go online off the stale token
       fetchSpy.mockResolvedValue({ ok: true });
       const refreshCallsBefore = refreshPbConnection.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(5_000); // degraded cadence probe
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(getConnectionState()).toBe('auth-failed'); // re-derived via refresh, not laundered to online
       expect(refreshPbConnection.mock.calls.length).toBeGreaterThan(refreshCallsBefore);
     });
 
-    it('demotes auth-failed to offline when the server becomes unreachable', async () => {
+    it('keeps auth-failed latched when the server later becomes unreachable', async () => {
       const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal('fetch', fetchSpy);
-      const refreshPbConnection = vi.fn().mockResolvedValue({
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
         ok: false,
         error: 'auth-failed',
       } satisfies PbConnectionResult);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      stubBridgeApi({ refreshPbConnection });
       mockAuthStore.isValid = false;
       initPocketBase('http://localhost:8090');
       loadAuthSession({ token: 't', record: null });
       await vi.advanceTimersByTimeAsync(0); // immediate probe lands in auth-failed
       expect(getConnectionState()).toBe('auth-failed');
 
-      // Server outage: the diagnosis is now connectivity, not credentials.
+      // A network outage must not erase the prior credential rejection.
       fetchSpy.mockRejectedValue(new Error('net down'));
       await vi.advanceTimersByTimeAsync(30_000); // next probe (30s cadence) fails
-      expect(getConnectionState()).toBe('offline');
+      expect(getConnectionState()).toBe('auth-failed');
 
-      // Offline resumes the 5s degraded cadence.
+      // The latched authentication failure retains the relaxed cadence.
       const callsAfterOutage = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(fetchSpy.mock.calls.length).toBe(callsAfterOutage + 1);
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfterOutage);
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(fetchSpy.mock.calls).toHaveLength(callsAfterOutage + 1);
     });
   });
 
@@ -859,22 +907,55 @@ describe('pocketbase service', () => {
         token: 'refreshed-token',
         record: { id: 'user-1' },
       };
-      const refreshPbConnection = vi.fn().mockResolvedValue({
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
         ok: true,
         connection: {
           pbUrl: 'http://localhost:8090',
           auth: refreshedAuth,
         },
       } satisfies PbConnectionResult);
-      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      stubBridgeApi({ refreshPbConnection });
 
       handleApiError({ status: 401, message: 'unauthorized' });
       await Promise.resolve();
 
-      expect(listener).toHaveBeenCalledWith('reconnecting');
+      expect(listener).toHaveBeenCalledWith('auth-failed');
       expect(refreshPbConnection).toHaveBeenCalledOnce();
-      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(mockAuthSave).toHaveBeenCalledWith(
+        refreshedAuth.token,
+        expectedAuthRecord(refreshedAuth),
+      );
       expect(getConnectionState()).toBe('online');
+    });
+
+    it('collapses a burst of unauthorized errors into one refresh and one health restart', async () => {
+      const fetchSpy = vi.fn(() => new Promise(() => {}));
+      vi.stubGlobal('fetch', fetchSpy);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
+      const refreshPbConnection = vi.fn<BridgeAPI['refreshPbConnection']>().mockResolvedValue({
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8090',
+          auth: { token: 'refreshed-token', record: { id: 'user-1' } },
+        },
+      } satisfies PbConnectionResult);
+      stubBridgeApi({ refreshPbConnection });
+      const fetchCallsBefore = fetchSpy.mock.calls.length;
+
+      // Every in-flight collection request fails on the same expired token.
+      handleApiError({ status: 401, message: 'unauthorized' });
+      handleApiError({ status: 403, message: 'forbidden' });
+      handleApiError({ status: 401, message: 'unauthorized' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(refreshPbConnection).toHaveBeenCalledOnce();
+      expect(fetchSpy.mock.calls).toHaveLength(fetchCallsBefore + 1);
+
+      // The dedup only covers the in-flight window — a later rejection retries.
+      handleApiError({ status: 401, message: 'unauthorized' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(refreshPbConnection).toHaveBeenCalledTimes(2);
     });
 
     it('handles null/undefined errors gracefully', () => {

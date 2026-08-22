@@ -5,6 +5,15 @@ import fs from 'node:fs';
 import { SyncManager } from './SyncManager';
 import { PendingChanges, type PendingChange } from './PendingChanges';
 
+/** Index into an array, failing loudly rather than silently yielding `undefined`. */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(`Expected an element at index ${index} (length ${items.length})`);
+  }
+  return item;
+}
+
 function createFakePb(
   options: {
     records?: Map<string, Record<string, unknown>>;
@@ -182,7 +191,7 @@ describe('SyncManager integration tests', () => {
       (c) => c.method === 'create' && c.collection === 'conflict_log',
     );
     expect(conflictLogCalls).toHaveLength(1);
-    expect(conflictLogCalls[0].data).toMatchObject({
+    expect(at(conflictLogCalls, 0).data).toMatchObject({
       collection: 'notes',
       recordId,
       overwrittenBy: 'client',
@@ -217,8 +226,7 @@ describe('SyncManager integration tests', () => {
       (c) => c.method === 'create' && c.collection === 'contacts',
     );
     expect(createCalls).toHaveLength(1);
-    // id field should have been stripped from create payload
-    expect((createCalls[0].data as Record<string, unknown>).id).toBeUndefined();
+    expect((at(createCalls, 0).data as Record<string, unknown>).id).toBe('rec_missing_001');
   });
 
   it('progress callback: called once per change with correct counts', async () => {

@@ -119,24 +119,14 @@ describe('AlertHistoryModal', () => {
     expect(screen.queryByTestId('history-modal')).not.toBeInTheDocument();
   });
 
-  it('renders the title', () => {
+  it.each([
+    ['title', 'Alert History'],
+    ['severity', 'ISSUE'],
+    ['subject', 'Server Outage'],
+    ['sender', 'From: IT'],
+  ])('renders the history entry %s', (_field, expectedText) => {
     render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('Alert History')).toBeInTheDocument();
-  });
-
-  it('renders history entry with severity', () => {
-    render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('ISSUE')).toBeInTheDocument();
-  });
-
-  it('renders history entry subject', () => {
-    render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('Server Outage')).toBeInTheDocument();
-  });
-
-  it('renders sender info', () => {
-    render(<AlertHistoryModal {...defaultProps} />);
-    expect(screen.getByText('From: IT')).toBeInTheDocument();
+    expect(screen.getByText(expectedText)).toBeInTheDocument();
   });
 
   it('shows (no subject) when subject is empty', () => {
@@ -260,35 +250,16 @@ describe('AlertHistoryModal', () => {
     expect(screen.queryByText('Firewall maintenance')).not.toBeInTheDocument();
   });
 
-  it('tags severity chip with data-sev for ISSUE', () => {
-    const { container } = render(<AlertHistoryModal {...defaultProps} />);
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('ISSUE');
-  });
-
-  it('tags severity chip with data-sev for INFO', () => {
-    const { container } = render(
-      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'INFO' })]} />,
-    );
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('INFO');
-  });
-
-  it('tags severity chip with data-sev for RESOLVED', () => {
-    const { container } = render(
-      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'RESOLVED' })]} />,
-    );
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('RESOLVED');
-  });
-
-  it('tags severity chip with data-sev for MAINTENANCE', () => {
-    const { container } = render(
-      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'MAINTENANCE' })]} />,
-    );
-    const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.getAttribute('data-sev')).toBe('MAINTENANCE');
-  });
+  it.each(['ISSUE', 'INFO', 'RESOLVED', 'MAINTENANCE'] as const)(
+    'tags the severity chip with data-sev for %s',
+    (severity) => {
+      const { container } = render(
+        <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity })]} />,
+      );
+      const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
+      expect(sevEl?.getAttribute('data-sev')).toBe(severity);
+    },
+  );
 
   it('does not show extra content (label editor) by default', () => {
     render(<AlertHistoryModal {...defaultProps} />);
@@ -396,6 +367,10 @@ describe('AlertHistoryModal', () => {
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
       });
+      expect(screen.getByRole('dialog', { name: 'Edit template name' })).toHaveAttribute(
+        'data-variant',
+        'confirmation',
+      );
       // The input should be pre-filled with the existing label
       const input = screen.getByPlaceholderText('e.g. Network Outage Template');
       expect((input as HTMLInputElement).value).toBe('Old Name');
@@ -417,8 +392,9 @@ describe('AlertHistoryModal', () => {
       fireEvent.click(screen.getByText('Save'));
 
       expect(defaultProps.onUpdateLabel).toHaveBeenCalledWith('entry-1', 'My Template');
-      // Editor should close after save
-      expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      });
     });
 
     it('commits label on Enter key in input', async () => {
@@ -449,7 +425,9 @@ describe('AlertHistoryModal', () => {
       const input = screen.getByPlaceholderText('e.g. Network Outage Template');
       fireEvent.keyDown(input, { key: 'Escape' });
 
-      expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      });
       expect(defaultProps.onUpdateLabel).not.toHaveBeenCalled();
     });
 
@@ -464,11 +442,13 @@ describe('AlertHistoryModal', () => {
 
       fireEvent.click(screen.getByText('Cancel'));
 
-      expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      });
       expect(defaultProps.onUpdateLabel).not.toHaveBeenCalled();
     });
 
-    it('commits label when clicking overlay background', async () => {
+    it('cancels label editing when clicking the shared backdrop', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
@@ -478,16 +458,17 @@ describe('AlertHistoryModal', () => {
       });
 
       const input = screen.getByPlaceholderText('e.g. Network Outage Template');
-      fireEvent.change(input, { target: { value: 'Overlay Save' } });
+      fireEvent.change(input, { target: { value: 'Discarded draft' } });
 
-      // Click the overlay div itself
-      const overlay = document.querySelector('.alert-history-label-overlay')!;
-      fireEvent.click(overlay, { target: overlay, currentTarget: overlay });
+      fireEvent.click(screen.getByRole('button', { name: 'Close modal backdrop' }));
 
-      expect(defaultProps.onUpdateLabel).toHaveBeenCalledWith('entry-1', 'Overlay Save');
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      });
+      expect(defaultProps.onUpdateLabel).not.toHaveBeenCalled();
     });
 
-    it('dismisses label editor on Escape key on overlay', async () => {
+    it('dismisses label editor on Escape through the shared modal stack', async () => {
       defaultProps.onPin.mockResolvedValue(true);
       render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
@@ -495,11 +476,15 @@ describe('AlertHistoryModal', () => {
       await waitFor(() => {
         expect(screen.getByLabelText('Edit template name')).toBeInTheDocument();
       });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Close modal backdrop' })).toBeInTheDocument();
+      });
 
-      const overlay = document.querySelector('.alert-history-label-overlay')!;
-      fireEvent.keyDown(overlay, { key: 'Escape' });
+      fireEvent.keyDown(document, { key: 'Escape' });
 
-      expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+      });
     });
 
     it('trims whitespace from label on commit', async () => {
@@ -519,7 +504,7 @@ describe('AlertHistoryModal', () => {
     });
   });
 
-  it('resets label editor state when modal closes', () => {
+  it('resets label editor state when modal closes', async () => {
     defaultProps.onPin.mockResolvedValue(true);
     const { rerender } = render(
       <AlertHistoryModal
@@ -549,6 +534,8 @@ describe('AlertHistoryModal', () => {
       />,
     );
 
-    expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Edit template name')).not.toBeInTheDocument();
+    });
   });
 });

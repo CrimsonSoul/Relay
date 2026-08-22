@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
+import { emptyCloudStatusProviders } from '@shared/cloudStatus';
+import { CURRENT_CLOUD_OUTAGE_WINDOW_MS } from '../../utils/cloudStatus';
 
-// Mock ProviderIcon
 vi.mock('../../components/icons/ProviderIcons', () => ({
   ProviderIcon: ({ provider }: { provider: string }) => (
     <span data-testid={`provider-icon-${provider}`} />
@@ -21,159 +22,187 @@ vi.mock('../../components/StatusBar', () => ({
   StatusBarLive: () => <span data-testid="status-bar-live" />,
 }));
 
-// Stub globalThis.api
-beforeEach(() => {
-  (globalThis as Record<string, unknown>).api = {
-    openExternal: vi.fn(),
-  };
-});
-
 import { CloudStatusTab } from '../CloudStatusTab';
 
-const emptyProviders: Record<CloudStatusProvider, never[]> = {
-  aws: [],
-  azure: [],
-  m365: [],
-  jira: [],
-  github: [],
-  cloudflare: [],
-  google: [],
-  anthropic: [],
-  openai: [],
-  salesforce: [],
-};
+const emptyProviders = emptyCloudStatusProviders();
 
-const makeStatusData = (overrides: Partial<CloudStatusData> = {}): CloudStatusData => ({
-  providers: { ...emptyProviders },
-  lastUpdated: Date.now(),
-  errors: [],
-  ...overrides,
-});
+function makeStatusData(overrides: Partial<CloudStatusData> = {}): CloudStatusData {
+  return {
+    providers: emptyCloudStatusProviders(),
+    lastUpdated: Date.now(),
+    errors: [],
+    ...overrides,
+  };
+}
 
-const makeItem = (overrides: Partial<CloudStatusItem>): CloudStatusItem => ({
-  id: overrides.id ?? 'item-1',
-  provider: overrides.provider ?? 'aws',
-  title: overrides.title ?? 'Provider incident',
-  description: overrides.description ?? 'Incident details',
-  pubDate: overrides.pubDate ?? new Date().toISOString(),
-  link: overrides.link ?? '',
-  severity: overrides.severity ?? 'warning',
-});
+function makeItem<P extends CloudStatusProvider = 'aws'>(
+  overrides: Partial<CloudStatusItem<P>> = {},
+): CloudStatusItem<P> {
+  return {
+    id: overrides.id ?? 'item-1',
+    provider: overrides.provider ?? ('aws' as P),
+    title: overrides.title ?? 'Provider incident',
+    description: overrides.description ?? 'Incident details',
+    pubDate: overrides.pubDate ?? '2026-07-20T15:00:00.000Z',
+    link: overrides.link ?? '',
+    severity: overrides.severity ?? 'error',
+    affectedScopes: overrides.affectedScopes,
+  };
+}
 
 describe('CloudStatusTab', () => {
-  it('shows loading fallback when no data and loading', () => {
+  const openExternal = vi.fn();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-07-20T18:00:00.000Z');
+    vi.clearAllMocks();
+    globalThis.api = { openExternal } as never;
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('shows the loading fallback when no snapshot is available', () => {
     render(<CloudStatusTab statusData={null} loading={true} refetch={vi.fn()} />);
     expect(screen.getByTestId('tab-fallback')).toBeInTheDocument();
   });
 
-  it('renders with empty status data', () => {
+  it('marks coverage unknown when loading ends without a status snapshot', () => {
+    render(<CloudStatusTab statusData={null} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
+    expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
+    expect(screen.getAllByText('Unknown')).toHaveLength(15);
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
+    expect(screen.queryByText('No active vendor issues')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
+    for (const region of ['Global', 'EMEA', 'APAC', 'Federal']) {
+      expect(screen.getByRole('button', { name: `${region} Unknown` })).toBeInTheDocument();
+    }
+  });
+
+  it('keeps a two-column provider overview without a global active-issues pane', () => {
+    const { container } = render(
+      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'External Status' })).toHaveClass(
+      'tab-page-header__title',
+    );
+    const toolbar = screen.getByRole('toolbar', { name: 'Status actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    expect(toolbar).toContainElement(utility);
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'Refresh cloud status' }));
+    expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(15);
+    expect(
+      screen.getByRole('button', { name: 'View AWS status details' }),
+    ).toHaveAccessibleDescription('Operational No active issues');
+    expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
+  });
+
+  it('renders Dropbox and Proofpoint rows and keeps the combined Mist and Dynatrace rows', () => {
+    const { container } = render(
+      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+    );
+
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      'AWS',
+      'Azure',
+      'Microsoft 365',
+      'Dropbox',
+      'Proofpoint',
+      'CrowdStrike',
+      'Jira',
+      'GitHub',
+      'Cloudflare',
+      'Juniper Mist',
+      'Dynatrace',
+      'Google Cloud',
+      'Claude',
+      'ChatGPT',
+      'Salesforce',
+    ]);
+    expect(screen.getByText('across 15 monitored providers')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Dropbox status details' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View Proofpoint status details' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View Juniper Mist status details' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View Dynatrace status details' }),
+    ).toBeInTheDocument();
+  });
+
+  it('offers only the official status action for Juniper Mist', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('Incident feed')).toBeInTheDocument();
-    expect(screen.getByText(/No recent events/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Juniper Mist official status page' }));
+
+    expect(openExternal).toHaveBeenCalledWith('https://status.mist.com/');
+    expect(
+      screen.queryByRole('button', { name: /Open Juniper Mist on (?:X|Downdetector)/ }),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders provider cards for all providers', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    // Should show "All services normal" for each provider (10 providers)
-    const normalStatuses = screen.getAllByText('All services normal');
-    expect(normalStatuses.length).toBe(10);
-  });
-
-  it('renders filter buttons including All', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    // The "All" filter button
-    expect(screen.getByText('All')).toBeInTheDocument();
-    // Filter area has provider short labels - AWS appears in both filter and provider card
-    const filterContainer = screen.getByText('All').parentElement!;
-    expect(filterContainer).toBeInTheDocument();
-    // Just verify the filters container has buttons
-    const filterButtons = filterContainer.querySelectorAll('button');
-    // All + 10 providers = 11
-    expect(filterButtons.length).toBe(11);
-  });
-
-  it('renders refresh button', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByLabelText('Refresh cloud status')).toBeInTheDocument();
-  });
-
-  it('calls refetch when refresh button is clicked', () => {
-    const refetch = vi.fn();
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={refetch} />);
-    fireEvent.click(screen.getByLabelText('Refresh cloud status'));
-    expect(refetch).toHaveBeenCalledOnce();
-  });
-
-  it('disables refresh button while loading', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={true} refetch={vi.fn()} />);
-    expect(screen.getByLabelText('Refresh cloud status')).toBeDisabled();
-  });
-
-  it('renders status items when providers have issues', () => {
+  it('shows Proofpoint as one outage-focused provider with its affected products', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
-        aws: [makeItem({ id: 'aws-1', provider: 'aws', title: 'EC2 Outage', severity: 'error' })],
-      },
-    });
-    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('EC2 Outage')).toBeInTheDocument();
-    expect(screen.getByText('OUTAGE')).toBeInTheDocument();
-  });
-
-  it('shows active issues count on provider card', () => {
-    const data = makeStatusData({
-      providers: {
-        ...emptyProviders,
-        azure: [
-          {
-            id: 'az-1',
-            provider: 'azure',
-            title: 'Storage Degraded',
-            description: 'Degraded storage performance',
-            pubDate: new Date().toISOString(),
-            link: '',
-            severity: 'warning',
-          },
+        proofpoint: [
+          makeItem({
+            id: '000026896',
+            provider: 'proofpoint',
+            title: 'Proofpoint service interruption',
+            description: 'Mail flow and portal access may be unavailable.',
+            link: 'https://proofpoint.my.site.com/community/s/article/example',
+            affectedScopes: ['Proofpoint Essentials', 'Email Protection'],
+          }),
         ],
       },
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-    expect(screen.getAllByText('1 active issue').length).toBeGreaterThanOrEqual(1);
-  });
 
-  it('uses degraded and outage severity classes for provider status text', () => {
-    const data = makeStatusData({
-      providers: {
-        ...emptyProviders,
-        aws: [makeItem({ id: 'aws-1', provider: 'aws', severity: 'error' })],
-        azure: [makeItem({ id: 'az-1', provider: 'azure', severity: 'warning' })],
-      },
+    const proofpointButton = screen.getByRole('button', {
+      name: 'View Proofpoint status details',
     });
-    const { container } = render(
-      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    expect(proofpointButton).toHaveAccessibleDescription('Outage 1 active issue');
+    fireEvent.click(proofpointButton);
+
+    expect(screen.getByText('Proofpoint service interruption')).toBeInTheDocument();
+    expect(screen.getByText('Proofpoint Essentials · Email Protection')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View official status' }));
+    expect(openExternal).toHaveBeenCalledWith(
+      'https://proofpoint.my.site.com/community/s/article/example',
     );
-
-    const providerCards = Array.from(container.querySelectorAll('.cloud-status-provider'));
-    const awsCard = providerCards.find((card) => card.textContent?.includes('AWS'));
-    const azureCard = providerCards.find((card) => card.textContent?.includes('Azure'));
-
-    expect(awsCard?.querySelector('.cloud-status-provider__status--outage')).toBeInTheDocument();
     expect(
-      azureCard?.querySelector('.cloud-status-provider__status--degraded'),
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: /Open Proofpoint on (?:X|Downdetector)/ }),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders info feed items with the info severity class', () => {
+  it('labels CrowdStrike as third-party and separates StatusGator from official support', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
-        m365: [
+        crowdstrike: [
           makeItem({
-            id: 'm365-info',
-            provider: 'm365',
-            title: 'Admin center notice',
-            severity: 'info',
+            id: 'crowdstrike-statusgator-down',
+            provider: 'crowdstrike',
+            title: 'CrowdStrike outage reported by StatusGator',
+            description: 'CrowdStrike is currently down.',
+            link: 'https://statusgator.com/services/crowdstrike',
           }),
         ],
       },
@@ -182,69 +211,166 @@ describe('CloudStatusTab', () => {
       <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
-    expect(screen.getByText('INFO')).toBeInTheDocument();
-    expect(container.querySelector('.cloud-status-item__severity--info')).toBeInTheDocument();
+    const crowdstrikeRow = screen
+      .getByRole('button', { name: 'View CrowdStrike status details' })
+      .closest('.cloud-status-provider');
+    expect(crowdstrikeRow).toHaveTextContent('Third-party');
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
+        (node) => node.textContent,
+      ),
+    ).toContain('CrowdStrike');
+
+    fireEvent.click(screen.getByRole('button', { name: 'View CrowdStrike status details' }));
+
+    expect(
+      screen.getByText('Status supplied by StatusGator, not CrowdStrike.'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open CrowdStrike on StatusGator' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open CrowdStrike official support portal' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open CrowdStrike on Downdetector' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View StatusGator report' }));
+
+    expect(openExternal).toHaveBeenNthCalledWith(1, 'https://statusgator.com/services/crowdstrike');
+    expect(openExternal).toHaveBeenNthCalledWith(
+      2,
+      'https://supportportal.crowdstrike.com/s/get-help',
+    );
+    expect(openExternal).toHaveBeenNthCalledWith(3, 'https://downdetector.com/status/crowdstrike/');
+    expect(openExternal).toHaveBeenNthCalledWith(4, 'https://statusgator.com/services/crowdstrike');
   });
 
-  it('renders command center posture metrics', () => {
+  it('deduplicates Mist regions and filters its detail view by regional posture', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
-        aws: [
-          makeItem({ id: 'aws-1', provider: 'aws', severity: 'error' }),
-          makeItem({ id: 'aws-2', provider: 'aws', severity: 'warning' }),
+        mist_global: [
+          makeItem({
+            id: 'mist-1',
+            provider: 'mist_global',
+            title: 'Mist login outage',
+          }),
         ],
-        cloudflare: [makeItem({ id: 'cf-1', provider: 'cloudflare', severity: 'warning' })],
-        m365: [makeItem({ id: 'm365-1', provider: 'm365', severity: 'info' })],
+        mist_apac: [
+          makeItem({
+            id: 'mist-1',
+            provider: 'mist_apac',
+            title: 'Mist login outage',
+          }),
+        ],
+        mist_emea: [
+          makeItem({
+            id: 'mist-2',
+            provider: 'mist_emea',
+            title: 'Mist EMEA packet loss',
+            severity: 'warning',
+          }),
+        ],
+        dynatrace: [
+          makeItem({
+            id: 'dynatrace-1',
+            provider: 'dynatrace',
+            title: 'Dynatrace platform outage',
+            affectedScopes: ['AWS · Americas', 'Azure · Europe'],
+          }),
+        ],
       },
     });
-
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByText('Current posture')).toBeInTheDocument();
-    expect(screen.getByText('3 active issues')).toBeInTheDocument();
-    expect(screen.getByText('2 impacted providers')).toBeInTheDocument();
-    expect(screen.getByText('Worst severity')).toBeInTheDocument();
-    expect(screen.getByText('Outage')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View Juniper Mist status details' }));
+    expect(screen.getAllByText('Mist login outage')).toHaveLength(1);
+    expect(screen.getByText('Global · APAC')).toBeInTheDocument();
+    expect(screen.getByText('Mist EMEA packet loss')).toBeInTheDocument();
+    const regionGroup = screen.getByRole('group', { name: 'Juniper Mist regions' });
+    expect(regionGroup).toBeInTheDocument();
+    expect(regionGroup.tagName).toBe('FIELDSET');
+    expect(screen.getByRole('button', { name: 'All Outage' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Global Outage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'EMEA Degraded' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'APAC Outage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Federal Operational' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'EMEA Degraded' }));
+    expect(screen.queryByText('Mist login outage')).not.toBeInTheDocument();
+    expect(screen.getByText('Mist EMEA packet loss')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Federal Operational' }));
+    expect(screen.queryByText('Mist EMEA packet loss')).not.toBeInTheDocument();
+    expect(screen.getByText('No active issues for Juniper Mist Federal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Dynatrace status details' }));
+    expect(screen.getByText('Dynatrace platform outage')).toBeInTheDocument();
+    expect(screen.getByText('AWS · Americas · Azure · Europe')).toBeInTheDocument();
   });
 
-  it('orders impacted providers before healthy providers', () => {
+  it('does not claim full coverage when a provider feed is unavailable', () => {
+    const data = makeStatusData({ errors: [{ provider: 'github', message: 'fetch failed' }] });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.getByText('Some provider feeds are unavailable.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View GitHub status details' }),
+    ).toHaveAccessibleDescription('Unknown Coverage unavailable');
+  });
+
+  it('does not claim an unavailable provider has no active issues in the overview', () => {
     const data = makeStatusData({
-      providers: {
-        ...emptyProviders,
-        aws: [makeItem({ id: 'aws-1', provider: 'aws', severity: 'error' })],
-        cloudflare: [makeItem({ id: 'cf-1', provider: 'cloudflare', severity: 'warning' })],
-      },
+      providers: { ...emptyProviders, aws: [makeItem()] },
+      errors: [{ provider: 'github', message: 'fetch failed' }],
     });
-    const { container } = render(
-      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    const names = Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
-      (node) => node.textContent,
-    );
-    expect(names.slice(0, 2)).toEqual(['AWS', 'Cloudflare']);
+    const githubButton = screen.getByRole('button', { name: 'View GitHub status details' });
+    expect(githubButton).toHaveTextContent('Coverage unavailable');
+    expect(githubButton).not.toHaveTextContent('No active issues');
+    expect(githubButton).toHaveAccessibleDescription('Unknown Coverage unavailable');
   });
 
-  it('filters the incident feed by active, recent, and resolved states', () => {
+  it('refreshes manually and disables refresh while loading', () => {
+    const refetch = vi.fn();
+    const { rerender } = render(
+      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={refetch} />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Refresh cloud status'));
+    expect(refetch).toHaveBeenCalledOnce();
+
+    rerender(<CloudStatusTab statusData={makeStatusData()} loading={true} refetch={refetch} />);
+    expect(screen.getByLabelText('Refresh cloud status')).toBeDisabled();
+  });
+
+  it('summarizes current outage and degraded records in the provider overview', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
-        aws: [
-          makeItem({ id: 'aws-1', provider: 'aws', title: 'Active outage', severity: 'error' }),
+        aws: [makeItem({ id: 'outage', title: 'EC2 outage', severity: 'error' })],
+        azure: [
+          makeItem({
+            id: 'warning',
+            provider: 'azure',
+            title: 'Storage latency',
+            severity: 'warning',
+          }),
         ],
         m365: [
           makeItem({
-            id: 'm365-1',
+            id: 'info',
             provider: 'm365',
-            title: 'Admin center notice',
+            title: 'Admin notice',
             severity: 'info',
           }),
         ],
         github: [
           makeItem({
-            id: 'gh-1',
+            id: 'resolved',
             provider: 'github',
             title: 'Recovered webhooks',
             severity: 'resolved',
@@ -255,136 +381,333 @@ describe('CloudStatusTab', () => {
 
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByText('Active outage')).toBeInTheDocument();
-    expect(screen.queryByText('Admin center notice')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.queryByText('EC2 outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Outage').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Degraded').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('1 active outage · 1 degraded issue')).toBeInTheDocument();
+    expect(screen.queryByText('Admin notice')).not.toBeInTheDocument();
     expect(screen.queryByText('Recovered webhooks')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
-    expect(screen.getByText('Admin center notice')).toBeInTheDocument();
-    expect(screen.getByText('Active outage')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Resolved' }));
-    expect(screen.getByText('Recovered webhooks')).toBeInTheDocument();
-    expect(screen.queryByText('Active outage')).not.toBeInTheDocument();
   });
 
-  it('expands status item on click', () => {
+  it('drills into one provider and returns to the overview', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
-        aws: [
-          {
-            id: 'aws-1',
-            provider: 'aws',
-            title: 'EC2 Outage',
-            description: 'Detailed description here',
-            pubDate: new Date().toISOString(),
-            link: 'https://example.com',
-            severity: 'error',
-          },
-        ],
-      },
-    });
-    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-
-    // Description should not be visible initially
-    expect(screen.queryByText('Detailed description here')).not.toBeInTheDocument();
-
-    // Click to expand
-    fireEvent.click(screen.getByText('EC2 Outage'));
-    expect(screen.getByText('Detailed description here')).toBeInTheDocument();
-    expect(screen.getByText('View details')).toBeInTheDocument();
-  });
-
-  it('collapses expanded item on second click', () => {
-    const data = makeStatusData({
-      providers: {
-        ...emptyProviders,
-        aws: [
-          {
-            id: 'aws-1',
-            provider: 'aws',
-            title: 'EC2 Outage',
-            description: 'Detailed description',
-            pubDate: new Date().toISOString(),
-            link: '',
-            severity: 'error',
-          },
-        ],
-      },
-    });
-    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-
-    fireEvent.click(screen.getByText('EC2 Outage'));
-    expect(screen.getByText('Detailed description')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('EC2 Outage'));
-    expect(screen.queryByText('Detailed description')).not.toBeInTheDocument();
-  });
-
-  it('filters by provider when filter button is clicked', () => {
-    const data = makeStatusData({
-      providers: {
-        ...emptyProviders,
-        aws: [
-          {
-            id: 'aws-1',
-            provider: 'aws',
-            title: 'AWS Issue',
-            description: 'desc',
-            pubDate: new Date().toISOString(),
-            link: '',
-            severity: 'error',
-          },
-        ],
+        aws: [makeItem({ id: 'aws-outage', title: 'EC2 outage', severity: 'error' })],
         azure: [
-          {
-            id: 'az-1',
+          makeItem({
+            id: 'azure-warning',
             provider: 'azure',
-            title: 'Azure Issue',
-            description: 'desc',
-            pubDate: new Date().toISOString(),
-            link: '',
+            title: 'Storage latency',
             severity: 'warning',
-          },
+          }),
         ],
       },
     });
+
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    expect(screen.queryByText('EC2 outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
 
-    // Both visible initially
-    expect(screen.getByText('AWS Issue')).toBeInTheDocument();
-    expect(screen.getByText('Azure Issue')).toBeInTheDocument();
+    const awsButton = screen.getByRole('button', { name: 'View AWS status details' });
+    expect(awsButton).toHaveAccessibleDescription('Outage 1 active issue');
+    awsButton.focus();
+    fireEvent.click(awsButton);
 
-    // Click AWS filter button (in the filters container, not the provider card)
-    const filterContainer = screen.getByText('All').parentElement!;
-    const awsFilterBtn = Array.from(filterContainer.querySelectorAll('button')).find((btn) =>
-      btn.textContent?.includes('AWS'),
-    )!;
-    fireEvent.click(awsFilterBtn);
-    expect(screen.getByText('AWS Issue')).toBeInTheDocument();
-    expect(screen.queryByText('Azure Issue')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'AWS status details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'AWS' })).toBeInTheDocument();
+    expect(screen.getByText('EC2 outage')).toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+    const allProvidersButton = screen.getByRole('button', { name: 'All providers' });
+    expect(allProvidersButton).toHaveFocus();
+    expect(allProvidersButton.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+
+    fireEvent.click(allProvidersButton);
+
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.queryByText('EC2 outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Storage latency')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View AWS status details' })).toHaveFocus();
   });
 
-  it('shows "Feed unavailable" for providers with errors', () => {
+  it('supports externally selecting a provider for notification navigation', () => {
+    const onSelectedProviderChange = vi.fn();
     const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [
+          makeItem({
+            id: 'azure-warning',
+            provider: 'azure',
+            title: 'Storage latency',
+            severity: 'warning',
+          }),
+        ],
+      },
+    });
+    const { rerender } = render(
+      <CloudStatusTab
+        statusData={data}
+        loading={false}
+        refetch={vi.fn()}
+        selectedProvider="azure"
+        onSelectedProviderChange={onSelectedProviderChange}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Azure status details' })).toBeInTheDocument();
+    expect(screen.getByText('Storage latency')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    expect(onSelectedProviderChange).toHaveBeenCalledWith(null);
+
+    rerender(
+      <CloudStatusTab
+        statusData={data}
+        loading={false}
+        refetch={vi.fn()}
+        selectedProvider={null}
+        onSelectedProviderChange={onSelectedProviderChange}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+  });
+
+  it('can inspect a healthy provider without hiding it from the overview', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'View ChatGPT status details' }));
+
+    expect(screen.getByRole('region', { name: 'ChatGPT status details' })).toBeInTheDocument();
+    expect(screen.getByText('No active issues for ChatGPT')).toBeInTheDocument();
+    expect(screen.getByText('Operational')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+
+    expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View ChatGPT status details' })).toHaveFocus();
+  });
+
+  it('summarizes a warning-only snapshot as degraded', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [
+          makeItem({
+            id: 'warning',
+            provider: 'azure',
+            title: 'Storage latency',
+            severity: 'warning',
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getAllByText('1 degraded issue').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
+  });
+
+  it('expires a degraded issue at the current-incident cutoff without a new snapshot', async () => {
+    const now = Date.now();
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [
+          makeItem({
+            provider: 'azure',
+            severity: 'warning',
+            title: 'Expiring latency advisory',
+            pubDate: new Date(now - CURRENT_CLOUD_OUTAGE_WINDOW_MS + 1_000).toISOString(),
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View Azure status details' }));
+    expect(screen.getByText('Expiring latency advisory')).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(1_001));
+
+    expect(screen.queryByText('Expiring latency advisory')).not.toBeInTheDocument();
+    expect(screen.getByText('No active issues for Azure')).toBeInTheDocument();
+  });
+
+  it('shows multiple-outage counts with plural copy', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [makeItem({ id: 'aws-1' })],
+        azure: [makeItem({ id: 'azure-1', provider: 'azure' })],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    expect(screen.getByText('2 active outages')).toBeInTheDocument();
+  });
+
+  it('does not display or count stale error records as active outages', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [
+          makeItem({
+            id: 'stale',
+            title: 'Old AWS outage',
+            pubDate: '2026-04-30T07:25:54.000Z',
+          }),
+        ],
+        github: [makeItem({ id: 'current', provider: 'github', title: 'Current GitHub outage' })],
+      },
+    });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
+    expect(screen.queryByText('Current GitHub outage')).not.toBeInTheDocument();
+    expect(screen.getByText('1 active outage')).toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name'))
+        .slice(0, 2)
+        .map((node) => node.textContent),
+    ).toEqual(['GitHub', 'AWS']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'View GitHub status details' }));
+    expect(screen.getByText('Current GitHub outage')).toBeInTheDocument();
+    expect(screen.queryByText('Old AWS outage')).not.toBeInTheDocument();
+  });
+
+  it('orders outage providers before unknown, degraded, and operational providers', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [makeItem({ provider: 'azure', severity: 'error' })],
+        cloudflare: [
+          makeItem({ provider: 'cloudflare', severity: 'warning', title: 'Elevated latency' }),
+        ],
+      },
       errors: [{ provider: 'github', message: 'fetch failed' }],
     });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    expect(
+      Array.from(container.querySelectorAll('.cloud-status-provider__name'))
+        .slice(0, 4)
+        .map((node) => node.textContent),
+    ).toEqual(['Azure', 'GitHub', 'Cloudflare', 'AWS']);
+  });
+
+  it('shows stale degradation as unknown when the latest provider fetch failed', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        cloudflare: [
+          makeItem({ provider: 'cloudflare', severity: 'warning', title: 'Last known latency' }),
+        ],
+      },
+      errors: [{ provider: 'cloudflare', message: 'fetch failed' }],
+    });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('Feed unavailable')).toBeInTheDocument();
+
+    expect(
+      screen.getByRole('button', { name: 'View Cloudflare status details' }),
+    ).toHaveAccessibleDescription('Unknown 1 active issue');
+    expect(screen.getByText('Coverage incomplete')).toBeInTheDocument();
+    expect(screen.getByTestId('status-bar')).toHaveTextContent('coverage incomplete');
+    expect(screen.getByTestId('status-bar')).not.toHaveTextContent('degraded issue');
   });
 
-  it('renders status bar with provider count', () => {
+  it('keeps a confirmed outage visible when the latest provider fetch failed', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        proofpoint: [makeItem({ provider: 'proofpoint', severity: 'error' })],
+      },
+      errors: [{ provider: 'proofpoint', message: 'fetch failed' }],
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(
+      screen.getByRole('button', { name: 'View Proofpoint status details' }),
+    ).toHaveAccessibleDescription('Outage 1 active issue');
+    expect(screen.getByText('1 active outage')).toBeInTheDocument();
+  });
+
+  it('shows provider issue details and opens the incident source', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [
+          makeItem({
+            title: 'EC2 outage',
+            description: '<p>Investigating &amp; mitigating EC2</p>',
+            link: 'https://health.aws.amazon.com/incident/1',
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
+
+    expect(screen.getByText('Investigating & mitigating EC2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View official status' }));
+    expect(openExternal).toHaveBeenCalledWith('https://health.aws.amazon.com/incident/1');
+  });
+
+  it('opens provider Status, X, and Downdetector actions in the outage layout', () => {
+    const data = makeStatusData({
+      providers: { ...emptyProviders, aws: [makeItem()] },
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open AWS official status page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open AWS on X' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open AWS on Downdetector' }));
+
+    expect(openExternal).toHaveBeenNthCalledWith(1, 'https://status.aws.amazon.com/');
+    expect(openExternal).toHaveBeenNthCalledWith(2, 'https://x.com/AWSCloud');
+    expect(openExternal).toHaveBeenNthCalledWith(
+      3,
+      'https://downdetector.com/status/aws-amazon-web-services/',
+    );
+  });
+
+  it('keeps separate provider actions and omits unavailable X accounts', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('10 providers monitored')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View AWS status details' }));
+    expect(screen.getByRole('button', { name: 'Open AWS on X' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All providers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Claude status details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Claude on Downdetector' }));
+    expect(openExternal).toHaveBeenCalledWith('https://downdetector.com/status/claude-ai/');
+    expect(screen.queryByRole('button', { name: 'Open Claude on X' })).not.toBeInTheDocument();
   });
 
-  it('shows Updated timestamp', () => {
+  it('removes historical feed controls and hidden severity labels', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText(/Updated/)).toBeInTheDocument();
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Incident feed')).not.toBeInTheDocument();
+    for (const label of ['INFO', 'RESOLVED']) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
   });
 
-  it('shows "Never" when lastUpdated is 0', () => {
+  it('shows the never-updated state without invalid time copy', () => {
     render(
       <CloudStatusTab
         statusData={makeStatusData({ lastUpdated: 0 })}
@@ -395,67 +718,18 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('Updated Never')).toBeInTheDocument();
   });
 
-  it('does not render a footer socials block', () => {
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.queryByText('Socials')).not.toBeInTheDocument();
-  });
-
-  describe('provider card links', () => {
-    const getCard = (container: HTMLElement, name: string): HTMLElement => {
-      const cards = Array.from(container.querySelectorAll<HTMLElement>('.cloud-status-provider'));
-      const card = cards.find((c) =>
-        c.querySelector('.cloud-status-provider__name')?.textContent?.includes(name),
-      );
-      expect(card).toBeDefined();
-      return card!;
-    };
-    const openExternal = () =>
-      (globalThis as { api?: { openExternal: ReturnType<typeof vi.fn> } }).api!.openExternal;
-
-    it('opens the vendor status page from the card main button', () => {
-      const { container } = render(
-        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-      );
-      const awsCard = getCard(container, 'AWS');
-      fireEvent.click(awsCard.querySelector('.cloud-status-provider__main')!);
-      expect(openExternal()).toHaveBeenCalledWith('https://status.aws.amazon.com/');
+  it('keeps provider, outage, and degraded counts in the status bar', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [makeItem()],
+        azure: [makeItem({ id: 'azure-warning', provider: 'azure', severity: 'warning' })],
+      },
     });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    it('renders an X link that opens the provider profile', () => {
-      const { container } = render(
-        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-      );
-      const awsCard = getCard(container, 'AWS');
-      const xLink = Array.from(awsCard.querySelectorAll('button')).find(
-        (b) => b.textContent === '@AWSCloud',
-      );
-      expect(xLink).toBeDefined();
-      fireEvent.click(xLink!);
-      expect(openExternal()).toHaveBeenCalledWith('https://x.com/AWSCloud');
-    });
-
-    it('omits the X link for providers without a handle', () => {
-      const { container } = render(
-        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-      );
-      const claudeCard = getCard(container, 'Claude');
-      const xLinks = Array.from(claudeCard.querySelectorAll('button')).filter((b) =>
-        b.textContent?.startsWith('@'),
-      );
-      expect(xLinks).toHaveLength(0);
-    });
-
-    it('renders a Downdetector link that opens the Downdetector page', () => {
-      const { container } = render(
-        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-      );
-      const githubCard = getCard(container, 'GitHub');
-      const downdetectorLink = Array.from(githubCard.querySelectorAll('button')).find((b) =>
-        b.textContent?.includes('Downdetector'),
-      );
-      expect(downdetectorLink).toBeDefined();
-      fireEvent.click(downdetectorLink!);
-      expect(openExternal()).toHaveBeenCalledWith('https://downdetector.com/status/github/');
-    });
+    expect(screen.getByTestId('status-bar')).toHaveTextContent(
+      '15 providers monitored · 1 active outage · 1 degraded issue',
+    );
   });
 });

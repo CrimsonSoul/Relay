@@ -1,8 +1,83 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { WEB_RUNTIME } from '@shared/runtime';
+
+function cssBlock(css: string, selector: string): string | undefined {
+  const selectorStart = css.indexOf(selector);
+  if (selectorStart === -1) return undefined;
+
+  const openingBrace = css.indexOf('{', selectorStart);
+  let depth = 0;
+  for (let index = openingBrace; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    if (css[index] === '}') depth -= 1;
+    if (depth === 0) return css.slice(openingBrace + 1, index);
+  }
+
+  return undefined;
+}
+
+function mediaBlock(css: string, query: string): string | undefined {
+  const mediaStart = css.indexOf(`@media (${query})`);
+  if (mediaStart === -1) return undefined;
+
+  const openingBrace = css.indexOf('{', mediaStart);
+  let depth = 0;
+  for (let index = openingBrace; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    if (css[index] === '}') depth -= 1;
+    if (depth === 0) return css.slice(openingBrace + 1, index);
+  }
+
+  return undefined;
+}
+
+function declarations(css: string): Map<string, string> {
+  return new Map(
+    css
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split(';')
+      .map((declaration) => {
+        const separator = declaration.indexOf(':');
+        return separator === -1
+          ? undefined
+          : [declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim()];
+      })
+      .filter((declaration): declaration is [string, string] => declaration !== undefined),
+  );
+}
+
+function px(value: string | undefined): number {
+  const parsed = /^(\d+)px$/.exec(value?.trim() ?? '');
+  if (!parsed) throw new Error(`Expected a pixel value, received ${value ?? 'undefined'}`);
+  return Number(parsed[1]);
+}
+
+function gridMinimums(template: string | undefined): number[] {
+  if (!template) throw new Error('Missing grid-template-columns');
+
+  return template
+    .split('minmax(')
+    .slice(1)
+    .map((column) => px(`${column.trim().split('px', 1)[0]}px`));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 // --- Mocks ---
+
+const OPTIMIZED_OUTLOOK_DATA_URL = 'data:image/png;base64,T1BUSU1JWkVEX09VVExPT0tfQ0FQVFVSRQ==';
 
 const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
@@ -61,9 +136,13 @@ const mockPendingReminders = {
     note?: string;
     status?: string;
     snoozeUntil?: string;
+    operatorId?: string;
+    createdBy?: string;
   }>,
 };
 const mockCompletedReminders = { current: [] as unknown[] };
+const mockReminderSubmitResult = { current: null as boolean | null };
+
 vi.mock('../../hooks/useAlertReminders', () => ({
   useAlertReminders: () => ({
     reminders: [],
@@ -101,6 +180,7 @@ vi.mock('../AlertReminderModal', () => ({
     mode?: 'schedule' | 'edit';
     reminder?: { title: string } | null;
     onSchedule: (input: Record<string, unknown>) => Promise<boolean>;
+    onClose: () => void;
   }) =>
     props.isOpen ? (
       <div data-testid="reminder-modal">
@@ -112,13 +192,37 @@ vi.mock('../AlertReminderModal', () => ({
         <span data-testid="reminder-draft-sender">{props.draft.sender}</span>
         <button
           data-testid="reminder-schedule"
-          onClick={() => void props.onSchedule({ title: 'Scheduled reminder' })}
+          onClick={() =>
+            void props
+              .onSchedule({
+                title: 'Scheduled reminder',
+                note: 'Reminder note',
+                dueAt: '2026-05-28T20:00:00.000Z',
+                operatorId: 'malicious-current-operator',
+                createdBy: 'Malicious Current Operator',
+              })
+              .then((result) => {
+                mockReminderSubmitResult.current = result;
+              })
+          }
         >
           Schedule alarm
+        </button>
+        <button data-testid="reminder-close" onClick={props.onClose}>
+          Close alarm
         </button>
       </div>
     ) : null,
 }));
+
+/** The reminder the manager-modal mock acts on, failing loudly when none was passed. */
+const firstPendingReminder = (reminders: Array<{ id: string; title: string }>) => {
+  const [reminder] = reminders;
+  if (!reminder) {
+    throw new Error('Expected AlertReminderManagerModal to receive at least one pending reminder');
+  }
+  return reminder;
+};
 
 vi.mock('../AlertReminderManagerModal', () => ({
   AlertReminderManagerModal: (props: {
@@ -135,18 +239,21 @@ vi.mock('../AlertReminderManagerModal', () => ({
         <button data-testid="manager-schedule" onClick={props.onScheduleNew}>
           manager-schedule
         </button>
-        <button data-testid="manager-edit" onClick={() => props.onEdit(props.pendingReminders[0])}>
+        <button
+          data-testid="manager-edit"
+          onClick={() => props.onEdit(firstPendingReminder(props.pendingReminders))}
+        >
           manager-edit
         </button>
         <button
           data-testid="manager-done"
-          onClick={() => props.onDone(props.pendingReminders[0].id)}
+          onClick={() => props.onDone(firstPendingReminder(props.pendingReminders).id)}
         >
           manager-done
         </button>
         <button
           data-testid="manager-dismiss"
-          onClick={() => props.onDismiss(props.pendingReminders[0].id)}
+          onClick={() => props.onDismiss(firstPendingReminder(props.pendingReminders).id)}
         >
           manager-dismiss
         </button>
@@ -154,69 +261,82 @@ vi.mock('../AlertReminderManagerModal', () => ({
     ) : null,
 }));
 
-// Mock AlertForm — forward ref and expose callbacks so we can trigger them from tests
-vi.mock('../AlertForm', () => ({
-  AlertForm: React.forwardRef(function MockAlertForm(
-    props: Record<string, unknown>,
-    ref: React.Ref<{ setEditorContent: (html: string) => void }>,
-  ) {
-    React.useImperativeHandle(ref, () => ({
-      setEditorContent: vi.fn(),
-    }));
-    const setSeverity = props.setSeverity as (s: string) => void;
-    const setSubject = props.setSubject as (s: string) => void;
-    const setBodyHtml = props.setBodyHtml as (s: string) => void;
-    const setSender = props.setSender as (s: string) => void;
-    const setRecipient = props.setRecipient as (s: string) => void;
-    const setUpdateNumber = props.setUpdateNumber as (n: number) => void;
-    const setAlertBodyFontSize = props.setAlertBodyFontSize as (s: string) => void;
-    const onToggleCompact = props.onToggleCompact as () => void;
-    const onToggleEnhanced = props.onToggleEnhanced as () => void;
-    return (
-      <div data-testid="alert-form">
-        <button data-testid="set-severity-issue" onClick={() => setSeverity('ISSUE')}>
-          set-issue
-        </button>
-        <button data-testid="set-severity-maintenance" onClick={() => setSeverity('MAINTENANCE')}>
-          set-maintenance
-        </button>
-        <button data-testid="set-severity-info" onClick={() => setSeverity('INFO')}>
-          set-info
-        </button>
-        <button data-testid="set-severity-resolved" onClick={() => setSeverity('RESOLVED')}>
-          set-resolved
-        </button>
-        <button data-testid="set-subject" onClick={() => setSubject('Test Subject')}>
-          set-subject
-        </button>
-        <button data-testid="set-body" onClick={() => setBodyHtml('<p>body</p>')}>
-          set-body
-        </button>
-        <button data-testid="set-sender" onClick={() => setSender('Security')}>
-          set-sender
-        </button>
-        <button data-testid="set-recipient" onClick={() => setRecipient('Managers')}>
-          set-recipient
-        </button>
-        <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
-          set-update
-        </button>
-        <button data-testid="set-alert-font-large" onClick={() => setAlertBodyFontSize('large')}>
-          set-large
-        </button>
-        <button data-testid="toggle-compact" onClick={onToggleCompact}>
-          toggle-compact
-        </button>
-        <button data-testid="toggle-enhanced" onClick={onToggleEnhanced}>
-          toggle-enhanced
-        </button>
-        <span data-testid="form-compact">{String(props.isCompact)}</span>
-        <span data-testid="form-enhanced">{String(props.isEnhanced)}</span>
-        <span data-testid="form-alert-font-size">{String(props.alertBodyFontSize)}</span>
-      </div>
-    );
-  }),
-}));
+let lastAlertFormProps: Record<string, unknown> | null = null;
+
+// Mock AlertForm — use the real draft contract and expose controls for tab-level tests
+vi.mock('../AlertForm', async () => {
+  const { useAlertDraft } = await vi.importActual<typeof import('../alerts/AlertDraftContext')>(
+    '../alerts/AlertDraftContext',
+  );
+  return {
+    AlertForm: function MockAlertForm(props: Record<string, unknown>) {
+      lastAlertFormProps = props;
+      const { state, setField } = useAlertDraft();
+      const hasRetiredTransformProps = [
+        'isCompact',
+        'onToggleCompact',
+        'isEnhanced',
+        'onToggleEnhanced',
+      ].some((key) => Object.prototype.hasOwnProperty.call(props, key));
+      const hasRetiredFontSizeProps = ['alertBodyFontSize', 'setAlertBodyFontSize'].some((key) =>
+        Object.prototype.hasOwnProperty.call(props, key),
+      );
+      return (
+        <div data-testid="alert-form">
+          <button data-testid="set-severity-issue" onClick={() => setField('severity', 'ISSUE')}>
+            set-issue
+          </button>
+          <button
+            data-testid="set-severity-maintenance"
+            onClick={() => setField('severity', 'MAINTENANCE')}
+          >
+            set-maintenance
+          </button>
+          <button data-testid="set-severity-info" onClick={() => setField('severity', 'INFO')}>
+            set-info
+          </button>
+          <button
+            data-testid="set-severity-resolved"
+            onClick={() => setField('severity', 'RESOLVED')}
+          >
+            set-resolved
+          </button>
+          <button data-testid="set-subject" onClick={() => setField('subject', 'Test Subject')}>
+            set-subject
+          </button>
+          <button data-testid="set-body" onClick={() => setField('bodyHtml', '<p>body</p>')}>
+            set-body
+          </button>
+          <button data-testid="set-sender" onClick={() => setField('sender', 'Security')}>
+            set-sender
+          </button>
+          <button data-testid="set-recipient" onClick={() => setField('recipient', 'Managers')}>
+            set-recipient
+          </button>
+          <button
+            data-testid="set-click-through-url"
+            onClick={() => setField('clickThroughUrl', 'https://status.example.com/incident')}
+          >
+            set-click-through-url
+          </button>
+          <button
+            data-testid="set-unsafe-click-through-url"
+            onClick={() => setField('clickThroughUrl', 'javascript:alert(1)')}
+          >
+            set-unsafe-click-through-url
+          </button>
+          <span data-testid="form-click-through-url">{state.clickThroughUrl}</span>
+          <span data-testid="form-body-html">{state.bodyHtml}</span>
+          <button data-testid="set-update-number" onClick={() => setField('updateNumber', 2)}>
+            set-update
+          </button>
+          <span data-testid="form-retired-transform-props">{String(hasRetiredTransformProps)}</span>
+          <span data-testid="form-retired-font-size-props">{String(hasRetiredFontSizeProps)}</span>
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock('../AlertCard', () => ({
   AlertCard: (props: Record<string, unknown>) => {
@@ -255,7 +375,9 @@ vi.mock('../AlertCard', () => ({
         <span data-testid="card-sender">{String(props.displaySender)}</span>
         <span data-testid="card-recipient">{String(props.displayRecipient)}</span>
         <span data-testid="card-body">{String(props.bodyHtml)}</span>
-        <span data-testid="card-alert-font-size">{String(props.alertBodyFontSize)}</span>
+        <span data-testid="card-retired-font-size-prop">
+          {String(Object.prototype.hasOwnProperty.call(props, 'alertBodyFontSize'))}
+        </span>
       </div>
     );
   },
@@ -295,35 +417,6 @@ vi.mock('../AlertHistoryModal', () => ({
     ) : null,
 }));
 
-vi.mock('../../components/TactileButton', () => ({
-  TactileButton: ({
-    children,
-    onClick,
-    loading,
-    variant,
-    icon,
-    tooltip,
-  }: {
-    children: React.ReactNode;
-    onClick?: () => void;
-    loading?: boolean;
-    variant?: string;
-    icon?: React.ReactNode;
-    tooltip?: React.ReactNode;
-  }) => (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      data-variant={variant}
-      data-has-icon={icon ? 'true' : 'false'}
-      data-tooltip={typeof tooltip === 'string' ? tooltip : undefined}
-    >
-      {icon && <span data-testid={`button-icon-${String(children).trim()}`}>{icon}</span>}
-      {children}
-    </button>
-  ),
-}));
-
 vi.mock('../../components/CollapsibleHeader', () => ({
   CollapsibleHeader: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="collapsible-header">{children}</div>
@@ -335,11 +428,21 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
+  }) =>
+    isOpen ? (
+      <div data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+        {footer}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/StatusBar', () => ({
@@ -352,27 +455,26 @@ vi.mock('../../components/StatusBar', () => ({
   StatusBarLive: () => <span data-testid="status-bar-live" />,
 }));
 
-vi.mock('../alertUtils', () => ({
+vi.mock('../alertUtils', async () => ({
+  ...(await vi.importActual<typeof import('../alertUtils')>('../alertUtils')),
   sanitizeHtml: (html: string) => html,
-}));
-
-vi.mock('../alerts/compactEngine', () => ({
-  compactText: (text: string) => `[compact]${text}`,
-}));
-
-vi.mock('../alerts/enhanceEngine', () => ({
-  enhanceHtml: (html: string) => `[enhanced]${html}`,
 }));
 
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
+  lastAlertFormProps = null;
+  mockReminderSubmitResult.current = null;
   mockPendingReminders.current = [];
   mockCompletedReminders.current = [];
   (globalThis as Record<string, unknown>).api = {
     getCompanyLogo: vi.fn().mockResolvedValue(null),
     getFooterLogo: vi.fn().mockResolvedValue(null),
-    writeClipboardImage: vi.fn().mockResolvedValue(true),
+    optimizeAlertImage: vi.fn().mockResolvedValue({
+      success: true,
+      data: OPTIMIZED_OUTLOOK_DATA_URL,
+    }),
+    saveAndOpenAlertDraft: vi.fn().mockResolvedValue(true),
     saveAlertImage: vi.fn().mockResolvedValue({ success: true }),
     saveCompanyLogo: vi.fn().mockResolvedValue({ success: false }),
     removeCompanyLogo: vi.fn().mockResolvedValue({ success: true }),
@@ -384,6 +486,17 @@ beforeEach(() => {
 // --- Import after mocks ---
 import { AlertsTab } from '../AlertsTab';
 
+type AlertOverflowAction = 'Schedule Alarm' | 'Alarms' | 'Pin Template' | 'Reset';
+
+function chooseAlertAction(name: AlertOverflowAction): void {
+  fireEvent.click(screen.getByRole('button', { name: 'More alert actions' }));
+  fireEvent.click(screen.getByRole('menuitem', { name }));
+}
+
+function openAlertHistory(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'History' }));
+}
+
 describe('AlertsTab', () => {
   it('renders without crashing', () => {
     render(<AlertsTab />);
@@ -391,31 +504,156 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('alert-card')).toBeInTheDocument();
   });
 
-  it('renders action buttons in the header', () => {
+  it('places History at the far-left utility position while keeping Save Image beside delivery', () => {
     render(<AlertsTab />);
-    expect(screen.getByText('RESET')).toBeInTheDocument();
-    expect(screen.getByText('HISTORY')).toBeInTheDocument();
-    expect(screen.getByText('ALARMS')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'REMIND' })).not.toBeInTheDocument();
-    expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
-    expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
-    expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
-    expect(screen.getByText('SCHEDULE ALERT ALARM')).toBeInTheDocument();
+    const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
+    const actions = within(toolbar).getAllByRole('button');
+
+    expect(
+      actions.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
+    ).toEqual(['History', 'Save Image', 'Open in Outlook', 'More alert actions']);
+    expect(within(toolbar).queryByRole('button', { name: /^RESET$/i })).toBeNull();
+    expect(within(toolbar).queryByRole('button', { name: /^SCHEDULE ALARM$/i })).toBeNull();
   });
 
-  it('places the alarm action before the Outlook copy action', () => {
+  it('keeps Save Image prominent while capture disables conflicting actions', async () => {
+    const capture = deferred<typeof mockCapture.highResCanvas>();
+    mockCapture.html2canvas.mockReturnValueOnce(capture.promise);
     render(<AlertsTab />);
-    const header = screen.getByTestId('collapsible-header');
-    const labels = Array.from(header.querySelectorAll('button')).map((button) =>
-      button.textContent?.trim(),
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Image' }));
+
+    expect(screen.getByRole('button', { name: 'Save Image' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More alert actions' })).toBeDisabled();
+
+    await act(async () => {
+      capture.resolve(mockCapture.highResCanvas);
+      await capture.promise;
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save Image' })).toBeEnabled();
+    });
+  });
+
+  it('renders the approved Alerts operational hierarchy', () => {
+    render(<AlertsTab />);
+
+    expect(screen.getByRole('heading', { name: 'Operational Alert Utility' })).toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: 'Alert actions' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Alert definition' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveClass('tab-page-status');
+    expect(screen.getByText('Draft · INFO')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+  });
+
+  it('separates far-left History from the right-aligned delivery workflow', () => {
+    const { container } = render(<AlertsTab />);
+
+    const heading = screen.getByRole('heading', { name: 'Operational Alert Utility' });
+    const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
+    const utility = container.querySelector<HTMLElement>('.tab-command-group--utility');
+    const workflow = container.querySelector<HTMLElement>('.tab-command-group--workflow');
+
+    expect(heading).toHaveClass('tab-page-header__title');
+    expect(toolbar).toContainElement(utility);
+    expect(toolbar).toContainElement(workflow);
+    expect(screen.getByRole('button', { name: 'Open in Outlook' })).toHaveClass(
+      'tactile-button--primary',
+    );
+    expect(screen.getByRole('button', { name: 'Save Image' })).toHaveClass(
+      'alerts-save-image-action',
+      'tactile-button--secondary',
+    );
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'Save Image' }));
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'Open in Outlook' }));
+    expect(workflow).toContainElement(screen.getByRole('button', { name: 'More alert actions' }));
+    expect(utility).toContainElement(screen.getByRole('button', { name: 'History' }));
+    expect(workflow).not.toContainElement(screen.getByRole('button', { name: 'History' }));
+    expect(screen.getByRole('button', { name: 'More alert actions' })).toHaveClass(
+      'tactile-button',
+      'tactile-button--icon-only',
+    );
+  });
+
+  it('renders one divider between the Alert definition header and its first step', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const paneHeader = declarations(cssBlock(css, '.alerts-pane-header') ?? '');
+    const step = declarations(cssBlock(css, '.alerts-step-section') ?? '');
+    const firstStep = declarations(
+      cssBlock(css, '.alerts-form-section > .alerts-step-section:first-child') ?? '',
     );
 
-    expect(labels.indexOf('SCHEDULE ALERT ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
-    expect(screen.getByText('SCHEDULE ALERT ALARM')).toHaveAttribute('data-has-icon', 'true');
-    expect(screen.getByText('SCHEDULE ALERT ALARM')).toHaveAttribute(
-      'data-tooltip',
-      'Schedule an alarm for this alert',
+    expect(paneHeader.get('border-bottom')).toBe('1px solid var(--color-border)');
+    expect(step.get('border-top')).toBe('1px solid var(--color-border)');
+    expect(firstStep.get('border-top')).toBe('0');
+  });
+
+  it('keeps the two-pane Alerts grid within the shell content width above its 1100px stack breakpoint', () => {
+    const alertsCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/tabs/alerts.css'),
+      'utf8',
     );
+    const responsiveCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/styles/responsive.css'),
+      'utf8',
+    );
+    const themeCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/styles/theme.css'),
+      'utf8',
+    );
+
+    const alertsTab = declarations(cssBlock(alertsCss, '.alerts-tab') ?? '');
+    const desktopGrid = declarations(cssBlock(alertsCss, '.alerts-layout') ?? '');
+    const stackGrid = declarations(
+      cssBlock(mediaBlock(alertsCss, 'max-width: 1100px') ?? '', '.alerts-layout') ?? '',
+    );
+    const theme = declarations(cssBlock(themeCss, ':root') ?? '');
+    const compactShell = declarations(
+      cssBlock(mediaBlock(responsiveCss, 'max-width: 1200px') ?? '', ':root') ?? '',
+    );
+
+    const horizontalPadding = px(theme.get('--space-5')) * 2;
+    const gridMinimumsPx = gridMinimums(desktopGrid.get('grid-template-columns'));
+    const gridMinimumTotal = gridMinimumsPx.reduce((total, minimum) => total + minimum, 0);
+    const compactSidebarWidth = px(compactShell.get('--sidebar-width-collapsed'));
+    const expandedSidebarWidth = px(theme.get('--sidebar-width-collapsed'));
+
+    expect(alertsTab.get('padding')).toBe('var(--space-4) var(--space-5) 0');
+    expect(gridMinimumsPx).toHaveLength(2);
+    expect(stackGrid.get('grid-template-columns')).toBe('1fr');
+
+    for (const { viewport, sidebarWidth } of [
+      { viewport: 1101, sidebarWidth: compactSidebarWidth },
+      { viewport: 1200, sidebarWidth: compactSidebarWidth },
+      { viewport: 1201, sidebarWidth: expandedSidebarWidth },
+    ]) {
+      const twoPaneContentWidth = viewport - sidebarWidth - horizontalPadding;
+      expect(gridMinimumTotal).toBeLessThanOrEqual(twoPaneContentWidth);
+    }
+  });
+
+  it('derives severity and required-step metadata from the existing draft', () => {
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    expect(screen.getByText('Draft · ISSUE')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('set-subject'));
+    expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('set-body'));
+    expect(screen.getByText('2 of 2 required ready')).toBeInTheDocument();
+  });
+
+  it('keeps the visible Alert action order aligned with keyboard focus order', () => {
+    render(<AlertsTab />);
+    const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
+    expect(
+      within(toolbar)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()),
+    ).toEqual(['History', 'Save Image', 'Open in Outlook', 'More alert actions']);
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -434,9 +672,9 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
   });
 
-  it('renders status bar with Alert Composer label', () => {
+  it('renders status bar with Alert Utility label', () => {
     render(<AlertsTab />);
-    expect(screen.getByText('Alert Composer')).toBeInTheDocument();
+    expect(screen.getByText('Alert Utility')).toBeInTheDocument();
   });
 
   it('does not show history modal by default', () => {
@@ -495,28 +733,23 @@ describe('AlertsTab', () => {
     expect(() => render(<AlertsTab />)).not.toThrow();
   });
 
-  it('renders RESET button that is clickable', () => {
+  it('exposes Reset in the overflow and keeps it clickable', () => {
     render(<AlertsTab />);
-    const resetBtn = screen.getByText('RESET');
-    expect(resetBtn).toBeInTheDocument();
-    fireEvent.click(resetBtn);
+    chooseAlertAction('Reset');
     // After reset, defaults should still show
     expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
   });
 
-  it('renders PIN TEMPLATE button that is clickable', () => {
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Each action verifies a distinct workflow, state transition, and rendered result.
+  it('exposes Pin Template in the overflow and keeps it clickable', () => {
     render(<AlertsTab />);
-    const pinBtn = screen.getByText('PIN TEMPLATE');
-    expect(pinBtn).toBeInTheDocument();
-    fireEvent.click(pinBtn);
-    // The pin modal uses useModalState which is mocked to always be closed,
-    // so just verifying the click doesn't throw
-    expect(pinBtn).toBeInTheDocument();
+    chooseAlertAction('Pin Template');
+    expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
   });
 
-  it('clicking SAVE PNG saves the high-resolution capture', async () => {
+  it('clicking SAVE IMAGE saves the high-resolution PNG capture', async () => {
     render(<AlertsTab />);
-    const saveBtn = screen.getByText('SAVE PNG');
+    const saveBtn = screen.getByText('Save Image');
     fireEvent.click(saveBtn);
     await waitFor(() => {
       expect(globalThis.api?.saveAlertImage).toHaveBeenCalledWith(
@@ -535,23 +768,90 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('clicking COPY FOR OUTLOOK sends a preview-sized capture to the clipboard', async () => {
+  it('opens a 2x inline-image Outlook draft at an explicit 640px display size', async () => {
     render(<AlertsTab />);
-    const copyBtn = screen.getByText('COPY FOR OUTLOOK');
-    fireEvent.click(copyBtn);
+    fireEvent.click(screen.getByText('Open in Outlook'));
+
     await waitFor(() => {
-      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,OUTLOOK_SIZED_CAPTURE',
-      );
+      expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
-      expect.objectContaining({
-        style: expect.objectContaining({
-          minWidth: '640px',
-          maxWidth: '640px',
-        }),
-      }),
-      expect.objectContaining({ scale: 1 }),
+      expect.any(HTMLElement),
+      expect.objectContaining({ scale: 2 }),
+    );
+
+    const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('X-Unsent: 1');
+    expect(eml).toContain('Subject: Alert Subject');
+    expect(eml).not.toMatch(/(^|\r\n)From:/);
+    expect(eml).not.toMatch(/(^|\r\n)To:/);
+    expect(eml).toContain('Content-ID: <relay-alert-image>');
+    const encodedHtml = eml
+      .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
+      ?.split('\r\n--relay_alert_')[0]
+      ?.replaceAll('\r\n', '');
+    const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+    expect(html).toContain('width="640" height="600"');
+  });
+
+  it('downloads an EML with browser-specific action text in the web runtime', async () => {
+    (globalThis.api as Record<string, unknown>).runtime = WEB_RUNTIME;
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByText('Download Draft'));
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Alert draft downloaded', 'success');
+    });
+    expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledOnce();
+  });
+
+  it('wraps the whole Outlook draft image in the one sanitized click-through URL', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-click-through-url'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
+
+    await waitFor(() => {
+      expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
+    });
+    const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
+    const encodedHtml = eml
+      .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
+      ?.split('\r\n--relay_alert_')[0]
+      ?.replaceAll('\r\n', '');
+    const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+    expect(html).toContain('<a href="https://status.example.com/incident"');
+    expect(html.match(/<a href=/g)).toHaveLength(1);
+  });
+
+  it('blocks an unsafe click-through URL before capturing or opening Outlook', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
+    mockCapture.html2canvas.mockClear();
+    fireEvent.click(screen.getByText('Open in Outlook'));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Enter a valid HTTP or HTTPS click-through URL',
+        'error',
+      );
+    });
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
+    expect(globalThis.api?.saveAndOpenAlertDraft).not.toHaveBeenCalled();
+  });
+
+  it('requests click-through attention before an invalid Outlook export', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
+    mockCapture.html2canvas.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Outlook' }));
+
+    await waitFor(() => {
+      expect(lastAlertFormProps?.attentionRequest).toMatchObject({ field: 'clickThroughUrl' });
+    });
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Enter a valid HTTP or HTTPS click-through URL',
+      'error',
     );
   });
 
@@ -559,7 +859,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-severity-issue'));
 
-    fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -583,7 +883,7 @@ describe('AlertsTab', () => {
       render(<AlertsTab />);
       fireEvent.click(screen.getByTestId(testId));
 
-      fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+      fireEvent.click(screen.getByText('Open in Outlook'));
 
       await waitFor(() => {
         expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -601,7 +901,7 @@ describe('AlertsTab', () => {
   it('paints alert capture surfaces so Teams and Discord do not show grey transparency', async () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -649,22 +949,20 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
+    chooseAlertAction('Schedule Alarm');
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
     expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
     expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>body</p>');
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
-    expect(globalThis.api?.writeClipboardImage).not.toHaveBeenCalled();
     expect(mockCapture.html2canvas).not.toHaveBeenCalled();
   });
 
   it('clicking HISTORY button calls open on the modal state', () => {
     render(<AlertsTab />);
-    const historyBtn = screen.getByText('HISTORY');
-    fireEvent.click(historyBtn);
-    expect(historyBtn).toBeInTheDocument();
+    openAlertHistory();
+    expect(screen.getByTestId('history-modal')).toBeInTheDocument();
   });
 
   it('opens reminder modal with current draft context', () => {
@@ -674,7 +972,7 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('ALARMS'));
+    chooseAlertAction('Alarms');
     fireEvent.click(screen.getByTestId('manager-schedule'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
@@ -706,7 +1004,7 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
     expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from alarm', 'success');
 
-    fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
+    chooseAlertAction('Schedule Alarm');
 
     expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Stored outage alert');
@@ -714,15 +1012,27 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Ops');
   });
 
-  it('schedules reminders through the reminder hook', async () => {
+  it('schedules a new reminder without operator attribution', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('ALARMS'));
+    chooseAlertAction('Alarms');
     fireEvent.click(screen.getByTestId('manager-schedule'));
+
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId('reminder-schedule'));
 
     await waitFor(() => {
-      expect(mockScheduleReminder).toHaveBeenCalledWith({ title: 'Scheduled reminder' });
+      expect(mockScheduleReminder).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Scheduled reminder' }),
+      );
     });
+  });
+
+  it('opens the schedule modal without an operator provider', () => {
+    render(<AlertsTab />);
+    chooseAlertAction('Schedule Alarm');
+
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
   });
 
   it('shows the next upcoming reminder compactly', () => {
@@ -754,7 +1064,7 @@ describe('AlertsTab', () => {
   it('opens the reminder manager from the header action', () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByText('ALARMS'));
+    chooseAlertAction('Alarms');
 
     expect(screen.getByTestId('reminder-manager-modal')).toBeInTheDocument();
   });
@@ -765,19 +1075,45 @@ describe('AlertsTab', () => {
     ];
 
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('ALARMS'));
+    chooseAlertAction('Alarms');
     fireEvent.click(screen.getByTestId('manager-edit'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
     expect(screen.getByTestId('reminder-modal-mode')).toHaveTextContent('edit');
     expect(screen.getByTestId('reminder-edit-title')).toHaveTextContent('Editable reminder');
 
-    fireEvent.click(screen.getByText('ALARMS'));
+    chooseAlertAction('Alarms');
     fireEvent.click(screen.getByTestId('manager-done'));
     fireEvent.click(screen.getByTestId('manager-dismiss'));
 
     expect(mockMarkDone).toHaveBeenCalledWith('rem-1');
     expect(mockDismissReminder).toHaveBeenCalledWith('rem-1');
+  });
+
+  it('edits an existing reminder without requiring or replacing its creator attribution', async () => {
+    mockPendingReminders.current = [
+      {
+        id: 'rem-1',
+        title: 'Editable reminder',
+        dueAt: '2026-05-28T20:00:00.000Z',
+        operatorId: 'operator-original',
+        createdBy: 'Original Operator',
+      },
+    ];
+
+    render(<AlertsTab />);
+    chooseAlertAction('Alarms');
+    fireEvent.click(screen.getByTestId('manager-edit'));
+    fireEvent.click(screen.getByTestId('reminder-schedule'));
+
+    await waitFor(() => {
+      expect(mockUpdateReminder).toHaveBeenCalledWith('rem-1', {
+        title: 'Scheduled reminder',
+        note: 'Reminder note',
+        dueAt: '2026-05-28T20:00:00.000Z',
+      });
+    });
+    expect(mockScheduleReminder).not.toHaveBeenCalled();
   });
 
   it('renders with null logo by default on the card', () => {
@@ -818,16 +1154,12 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('Managers');
   });
 
-  it('routes selected alert font size from the composer to the preview', () => {
+  it('does not expose retired alert font size controls or props', () => {
     render(<AlertsTab />);
 
-    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('normal');
-    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('normal');
-
-    fireEvent.click(screen.getByTestId('set-alert-font-large'));
-
-    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('large');
-    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('large');
+    expect(screen.queryByTestId('set-alert-font-large')).not.toBeInTheDocument();
+    expect(screen.getByTestId('form-retired-font-size-props')).toHaveTextContent('false');
+    expect(screen.getByTestId('card-retired-font-size-prop')).toHaveTextContent('false');
   });
 
   it('shows UPDATE prefix in subject when updateNumber > 0', () => {
@@ -843,97 +1175,43 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('UPDATE #2 — Test Subject');
   });
 
-  // --- Compact/Enhance toggles ---
-
-  it('toggles compact on then off restoring original body', () => {
+  it('does not expose retired compact or enhance controls to the alert form', () => {
     render(<AlertsTab />);
-    // Set some body content first
-    fireEvent.click(screen.getByTestId('set-body'));
-    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>body</p>');
-
-    // Toggle compact ON
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('true');
-
-    // Toggle compact OFF — should restore original
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('false');
-  });
-
-  it('toggles enhanced on then off restoring original body', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-
-    // Toggle enhanced ON
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('true');
-
-    // Toggle enhanced OFF — should restore
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('false');
-  });
-
-  it('can have both compact and enhanced on at the same time', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('true');
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('true');
-  });
-
-  it('turning off compact while enhanced is still on keeps enhanced', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-    // Turn both on
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    // Turn compact off
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('false');
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('true');
-  });
-
-  it('turning off enhanced while compact is still on keeps compact', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-    // Turn both on
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    // Turn enhanced off
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('true');
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('false');
+    expect(screen.queryByTestId('toggle-compact')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('toggle-enhanced')).not.toBeInTheDocument();
+    expect(screen.getByTestId('form-retired-transform-props')).toHaveTextContent('false');
   });
 
   // --- History modal interactions ---
 
   it('opens history modal when HISTORY button is clicked', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    openAlertHistory();
     expect(screen.getByTestId('history-modal')).toBeInTheDocument();
   });
 
   it('loads from history and updates form state', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    openAlertHistory();
     fireEvent.click(screen.getByTestId('history-load'));
     expect(screen.getByTestId('card-severity')).toHaveTextContent('MAINTENANCE');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Loaded Subject');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('Staff');
+    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>loaded</p>');
+    expect(screen.getByTestId('form-body-html')).toHaveTextContent('<p>loaded</p>');
   });
 
   it('calls deleteHistory when delete is triggered from history modal', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    openAlertHistory();
     fireEvent.click(screen.getByTestId('history-delete'));
     expect(mockDeleteHistory).toHaveBeenCalledWith('del-1');
   });
 
   it('calls clearHistory when clear is triggered from history modal', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    openAlertHistory();
     fireEvent.click(screen.getByTestId('history-clear'));
     expect(mockClearHistory).toHaveBeenCalled();
   });
@@ -942,27 +1220,31 @@ describe('AlertsTab', () => {
 
   it('opens pin template modal and shows template name input', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Pin Template')).toHaveAttribute(
+      'data-variant',
+      'confirmation',
+    );
     expect(screen.getByLabelText('Template name')).toBeInTheDocument();
   });
 
   it('pin template modal defaults to Untitled Template when subject is empty', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     expect(screen.getByLabelText('Template name')).toHaveValue('Untitled Template');
   });
 
   it('pin template modal uses subject as default name', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-subject'));
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     expect(screen.getByLabelText('Template name')).toHaveValue('Test Subject');
   });
 
   it('can change pin template name and confirm', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     const input = screen.getByLabelText('Template name');
     fireEvent.change(input, { target: { value: 'My Custom Template' } });
     fireEvent.click(screen.getByText('PIN'));
@@ -975,7 +1257,7 @@ describe('AlertsTab', () => {
 
   it('pin template confirm with empty label sends undefined label', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     const input = screen.getByLabelText('Template name');
     fireEvent.change(input, { target: { value: '  ' } });
     fireEvent.click(screen.getByText('PIN'));
@@ -988,7 +1270,7 @@ describe('AlertsTab', () => {
 
   it('pin template can be confirmed with Enter key', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     const input = screen.getByLabelText('Template name');
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
@@ -998,7 +1280,7 @@ describe('AlertsTab', () => {
 
   it('pin template CANCEL closes the modal', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     expect(screen.getByTestId('modal-Pin Template')).toBeInTheDocument();
     fireEvent.click(screen.getByText('CANCEL'));
     expect(screen.queryByTestId('modal-Pin Template')).not.toBeInTheDocument();
@@ -1007,7 +1289,7 @@ describe('AlertsTab', () => {
   it('pin template confirm shows toast on success', async () => {
     mockAddHistory.mockResolvedValueOnce({ id: 'pin-1' });
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     fireEvent.click(screen.getByText('PIN'));
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Pinned as template', 'success');
@@ -1017,7 +1299,7 @@ describe('AlertsTab', () => {
   it('pin template confirm shows error toast on failure', async () => {
     mockAddHistory.mockRejectedValueOnce(new Error('fail'));
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     fireEvent.click(screen.getByText('PIN'));
     await waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Failed to pin template', 'error');
@@ -1027,7 +1309,7 @@ describe('AlertsTab', () => {
   it('pin template confirm with null entry does not show success toast', async () => {
     mockAddHistory.mockResolvedValueOnce(null);
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     fireEvent.click(screen.getByText('PIN'));
     await waitFor(() => {
       expect(mockAddHistory).toHaveBeenCalled();
@@ -1037,25 +1319,87 @@ describe('AlertsTab', () => {
 
   // --- Reset button ---
 
-  it('reset button clears form state back to defaults', () => {
+  it('reset button clears form state back to defaults once confirmed', () => {
     render(<AlertsTab />);
     // Change state
     fireEvent.click(screen.getByTestId('set-severity-issue'));
     fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
     // Reset
-    fireEvent.click(screen.getByText('RESET'));
+    chooseAlertAction('Reset');
+    fireEvent.click(screen.getByText('Discard Alert'));
     expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Alert Subject');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('IT');
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('All Employees');
+    expect(screen.getByTestId('card-body')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('form-body-html')).toBeEmptyDOMElement();
+  });
+
+  it('keeps the composition when a reset is cancelled', () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+
+    chooseAlertAction('Reset');
+    // Reset is destructive, so it has to ask while there is a composition in progress.
+    expect(screen.getByTestId('modal-Reset Alert')).toBeInTheDocument();
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>body</p>');
+  });
+
+  it('resets immediately when there is nothing composed', () => {
+    render(<AlertsTab />);
+    chooseAlertAction('Reset');
+
+    expect(screen.queryByTestId('modal-Reset Alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('INFO');
+  });
+
+  it('confirms before an alarm overwrites a composition in progress', async () => {
+    const loadedReminderAlert = {
+      reminderId: 'rem-1',
+      title: 'Stored reminder',
+      severity: 'ISSUE' as const,
+      subject: 'Stored outage alert',
+      bodyHtml: '<p>Stored body</p>',
+      sender: 'Ops',
+    };
+
+    const { rerender } = render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+
+    rerender(<AlertsTab loadedReminderAlert={loadedReminderAlert} />);
+
+    // The in-progress alert must survive until the operator agrees to replace it
+    expect(screen.getByTestId('modal-Load Alert From Alarm')).toBeInTheDocument();
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Test Subject');
+    expect(mockShowToast).not.toHaveBeenCalledWith('Alert loaded from alarm', 'success');
+
+    rerender(<AlertsTab loadedReminderAlert={{ ...loadedReminderAlert, reminderId: 'rem-2' }} />);
+    fireEvent.click(screen.getByText('Load Alert'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
+    });
+    expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
   });
 
   // --- Non-enter keydown on pin template input ---
 
   it('non-Enter keydown on pin template input does not confirm', () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('PIN TEMPLATE'));
+    chooseAlertAction('Pin Template');
     const input = screen.getByLabelText('Template name');
     fireEvent.keyDown(input, { key: 'Escape' });
     // Modal should still be open, addHistory should not be called

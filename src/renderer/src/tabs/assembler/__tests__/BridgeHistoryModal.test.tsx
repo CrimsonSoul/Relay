@@ -10,14 +10,27 @@ vi.mock('../../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    headerActions,
+    footer,
+    variant,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
+    title?: React.ReactNode;
+    headerActions?: React.ReactNode;
+    footer?: React.ReactNode;
+    variant?: string;
   }) => {
     if (!isOpen) return null;
     const titleNode = title ? React.createElement('h2', null, title) : null;
-    return React.createElement('div', { 'data-testid': 'modal' }, titleNode, children);
+    return React.createElement(
+      'div',
+      { 'data-testid': 'modal', 'data-variant': variant },
+      titleNode,
+      headerActions,
+      children,
+      footer,
+    );
   },
 }));
 
@@ -50,7 +63,12 @@ vi.mock('../../../components/ContextMenu', () => ({
 
 // Mock TactileButton
 vi.mock('../../../components/TactileButton', () => ({
-  TactileButton: ({ children, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
+  TactileButton: ({
+    children,
+    onClick,
+    loading: _loading,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean }) =>
     React.createElement('button', { onClick, ...props }, children),
 }));
 

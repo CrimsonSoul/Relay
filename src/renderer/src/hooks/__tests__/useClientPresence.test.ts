@@ -1,11 +1,22 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PublicRelayConfig } from '@shared/ipc';
+import type { BridgeAPI, PublicRelayConfig } from '@shared/ipc';
+import { WEB_RUNTIME } from '@shared/runtime';
 import {
   CLIENT_PRESENCE_SESSION_STORAGE_KEY,
   CLIENT_PRESENCE_TTL_MS,
+  getNextPresenceExpiry,
   useClientPresence,
 } from '../useClientPresence';
+
+/**
+ * `globalThis.api` is typed as the complete preload bridge; presence only reads `runtime`
+ * and `getClientHostname`. `vi.stubGlobal` installs the partial without a cast, and
+ * `Partial<BridgeAPI>` still checks each stubbed member against the real contract.
+ */
+function stubBridgeApi(overrides: Partial<BridgeAPI>): void {
+  vi.stubGlobal('api', overrides);
+}
 
 type PresenceRecord = {
   id: string;
@@ -21,10 +32,13 @@ const mockGetFullList = vi.fn();
 const mockGetFirstListItem = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
+const mockDelete = vi.fn();
 const mockSubscribe = vi.fn();
 const mockUnsubscribe = vi.fn();
 const mockHandleApiError = vi.fn();
+const mockOnConnectionStateChange = vi.fn();
 let realtimeCallback: ((event: { action: string; record: PresenceRecord }) => void) | null = null;
+let connectionListeners: ((state: string) => void)[] = [];
 
 vi.mock('../../services/pocketbase', () => ({
   getPb: () => ({
@@ -33,13 +47,13 @@ vi.mock('../../services/pocketbase', () => ({
       getFirstListItem: mockGetFirstListItem,
       create: mockCreate,
       update: mockUpdate,
+      delete: mockDelete,
       subscribe: mockSubscribe,
     }),
   }),
   isOnline: vi.fn(() => true),
-  onConnectionStateChange: vi.fn((_callback: (state: string) => void) => {
-    return () => undefined;
-  }),
+  onConnectionStateChange: (callback: (state: string) => void) =>
+    mockOnConnectionStateChange(callback),
   onPocketBaseClientChange: vi.fn((_callback: () => void) => {
     return () => undefined;
   }),
@@ -70,11 +84,32 @@ function makePresence(id: string, sessionId: string, hostname: string, ageMs = 0
   };
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} {
+  let resolvePromise: (value: T) => void = () => undefined;
+  let rejectPromise: (reason: unknown) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   sessionStorage.clear();
   realtimeCallback = null;
+  connectionListeners = [];
+  mockOnConnectionStateChange.mockImplementation((callback: (state: string) => void) => {
+    connectionListeners.push(callback);
+    return () => {
+      connectionListeners = connectionListeners.filter((entry) => entry !== callback);
+    };
+  });
   mockGetFullList.mockResolvedValue([]);
   mockGetFirstListItem.mockRejectedValue({ status: 404 });
   mockCreate.mockImplementation(async (payload: Record<string, unknown>) =>
@@ -92,12 +127,22 @@ beforeEach(() => {
       return mockUnsubscribe;
     },
   );
-  globalThis.api = {
+  stubBridgeApi({
     getClientHostname: vi.fn().mockResolvedValue('ops-laptop'),
-  } as typeof globalThis.api;
+  });
 });
 
 describe('useClientPresence', () => {
+  it('schedules expiration at the earliest active client deadline', () => {
+    const now = new Date('2026-07-10T12:00:00Z').getTime();
+    const first = makePresence('first', 'first-session', 'first-host');
+    const second = makePresence('second', 'second-session', 'second-host');
+    first.lastSeen = new Date(now - 60_000).toISOString();
+    second.lastSeen = new Date(now - 30_000).toISOString();
+
+    expect(getNextPresenceExpiry([second, first], now)).toBe(now + 30_000);
+  });
+
   it('does not heartbeat from the server app', async () => {
     const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
 
@@ -123,6 +168,113 @@ describe('useClientPresence', () => {
       }),
     );
     expect(mockCreate.mock.calls[0]?.[0]).toHaveProperty('sessionId');
+  });
+
+  it('publishes a bounded Web presence label and removes it when the session unmounts', async () => {
+    stubBridgeApi({
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue('Web · Edge · 10.0.0.8'),
+    });
+    mockGetFirstListItem.mockResolvedValue(
+      makePresence('web-presence', 'web-session', 'Web · Edge · 10.0.0.8'),
+    );
+    const { unmount } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'web-presence',
+      expect.objectContaining({ hostname: 'Web · Edge · 10.0.0.8', mode: 'client' }),
+    );
+
+    unmount();
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('web-presence'));
+  });
+
+  it('refreshes the snapshot after the first Web heartbeat can race realtime setup', async () => {
+    const webPresence = makePresence('web-presence', 'web-session', 'Web · Edge · 10.0.0.8');
+    stubBridgeApi({
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
+    });
+    mockCreate.mockResolvedValue(webPresence);
+    mockGetFullList.mockResolvedValueOnce([]).mockResolvedValue([webPresence]);
+
+    const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(result.current.count).toBe(1));
+    expect(mockGetFullList).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a slower initial presence read overwrite the post-heartbeat snapshot', async () => {
+    const webPresence = makePresence('web-presence', 'web-session', 'Web · Safari · 10.0.0.8');
+    stubBridgeApi({
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
+    });
+    mockCreate.mockResolvedValue(webPresence);
+    const initialRead = deferred<PresenceRecord[]>();
+    mockGetFullList.mockReturnValueOnce(initialRead.promise).mockResolvedValue([webPresence]);
+
+    const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(mockGetFullList).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.count).toBe(1));
+    await act(async () => {
+      initialRead.resolve([]);
+      await initialRead.promise;
+    });
+
+    expect(result.current.count).toBe(1);
+  });
+
+  it('does not treat a stale failed presence read as a new connection failure', async () => {
+    const webPresence = makePresence('web-presence', 'web-session', 'Web · Safari · 10.0.0.8');
+    stubBridgeApi({
+      runtime: WEB_RUNTIME,
+      getClientHostname: vi.fn().mockResolvedValue(webPresence.hostname),
+    });
+    mockCreate.mockResolvedValue(webPresence);
+    const initialRead = deferred<PresenceRecord[]>();
+    mockGetFullList.mockReturnValueOnce(initialRead.promise).mockResolvedValue([webPresence]);
+
+    const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(result.current.count).toBe(1));
+    await act(async () => {
+      initialRead.reject(new TypeError('fetch failed'));
+      await initialRead.promise.catch(() => undefined);
+    });
+
+    expect(mockHandleApiError).not.toHaveBeenCalled();
+    expect(result.current.count).toBe(1);
+  });
+
+  it('releases the orphaned handle when resubscribes overlap', async () => {
+    const firstSubscription = deferred<() => void>();
+    const secondSubscription = deferred<() => void>();
+    const firstUnsubscribe = vi.fn();
+    const secondUnsubscribe = vi.fn();
+    mockSubscribe
+      .mockReturnValueOnce(firstSubscription.promise)
+      .mockReturnValueOnce(secondSubscription.promise);
+
+    renderHook(() => useClientPresence(serverConfig, vi.fn()));
+
+    await waitFor(() => expect(connectionListeners).toHaveLength(1));
+    // The mount subscribe is still awaiting when the connection flips online.
+    act(() => {
+      connectionListeners.forEach((listener) => listener('online'));
+    });
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      firstSubscription.resolve(firstUnsubscribe);
+      secondSubscription.resolve(secondUnsubscribe);
+      await secondSubscription.promise;
+    });
+
+    expect(firstUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(secondUnsubscribe).not.toHaveBeenCalled();
   });
 
   it('filters stale client records out of the visible count', async () => {

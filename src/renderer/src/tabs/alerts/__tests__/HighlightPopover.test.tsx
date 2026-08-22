@@ -110,6 +110,42 @@ describe('HighlightPopover', () => {
     expect(container.querySelector('.alerts-hl-popover')).not.toBeInTheDocument();
   });
 
+  it('opens the popover and applies a highlight from the keyboard', () => {
+    const onApply = vi.fn();
+    const { container } = render(<HighlightPopover {...defaultProps} onApply={onApply} />);
+
+    // Enter/Space on a focused button dispatches click with detail 0 and never mousedown,
+    // so a mousedown-only popover is unreachable without a mouse.
+    fireEvent.click(screen.getByRole('button', { name: 'Highlight text' }));
+    expect(container.querySelector('.alerts-hl-popover')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Deadline').closest('button')!);
+
+    expect(onApply).toHaveBeenCalledWith('deadline');
+    expect(container.querySelector('.alerts-hl-popover')).not.toBeInTheDocument();
+  });
+
+  it('clears a highlight from the keyboard', () => {
+    const onClear = vi.fn();
+    render(<HighlightPopover {...defaultProps} onClear={onClear} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Highlight text' }));
+    fireEvent.click(screen.getByText('Remove').closest('button')!);
+
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles the popover once for a real mouse press', () => {
+    const { container } = render(<HighlightPopover {...defaultProps} />);
+    const trigger = container.querySelector('.alerts-hl-trigger')!;
+
+    // A mouse press fires mousedown then click; a double toggle would leave it closed
+    fireEvent.mouseDown(trigger);
+    fireEvent.click(trigger, { detail: 1 });
+
+    expect(container.querySelector('.alerts-hl-popover')).toBeInTheDocument();
+  });
+
   it('toggles popover closed on second trigger click', () => {
     const { container } = render(<HighlightPopover {...defaultProps} />);
 

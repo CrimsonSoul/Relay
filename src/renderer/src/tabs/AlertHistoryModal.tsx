@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { HistoryModal } from '../components/HistoryModal';
+import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
 import { sanitizeHtml } from './alertUtils';
 import type { AlertHistoryEntry } from '@shared/ipc';
@@ -89,265 +90,248 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
     }
   };
 
-  return (
-    <HistoryModal<AlertHistoryEntry>
-      isOpen={isOpen}
-      onClose={onClose}
-      history={filteredHistory}
-      title="Alert History"
-      classPrefix="alert-history"
-      width="760px"
-      emptyText={
-        searchQuery.trim()
-          ? 'No matching alert history. Try a different subject, template name, sender, recipient, or body phrase.'
-          : 'No alert history yet. History is saved when you copy or save an alert.'
-      }
-      clearConfirmText="Clear all alert history? Pinned templates will also be removed."
-      onLoad={onLoad}
-      onDelete={onDelete}
-      onClear={onClear}
-      enablePinnedSections
-      pinnedSectionLabel="Pinned Templates"
-      recentSectionLabel="Recent"
-      toolbar={
-        history.length > 0 ? (
-          <div className="alert-history-toolbar">
-            <input
-              type="search"
-              className="alert-history-search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search templates and history..."
-              aria-label="Search templates and history"
-            />
-            <span className="alert-history-result-count">
-              {filteredHistory.length} of {history.length}
-            </span>
-          </div>
-        ) : undefined
-      }
-      renderEntry={(entry, { formatDate }) => {
-        const bodyText = getPlainBodyText(entry.bodyHtml);
-        const title = getEntryTitle(entry, formatDate);
-        const subject = entry.subject || '(no subject)';
-        const isPinned = Boolean(entry.pinned);
+  const closeLabelEditor = () => {
+    setEditingLabelId(null);
+    setLabelDraft('');
+  };
 
-        return (
-          <div
-            className={isPinned ? 'alert-history-template-card' : 'alert-history-recent-row'}
-            data-sev={entry.severity}
-          >
+  return (
+    <>
+      <HistoryModal<AlertHistoryEntry>
+        isOpen={isOpen}
+        onClose={onClose}
+        history={filteredHistory}
+        title="Alert History"
+        classPrefix="alert-history"
+        width="760px"
+        emptyText={
+          searchQuery.trim()
+            ? 'No matching alert history. Try a different subject, template name, sender, recipient, or body phrase.'
+            : 'No alert history yet. History is saved when you copy or save an alert.'
+        }
+        clearConfirmText="Clear all alert history? Pinned templates will also be removed."
+        onLoad={onLoad}
+        onDelete={onDelete}
+        onClear={onClear}
+        enablePinnedSections
+        pinnedSectionLabel="Pinned Templates"
+        recentSectionLabel="Recent"
+        toolbar={
+          history.length > 0 ? (
+            <div className="alert-history-toolbar">
+              <input
+                type="search"
+                className="alert-history-search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search templates and history..."
+                aria-label="Search templates and history"
+              />
+              <span className="alert-history-result-count">
+                {filteredHistory.length} of {history.length}
+              </span>
+            </div>
+          ) : undefined
+        }
+        renderEntry={(entry, { formatDate }) => {
+          const bodyText = getPlainBodyText(entry.bodyHtml);
+          const title = getEntryTitle(entry, formatDate);
+          const subject = entry.subject || '(no subject)';
+          const isPinned = Boolean(entry.pinned);
+
+          return (
             <div
-              className={
-                isPinned
-                  ? 'alert-history-card-preview'
-                  : 'alert-history-card-preview alert-history-mini-preview'
-              }
-              aria-hidden="true"
+              className={isPinned ? 'alert-history-template-card' : 'alert-history-recent-row'}
+              data-sev={entry.severity}
             >
               <div
-                className="alert-history-preview-banner"
-                style={
-                  {
-                    '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
-                  } as React.CSSProperties
+                className={
+                  isPinned
+                    ? 'alert-history-card-preview'
+                    : 'alert-history-card-preview alert-history-mini-preview'
                 }
-              />
-              <div className="alert-history-preview-body">
-                <span className="alert-history-preview-line" />
-                <span className="alert-history-preview-line alert-history-preview-line-short" />
-                <span className="alert-history-preview-highlight" />
-              </div>
-            </div>
-            <div className="alert-history-entry-main">
-              <div className="alert-history-entry-header">
-                <span className="alert-history-entry-date">
-                  {isPinned && (
-                    <span className="alert-history-pin-icon" title="Pinned template">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M16 2c-.55 0-1.05.22-1.41.59L9.17 8H4a1 1 0 00-.7 1.71l4.58 4.58L2 22l7.71-5.88 4.58 4.58A1 1 0 0016 20v-5.17l5.41-5.42A2 2 0 0016 2z" />
-                      </svg>
-                    </span>
-                  )}
-                  {title}
-                </span>
-                <span className="alert-history-entry-severity" data-sev={entry.severity}>
-                  {entry.severity}
-                </span>
-              </div>
-              <div className="alert-history-entry-subject">{subject}</div>
-              {bodyText && <div className="alert-history-entry-body">{bodyText}</div>}
-              <div className="alert-history-entry-meta">
-                {entry.sender && (
-                  <span className="alert-history-entry-sender">From: {entry.sender}</span>
-                )}
-                {entry.recipient && (
-                  <span className="alert-history-entry-recipient">To: {entry.recipient}</span>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      }}
-      getContextMenuItems={(entry, { closeMenu, closeModal }) => [
-        {
-          label: 'Load Alert',
-          onClick: () => {
-            onLoad(entry);
-            closeMenu();
-            closeModal();
-          },
-          icon: (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          ),
-        },
-        {
-          label: entry.pinned ? 'Unpin' : 'Pin as Template',
-          onClick: () => {
-            const wasPinned = entry.pinned;
-            closeMenu();
-            void onPin(entry.id, !wasPinned).then((success) => {
-              if (success && !wasPinned) {
-                startEditLabel(entry);
-              }
-            });
-          },
-          icon: (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 17v5" />
-              <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1z" />
-            </svg>
-          ),
-        },
-        ...(entry.pinned
-          ? [
-              {
-                label: 'Rename',
-                onClick: () => {
-                  startEditLabel(entry);
-                  closeMenu();
-                },
-                icon: (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z" />
-                  </svg>
-                ),
-              },
-            ]
-          : []),
-        {
-          label: 'Delete',
-          onClick: () => {
-            onDelete(entry.id);
-            closeMenu();
-          },
-          danger: true,
-          icon: (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          ),
-        },
-      ]}
-      extraContent={
-        editingLabelId ? (
-          // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-          <div
-            className="alert-history-label-overlay"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) commitLabel();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setEditingLabelId(null);
-                setLabelDraft('');
-              }
-            }}
-          >
-            <dialog className="alert-history-label-editor" open aria-label="Edit template name">
-              <label
-                className="alert-history-label-editor-label"
-                htmlFor="alert-history-label-input"
+                aria-hidden="true"
               >
-                Template Name
-              </label>
-              <input
-                id="alert-history-label-input"
-                type="text"
-                className="alert-history-label-input"
-                maxLength={10000}
-                value={labelDraft}
-                onChange={(e) => setLabelDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitLabel();
-                  if (e.key === 'Escape') {
-                    setEditingLabelId(null);
-                    setLabelDraft('');
+                <div
+                  className="alert-history-preview-banner"
+                  style={
+                    {
+                      '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
+                    } as React.CSSProperties
                   }
-                }}
-                placeholder="e.g. Network Outage Template"
-                autoFocus
-              />
-              <div className="alert-history-label-editor-actions">
-                <TactileButton
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setEditingLabelId(null);
-                    setLabelDraft('');
-                  }}
-                >
-                  Cancel
-                </TactileButton>
-                <TactileButton variant="primary" size="sm" onClick={commitLabel}>
-                  Save
-                </TactileButton>
+                />
+                <div className="alert-history-preview-body">
+                  <span className="alert-history-preview-line" />
+                  <span className="alert-history-preview-line alert-history-preview-line-short" />
+                  <span className="alert-history-preview-highlight" />
+                </div>
               </div>
-            </dialog>
-          </div>
-        ) : undefined
-      }
-    />
+              <div className="alert-history-entry-main">
+                <div className="alert-history-entry-header">
+                  <span className="alert-history-entry-date">
+                    {isPinned && (
+                      <span className="alert-history-pin-icon" title="Pinned template">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M16 2c-.55 0-1.05.22-1.41.59L9.17 8H4a1 1 0 00-.7 1.71l4.58 4.58L2 22l7.71-5.88 4.58 4.58A1 1 0 0016 20v-5.17l5.41-5.42A2 2 0 0016 2z" />
+                        </svg>
+                      </span>
+                    )}
+                    {title}
+                  </span>
+                  <span className="alert-history-entry-severity" data-sev={entry.severity}>
+                    {entry.severity}
+                  </span>
+                </div>
+                <div className="alert-history-entry-subject">{subject}</div>
+                {bodyText && <div className="alert-history-entry-body">{bodyText}</div>}
+                <div className="alert-history-entry-meta">
+                  {entry.sender && (
+                    <span className="alert-history-entry-sender">From: {entry.sender}</span>
+                  )}
+                  {entry.recipient && (
+                    <span className="alert-history-entry-recipient">To: {entry.recipient}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }}
+        getContextMenuItems={(entry, { closeMenu, closeModal }) => [
+          {
+            label: 'Load Alert',
+            onClick: () => {
+              onLoad(entry);
+              closeMenu();
+              closeModal();
+            },
+            icon: (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            ),
+          },
+          {
+            label: entry.pinned ? 'Unpin' : 'Pin as Template',
+            onClick: () => {
+              const wasPinned = entry.pinned;
+              closeMenu();
+              void onPin(entry.id, !wasPinned).then((success) => {
+                if (success && !wasPinned) {
+                  startEditLabel(entry);
+                }
+              });
+            },
+            icon: (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 17v5" />
+                <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1z" />
+              </svg>
+            ),
+          },
+          ...(entry.pinned
+            ? [
+                {
+                  label: 'Rename',
+                  onClick: () => {
+                    startEditLabel(entry);
+                    closeMenu();
+                  },
+                  icon: (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z" />
+                    </svg>
+                  ),
+                },
+              ]
+            : []),
+          {
+            label: 'Delete',
+            onClick: () => {
+              onDelete(entry.id);
+              closeMenu();
+            },
+            danger: true,
+            icon: (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        isOpen={editingLabelId !== null}
+        onClose={closeLabelEditor}
+        title="Edit template name"
+        variant="confirmation"
+        footer={
+          <>
+            <TactileButton variant="secondary" onClick={closeLabelEditor}>
+              Cancel
+            </TactileButton>
+            <TactileButton variant="primary" onClick={commitLabel}>
+              Save
+            </TactileButton>
+          </>
+        }
+      >
+        <label className="alert-history-label-editor-label" htmlFor="alert-history-label-input">
+          Template Name
+        </label>
+        <input
+          id="alert-history-label-input"
+          type="text"
+          className="alert-history-label-input"
+          maxLength={10000}
+          value={labelDraft}
+          onChange={(event) => setLabelDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commitLabel();
+            if (event.key === 'Escape') closeLabelEditor();
+          }}
+          placeholder="e.g. Network Outage Template"
+          autoFocus
+        />
+      </Modal>
+    </>
   );
 };

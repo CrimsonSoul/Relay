@@ -1,62 +1,111 @@
 import { useMemo } from 'react';
 import { Contact, Server, BridgeGroup } from '@shared/ipc';
+import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
+import { normalizeKnowledgeSearchText } from '@shared/knowledge';
+import { knowledgeDocumentMatches } from '../features/knowledge/knowledgeModel';
 
-export type ResultType = 'contact' | 'server' | 'group' | 'action';
+export type ResultType = 'contact' | 'server' | 'group' | 'knowledge' | 'action';
 
 export type SearchResult = {
   id: string;
   type: ResultType;
+  source?: 'wiki-passage';
   title: string;
   subtitle?: string;
   iconType: string;
   data: unknown;
 };
 
+function findMatchingKnowledgeHeading(
+  document: KnowledgeDocumentRecord,
+  terms: string[],
+): KnowledgeOutlineNode | undefined {
+  return document.outline.find((node) =>
+    terms.every((term) => normalizeKnowledgeSearchText(node.label).includes(term)),
+  );
+}
+
 export function useCommandSearch(
   query: string,
   contacts: Contact[],
   servers: Server[],
   groups: BridgeGroup[],
+  knowledgeDocuments: KnowledgeDocumentRecord[] = [],
 ) {
   return useMemo((): SearchResult[] => {
-    if (!query.trim()) {
-      return [
-        {
-          id: 'action-compose',
-          type: 'action',
-          title: 'Go to Compose',
-          subtitle: 'Open bridge composition',
-          iconType: 'compose',
-          data: { action: 'navigate', tab: 'Compose' },
-        },
-        {
-          id: 'action-personnel',
-          type: 'action',
-          title: 'Go to On-Call Board',
-          subtitle: 'View current on-call assignments',
-          iconType: 'personnel',
-          data: { action: 'navigate', tab: 'Personnel' },
-        },
-        {
-          id: 'action-people',
-          type: 'action',
-          title: 'Go to People',
-          subtitle: 'Search contacts directory',
-          iconType: 'people',
-          data: { action: 'navigate', tab: 'People' },
-        },
-        {
-          id: 'action-create-contact',
-          type: 'action',
-          title: 'Create New Contact',
-          subtitle: 'Add a new person to the directory',
-          iconType: 'add-contact',
-          data: { action: 'create-contact' },
-        },
-      ];
-    }
+    const actions: SearchResult[] = [
+      {
+        id: 'action-compose',
+        type: 'action',
+        title: 'Go to Compose',
+        subtitle: 'Open bridge composition',
+        iconType: 'compose',
+        data: { action: 'navigate', tab: 'Compose' },
+      },
+      {
+        id: 'action-alerts',
+        type: 'action',
+        title: 'Go to Alerts',
+        subtitle: 'Review operational alerts',
+        iconType: 'alerts',
+        data: { action: 'navigate', tab: 'Alerts' },
+      },
+      {
+        id: 'action-personnel',
+        type: 'action',
+        title: 'Go to On-Call Board',
+        subtitle: 'View current on-call assignments',
+        iconType: 'personnel',
+        data: { action: 'navigate', tab: 'Personnel' },
+      },
+      {
+        id: 'action-contacts',
+        type: 'action',
+        title: 'Go to Contacts',
+        subtitle: 'Search contacts directory',
+        iconType: 'people',
+        data: { action: 'open-knowledge', destination: 'contacts' },
+      },
+      {
+        id: 'action-wiki',
+        type: 'action',
+        title: 'Go to Wiki',
+        subtitle: 'Open the shared guidance library',
+        iconType: 'wiki',
+        data: { action: 'open-knowledge', destination: 'wiki' },
+      },
+      {
+        id: 'action-servers',
+        type: 'action',
+        title: 'Go to Servers',
+        subtitle: 'Search the server directory',
+        iconType: 'servers',
+        data: { action: 'open-knowledge', destination: 'servers' },
+      },
+      {
+        id: 'action-problems',
+        type: 'action',
+        title: 'Go to Dynatrace Problems',
+        subtitle: 'Review the local NOC response queue',
+        iconType: 'problems',
+        data: { action: 'navigate', tab: 'Problems' },
+      },
+      {
+        id: 'action-create-contact',
+        type: 'action',
+        title: 'Create New Contact',
+        subtitle: 'Add a new person to the directory',
+        iconType: 'add-contact',
+        data: { action: 'create-contact' },
+      },
+    ];
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return actions;
 
-    const lower = query.toLowerCase();
+    const lower = trimmedQuery.toLowerCase();
+    const matchingActions = actions.filter((item) =>
+      `${item.title} ${item.subtitle ?? ''}`.toLowerCase().includes(lower),
+    );
     const results: SearchResult[] = [];
 
     const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s.]{2,}$/.test(query.trim());
@@ -123,6 +172,21 @@ export function useCommandSearch(
       }
     });
 
-    return results.slice(0, 15);
-  }, [query, contacts, servers, groups]);
+    const normalizedQuery = normalizeKnowledgeSearchText(query);
+    const knowledgeQueryTerms = normalizedQuery.split(' ');
+    knowledgeDocuments.forEach((document) => {
+      if (!knowledgeDocumentMatches(document, query)) return;
+      const heading = findMatchingKnowledgeHeading(document, knowledgeQueryTerms);
+      results.push({
+        id: `knowledge-${document.id}`,
+        type: 'knowledge',
+        title: document.title,
+        subtitle: heading ? `${document.category} · ${heading.label}` : document.category,
+        iconType: 'knowledge',
+        data: { document, headingId: heading?.id },
+      });
+    });
+
+    return [...results, ...matchingActions];
+  }, [query, contacts, servers, groups, knowledgeDocuments]);
 }

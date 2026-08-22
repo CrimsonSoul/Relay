@@ -1,7 +1,10 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import type { Mock } from 'vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SetupScreen } from '../SetupScreen';
+
+type SetupConfig = Parameters<React.ComponentProps<typeof SetupScreen>['onComplete']>[0];
 
 // Mock the Input component to simplify testing
 vi.mock('../Input', () => ({
@@ -44,12 +47,16 @@ describe('SetupScreen', () => {
   );
   const DOT_LOCAL_HTTP_URL = ['http', '://', 'relay-server.local', ':8090'].join('');
   const PUBLIC_HTTP_URL = ['http', '://', 'relay.example.com', ':8090'].join('');
-  const getSubmittedConfig = () => onComplete.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-  let onComplete: ReturnType<typeof vi.fn>;
+  const getSubmittedConfig = (): SetupConfig => {
+    const config = onComplete.mock.calls.at(-1)?.[0];
+    expect(config).toBeDefined();
+    return config!;
+  };
+  let onComplete: Mock<(config: SetupConfig) => Promise<void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    onComplete = vi.fn();
+    onComplete = vi.fn<(config: SetupConfig) => Promise<void>>();
     // Mock window.api for the CloseButton, the test-connection probe, and server discovery
     (globalThis as unknown as { window: unknown }).window = {
       api: { windowClose: vi.fn(), testConnection: vi.fn(), discoverServers: vi.fn() },
@@ -61,7 +68,7 @@ describe('SetupScreen', () => {
   it('renders mode selection screen initially', () => {
     render(<SetupScreen onComplete={onComplete} />);
     expect(screen.getByText('Relay')).toBeInTheDocument();
-    expect(screen.getByText('How will this instance be used?')).toBeInTheDocument();
+    expect(screen.getByText("Choose this station's role")).toBeInTheDocument();
     expect(screen.getByText('Server')).toBeInTheDocument();
     expect(screen.getByText('Client')).toBeInTheDocument();
   });
@@ -114,6 +121,7 @@ describe('SetupScreen', () => {
     ).toBeInTheDocument();
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- The input contract, explanatory copy, and submit action are distinct server-form requirements with separate diagnostics.
   it('shows Save & Start Server button in server mode', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Server'));
@@ -420,7 +428,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     expect(screen.getByText('Configure Relay')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Back'));
-    expect(screen.getByText('How will this instance be used?')).toBeInTheDocument();
+    expect(screen.getByText("Choose this station's role")).toBeInTheDocument();
   });
 
   it('clears error when going back', () => {
@@ -547,9 +555,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'server', port: 9090 });
@@ -572,9 +578,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({ mode: 'server', bindHost: '127.0.0.1' });
   });
@@ -589,9 +593,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'client', serverUrl: CLIENT_URL });
@@ -608,9 +610,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'client', serverUrl: CLIENT_URL });
@@ -627,9 +627,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
@@ -647,9 +645,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
@@ -666,9 +662,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(screen.getByText(/Public HTTP is not production safe/)).toBeInTheDocument();
     expect(onComplete).not.toHaveBeenCalled();
@@ -685,9 +679,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
@@ -707,11 +699,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    // Use act to flush the synchronous state update (setLoading(true))
-    // but don't await the full promise (it never resolves)
-    act(() => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
     expect(screen.getByText('Starting Server...')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Starting Server/i })).toBeDisabled();
@@ -727,9 +715,7 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    act(() => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
     expect(screen.getByText('Connecting...')).toBeInTheDocument();
   });
@@ -744,11 +730,9 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
 
-    expect(screen.getByText('Save & Start Server')).toBeInTheDocument();
+    expect(await screen.findByText('Save & Start Server')).toBeInTheDocument();
   });
 
   it('resets loading state when onComplete throws in client mode', async () => {
@@ -761,11 +745,9 @@ describe('SetupScreen', () => {
     fireEvent.change(screen.getByLabelText('Passphrase'), {
       target: { value: validPassphrase },
     });
-    await act(async () => {
-      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
-    });
+    fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
 
-    expect(screen.getByText('Save & Connect')).toBeInTheDocument();
+    expect(await screen.findByText('Save & Connect')).toBeInTheDocument();
   });
 
   it('clears previous error on new submission attempt', () => {

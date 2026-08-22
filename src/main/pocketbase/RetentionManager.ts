@@ -1,10 +1,12 @@
 import type PocketBase from 'pocketbase';
 import { loggers } from '../logger';
+import { KnowledgeManagementCleanup } from '../knowledge/KnowledgeManagementCleanup';
 
 const logger = loggers.retention;
 
 export class RetentionManager {
   private interval: ReturnType<typeof setInterval> | null = null;
+  private initialTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly pb: PocketBase) {}
 
@@ -13,10 +15,26 @@ export class RetentionManager {
     await this.cleanAlertHistory();
     await this.cleanConflictLog();
     await this.cleanOncallDismissals();
+    await this.cleanKnowledgeManagement();
     logger.info('Retention cleanup complete');
   }
 
-  startSchedule(intervalMs = 24 * 60 * 60 * 1000, beforeCleanup?: () => Promise<void>): void {
+  private async cleanKnowledgeManagement(): Promise<void> {
+    try {
+      const result = await new KnowledgeManagementCleanup({ pb: this.pb }).run();
+      if (result.expiredUploads > 0 || result.expiredAuditEvents > 0) {
+        logger.info('Knowledge management cleanup complete', result);
+      }
+    } catch (err) {
+      logger.error('Knowledge management cleanup failed', { error: err });
+    }
+  }
+
+  startSchedule(
+    intervalMs = 24 * 60 * 60 * 1000,
+    beforeCleanup?: () => Promise<void>,
+    initialDelayMs = 0,
+  ): void {
     this.stop();
     let running = false;
     const run = async (): Promise<void> => {
@@ -36,14 +54,27 @@ export class RetentionManager {
         running = false;
       }
     };
-    void run();
-    this.interval = setInterval(() => {
+    const startRecurringSchedule = () => {
+      this.initialTimeout = null;
       void run();
-    }, intervalMs);
-    this.interval.unref?.();
+      this.interval = setInterval(() => {
+        void run();
+      }, intervalMs);
+      this.interval.unref?.();
+    };
+    if (initialDelayMs > 0) {
+      this.initialTimeout = setTimeout(startRecurringSchedule, initialDelayMs);
+      this.initialTimeout.unref?.();
+    } else {
+      startRecurringSchedule();
+    }
   }
 
   stop(): void {
+    if (this.initialTimeout) {
+      clearTimeout(this.initialTimeout);
+      this.initialTimeout = null;
+    }
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;

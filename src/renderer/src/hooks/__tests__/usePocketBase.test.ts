@@ -152,15 +152,14 @@ describe('usePocketBase', () => {
 
   it('resets local connection state when url becomes null', () => {
     const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
+    type NullableProps = { url: string | null; currentAuth: PbAuthSession | null };
+    const initialProps: NullableProps = {
+      url: 'http://localhost:8090',
+      currentAuth: auth,
+    };
     const { result, rerender } = renderHook(
-      ({ url, currentAuth }: { url: string | null; currentAuth: PbAuthSession | null }) =>
-        usePocketBase(url, currentAuth),
-      {
-        initialProps: {
-          url: 'http://localhost:8090',
-          currentAuth: auth,
-        },
-      },
+      ({ url, currentAuth }: NullableProps) => usePocketBase(url, currentAuth),
+      { initialProps },
     );
 
     act(() => {

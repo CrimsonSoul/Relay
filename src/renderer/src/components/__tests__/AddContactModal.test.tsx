@@ -10,16 +10,27 @@ vi.mock('../Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
+    footer,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
+    title?: React.ReactNode;
+    variant?: string;
+    footer?: React.ReactNode;
   }) =>
     isOpen
-      ? React.createElement('div', { 'data-testid': 'modal' }, [
-          title && React.createElement('h2', { key: 'title' }, title),
-          children,
-        ])
+      ? React.createElement(
+          'dialog',
+          { 'data-testid': 'modal', 'data-variant': variant, open: true },
+          React.createElement(
+            'header',
+            { className: 'modal-header-generic' },
+            title && React.createElement('h2', null, title),
+          ),
+          React.createElement('div', { className: 'modal-body-generic' }, children),
+          footer && React.createElement('footer', { className: 'modal-footer-generic' }, footer),
+        )
       : null,
 }));
 
@@ -53,6 +64,11 @@ describe('AddContactModal', () => {
     render(<AddContactModal {...defaultProps} />);
     expect(screen.getByText('Add Contact')).toBeInTheDocument();
     expect(screen.getByText('Create Contact')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'standard');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('does not render when closed', () => {

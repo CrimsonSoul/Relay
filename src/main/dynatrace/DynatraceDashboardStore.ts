@@ -51,10 +51,11 @@ export class DynatraceDashboardStore {
   update(id: string, input: DynatraceDashboardInput): DynatraceDashboard | null {
     const dashboards = this.readDashboards();
     const index = dashboards.findIndex((dashboard) => dashboard.id === id);
-    if (index === -1) return null;
+    const existing = dashboards[index];
+    if (existing === undefined) return null;
 
     const updated: DynatraceDashboard = {
-      ...dashboards[index],
+      ...existing,
       ...this.validateInput(input),
     };
     dashboards[index] = updated;
@@ -75,11 +76,12 @@ export class DynatraceDashboardStore {
   setBounds(id: string, bounds: DynatraceDashboardBounds): DynatraceDashboard | null {
     const dashboards = this.readDashboards();
     const index = dashboards.findIndex((dashboard) => dashboard.id === id);
-    if (index === -1) return null;
+    const existing = dashboards[index];
+    if (existing === undefined) return null;
 
     const validBounds = this.validateBounds(bounds);
     const updated: DynatraceDashboard = {
-      ...dashboards[index],
+      ...existing,
       bounds: validBounds,
     };
     dashboards[index] = updated;
@@ -225,6 +227,6 @@ export class DynatraceDashboardStore {
   }
 
   private isIntegerInRange(value: unknown, min: number, max: number): value is number {
-    return Number.isInteger(value) && value >= min && value <= max;
+    return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
   }
 }

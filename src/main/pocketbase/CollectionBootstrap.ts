@@ -7,40 +7,44 @@
  */
 
 import PocketBase from 'pocketbase';
+import {
+  KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_LIBRARY_STATE_COLLECTION,
+} from '@shared/knowledge';
+import {
+  RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+  RELAY_PRIVILEGED_STATE_COLLECTION,
+} from '@shared/privilegedAccess';
 import { loggers } from '../logger';
+import { migrateKnowledgeCategories } from '../knowledge/KnowledgeCategoryMigration';
+import { RoleAccountMigration } from '../privileged/RoleAccountMigration';
+import {
+  BOARD_SETTINGS_COLLECTION,
+  COLLECTIONS,
+  KNOWN_NAMES,
+  KNOWLEDGE_SEARCH_CHUNK_DEFINITION,
+  KNOWLEDGE_SEARCH_DOCUMENT_STATUS_FIELDS,
+  PRIMARY_BOARD_SETTINGS_KEY,
+  PRIVILEGED_ACCOUNT_COMPATIBILITY_DEFINITION,
+  PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
+  PRIVILEGED_STATE_COMPATIBILITY_DEFINITION,
+  PRIVILEGED_STATE_FINAL_DEFINITION,
+} from './schema/collectionCatalog';
+import {
+  ensureManagedCollections,
+  patchManagedCollection,
+  reconcileManagedFields,
+} from './schema/collectionReconciler';
+import { ensureKnowledgeBatchApi } from './schema/pocketBaseSettings';
+import type { CollectionBootstrapResult, ExistingCollection } from './schema/collectionTypes';
 
+export { ensureKnowledgeBatchApi };
+export { ensurePocketBaseAuthRateLimit } from './schema/pocketBaseSettings';
+export type { CollectionBootstrapResult } from './schema/collectionTypes';
+
+const LEGACY_ROSTER_COLLECTION = 'relay_operators';
+const LEGACY_LOGIN_ROSTER_VIEW = 'relay_login_roster';
 const logger = loggers.pocketbase;
-
-const AUTH_RULE = '@request.auth.id != ""';
-
-interface FieldDef {
-  type: string;
-  name: string;
-  required?: boolean;
-  values?: string[];
-  maxSelect?: number;
-  onCreate?: boolean;
-  onUpdate?: boolean;
-}
-
-interface CollectionDef {
-  name: string;
-  type: 'base';
-  fields: FieldDef[];
-  indexes?: string[];
-}
-
-type ExistingCollection = {
-  id: string;
-  name: string;
-  fields?: FieldDef[];
-  indexes?: string[];
-  listRule?: string | null;
-  viewRule?: string | null;
-  createRule?: string | null;
-  updateRule?: string | null;
-  deleteRule?: string | null;
-};
 
 type BoardSettingsRecord = {
   id: string;
@@ -51,299 +55,46 @@ type BoardSettingsRecord = {
   updated: string;
 };
 
-/** Autodate fields added to every collection for created/updated timestamps. */
-const AUTODATE_FIELDS: FieldDef[] = [
-  { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
-  { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
-];
-
-const BOARD_SETTINGS_COLLECTION = 'oncall_board_settings';
-const PRIMARY_BOARD_SETTINGS_KEY = 'primary';
-const BOARD_SETTINGS_KEY_INDEX =
-  'CREATE UNIQUE INDEX idx_oncall_board_settings_key ON oncall_board_settings (key)';
-const CLIENT_PRESENCE_COLLECTION = 'client_presence';
-const CLIENT_PRESENCE_SESSION_INDEX =
-  'CREATE UNIQUE INDEX idx_client_presence_session_id ON client_presence (sessionId)';
-
-/** All data collections Relay requires. */
-const COLLECTIONS: CollectionDef[] = [
-  {
-    name: 'contacts',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'name', required: true },
-      { type: 'text', name: 'email' },
-      { type: 'text', name: 'phone' },
-      { type: 'text', name: 'title' },
-    ],
-  },
-  {
-    name: 'servers',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'name', required: true },
-      { type: 'text', name: 'businessArea' },
-      { type: 'text', name: 'lob' },
-      { type: 'text', name: 'comment' },
-      { type: 'text', name: 'owner' },
-      { type: 'text', name: 'contact' },
-      { type: 'text', name: 'os' },
-    ],
-  },
-  {
-    name: 'oncall',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'team', required: true },
-      { type: 'text', name: 'role' },
-      { type: 'text', name: 'name' },
-      { type: 'text', name: 'contact' },
-      { type: 'text', name: 'timeWindow' },
-      { type: 'number', name: 'sortOrder' },
-      { type: 'text', name: 'teamId' },
-    ],
-  },
-  {
-    name: 'bridge_groups',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'name', required: true },
-      { type: 'json', name: 'contacts' },
-    ],
-  },
-  {
-    name: 'bridge_history',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'note' },
-      { type: 'json', name: 'groups' },
-      { type: 'json', name: 'contacts' },
-      { type: 'number', name: 'recipientCount' },
-    ],
-  },
-  {
-    name: 'alert_history',
-    type: 'base',
-    fields: [
-      {
-        type: 'select',
-        name: 'severity',
-        values: ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'],
-        maxSelect: 1,
-      },
-      { type: 'text', name: 'subject' },
-      { type: 'text', name: 'bodyHtml' },
-      { type: 'text', name: 'sender' },
-      { type: 'text', name: 'recipient' },
-      { type: 'bool', name: 'pinned' },
-      { type: 'text', name: 'label' },
-    ],
-  },
-  {
-    name: 'alert_reminders',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'title', required: true },
-      { type: 'text', name: 'note' },
-      { type: 'date', name: 'dueAt', required: true },
-      {
-        type: 'select',
-        name: 'status',
-        required: true,
-        values: ['pending', 'done', 'dismissed'],
-        maxSelect: 1,
-      },
-      { type: 'date', name: 'snoozeUntil' },
-      {
-        type: 'select',
-        name: 'severity',
-        values: ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'],
-        maxSelect: 1,
-      },
-      { type: 'text', name: 'alertSubject' },
-      { type: 'text', name: 'alertBodyHtml' },
-      { type: 'text', name: 'createdBy' },
-      { type: 'date', name: 'completedAt' },
-      { type: 'date', name: 'dismissedAt' },
-    ],
-  },
-  {
-    name: 'notes',
-    type: 'base',
-    fields: [
-      {
-        type: 'select',
-        name: 'entityType',
-        required: true,
-        values: ['contact', 'server'],
-        maxSelect: 1,
-      },
-      { type: 'text', name: 'entityKey', required: true },
-      { type: 'text', name: 'note' },
-      { type: 'json', name: 'tags' },
-    ],
-  },
-  {
-    name: 'standalone_notes',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'title' },
-      { type: 'text', name: 'content' },
-      { type: 'text', name: 'color' },
-      { type: 'json', name: 'tags' },
-      { type: 'number', name: 'sortOrder' },
-    ],
-  },
-  {
-    name: 'oncall_dismissals',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'alertType', required: true },
-      { type: 'text', name: 'dateKey', required: true },
-    ],
-  },
-  {
-    name: 'conflict_log',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'collection', required: true },
-      { type: 'text', name: 'recordId', required: true },
-      { type: 'json', name: 'overwrittenData', required: true },
-      { type: 'text', name: 'overwrittenBy' },
-    ],
-  },
-  {
-    name: BOARD_SETTINGS_COLLECTION,
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'key', required: true },
-      { type: 'json', name: 'teamOrder' },
-      { type: 'bool', name: 'locked' },
-    ],
-    indexes: [BOARD_SETTINGS_KEY_INDEX],
-  },
-  {
-    name: CLIENT_PRESENCE_COLLECTION,
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'sessionId', required: true },
-      { type: 'text', name: 'hostname', required: true },
-      {
-        type: 'select',
-        name: 'mode',
-        required: true,
-        values: ['client'],
-        maxSelect: 1,
-      },
-      { type: 'date', name: 'lastSeen', required: true },
-    ],
-    indexes: [CLIENT_PRESENCE_SESSION_INDEX],
-  },
-];
-
-const KNOWN_NAMES = new Set(COLLECTIONS.map((c) => c.name));
-
-const AUTH_RULE_PATCH = {
-  listRule: AUTH_RULE,
-  viewRule: AUTH_RULE,
-  createRule: AUTH_RULE,
-  updateRule: AUTH_RULE,
-  deleteRule: AUTH_RULE,
+type KnowledgeLibraryStateBootstrapRecord = {
+  id: string;
+  key: string;
+  mode: 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
+  revision?: number;
 };
 
-/** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */
-async function patchCollectionDefinition(
-  pb: PocketBase,
-  colId: string,
-  colName: string,
-  expectedSchemaFields: FieldDef[],
-  expectedIndexes: string[] = [],
-): Promise<boolean> {
-  const colFull = (await pb.collections.getOne(colId)) as unknown as ExistingCollection;
-  const fields = colFull.fields || [];
-  const fieldNames = new Set(fields.map((f) => f.name));
-  const allExpected = [...expectedSchemaFields, ...AUTODATE_FIELDS];
-  const missing = allExpected.filter((f) => !fieldNames.has(f.name));
-  const indexes = colFull.indexes || [];
-  const missingIndexes = expectedIndexes.filter((index) => !indexes.includes(index));
-  const rulesPatch = Object.fromEntries(
-    Object.entries(AUTH_RULE_PATCH).filter(([key, value]) => {
-      return colFull[key as keyof typeof AUTH_RULE_PATCH] !== value;
-    }),
-  );
-
-  if (missing.length === 0 && missingIndexes.length === 0 && Object.keys(rulesPatch).length === 0) {
-    return false;
-  }
-
-  await pb.collections.update(colId, {
-    ...(missing.length > 0 ? { fields: [...fields, ...missing] } : {}),
-    ...(missingIndexes.length > 0 ? { indexes: [...indexes, ...missingIndexes] } : {}),
-    ...rulesPatch,
+async function ensureKnowledgeLibraryBootstrap(pb: PocketBase): Promise<void> {
+  const states = pb.collection(KNOWLEDGE_LIBRARY_STATE_COLLECTION);
+  const result = await states.getList<KnowledgeLibraryStateBootstrapRecord>(1, 2, {
+    filter: 'key="primary"',
+    requestKey: null,
   });
+  if (result.totalItems > result.items.length || result.items.length > 1) {
+    throw new Error('Knowledge library state bootstrap found an ambiguous singleton record');
+  }
 
-  if (missing.length > 0) {
-    logger.info(
-      `Patched fields on collection: ${colName} (+${missing.map((f) => f.name).join(', ')})`,
-    );
+  const current = result.items[0];
+  if (!current) {
+    await states.create({
+      key: 'primary',
+      mode: 'managed',
+      transitionedAt: new Date().toISOString(),
+      transitionedByOperatorId: '',
+      safeError: '',
+      revision: 1,
+    });
+    logger.info('Created managed Knowledge library state');
+    return;
   }
-  if (Object.keys(rulesPatch).length > 0) {
-    logger.info(`Patched API rules on collection: ${colName}`);
-  }
-  if (missingIndexes.length > 0) {
-    logger.info(`Patched indexes on collection: ${colName} (+${missingIndexes.length})`);
-  }
-  return true;
-}
+  if (current.mode !== 'legacy-watch' && current.mode !== 'migrating') return;
 
-/** Create collections that don't exist yet. */
-async function createMissing(pb: PocketBase, existing: Set<string>): Promise<number> {
-  let created = 0;
-  for (const def of COLLECTIONS) {
-    if (existing.has(def.name)) continue;
-    try {
-      await pb.collections.create({
-        name: def.name,
-        type: def.type,
-        fields: [...def.fields, ...AUTODATE_FIELDS],
-        ...(def.indexes ? { indexes: def.indexes } : {}),
-        listRule: AUTH_RULE,
-        viewRule: AUTH_RULE,
-        createRule: AUTH_RULE,
-        updateRule: AUTH_RULE,
-        deleteRule: AUTH_RULE,
-      });
-      created++;
-      logger.info(`Created collection: ${def.name}`);
-    } catch (err) {
-      logger.error(`Failed to create collection: ${def.name}`, { error: err });
-      throw new Error(`Failed to create collection: ${def.name}`, { cause: err });
-    }
-  }
-  return created;
-}
-
-/** Patch existing collections that are missing schema or autodate fields. */
-async function patchExisting(
-  pb: PocketBase,
-  existing: Set<string>,
-  allCols: Array<{ id: string; name: string }>,
-): Promise<number> {
-  let patched = 0;
-  for (const def of COLLECTIONS) {
-    if (!existing.has(def.name)) continue;
-    const col = allCols.find((c) => c.name === def.name);
-    if (!col) continue;
-    try {
-      if (await patchCollectionDefinition(pb, col.id, def.name, def.fields, def.indexes)) {
-        patched++;
-      }
-    } catch (err) {
-      logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
-      throw new Error(`Failed to patch collection: ${def.name}`, { cause: err });
-    }
-  }
-  return patched;
+  await states.update(current.id, {
+    mode: 'managed',
+    transitionedAt: new Date().toISOString(),
+    transitionedByOperatorId: '',
+    safeError: '',
+    revision: Math.max(1, current.revision ?? 0) + 1,
+  });
+  logger.info('Completed Knowledge library transition to PocketBase-only management');
 }
 
 async function repairDuplicateBoardSettings(pb: PocketBase, existing: Set<string>): Promise<void> {
@@ -446,30 +197,201 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
 }
 
 /**
+ * Ensure derived Wiki search storage without making it part of the required
+ * PocketBase bootstrap. Callers intentionally treat failures as best-effort.
+ */
+export async function ensureKnowledgeSearchCollections(
+  pb: PocketBase,
+  options: { batchApiReady?: boolean } = {},
+): Promise<void> {
+  if (!options.batchApiReady) await ensureKnowledgeBatchApi(pb);
+
+  let allCols: ExistingCollection[];
+  try {
+    allCols = await pb.collections.getFullList<ExistingCollection>();
+  } catch (err) {
+    logger.error('Failed to list collections for optional Wiki search storage', { error: err });
+    throw new Error('Failed to list PocketBase collections for optional Wiki search storage', {
+      cause: err,
+    });
+  }
+
+  const documents = allCols.find(({ name }) => name === KNOWLEDGE_DOCUMENTS_COLLECTION);
+  if (!documents) {
+    throw new Error('Cannot bootstrap optional Wiki search storage without knowledge_documents');
+  }
+
+  try {
+    const existing = Array.isArray(documents.fields)
+      ? documents
+      : ((await pb.collections.getOne(documents.id)) as unknown as ExistingCollection);
+    const reconciled = reconcileManagedFields(
+      existing.fields ?? [],
+      KNOWLEDGE_SEARCH_DOCUMENT_STATUS_FIELDS,
+    );
+    if (reconciled.added.length > 0 || reconciled.changed.length > 0) {
+      await pb.collections.update(documents.id, { fields: reconciled.fields });
+      logger.info(
+        `Patched optional Wiki search fields on ${KNOWLEDGE_DOCUMENTS_COLLECTION} (+${reconciled.added.map((field) => field.name).join(', ')})`,
+      );
+    }
+  } catch (err) {
+    logger.error('Failed to patch optional Wiki search document fields', { error: err });
+    throw new Error('Failed to patch optional Wiki search document fields', { cause: err });
+  }
+
+  const existing = new Set(allCols.map(({ name }) => name));
+  const collectionIds = new Map(allCols.map(({ id, name }) => [name, id]));
+  await ensureManagedCollections(pb, existing, allCols, collectionIds, [
+    KNOWLEDGE_SEARCH_CHUNK_DEFINITION,
+  ]);
+}
+
+/**
+ * Snapshot the database immediately before the one-time legacy role conversion.
+ *
+ * The conversion deletes `relay_operators` — the only record of who the
+ * operators were — and then patches the very columns it just populated. That
+ * patch has been wrong before: it re-sent already-created fields without the ids
+ * PocketBase assigned, dropping and recreating the username column *after* the
+ * roster was gone. Nothing else backs the database up first; the maintenance
+ * schedule that calls `backupIfDue()` only starts once `ensureCollections`
+ * returns, so a failure here had nothing to restore from.
+ *
+ * This runs at most once per install — only while a legacy roster is present —
+ * and refuses to continue if the snapshot cannot be written. Blocking startup is
+ * the lesser harm: the alternative is an irreversible migration with no way back.
+ */
+async function snapshotBeforeRoleAccountMigration(pb: PocketBase): Promise<void> {
+  const name = `pre_role_migration_${new Date().toISOString().replaceAll(/[:.]/g, '-')}.zip`;
+  try {
+    await pb.backups.create(name, { requestKey: null });
+    logger.info('Captured pre-migration backup', { name });
+  } catch (error) {
+    logger.error('Could not capture the pre-migration backup', { error, name });
+    throw new Error(
+      'Relay could not back up the workspace before upgrading its accounts, so the upgrade was ' +
+        'stopped. Free disk space in the Relay data folder and restart Relay to try again.',
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * Confirm the conversion's own output survived the final-definition patch.
+ *
+ * The defect this guards against was silent: the accounts were still there, just
+ * with empty usernames, so nobody could sign in and nothing said why. Checking
+ * here turns that into a loud failure next to the backup taken moments earlier,
+ * while the operator still has an obvious way back.
+ */
+async function assertMigratedUsernamesSurvived(pb: PocketBase): Promise<void> {
+  const accounts = await pb
+    .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+    .getFullList<{ id: string; username?: unknown }>({ requestKey: null });
+  const blank = accounts.filter(
+    (account) => typeof account.username !== 'string' || account.username.trim() === '',
+  );
+  if (blank.length === 0) return;
+
+  logger.error('Account upgrade left usernames empty', {
+    blankCount: blank.length,
+    totalCount: accounts.length,
+  });
+  throw new Error(
+    `Relay upgraded its accounts but ${blank.length} of ${accounts.length} lost their sign-in ` +
+      'name, so startup was stopped before the change could be used. Restore the ' +
+      'pre_role_migration backup from the Relay data folder and report this.',
+  );
+}
+
+/**
  * Ensure all required collections exist in PocketBase.
  * Creates missing collections, patches required fields and API rules, and warns about
  * unmanaged collections without deleting them.
  */
-export async function ensureCollections(pb: PocketBase): Promise<void> {
-  let allCols: Array<{ id: string; name: string }>;
+export async function ensureCollections(pb: PocketBase): Promise<CollectionBootstrapResult> {
+  let allCols: ExistingCollection[];
   try {
-    allCols = await pb.collections.getFullList();
+    allCols = await pb.collections.getFullList<ExistingCollection>();
   } catch (err) {
     logger.error('Failed to list collections', { error: err });
     throw new Error('Failed to list PocketBase collections', { cause: err });
   }
 
   const existing = new Set(allCols.map((c) => c.name));
-  const created = await createMissing(pb, existing);
+  // Before the first schema write, not merely before the conversion: the
+  // compatibility patch below already reshapes a legacy database.
+  if (existing.has(LEGACY_ROSTER_COLLECTION)) await snapshotBeforeRoleAccountMigration(pb);
+  const collectionIds = new Map(allCols.map((collection) => [collection.name, collection.id]));
   await repairDuplicateBoardSettings(pb, existing);
-  const patched = await patchExisting(pb, existing, allCols);
+  const bootstrapDefinitions = COLLECTIONS.map((definition) => {
+    if (
+      definition.name === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION &&
+      existing.has(definition.name) &&
+      existing.has(LEGACY_ROSTER_COLLECTION)
+    ) {
+      return PRIVILEGED_ACCOUNT_COMPATIBILITY_DEFINITION;
+    }
+    if (
+      definition.name === RELAY_PRIVILEGED_STATE_COLLECTION &&
+      existing.has(definition.name) &&
+      existing.has(LEGACY_ROSTER_COLLECTION)
+    ) {
+      return PRIVILEGED_STATE_COMPATIBILITY_DEFINITION;
+    }
+    return definition;
+  });
+  const managed = await ensureManagedCollections(
+    pb,
+    existing,
+    allCols,
+    collectionIds,
+    bootstrapDefinitions,
+  );
+  let { patched } = managed;
+  const migration = await new RoleAccountMigration({ pb }).run(allCols);
+  let migrationDeferredReason: string | null = null;
+  if (migration.status === 'deferred') {
+    logger.warn(`Role account migration deferred: ${migration.reason}`);
+    migrationDeferredReason = migration.reason;
+  } else {
+    for (const definition of [
+      PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
+      PRIVILEGED_STATE_FINAL_DEFINITION,
+    ]) {
+      // These collections were already patched above with their compatibility
+      // definitions, so the listing snapshot no longer describes them. Re-read
+      // each one instead: the fields phase one created must be re-sent with the
+      // ids PocketBase gave them, or the columns holding the usernames the
+      // migration just wrote are dropped and recreated empty.
+      if (
+        await patchManagedCollection(pb, definition, allCols, collectionIds, {
+          reuseSnapshot: false,
+        })
+      ) {
+        patched += 1;
+      }
+    }
+    if (migration.status === 'migrated') {
+      await assertMigratedUsernamesSurvived(pb);
+      allCols = allCols.filter(
+        ({ name }) => name !== LEGACY_ROSTER_COLLECTION && name !== LEGACY_LOGIN_ROSTER_VIEW,
+      );
+    }
+  }
+  await ensureKnowledgeLibraryBootstrap(pb);
+  await migrateKnowledgeCategories(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 
-  if (created > 0 || unmanaged > 0 || patched > 0) {
+  if (managed.created > 0 || unmanaged > 0 || patched > 0) {
     logger.info(
-      `Collection bootstrap complete: ${created} created, ${patched} patched, ${unmanaged} unmanaged`,
+      `Collection bootstrap complete: ${managed.created} created, ${patched} patched, ${unmanaged} unmanaged`,
     );
   } else {
     logger.info('Collection bootstrap: all collections up to date');
   }
+  return migrationDeferredReason
+    ? { privilegedRuntimeReady: false, reason: migrationDeferredReason }
+    : { privilegedRuntimeReady: true };
 }

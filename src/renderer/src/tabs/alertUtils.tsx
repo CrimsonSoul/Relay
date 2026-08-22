@@ -2,7 +2,6 @@ import React from 'react';
 import { HIGHLIGHT_TYPES } from './alerts/highlightColors';
 
 export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
-export type AlertBodyFontSize = 'normal' | 'large';
 
 export const SEVERITIES: Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 
@@ -70,7 +69,31 @@ export function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;');
 }
 
-/** Strip all HTML tags except basic formatting (b, i, u, em, strong, br, p). */
+function escapeHtmlAttribute(text: string): string {
+  return escapeHtml(text).replaceAll("'", '&#39;');
+}
+
+// Large enough for anything the insert pipeline produces (516px-wide images),
+// small enough to reject multi-megabyte screenshots pasted as raw data URLs,
+// which would bypass the size/width caps of the insert pipeline entirely.
+const MAX_DATA_IMAGE_SRC_LENGTH = 1_500_000;
+
+function isAllowedDataImage(src: string): boolean {
+  return (
+    src.length <= MAX_DATA_IMAGE_SRC_LENGTH &&
+    /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src)
+  );
+}
+
+function renderDataImage(el: Element): string | null {
+  const src = el.getAttribute('src')?.trim() ?? '';
+  if (!isAllowedDataImage(src)) return null;
+  const alt = el.getAttribute('alt')?.trim() ?? '';
+  const className = el.classList.contains('alert-body-image') ? ' class="alert-body-image"' : '';
+  return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(alt)}"${className}>`;
+}
+
+/** Strip unsafe HTML while keeping alert formatting, highlights, and inline data images. */
 export function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const walk = (node: Node): string => {
@@ -86,10 +109,13 @@ export function sanitizeHtml(html: string): string {
     }
     // Allow <span data-hl="knownType"> for highlight support
     if (tag === 'span') {
-      const hlType = el.dataset.hl;
+      const hlType = (el as HTMLElement).dataset.hl;
       if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
         return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
       }
+    }
+    if (tag === 'img') {
+      return renderDataImage(el) ?? '';
     }
     return children;
   };
@@ -106,4 +132,9 @@ export function hasVisibleText(html: string): boolean {
     .replaceAll('\ufeff', '')
     .replaceAll('\u2060', '');
   return visibleText.trim().length > 0;
+}
+
+/** A required alert message is complete only when subject and visible body text are present. */
+export function isAlertMessageComplete(subject: string, bodyHtml: string): boolean {
+  return subject.trim().length > 0 && hasVisibleText(bodyHtml);
 }

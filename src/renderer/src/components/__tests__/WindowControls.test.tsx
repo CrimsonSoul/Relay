@@ -1,21 +1,20 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { WindowControls } from '../WindowControls';
 
 describe('WindowControls', () => {
   beforeEach(() => {
-    // Mock window.api without platform so we get the full controls (non-darwin)
-    (globalThis as unknown as Record<string, unknown>).window = {
-      api: {
-        isMaximized: vi.fn().mockResolvedValue(false),
-        onMaximizeChange: vi.fn().mockReturnValue(vi.fn()),
-        windowMinimize: vi.fn(),
-        windowMaximize: vi.fn(),
-        windowClose: vi.fn(),
-        // No 'platform' key → not darwin → renders controls
-      },
-    };
+    globalThis.api = {
+      runtime: ELECTRON_RUNTIME,
+      platform: 'win32',
+      isMaximized: vi.fn().mockResolvedValue(false),
+      onMaximizeChange: vi.fn().mockReturnValue(vi.fn()),
+      windowMinimize: vi.fn(),
+      windowMaximize: vi.fn(),
+      windowClose: vi.fn(),
+    } as never;
   });
 
   it('renders minimize, maximize, and close buttons', () => {
@@ -28,41 +27,29 @@ describe('WindowControls', () => {
   it('calls windowMinimize when Minimize is clicked', () => {
     render(<WindowControls />);
     fireEvent.click(screen.getByLabelText('Minimize'));
-    expect(
-      (globalThis as unknown as { window: { api: { windowMinimize: ReturnType<typeof vi.fn> } } })
-        .window.api.windowMinimize,
-    ).toHaveBeenCalled();
+    expect(globalThis.api?.windowMinimize).toHaveBeenCalled();
   });
 
   it('calls windowMaximize when Maximize is clicked', () => {
     render(<WindowControls />);
     fireEvent.click(screen.getByLabelText('Maximize'));
-    expect(
-      (globalThis as unknown as { window: { api: { windowMaximize: ReturnType<typeof vi.fn> } } })
-        .window.api.windowMaximize,
-    ).toHaveBeenCalled();
+    expect(globalThis.api?.windowMaximize).toHaveBeenCalled();
   });
 
   it('calls windowClose when Close is clicked', () => {
     render(<WindowControls />);
     fireEvent.click(screen.getByLabelText('Close'));
-    expect(
-      (globalThis as unknown as { window: { api: { windowClose: ReturnType<typeof vi.fn> } } })
-        .window.api.windowClose,
-    ).toHaveBeenCalled();
+    expect(globalThis.api?.windowClose).toHaveBeenCalled();
   });
 
   it('returns null on darwin platform', () => {
-    (globalThis as unknown as Record<string, unknown>).window = {
-      api: {
-        isMaximized: vi.fn().mockResolvedValue(false),
-        onMaximizeChange: vi.fn().mockReturnValue(vi.fn()),
-        windowMinimize: vi.fn(),
-        windowMaximize: vi.fn(),
-        windowClose: vi.fn(),
-        platform: 'darwin',
-      },
-    };
+    globalThis.api = { ...globalThis.api!, platform: 'darwin' };
+    const { container } = render(<WindowControls />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('returns null for the browser runtime', () => {
+    globalThis.api = { ...globalThis.api!, runtime: WEB_RUNTIME };
     const { container } = render(<WindowControls />);
     expect(container.firstChild).toBeNull();
   });

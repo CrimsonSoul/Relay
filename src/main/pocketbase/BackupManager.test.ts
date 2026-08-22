@@ -26,9 +26,21 @@ import { BackupManager } from './BackupManager';
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
-const mockReaddirSync = vi.mocked(readdirSync);
+// BackupManager only ever calls `readdirSync(dir)` with no options, which
+// resolves to the `string[]` overload. Pin the mock to that signature so the
+// fixtures below can be plain file-name arrays.
+const mockReaddirSync = vi.mocked<(path: string) => string[]>(readdirSync);
 const mockRmSync = vi.mocked(rmSync);
 const mockStatSync = vi.mocked(statSync);
+
+/** Index into an array, failing loudly rather than silently yielding `undefined`. */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(`Expected an element at index ${index} (length ${items.length})`);
+  }
+  return item;
+}
 
 function makeStatResult(mtime: Date, size = 1024): Stats {
   return { mtime, size } as unknown as Stats;
@@ -66,7 +78,7 @@ describe('BackupManager', () => {
     it('stores the PocketBase client (verified by backup() using it)', async () => {
       const manager = new BackupManager(dataDir);
       const pb = makePbClient();
-      mockReaddirSync.mockReturnValue([] as unknown as string[]);
+      mockReaddirSync.mockReturnValue([]);
       manager.setPocketBase(pb);
       const result = await manager.backup();
       expect(
@@ -81,13 +93,13 @@ describe('BackupManager', () => {
       const manager = new BackupManager(dataDir);
       const createMock = vi.fn().mockResolvedValue(undefined);
       const pb = { backups: { create: createMock } } as unknown as import('pocketbase').default;
-      mockReaddirSync.mockReturnValue([] as unknown as string[]);
+      mockReaddirSync.mockReturnValue([]);
       manager.setPocketBase(pb);
 
       const result = await manager.backup();
 
       expect(createMock).toHaveBeenCalledOnce();
-      const backupName: string = createMock.mock.calls[0][0] as string;
+      const backupName: string = at(createMock.mock.calls, 0)[0] as string;
       expect(backupName).toMatch(/^backup_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$/);
       expect(backupName).not.toMatch(/[TZ:]/);
       expect(result).toBe(join(backupsDir, backupName));
@@ -118,7 +130,7 @@ describe('BackupManager', () => {
         { length: 12 },
         (_, i) => `backup-${String(i).padStart(2, '0')}.zip`,
       );
-      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      mockReaddirSync.mockReturnValue(files);
       // Newer files have lower index (sorted descending by mtime — keep first 10, prune indices 10+)
       mockStatSync.mockImplementation((filePath) => {
         const name = String(filePath).split('/').pop()!;
@@ -149,7 +161,7 @@ describe('BackupManager', () => {
         (_, i) => `pre_restore_${String(i).padStart(2, '0')}.zip`,
       );
       const files = [...regularFiles, ...preRestoreFiles];
-      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      mockReaddirSync.mockReturnValue(files);
       // Lower index = newer (descending mtime within each group)
       mockStatSync.mockImplementation((filePath) => {
         const name = String(filePath).split('/').pop()!;
@@ -169,6 +181,65 @@ describe('BackupManager', () => {
     });
   });
 
+  describe('backupIfDue()', () => {
+    it('skips an automatic backup when the newest regular backup is less than 24 hours old', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+      mockReaddirSync.mockReturnValue([
+        'backup_2026-07-10_11-00-00.zip',
+        'pre_restore_2026-07-10_11-30-00.zip',
+      ]);
+      mockStatSync.mockImplementation((filePath) => {
+        const name = String(filePath).split('/').pop();
+        return makeStatResult(
+          new Date(
+            name?.startsWith('pre_restore') ? '2026-07-10T11:30:00Z' : '2026-07-10T11:00:00Z',
+          ),
+        );
+      });
+
+      await expect(manager.backupIfDue(new Date('2026-07-10T12:00:00Z'))).resolves.toBeNull();
+
+      expect(
+        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('creates an automatic backup when the newest regular backup is at least 24 hours old', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+      mockReaddirSync
+        .mockReturnValueOnce(['backup_2026-07-09_12-00-00.zip'])
+        .mockReturnValueOnce([]);
+      mockStatSync.mockReturnValue(makeStatResult(new Date('2026-07-09T12:00:00Z')));
+
+      const result = await manager.backupIfDue(new Date('2026-07-10T12:00:00Z'));
+
+      expect(
+        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
+      ).toHaveBeenCalledOnce();
+      expect(result).toContain('backup_');
+    });
+
+    it('creates an automatic backup when only pre-restore backups exist', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+      mockReaddirSync
+        .mockReturnValueOnce(['pre_restore_2026-07-10_11-59-00.zip'])
+        .mockReturnValueOnce([]);
+
+      await expect(manager.backupIfDue(new Date('2026-07-10T12:00:00Z'))).resolves.toContain(
+        'backup_',
+      );
+      expect(
+        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
+      ).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('listBackups()', () => {
     it('returns empty array when the backups directory does not exist', () => {
       mockExistsSync.mockReturnValue(false);
@@ -180,7 +251,7 @@ describe('BackupManager', () => {
     it('returns sorted list of .zip files with name/date/size', () => {
       mockExistsSync.mockReturnValue(true);
       const files = ['backup-a.zip', 'backup-b.db', 'not-a-backup.txt'];
-      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      mockReaddirSync.mockReturnValue(files);
       const dates: Record<string, Date> = {
         'backup-a.zip': new Date('2025-01-02T00:00:00Z'),
         'backup-b.db': new Date('2025-01-03T00:00:00Z'),
@@ -195,26 +266,26 @@ describe('BackupManager', () => {
 
       // .txt and legacy .db files excluded, result sorted descending by date
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('backup-a.zip');
-      expect(result[0].date).toEqual(dates['backup-a.zip']);
-      expect(result[0].size).toBe(2048);
+      expect(at(result, 0).name).toBe('backup-a.zip');
+      expect(at(result, 0).date).toEqual(dates['backup-a.zip']);
+      expect(at(result, 0).size).toBe(2048);
     });
 
     it('excludes non-backup file extensions', () => {
       mockExistsSync.mockReturnValue(true);
-      mockReaddirSync.mockReturnValue(['file.txt', 'file.log', 'file.zip'] as unknown as string[]);
+      mockReaddirSync.mockReturnValue(['file.txt', 'file.log', 'file.zip']);
       mockStatSync.mockReturnValue(makeStatResult(new Date('2025-01-01')));
 
       const manager = new BackupManager(dataDir);
       const result = manager.listBackups();
 
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('file.zip');
+      expect(at(result, 0).name).toBe('file.zip');
     });
 
     it('excludes legacy .db files from the restorable backup list', () => {
       mockExistsSync.mockReturnValue(true);
-      mockReaddirSync.mockReturnValue(['legacy.db', 'backup.zip'] as unknown as string[]);
+      mockReaddirSync.mockReturnValue(['legacy.db', 'backup.zip']);
       mockStatSync.mockReturnValue(makeStatResult(new Date('2025-01-01')));
 
       const manager = new BackupManager(dataDir);
@@ -233,7 +304,7 @@ describe('BackupManager', () => {
     it('creates a safety backup then restores the named backup', async () => {
       const manager = new BackupManager(dataDir);
       const pb = makePbClient();
-      mockReaddirSync.mockReturnValue([] as unknown as string[]);
+      mockReaddirSync.mockReturnValue([]);
       manager.setPocketBase(pb);
 
       await manager.restore('my-backup.zip');
@@ -243,7 +314,7 @@ describe('BackupManager', () => {
 
       // Safety backup should be created first
       expect(createMock).toHaveBeenCalledOnce();
-      const safetyName: string = createMock.mock.calls[0][0] as string;
+      const safetyName: string = at(createMock.mock.calls, 0)[0] as string;
       expect(safetyName).toMatch(/^pre_restore_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$/);
       expect(safetyName).not.toMatch(/[TZ:]/);
 
@@ -261,7 +332,7 @@ describe('BackupManager', () => {
         { length: 12 },
         (_, i) => `pre_restore_${String(i).padStart(2, '0')}.zip`,
       );
-      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      mockReaddirSync.mockReturnValue(files);
       mockStatSync.mockImplementation((filePath) => {
         const name = String(filePath).split('/').pop()!;
         const idx = files.indexOf(name);
@@ -293,7 +364,7 @@ describe('BackupManager', () => {
         () => Promise.resolve(),
         () => Promise.reject(new Error('Restore failed')),
       );
-      mockReaddirSync.mockReturnValue([] as unknown as string[]);
+      mockReaddirSync.mockReturnValue([]);
       manager.setPocketBase(pb);
 
       await expect(manager.restore('backup.zip')).rejects.toThrow('Restore failed');
@@ -310,7 +381,7 @@ describe('BackupManager', () => {
         { length: 12 },
         (_, i) => `backup-${String(i).padStart(2, '0')}.zip`,
       );
-      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      mockReaddirSync.mockReturnValue(files);
       mockStatSync.mockImplementation((filePath) => {
         const name = String(filePath).split('/').pop()!;
         const idx = files.indexOf(name);

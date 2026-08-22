@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -30,6 +30,11 @@ describe('ConfirmModal', () => {
     );
     expect(screen.getByText('Delete item')).toBeInTheDocument();
     expect(screen.getByText('Are you sure you want to delete this?')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('data-variant', 'confirmation');
+    expect(dialog.querySelector('.modal-header-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-body-generic')).not.toBeNull();
+    expect(dialog.querySelector('.modal-footer-generic')).not.toBeNull();
   });
 
   it('shows default button labels', () => {
@@ -93,6 +98,87 @@ describe('ConfirmModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(onConfirm).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('waits for asynchronous confirmation before closing', async () => {
+    let resolveConfirm!: () => void;
+    const onConfirm = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConfirm = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+
+    render(
+      <ConfirmModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        title="Deactivate operator?"
+        message="History stays attributed."
+        confirmLabel="Deactivate"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Deactivate' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByLabelText('Close')).toBeNull();
+    expect(screen.queryByLabelText('Close modal backdrop')).toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+
+    resolveConfirm();
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows asynchronous failure inside the dialog and updates it on retry', async () => {
+    const onClose = vi.fn();
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Could not deactivate operator.'))
+      .mockRejectedValueOnce(new Error('The operator changed. Refresh and retry.'));
+
+    render(
+      <ConfirmModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        title="Deactivate operator?"
+        message="History stays attributed."
+        confirmLabel="Deactivate"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Deactivate operator?' });
+    const firstError = await within(dialog).findByRole('alert');
+    expect(firstError).toHaveTextContent('Could not deactivate operator.');
+    expect(dialog).toHaveAttribute('aria-describedby', expect.stringContaining(firstError.id));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    await waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'The operator changed. Refresh and retry.',
+      ),
+    );
+    expect(onConfirm).toHaveBeenCalledTimes(2);
   });
 
   it('uses danger variant when isDanger is true', () => {

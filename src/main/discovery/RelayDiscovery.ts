@@ -4,10 +4,14 @@ import type { DiscoveredRelayServer } from '@shared/ipc';
 import { isLanRelayServerUrl } from '@shared/urlSecurity';
 import { loggers } from '../logger';
 
+// `bonjour-service` uses `export =` with a class/namespace merge, so the named `Bonjour`
+// binding is a value only. Derive the instance type from the constructor instead.
+type BonjourInstance = InstanceType<typeof Bonjour>;
+
 const SERVICE_TYPE = 'relay';
 const IPV4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
-let advertiser: Bonjour | null = null;
+let advertiser: BonjourInstance | null = null;
 
 /** Swallow async mDNS errors so they log instead of crashing the main process. */
 function logMdnsError(err: unknown): void {
@@ -19,7 +23,7 @@ function logMdnsError(err: unknown): void {
  * (e.g. EACCES/EADDRINUSE on port 5353). bonjour-service attaches no listener,
  * so an unhandled emit would crash the main process. Attach one ourselves.
  */
-function muzzleMdnsErrors(instance: Bonjour): void {
+function muzzleMdnsErrors(instance: BonjourInstance): void {
   const mdns = (instance as unknown as { server?: { mdns?: NodeJS.EventEmitter } }).server?.mdns;
   mdns?.on('error', (err: unknown) => {
     loggers.main.warn('mDNS socket error', { error: err });
@@ -65,7 +69,7 @@ export function stopAdvertising(): void {
 /** Browse for relay services for `timeoutMs`, returning unique IPv4 results. */
 export function discoverServers(timeoutMs = 3000): Promise<DiscoveredRelayServer[]> {
   return new Promise((resolve) => {
-    let bonjour: Bonjour;
+    let bonjour: BonjourInstance;
     try {
       bonjour = new Bonjour(undefined, logMdnsError);
       muzzleMdnsErrors(bonjour);

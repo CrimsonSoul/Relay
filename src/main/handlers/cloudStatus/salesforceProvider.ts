@@ -1,4 +1,5 @@
 import { type CloudStatusItem, type CloudStatusSeverity } from '@shared/ipc';
+import { fetchNoStore } from './fetchNoStore';
 import type { SalesforceIncident } from './types';
 
 export const SALESFORCE_ACTIVE_URL = 'https://api.status.salesforce.com/v1/incidents/active';
@@ -13,8 +14,7 @@ export function salesforceTypeToSeverity(type: string, status: string): CloudSta
 
 /** Fetch from Salesforce Trust API active incidents. */
 export async function fetchSalesforceProvider(): Promise<CloudStatusItem[]> {
-  const res = await fetch(SALESFORCE_ACTIVE_URL, {
-    cache: 'no-store',
+  const res = await fetchNoStore(SALESFORCE_ACTIVE_URL, {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
   });

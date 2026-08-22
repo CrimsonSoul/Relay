@@ -1,12 +1,29 @@
 import { renderHook } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import React from 'react';
 import { useDirectoryKeyboard } from '../useDirectoryKeyboard';
 import type { Contact } from '@shared/ipc';
 import type { ListImperativeAPI } from 'react-window';
 
+// Matches ROW_HEIGHT in DirectoryTab, the hook's only production caller.
+const ROW_HEIGHT = 67;
+
+type ContextMenuState = { x: number; y: number; contact: Contact } | null;
+
+// The hook always passes a functional updater for the arrow-key cases; this
+// keeps the call-site narrowing honest instead of assuming the shape.
+const functionalUpdate = (
+  call: [React.SetStateAction<number>] | undefined,
+): ((prev: number) => number) => {
+  const updater = call?.[0];
+  if (typeof updater !== 'function') {
+    throw new Error(`expected a functional state update, received ${String(updater)}`);
+  }
+  return updater;
+};
+
 const makeContact = (email: string): Contact => ({
-  name: email.split('@')[0],
+  name: email.split('@')[0] ?? email,
   email,
   phone: '',
   title: '',
@@ -29,33 +46,32 @@ describe('useDirectoryKeyboard', () => {
     makeContact('charlie@test.com'),
   ];
 
-  let mockScrollToRow: ReturnType<typeof vi.fn>;
-  let listRef: {
-    current: { scrollToRow: ReturnType<typeof vi.fn>; element: { scrollTop: number } };
-  };
-  let listContainerRef: { current: null };
-  let setFocusedIndex: ReturnType<typeof vi.fn>;
-  let handleAddWrapper: ReturnType<typeof vi.fn>;
-  let setContextMenu: ReturnType<typeof vi.fn>;
+  let mockScrollToRow: Mock<ListImperativeAPI['scrollToRow']>;
+  let listRef: { current: ListImperativeAPI | null };
+  let listContainerRef: { current: HTMLDivElement | null };
+  let setFocusedIndex: Mock<React.Dispatch<React.SetStateAction<number>>>;
+  let handleAddWrapper: Mock<(contact: Contact) => void>;
+  let setContextMenu: Mock<(menu: ContextMenuState) => void>;
 
   let defaultProps: Parameters<typeof useDirectoryKeyboard>[0];
 
   beforeEach(() => {
-    mockScrollToRow = vi.fn();
-    listRef = { current: { scrollToRow: mockScrollToRow, element: { scrollTop: 0 } } };
+    mockScrollToRow = vi.fn<ListImperativeAPI['scrollToRow']>();
+    listRef = { current: { scrollToRow: mockScrollToRow, element: document.createElement('div') } };
     listContainerRef = { current: null };
-    setFocusedIndex = vi.fn();
-    handleAddWrapper = vi.fn();
-    setContextMenu = vi.fn();
+    setFocusedIndex = vi.fn<React.Dispatch<React.SetStateAction<number>>>();
+    handleAddWrapper = vi.fn<(contact: Contact) => void>();
+    setContextMenu = vi.fn<(menu: ContextMenuState) => void>();
 
     defaultProps = {
-      listRef: listRef as React.RefObject<ListImperativeAPI | null>,
+      listRef,
       filtered,
       focusedIndex: 0,
       setFocusedIndex,
       handleAddWrapper,
       setContextMenu,
-      listContainerRef: listContainerRef as React.RefObject<HTMLDivElement | null>,
+      listContainerRef,
+      rowHeight: ROW_HEIGHT,
     };
   });
 
@@ -69,7 +85,7 @@ describe('useDirectoryKeyboard', () => {
     expect(setFocusedIndex).toHaveBeenCalled();
 
     // Call the updater function
-    const updater = setFocusedIndex.mock.calls[0][0];
+    const updater = functionalUpdate(setFocusedIndex.mock.calls[0]);
     expect(updater(0)).toBe(1); // 0 -> 1
     expect(updater(2)).toBe(2); // At end, stays at end
   });
@@ -81,7 +97,7 @@ describe('useDirectoryKeyboard', () => {
     result.current.handleListKeyDown(event);
 
     expect(event.preventDefault).toHaveBeenCalled();
-    const updater = setFocusedIndex.mock.calls[0][0];
+    const updater = functionalUpdate(setFocusedIndex.mock.calls[0]);
     expect(updater(1)).toBe(0); // 1 -> 0
     expect(updater(0)).toBe(0); // At start, stays at start
   });
@@ -191,11 +207,11 @@ describe('useDirectoryKeyboard', () => {
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(setContextMenu).toHaveBeenCalledTimes(1);
-    const menuArg = setContextMenu.mock.calls[0][0];
+    const menuArg = setContextMenu.mock.calls[0]?.[0];
     expect(menuArg).not.toBeNull();
-    expect(menuArg.contact).toBe(filtered[1]);
-    expect(typeof menuArg.x).toBe('number');
-    expect(typeof menuArg.y).toBe('number');
+    expect(menuArg?.contact).toBe(filtered[1]);
+    expect(typeof menuArg?.x).toBe('number');
+    expect(typeof menuArg?.y).toBe('number');
   });
 
   it('does not open context menu on Shift+F10 when focusedIndex is -1', () => {

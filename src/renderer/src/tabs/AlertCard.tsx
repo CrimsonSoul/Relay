@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
-import type { AlertBodyFontSize, Severity } from './alertUtils';
+import type { Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
 
 /** Convert an image data URL to grayscale (preserving alpha). */
@@ -15,8 +15,12 @@ function makeGrayscale(dataUrl: string): Promise<string> {
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const { data } = imageData;
-      for (let i = 0; i < data.length; i += 4) {
-        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      for (let i = 0; i + 3 < data.length; i += 4) {
+        const red = data[i];
+        const green = data[i + 1];
+        const blue = data[i + 2];
+        if (red === undefined || green === undefined || blue === undefined) break;
+        const lum = 0.299 * red + 0.587 * green + 0.114 * blue;
         data[i] = data[i + 1] = data[i + 2] = lum;
       }
       ctx.putImageData(imageData, 0, 0);
@@ -64,7 +68,6 @@ export interface AlertCardProps {
   footerLogoDataUrl?: string | null;
   eventTimeStart?: string;
   eventTimeEnd?: string;
-  alertBodyFontSize?: AlertBodyFontSize;
 }
 
 export const AlertCard: React.FC<AlertCardProps> = ({
@@ -78,7 +81,6 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   footerLogoDataUrl,
   eventTimeStart,
   eventTimeEnd,
-  alertBodyFontSize = 'normal',
 }) => {
   const colors = SEVERITY_COLORS[severity];
   const hasContent = hasVisibleText(bodyHtml);
@@ -142,7 +144,9 @@ export const AlertCard: React.FC<AlertCardProps> = ({
 
   useEffect(() => {
     if (!metaRef.current) return;
-    const ro = new ResizeObserver(([entry]) => setMetaWidth(entry.contentRect.width));
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setMetaWidth(entry.contentRect.width);
+    });
     ro.observe(metaRef.current);
     return () => ro.disconnect();
   }, []);
@@ -226,9 +230,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
             </div>
           </div>
           <div
-            className={`alerts-email-body alerts-email-body--font-${alertBodyFontSize}${
-              hasContent ? '' : ' empty'
-            }`}
+            className={`alerts-email-body${hasContent ? '' : ' empty'}`}
             dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
           <div className="alerts-email-footer">

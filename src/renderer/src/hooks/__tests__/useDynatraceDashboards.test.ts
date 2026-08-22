@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 import { useDynatraceDashboards } from '../useDynatraceDashboards';
 
@@ -46,7 +46,7 @@ function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void
 
 describe('useDynatraceDashboards', () => {
   let listener: ((dashboards: DynatraceDashboardState[]) => void) | null = null;
-  let unsubscribe: ReturnType<typeof vi.fn>;
+  let unsubscribe: Mock<() => void>;
   let api: DynatraceBridgeApi;
   const showToast = vi.fn();
 
@@ -63,7 +63,7 @@ describe('useDynatraceDashboards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listener = null;
-    unsubscribe = vi.fn();
+    unsubscribe = vi.fn<() => void>();
     api = {
       listDynatraceDashboards: vi.fn().mockResolvedValue([live]),
       addDynatraceDashboard: vi.fn().mockResolvedValue({ success: true, data: added }),
@@ -71,10 +71,12 @@ describe('useDynatraceDashboards', () => {
       removeDynatraceDashboard: vi.fn().mockResolvedValue({ success: true }),
       openDynatraceDashboard: vi.fn().mockResolvedValue(true),
       clearDynatraceSession: vi.fn().mockResolvedValue({ success: true }),
-      onDynatraceDashboardsChanged: vi.fn((callback) => {
-        listener = callback;
-        return unsubscribe;
-      }),
+      onDynatraceDashboardsChanged: vi.fn(
+        (callback: (dashboards: DynatraceDashboardState[]) => void) => {
+          listener = callback;
+          return unsubscribe;
+        },
+      ),
     };
     installApi(api);
   });

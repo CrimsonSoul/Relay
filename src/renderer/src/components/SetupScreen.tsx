@@ -17,6 +17,7 @@ interface SetupScreenProps {
 function CloseButton() {
   return (
     <button
+      type="button"
       className="setup-close-btn"
       onClick={() => globalThis.window.api?.windowClose()}
       aria-label="Close"
@@ -151,6 +152,11 @@ const TEST_RESULT_MESSAGES: Record<Exclude<TestStatus, 'idle' | 'testing'>, stri
   'invalid-url': 'That address is not a valid LAN server URL.',
 };
 
+const MODE_DESCRIPTIONS = {
+  server: 'Host shared Relay data on this primary station.',
+  client: 'Connect this workstation to the Relay server on your LAN.',
+} as const;
+
 export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [mode, setMode] = useState<'server' | 'client' | null>(null);
   const [port, setPort] = useState('8090');
@@ -270,11 +276,15 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
       <div className="setup-fullscreen">
         <CloseButton />
         <div className="setup-branding">
+          <div className="setup-branding__context">Relay / Setup</div>
           <h1 className="setup-branding__title">Relay</h1>
-          <p className="setup-branding__subtitle">How will this instance be used?</p>
+          <p className="setup-branding__subtitle">Choose this station&apos;s role</p>
+          <p className="setup-branding__description">
+            The server holds shared Relay data. Clients connect to it across the LAN.
+          </p>
         </div>
         <div className="setup-mode-cards">
-          <button onClick={() => setMode('server')} className="setup-mode-card">
+          <button type="button" onClick={() => setMode('server')} className="setup-mode-card">
             <div className="setup-mode-card__icon setup-mode-card__icon--server">
               <ServerIcon />
             </div>
@@ -287,8 +297,11 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 Primary Station
               </span>
             </div>
+            <span className="setup-mode-card__arrow" aria-hidden="true">
+              <SubmitArrow />
+            </span>
           </button>
-          <button onClick={() => setMode('client')} className="setup-mode-card">
+          <button type="button" onClick={() => setMode('client')} className="setup-mode-card">
             <div className="setup-mode-card__icon setup-mode-card__icon--client">
               <ClientIcon />
             </div>
@@ -301,6 +314,9 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 Remote Station
               </span>
             </div>
+            <span className="setup-mode-card__arrow" aria-hidden="true">
+              <SubmitArrow />
+            </span>
           </button>
         </div>
       </div>
@@ -333,6 +349,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
             </span>
           </div>
           <h1 className="setup-config__title">Configure Relay</h1>
+          <p className="setup-config__subtitle">{MODE_DESCRIPTIONS[mode]}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="setup-config__form">
@@ -379,7 +396,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 >
                   {discovering ? 'Searching…' : 'Find servers on this network'}
                 </button>
-                {discovered && discovered.length === 0 && (
+                {discovered?.length === 0 && (
                   <p className="setup-config__hint">
                     No servers found — enter the address shown on the server&apos;s status bar.
                   </p>

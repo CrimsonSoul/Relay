@@ -2,12 +2,19 @@ import React from 'react';
 import type { DataCategory, ExportFormat } from '@shared/ipc';
 
 export const TabButton: React.FC<{
+  id: string;
+  controls: string;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-}> = ({ active, onClick, children }) => (
+}> = ({ id, controls, active, onClick, children }) => (
   <button
+    id={id}
     type="button"
+    role="tab"
+    aria-selected={active}
+    aria-controls={controls}
+    tabIndex={active ? 0 : -1}
     onClick={onClick}
     className={`dm-tab-btn${active ? ' dm-tab-btn--active' : ''}`}
   >
@@ -23,7 +30,7 @@ export const StatCard: React.FC<{
   <div className="dm-stat-card">
     <div className="dm-stat-count">{count}</div>
     <div className="dm-stat-label">{label}</div>
-    {lastUpdated && lastUpdated > 0 && (
+    {typeof lastUpdated === 'number' && lastUpdated > 0 && (
       <div className="dm-stat-updated">Updated {new Date(lastUpdated).toLocaleDateString()}</div>
     )}
   </div>
@@ -47,7 +54,6 @@ export const CategorySelect: React.FC<{
     <option value="bridge_history">Bridge History</option>
     <option value="alert_history">Alert History</option>
     <option value="notes">Notes</option>
-    <option value="standalone_notes">Standalone Notes</option>
   </select>
 );
 

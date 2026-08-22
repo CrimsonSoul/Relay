@@ -3,6 +3,9 @@ import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
 
+/** Used only if the restart schedule is ever emptied — the schedule below is never empty. */
+const FALLBACK_RESTART_BACKOFF_MS = 1_000;
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -10,6 +13,7 @@ function delay(ms: number): Promise<void> {
 export interface PocketBaseConfig {
   binaryPath: string;
   dataDir: string;
+  hooksDir?: string;
   host: string;
   port: number;
   platform?: NodeJS.Platform;
@@ -39,11 +43,15 @@ export class PocketBaseProcess {
   }
 
   getSpawnArgs(): string[] {
-    return [
+    const args = [
       'serve',
       `--http=${this.config.host}:${this.config.port}`,
       `--dir=${this.config.dataDir}`,
     ];
+    if (this.config.hooksDir) {
+      args.push(`--hooksDir=${this.config.hooksDir}`, '--hooksWatch=false');
+    }
+    return args;
   }
 
   isRunning(): boolean {
@@ -55,6 +63,10 @@ export class PocketBaseProcess {
   }
 
   async start(): Promise<void> {
+    // Starting cancels any earlier stop intent. stop()/killSync() latch the flag
+    // even when no child is alive, so a reused instance would otherwise spawn a
+    // child whose crashes are silently ignored.
+    this.stopping = false;
     this.cleanupStalePocketBaseProcesses();
 
     const args = this.getSpawnArgs();
@@ -129,8 +141,14 @@ export class PocketBaseProcess {
   }
 
   async stop(): Promise<void> {
-    if (!this.child || this.stopping) return;
+    if (this.stopping) return;
+    // Claim the stop intent before the "no child" check. Between a crash and the
+    // end of its restart backoff there is no child, and handleCrash() only honours
+    // a stop that was recorded before the delay elapsed. Returning early without
+    // it lets the retired instance spawn a second server that kills whatever is
+    // already listening on the port.
     this.stopping = true;
+    if (!this.child) return;
 
     logger.info('Stopping PocketBase');
 
@@ -180,8 +198,10 @@ export class PocketBaseProcess {
 
   /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */
   killSync(): void {
-    if (!this.child?.pid) return;
+    // Recorded before the "no child" check so a restart backoff still running at
+    // quit time cannot resurrect PocketBase after the app has torn everything down.
     this.stopping = true;
+    if (!this.child?.pid) return;
     const pid = this.child.pid;
     logger.info('Force-killing PocketBase (sync)', { pid });
 
@@ -311,8 +331,8 @@ export class PocketBaseProcess {
 
     this.restartCount++;
     if (this.restartCount <= this.maxRestarts) {
-      const backoffMs =
-        this.restartDelaysMs[Math.min(this.restartCount - 1, this.restartDelaysMs.length - 1)];
+      const backoffIndex = Math.min(this.restartCount - 1, this.restartDelaysMs.length - 1);
+      const backoffMs = this.restartDelaysMs[backoffIndex] ?? FALLBACK_RESTART_BACKOFF_MS;
       logger.warn(
         `Restarting PocketBase in ${backoffMs}ms (attempt ${this.restartCount}/${this.maxRestarts})`,
       );
@@ -350,6 +370,7 @@ export class PocketBaseProcess {
   private async waitForHealthy(timeoutMs = 10000): Promise<void> {
     const start = Date.now();
     const healthUrl = `${this.getLocalUrl()}/api/health`;
+    let retryDelayMs = 20;
 
     while (Date.now() - start < timeoutMs) {
       try {
@@ -358,7 +379,10 @@ export class PocketBaseProcess {
       } catch {
         // Not ready yet
       }
-      await new Promise((r) => setTimeout(r, 200));
+      const remainingMs = timeoutMs - (Date.now() - start);
+      if (remainingMs <= 0) break;
+      await delay(Math.min(retryDelayMs, remainingMs));
+      retryDelayMs = Math.min(retryDelayMs * 2, 200);
     }
 
     throw new Error(`PocketBase failed to become healthy within ${timeoutMs}ms`);

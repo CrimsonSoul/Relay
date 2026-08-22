@@ -28,6 +28,7 @@ describe('DataManagerOverview', () => {
     expect(screen.getByText('7')).toBeInTheDocument();
     expect(screen.getByText('15')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
   });
 
   it('renders label names for each stat category', () => {
@@ -57,6 +58,7 @@ describe('DataManagerImport', () => {
     importCategory: 'contacts' as const,
     setImportCategory: vi.fn(),
     importing: false,
+    importProgress: null,
     onImport: vi.fn(),
     lastImportResult: null,
     onClearResult: vi.fn(),
@@ -81,6 +83,31 @@ describe('DataManagerImport', () => {
     render(<DataManagerImport {...defaultImportProps} importing={true} />);
     const btn = screen.getByText('Importing...').closest('button');
     expect(btn).toBeDisabled();
+  });
+
+  it('shows exact processed, total, and outcome counts while importing', () => {
+    render(
+      <DataManagerImport
+        {...defaultImportProps}
+        importing
+        importProgress={{
+          processed: 977,
+          total: 977,
+          imported: 900,
+          updated: 72,
+          errors: 5,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Processed 977 of 977')).toBeInTheDocument();
+    expect(screen.getByText('Imported 900 · Updated 72 · Errors 5')).toBeInTheDocument();
+  });
+
+  it('does not show progress before an import starts', () => {
+    render(<DataManagerImport {...defaultImportProps} />);
+
+    expect(screen.queryByText(/Processed/)).not.toBeInTheDocument();
   });
 
   it('calls onImport when Import button is clicked', () => {
@@ -161,6 +188,12 @@ describe('DataManagerImport', () => {
     fireEvent.change(select, { target: { value: 'servers' } });
     expect(setImportCategory).toHaveBeenCalledWith('servers');
   });
+
+  it('does not offer Standalone Notes as an import category', () => {
+    render(<DataManagerImport {...defaultImportProps} />);
+
+    expect(screen.queryByRole('option', { name: 'Standalone Notes' })).not.toBeInTheDocument();
+  });
 });
 
 // ── DataManagerExport ────────────────────────────────────────────────────────
@@ -225,14 +258,21 @@ describe('DataManagerExport', () => {
   it('has two selects (category and format)', () => {
     render(<DataManagerExport {...defaultExportProps} />);
     const selects = screen.getAllByRole('combobox');
-    expect(selects.length).toBe(2);
+    expect(selects).toHaveLength(2);
   });
 
   it('calls setExportFormat when format select changes', () => {
     const setExportFormat = vi.fn();
     render(<DataManagerExport {...defaultExportProps} setExportFormat={setExportFormat} />);
     const [, formatSelect] = screen.getAllByRole('combobox');
+    if (!formatSelect) throw new Error('Expected a format select alongside the category select');
     fireEvent.change(formatSelect, { target: { value: 'csv' } });
     expect(setExportFormat).toHaveBeenCalledWith('csv');
+  });
+
+  it('does not offer Standalone Notes as an export category', () => {
+    render(<DataManagerExport {...defaultExportProps} />);
+
+    expect(screen.queryByRole('option', { name: 'Standalone Notes' })).not.toBeInTheDocument();
   });
 });

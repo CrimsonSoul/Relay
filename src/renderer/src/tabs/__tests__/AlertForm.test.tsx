@@ -1,8 +1,13 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AlertForm, type AlertFormHandle } from '../AlertForm';
+import { AlertForm as BaseAlertForm, type AlertFormProps } from '../AlertForm';
+import {
+  AlertDraftProvider,
+  initialAlertDraftState,
+  type AlertDraftState,
+} from '../alerts/AlertDraftContext';
 
 // --- Mocks ---
 
@@ -22,20 +27,11 @@ vi.mock('../alerts/AlertSeveritySelector', () => ({
 }));
 
 vi.mock('../alerts/AlertBodyEditor', () => ({
-  AlertBodyEditor: React.forwardRef(
-    (
-      { setBodyHtml }: { setBodyHtml: (s: string) => void },
-      ref: React.Ref<{ setEditorContent: (html: string) => void }>,
-    ) => {
-      React.useImperativeHandle(ref, () => ({
-        setEditorContent: vi.fn(),
-      }));
-      return (
-        <div data-testid="body-editor">
-          <button onClick={() => setBodyHtml('<p>test</p>')}>set-body</button>
-        </div>
-      );
-    },
+  AlertBodyEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+    <div data-testid="body-editor">
+      <span data-testid="body-editor-value">{value}</span>
+      <button onClick={() => onChange('<p>test</p>')}>set-body</button>
+    </div>
   ),
 }));
 
@@ -57,35 +53,71 @@ vi.mock('../alerts/AlertLogoUpload', () => ({
 
 const defaultProps = {
   severity: 'ISSUE' as const,
-  setSeverity: vi.fn(),
   subject: '',
-  setSubject: vi.fn(),
   bodyHtml: '',
-  setBodyHtml: vi.fn(),
   sender: '',
-  setSender: vi.fn(),
   recipient: '',
-  setRecipient: vi.fn(),
+  clickThroughUrl: '',
   updateNumber: 0,
-  setUpdateNumber: vi.fn(),
   eventTimeStart: '',
-  setEventTimeStart: vi.fn(),
   eventTimeEnd: '',
-  setEventTimeEnd: vi.fn(),
   eventTimeSourceTz: 'America/Chicago',
-  setEventTimeSourceTz: vi.fn(),
   logoDataUrl: null,
   onSetLogo: vi.fn(),
   onRemoveLogo: vi.fn(),
   footerLogoDataUrl: null,
   onSetFooterLogo: vi.fn(),
   onRemoveFooterLogo: vi.fn(),
-  isCompact: false,
-  onToggleCompact: vi.fn(),
-  isEnhanced: false,
-  onToggleEnhanced: vi.fn(),
-  alertBodyFontSize: 'normal' as const,
-  setAlertBodyFontSize: vi.fn(),
+};
+
+type AlertFormHarnessProps = AlertFormProps & Partial<AlertDraftState> & Record<string, unknown>;
+
+const AlertForm: React.FC<AlertFormHarnessProps> = ({
+  severity = defaultProps.severity,
+  subject = defaultProps.subject,
+  bodyHtml = defaultProps.bodyHtml,
+  sender = defaultProps.sender,
+  recipient = defaultProps.recipient,
+  clickThroughUrl = defaultProps.clickThroughUrl,
+  updateNumber = defaultProps.updateNumber,
+  eventTimeStart = defaultProps.eventTimeStart,
+  eventTimeEnd = defaultProps.eventTimeEnd,
+  eventTimeSourceTz = defaultProps.eventTimeSourceTz,
+  logoDataUrl,
+  onSetLogo,
+  onRemoveLogo,
+  footerLogoDataUrl,
+  onSetFooterLogo,
+  onRemoveFooterLogo,
+  attentionRequest,
+}) => {
+  const draftState = {
+    ...initialAlertDraftState,
+    severity,
+    subject,
+    bodyHtml,
+    sender,
+    recipient,
+    clickThroughUrl,
+    updateNumber,
+    eventTimeStart,
+    eventTimeEnd,
+    eventTimeSourceTz,
+  };
+
+  return (
+    <AlertDraftProvider key={JSON.stringify(draftState)} initialState={draftState}>
+      <BaseAlertForm
+        logoDataUrl={logoDataUrl}
+        onSetLogo={onSetLogo}
+        onRemoveLogo={onRemoveLogo}
+        footerLogoDataUrl={footerLogoDataUrl}
+        onSetFooterLogo={onSetFooterLogo}
+        onRemoveFooterLogo={onRemoveFooterLogo}
+        attentionRequest={attentionRequest}
+      />
+    </AlertDraftProvider>
+  );
 };
 
 describe('AlertForm', () => {
@@ -141,6 +173,7 @@ describe('AlertForm', () => {
     expect(brandingToggle).toContain('border-radius: 2px');
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Selector presence, guided section structure, and instructional copy are separate UI contracts with different assertions.
   it('renders the severity selector', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByTestId('severity-selector')).toBeInTheDocument();
@@ -173,8 +206,67 @@ describe('AlertForm', () => {
   it('uses one optional marker for the delivery section', () => {
     render(<AlertForm {...defaultProps} />);
 
-    const deliveryStep = screen.getByRole('region', { name: 'Add delivery details' });
+    const deliveryStep = screen.getByRole('group', { name: 'Optional delivery details' });
     expect(within(deliveryStep).getAllByText('OPTIONAL')).toHaveLength(1);
+  });
+
+  it('collapses optional delivery details by default and omits unconfigured categories', () => {
+    render(<AlertForm {...defaultProps} />);
+    const disclosure = screen.getByRole('group', { name: 'Optional delivery details' });
+
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(screen.queryByText('Routing configured')).toBeNull();
+    expect(screen.queryByText('Link ready')).toBeNull();
+    expect(screen.queryByText('Timing configured')).toBeNull();
+    expect(screen.queryByText('Branding customized')).toBeNull();
+  });
+
+  it('summarizes only configured optional categories without opening the section', () => {
+    render(
+      <AlertForm
+        {...defaultProps}
+        sender="IT"
+        clickThroughUrl="https://status.example.com"
+        updateNumber={2}
+        logoDataUrl="data:image/png;base64,logo"
+      />,
+    );
+
+    expect(screen.getByText('Routing configured')).toBeVisible();
+    expect(screen.getByText('Link ready')).toBeVisible();
+    expect(screen.getByText('Timing configured')).toBeVisible();
+    expect(screen.getByText('Branding customized')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
+      'open',
+    );
+  });
+
+  it('updates configured-state summary on a loaded draft without forcing disclosure open', () => {
+    const { rerender } = render(<AlertForm {...defaultProps} />);
+
+    rerender(<AlertForm {...defaultProps} sender="NOC" eventTimeStart="2026-08-05T14:00" />);
+
+    expect(screen.getByText('Routing configured')).toBeVisible();
+    expect(screen.getByText('Timing configured')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
+      'open',
+    );
+  });
+
+  it('expands and focuses the requested optional field exactly once', async () => {
+    const request = { requestId: 3, field: 'clickThroughUrl' as const };
+    const { rerender } = render(<AlertForm {...defaultProps} attentionRequest={request} />);
+
+    await waitFor(() => expect(screen.getByLabelText('Clickable image URL')).toHaveFocus());
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).toHaveAttribute(
+      'open',
+    );
+
+    fireEvent.click(screen.getByText('Add delivery details'));
+    rerender(<AlertForm {...defaultProps} attentionRequest={request} />);
+    expect(screen.getByRole('group', { name: 'Optional delivery details' })).not.toHaveAttribute(
+      'open',
+    );
   });
 
   it('marks the message step done when subject and body both have content', () => {
@@ -213,24 +305,53 @@ describe('AlertForm', () => {
     expect(screen.getByLabelText(/To \/ Recipient/)).toBeInTheDocument();
   });
 
-  it('calls setSubject on subject input change', () => {
+  it('updates the draft subject on input change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/Subject/), { target: { value: 'Test Subject' } });
-    expect(defaultProps.setSubject).toHaveBeenCalledWith('Test Subject');
+    const input = screen.getByLabelText(/Subject/);
+    fireEvent.change(input, { target: { value: 'Test Subject' } });
+    expect(input).toHaveValue('Test Subject');
   });
 
-  it('calls setSender on sender input change', () => {
+  it('updates the draft sender on input change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/Sender/), { target: { value: 'IT Team' } });
-    expect(defaultProps.setSender).toHaveBeenCalledWith('IT Team');
+    const input = screen.getByLabelText(/Sender/);
+    fireEvent.change(input, { target: { value: 'IT Team' } });
+    expect(input).toHaveValue('IT Team');
   });
 
-  it('calls setRecipient on recipient input change', () => {
+  it('updates the draft recipient on input change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/To \/ Recipient/), {
+    const input = screen.getByLabelText(/To \/ Recipient/);
+    fireEvent.change(input, {
       target: { value: 'All Staff' },
     });
-    expect(defaultProps.setRecipient).toHaveBeenCalledWith('All Staff');
+    expect(input).toHaveValue('All Staff');
+  });
+
+  it('renders one optional whole-image click-through URL field', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    expect(screen.getByLabelText('Clickable image URL')).toBeInTheDocument();
+    expect(screen.getByText(/entire alert image open one URL/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add click link/i })).not.toBeInTheDocument();
+  });
+
+  it('updates and normalizes a valid click-through URL', () => {
+    render(<AlertForm {...defaultProps} />);
+    const input = screen.getByLabelText('Clickable image URL');
+    fireEvent.change(input, { target: { value: 'status.example.com/incident' } });
+    expect(input).toHaveValue('status.example.com/incident');
+
+    fireEvent.blur(input);
+    expect(input).toHaveValue('https://status.example.com/incident');
+    expect(screen.getByText('LINK READY')).toBeInTheDocument();
+  });
+
+  it('marks unsafe click-through URLs invalid', () => {
+    render(<AlertForm {...defaultProps} clickThroughUrl="javascript:alert(1)" />);
+
+    expect(screen.getByLabelText('Clickable image URL')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a valid HTTP or HTTPS address.')).toBeInTheDocument();
   });
 
   it('shows subject char count', () => {
@@ -245,6 +366,7 @@ describe('AlertForm', () => {
     expect(charCount).toBeInTheDocument();
   });
 
+  // eslint-disable-next-line sonarjs/parameterized-tests -- Default toggle state, interaction behavior, and populated stepper rendering exercise distinct update-number paths.
   it('renders update number toggle (OFF by default)', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByText('OFF')).toBeInTheDocument();
@@ -253,7 +375,8 @@ describe('AlertForm', () => {
   it('toggles update number on click', () => {
     render(<AlertForm {...defaultProps} />);
     fireEvent.click(screen.getByText('OFF'));
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(1);
+    expect(screen.getByText('ON')).toBeInTheDocument();
+    expect(screen.getByText('#1')).toBeInTheDocument();
   });
 
   it('shows stepper when updateNumber > 0', () => {
@@ -293,23 +416,16 @@ describe('AlertForm', () => {
     expect(screen.getByAltText('Footer logo')).toBeInTheDocument();
   });
 
-  it('exposes setEditorContent via ref', () => {
-    const ref = React.createRef<AlertFormHandle>();
-    render(<AlertForm {...defaultProps} ref={ref} />);
-    expect(ref.current).toBeTruthy();
-    expect(typeof ref.current!.setEditorContent).toBe('function');
-  });
-
   it('clicks ON to turn off update number', () => {
     render(<AlertForm {...defaultProps} updateNumber={2} />);
     fireEvent.click(screen.getByText('ON'));
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(0);
+    expect(screen.getByText('OFF')).toBeInTheDocument();
   });
 
   it('increments update number with + button', () => {
     render(<AlertForm {...defaultProps} updateNumber={2} />);
     fireEvent.click(screen.getByText('+'));
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(3);
+    expect(screen.getByText('#3')).toBeInTheDocument();
   });
 
   it('decrements update number with - button but not below 1', () => {
@@ -317,14 +433,14 @@ describe('AlertForm', () => {
     // The minus button text is a unicode minus
     const minusBtn = screen.getByText('\u2212');
     fireEvent.click(minusBtn);
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(1); // max(1, 1-1) = 1
+    expect(screen.getByText('#1')).toBeInTheDocument();
   });
 
   it('decrements update number correctly when > 1', () => {
     render(<AlertForm {...defaultProps} updateNumber={3} />);
     const minusBtn = screen.getByText('\u2212');
     fireEvent.click(minusBtn);
-    expect(defaultProps.setUpdateNumber).toHaveBeenCalledWith(2);
+    expect(screen.getByText('#2')).toBeInTheDocument();
   });
 
   it('does not show stepper when updateNumber is 0', () => {
@@ -332,29 +448,32 @@ describe('AlertForm', () => {
     expect(screen.queryByText('+')).not.toBeInTheDocument();
   });
 
-  it('calls setEventTimeStart on start time change', () => {
+  it('updates the draft start time on change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-04-01T10:00' } });
-    expect(defaultProps.setEventTimeStart).toHaveBeenCalledWith('2026-04-01T10:00');
+    const input = screen.getByLabelText('Start');
+    fireEvent.change(input, { target: { value: '2026-04-01T10:00' } });
+    expect(input).toHaveValue('2026-04-01T10:00');
   });
 
-  it('calls setEventTimeEnd on end time change', () => {
+  it('updates the draft end time on change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText(/End/), { target: { value: '2026-04-01T14:00' } });
-    expect(defaultProps.setEventTimeEnd).toHaveBeenCalledWith('2026-04-01T14:00');
+    const input = screen.getByLabelText(/End/);
+    fireEvent.change(input, { target: { value: '2026-04-01T14:00' } });
+    expect(input).toHaveValue('2026-04-01T14:00');
   });
 
-  it('calls setEventTimeSourceTz on timezone change', () => {
+  it('updates the draft source timezone on change', () => {
     render(<AlertForm {...defaultProps} />);
-    fireEvent.change(screen.getByLabelText('Source TZ'), { target: { value: 'UTC' } });
-    expect(defaultProps.setEventTimeSourceTz).toHaveBeenCalledWith('UTC');
+    const select = screen.getByLabelText('Source TZ');
+    fireEvent.change(select, { target: { value: 'UTC' } });
+    expect(select).toHaveValue('UTC');
   });
 
   it('clears both event times when Clear is clicked', () => {
     render(<AlertForm {...defaultProps} eventTimeStart="2026-01-01T10:00" />);
     fireEvent.click(screen.getByText('Clear'));
-    expect(defaultProps.setEventTimeStart).toHaveBeenCalledWith('');
-    expect(defaultProps.setEventTimeEnd).toHaveBeenCalledWith('');
+    expect(screen.getByLabelText('Start')).toHaveValue('');
+    expect(screen.getByLabelText(/End/)).toHaveValue('');
   });
 
   it('does not show clear button when no event time is set', () => {
@@ -397,16 +516,16 @@ describe('AlertForm', () => {
     expect(screen.getByText('0')).toBeInTheDocument();
   });
 
-  it('calls setSeverity through severity selector mock', () => {
+  it('updates severity through the severity selector', () => {
     render(<AlertForm {...defaultProps} />);
     fireEvent.click(screen.getByText('change-severity'));
-    expect(defaultProps.setSeverity).toHaveBeenCalledWith('MAINTENANCE');
+    expect(screen.getByTestId('severity-selector')).toHaveTextContent('MAINTENANCE');
   });
 
-  it('calls setBodyHtml through body editor mock', () => {
+  it('updates body HTML through the body editor', () => {
     render(<AlertForm {...defaultProps} />);
     fireEvent.click(screen.getByText('set-body'));
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('<p>test</p>');
+    expect(screen.getByTestId('body-editor-value')).toHaveTextContent('<p>test</p>');
   });
 
   it('calls onSetLogo through logo upload mock', () => {
@@ -440,36 +559,17 @@ describe('AlertForm', () => {
     expect(screen.getByText('Displays as Central Time on card')).toBeInTheDocument();
   });
 
-  it('offers only normal and large alert body font sizes', () => {
-    const setAlertBodyFontSize = vi.fn();
-    render(<AlertForm {...defaultProps} setAlertBodyFontSize={setAlertBodyFontSize} />);
-
-    const group = screen.getByRole('group', { name: 'Alert font size' });
-    expect(within(group).getByRole('button', { name: 'Normal' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    fireEvent.click(within(group).getByRole('button', { name: 'Large' }));
-
-    expect(setAlertBodyFontSize).toHaveBeenCalledWith('large');
-    expect(within(group).queryByRole('button', { name: 'Small' })).not.toBeInTheDocument();
-    expect(within(group).queryByRole('button', { name: 'XL' })).not.toBeInTheDocument();
-  });
-
-  it('places font size before the body editor and keeps the control compact', () => {
+  it('does not render the retired alert font size control', () => {
     render(<AlertForm {...defaultProps} />);
 
-    const group = screen.getByRole('group', { name: 'Alert font size' });
     const bodyEditor = screen.getByTestId('body-editor');
     const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
-    const controlRule = /\.alerts-font-size-control\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(group.compareDocumentPosition(bodyEditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(controlRule).toContain('grid-template-columns: repeat(2, minmax(112px, 140px))');
-    expect(controlRule).toContain('width: max-content');
-    expect(controlRule).toContain('max-width: 100%');
+    expect(screen.queryByRole('group', { name: 'Alert font size' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Alert Font Size')).not.toBeInTheDocument();
+    expect(bodyEditor).toBeInTheDocument();
+    expect(css).not.toContain('.alerts-font-size-control');
+    expect(css).not.toContain('.alerts-font-size-btn');
   });
 
   it('renders all timezone options in the Source TZ dropdown', () => {

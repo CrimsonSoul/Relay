@@ -1,16 +1,18 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
-import {
+import * as SidebarIcons from '../../sidebar/SidebarIcons';
+
+const {
   ComposeIcon,
   PersonnelIcon,
   PeopleIcon,
   ServersIcon,
-  NotesIcon,
   StatusIcon,
+  ProblemsIcon,
   SettingsIcon,
   AppIcon,
-} from '../../sidebar/SidebarIcons';
+} = SidebarIcons;
 
 describe('SidebarIcons', () => {
   const icons20 = [
@@ -18,8 +20,8 @@ describe('SidebarIcons', () => {
     { name: 'PersonnelIcon', Component: PersonnelIcon },
     { name: 'PeopleIcon', Component: PeopleIcon },
     { name: 'ServersIcon', Component: ServersIcon },
-    { name: 'NotesIcon', Component: NotesIcon },
     { name: 'StatusIcon', Component: StatusIcon },
+    { name: 'ProblemsIcon', Component: ProblemsIcon },
     { name: 'SettingsIcon', Component: SettingsIcon },
   ];
 
@@ -39,5 +41,9 @@ describe('SidebarIcons', () => {
     expect(svg).toBeTruthy();
     expect(svg?.getAttribute('width')).toBe('32');
     expect(svg?.getAttribute('height')).toBe('32');
+  });
+
+  it('does not export the retired standalone Notes sidebar icon', () => {
+    expect(SidebarIcons).not.toHaveProperty('NotesIcon');
   });
 });

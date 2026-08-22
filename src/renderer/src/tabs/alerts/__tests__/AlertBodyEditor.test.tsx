@@ -2,13 +2,13 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AlertBodyEditor, type AlertBodyEditorHandle } from '../AlertBodyEditor';
+import { AlertBodyEditor } from '../AlertBodyEditor';
 
 // --- Mocks ---
 
-vi.mock('../../alertUtils', () => ({
-  sanitizeHtml: (html: string) => html,
-  escapeHtml: (text: string) => text,
+const showToastMock = vi.fn();
+vi.mock('../../../components/Toast', () => ({
+  useToast: () => ({ showToast: showToastMock }),
 }));
 
 vi.mock('../HighlightPopover', () => ({
@@ -43,11 +43,8 @@ vi.mock('../HighlightPopover', () => ({
 }));
 
 const defaultProps = {
-  setBodyHtml: vi.fn(),
-  isCompact: false,
-  onToggleCompact: vi.fn(),
-  isEnhanced: false,
-  onToggleEnhanced: vi.fn(),
+  value: '',
+  onChange: vi.fn(),
 };
 
 // Stub execCommand and queryCommandState since jsdom does not define them
@@ -55,6 +52,12 @@ const defaultProps = {
 beforeEach(() => {
   document.execCommand = vi.fn().mockReturnValue(true);
   document.queryCommandState = vi.fn().mockReturnValue(false);
+  Object.defineProperty(window, 'api', {
+    configurable: true,
+    value: {
+      selectAlertBodyImage: vi.fn(),
+    },
+  });
 });
 
 describe('AlertBodyEditor', () => {
@@ -91,7 +94,7 @@ describe('AlertBodyEditor', () => {
   });
 
   it('exposes toolbar controls with clear accessible labels and pressed states', () => {
-    render(<AlertBodyEditor {...defaultProps} isCompact={true} />);
+    render(<AlertBodyEditor {...defaultProps} />);
 
     expect(screen.getByRole('toolbar', { name: 'Body formatting' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
@@ -102,14 +105,9 @@ describe('AlertBodyEditor', () => {
     );
     expect(screen.getByRole('button', { name: 'Bullet list' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Numbered list' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Compact message' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('button', { name: 'Enhance message' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(screen.getByRole('button', { name: 'Insert image' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Compact message' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enhance message' })).not.toBeInTheDocument();
   });
 
   it('renders list formatting buttons', () => {
@@ -123,94 +121,187 @@ describe('AlertBodyEditor', () => {
     expect(screen.getByTestId('highlight-popover')).toBeInTheDocument();
   });
 
-  it('renders compact toggle button', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Compact/);
-    expect(btn).toBeInTheDocument();
-  });
-
-  it('renders enhance toggle button', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Enhance/);
-    expect(btn).toBeInTheDocument();
-  });
-
-  it('calls onToggleCompact when compact button is clicked', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Compact/);
-    fireEvent.mouseDown(btn);
-    expect(defaultProps.onToggleCompact).toHaveBeenCalled();
-  });
-
-  it('calls onToggleEnhanced when enhance button is clicked', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Enhance/);
-    fireEvent.mouseDown(btn);
-    expect(defaultProps.onToggleEnhanced).toHaveBeenCalled();
-  });
-
-  it('adds active class when isCompact is true', () => {
-    render(<AlertBodyEditor {...defaultProps} isCompact={true} />);
-    const btn = screen.getByTitle(/Compact/);
-    expect(btn.className).toContain('active');
-  });
-
-  it('adds active class when isEnhanced is true', () => {
-    render(<AlertBodyEditor {...defaultProps} isEnhanced={true} />);
-    const btn = screen.getByTitle(/Enhance/);
-    expect(btn.className).toContain('active');
-  });
-
-  it('calls setBodyHtml on editor input', () => {
+  it('calls onChange on editor input', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     fireEvent.input(editor);
-    expect(defaultProps.setBodyHtml).toHaveBeenCalled();
+    expect(defaultProps.onChange).toHaveBeenCalled();
   });
 
-  it('exposes setEditorContent via ref', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    expect(ref.current).toBeTruthy();
-    expect(typeof ref.current!.setEditorContent).toBe('function');
+  it('synchronizes a new controlled value loaded from history', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<AlertBodyEditor {...defaultProps} value="" onChange={onChange} />);
+
+    rerender(
+      <AlertBodyEditor
+        {...defaultProps}
+        value={'<p onclick="alert(1)">History <script>body</script></p>'}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByRole('textbox', { name: 'Alert body' })).toHaveProperty(
+      'innerHTML',
+      '<p>History body</p>',
+    );
   });
 
-  it('sets editor content via ref', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent('<p>New content</p>');
+  it('clears stale editor content when the controlled value is reset', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <AlertBodyEditor {...defaultProps} value="<p>Draft body</p>" onChange={onChange} />,
+    );
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    editor.innerHTML = '<p>Draft body</p>';
+
+    rerender(<AlertBodyEditor {...defaultProps} value="" onChange={onChange} />);
+
+    expect(editor).toHaveProperty('innerHTML', '');
+  });
+
+  it('preserves the caret when ordinary input is echoed through the controlled value', () => {
+    const ControlledEditor = () => {
+      const [value, setValue] = React.useState('');
+      return (
+        <>
+          <AlertBodyEditor {...defaultProps} value={value} onChange={setValue} />
+          <output data-testid="controlled-body-value">{value}</output>
+        </>
+      );
+    };
+    render(<ControlledEditor />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    editor.innerHTML = '<p>Draft body</p>';
+    const text = editor.querySelector('p')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(text, 5);
+    range.collapse(true);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.input(editor);
+
+    expect(screen.getByTestId('controlled-body-value')).toHaveTextContent('<p>Draft body</p>');
+    expect(selection.anchorNode).toBe(text);
+    expect(selection.anchorOffset).toBe(5);
+  });
+
+  it('sets editor content from its controlled value', () => {
+    render(<AlertBodyEditor {...defaultProps} value="<p>New content</p>" />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     expect(editor.innerHTML).toBe('<p>New content</p>');
   });
 
-  it('applies bold formatting on mouseDown', () => {
+  it.each([
+    ['Bold (Cmd+B)', 'bold'],
+    ['Italic (Cmd+I)', 'italic'],
+    ['Underline (Cmd+U)', 'underline'],
+    ['Bullet List', 'insertUnorderedList'],
+    ['Numbered List', 'insertOrderedList'],
+  ])('applies %s formatting on mouseDown', (buttonTitle, command) => {
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Bold (Cmd+B)'));
-    expect(document.execCommand).toHaveBeenCalledWith('bold');
+    fireEvent.mouseDown(screen.getByTitle(buttonTitle));
+    expect(document.execCommand).toHaveBeenCalledWith(command);
   });
 
-  it('applies italic formatting on mouseDown', () => {
+  it.each([
+    ['Bullet list', 'insertUnorderedList'],
+    ['Numbered list', 'insertOrderedList'],
+  ])('applies %s formatting from the keyboard', (buttonName, command) => {
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Italic (Cmd+I)'));
-    expect(document.execCommand).toHaveBeenCalledWith('italic');
+    // Enter/Space on a focused button dispatches click with detail 0 and never mousedown,
+    // so a mousedown-only toolbar is unreachable without a mouse.
+    fireEvent.click(screen.getByRole('button', { name: buttonName }));
+    expect(document.execCommand).toHaveBeenCalledWith(command);
   });
 
-  it('applies underline formatting on mouseDown', () => {
+  it('inserts an alert image from the keyboard', async () => {
+    const bridge = window.api as NonNullable<typeof window.api>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({ success: true, data: 'data:img' });
+
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Underline (Cmd+U)'));
-    expect(document.execCommand).toHaveBeenCalledWith('underline');
+    fireEvent.click(screen.getByRole('button', { name: 'Insert image' }));
+
+    await vi.waitFor(() => {
+      expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    });
   });
 
-  it('applies bullet list formatting', () => {
+  it('applies a toolbar command once for a real mouse press', () => {
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Bullet List'));
-    expect(document.execCommand).toHaveBeenCalledWith('insertUnorderedList');
+    const button = screen.getByRole('button', { name: 'Bullet list' });
+
+    // A mouse press fires mousedown then click; only one of them may run the command
+    fireEvent.mouseDown(button);
+    fireEvent.click(button, { detail: 1 });
+
+    expect(document.execCommand).toHaveBeenCalledTimes(1);
   });
 
-  it('applies numbered list formatting', () => {
+  it('selects and inserts an alert image block through the toolbar', async () => {
+    const selectedImage = 'data:image/jpeg;base64,SEL';
+    const bridge = window.api as NonNullable<typeof window.api>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+      success: true,
+      data: selectedImage,
+    });
+
     render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Numbered List'));
-    expect(document.execCommand).toHaveBeenCalledWith('insertOrderedList');
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+
+    await vi.waitFor(() => {
+      expect(document.execCommand).toHaveBeenCalledWith(
+        'insertHTML',
+        false,
+        `<p><img src="${selectedImage}" alt="Alert image" class="alert-body-image"></p>`,
+      );
+    });
+    expect(defaultProps.onChange).toHaveBeenCalled();
+  });
+
+  it('does nothing when image selection is cancelled', async () => {
+    const bridge = window.api as NonNullable<typeof window.api>;
+    let resolveSelection!: (result: { success: boolean; error: string }) => void;
+    const selection = new Promise<{ success: boolean; error: string }>((resolve) => {
+      resolveSelection = resolve;
+    });
+    vi.mocked(bridge.selectAlertBodyImage).mockReturnValue(selection);
+
+    render(<AlertBodyEditor {...defaultProps} />);
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+
+    expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    await act(async () => {
+      resolveSelection({ success: false, error: 'Cancelled' });
+    });
+
+    expect(document.execCommand).not.toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      expect.stringContaining('<img'),
+    );
+    expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces image selection errors as a toast', async () => {
+    const bridge = window.api as NonNullable<typeof window.api>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+      success: false,
+      error: 'Image must be under 5MB',
+    });
+
+    render(<AlertBodyEditor {...defaultProps} />);
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+
+    await vi.waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith('Image must be under 5MB', 'error');
+    });
+    expect(document.execCommand).not.toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      expect.stringContaining('<img'),
+    );
   });
 
   it('handles paste with HTML content', () => {
@@ -243,32 +334,15 @@ describe('AlertBodyEditor', () => {
     );
   });
 
-  it('handles Cmd+1 keydown to apply first highlight', () => {
+  it.each([
+    ['Cmd+1 highlight', { key: '1', metaKey: true }],
+    ['Cmd+0 clear', { key: '0', metaKey: true }],
+    ['unmodified key', { key: '1' }],
+    ['Ctrl shortcut', { key: '2', ctrlKey: true }],
+  ])('handles the %s keydown path without crashing', (_case, init) => {
     render(<AlertBodyEditor {...defaultProps} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '1', metaKey: true });
-    // Should not crash — highlight needs selection which is empty in test
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Cmd+0 keydown to clear highlight', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '0', metaKey: true });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('ignores keydown without metaKey or ctrlKey', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '1' });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Ctrl+key shortcuts (non-Mac)', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '2', ctrlKey: true });
+    fireEvent.keyDown(editor, init);
     expect(editor).toBeInTheDocument();
   });
 
@@ -282,24 +356,22 @@ describe('AlertBodyEditor', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     // Clicking apply without a selection should not crash
     fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
-    // With no selection, setBodyHtml is not called
-    expect(defaultProps.setBodyHtml).not.toHaveBeenCalled();
+    // With no selection, onChange is not called
+    expect(defaultProps.onChange).not.toHaveBeenCalled();
   });
 
   it('calls clearHighlight via popover onClear (no highlight node is a no-op)', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     // Clicking clear without any highlighted node should not crash
     fireEvent.mouseDown(screen.getByTestId('clear-highlight'));
-    expect(defaultProps.setBodyHtml).not.toHaveBeenCalled();
+    expect(defaultProps.onChange).not.toHaveBeenCalled();
   });
 
   it('applies highlight across mixed formatted and plain text selections', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent('<b>Bold</b> text');
+    render(<AlertBodyEditor {...defaultProps} value="<b>Bold</b> text" />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const boldText = editor.querySelector('b')!.firstChild!;
-    const plainText = editor.childNodes[1];
+    const plainText = editor.childNodes[1]!;
     const range = document.createRange();
     range.setStart(boldText, 2);
     range.setEnd(plainText, 3);
@@ -310,18 +382,16 @@ describe('AlertBodyEditor', () => {
     fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
 
     expect(editor.innerHTML).toBe('<b>Bo</b><span data-hl="deadline"><b>ld</b> te</span>xt');
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
+    expect(defaultProps.onChange).toHaveBeenCalledWith(
       '<b>Bo</b><span data-hl="deadline"><b>ld</b> te</span>xt',
     );
   });
 
   it('replaces existing highlights inside the selected content', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent('<span data-hl="warning">Old</span> text');
+    render(<AlertBodyEditor {...defaultProps} value={'<span data-hl="warning">Old</span> text'} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
-    const plainText = editor.childNodes[1];
+    const plainText = editor.childNodes[1]!;
     const range = document.createRange();
     range.setStart(highlightedText, 0);
     range.setEnd(plainText, 3);
@@ -332,15 +402,11 @@ describe('AlertBodyEditor', () => {
     fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
 
     expect(editor.innerHTML).toBe('<span data-hl="deadline">Old te</span>xt');
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
-      '<span data-hl="deadline">Old te</span>xt',
-    );
+    expect(defaultProps.onChange).toHaveBeenCalledWith('<span data-hl="deadline">Old te</span>xt');
   });
 
   it('replaces the current highlight instead of nesting when selection is inside one', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent('<span data-hl="warning">Old</span> text');
+    render(<AlertBodyEditor {...defaultProps} value={'<span data-hl="warning">Old</span> text'} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
     const range = document.createRange();
@@ -353,15 +419,11 @@ describe('AlertBodyEditor', () => {
     fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
 
     expect(editor.innerHTML).toBe('<span data-hl="deadline">Old</span> text');
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
-      '<span data-hl="deadline">Old</span> text',
-    );
+    expect(defaultProps.onChange).toHaveBeenCalledWith('<span data-hl="deadline">Old</span> text');
   });
 
   it('splits an existing highlight around a newly selected highlight', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent('<span data-hl="warning">ABCDE</span>');
+    render(<AlertBodyEditor {...defaultProps} value={'<span data-hl="warning">ABCDE</span>'} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
     const range = document.createRange();
@@ -376,15 +438,18 @@ describe('AlertBodyEditor', () => {
     expect(editor.innerHTML).toBe(
       '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>',
     );
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
+    expect(defaultProps.onChange).toHaveBeenCalledWith(
       '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>',
     );
   });
 
   it('clears highlight when the selection is inside nested formatted content', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent('<span data-hl="deadline"><b>Nested</b></span> highlight');
+    render(
+      <AlertBodyEditor
+        {...defaultProps}
+        value={'<span data-hl="deadline"><b>Nested</b></span> highlight'}
+      />,
+    );
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const nestedText = editor.querySelector('b')!.firstChild!;
     const range = document.createRange();
@@ -397,20 +462,24 @@ describe('AlertBodyEditor', () => {
     fireEvent.mouseDown(screen.getByTestId('clear-highlight'));
 
     expect(editor.innerHTML).toBe('<b>Nested</b> highlight');
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('<b>Nested</b> highlight');
+    expect(defaultProps.onChange).toHaveBeenCalledWith('<b>Nested</b> highlight');
   });
 
   it('clears all highlights touched by a selected range', () => {
-    const ref = React.createRef<AlertBodyEditorHandle>();
-    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
-    ref.current!.setEditorContent(
-      '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>',
+    render(
+      <AlertBodyEditor
+        {...defaultProps}
+        value={
+          '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>'
+        }
+      />,
     );
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     const highlights = editor.querySelectorAll('[data-hl]');
+    expect(highlights).toHaveLength(3);
     const range = document.createRange();
-    range.setStart(highlights[0].firstChild!, 0);
-    range.setEnd(highlights[2].firstChild!, 2);
+    range.setStart(highlights[0]!.firstChild!, 0);
+    range.setEnd(highlights[2]!.firstChild!, 2);
     const selection = globalThis.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);
@@ -418,43 +487,19 @@ describe('AlertBodyEditor', () => {
     fireEvent.mouseDown(screen.getByTestId('clear-highlight'));
 
     expect(editor.innerHTML).toBe('ABCDE');
-    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('ABCDE');
+    expect(defaultProps.onChange).toHaveBeenCalledWith('ABCDE');
   });
 
-  it('handles Ctrl+3 to apply third highlight type', () => {
+  it.each([
+    ['Ctrl+3 highlight', { key: '3', ctrlKey: true }],
+    ['Cmd+4 highlight', { key: '4', metaKey: true }],
+    ['Cmd+5 highlight', { key: '5', metaKey: true }],
+    ['Cmd+6 out-of-range', { key: '6', metaKey: true }],
+    ['Cmd+9 out-of-range', { key: '9', metaKey: true }],
+  ])('handles the %s keydown path without crashing', (_case, init) => {
     render(<AlertBodyEditor {...defaultProps} />);
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '3', ctrlKey: true });
-    // Should not crash — highlight needs selection which may be empty
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Ctrl+4 to apply fourth highlight type', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '4', metaKey: true });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('handles Ctrl+5 to apply fifth highlight type', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '5', metaKey: true });
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('ignores Cmd+6 (no sixth highlight)', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '6', metaKey: true });
-    // No highlight for index 5, should be a no-op
-    expect(editor).toBeInTheDocument();
-  });
-
-  it('ignores Cmd+9 (out of highlight range)', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const editor = screen.getByRole('textbox', { name: 'Alert body' });
-    fireEvent.keyDown(editor, { key: '9', metaKey: true });
+    fireEvent.keyDown(editor, init);
     expect(editor).toBeInTheDocument();
   });
 
@@ -484,17 +529,5 @@ describe('AlertBodyEditor', () => {
     // Bold button should not have active class because editor is not the active element
     const boldBtn = screen.getByTitle('Bold (Cmd+B)');
     expect(boldBtn.className).not.toContain('active');
-  });
-
-  it('does not add active class to compact toggle when isCompact is false', () => {
-    render(<AlertBodyEditor {...defaultProps} isCompact={false} />);
-    const btn = screen.getByTitle(/Compact/);
-    expect(btn.className).not.toContain('active');
-  });
-
-  it('does not add active class to enhance toggle when isEnhanced is false', () => {
-    render(<AlertBodyEditor {...defaultProps} isEnhanced={false} />);
-    const btn = screen.getByTitle(/Enhance/);
-    expect(btn.className).not.toContain('active');
   });
 });

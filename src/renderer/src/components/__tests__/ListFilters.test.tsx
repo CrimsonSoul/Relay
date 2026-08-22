@@ -46,6 +46,20 @@ describe('ListFilters', () => {
     expect(screen.getByText('#dev')).toBeInTheDocument();
   });
 
+  it('can keep optional note and tag filters out of a compact directory toolbar', () => {
+    render(
+      <ListFilters
+        {...defaultProps}
+        availableTags={['ops']}
+        showNotesFilter={false}
+        showTagFilters={false}
+      />,
+    );
+
+    expect(screen.queryByText('Has Notes')).not.toBeInTheDocument();
+    expect(screen.queryByText('#ops')).not.toBeInTheDocument();
+  });
+
   it('calls onToggleTag when a tag is clicked', () => {
     const onToggleTag = vi.fn();
     render(<ListFilters {...defaultProps} availableTags={['ops']} onToggleTag={onToggleTag} />);
@@ -71,14 +85,18 @@ describe('ListFilters', () => {
   });
 
   it('renders extra filters', () => {
-    const extraFilters: FilterDef<unknown>[] = [{ key: 'on_call', label: 'On Call', fn: vi.fn() }];
+    const extraFilters: FilterDef<unknown>[] = [
+      { key: 'on_call', label: 'On Call', predicate: () => true },
+    ];
     render(<ListFilters {...defaultProps} extraFilters={extraFilters} />);
     expect(screen.getByText('On Call')).toBeInTheDocument();
   });
 
   it('calls onToggleExtra when extra filter is clicked', () => {
     const onToggleExtra = vi.fn();
-    const extraFilters: FilterDef<unknown>[] = [{ key: 'on_call', label: 'On Call', fn: vi.fn() }];
+    const extraFilters: FilterDef<unknown>[] = [
+      { key: 'on_call', label: 'On Call', predicate: () => true },
+    ];
     render(
       <ListFilters {...defaultProps} extraFilters={extraFilters} onToggleExtra={onToggleExtra} />,
     );

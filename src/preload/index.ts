@@ -1,11 +1,41 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type BridgeAPI, type AuthRequest } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  type BridgeAPI,
+  type AuthRequest,
+  type RadarSnapshot,
+  type StartupSnapshot,
+} from '@shared/ipc';
 import type { DynatraceDashboardState } from '@shared/dynatrace';
+import type { RelayUpdateSnapshot } from '@shared/releases';
+import { ELECTRON_RUNTIME } from '@shared/runtime';
 
 const api: BridgeAPI = {
-  /** Path validation and sandboxing constraints are enforced on the main process side. */
-  openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
+  runtime: ELECTRON_RUNTIME,
+  getStartupState: () => ipcRenderer.invoke(IPC_CHANNELS.STARTUP_GET_STATE),
+  onStartupStateChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: StartupSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.STARTUP_STATE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.STARTUP_STATE_CHANGED, handler);
+  },
+  markStartupRendererMounted: () => ipcRenderer.send(IPC_CHANNELS.STARTUP_RENDERER_MOUNTED),
+  getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_VERSION),
+  checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.APP_CHECK_FOR_UPDATES),
+  getUpdateState: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD),
+  cancelUpdateDownload: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_CANCEL_DOWNLOAD),
+  installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_INSTALL),
+  restartToUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.APP_UPDATE_RESTART),
+  onUpdateStateChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: RelayUpdateSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.APP_UPDATE_STATE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.APP_UPDATE_STATE_CHANGED, handler);
+  },
+  openReleasesPage: () => ipcRenderer.invoke(IPC_CHANNELS.APP_OPEN_RELEASES),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
+  openServiceDeskUrl: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_DESK_URL, url),
 
   onAuthRequested: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, request: AuthRequest) => {
@@ -29,6 +59,17 @@ const api: BridgeAPI = {
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
   getCloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CLOUD_STATUS),
+
+  // Dispatcher Radar
+  getRadarSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.RADAR_GET_SNAPSHOT),
+  refreshRadar: () => ipcRenderer.invoke(IPC_CHANNELS.RADAR_REFRESH),
+  openRadarSignIn: () => ipcRenderer.invoke(IPC_CHANNELS.RADAR_OPEN_SIGN_IN),
+  onRadarSnapshot: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: RadarSnapshot) =>
+      callback(snapshot);
+    ipcRenderer.on(IPC_CHANNELS.RADAR_SNAPSHOT_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.RADAR_SNAPSHOT_CHANGED, handler);
+  },
   logToMain: (entry) => ipcRenderer.send(IPC_CHANNELS.LOG_TO_MAIN, entry),
 
   // Dynatrace dashboards
@@ -44,6 +85,50 @@ const api: BridgeAPI = {
       callback(dashboards);
     ipcRenderer.on(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
+  },
+  getDynatraceProblemsSettings: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_GET_SETTINGS),
+  saveDynatraceProblemsSettings: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS, input),
+  testDynatraceProblemsSettings: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_TEST_SETTINGS, input),
+  clearDynatraceProblemsSettings: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_CLEAR_SETTINGS),
+  syncDynatraceProblems: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC),
+  saveDynatraceProblemProfileFilter: (alertingProfiles) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER, alertingProfiles),
+  // Privileged access
+  getPrivilegedSession: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_GET_SESSION),
+  loginPrivileged: (input) => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, input),
+  logoutPrivileged: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGOUT),
+  reauthenticatePrivileged: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_REAUTHENTICATE, input),
+  createPrivilegedPairingChallenge: (targetAccountId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE, targetAccountId),
+  completePrivilegedPairing: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING, input),
+  submitPrivilegedCommand: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SUBMIT_COMMAND, input),
+  setupInitialAdministratorCredential: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN, input),
+  setupPrivilegedCredential: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, input),
+  onPrivilegedSessionChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, view: Parameters<typeof callback>[0]) =>
+      callback(view);
+    ipcRenderer.on(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, handler);
+  },
+  listWebApprovalRequests: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_LIST),
+  generateWebApprovalCode: (requestId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_GENERATE, requestId),
+  cancelWebApprovalRequest: (requestId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_APPROVAL_CANCEL, requestId),
+  onWebApprovalRequestsChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, requests: Parameters<typeof callback>[0]) =>
+      callback(requests);
+    ipcRenderer.on(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PRIVILEGED_APPROVAL_CHANGED, handler);
   },
 
   // Drag Sync
@@ -72,12 +157,15 @@ const api: BridgeAPI = {
 
   // Clipboard
   writeClipboard: (text) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE, text),
-  writeClipboardImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, dataUrl),
+  optimizeAlertImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE, dataUrl),
   // Alerts
   playAlertSound: () => ipcRenderer.invoke(IPC_CHANNELS.ALERT_PLAY_SOUND),
   selectReminderSound: () => ipcRenderer.invoke(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND),
   saveAlertImage: (dataUrl, suggestedName) =>
     ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALERT_IMAGE, dataUrl, suggestedName),
+  selectAlertBodyImage: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE),
+  saveAndOpenAlertDraft: (content) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN, content),
   // Schedule Bridge (.ics)
   saveAndOpenIcs: (content) => ipcRenderer.invoke(IPC_CHANNELS.ICS_SAVE_AND_OPEN, content),
   saveCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.SAVE_COMPANY_LOGO),
@@ -95,12 +183,70 @@ const api: BridgeAPI = {
   isConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_IS_CONFIGURED),
   testConnection: (payload) => ipcRenderer.invoke(IPC_CHANNELS.SETUP_TEST_CONNECTION, payload),
   discoverServers: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_DISCOVER_SERVERS),
+  getWebServerState: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_GET_STATE),
+  saveWebServerConfig: (input) => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_SAVE_CONFIG, input),
+  retryWebServer: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_RETRY),
   // Cache (offline)
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
+  cacheQueryRead: (collection: string, queryKey: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_QUERY_READ, collection, queryKey),
+  cacheQuerySnapshot: (collection, queryKey, membership) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_QUERY_SNAPSHOT, collection, queryKey, membership),
   cacheWrite: (collection: string, action: string, record: unknown) =>
     ipcRenderer.invoke(IPC_CHANNELS.CACHE_WRITE, collection, action, record),
-  cacheSnapshot: (collection: string, records: unknown[]) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT, collection, records),
+  cacheSnapshot: (collection: string, signature: string, records: unknown[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT, collection, signature, records),
+  mutateOffline: (input) => ipcRenderer.invoke(IPC_CHANNELS.OFFLINE_MUTATE, input),
+  onOfflineMutationApplied: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, mutation: Parameters<typeof callback>[0]) =>
+      callback(mutation);
+    ipcRenderer.on(IPC_CHANNELS.OFFLINE_MUTATION_APPLIED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.OFFLINE_MUTATION_APPLIED, handler);
+  },
+  getPendingSyncStatus: () => ipcRenderer.invoke(IPC_CHANNELS.OFFLINE_PENDING_STATUS),
+  onPendingSyncStatusChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
+      callback(status);
+    ipcRenderer.on(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, handler);
+  },
+  // Knowledge Base
+  getKnowledgePdf: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_PDF, request),
+  getKnowledgeCover: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_COVER, request),
+  getKnowledgeIndexStatus: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS),
+  searchKnowledge: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SEARCH, request),
+  cancelKnowledgeSearch: (requestId) =>
+    ipcRenderer.send(IPC_CHANNELS.KNOWLEDGE_SEARCH_CANCEL, requestId),
+  onKnowledgeIndexStatusChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
+      callback(status);
+    ipcRenderer.on(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
+  },
+  openKnowledgeWebLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_OPEN_WEB_LINK, url),
+  selectAndQueueKnowledgePdfs: (replacementDocumentId) =>
+    replacementDocumentId
+      ? ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE, replacementDocumentId)
+      : ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE),
+  getKnowledgeUploadQueue: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET),
+  pauseKnowledgeUploadBatch: (batchId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_PAUSE, batchId),
+  resumeKnowledgeUploadBatch: (batchId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_RESUME, batchId),
+  retryKnowledgeUpload: (uploadId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY, uploadId),
+  reselectKnowledgeUploadSource: (uploadId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT, uploadId),
+  cancelKnowledgeUpload: (uploadId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_FILE_CANCEL, uploadId),
+  cancelKnowledgeUploadBatch: (batchId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_CANCEL, batchId),
+  onKnowledgeUploadQueueChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, queue: Parameters<typeof callback>[0]) =>
+      callback(queue);
+    ipcRenderer.on(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_CHANGED, handler);
+  },
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase
@@ -136,7 +282,6 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.PB_CRASHED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.PB_CRASHED, handler);
   },
-  openAuxWindow: (route) => ipcRenderer.send(IPC_CHANNELS.WINDOW_OPEN_AUX, route),
   platform: process.platform,
 };
 

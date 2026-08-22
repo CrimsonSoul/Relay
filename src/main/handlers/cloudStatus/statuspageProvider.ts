@@ -3,9 +3,11 @@ import {
   type CloudStatusProvider,
   type CloudStatusSeverity,
 } from '@shared/ipc';
+import { fetchNoStore } from './fetchNoStore';
 import type { StatuspageIncident } from './types';
 
 export const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
+  dropbox: 'https://status.dropbox.com/api/v2/summary.json',
   jira: 'https://jira-software.status.atlassian.com/api/v2/summary.json',
   github: 'https://www.githubstatus.com/api/v2/summary.json',
   cloudflare: 'https://www.cloudflarestatus.com/api/v2/summary.json',
@@ -43,8 +45,7 @@ export async function fetchStatuspageProvider(
   url: string,
   provider: CloudStatusProvider,
 ): Promise<CloudStatusItem[]> {
-  const res = await fetch(url, {
-    cache: 'no-store',
+  const res = await fetchNoStore(url, {
     headers: { Accept: 'application/json' },
     redirect: 'follow',
     signal: AbortSignal.timeout(10000),
@@ -71,6 +72,8 @@ export async function fetchStatuspageProvider(
     link: inc.shortlink || `${baseUrl}/incidents/${inc.id}`,
     severity: statuspageImpactToSeverity(inc.impact, inc.status),
   }));
+
+  if (provider === 'cloudflare' && incidents.length === 0) return [];
 
   if (incidents.length > 0 || !json.status || json.status.indicator === 'none') {
     return incidents;

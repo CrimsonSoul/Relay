@@ -1,4 +1,6 @@
+import { AlertHistoryEntrySchema } from '@shared/ipcValidation';
 import { getPb, handleApiError, requireOnline } from './pocketbase';
+import { mutateCollection } from './mutationGateway';
 
 export interface AlertHistoryRecord {
   id: string;
@@ -16,23 +18,20 @@ export interface AlertHistoryRecord {
 export type AlertHistoryInput = Omit<AlertHistoryRecord, 'id' | 'created' | 'updated'>;
 
 export async function addAlertHistory(data: AlertHistoryInput): Promise<AlertHistoryRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('alert_history').create<AlertHistoryRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
+  const parsed = AlertHistoryEntrySchema.safeParse(data);
+  if (!parsed.success) {
+    throw new Error('Alert history entry exceeds size limits');
   }
+  return (await mutateCollection<AlertHistoryRecord>(
+    'alert_history',
+    'create',
+    undefined,
+    data,
+  )) as AlertHistoryRecord;
 }
 
 export async function deleteAlertHistory(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('alert_history').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  await mutateCollection('alert_history', 'delete', id);
 }
 
 export async function clearAlertHistory(): Promise<void> {
@@ -49,21 +48,13 @@ export async function clearAlertHistory(): Promise<void> {
 }
 
 export async function pinAlertHistory(id: string, pinned: boolean): Promise<AlertHistoryRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('alert_history').update<AlertHistoryRecord>(id, { pinned });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertHistoryRecord>('alert_history', 'update', id, {
+    pinned,
+  })) as AlertHistoryRecord;
 }
 
 export async function updateAlertLabel(id: string, label: string): Promise<AlertHistoryRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('alert_history').update<AlertHistoryRecord>(id, { label });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertHistoryRecord>('alert_history', 'update', id, {
+    label,
+  })) as AlertHistoryRecord;
 }

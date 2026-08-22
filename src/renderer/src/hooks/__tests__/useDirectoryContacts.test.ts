@@ -20,21 +20,22 @@ vi.mock('../../services/contactService', () => ({
   findContactByEmail: (...args: unknown[]) => mockFindContactByEmail(...args),
 }));
 
-const makeContact = (email: string, name?: string): Contact => ({
-  name: name || email.split('@')[0],
-  email,
-  phone: '',
-  title: '',
-  _searchString: `${name || email.split('@')[0]} ${email}`.toLowerCase(),
-  raw: {},
-});
+const makeContact = (email: string, name?: string): Contact => {
+  const displayName = name || email.split('@')[0] || email;
+  return {
+    name: displayName,
+    email,
+    phone: '',
+    title: '',
+    _searchString: `${displayName} ${email}`.toLowerCase(),
+    raw: {},
+  };
+};
 
 describe('useDirectoryContacts', () => {
-  const contacts = [
-    makeContact('alice@test.com', 'Alice'),
-    makeContact('bob@test.com', 'Bob'),
-    makeContact('charlie@test.com', 'Charlie'),
-  ];
+  const alice = makeContact('alice@test.com', 'Alice');
+  const bob = makeContact('bob@test.com', 'Bob');
+  const contacts = [alice, bob, makeContact('charlie@test.com', 'Charlie')];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,7 +66,7 @@ describe('useDirectoryContacts', () => {
     const effective = result.current.getEffectiveContacts();
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('dave@test.com');
-    expect(effective[0].email).toBe('dave@test.com');
+    expect(effective[0]?.email).toBe('dave@test.com');
   });
 
   it('rolls back optimistic create on service failure', async () => {
@@ -137,7 +138,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[0]); // Alice
+      result.current.setDeleteConfirmation(alice);
     });
 
     await act(async () => {
@@ -156,7 +157,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[0]); // Alice
+      result.current.setDeleteConfirmation(alice);
     });
 
     await act(async () => {
@@ -208,9 +209,9 @@ describe('useDirectoryContacts', () => {
     expect(result.current.editingContact).toBeNull();
 
     act(() => {
-      result.current.setEditingContact(contacts[1]);
+      result.current.setEditingContact(bob);
     });
-    expect(result.current.editingContact).toEqual(contacts[1]);
+    expect(result.current.editingContact).toEqual(bob);
 
     act(() => {
       result.current.setEditingContact(null);
@@ -238,7 +239,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[1]); // Bob
+      result.current.setDeleteConfirmation(bob);
     });
 
     await act(async () => {
@@ -304,7 +305,7 @@ describe('useDirectoryContacts', () => {
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
     act(() => {
-      result.current.setDeleteConfirmation(contacts[0]); // Alice
+      result.current.setDeleteConfirmation(alice);
     });
 
     await act(async () => {
@@ -315,5 +316,68 @@ describe('useDirectoryContacts', () => {
     const effective = result.current.getEffectiveContacts();
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('alice@test.com');
+  });
+
+  it('renames the existing record when the email changes, rather than duplicating', async () => {
+    // clearAllMocks() resets calls but not implementations, so pin these here.
+    mockUpdateContact.mockResolvedValue({});
+    mockAddContact.mockResolvedValue({});
+    mockFindContactByEmail.mockResolvedValue({
+      id: 'rec-alice',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '5551234567',
+      title: 'Engineer',
+    });
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    act(() => {
+      result.current.setEditingContact(alice); // editing alice@test.com
+    });
+
+    await act(async () => {
+      await result.current.handleUpdateContact({
+        name: 'Alice',
+        email: 'alice.renamed@test.com',
+        phone: '5551234567',
+        title: 'Engineer',
+      });
+    });
+
+    // Looked up by the address the record actually has, not the new one.
+    expect(mockFindContactByEmail).toHaveBeenCalledWith('alice@test.com');
+    expect(mockAddContact).not.toHaveBeenCalled();
+    expect(mockUpdateContact).toHaveBeenCalledWith(
+      'rec-alice',
+      expect.objectContaining({ email: 'alice.renamed@test.com' }),
+    );
+  });
+
+  it('persists a cleared phone and title instead of reverting to the stored values', async () => {
+    mockUpdateContact.mockResolvedValue({});
+    mockFindContactByEmail.mockResolvedValue({
+      id: 'rec-alice',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '5551234567',
+      title: 'Engineer',
+    });
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    await act(async () => {
+      await result.current.handleUpdateContact({
+        name: 'Alice',
+        email: 'alice@test.com',
+        phone: '',
+        title: '',
+      });
+    });
+
+    expect(mockUpdateContact).toHaveBeenCalledWith(
+      'rec-alice',
+      expect.objectContaining({ phone: '', title: '' }),
+    );
   });
 });

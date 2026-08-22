@@ -76,6 +76,19 @@ describe('ServerCard', () => {
     expect(button).toHaveClass('server-card--interactive');
   });
 
+  it('exposes its stable record key on an interactive row', () => {
+    render(
+      <ServerCard
+        server={makeServer()}
+        recordKey="id:server_1"
+        onContextMenu={vi.fn()}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button')).toHaveAttribute('data-record-key', 'id:server_1');
+  });
+
   it('calls onRowClick when button is clicked', () => {
     const onClick = vi.fn();
     const { container } = render(

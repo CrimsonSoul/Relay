@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Contact, BridgeGroup, Server } from '@shared/ipc';
 
@@ -36,10 +36,12 @@ function makeDefaultListFiltersReturn(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const mockSetContactNote = vi.fn();
+
 vi.mock('../../contexts', () => ({
   useNotesContext: () => ({
     getContactNote: vi.fn().mockReturnValue(undefined),
-    setContactNote: vi.fn(),
+    setContactNote: mockSetContactNote,
   }),
 }));
 
@@ -53,11 +55,18 @@ vi.mock('../../components/Modal', () => ({
     isOpen,
     children,
     title,
+    variant,
   }: {
     isOpen: boolean;
     children: React.ReactNode;
-    title?: string;
-  }) => (isOpen ? <div data-testid={`modal-${title}`}>{children}</div> : null),
+    title?: React.ReactNode;
+    variant?: string;
+  }) =>
+    isOpen ? (
+      <div data-testid={`modal-${title}`} data-variant={variant}>
+        {children}
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/TactileButton', () => ({
@@ -83,7 +92,9 @@ vi.mock('../../components/CollapsibleHeader', () => ({
 }));
 
 vi.mock('../../components/ListToolbar', () => ({
-  ListToolbar: () => <div data-testid="list-toolbar" />,
+  ListToolbar: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="list-toolbar">{children}</div>
+  ),
 }));
 
 vi.mock('../../components/ListFilters', () => ({
@@ -95,7 +106,32 @@ vi.mock('../../components/directory/GroupSelector', () => ({
 }));
 
 vi.mock('../../components/directory/VirtualRow', () => ({
-  VirtualRow: () => <div data-testid="virtual-row" />,
+  VirtualRow: ({
+    index,
+    filtered,
+    focusedIndex,
+    onRowClick,
+  }: {
+    index: number;
+    filtered: Contact[];
+    focusedIndex: number;
+    onRowClick: (index: number) => void;
+  }) => {
+    const contact = filtered[index];
+    if (!contact) return null;
+    const id = contact.raw?.id;
+    return (
+      <button
+        type="button"
+        aria-label={contact.name}
+        data-record-key={id ? `id:${id}` : `email:${contact.email.toLowerCase()}`}
+        data-selected={index === focusedIndex}
+        onClick={() => onRowClick(index)}
+      >
+        {contact.name}
+      </button>
+    );
+  },
 }));
 
 vi.mock('../../components/directory/DeleteConfirmationModal', () => ({
@@ -165,12 +201,15 @@ vi.mock('../../components/ContactDetailPanel', () => ({
   ContactDetailPanel: ({
     contact,
     relatedServers,
+    onEditNotes,
   }: {
     contact: Contact;
     relatedServers?: { owned: Server[]; supported: Server[] };
+    onEditNotes: () => void;
   }) => (
-    <div data-testid="contact-detail">
+    <div data-testid="contact-detail" data-record-id={contact.raw?.id}>
       {contact.name}
+      <button type="button" data-testid="contact-detail-notes" onClick={onEditNotes} />
       {relatedServers?.owned.map((server) => (
         <span key={`owned-${server.name}`}>owned:{server.name}</span>
       ))}
@@ -181,9 +220,27 @@ vi.mock('../../components/ContactDetailPanel', () => ({
   ),
 }));
 
+// The real NotesModal closes itself on any truthy onSave result, so the stub records exactly what
+// the tab resolves rather than re-implementing that decision.
+const noteSaveOutcomes: unknown[] = [];
+
 vi.mock('../../components/NotesModal', () => ({
-  NotesModal: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="notes-modal" /> : null,
+  NotesModal: ({
+    isOpen,
+    onSave,
+  }: {
+    isOpen: boolean;
+    onSave: (note: string, tags: string[]) => Promise<boolean | undefined>;
+  }) =>
+    isOpen ? (
+      <div data-testid="notes-modal">
+        <button
+          type="button"
+          data-testid="notes-modal-save"
+          onClick={() => void onSave('Prefers Teams', []).then((r) => noteSaveOutcomes.push(r))}
+        />
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/StatusBar', () => ({
@@ -202,12 +259,31 @@ vi.mock('react-virtualized-auto-sizer', () => ({
   }) => renderProp({ height: 600, width: 800 }),
 }));
 
-// Mock react-window
+const { mockScrollToRow, mockListRef } = vi.hoisted(() => {
+  const scrollToRow = vi.fn();
+  return { mockScrollToRow: scrollToRow, mockListRef: { current: { scrollToRow } } };
+});
+
+// Mock react-window — rows are rendered so exact-record focus can be exercised.
 vi.mock('react-window', () => ({
-  List: ({ rowCount }: { rowCount: number }) => (
-    <div data-testid="virtual-list" data-row-count={rowCount} />
+  List: ({
+    rowCount,
+    rowHeight,
+    rowComponent: RowComponent,
+    rowProps,
+  }: {
+    rowCount: number;
+    rowHeight: number;
+    rowComponent: React.ComponentType<Record<string, unknown>>;
+    rowProps: Record<string, unknown>;
+  }) => (
+    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight}>
+      {Array.from({ length: rowCount }, (_unused, index) => (
+        <RowComponent key={index} index={index} style={{}} {...rowProps} />
+      ))}
+    </div>
   ),
-  useListRef: () => ({ current: null }),
+  useListRef: () => mockListRef,
 }));
 
 function makeDefaultDirectoryReturn() {
@@ -241,6 +317,9 @@ function makeDefaultDirectoryReturn() {
 beforeEach(() => {
   mockUseDirectory.mockReturnValue(makeDefaultDirectoryReturn());
   mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn());
+  noteSaveOutcomes.length = 0;
+  mockSetContactNote.mockReset();
+  mockScrollToRow.mockReset();
 });
 
 import { DirectoryTab } from '../DirectoryTab';
@@ -274,9 +353,13 @@ describe('DirectoryTab', () => {
     expect(screen.getByTestId('collapsible-header')).toBeInTheDocument();
   });
 
-  it('shows empty state when no contacts', () => {
+  it.each([
+    ['shows empty state when no contacts', 'No contacts found'],
+    ['renders ADD CONTACT button', 'ADD CONTACT'],
+    ['shows "Select a contact" placeholder when no contact selected', 'Select a contact'],
+  ])('%s', (_caseName, expectedText) => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('No contacts found')).toBeInTheDocument();
+    expect(screen.getByText(expectedText)).toBeInTheDocument();
   });
 
   it('renders status bar with showing count', () => {
@@ -285,9 +368,14 @@ describe('DirectoryTab', () => {
     expect(screen.getByText('Showing 0 of 1')).toBeInTheDocument();
   });
 
-  it('renders ADD CONTACT button', () => {
-    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('ADD CONTACT')).toBeInTheDocument();
+  it('provides an independent local contact filter', () => {
+    const onAddToAssembler = vi.fn();
+    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={onAddToAssembler} />);
+
+    const search = screen.getByRole('searchbox', { name: 'Filter contacts' });
+    fireEvent.change(search, { target: { value: 'alice' } });
+
+    expect(mockUseDirectory).toHaveBeenLastCalledWith([], [], onAddToAssembler, 'alice');
   });
 
   it('gives the add contact button a tooltip', () => {
@@ -295,14 +383,14 @@ describe('DirectoryTab', () => {
     expect(screen.getByText('ADD CONTACT')).toHaveAttribute('data-tooltip', 'Add contact');
   });
 
-  it('shows "Select a contact" placeholder when no contact selected', () => {
-    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
-    expect(screen.getByText('Select a contact')).toBeInTheDocument();
-  });
-
   it('shows the virtual list', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+  });
+
+  it('uses the approved compact record height', () => {
+    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
+    expect(screen.getByTestId('virtual-list')).toHaveAttribute('data-row-height', '67');
   });
 
   it('shows contact detail panel when a contact is selected', () => {
@@ -316,7 +404,182 @@ describe('DirectoryTab', () => {
 
     render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('contact-detail')).toBeInTheDocument();
-    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
+  });
+
+  it('clears local filters, reveals, selects, scrolls to, and focuses a requested contact once', async () => {
+    const first = makeContact({
+      name: 'First Contact',
+      email: 'first@example.com',
+      raw: { id: 'contact_1' },
+    });
+    const second = makeContact({
+      name: 'Second Contact',
+      email: 'second@example.com',
+      raw: { id: 'contact_2' },
+    });
+    const clearAll = vi.fn();
+    mockUseDirectory.mockImplementation(() => {
+      const [focusedIndex, setFocusedIndex] = React.useState(0);
+      return {
+        ...makeDefaultDirectoryReturn(),
+        filtered: [first, second],
+        focusedIndex,
+        setFocusedIndex,
+      };
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [first, second], clearAll }),
+    );
+    const request = {
+      requestId: 7,
+      destination: 'contacts' as const,
+      recordKey: 'id:contact_2',
+    };
+    const props = {
+      contacts: [first, second],
+      groups: [],
+      onAddToAssembler: vi.fn(),
+      selectionRequest: request,
+    };
+    const { rerender } = render(<DirectoryTab {...props} />);
+
+    await waitFor(() => expect(mockScrollToRow).toHaveBeenCalledWith({ index: 1, align: 'smart' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Second Contact' })).toHaveFocus(),
+    );
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Second Contact');
+    expect(clearAll).toHaveBeenCalledOnce();
+
+    mockScrollToRow.mockClear();
+    rerender(<DirectoryTab {...props} />);
+    expect(mockScrollToRow).not.toHaveBeenCalled();
+  });
+
+  it('keeps the requested contact exact when another record shares its email', async () => {
+    const first = makeContact({
+      name: 'First Duplicate',
+      email: 'shared@example.com',
+      raw: { id: 'contact_1' },
+    });
+    const second = makeContact({
+      name: 'Second Duplicate',
+      email: 'shared@example.com',
+      raw: { id: 'contact_2' },
+    });
+    mockUseDirectory.mockImplementation(() => {
+      const [focusedIndex, setFocusedIndex] = React.useState(0);
+      return {
+        ...makeDefaultDirectoryReturn(),
+        filtered: [first, second],
+        focusedIndex,
+        setFocusedIndex,
+      };
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [first, second] }),
+    );
+
+    render(
+      <DirectoryTab
+        contacts={[first, second]}
+        groups={[]}
+        onAddToAssembler={vi.fn()}
+        selectionRequest={{
+          requestId: 9,
+          destination: 'contacts',
+          recordKey: 'id:contact_2',
+        }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('contact-detail')).toHaveAttribute('data-record-id', 'contact_2'),
+    );
+  });
+
+  // Regression: setContactNote resolves an IpcResult, and the tab handed that object straight back
+  // to NotesModal, which only checks truthiness. A failed save therefore closed the modal as if it
+  // had worked and the operator's note was gone.
+  it.each([
+    ['a rejected save', { success: false, error: 'offline' }, false],
+    ['an accepted save', { success: true }, true],
+  ])('reports %s to the notes modal as a boolean', async (_caseName, ipcResult, expected) => {
+    const contacts = [makeContact({ name: 'Jane Smith', email: 'jane@example.com' })];
+    mockSetContactNote.mockResolvedValue(ipcResult);
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: contacts,
+      focusedIndex: 0,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: contacts }));
+
+    render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('contact-detail-notes'));
+    fireEvent.click(screen.getByTestId('notes-modal-save'));
+
+    await waitFor(() => expect(noteSaveOutcomes).toHaveLength(1));
+    expect(mockSetContactNote).toHaveBeenCalledWith('jane@example.com', 'Prefers Teams', []);
+    expect(noteSaveOutcomes[0]).toBe(expected);
+  });
+
+  it('clears the detail panel when the selected contact leaves the filtered set', () => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john, jane],
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [john, jane] }),
+    );
+
+    const { rerender } = render(
+      <DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />,
+    );
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
+
+    // Typing in the search box drops Jane. Index 1 now points at a different person, and
+    // the panel's Delete button must not quietly follow it there.
+    const others = [john, makeContact({ name: 'Joan Clarke', email: 'joan@example.com' })];
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: others,
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: others }));
+    rerender(<DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />);
+
+    expect(screen.queryByTestId('contact-detail')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a contact')).toBeInTheDocument();
+  });
+
+  it('keeps the detail panel on the selected contact when filtering moves their row', () => {
+    const john = makeContact({ name: 'John Doe', email: 'john@example.com' });
+    const jane = makeContact({ name: 'Jane Smith', email: 'jane@example.com' });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [john, jane],
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(
+      makeDefaultListFiltersReturn({ filteredItems: [john, jane] }),
+    );
+
+    const { rerender } = render(
+      <DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />,
+    );
+
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [jane],
+      focusedIndex: 1,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [jane] }));
+    rerender(<DirectoryTab contacts={[john, jane]} groups={[]} onAddToAssembler={vi.fn()} />);
+
+    expect(screen.getByTestId('contact-detail')).toHaveTextContent('Jane Smith');
   });
 
   it('passes owned and supported servers to the selected contact detail panel', () => {
@@ -381,6 +644,10 @@ describe('DirectoryTab', () => {
 
     render(<DirectoryTab contacts={[contact]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('modal-Manage Groups')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Manage Groups')).toHaveAttribute(
+      'data-variant',
+      'confirmation',
+    );
     expect(screen.getByTestId('group-selector')).toBeInTheDocument();
   });
 
@@ -593,7 +860,13 @@ describe('DirectoryTab', () => {
 
   it('renders selected contact with group info from groupMap', () => {
     const contact = makeContact({ name: 'Alice', email: 'alice@test.com' });
-    const group: BridgeGroup = { id: 'g1', name: 'Engineering', members: [] };
+    const group: BridgeGroup = {
+      id: 'g1',
+      name: 'Engineering',
+      contacts: ['alice@test.com'],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
     const groupMap = new Map<string, BridgeGroup[]>();
     groupMap.set('alice@test.com', [group]);
     const dirReturn = {

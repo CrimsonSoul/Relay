@@ -6,7 +6,7 @@ import { DashboardsIcon } from './SidebarIcons';
 
 interface SidebarDashboardsProps {
   dashboards: DynatraceDashboardState[];
-  onOpenDashboard: (id: string) => void | Promise<void>;
+  onOpenDashboard: (id: string) => void | Promise<unknown>;
 }
 
 const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
@@ -125,10 +125,7 @@ export function SidebarDashboards({
     const items = itemRefs.current.filter(Boolean);
     if (!items.length) return;
 
-    const focusedIndex = Math.max(
-      0,
-      items.findIndex((item) => item === document.activeElement),
-    );
+    const focusedIndex = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
 
     switch (event.key) {
       case 'ArrowDown':
@@ -177,6 +174,7 @@ export function SidebarDashboards({
           <div
             ref={popoverRef}
             className="sidebar-dashboards-popover"
+            data-motion="popover"
             role="menu"
             aria-label="Dynatrace dashboards"
             tabIndex={-1}

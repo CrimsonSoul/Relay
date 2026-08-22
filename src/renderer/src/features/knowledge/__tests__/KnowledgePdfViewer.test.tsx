@@ -1,0 +1,1989 @@
+import { Activity, useState } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { KnowledgeDocumentRecord } from '@shared/knowledge';
+import { getDocument, TextLayer } from 'pdfjs-dist/build/pdf.mjs';
+import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
+import type { KnowledgeDocumentSearchMatch } from '../knowledgeDocumentSearch';
+import type { KnowledgeViewerTarget } from '../knowledgePdfDestination';
+import { KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY } from '../knowledgePdfViewMode';
+import type { KnowledgePdfPageProps } from '../KnowledgePdfPage';
+import { KnowledgePdfViewer } from '../KnowledgePdfViewer';
+import type { KnowledgeSearchNavigationRequest } from '../useKnowledgeDocumentSearch';
+
+const pageHarness = vi.hoisted(() => ({
+  callbacks: new Map<number, NonNullable<KnowledgePdfPageProps['onActiveSearchHighlightReady']>>(),
+}));
+
+vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf-worker.js' }));
+vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
+  AnnotationType: { LINK: 2 },
+  GlobalWorkerOptions: { workerSrc: '' },
+  getDocument: vi.fn(),
+  RenderingCancelledException: class RenderingCancelledException extends Error {},
+  TextLayer: vi.fn(function MockTextLayer() {
+    return { render: vi.fn(async () => undefined), cancel: vi.fn() };
+  }),
+}));
+vi.mock('../KnowledgePdfPage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../KnowledgePdfPage')>();
+  const ActualKnowledgePdfPage = actual.KnowledgePdfPage;
+  return {
+    ...actual,
+    KnowledgePdfPage: (props: KnowledgePdfPageProps) => {
+      if (props.onActiveSearchHighlightReady) {
+        pageHarness.callbacks.set(props.pageIndex, props.onActiveSearchHighlightReady);
+      }
+      return <ActualKnowledgePdfPage {...props} />;
+    },
+  };
+});
+
+const getDocumentMock = vi.mocked(getDocument);
+const TextLayerMock = vi.mocked(TextLayer);
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+type ObserverEntry = {
+  target: Element;
+  intersectionRatio: number;
+  isIntersecting?: boolean;
+};
+
+class IntersectionObserverDouble {
+  static readonly instances: IntersectionObserverDouble[] = [];
+
+  readonly observe = vi.fn();
+  readonly unobserve = vi.fn();
+  readonly disconnect = vi.fn();
+
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    readonly options?: IntersectionObserverInit,
+  ) {
+    IntersectionObserverDouble.instances.push(this);
+  }
+
+  showPage(target: Element): void {
+    this.emit([{ target, intersectionRatio: 1 }]);
+  }
+
+  emit(entries: ObserverEntry[]): void {
+    this.callback(
+      entries.map(
+        ({ target, intersectionRatio, isIntersecting = intersectionRatio > 0 }) =>
+          ({ target, intersectionRatio, isIntersecting }) as IntersectionObserverEntry,
+      ),
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
+
+function required<T>(value: T | undefined, description: string): T {
+  if (value === undefined) {
+    throw new Error(`expected ${description}`);
+  }
+  return value;
+}
+
+function firstObserver(): IntersectionObserverDouble {
+  const [observer] = IntersectionObserverDouble.instances;
+  if (!observer) {
+    throw new Error('expected KnowledgePdfViewer to construct an IntersectionObserver');
+  }
+  return observer;
+}
+
+function pageAt(pages: readonly HTMLElement[], index: number): HTMLElement {
+  const pageShell = pages[index];
+  if (!pageShell) {
+    throw new Error(`expected a rendered page shell at index ${index}`);
+  }
+  return pageShell;
+}
+
+function record(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDocumentRecord {
+  return {
+    id: 'doc-1',
+    sourceKey: 'General/Guide.pdf',
+    category: 'General',
+    categoryId: 'category-general',
+    documentType: 'sop',
+    title: 'Operator guide',
+    displayTitle: 'Operator guide',
+    fileName: 'Guide.pdf',
+    pdf: 'Guide.pdf',
+    cover: null,
+    checksum: 'a'.repeat(64),
+    byteSize: 1024,
+    pageCount: 3,
+    outline: [],
+    outlineSource: 'none',
+    sourceModifiedAt: '2026-07-14T12:00:00.000Z',
+    indexedAt: '2026-07-14T12:00:00.000Z',
+    searchIndexState: 'ready',
+    searchIndexChecksum: 'a'.repeat(64),
+    searchIndexVersion: 1,
+    searchIndexedAt: '2026-07-14T12:00:00.000Z',
+    searchIndexError: null,
+    lifecycleState: 'active',
+    revision: 1,
+    publishedByAccountId: 'owner',
+    publishedByName: 'Ryan',
+    publishedAt: '2026-07-14T12:00:00.000Z',
+    trashedByAccountId: null,
+    trashedByName: null,
+    trashedAt: null,
+    created: '2026-07-14T12:00:00.000Z',
+    updated: '2026-07-14T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function searchResult(
+  overrides: Partial<KnowledgeDocumentSearchMatch> = {},
+): KnowledgeDocumentSearchMatch {
+  return {
+    id: '0:0:0',
+    pageIndex: 0,
+    matchIndex: 0,
+    snippet: 'Reset the lane service',
+    sectionLabel: 'Recovery',
+    normalizedStart: 0,
+    normalizedEnd: 22,
+    textItemRange: { start: 0, end: 0 },
+    domRange: {
+      start: { itemIndex: 0, itemOffset: 0 },
+      end: { itemIndex: 0, itemOffset: 22 },
+    },
+    ...overrides,
+  };
+}
+
+function searchRequest(
+  key: number,
+  result: KnowledgeDocumentSearchMatch,
+): KnowledgeSearchNavigationRequest {
+  return { key, result };
+}
+
+describe('KnowledgePdfViewer', () => {
+  const getKnowledgePdf = vi.fn();
+  const renderTask = { promise: Promise.resolve(), cancel: vi.fn() };
+  const annotationMocks = new Map<number, ReturnType<typeof vi.fn>>();
+  const operatorListMocks = new Map<number, ReturnType<typeof vi.fn>>();
+  const resolveUrl = vi.fn<(url: string) => KnowledgeResolvedLink>(() => ({
+    kind: 'unavailable',
+    reason: 'unsupported',
+  }));
+  const onActivateResolvedLink = vi.fn();
+  const onDestinationChange = vi.fn();
+  const onPageChange = vi.fn();
+  const loadingDestroy = vi.fn(async () => undefined);
+  const getDestination = vi.fn(async () => null);
+  const getPageIndex = vi.fn(async () => 0);
+
+  function getAnnotations(pageNumber: number) {
+    let mock = annotationMocks.get(pageNumber);
+    if (!mock) {
+      mock = vi.fn(async () => []);
+      annotationMocks.set(pageNumber, mock);
+    }
+    return mock;
+  }
+
+  function getOperatorList(pageNumber: number) {
+    let mock = operatorListMocks.get(pageNumber);
+    if (!mock) {
+      mock = vi.fn(async () => ({ fnArray: [], argsArray: [] }));
+      operatorListMocks.set(pageNumber, mock);
+    }
+    return mock;
+  }
+
+  function page(pageNumber: number) {
+    return {
+      pageNumber,
+      cleanup: vi.fn(),
+      getOperatorList: getOperatorList(pageNumber),
+      getViewport: ({ scale }: { scale: number }) => ({
+        width: 600 * scale,
+        height: 800 * scale,
+        scale,
+        convertToViewportPoint: (x: number, y: number) => [x * scale, (800 - y) * scale],
+      }),
+      render: vi.fn(() => renderTask),
+      getTextContent: vi.fn(async () => ({ items: [], styles: {} })),
+      getAnnotations: getAnnotations(pageNumber),
+    };
+  }
+
+  const getPage = vi.fn(async (pageNumber: number) => page(pageNumber));
+
+  function pdf(overrides = {}) {
+    return {
+      numPages: 3,
+      getPage,
+      getDestination,
+      getPageIndex,
+      ...overrides,
+    };
+  }
+
+  function viewerProps(overrides = {}) {
+    return {
+      document: record(),
+      active: true,
+      target: null,
+      resolveUrl,
+      onActivateResolvedLink,
+      onDestinationChange,
+      onPageChange,
+      ...overrides,
+    };
+  }
+
+  function renderComponent(overrides = {}) {
+    return render(<KnowledgePdfViewer {...viewerProps(overrides)} />);
+  }
+
+  function viewOptionsTrigger() {
+    return screen.getByRole('button', { name: /^View options:/ });
+  }
+
+  function selectPdfViewMode(label: 'Continuous scrolling' | 'Single page') {
+    fireEvent.click(viewOptionsTrigger());
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'View options' })).getByRole('button', {
+        name: label,
+      }),
+    );
+  }
+
+  function fitPdfWidth() {
+    fireEvent.click(viewOptionsTrigger());
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'View options' })).getByRole('button', {
+        name: 'Fit width',
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pageHarness.callbacks.clear();
+    localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, 'single');
+    IntersectionObserverDouble.instances.splice(0);
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverDouble);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })) as unknown as typeof globalThis.matchMedia,
+    );
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+    annotationMocks.clear();
+    operatorListMocks.clear();
+    getPage.mockImplementation(async (pageNumber: number) => page(pageNumber));
+    resolveUrl.mockReturnValue({ kind: 'unavailable', reason: 'unsupported' });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      {} as CanvasRenderingContext2D,
+    );
+    getKnowledgePdf.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([1, 2, 3]).buffer,
+      checksum: 'a'.repeat(64),
+      source: 'server',
+    });
+    globalThis.api = { getKnowledgePdf } as never;
+    getDocumentMock.mockReturnValue({
+      promise: Promise.resolve(pdf()),
+      destroy: loadingDestroy,
+    } as never);
+  });
+
+  afterEach(() => {
+    delete globalThis.api;
+    localStorage.clear();
+    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each(['continuous', 'single'] as const)(
+    'navigates a search result to its exact highlight in %s mode',
+    async (mode) => {
+      localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, mode);
+      const result = searchResult({ pageIndex: 2, id: '2:40:0' });
+      const request = searchRequest(7, result);
+      renderComponent({ searchNavigationRequest: request, searchMatches: [result] });
+
+      expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+      await waitFor(() => expect(pageHarness.callbacks.has(2)).toBe(true));
+      const viewport =
+        mode === 'continuous'
+          ? screen.getByRole('region', { name: 'Continuous PDF pages' })
+          : document.querySelector<HTMLDivElement>('.knowledge-viewer__viewport');
+      expect(viewport).not.toBeNull();
+      const pageShell = document.querySelector<HTMLElement>('[data-page-index="2"]');
+      if (pageShell) {
+        Object.defineProperty(pageShell, 'offsetTop', { configurable: true, value: 1000 });
+      }
+
+      act(() => pageHarness.callbacks.get(2)?.(result.id, 2, 360));
+
+      expect(viewport?.scrollTo).toHaveBeenCalledWith(
+        expect.objectContaining({ behavior: 'smooth' }),
+      );
+      expect(onPageChange).toHaveBeenCalledWith(2);
+      expect(onDestinationChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it('ignores a stale exact-highlight callback after a newer search request wins', async () => {
+    const staleResult = searchResult({ pageIndex: 1, id: '1:12:0' });
+    const currentResult = searchResult({ pageIndex: 2, id: '2:40:0' });
+    const { rerender } = renderComponent({
+      searchNavigationRequest: searchRequest(7, staleResult),
+      searchMatches: [staleResult],
+    });
+    await screen.findByText('Page 2 of 3');
+    await waitFor(() => expect(pageHarness.callbacks.has(1)).toBe(true));
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          searchNavigationRequest: searchRequest(8, currentResult),
+          searchMatches: [currentResult],
+        })}
+      />,
+    );
+    await screen.findByText('Page 3 of 3');
+    await waitFor(() => expect(pageHarness.callbacks.has(2)).toBe(true));
+
+    act(() => pageHarness.callbacks.get(1)?.(staleResult.id, 1, 180));
+    expect(onPageChange).not.toHaveBeenCalledWith(1);
+
+    act(() => pageHarness.callbacks.get(2)?.(currentResult.id, 2, 360));
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it('does not let observer feedback consume pending exact search navigation', async () => {
+    localStorage.setItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY, 'continuous');
+    const result = searchResult({ pageIndex: 2, id: '2:40:0' });
+    const { container } = renderComponent({
+      searchNavigationRequest: searchRequest(7, result),
+      searchMatches: [result],
+    });
+    await screen.findByText('Page 3 of 3');
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
+
+    act(() =>
+      firstObserver().emit([
+        { target: pageAt(pages, 2), intersectionRatio: 0 },
+        { target: pageAt(pages, 1), intersectionRatio: 1 },
+      ]),
+    );
+    expect(onPageChange).not.toHaveBeenCalledWith(1);
+
+    await waitFor(() => expect(pageHarness.callbacks.has(2)).toBe(true));
+    act(() => pageHarness.callbacks.get(2)?.(result.id, 2, 360));
+    expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it('labels the empty destination as the Wiki reader', () => {
+    renderComponent({ document: null });
+
+    expect(screen.getByText('Wiki reader')).toBeInTheDocument();
+    expect(screen.queryByText('Focus reader')).not.toBeInTheDocument();
+  });
+
+  it('resets zoom to 100 percent for each newly opened document', async () => {
+    const nextDocument = record({ id: 'doc-2', checksum: 'b'.repeat(64) });
+    const view = renderComponent();
+    await screen.findByText('100%');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('115%')).toBeInTheDocument();
+
+    view.rerender(<KnowledgePdfViewer {...viewerProps({ document: nextDocument })} />);
+
+    expect(await screen.findByText('100%')).toBeInTheDocument();
+  });
+
+  it('clears viewer errors and pending navigation when the document identity changes', async () => {
+    const nextDocument = record({ id: 'doc-2', checksum: 'b'.repeat(64) });
+    getKnowledgePdf.mockResolvedValueOnce({ ok: false, error: 'download-failed' });
+    const view = renderComponent({
+      target: { pageIndex: 2, top: 650 },
+      searchNavigationRequest: searchRequest(7, searchResult({ pageIndex: 2 })),
+    });
+    expect(await screen.findByText('Unable to open this guide')).toBeInTheDocument();
+
+    view.rerender(<KnowledgePdfViewer {...viewerProps({ document: nextDocument })} />);
+
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    expect(screen.queryByText('Unable to open this guide')).not.toBeInTheDocument();
+  });
+
+  it('publishes only the active PDF generation and clears it before replacement', async () => {
+    const onPdfSessionChange = vi.fn();
+    const replacementLoad = deferred<ReturnType<typeof pdf>>();
+    const firstPdf = pdf();
+    const replacementPdf = pdf();
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(firstPdf), destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({ promise: replacementLoad.promise, destroy: loadingDestroy } as never);
+    const { rerender } = renderComponent({ onPdfSessionChange });
+
+    await waitFor(() =>
+      expect(onPdfSessionChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pdf: firstPdf,
+          documentId: 'doc-1',
+          checksum: 'a'.repeat(64),
+          generation: 1,
+        }),
+      ),
+    );
+    onPdfSessionChange.mockClear();
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: record({ checksum: 'b'.repeat(64) }),
+          onPdfSessionChange,
+        })}
+      />,
+    );
+
+    expect(onPdfSessionChange).toHaveBeenCalledWith(null);
+    expect(onPdfSessionChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ checksum: 'b'.repeat(64) }),
+    );
+
+    replacementLoad.resolve(replacementPdf);
+    await waitFor(() =>
+      expect(onPdfSessionChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          pdf: replacementPdf,
+          documentId: 'doc-1',
+          checksum: 'b'.repeat(64),
+          generation: 2,
+        }),
+      ),
+    );
+  });
+
+  it('never publishes a late PDF session from a superseded load', async () => {
+    const onPdfSessionChange = vi.fn();
+    const staleLoad = deferred<ReturnType<typeof pdf>>();
+    const currentPdf = pdf();
+    const stalePdf = pdf();
+    getDocumentMock
+      .mockReturnValueOnce({ promise: staleLoad.promise, destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(currentPdf),
+        destroy: loadingDestroy,
+      } as never);
+    const { rerender } = renderComponent({ onPdfSessionChange });
+    await waitFor(() => expect(getDocumentMock).toHaveBeenCalledOnce());
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: record({ checksum: 'b'.repeat(64) }),
+          onPdfSessionChange,
+        })}
+      />,
+    );
+    await waitFor(() =>
+      expect(onPdfSessionChange).toHaveBeenCalledWith(
+        expect.objectContaining({ pdf: currentPdf, checksum: 'b'.repeat(64) }),
+      ),
+    );
+
+    staleLoad.resolve(stalePdf);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onPdfSessionChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ pdf: stalePdf, checksum: 'a'.repeat(64) }),
+    );
+    expect(loadingDestroy).toHaveBeenCalledOnce();
+  });
+
+  it('groups the compact reader controls and exposes secondary options from View', async () => {
+    const { container } = renderComponent({
+      toolbarLeading: <button type="button">Back to Wiki</button>,
+    });
+
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    expect(container.querySelector('.knowledge-viewer__page-status .sr-only')).toHaveTextContent(
+      'Current page 1 of 3',
+    );
+    const back = screen.getByRole('button', { name: 'Back to Wiki' });
+    expect(back).toBeInTheDocument();
+    expect(back.closest('.knowledge-viewer__leading')).toBeInTheDocument();
+    expect(back.closest('.knowledge-viewer__heading')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Page navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Zoom controls' })).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+
+    const viewButton = screen.getByRole('button', { name: 'View options: Single page' });
+    expect(viewButton).toHaveTextContent('View');
+    fireEvent.click(viewButton);
+
+    const options = screen.getByRole('dialog', { name: 'View options' });
+    expect(within(options).getByRole('button', { name: 'Fit width' })).toBeInTheDocument();
+    expect(within(options).getByRole('button', { name: 'Continuous scrolling' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(within(options).getByRole('button', { name: 'Single page' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('dismisses View options with Escape or an outside pointer action', async () => {
+    renderComponent();
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+
+    const trigger = viewOptionsTrigger();
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'View options' })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'View options' })).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'View options' })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'View options' })).not.toBeInTheDocument();
+  });
+
+  it('defaults to Continuous view and tracks the most visible page', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const { container } = renderComponent();
+
+    expect(await screen.findByRole('button', { name: 'View options: Continuous' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.getByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+
+    const pageThree = container.querySelector<HTMLElement>('[data-page-index="2"]');
+    expect(pageThree).not.toBeNull();
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
+    act(() => firstObserver().showPage(pageThree!));
+
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenLastCalledWith(2);
+  });
+
+  it('returns focus to the uniquely named View trigger after changing page flow', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    renderComponent();
+
+    const continuousView = await screen.findByRole('button', {
+      name: 'View options: Continuous',
+    });
+    continuousView.focus();
+    selectPdfViewMode('Single page');
+
+    const singleView = await screen.findByRole('button', {
+      name: 'View options: Single page',
+    });
+    await waitFor(() => expect(singleView).toHaveFocus());
+
+    selectPdfViewMode('Continuous scrolling');
+    const restoredContinuousView = await screen.findByRole('button', {
+      name: 'View options: Continuous',
+    });
+    await waitFor(() => expect(restoredContinuousView).toHaveFocus());
+  });
+
+  it('reads a cached offline PDF in Continuous and Single without another fetch or load', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    getKnowledgePdf.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([1, 2, 3]).buffer,
+      checksum: 'a'.repeat(64),
+      source: 'cache',
+    });
+    renderComponent();
+
+    expect(await screen.findByRole('region', { name: 'Continuous PDF pages' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Page 1')).toBeVisible();
+    selectPdfViewMode('Single page');
+
+    expect(
+      await screen.findByRole('button', { name: 'View options: Single page' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText('Page 1')).toBeVisible();
+    expect(screen.queryByText(/not cached on this laptop/i)).not.toBeInTheDocument();
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+  });
+
+  it('uses instant scrolling for a Single-page destination when reduced motion is requested', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+      })) as unknown as typeof globalThis.matchMedia,
+    );
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    renderComponent({
+      target: { pageIndex: 1, top: 650 },
+      currentSection: 'Reduced-motion destination',
+    });
+
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 122, behavior: 'auto' }));
+  });
+
+  it('switches modes on the shared current page without refetching or destroying the PDF', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const { container } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const pageTwo = container.querySelector<HTMLElement>('[data-page-index="1"]');
+    expect(pageTwo).not.toBeNull();
+
+    act(() => firstObserver().showPage(pageTwo!));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+    selectPdfViewMode('Single page');
+
+    expect(
+      await screen.findByRole('button', { name: 'View options: Single page' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText('Page 2')).toBeVisible();
+    expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('single');
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0 }));
+    scrollTo.mockClear();
+    selectPdfViewMode('Continuous scrolling');
+
+    expect(await screen.findByRole('button', { name: 'View options: Continuous' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })),
+    );
+    expect(scrollTo.mock.calls).toEqual([[expect.objectContaining({ behavior: 'smooth' })]]);
+    expect(localStorage.getItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY)).toBe('continuous');
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+  });
+
+  it('consumes a saved Single target before manual navigation and restores the manual page', async () => {
+    const offsetTop = vi
+      .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+      .mockImplementation(function mockPageOffset(this: HTMLElement) {
+        const pageShellIndex = this.dataset.pageIndex;
+        return pageShellIndex === undefined ? 0 : Number(pageShellIndex) * 1000;
+      });
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    renderComponent({ target: { pageIndex: 1, top: null }, currentSection: 'Saved target' });
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalled());
+
+    scrollTo.mockClear();
+    selectPdfViewMode('Continuous scrolling');
+
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 1972, behavior: 'smooth' }]]));
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenCalledWith(2);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    offsetTop.mockRestore();
+  });
+
+  it('reopens a fresh same-valued target in Single without reacting to stable rerenders', async () => {
+    const initialTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    const { rerender } = renderComponent({
+      target: initialTarget,
+      currentSection: 'Repeated Single target',
+    });
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: initialTarget, currentSection: 'Incidental Single rerender' })}
+      />,
+    );
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(1);
+
+    const repeatedTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Repeated Single target' })}
+      />,
+    );
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalledTimes(2));
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Second incidental rerender' })}
+      />,
+    );
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(2);
+    expect(onPageChange.mock.calls).toEqual([[2]]);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+  });
+
+  it('scrolls a fresh same-page Single target to the top without reacting to stable rerenders', async () => {
+    const initialTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const { container, rerender } = renderComponent({
+      target: initialTarget,
+      currentSection: 'Same-page Single target',
+    });
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalledTimes(1));
+    const viewport = container.querySelector<HTMLElement>('.knowledge-viewer__viewport');
+    expect(viewport).not.toBeNull();
+    Object.defineProperty(viewport!, 'scrollTop', { configurable: true, value: 420 });
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: initialTarget, currentSection: 'Incidental Single rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    const repeatedTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Same-page Single target' })}
+      />,
+    );
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 0 }]]));
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Second incidental rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(1);
+    expect(onPageChange).not.toHaveBeenCalled();
+
+    selectPdfViewMode('Continuous scrolling');
+    await waitFor(() =>
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })),
+    );
+    scrollTo.mockClear();
+    selectPdfViewMode('Single page');
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 0 }]]));
+    expect(getAnnotations(2)).toHaveBeenCalledTimes(3);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+  });
+
+  it('uses continuous previous and next controls without feeding observer updates back into scroll', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const { container } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const viewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    const scrollTo = vi.fn();
+    viewport.scrollTo = scrollTo;
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    Object.defineProperty(pageAt(pages, 0), 'offsetTop', { configurable: true, value: 200 });
+    Object.defineProperty(pageAt(pages, 1), 'offsetTop', { configurable: true, value: 1000 });
+    Object.defineProperty(pageAt(pages, 2), 'offsetTop', { configurable: true, value: 1600 });
+
+    await waitFor(() => expect(IntersectionObserverDouble.instances).toHaveLength(1));
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 172, behavior: 'smooth' });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1572, behavior: 'smooth' });
+  });
+
+  it('consumes a same-page ready target after scrolling so later observer pages remain current', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const { container, rerender } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    const viewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    const scrollTo = vi.fn();
+    viewport.scrollTo = scrollTo;
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    Object.defineProperty(pageAt(pages, 0), 'offsetTop', { configurable: true, value: 200 });
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 0, top: 650 }, currentSection: 'Overview target' })}
+      />,
+    );
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 322, behavior: 'smooth' }));
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+
+    act(() => {
+      firstObserver().emit([
+        { target: pageAt(pages, 0), intersectionRatio: 0 },
+        { target: pageAt(pages, 1), intersectionRatio: 1 },
+      ]);
+    });
+
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenLastCalledWith(1);
+
+    selectPdfViewMode('Single page');
+    expect(await screen.findByLabelText('Page 2')).toBeVisible();
+  });
+
+  it('releases a cross-page target that becomes visible before it finishes rendering', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const pageTwoText = deferred<{ items: never[]; styles: Record<string, never> }>();
+    getPage.mockImplementation(async (pageNumber: number) => {
+      const loadedPage = page(pageNumber);
+      if (pageNumber === 2) loadedPage.getTextContent = vi.fn(() => pageTwoText.promise);
+      return loadedPage;
+    });
+    const { container, rerender } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const viewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    viewport.scrollTo = vi.fn();
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 1, top: null }, currentSection: 'Delayed target' })}
+      />,
+    );
+    await waitFor(() => expect(viewport.scrollTo).toHaveBeenCalled());
+    act(() => {
+      firstObserver().emit([
+        { target: pageAt(pages, 0), intersectionRatio: 0 },
+        { target: pageAt(pages, 1), intersectionRatio: 1 },
+      ]);
+    });
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+    await act(async () => {
+      pageTwoText.resolve({ items: [], styles: {} });
+      await pageTwoText.promise;
+    });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(3));
+
+    act(() => {
+      firstObserver().emit([
+        { target: pageAt(pages, 1), intersectionRatio: 0 },
+        { target: pageAt(pages, 2), intersectionRatio: 1 },
+      ]);
+    });
+
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenLastCalledWith(2);
+    selectPdfViewMode('Single page');
+    expect(await screen.findByLabelText('Page 3')).toBeVisible();
+  });
+
+  it('rearms a fresh explicit target with the same page and offset only once', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const offsetTop = vi
+      .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+      .mockImplementation(function mockPageOffset(this: HTMLElement) {
+        const pageShellIndex = this.dataset.pageIndex;
+        return pageShellIndex === undefined ? 0 : Number(pageShellIndex) * 1000;
+      });
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const initialTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    const { container, rerender } = renderComponent({
+      target: initialTarget,
+      currentSection: 'Repeated target',
+    });
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 972, behavior: 'smooth' }));
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
+    act(() => {
+      firstObserver().emit([
+        { target: pageAt(pages, 1), intersectionRatio: 0 },
+        { target: pageAt(pages, 2), intersectionRatio: 1 },
+      ]);
+    });
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: initialTarget, currentSection: 'Incidental rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    const repeatedTarget: KnowledgeViewerTarget = { pageIndex: 1, top: null };
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Repeated target' })}
+      />,
+    );
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 972, behavior: 'smooth' }]]));
+    act(() => firstObserver().showPage(pageAt(pages, 1)));
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange.mock.calls).toEqual([[2], [1]]);
+
+    scrollTo.mockClear();
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: repeatedTarget, currentSection: 'Second incidental rerender' })}
+      />,
+    );
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+    offsetTop.mockRestore();
+  });
+
+  it.each([
+    ['fractional', 1.8, 1, 972],
+    ['out-of-range', 8.7, 2, 1972],
+  ])(
+    'normalizes a %s target before Continuous consumption',
+    async (_label, requestedPageIndex, expectedPageIndex, expectedScrollTop) => {
+      localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+      const offsetTop = vi
+        .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+        .mockImplementation(function mockPageOffset(this: HTMLElement) {
+          const pageShellIndex = this.dataset.pageIndex;
+          return pageShellIndex === undefined ? 0 : Number(pageShellIndex) * 1000;
+        });
+      const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+      const { container } = renderComponent({
+        target: { pageIndex: requestedPageIndex, top: null },
+        currentSection: 'Normalized target',
+      });
+      expect(await screen.findByText(`Page ${expectedPageIndex + 1} of 3`)).toBeInTheDocument();
+      await waitFor(() =>
+        expect(scrollTo).toHaveBeenCalledWith({
+          top: expectedScrollTop,
+          behavior: 'smooth',
+        }),
+      );
+      const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+
+      act(() => {
+        firstObserver().showPage(pageAt(pages, expectedPageIndex));
+      });
+      const nextPageIndex = expectedPageIndex === 2 ? 1 : 2;
+      act(() => {
+        firstObserver().emit([
+          { target: pageAt(pages, expectedPageIndex), intersectionRatio: 0 },
+          { target: pageAt(pages, nextPageIndex), intersectionRatio: 1 },
+        ]);
+      });
+
+      expect(screen.getByText(`Page ${nextPageIndex + 1} of 3`)).toBeInTheDocument();
+      expect(onPageChange).toHaveBeenCalledTimes(1);
+      expect(onPageChange).toHaveBeenLastCalledWith(nextPageIndex);
+      selectPdfViewMode('Single page');
+      expect(await screen.findByLabelText(`Page ${nextPageIndex + 1}`)).toBeVisible();
+      offsetTop.mockRestore();
+    },
+  );
+
+  it('keeps outline offsets, shared zoom, and fit width without a second PDF fetch', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    const { container } = renderComponent({
+      target: { pageIndex: 1, top: 650 },
+      currentSection: 'Recovery procedure',
+    });
+
+    expect(await screen.findByText('Current section · Recovery procedure')).toBeInTheDocument();
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 122, behavior: 'smooth' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('115%')).toBeInTheDocument();
+
+    const continuousViewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    Object.defineProperty(continuousViewport, 'clientWidth', { configurable: true, value: 648 });
+    fitPdfWidth();
+    expect(await screen.findByText('100%')).toBeInTheDocument();
+
+    selectPdfViewMode('Single page');
+    expect(await screen.findByLabelText('Page 2')).toBeVisible();
+    expect(container.querySelectorAll('.knowledge-page')).toHaveLength(1);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(getDocumentMock).toHaveBeenCalledOnce();
+    expect(loadingDestroy).not.toHaveBeenCalled();
+  });
+
+  it('loads the selected PDF through Relay with remote fetching disabled and renders selectable text', async () => {
+    renderComponent();
+
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    expect(getKnowledgePdf).toHaveBeenCalledWith({ documentId: 'doc-1', checksum: 'a'.repeat(64) });
+    expect(getDocumentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        disableAutoFetch: true,
+        disableStream: true,
+        enableXfa: false,
+        useWorkerFetch: false,
+      }),
+    );
+    // pdf.js 6 dropped `isEvalSupported` along with the `new Function` path it gated, so passing
+    // it would only read as a control that no longer exists.
+    expect(getDocumentMock.mock.calls[0]?.[0]).not.toHaveProperty('isEvalSupported');
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+  });
+
+  it('observes canvas rendering before text or annotation extraction can be interrupted', async () => {
+    const renderPromise = new Promise<void>(() => undefined);
+    const renderPromiseThen = vi.spyOn(renderPromise, 'then');
+    const renderPage = page(1);
+    renderPage.render = vi.fn(() => ({ promise: renderPromise, cancel: vi.fn() }));
+    renderPage.getTextContent = vi.fn(() => new Promise(() => undefined));
+    renderPage.getAnnotations = vi.fn(() => new Promise(() => undefined));
+    getPage.mockResolvedValueOnce(renderPage);
+
+    renderComponent();
+
+    await waitFor(() => expect(renderPage.getAnnotations).toHaveBeenCalledOnce());
+    expect(renderPromiseThen).toHaveBeenCalled();
+    const renderOrder = required(
+      renderPromiseThen.mock.invocationCallOrder[0],
+      'the render promise to have been awaited',
+    );
+    expect(renderOrder).toBeLessThan(
+      required(
+        renderPage.getTextContent.mock.invocationCallOrder[0],
+        'text extraction to have been requested',
+      ),
+    );
+    expect(renderOrder).toBeLessThan(
+      required(
+        renderPage.getAnnotations.mock.invocationCallOrder[0],
+        'annotation extraction to have been requested',
+      ),
+    );
+  });
+
+  it('requests annotations only for the active loaded page', async () => {
+    const { rerender } = renderComponent({ active: false });
+
+    expect(getKnowledgePdf).not.toHaveBeenCalled();
+    expect(getAnnotations(1)).not.toHaveBeenCalled();
+
+    rerender(<KnowledgePdfViewer {...viewerProps()} />);
+
+    await waitFor(() => expect(getAnnotations(1)).toHaveBeenCalledWith({ intent: 'display' }));
+    expect(getAnnotations(2)).not.toHaveBeenCalled();
+  });
+
+  it('prefetches only the adjacent pages around the active single page', async () => {
+    renderComponent();
+
+    await waitFor(() => expect(getOperatorList(2)).toHaveBeenCalledWith({ intent: 'display' }));
+    expect(getPage).not.toHaveBeenCalledWith(3);
+    expect(getOperatorList(3)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+
+    await waitFor(() => expect(getOperatorList(3)).toHaveBeenCalledWith({ intent: 'display' }));
+    expect(getOperatorList(1)).toHaveBeenCalledWith({ intent: 'display' });
+  });
+
+  it('refreshes link geometry after zoom and page changes', async () => {
+    resolveUrl.mockReturnValue({
+      kind: 'web',
+      url: 'https://relay.example/help',
+      hostname: 'relay.example',
+    });
+    getAnnotations(1).mockResolvedValue([
+      {
+        subtype: 'Link',
+        id: 'page-one',
+        rect: [10, 20, 30, 40],
+        url: 'https://relay.example/help',
+      },
+    ]);
+    getAnnotations(2).mockResolvedValue([
+      {
+        subtype: 'Link',
+        id: 'page-two',
+        rect: [30, 20, 50, 40],
+        url: 'https://relay.example/help',
+      },
+    ]);
+    renderComponent();
+
+    const pageOneLink = await screen.findByRole('button', {
+      name: 'Open relay.example in browser',
+    });
+    expect(pageOneLink).toHaveStyle({ left: '10px', width: '20px' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Open relay.example in browser' })).toHaveStyle({
+        left: '11.5px',
+        width: '23px',
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => {
+      const pageTwoLink = screen.getByRole('button', {
+        name: 'Open relay.example in browser',
+      });
+      expect(pageTwoLink).toHaveStyle({ left: '34.5px' });
+      expect(Number.parseFloat(pageTwoLink.style.width)).toBeCloseTo(23);
+    });
+    expect(getAnnotations(1)).toHaveBeenCalledTimes(2);
+    expect(getAnnotations(2)).toHaveBeenCalledOnce();
+  });
+
+  it('navigates a native destination without reloading PDF bytes', async () => {
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'destination', rect: [10, 20, 30, 40], dest: [2, { name: 'Fit' }] },
+    ]);
+
+    function DestinationHarness() {
+      const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
+      return <KnowledgePdfViewer {...viewerProps({ target, onDestinationChange: setTarget })} />;
+    }
+
+    render(<DestinationHarness />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open linked location in this guide' }),
+    );
+
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    expect(onActivateResolvedLink).not.toHaveBeenCalled();
+  });
+
+  it('applies only the latest native destination when lookups resolve out of order', async () => {
+    const firstDestination = deferred<unknown[] | null>();
+    const secondDestination = deferred<unknown[] | null>();
+    const getRaceDestination = vi.fn((name: string) =>
+      name === 'first-destination' ? firstDestination.promise : secondDestination.promise,
+    );
+    getDocumentMock.mockReturnValueOnce({
+      promise: Promise.resolve(pdf({ getDestination: getRaceDestination })),
+      destroy: loadingDestroy,
+    } as never);
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'first', rect: [10, 20, 30, 40], dest: 'first-destination' },
+      { subtype: 'Link', id: 'second', rect: [10, 50, 30, 70], dest: 'second-destination' },
+    ]);
+    renderComponent();
+
+    const [firstButton, secondButton] = await screen.findAllByRole('button', {
+      name: 'Open linked location in this guide',
+    });
+    fireEvent.click(required(firstButton, 'the first in-document link button'));
+    fireEvent.click(required(secondButton, 'the second in-document link button'));
+    await waitFor(() => expect(getRaceDestination).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      secondDestination.resolve([2, { name: 'Fit' }]);
+      await secondDestination.promise;
+    });
+    await waitFor(() =>
+      expect(onDestinationChange).toHaveBeenCalledWith({ pageIndex: 2, top: null }),
+    );
+
+    await act(async () => {
+      firstDestination.resolve([1, { name: 'Fit' }]);
+      await firstDestination.promise;
+      await Promise.resolve();
+    });
+
+    expect(onDestinationChange).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates an in-flight native destination when the operator changes page manually', async () => {
+    const destination = deferred<unknown[] | null>();
+    const getManualRaceDestination = vi.fn(() => destination.promise);
+    getDocumentMock.mockReturnValueOnce({
+      promise: Promise.resolve(pdf({ getDestination: getManualRaceDestination })),
+      destroy: loadingDestroy,
+    } as never);
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'destination', rect: [10, 20, 30, 40], dest: 'late-destination' },
+    ]);
+    renderComponent();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open linked location in this guide' }),
+    );
+    await waitFor(() => expect(getManualRaceDestination).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+
+    await act(async () => {
+      destination.resolve([2, { name: 'Fit' }]);
+      await destination.promise;
+      await Promise.resolve();
+    });
+
+    expect(onDestinationChange).not.toHaveBeenCalled();
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+  });
+
+  it('discards a native destination that resolves after selecting another document', async () => {
+    const destination = deferred<unknown[] | null>();
+    const pageIndex = deferred<number>();
+    const sourceGetDestination = vi.fn(() => destination.promise);
+    const sourceGetPageIndex = vi.fn(() => pageIndex.promise);
+    const sourcePdf = pdf({
+      getDestination: sourceGetDestination,
+      getPageIndex: sourceGetPageIndex,
+    });
+    const selectedPdf = pdf();
+    getDocumentMock
+      .mockReturnValueOnce({
+        promise: Promise.resolve(sourcePdf),
+        destroy: loadingDestroy,
+      } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(selectedPdf),
+        destroy: loadingDestroy,
+      } as never);
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'destination', rect: [10, 20, 30, 40], dest: 'late-destination' },
+    ]);
+    const sourceDocument = record({ title: 'Source guide' });
+    const selectedDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Selected guide',
+      sourceKey: 'General/Selected.pdf',
+      fileName: 'Selected.pdf',
+      pdf: 'Selected.pdf',
+    });
+
+    function DestinationRaceHarness() {
+      const [selected, setSelected] = useState(sourceDocument);
+      const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
+      const [section, setSection] = useState('Source section');
+
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(selectedDocument);
+              setTarget(null);
+              setSection('Selected section');
+            }}
+          >
+            Select another document
+          </button>
+          <KnowledgePdfViewer
+            {...viewerProps({
+              document: selected,
+              target,
+              currentSection: section,
+              onDestinationChange: (nextTarget: KnowledgeViewerTarget) => {
+                setTarget(nextTarget);
+                setSection(`${selected.title} destination`);
+              },
+            })}
+          />
+        </>
+      );
+    }
+
+    render(<DestinationRaceHarness />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open linked location in this guide' }),
+    );
+    await waitFor(() => expect(sourceGetDestination).toHaveBeenCalledWith('late-destination'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select another document' }));
+    expect(await screen.findByRole('heading', { name: 'Selected guide' })).toBeInTheDocument();
+    expect(await screen.findByText('Current section · Selected section')).toBeInTheDocument();
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+
+    await act(async () => {
+      destination.resolve([{ num: 2, gen: 0 }, { name: 'Fit' }]);
+      await sourceGetDestination.mock.results[0]?.value;
+    });
+    await waitFor(() => expect(sourceGetPageIndex).toHaveBeenCalledOnce());
+    await act(async () => {
+      pageIndex.resolve(2);
+      await pageIndex.promise;
+    });
+
+    expect(screen.getByText('Current section · Selected section')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+  });
+
+  it('reports an invalid native destination without changing page', async () => {
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'invalid', rect: [10, 20, 30, 40], dest: [8, { name: 'Fit' }] },
+    ]);
+    renderComponent();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open linked location in this guide' }),
+    );
+
+    await waitFor(() =>
+      expect(onActivateResolvedLink).toHaveBeenCalledWith({
+        kind: 'unavailable',
+        reason: 'unsupported',
+      }),
+    );
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+    expect(onDestinationChange).not.toHaveBeenCalled();
+  });
+
+  it('clears stale overlays across scale, page, and document changes', async () => {
+    resolveUrl.mockReturnValue({
+      kind: 'web',
+      url: 'https://relay.example/help',
+      hostname: 'relay.example',
+    });
+    const annotation = {
+      subtype: 'Link',
+      id: 'current',
+      rect: [10, 20, 30, 40],
+      url: 'https://relay.example/help',
+    };
+    getAnnotations(1).mockResolvedValueOnce([annotation]);
+    const scaledAnnotations = deferred<unknown[]>();
+    getAnnotations(1).mockReturnValueOnce(scaledAnnotations.promise);
+    const nextPageAnnotations = deferred<unknown[]>();
+    getAnnotations(2).mockReturnValueOnce(nextPageAnnotations.promise);
+    const { rerender } = renderComponent();
+
+    expect(
+      await screen.findByRole('button', { name: 'Open relay.example in browser' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(
+      screen.queryByRole('button', { name: 'Open relay.example in browser' }),
+    ).not.toBeInTheDocument();
+    scaledAnnotations.resolve([annotation]);
+    expect(
+      await screen.findByRole('button', { name: 'Open relay.example in browser' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(
+      screen.queryByRole('button', { name: 'Open relay.example in browser' }),
+    ).not.toBeInTheDocument();
+    nextPageAnnotations.resolve([{ ...annotation, id: 'next-page' }]);
+    expect(
+      await screen.findByRole('button', { name: 'Open relay.example in browser' }),
+    ).toBeInTheDocument();
+
+    const nextDocumentPdf = deferred<{
+      ok: true;
+      data: ArrayBuffer;
+      checksum: string;
+      source: 'server';
+    }>();
+    getKnowledgePdf.mockReturnValueOnce(nextDocumentPdf.promise);
+    const nextDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Second guide',
+      sourceKey: 'General/Second.pdf',
+      fileName: 'Second.pdf',
+      pdf: 'Second.pdf',
+    });
+    rerender(<KnowledgePdfViewer {...viewerProps({ document: nextDocument })} />);
+    expect(
+      screen.queryByRole('button', { name: 'Open relay.example in browser' }),
+    ).not.toBeInTheDocument();
+    expect(getKnowledgePdf).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores late annotation work from an interrupted page render', async () => {
+    resolveUrl.mockImplementation((url): KnowledgeResolvedLink => ({
+      kind: 'web',
+      url,
+      hostname: new URL(url).hostname,
+    }));
+    const firstPageAnnotations = deferred<unknown[]>();
+    getAnnotations(1).mockReturnValueOnce(firstPageAnnotations.promise);
+    getAnnotations(2).mockResolvedValueOnce([
+      { subtype: 'Link', id: 'new', rect: [20, 20, 40, 40], url: 'https://new.example' },
+    ]);
+    renderComponent();
+    await screen.findByText('Page 1 of 3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(
+      await screen.findByRole('button', { name: 'Open new.example in browser' }),
+    ).toBeInTheDocument();
+
+    firstPageAnnotations.resolve([
+      { subtype: 'Link', id: 'old', rect: [10, 10, 30, 30], url: 'https://old.example' },
+    ]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.queryByRole('button', { name: 'Open old.example in browser' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open new.example in browser' })).toBeInTheDocument();
+  });
+
+  it('invalidates active annotation work when the same document checksum changes', async () => {
+    resolveUrl.mockImplementation((url): KnowledgeResolvedLink => ({
+      kind: 'web',
+      url,
+      hostname: new URL(url).hostname,
+    }));
+    const staleAnnotations = deferred<unknown[]>();
+    const stalePage = page(1);
+    stalePage.getAnnotations = vi.fn(() => staleAnnotations.promise);
+    const staleGetPage = vi.fn(async () => stalePage);
+    getDocumentMock.mockReturnValueOnce({
+      promise: Promise.resolve(pdf({ getPage: staleGetPage })),
+      destroy: loadingDestroy,
+    } as never);
+    getKnowledgePdf
+      .mockResolvedValueOnce({
+        ok: true,
+        data: new Uint8Array([1, 2, 3]).buffer,
+        checksum: 'a'.repeat(64),
+        source: 'server',
+      })
+      .mockReturnValueOnce(new Promise(() => undefined));
+    const { rerender } = renderComponent();
+    await waitFor(() => expect(stalePage.getAnnotations).toHaveBeenCalledOnce());
+
+    rerender(
+      <KnowledgePdfViewer {...viewerProps({ document: record({ checksum: 'b'.repeat(64) }) })} />,
+    );
+
+    expect(getKnowledgePdf).toHaveBeenLastCalledWith({
+      documentId: 'doc-1',
+      checksum: 'b'.repeat(64),
+    });
+    staleAnnotations.resolve([
+      { subtype: 'Link', id: 'stale', rect: [10, 10, 30, 30], url: 'https://stale.example' },
+    ]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await waitFor(() => expect(stalePage.cleanup).toHaveBeenCalledOnce());
+    expect(staleGetPage).toHaveBeenCalledWith(1);
+    expect(staleGetPage).toHaveBeenCalledWith(2);
+    expect(stalePage.getAnnotations).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Open stale.example in browser' })).toBeNull();
+  });
+
+  it('handles interrupted render and annotation rejections without an unhandled rejection', async () => {
+    const canvasRender = deferred<void>();
+    const annotations = deferred<unknown[]>();
+    const interruptedPage = page(1);
+    interruptedPage.render = vi.fn(() => ({ promise: canvasRender.promise, cancel: vi.fn() }));
+    interruptedPage.getAnnotations = vi.fn(() => annotations.promise);
+    getPage.mockResolvedValueOnce(interruptedPage);
+    const unhandled = vi.fn((event: PromiseRejectionEvent) => event.preventDefault());
+    globalThis.addEventListener('unhandledrejection', unhandled);
+    const { rerender } = renderComponent();
+    await waitFor(() => expect(interruptedPage.getAnnotations).toHaveBeenCalled());
+
+    rerender(<KnowledgePdfViewer {...viewerProps({ active: false })} />);
+    const cancelled = new Error('cancelled');
+    cancelled.name = 'RenderingCancelledException';
+    canvasRender.reject(cancelled);
+    annotations.reject(cancelled);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(screen.queryByText('Relay could not render this page.')).not.toBeInTheDocument();
+    globalThis.removeEventListener('unhandledrejection', unhandled);
+  });
+
+  it('does not reconnect pages to a destroyed PDF when the retained Wiki becomes visible again', async () => {
+    let firstPdfDestroyed = false;
+    const firstPdfDestroy = vi.fn(async () => {
+      firstPdfDestroyed = true;
+    });
+    const firstPdfGetPage = vi.fn((pageNumber: number) => {
+      if (firstPdfDestroyed) {
+        throw new TypeError("Cannot read properties of null (reading 'sendWithPromise')");
+      }
+      return Promise.resolve(page(pageNumber));
+    });
+    const secondPdfLoad = deferred<ReturnType<typeof pdf>>();
+    getDocumentMock
+      .mockReturnValueOnce({
+        promise: Promise.resolve(pdf({ getPage: firstPdfGetPage })),
+        destroy: firstPdfDestroy,
+      } as never)
+      .mockReturnValueOnce({
+        promise: secondPdfLoad.promise,
+        destroy: loadingDestroy,
+      } as never);
+
+    const renderRetainedViewer = (visible: boolean) => (
+      <Activity mode={visible ? 'visible' : 'hidden'}>
+        <KnowledgePdfViewer {...viewerProps({ active: visible })} />
+      </Activity>
+    );
+    const { rerender } = render(renderRetainedViewer(true));
+    await screen.findByText('Page 1 of 3');
+    await waitFor(() => expect(firstPdfGetPage).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('115%')).toBeInTheDocument();
+
+    rerender(renderRetainedViewer(false));
+    await waitFor(() => expect(firstPdfDestroy).toHaveBeenCalledOnce());
+    firstPdfGetPage.mockClear();
+
+    rerender(renderRetainedViewer(true));
+    await waitFor(() => expect(getDocumentMock).toHaveBeenCalledTimes(2));
+
+    expect(firstPdfGetPage).not.toHaveBeenCalled();
+    expect(screen.getByText('Loading document')).toBeInTheDocument();
+
+    secondPdfLoad.resolve(pdf());
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('115%')).toBeInTheDocument();
+  });
+
+  it.each(['rejects', 'throws'])(
+    'keeps an active readable page visible when optional annotation extraction %s',
+    async (failureMode) => {
+      const readablePage = page(1);
+      readablePage.getAnnotations =
+        failureMode === 'throws'
+          ? vi.fn(() => {
+              throw new Error('malformed optional annotation data');
+            })
+          : vi.fn(async () => {
+              throw new Error('malformed optional annotation data');
+            });
+      getPage.mockResolvedValueOnce(readablePage);
+
+      renderComponent();
+
+      await waitFor(() =>
+        expect(readablePage.getAnnotations).toHaveBeenCalledWith({ intent: 'display' }),
+      );
+      await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+      expect(screen.getByLabelText('Page 1')).toBeInTheDocument();
+      expect(screen.queryByText('Relay could not render this page.')).not.toBeInTheDocument();
+      expect(document.querySelector('.knowledge-page__link-target')).not.toBeInTheDocument();
+    },
+  );
+
+  it('restores focus after a cross-document request once its target page is rendered', async () => {
+    const secondPageText = deferred<{ items: never[]; styles: Record<string, never> }>();
+    const secondGetPage = vi.fn(async (pageNumber: number) => {
+      const loadedPage = page(pageNumber);
+      if (pageNumber === 2) loadedPage.getTextContent = vi.fn(() => secondPageText.promise);
+      return loadedPage;
+    });
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(pdf()), destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(pdf({ getPage: secondGetPage })),
+        destroy: loadingDestroy,
+      } as never);
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    expect(externalFocus).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    await waitFor(() => expect(getAnnotations(1)).toHaveBeenCalledTimes(2));
+    expect(externalFocus).toHaveFocus();
+
+    const nextDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Second guide',
+      sourceKey: 'General/Second.pdf',
+      fileName: 'Second.pdf',
+      pdf: 'Second.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: nextDocument,
+          target: { pageIndex: 1, top: null },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+    await waitFor(() => expect(secondGetPage).toHaveBeenCalledWith(2));
+    expect(externalFocus).toHaveFocus();
+
+    secondPageText.resolve({ items: [], styles: {} });
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(viewport).toHaveAttribute('tabindex', '-1');
+    externalFocus.remove();
+  });
+
+  it('restores focus using the bounded page for an out-of-range target', async () => {
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    expect(externalFocus).toHaveFocus();
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 8.7, top: null }, focusRequestKey: 1 })}
+      />,
+    );
+
+    await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalled());
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    externalFocus.remove();
+  });
+
+  // Regression: a single-page target that lands on the page already on screen *with* a vertical
+  // offset took neither branch of the settle logic, so the navigation target was never released.
+  // The pending focus request stayed queued forever and the viewport never took focus.
+  it('restores focus for an offset target that lands on the page already displayed', async () => {
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    expect(externalFocus).toHaveFocus();
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 0, top: 420 }, focusRequestKey: 1 })}
+      />,
+    );
+
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+    externalFocus.remove();
+  });
+
+  // Regression: `activePdfIdentity?.documentId === documentId` compared undefined to undefined
+  // while no document was selected, reporting a match against a session that does not exist. The
+  // next term then dereferenced the null session and threw out of the effect.
+  it('does not read a null pdf session when a target arrives with no selected document', async () => {
+    const { rerender } = render(
+      <KnowledgePdfViewer {...viewerProps({ document: null, target: null })} />,
+    );
+
+    expect(() =>
+      rerender(
+        <KnowledgePdfViewer
+          {...viewerProps({ document: null, target: { pageIndex: 1, top: null } })}
+        />,
+      ),
+    ).not.toThrow();
+
+    expect(screen.getByRole('heading', { name: 'Select a document' })).toBeInTheDocument();
+  });
+
+  it('does not restore delayed target focus after manual navigation supersedes it', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const pageTwoText = deferred<{ items: never[]; styles: Record<string, never> }>();
+    const secondGetPage = vi.fn(async (pageNumber: number) => {
+      const loadedPage = page(pageNumber);
+      if (pageNumber === 2) loadedPage.getTextContent = vi.fn(() => pageTwoText.promise);
+      return loadedPage;
+    });
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(pdf()), destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(pdf({ getPage: secondGetPage })),
+        destroy: loadingDestroy,
+      } as never);
+    const { rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(3));
+
+    const nextDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Second guide',
+      sourceKey: 'General/Second.pdf',
+      fileName: 'Second.pdf',
+      pdf: 'Second.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: nextDocument,
+          target: { pageIndex: 1, top: null },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(5));
+
+    const nextPage = screen.getByRole('button', { name: 'Next page' });
+    nextPage.focus();
+    fireEvent.click(nextPage);
+    expect(nextPage).toHaveFocus();
+    await act(async () => {
+      pageTwoText.resolve({ items: [], styles: {} });
+      await pageTwoText.promise;
+    });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(6));
+
+    expect(nextPage).toHaveFocus();
+  });
+
+  it('does not transfer a pending cross-document focus request to an unrelated document', async () => {
+    const requestedPageText = deferred<{ items: never[]; styles: Record<string, never> }>();
+    const requestedGetPage = vi.fn(async (pageNumber: number) => {
+      const loadedPage = page(pageNumber);
+      if (pageNumber === 2) loadedPage.getTextContent = vi.fn(() => requestedPageText.promise);
+      return loadedPage;
+    });
+    const unrelatedGetPage = vi.fn(async (pageNumber: number) => page(pageNumber));
+    getDocumentMock
+      .mockReturnValueOnce({ promise: Promise.resolve(pdf()), destroy: loadingDestroy } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(pdf({ getPage: requestedGetPage })),
+        destroy: loadingDestroy,
+      } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(pdf({ getPage: unrelatedGetPage })),
+        destroy: loadingDestroy,
+      } as never);
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+
+    const requestedDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Requested guide',
+      sourceKey: 'General/Requested.pdf',
+      fileName: 'Requested.pdf',
+      pdf: 'Requested.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: requestedDocument,
+          target: { pageIndex: 1, top: null },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+    await waitFor(() => expect(requestedGetPage).toHaveBeenCalledWith(2));
+    expect(externalFocus).toHaveFocus();
+    const textLayerCountBeforeUnrelatedDocument = TextLayerMock.mock.calls.length;
+
+    const unrelatedDocument = record({
+      id: 'doc-3',
+      checksum: 'c'.repeat(64),
+      title: 'Unrelated guide',
+      sourceKey: 'General/Unrelated.pdf',
+      fileName: 'Unrelated.pdf',
+      pdf: 'Unrelated.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: unrelatedDocument,
+          target: null,
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(unrelatedGetPage).toHaveBeenCalledWith(1));
+    await waitFor(() =>
+      expect(TextLayerMock).toHaveBeenCalledTimes(textLayerCountBeforeUnrelatedDocument + 1),
+    );
+    expect(externalFocus).toHaveFocus();
+    externalFocus.remove();
+  });
+
+  it('focuses and consumes only a matching cross-document request when the target is unavailable offline', async () => {
+    getKnowledgePdf.mockResolvedValue({ ok: false, error: 'not-available-offline' });
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+
+    expect(await screen.findByText(/not cached on this laptop/i)).toBeInTheDocument();
+    expect(externalFocus).toHaveFocus();
+
+    const requestedDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Requested guide',
+      sourceKey: 'General/Requested.pdf',
+      fileName: 'Requested.pdf',
+      pdf: 'Requested.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: requestedDocument,
+          target: { pageIndex: 1, top: null },
+          currentSection: 'Requested section',
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getKnowledgePdf).toHaveBeenLastCalledWith({
+        documentId: 'doc-2',
+        checksum: 'b'.repeat(64),
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Requested guide' })).toBeInTheDocument();
+    expect(screen.getByText('Current section · Requested section')).toBeInTheDocument();
+    expect(screen.getByText(/not cached on this laptop/i)).toBeInTheDocument();
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(onPageChange).not.toHaveBeenCalled();
+    expect(onDestinationChange).not.toHaveBeenCalled();
+
+    externalFocus.focus();
+    const unrelatedDocument = record({
+      id: 'doc-3',
+      checksum: 'c'.repeat(64),
+      title: 'Unrelated guide',
+      sourceKey: 'General/Unrelated.pdf',
+      fileName: 'Unrelated.pdf',
+      pdf: 'Unrelated.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: unrelatedDocument,
+          target: { pageIndex: 1, top: null },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getKnowledgePdf).toHaveBeenLastCalledWith({
+        documentId: 'doc-3',
+        checksum: 'c'.repeat(64),
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Unrelated guide' })).toBeInTheDocument();
+    expect(screen.getByText(/not cached on this laptop/i)).toBeInTheDocument();
+    expect(externalFocus).toHaveFocus();
+    externalFocus.remove();
+  });
+
+  it('navigates pages and follows a viewer target', async () => {
+    const { rerender } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenCalledWith(1);
+
+    const target: KnowledgeViewerTarget = { pageIndex: 2, top: 650 };
+    rerender(<KnowledgePdfViewer {...viewerProps({ target })} />);
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+  });
+
+  it('shows the active section without replacing it when the target page opens', async () => {
+    renderComponent({
+      target: { pageIndex: 1, top: 650 },
+      currentSection: 'Recovery procedure',
+    });
+
+    expect(await screen.findByText('Current section · Recovery procedure')).toBeInTheDocument();
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange).not.toHaveBeenCalled();
+  });
+
+  it('shows a useful offline state without exposing download or print controls', async () => {
+    getKnowledgePdf.mockResolvedValue({ ok: false, error: 'not-available-offline' });
+    renderComponent();
+
+    expect(await screen.findByText(/not cached on this laptop/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /print/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry document' })).toBeInTheDocument();
+  });
+
+  it('retries the active document after a transient load failure', async () => {
+    getKnowledgePdf
+      .mockResolvedValueOnce({ ok: false, error: 'download-failed' })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: new Uint8Array([1, 2, 3]).buffer,
+        checksum: 'a'.repeat(64),
+        source: 'server',
+      });
+    renderComponent();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry document' }));
+
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+    expect(getKnowledgePdf).toHaveBeenCalledTimes(2);
+  });
+
+  it('destroys an opened document through its loading task on unmount', async () => {
+    const { unmount } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+
+    unmount();
+    expect(loadingDestroy).toHaveBeenCalledOnce();
+  });
+});

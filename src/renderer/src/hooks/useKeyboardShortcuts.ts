@@ -1,28 +1,29 @@
 import { useEffect, RefObject } from 'react';
 import { TabName } from '@shared/ipc';
+import { isAnyModalOpen } from '../components/modalStack';
 
 interface UseKeyboardShortcutsParams {
   setActiveTab: (tab: TabName) => void;
-  setSettingsOpen: (open: boolean) => void;
+  openSettings: () => void;
   setIsShortcutsOpen: (open: boolean) => void;
-  searchInputRef: RefObject<HTMLInputElement>;
+  searchInputRef: RefObject<HTMLInputElement | null>;
 }
 
 export function useKeyboardShortcuts({
   setActiveTab,
-  setSettingsOpen,
+  openSettings,
   setIsShortcutsOpen,
   searchInputRef,
 }: UseKeyboardShortcutsParams): void {
   useEffect(() => {
-    const tabMap: Record<string, string> = {
+    const tabMap: Partial<Record<string, TabName>> = {
       '1': 'Compose',
-      '2': 'Personnel',
-      '3': 'People',
-      '4': 'Servers',
+      '2': 'Alerts',
+      '3': 'Personnel',
+      '4': 'Knowledge',
       '5': 'Status',
-      '6': 'Notes',
-      '7': 'Alerts',
+      '6': 'Problems',
+      '7': 'Radar',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -38,7 +39,7 @@ export function useKeyboardShortcuts({
       // Cmd/Ctrl+, for Settings
       if (mod && e.key === ',') {
         e.preventDefault();
-        setSettingsOpen(true);
+        openSettings();
         return;
       }
 
@@ -49,14 +50,18 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // Cmd/Ctrl+1-9 for tab navigation
-      if (mod && !e.shiftKey && tabMap[e.key]) {
+      // Cmd/Ctrl+1-7 for top-level navigation
+      const destination = tabMap[e.key];
+      if (mod && !e.shiftKey && destination) {
         e.preventDefault();
-        setActiveTab(tabMap[e.key] as TabName);
+        // Switching the tab underneath an open modal strands the dialog over a
+        // context the user never opened it from — swallow the shortcut instead.
+        if (isAnyModalOpen()) return;
+        setActiveTab(destination);
       }
     };
 
     globalThis.addEventListener('keydown', handleKeyDown);
     return () => globalThis.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveTab, setSettingsOpen, setIsShortcutsOpen, searchInputRef]);
+  }, [setActiveTab, openSettings, setIsShortcutsOpen, searchInputRef]);
 }

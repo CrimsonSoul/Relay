@@ -53,31 +53,17 @@ export const TeamCard = React.memo(
         return { label: 'Empty', tone: 'muted' };
       }
 
-      const hasPrimary = validRows.some((row) => row.role.toLowerCase().includes('primary'));
-      const hasBackup = validRows.some((row) => {
-        const role = row.role.toLowerCase();
-        return (
-          role.includes('secondary') ||
-          role.includes('backup') ||
-          role.includes('weekend') ||
-          role.includes('after')
-        );
-      });
       const missingContact = validRows.some((row) => !row.contact.trim());
 
       if (missingContact) {
         return { label: 'Needs contact', tone: 'watch' };
       }
 
-      if (hasPrimary && !hasBackup) {
-        return { label: 'No backup', tone: 'danger' };
-      }
-
-      return { label: 'Covered', tone: 'ok' };
+      return null;
     }, [teamRows]);
 
-    const isEmpty =
-      teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
+    const onlyRow = teamRows.length === 1 ? teamRows[0] : undefined;
+    const isEmpty = teamRows.length === 0 || (!!onlyRow && !onlyRow.name && !onlyRow.contact);
     const emptyStateContent = isReadOnly ? (
       <div className="team-card-empty team-card-empty--readonly">No personnel assigned</div>
     ) : (
@@ -203,9 +189,11 @@ export const TeamCard = React.memo(
                 <span>{team}</span>
               </Tooltip>
             </div>
-            <span className={`team-health-badge team-health-badge--${health.tone}`}>
-              {health.label}
-            </span>
+            {health && (
+              <span className={`team-health-badge team-health-badge--${health.tone}`}>
+                {health.label}
+              </span>
+            )}
           </div>
           <div className="team-card-rows">
             {isEmpty
@@ -238,11 +226,28 @@ export const TeamCard = React.memo(
     if (prev.team !== next.team) return false;
     if (prev.isReadOnly !== next.isReadOnly) return false;
     if (prev.contacts !== next.contacts) return false;
+    // The callbacks close over board state — onRemoveTeam captures the current
+    // teamOrder. A card that skipped a re-render (its index was untouched by a
+    // drag reorder) would keep the pre-drag closure and write that stale order
+    // back to the server, silently reverting a reorder the user just saw.
+    if (
+      prev.onUpdateRows !== next.onUpdateRows ||
+      prev.onRenameTeam !== next.onRenameTeam ||
+      prev.onRemoveTeam !== next.onRemoveTeam ||
+      prev.setConfirm !== next.setConfirm ||
+      prev.setMenu !== next.setMenu ||
+      prev.onCopyTeamInfo !== next.onCopyTeamInfo
+    ) {
+      return false;
+    }
     if (prev.rows.length !== next.rows.length) return false;
 
     for (let i = 0; i < prev.rows.length; i++) {
       const r1 = prev.rows[i];
       const r2 = next.rows[i];
+      // Lengths matched above, so a hole here would be a sparse array; treat it
+      // as "changed" and re-render rather than silently comparing nothing.
+      if (!r1 || !r2) return false;
       if (
         r1.id !== r2.id ||
         r1.name !== r2.name ||

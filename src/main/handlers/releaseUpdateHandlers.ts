@@ -1,0 +1,240 @@
+import { app, ipcMain, shell } from 'electron';
+import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
+import {
+  RELAY_RELEASES_URL,
+  type RelayUpdateCheck,
+  type RelayUpdateSnapshot,
+} from '@shared/releases';
+import { loggers } from '../logger';
+import { rateLimiters } from '../rateLimiter';
+import { shouldSuppressDesktopSideEffects } from '../app/e2eSafety';
+import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
+import type { RelayInstallableRelease } from '../releases/ReleaseUpdateService';
+
+type ReleaseUpdateChecker = {
+  check: () => Promise<RelayUpdateCheck>;
+};
+
+type InstallableReleaseResolver = {
+  resolveLatestInstallable: () => Promise<RelayInstallableRelease>;
+};
+
+type ReleaseUpdateController = {
+  snapshot: () => RelayUpdateSnapshot;
+  subscribe: (listener: (snapshot: RelayUpdateSnapshot) => void) => () => void;
+  noteCheck: (check: RelayUpdateCheck) => Promise<RelayUpdateSnapshot>;
+  download: () => Promise<RelayUpdateSnapshot>;
+  cancelDownload: () => Promise<RelayUpdateSnapshot>;
+  install: () => Promise<RelayUpdateSnapshot>;
+  restart: () => Promise<boolean>;
+};
+
+type ReleaseUpdateHandlerOptions = {
+  service?: ReleaseUpdateChecker;
+  manager?: ReleaseUpdateController;
+};
+
+function isInstallableReleaseResolver(
+  service: ReleaseUpdateChecker,
+): service is ReleaseUpdateChecker & InstallableReleaseResolver {
+  return (
+    'resolveLatestInstallable' in service && typeof service.resolveLatestInstallable === 'function'
+  );
+}
+
+function authoritativeCheck(
+  fallback: RelayUpdateCheck,
+  snapshot: RelayUpdateSnapshot,
+): RelayUpdateCheck {
+  if (snapshot.phase === 'idle' || !snapshot.latestVersion) return fallback;
+  return {
+    currentVersion: snapshot.currentVersion,
+    latestVersion: snapshot.latestVersion,
+    updateAvailable: true,
+    installable: snapshot.installable,
+    assetSizeBytes: snapshot.totalBytes,
+  };
+}
+
+export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions = {}): void {
+  let servicePromise: Promise<ReleaseUpdateChecker> | null = options.service
+    ? Promise.resolve(options.service)
+    : null;
+  const getService = () => {
+    servicePromise ??= import('../releases/ReleaseUpdateService').then(
+      ({ ReleaseUpdateService }) =>
+        new ReleaseUpdateService({ getCurrentVersion: () => app.getVersion() }),
+    );
+    return servicePromise;
+  };
+  let managerPromise: Promise<ReleaseUpdateController> | null = options.manager
+    ? Promise.resolve(options.manager)
+    : null;
+  let subscribedManager: ReleaseUpdateController | null = null;
+  const subscribeManager = (manager: ReleaseUpdateController) => {
+    if (subscribedManager === manager) return manager;
+    manager.subscribe((snapshot) =>
+      broadcastToAllWindows(IPC_CHANNELS.APP_UPDATE_STATE_CHANGED, snapshot),
+    );
+    subscribedManager = manager;
+    return manager;
+  };
+  const getManager = () => {
+    managerPromise ??= Promise.all([getService(), import('../releases/ReleaseUpdateManager')]).then(
+      ([service, { ReleaseUpdateManager }]) => {
+        if (!isInstallableReleaseResolver(service)) {
+          throw new Error('Release update service cannot resolve installable releases');
+        }
+        return new ReleaseUpdateManager({
+          service,
+          getCurrentVersion: () => app.getVersion(),
+          platform: process.platform,
+          arch: process.arch,
+          isPackaged: app.isPackaged,
+          localAppData: process.env.LOCALAPPDATA ?? '',
+          execPath: process.execPath,
+          relaunch: (relaunchOptions) => app.relaunch(relaunchOptions),
+          quit: () => app.quit(),
+        });
+      },
+    );
+    return managerPromise.then(subscribeManager);
+  };
+
+  ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, async (event): Promise<string | null> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_GET_VERSION)) return null;
+    return app.getVersion();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.APP_CHECK_FOR_UPDATES,
+    async (event): Promise<IpcResult<RelayUpdateCheck>> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_CHECK_FOR_UPDATES)) {
+        return { success: false, error: 'untrusted-sender' };
+      }
+      if (!rateLimiters.network.tryConsume().allowed) {
+        return { success: false, error: 'rate-limited' };
+      }
+
+      try {
+        const service = await getService();
+        const check = await service.check();
+        const manager = await getManager();
+        const snapshot = await manager.noteCheck(check);
+        return { success: true, data: authoritativeCheck(check, snapshot) };
+      } catch (error) {
+        loggers.main.warn('GitHub release check unavailable', { error });
+        return { success: false, error: 'unavailable' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_GET_STATE,
+    async (event): Promise<RelayUpdateSnapshot | null> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_GET_STATE)) return null;
+      try {
+        return (await getManager()).snapshot();
+      } catch (error) {
+        loggers.main.warn('Relay update state unavailable', { error });
+        return null;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_DOWNLOAD,
+    async (event): Promise<IpcResult<RelayUpdateSnapshot>> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_DOWNLOAD)) {
+        return { success: false, error: 'untrusted-sender' };
+      }
+      if (!rateLimiters.network.tryConsume().allowed) {
+        return { success: false, error: 'rate-limited' };
+      }
+
+      try {
+        const manager = await getManager();
+        if (shouldSuppressDesktopSideEffects()) {
+          return { success: true, data: manager.snapshot() };
+        }
+        return { success: true, data: await manager.download() };
+      } catch (error) {
+        loggers.main.warn('Relay update download unavailable', { error });
+        return { success: false, error: 'unavailable' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_CANCEL_DOWNLOAD,
+    async (event): Promise<IpcResult<RelayUpdateSnapshot>> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_CANCEL_DOWNLOAD)) {
+        return { success: false, error: 'untrusted-sender' };
+      }
+      try {
+        const manager = await getManager();
+        if (shouldSuppressDesktopSideEffects()) {
+          return { success: true, data: manager.snapshot() };
+        }
+        return { success: true, data: await manager.cancelDownload() };
+      } catch (error) {
+        loggers.main.warn('Relay update cancellation unavailable', { error });
+        return { success: false, error: 'unavailable' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.APP_UPDATE_INSTALL,
+    async (event): Promise<IpcResult<RelayUpdateSnapshot>> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_INSTALL)) {
+        return { success: false, error: 'untrusted-sender' };
+      }
+      if (!rateLimiters.fsOperations.tryConsume().allowed) {
+        return { success: false, error: 'rate-limited' };
+      }
+
+      try {
+        const manager = await getManager();
+        if (shouldSuppressDesktopSideEffects()) {
+          return { success: true, data: manager.snapshot() };
+        }
+        return { success: true, data: await manager.install() };
+      } catch (error) {
+        loggers.main.warn('Relay update installation unavailable', { error });
+        return { success: false, error: 'unavailable' };
+      }
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.APP_UPDATE_RESTART, async (event): Promise<IpcResult<boolean>> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_RESTART)) {
+      return { success: false, error: 'untrusted-sender' };
+    }
+    if (!rateLimiters.fsOperations.tryConsume().allowed) {
+      return { success: false, error: 'rate-limited', rateLimited: true };
+    }
+    if (shouldSuppressDesktopSideEffects()) return { success: true, data: true };
+    try {
+      return { success: true, data: await (await getManager()).restart() };
+    } catch (error) {
+      loggers.main.warn('Relay update restart unavailable', { error });
+      return { success: false, error: 'unavailable' };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.APP_OPEN_RELEASES, async (event): Promise<boolean> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_OPEN_RELEASES)) return false;
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
+    if (shouldSuppressDesktopSideEffects()) return true;
+
+    try {
+      await shell.openExternal(RELAY_RELEASES_URL);
+      return true;
+    } catch (error) {
+      loggers.security.error('Could not open the Relay releases page', { error });
+      return false;
+    }
+  });
+}

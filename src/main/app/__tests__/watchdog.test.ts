@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
   loggers: {
     main: {
       info: vi.fn(),
@@ -29,6 +31,8 @@ vi.mock('node:child_process', () => ({
 vi.mock('node:fs', () => ({
   existsSync: mocks.existsSync,
   readFileSync: mocks.readFileSync,
+  writeFileSync: mocks.writeFileSync,
+  mkdirSync: mocks.mkdirSync,
 }));
 
 vi.mock('../../logger', () => ({
@@ -159,6 +163,72 @@ describe('watchdog', () => {
       expect.objectContaining({ detached: true, windowsHide: true, stdio: 'ignore' }),
     );
     expect(mocks.app.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('refuses to restart once the shared relaunch budget is spent', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse('2026-05-13T10:05:00.000Z'));
+    vi.spyOn(process, 'kill').mockImplementation((() => {
+      throw new Error('process is gone');
+    }) as typeof process.kill);
+    // No exit marker: an uncontrolled exit the watchdog would normally answer by
+    // relaunching, but three restarts already happened inside the loop window.
+    mocks.existsSync.mockImplementation((path: string) =>
+      String(path).endsWith('relaunch-history.json'),
+    );
+    mocks.readFileSync.mockReturnValue(
+      JSON.stringify([
+        Date.parse('2026-05-13T10:02:00.000Z'),
+        Date.parse('2026-05-13T10:03:00.000Z'),
+        Date.parse('2026-05-13T10:04:00.000Z'),
+      ]),
+    );
+
+    const { runCrashWatchdogIfRequested } = await import('../watchdog');
+
+    runCrashWatchdogIfRequested([
+      'Relay.exe',
+      '--relay-watchdog',
+      '--relay-parent-pid=1234',
+      '--relay-watchdog-started-at=1710000000000',
+    ]);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.app.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('records each watchdog restart against the shared relaunch budget', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse('2026-05-13T10:05:00.000Z'));
+    vi.spyOn(process, 'kill').mockImplementation((() => {
+      throw new Error('process is gone');
+    }) as typeof process.kill);
+    mocks.existsSync.mockImplementation((path: string) =>
+      String(path).endsWith('relaunch-history.json'),
+    );
+    mocks.readFileSync.mockReturnValue(JSON.stringify([Date.parse('2026-05-13T10:04:00.000Z')]));
+
+    const { runCrashWatchdogIfRequested } = await import('../watchdog');
+
+    runCrashWatchdogIfRequested([
+      'Relay.exe',
+      '--relay-watchdog',
+      '--relay-parent-pid=1234',
+      '--relay-watchdog-started-at=1710000000000',
+    ]);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(mocks.spawn).toHaveBeenCalledOnce();
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('relaunch-history.json'),
+      expect.any(String),
+      'utf8',
+    );
+    expect(JSON.parse(mocks.writeFileSync.mock.calls[0]![1] as string)).toEqual([
+      Date.parse('2026-05-13T10:04:00.000Z'),
+      Date.now(),
+    ]);
   });
 
   it('does not restart from watchdog mode after a controlled parent exit', async () => {

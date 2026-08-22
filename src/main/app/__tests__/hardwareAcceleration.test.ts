@@ -8,8 +8,15 @@ function createMockApp(isPackaged: boolean) {
   return {
     isPackaged,
     disableHardwareAcceleration: vi.fn(),
+    // configureHardwareAcceleration takes Pick<App, 'commandLine' | ...>, so the
+    // stub has to cover Electron's whole CommandLine surface even though only
+    // appendSwitch is exercised here.
     commandLine: {
       appendSwitch: vi.fn(),
+      appendArgument: vi.fn(),
+      getSwitchValue: vi.fn(() => ''),
+      hasSwitch: vi.fn(() => false),
+      removeSwitch: vi.fn(),
     },
   };
 }
@@ -64,6 +71,7 @@ describe('hardwareAcceleration', () => {
     });
     expect(enabledByDefault).toBe(false);
     expect(app.disableHardwareAcceleration).not.toHaveBeenCalled();
+    expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
 
     const disabledByEnv = configureHardwareAcceleration(app, {
       platform: 'win32',

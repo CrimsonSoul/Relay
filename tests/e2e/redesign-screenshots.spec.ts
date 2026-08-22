@@ -3,10 +3,10 @@
  *
  * Launches the real Electron app in embedded-server mode, seeds data via the
  * PocketBase client, and captures 1920x1080 screenshots of every tab plus the
- * Settings accent picker and the five accent schemes into tmp/redesign-shots/.
+ * Settings accent picker and the accent scheme set into tmp/redesign-shots/.
  *
  * Not part of the default suite watchlist intent — run explicitly:
- *   npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+ *   RELAY_CAPTURE_SCREENSHOTS=1 npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
  */
 import { _electron as electron, test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
@@ -20,6 +20,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SHOTS_DIR = path.join(__dirname, '../../tmp/redesign-shots');
+const CAPTURE_ON_CALL = process.env.RELAY_CAPTURE_ON_CALL !== '0';
+const CAPTURE_COMPACT = process.env.RELAY_CAPTURE_COMPACT === '1';
 
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const TEST_PASSPHRASE = ['test', crypto.randomUUID()].join('-');
@@ -44,7 +46,19 @@ const makePbClient = async (port: number) => {
   return pb;
 };
 
+const makeSuperuserPbClient = async (port: number) => {
+  const pb = new PocketBase(`http://127.0.0.1:${port}`);
+  await pb.collection('_superusers').authWithPassword('admin@relay.app', TEST_PASSPHRASE, {
+    requestKey: null,
+  });
+  return pb;
+};
+
 const shoot = async (window: Page, name: string) => {
+  // Park the pointer in neutral header chrome so navigation tooltips do not
+  // obscure the UI under review.
+  await window.mouse.move(600, 30);
+
   // Let layout/animations settle before capture.
   await window.waitForTimeout(750);
 
@@ -74,6 +88,146 @@ const setAccentViaStorage = async (window: Page, accent: string) => {
     localStorage.setItem('relay-accent', id);
     globalThis.document.documentElement.setAttribute('data-accent', id);
   }, accent);
+};
+
+const setOnCallFontScaleViaStorage = async (window: Page, scale: number) => {
+  await window.evaluate((nextScale) => {
+    localStorage.setItem('relay-oncall-font-scale', String(nextScale));
+    globalThis.dispatchEvent(
+      new globalThis.StorageEvent('storage', {
+        key: 'relay-oncall-font-scale',
+        newValue: String(nextScale),
+      }),
+    );
+  }, scale);
+};
+
+const expectNoEllipsizedOnCallNames = async (window: Page) => {
+  const ellipsizedNames = await window.evaluate(() => {
+    const names = Array.from(globalThis.document.querySelectorAll('.team-row-name'));
+    return names
+      .filter((el) => {
+        const styles = globalThis.getComputedStyle(el);
+        return styles.overflow === 'hidden' || styles.textOverflow === 'ellipsis';
+      })
+      .map((el) => el.textContent?.trim());
+  });
+  expect(ellipsizedNames).toEqual([]);
+};
+
+type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
+
+const COMPACT_TABS = [
+  { id: 'sidebar-compose', breadcrumb: 'Compose', shot: 'compose-compact.png' },
+  { id: 'sidebar-alerts', breadcrumb: 'Alerts', shot: 'alerts-compact.png' },
+  { id: 'sidebar-on-call', breadcrumb: 'On-Call', shot: 'oncall-compact.png' },
+  { id: 'sidebar-status', breadcrumb: 'Service Status', shot: 'cloud-status-compact.png' },
+  {
+    id: 'sidebar-problems',
+    breadcrumb: 'Dynatrace Problems',
+    shot: 'dynatrace-problems-compact.png',
+  },
+  { id: 'sidebar-knowledge', breadcrumb: 'Knowledge', shot: 'knowledge-compact.png' },
+  { id: 'sidebar-radar', breadcrumb: 'Dispatcher Radar', shot: 'radar-compact.png' },
+  { id: 'sidebar-settings', breadcrumb: 'Settings', shot: 'settings-compact.png' },
+] as const;
+
+const resizeMainWindow = async (electronApp: ElectronApp, width: number, height: number) => {
+  await electronApp.evaluate(
+    ({ BrowserWindow }, size) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height);
+    },
+    { width, height },
+  );
+};
+
+const setApplicationZoom = async (electronApp: ElectronApp, factor: number) => {
+  await electronApp.evaluate(({ BrowserWindow }, nextFactor) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.setZoomFactor(nextFactor);
+  }, factor);
+  await expect
+    .poll(() =>
+      electronApp.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor(),
+      ),
+    )
+    .toBe(factor);
+};
+
+const expectTopLevelChrome = async (window: Page, hasToolbar: boolean) => {
+  const activePanel = window.locator('.tab-panel--active');
+  await expect(activePanel.locator('.tab-page-header')).toBeVisible();
+  const toolbar = activePanel.locator('.tab-command-bar');
+  if (!hasToolbar) {
+    await expect(toolbar).toHaveCount(0);
+    return;
+  }
+
+  await expect(toolbar).toHaveCount(1);
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar).toHaveAttribute('aria-label', /\S/u);
+  await expect
+    .poll(() => toolbar.evaluate((element) => element.scrollWidth - element.clientWidth))
+    .toBeLessThanOrEqual(1);
+  await expect
+    .poll(() =>
+      activePanel.evaluate((panel) => {
+        const toolbar = panel.querySelector('.tab-command-bar');
+        if (!(toolbar instanceof globalThis.HTMLElement)) return false;
+        const panelBounds = panel.getBoundingClientRect();
+        return Array.from(toolbar.querySelectorAll('button')).every((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.left >= panelBounds.left - 1 && rect.right <= panelBounds.right + 1;
+        });
+      }),
+    )
+    .toBe(true);
+};
+
+const expectCompactComposeActionsAligned = async (window: Page) => {
+  const copyRecipients = window.getByRole('button', { name: 'Copy Recipients' });
+  const openTeamsDraft = window.getByRole('button', { name: 'Open Teams Draft' });
+  const moreActions = window.getByRole('button', { name: 'More Compose actions' });
+  const boxes = await Promise.all([
+    copyRecipients.boundingBox(),
+    openTeamsDraft.boundingBox(),
+    moreActions.boundingBox(),
+  ]);
+  expect(boxes.every(Boolean)).toBe(true);
+  const yPositions = boxes.map((box) => box?.y ?? 0);
+  expect(Math.max(...yPositions) - Math.min(...yPositions)).toBeLessThan(2);
+};
+
+const expectSettingsBottomGutter = async (window: Page) => {
+  await window.waitForTimeout(300);
+  const workspace = await window.locator('.settings-page__workspace').boundingBox();
+  const viewportHeight = await window.evaluate(() => globalThis.innerHeight);
+  expect(workspace).not.toBeNull();
+  expect(viewportHeight - ((workspace?.y ?? 0) + (workspace?.height ?? 0))).toBeGreaterThanOrEqual(
+    12,
+  );
+};
+
+const captureCompactTabTour = async (window: Page, electronApp: ElectronApp) => {
+  await resizeMainWindow(electronApp, 1366, 768);
+
+  for (const tab of COMPACT_TABS) {
+    await goToTab(window, tab.id, tab.breadcrumb);
+
+    if (tab.id === 'sidebar-compose') await expectCompactComposeActionsAligned(window);
+    if (tab.id === 'sidebar-settings') {
+      await window.getByRole('tab', { name: 'Appearance' }).click();
+      await expectSettingsBottomGutter(window);
+    }
+
+    const activePanel = window.locator('.tab-panel--active');
+    const overflow = await activePanel.evaluate((panel) => panel.scrollWidth - panel.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+
+    await shoot(window, tab.shot);
+  }
+
+  await resizeMainWindow(electronApp, 1920, 1080);
 };
 
 const seedData = async (port: number) => {
@@ -215,34 +369,6 @@ const seedData = async (port: number) => {
     await pb.collection('oncall').create(row, { requestKey: null });
   }
 
-  // --- Standalone notes with different category colors ---
-  const notes = [
-    {
-      title: 'Failover Runbook',
-      content: 'Promote replica, rotate credentials, update DNS. Validate with smoke suite.',
-      color: 'amber',
-      tags: ['runbook', 'database'],
-      sortOrder: 0,
-    },
-    {
-      title: 'Maintenance Window',
-      content: 'Edge proxies patched every second Tuesday, 02:00-04:00 UTC.',
-      color: 'blue',
-      tags: ['maintenance'],
-      sortOrder: 1,
-    },
-    {
-      title: 'Escalation Contacts',
-      content: 'Payments escalation currently unstaffed — see On-Call board.',
-      color: 'red',
-      tags: ['escalation', 'urgent'],
-      sortOrder: 2,
-    },
-  ];
-  for (const note of notes) {
-    await pb.collection('standalone_notes').create(note, { requestKey: null });
-  }
-
   // --- One alert history entry ---
   await pb.collection('alert_history').create(
     {
@@ -256,9 +382,59 @@ const seedData = async (port: number) => {
     },
     { requestKey: null },
   );
+
+  // --- Dynatrace Problems operational queue ---
+  const syncedAt = new Date().toISOString();
+  const problems = [
+    {
+      problemId: 'RELAY-SHOTS-1001',
+      displayId: 'P-SHOTS-1001',
+      title: 'Checkout service availability below SLO',
+      status: 'OPEN',
+      severity: 'AVAILABILITY',
+      impactLevel: 'APPLICATION',
+      startTime: Date.now() - 18 * 60_000,
+      endTime: -1,
+      rootCauseName: 'checkout-web',
+      affectedEntities: [
+        { id: 'APPLICATION-SHOTS-1', type: 'APPLICATION', name: 'Checkout Web' },
+        { id: 'SERVICE-SHOTS-1', type: 'SERVICE', name: 'checkout-api' },
+      ],
+      impactedEntities: [{ id: 'APPLICATION-SHOTS-1', type: 'APPLICATION', name: 'Checkout Web' }],
+      managementZones: [{ id: 'ZONE-SHOTS-1', name: 'Payments Production' }],
+      environmentUrl: 'https://relay-shots.live.dynatrace.com',
+      syncedAt,
+    },
+    {
+      problemId: 'RELAY-SHOTS-1002',
+      displayId: 'P-SHOTS-1002',
+      title: 'Payment API response time degradation',
+      status: 'OPEN',
+      severity: 'PERFORMANCE',
+      impactLevel: 'SERVICES',
+      startTime: Date.now() - 47 * 60_000,
+      endTime: -1,
+      rootCauseName: 'payments-api',
+      affectedEntities: [
+        { id: 'SERVICE-SHOTS-2', type: 'SERVICE', name: 'payments-api' },
+        { id: 'HOST-SHOTS-7', type: 'HOST', name: 'prod-api-07' },
+      ],
+      impactedEntities: [{ id: 'SERVICE-SHOTS-3', type: 'SERVICE', name: 'order-submit' }],
+      managementZones: [{ id: 'ZONE-SHOTS-1', name: 'Payments Production' }],
+      environmentUrl: 'https://relay-shots.live.dynatrace.com',
+      syncedAt,
+    },
+  ];
+  const superuserPb = await makeSuperuserPbClient(port);
+  for (const problem of problems) {
+    await superuserPb.collection('dynatrace_problems').create(problem, { requestKey: null });
+  }
 };
 
 test.describe('Redesign screenshot harness', () => {
+  // This manual artifact generator is intentionally excluded from normal regression gates.
+  test.skip(process.env.RELAY_CAPTURE_SCREENSHOTS !== '1', 'Explicit screenshot refresh only');
+
   test('captures Accent Ink screenshots across tabs and accent schemes', async () => {
     test.setTimeout(8 * 60 * 1000);
 
@@ -293,7 +469,7 @@ test.describe('Redesign screenshot harness', () => {
 
       // Verify no sidebar nav label is ellipsized at 1920×1080.
       const truncated = await window.evaluate(() => {
-        return [...globalThis.document.querySelectorAll('.sidebar-button-label')]
+        return [...globalThis.document.querySelectorAll('.sidebar-nav .sidebar-button-label')]
           .filter((el) => el.scrollWidth > el.clientWidth)
           .map((el) => el.textContent);
       });
@@ -317,85 +493,115 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Compose ---
       await goToTab(window, 'sidebar-compose', 'Compose');
-      await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+      await expectTopLevelChrome(window, true);
+      await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
       await shoot(window, 'compose.png');
 
-      // --- On-Call ---
-      await goToTab(window, 'sidebar-on-call', 'On-Call');
-      await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
-      await expect(
-        window.locator('.team-card-body', { hasText: 'Database Reliability' }),
-      ).toBeVisible();
-      await expect(
-        window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
-      ).toBeVisible();
-      // Layout contract: member names never wrap to a second line (ellipsize instead).
-      const wrappedNameCount = await window.evaluate(() => {
-        const names = Array.from(globalThis.document.querySelectorAll('.team-row-name'));
-        return names.filter((el) => {
-          const lineHeight = parseFloat(globalThis.getComputedStyle(el).lineHeight) || 0;
-          return lineHeight > 0 && el.scrollHeight > lineHeight * 1.5;
-        }).length;
-      });
-      expect(wrappedNameCount).toBe(0);
-      await shoot(window, 'oncall.png');
+      if (CAPTURE_ON_CALL) {
+        // --- On-Call ---
+        await goToTab(window, 'sidebar-on-call', 'On-Call');
+        await expectTopLevelChrome(window, true);
+        await expect(window.getByRole('button', { name: 'Add Card' })).toBeVisible();
+        await expect(
+          window.locator('.team-card-body', { hasText: 'Database Reliability' }),
+        ).toBeVisible();
+        await expect(
+          window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
+        ).toBeVisible();
+        // Layout contract: member names remain fully visible instead of ellipsizing.
+        await expectNoEllipsizedOnCallNames(window);
+        await shoot(window, 'oncall.png');
+        await setOnCallFontScaleViaStorage(window, 150);
+        await expect(window.locator('.oncall-font-scale-value')).toContainText('150%');
+        await expectNoEllipsizedOnCallNames(window);
+        await shoot(window, 'oncall-150.png');
+        await setOnCallFontScaleViaStorage(window, 100);
+        await expect(window.locator('.oncall-font-scale-value')).toContainText('100%');
 
-      // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
-      await window.getByRole('button', { name: 'COPY ALL' }).click();
-      await expect(window.locator('.toast')).toBeVisible();
-      await window.waitForTimeout(400);
-      await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
+        // Browser zoom contract: the busiest command row must stack without clipping.
+        try {
+          await setApplicationZoom(electronApp, 1.5);
+          await expectTopLevelChrome(window, true);
+          await shoot(window, 'oncall-browser-zoom-150.png');
+        } finally {
+          await setApplicationZoom(electronApp, 1);
+        }
 
-      // --- People ---
-      await goToTab(window, 'sidebar-people', 'People');
+        // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
+        await window.getByRole('button', { name: 'Copy All' }).click();
+        await expect(window.locator('.toast')).toBeVisible();
+        await window.waitForTimeout(400);
+        await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
+      }
+
+      // --- Knowledge workspace ---
+      await goToTab(window, 'sidebar-knowledge', 'Knowledge');
+      await expectTopLevelChrome(window, false);
+      await expect(window.getByRole('button', { name: /Open Wiki/ })).toBeVisible();
+      await expect(window.getByRole('button', { name: /Open Contacts/ })).toBeVisible();
+      await expect(window.getByRole('button', { name: /Open Servers/ })).toBeVisible();
+      await shoot(window, 'knowledge.png');
+
+      // --- Wiki ---
+      await window.getByRole('button', { name: /Open Wiki/ }).click();
+      await expect(window.getByRole('heading', { name: 'Wiki' })).toBeVisible();
+      await shoot(window, 'wiki.png');
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
+
+      // --- Contacts ---
+      await window.getByRole('button', { name: /Open Contacts/ }).click();
       await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('Grace Hopper');
-      await shoot(window, 'people.png');
+      await shoot(window, 'contacts.png');
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
 
       // --- Servers ---
-      await goToTab(window, 'sidebar-servers', 'Servers');
+      await window.getByRole('button', { name: /Open Servers/ }).click();
       await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('prod-db-01');
       await shoot(window, 'servers.png');
 
       // --- Alerts ---
       await goToTab(window, 'sidebar-alerts', 'Alerts');
+      await expectTopLevelChrome(window, true);
       await shoot(window, 'alerts.png');
 
       // --- Alert history modal (seeded with one ISSUE entry) ---
-      await window.getByRole('button', { name: 'HISTORY' }).click();
+      await window.getByRole('button', { name: 'History' }).click();
       await expect(window.locator('.alert-history-content')).toBeVisible();
       await expect(window.locator('.alert-history-entry').first()).toBeVisible();
       await shoot(window, 'alert-history.png');
       await window.keyboard.press('Escape');
       await expect(window.locator('.alert-history-content')).not.toBeVisible();
 
-      // --- Notes ---
-      await goToTab(window, 'sidebar-notes', 'Notes');
-      await expect(window.locator('.tab-panel--active')).toContainText('Failover Runbook');
-      await shoot(window, 'notes.png');
-
       // --- Cloud / Service Status ---
       await goToTab(window, 'sidebar-status', 'Service Status');
+      await expectTopLevelChrome(window, true);
       await shoot(window, 'cloud-status.png');
 
-      // --- Settings modal with accent picker ---
-      await window.getByTestId('sidebar-settings').click();
+      // --- Dynatrace Problems ---
+      await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+      await expectTopLevelChrome(window, true);
+      await expect(window.locator('.tab-panel--active')).toContainText(
+        'Checkout service availability below SLO',
+      );
+      await shoot(window, 'dynatrace-problems.png');
+
+      // --- Dispatcher Radar ---
+      await goToTab(window, 'sidebar-radar', 'Dispatcher Radar');
+      await expectTopLevelChrome(window, true);
+      await expect(window.getByRole('heading', { name: 'Dispatcher Radar' })).toBeVisible();
+      await shoot(window, 'radar.png');
+
+      // --- Settings tab ---
+      await goToTab(window, 'sidebar-settings', 'Settings');
       await expect(window.getByRole('radiogroup', { name: 'Accent color' })).toBeVisible();
+      await expectSettingsBottomGutter(window);
+      await shoot(window, 'settings-appearance.png');
 
-      // Verify form controls inherit Outfit, not the UA default system font.
-      const settingsBtnFont = await window.evaluate(() => {
-        const btn = globalThis.document.querySelector(
-          '[data-testid="sidebar-settings"] ~ * button, .settings-modal button',
-        );
-        if (!btn) return null;
-        return globalThis.getComputedStyle(btn).fontFamily;
-      });
-      if (settingsBtnFont !== null) {
-        expect(settingsBtnFont).toMatch(/Outfit/i);
-      }
-
-      await shoot(window, 'settings-modal.png');
+      await window.getByRole('tab', { name: 'Relay data' }).click();
+      await expect(window.getByText('Relay connection')).toBeVisible();
+      await shoot(window, 'settings-relay-data.png');
 
       // --- Data Manager modal (opened from Settings) ---
       await window.getByRole('button', { name: 'Open Data Manager...' }).click();
@@ -405,42 +611,43 @@ test.describe('Redesign screenshot harness', () => {
       await expect(
         window.getByRole('tablist', { name: 'Data Manager sections' }),
       ).not.toBeVisible();
-      await window.keyboard.press('Escape');
-      await expect(window.getByRole('radiogroup', { name: 'Accent color' })).not.toBeVisible();
 
-      // --- Accent matrix on the On-Call board (empty-team alarm visible) ---
-      await goToTab(window, 'sidebar-on-call', 'On-Call');
+      await window.getByRole('tab', { name: 'Dynatrace' }).click();
       await expect(
-        window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
+        window.locator('.settings-section-heading', { hasText: 'Dynatrace Problems' }),
       ).toBeVisible();
-      for (const accent of ['red', 'blue', 'green', 'pink', 'purple'] as const) {
-        await setAccentViaStorage(window, accent);
-        await expect
-          .poll(() =>
-            window.evaluate(() => globalThis.document.documentElement.getAttribute('data-accent')),
-          )
-          .toBe(accent);
-        await shoot(window, `oncall-${accent}.png`);
-      }
+      await shoot(window, 'settings-dynatrace.png');
 
-      // --- Kiosk popout window ---
-      await setAccentViaStorage(window, 'red');
-      try {
-        const popoutPromise = electronApp.waitForEvent('window', { timeout: 20_000 });
-        await window.getByRole('button', { name: 'Pop Out Board' }).click();
-        const popout = await popoutPromise;
-        await popout.waitForLoadState('domcontentloaded');
-        await electronApp.evaluate(({ BrowserWindow }) => {
-          const wins = BrowserWindow.getAllWindows();
-          // Resize the most recently created window (the popout).
-          wins[wins.length - 1]?.setSize(1920, 1080);
-        });
-        await expect(popout.locator('.popout-title')).toBeVisible({ timeout: 20_000 });
-        await expect(popout.locator('body')).toContainText('Database Reliability');
-        await shoot(popout, 'popout.png');
-        await popout.close().catch(() => {});
-      } catch (error) {
-        console.warn('Popout capture skipped:', error);
+      if (CAPTURE_COMPACT) await captureCompactTabTour(window, electronApp);
+
+      if (CAPTURE_ON_CALL) {
+        // --- Accent matrix on the On-Call board (empty-team alarm visible) ---
+        await goToTab(window, 'sidebar-on-call', 'On-Call');
+        await expect(
+          window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
+        ).toBeVisible();
+        for (const accent of [
+          'red',
+          'orange',
+          'yellow',
+          'blue',
+          'cyan',
+          'green',
+          'lime',
+          'pink',
+          'purple',
+          'violet',
+        ] as const) {
+          await setAccentViaStorage(window, accent);
+          await expect
+            .poll(() =>
+              window.evaluate(() =>
+                globalThis.document.documentElement.getAttribute('data-accent'),
+              ),
+            )
+            .toBe(accent);
+          await shoot(window, `oncall-${accent}.png`);
+        }
       }
 
       // Reset accent to the default red before shutting down.

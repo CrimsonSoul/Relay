@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ipcMain } from 'electron';
 import { setupIpcHandlers } from '../ipcHandlers';
 
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
+  ipcMain: { handle: vi.fn() },
 }));
 
 vi.mock('../logger', () => ({
@@ -15,15 +17,21 @@ vi.mock('@shared/types', () => ({
 
 const mockSetupCloudStatusHandlers = vi.fn();
 const mockSetupWindowHandlers = vi.fn();
+const mockSetupReleaseUpdateHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
+const mockSetupKnowledgeHandlers = vi.fn();
+const mockSetupPrivilegedAccessHandlers = vi.fn();
 
 vi.mock('../handlers/cloudStatus', () => ({
   setupCloudStatusHandlers: (...args: unknown[]) => mockSetupCloudStatusHandlers(...args),
 }));
 vi.mock('../handlers/windowHandlers', () => ({
   setupWindowHandlers: (...args: unknown[]) => mockSetupWindowHandlers(...args),
+}));
+vi.mock('../handlers/releaseUpdateHandlers', () => ({
+  setupReleaseUpdateHandlers: (...args: unknown[]) => mockSetupReleaseUpdateHandlers(...args),
 }));
 vi.mock('../handlers/setupHandlers', () => ({
   setupSetupHandlers: (...args: unknown[]) => mockSetupSetupHandlers(...args),
@@ -33,6 +41,12 @@ vi.mock('../handlers/cacheHandlers', () => ({
 }));
 vi.mock('../handlers/backupHandlers', () => ({
   setupBackupHandlers: (...args: unknown[]) => mockSetupBackupHandlers(...args),
+}));
+vi.mock('../handlers/knowledgeHandlers', () => ({
+  setupKnowledgeHandlers: (...args: unknown[]) => mockSetupKnowledgeHandlers(...args),
+}));
+vi.mock('../handlers/privilegedAccessHandlers', () => ({
+  setupPrivilegedAccessHandlers: (...args: unknown[]) => mockSetupPrivilegedAccessHandlers(...args),
 }));
 
 import { loggers } from '../logger';
@@ -55,22 +69,50 @@ describe('setupIpcHandlers', () => {
 
     expect(mockSetupCloudStatusHandlers).toHaveBeenCalled();
     expect(mockSetupWindowHandlers).toHaveBeenCalled();
+    expect(mockSetupReleaseUpdateHandlers).toHaveBeenCalled();
     expect(mockSetupSetupHandlers).toHaveBeenCalled();
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
+    expect(mockSetupKnowledgeHandlers).toHaveBeenCalled();
+    expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalled();
   });
 
-  it('passes getMainWindow, createAuxWindow, getDataRoot to window handlers', () => {
+  it('passes live PDF and PocketBase-backed status services to knowledge handlers', () => {
+    const getKnowledgePdfService = vi.fn();
+    const getKnowledgeCoverService = vi.fn();
+    const getKnowledgeUploadService = vi.fn();
+    const getKnowledgeSearchService = vi.fn();
+    const getPbClient = vi.fn(() => null);
+
+    setupIpcHandlers(
+      makeOpts({
+        getKnowledgePdfService,
+        getKnowledgeCoverService,
+        getKnowledgeUploadService,
+        getKnowledgeSearchService,
+        getPbClient,
+      }),
+    );
+
+    expect(mockSetupKnowledgeHandlers).toHaveBeenCalledWith(
+      getKnowledgePdfService,
+      expect.any(Function),
+      getKnowledgeUploadService,
+      getKnowledgeCoverService,
+      getKnowledgeSearchService,
+    );
+    const getStatusService = mockSetupKnowledgeHandlers.mock.calls[0]?.[1];
+    expect(getStatusService()).toEqual(
+      expect.objectContaining({ getStatus: expect.any(Function) }),
+    );
+  });
+
+  it('passes getMainWindow and getDataRoot to window handlers', () => {
     const getMainWindow = vi.fn();
     const getDataRoot = vi.fn();
-    const createAuxWindow = vi.fn();
-    setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot, createAuxWindow }));
+    setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot }));
 
-    expect(mockSetupWindowHandlers).toHaveBeenCalledWith(
-      getMainWindow,
-      createAuxWindow,
-      getDataRoot,
-    );
+    expect(mockSetupWindowHandlers).toHaveBeenCalledWith(getMainWindow, getDataRoot);
   });
 
   it('passes cache-related getters to setup handlers', () => {
@@ -104,6 +146,41 @@ describe('setupIpcHandlers', () => {
     setupIpcHandlers(makeOpts({ getBackupManager, restartPb, getCache }));
 
     expect(mockSetupBackupHandlers).toHaveBeenCalledWith(getBackupManager, restartPb, getCache);
+  });
+
+  it('does not register retired roster handlers', () => {
+    setupIpcHandlers(makeOpts());
+
+    const retiredPrefix = ['relay', 'Operator:'].join('');
+    expect(
+      vi
+        .mocked(ipcMain.handle)
+        .mock.calls.some(([channel]) => String(channel).startsWith(retiredPrefix)),
+    ).toBe(false);
+  });
+
+  it('passes live runtime and public session subscription to privileged handlers', () => {
+    const runtime = { getView: vi.fn() };
+    const getPrivilegedRuntime = vi.fn(() => runtime);
+    const subscribePrivilegedSessionChanged = vi.fn(() => vi.fn());
+    const appConfig = { load: vi.fn(() => ({ mode: 'server' })) };
+
+    setupIpcHandlers(
+      makeOpts({
+        getAppConfig: vi.fn(() => appConfig),
+        getPrivilegedRuntime,
+        subscribePrivilegedSessionChanged,
+      }),
+    );
+
+    expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        getRuntime: getPrivilegedRuntime,
+        subscribeSessionChanged: subscribePrivilegedSessionChanged,
+        isServer: expect.any(Function),
+        assertTrustedIpcSender: expect.any(Function),
+      }),
+    );
   });
 
   it('continues registering handlers if one setup throws', () => {

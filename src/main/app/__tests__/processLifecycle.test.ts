@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
     exit: vi.fn(),
   };
   const mockBrowserWindow = {
-    getAllWindows: vi.fn(() => []),
+    getAllWindows: vi.fn<() => MockWindow[]>(() => []),
   };
 
   return {
@@ -47,6 +47,8 @@ vi.mock('../../utils/broadcastToAllWindows', () => ({
 vi.mock('../relaunch', () => ({
   requestAppRelaunch: mocks.requestAppRelaunch,
 }));
+
+type MockWindow = ReturnType<typeof createMockWindow>;
 
 let nextWebContentsId = 1;
 const originalPlatform = process.platform;

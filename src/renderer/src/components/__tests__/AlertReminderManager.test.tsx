@@ -10,11 +10,12 @@ import {
   saveReminderAlarmSource,
 } from '../../services/reminderAlarmSoundService';
 
-const mockListDueAlertReminders = vi.fn();
 const mockSnoozeAlertReminder = vi.fn();
 const mockMarkAlertReminderDone = vi.fn();
 const mockDismissAlertReminder = vi.fn();
 const mockPlayAlertSound = vi.fn();
+const mockRefetch = vi.fn().mockResolvedValue(undefined);
+const mockReminderData = { current: [] as AlertReminderRecord[] };
 const originalAudio = globalThis.Audio;
 
 type MockAudioElement = {
@@ -53,10 +54,18 @@ function installMockAudio(play: ReturnType<typeof vi.fn> = vi.fn().mockResolvedV
 }
 
 vi.mock('../../services/alertReminderService', () => ({
-  listDueAlertReminders: (...args: unknown[]) => mockListDueAlertReminders(...args),
   snoozeAlertReminder: (...args: unknown[]) => mockSnoozeAlertReminder(...args),
   markAlertReminderDone: (...args: unknown[]) => mockMarkAlertReminderDone(...args),
   dismissAlertReminder: (...args: unknown[]) => mockDismissAlertReminder(...args),
+}));
+
+vi.mock('../../hooks/useCollection', () => ({
+  useCollection: () => ({
+    data: mockReminderData.current,
+    loading: false,
+    error: null,
+    refetch: mockRefetch,
+  }),
 }));
 
 const showToast = vi.fn();
@@ -82,7 +91,7 @@ vi.mock('../TactileButton', () => ({
 }));
 
 const componentStyles = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), '../../styles/components.css'),
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../styles/components-after-settings.css'),
   'utf8',
 );
 
@@ -121,7 +130,7 @@ describe('AlertReminderManager', () => {
       playAlertSound: mockPlayAlertSound,
     };
     mockPlayAlertSound.mockResolvedValue(true);
-    mockListDueAlertReminders.mockResolvedValue([]);
+    mockReminderData.current = [];
     mockSnoozeAlertReminder.mockResolvedValue(makeReminder());
     mockMarkAlertReminderDone.mockResolvedValue(makeReminder({ status: 'done' }));
     mockDismissAlertReminder.mockResolvedValue(makeReminder({ status: 'dismissed' }));
@@ -138,7 +147,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('shows the first due reminder', async () => {
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -149,7 +158,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('renders due reminders with the critical alarm visual treatment', async () => {
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -171,9 +180,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('does not show reminders before their scheduled time', async () => {
-    mockListDueAlertReminders.mockResolvedValue([
-      makeReminder({ dueAt: '2026-05-28T20:02:00.000Z' }),
-    ]);
+    mockReminderData.current = [makeReminder({ dueAt: '2026-05-28T20:02:00.000Z' })];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -181,9 +188,40 @@ describe('AlertReminderManager', () => {
     expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
   });
 
+  it('uses one exact timeout instead of a 30-second polling interval', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    mockReminderData.current = [makeReminder({ dueAt: '2026-05-28T20:02:00.000Z' })];
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(59_999);
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Send outage alert')).toBeInTheDocument();
+  });
+
+  it('reconciles the shared snapshot when the window resumes', async () => {
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    fireEvent.focus(window);
+    await flushReminderEffects();
+
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
   it('loops a bundled reminder mp3 while visible and stops when addressed', async () => {
     installMockAudio();
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -217,7 +255,7 @@ describe('AlertReminderManager', () => {
   it('loops the selected custom mp3 when one is saved', async () => {
     installMockAudio();
     saveReminderAlarmSource('file:///Users/ryan/Music/custom-alarm.mp3');
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -261,7 +299,7 @@ describe('AlertReminderManager', () => {
       configurable: true,
       value: MockAudioContext,
     });
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -298,15 +336,13 @@ describe('AlertReminderManager', () => {
     installMockAudio();
     const loadListener = vi.fn();
     window.addEventListener('relay:load-alert-reminder', loadListener as EventListener);
-    mockListDueAlertReminders
-      .mockResolvedValueOnce([
-        makeReminder({
-          alertSubject: 'Stored outage alert',
-          alertBodyHtml: '<p>Stored body</p>',
-          createdBy: 'Ops',
-        }),
-      ])
-      .mockResolvedValue([]);
+    mockReminderData.current = [
+      makeReminder({
+        alertSubject: 'Stored outage alert',
+        alertBodyHtml: '<p>Stored body</p>',
+        createdBy: 'Ops',
+      }),
+    ];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -332,7 +368,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('does not offer navigation before the reminder is addressed', async () => {
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -342,7 +378,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('keeps keyboard focus inside the blocking reminder', async () => {
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -361,7 +397,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('snoozes for ten minutes and hides the reminder', async () => {
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -377,7 +413,7 @@ describe('AlertReminderManager', () => {
   });
 
   it('marks a reminder done and dismisses a reminder', async () => {
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     const { rerender } = render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -387,13 +423,8 @@ describe('AlertReminderManager', () => {
     await flushReminderEffects();
     expect(mockMarkAlertReminderDone).toHaveBeenCalledWith('rem-1');
 
-    mockListDueAlertReminders.mockResolvedValue([makeReminder({ id: 'rem-2' })]);
+    mockReminderData.current = [makeReminder({ id: 'rem-2' })];
     rerender(<AlertReminderManager />);
-    await act(async () => {
-      vi.advanceTimersByTime(30_000);
-      await Promise.resolve();
-    });
-
     await flushReminderEffects();
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Dismiss'));
@@ -404,12 +435,9 @@ describe('AlertReminderManager', () => {
 
   it('clears chimed reminder tracking when a reminder is dismissed', async () => {
     installMockAudio();
-    mockListDueAlertReminders
-      .mockResolvedValueOnce([makeReminder()])
-      .mockResolvedValueOnce([])
-      .mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
-    render(<AlertReminderManager />);
+    const { rerender } = render(<AlertReminderManager />);
     await flushReminderEffects();
     await flushReminderEffects();
 
@@ -419,11 +447,12 @@ describe('AlertReminderManager', () => {
     await flushReminderEffects();
     expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
 
-    await act(async () => {
-      vi.advanceTimersByTime(30_000);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    mockReminderData.current = [makeReminder({ status: 'dismissed' })];
+    rerender(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    mockReminderData.current = [makeReminder({ updated: '2026-05-28T20:02:00.000Z' })];
+    rerender(<AlertReminderManager />);
     await flushReminderEffects();
 
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
@@ -438,7 +467,7 @@ describe('AlertReminderManager', () => {
       configurable: true,
       value: BlockedAudioContext,
     });
-    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+    mockReminderData.current = [makeReminder()];
 
     render(<AlertReminderManager />);
     await flushReminderEffects();

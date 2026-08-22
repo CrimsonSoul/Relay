@@ -8,7 +8,8 @@ import { trustedEvent } from '../__tests__/testEvents';
 // The trusted-sender guard runs for real in this file: trustedEvent() passes
 // it (dev-server origin), anything else is rejected. See the
 // 'trusted sender guard' describe block below.
-process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+// electron-vite's ambient types declare ELECTRON_RENDERER_URL readonly, so set it reflectively.
+Reflect.set(process.env, 'ELECTRON_RENDERER_URL', 'http://localhost:5173');
 
 // Mock electron
 vi.mock('electron', () => ({

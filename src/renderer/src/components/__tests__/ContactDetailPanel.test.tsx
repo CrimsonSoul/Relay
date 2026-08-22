@@ -5,18 +5,20 @@ import { ContactDetailPanel } from '../ContactDetailPanel';
 import type { Contact, Server } from '@shared/ipc';
 
 const mockContact: Contact = {
-  id: '1',
   name: 'Alice Smith',
   email: 'alice@example.com',
   phone: '5551234567',
   title: 'Engineer',
-  businessArea: 'IT',
-  lob: '',
-  comment: '',
+  _searchString: 'alice smith alice@example.com engineer',
+  raw: { id: '1', businessArea: 'IT', lob: '', comment: '' },
 };
 
 describe('ContactDetailPanel', () => {
-  it('renders contact name', () => {
+  it.each([
+    ['name', 'Alice Smith'],
+    ['email', 'alice@example.com'],
+    ['title', 'Engineer'],
+  ])('renders contact %s', (_field, expectedValue) => {
     render(
       <ContactDetailPanel
         contact={mockContact}
@@ -26,33 +28,7 @@ describe('ContactDetailPanel', () => {
         onDelete={vi.fn()}
       />,
     );
-    expect(screen.getByText('Alice Smith')).toBeInTheDocument();
-  });
-
-  it('renders contact email', () => {
-    render(
-      <ContactDetailPanel
-        contact={mockContact}
-        groups={[]}
-        onEditNotes={vi.fn()}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('alice@example.com')).toBeInTheDocument();
-  });
-
-  it('renders contact title', () => {
-    render(
-      <ContactDetailPanel
-        contact={mockContact}
-        groups={[]}
-        onEditNotes={vi.fn()}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Engineer')).toBeInTheDocument();
+    expect(screen.getByText(expectedValue)).toBeInTheDocument();
   });
 
   it('renders groups', () => {

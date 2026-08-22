@@ -1,8 +1,25 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MainApp } from '../App';
+import { MainApp, RetainedTabPanel } from '../App';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
+import {
+  acknowledgeKnowledgeDestinationOpen,
+  getPendingKnowledgeDestinationOpen,
+  OPEN_KNOWLEDGE_DESTINATION_EVENT,
+} from '../features/knowledge/knowledgeWorkspaceNavigation';
+import {
+  acknowledgeKnowledgeDocumentOpen,
+  getPendingKnowledgeDocumentOpen,
+  OPEN_KNOWLEDGE_DOCUMENT_EVENT,
+  type KnowledgeOpenRequest,
+} from '../features/knowledge/knowledgeNavigation';
+import type {
+  KnowledgeRecordOpenRequest,
+  KnowledgeRecordTarget,
+} from '../features/knowledge/knowledgeRecordNavigation';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
+import type { BridgeAPI, CloudStatusProvider } from '@shared/ipc';
 
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
@@ -27,7 +44,8 @@ const LAN_SERVER_LABEL = ['LAN ', LAN_SERVER_ADDRESS, ':8090'].join('');
 const LAN_SERVER_URL = ['http', '://', 'noc-admin-pc', ':8090'].join('');
 let lastConnectionManagerProps: {
   pbUrl: string;
-  pbAuth: { token: string; record: Record<string, unknown> | null };
+  pbAuth: { token: string; record: Record<string, unknown> | null } | null;
+  offlineMode?: boolean;
   onReconfigure: () => void;
 } | null = null;
 let lastSidebarProps: {
@@ -45,6 +63,30 @@ let lastSettingsModalProps: {
     clearSession: () => Promise<boolean>;
   };
 } | null = null;
+let lastDataManagerModalProps: { isOpen: boolean } | null = null;
+let lastPersonnelTabProps: {
+  onCallFontScale?: number;
+  onOnCallFontScaleChange?: (scale: number) => void;
+} | null = null;
+let lastKnowledgeWorkspaceProps: {
+  active: boolean;
+  relayMode?: string;
+  contacts: unknown[];
+  groups: unknown[];
+  servers: unknown[];
+  onAddToAssembler: (contact: never) => void;
+  recordOpenRequest?: KnowledgeRecordOpenRequest | null;
+  onRecordUnavailable?: (request: KnowledgeRecordOpenRequest) => void;
+} | null = null;
+let lastCloudStatusTabProps: {
+  selectedProvider?: CloudStatusProvider | null;
+  onSelectedProviderChange?: (provider: CloudStatusProvider | null) => void;
+} | null = null;
+let lastDynatraceProblemsProps: {
+  relayMode?: string;
+  active?: boolean;
+} | null = null;
+let lastCloudStatusOpenProvider: ((provider: CloudStatusProvider) => void) | undefined;
 const mockDynatraceDashboards: DynatraceDashboardState[] = [
   {
     id: 'dt_1',
@@ -76,6 +118,9 @@ const mockUseDynatraceDashboards = vi.fn(() => mockDynatraceHookState);
 vi.mock('../contexts', () => ({
   NotesProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SearchProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PrivilegedAccessProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="privileged-access-provider">{children}</div>
+  ),
 }));
 
 // ── mock Toast ───────────────────────────────────────────────────────────────
@@ -115,6 +160,7 @@ vi.mock('../components/Sidebar', () => ({
           <button onClick={() => onTabChange('Personnel')}>nav-personnel</button>
           <button onClick={() => onTabChange('People')}>nav-people</button>
           <button onClick={() => onTabChange('Servers')}>nav-servers</button>
+          <button onClick={() => onTabChange('Notes')}>nav-notes</button>
           <button onClick={onOpenSettings}>open-settings</button>
         </div>
       );
@@ -153,7 +199,10 @@ vi.mock('../components/HeaderSearch', () => ({
       onAddContactToBridge: (email: string) => void;
       onToggleGroup: (id: string) => void;
       onNavigateToTab: (tab: string) => void;
+      onOpenKnowledgeDestination: (destination: 'wiki' | 'contacts' | 'servers') => void;
+      onOpenKnowledgeRecord: (target: KnowledgeRecordTarget) => void;
       onOpenAddContact: (email?: string) => void;
+      onOpenKnowledgeDocument: (request: KnowledgeOpenRequest) => void;
     };
   }) => (
     <div data-testid="header-search">
@@ -162,6 +211,36 @@ vi.mock('../components/HeaderSearch', () => ({
         add-to-bridge
       </button>
       <button onClick={() => actions.onOpenAddContact('new@example.com')}>open-add-contact</button>
+      <button
+        onClick={() =>
+          actions.onOpenKnowledgeDocument({
+            documentId: 'kb-1',
+            headingId: 'failover',
+            pageIndex: 3,
+            highlightText: 'failover',
+            normalizedStart: 48,
+            normalizedEnd: 56,
+          })
+        }
+      >
+        open-knowledge
+      </button>
+      <button onClick={() => actions.onOpenKnowledgeDestination('contacts')}>go-contacts</button>
+      <button onClick={() => actions.onOpenKnowledgeDestination('servers')}>go-servers</button>
+      <button
+        onClick={() =>
+          actions.onOpenKnowledgeRecord({ destination: 'contacts', recordKey: 'id:contact_1' })
+        }
+      >
+        open-contact-record
+      </button>
+      <button
+        onClick={() =>
+          actions.onOpenKnowledgeRecord({ destination: 'servers', recordKey: 'id:server_1' })
+        }
+      >
+        open-server-record
+      </button>
     </div>
   ),
 }));
@@ -209,21 +288,37 @@ vi.mock('../components/ConnectionManager', () => ({
   ConnectionManager: ({
     pbUrl,
     pbAuth,
+    offlineMode,
     onReconfigure,
     children,
   }: {
     pbUrl: string;
-    pbAuth: { token: string; record: Record<string, unknown> | null };
+    pbAuth: { token: string; record: Record<string, unknown> | null } | null;
+    offlineMode?: boolean;
     onReconfigure: () => void;
     children: React.ReactNode;
   }) => {
-    lastConnectionManagerProps = { pbUrl, pbAuth, onReconfigure };
+    lastConnectionManagerProps = { pbUrl, pbAuth, offlineMode, onReconfigure };
     return <div data-testid="connection-manager">{children}</div>;
   },
 }));
 
 vi.mock('../components/AlertReminderManager', () => ({
   AlertReminderManager: () => <div data-testid="alert-reminder-manager" />,
+}));
+
+vi.mock('../components/DynatraceProblemNotificationManager', () => ({
+  DynatraceProblemNotificationManager: () => (
+    <div data-testid="dynatrace-problem-notification-manager" />
+  ),
+}));
+
+vi.mock('../components/RadarQueueNotificationManager', () => ({
+  RadarQueueNotificationManager: ({ onOpenRadar }: { onOpenRadar: () => void }) => (
+    <button data-testid="radar-queue-notification-manager" onClick={onOpenRadar}>
+      Open Radar notification
+    </button>
+  ),
 }));
 
 // Lazy loaded tabs
@@ -240,15 +335,43 @@ vi.mock('../tabs/ServersTab', () => ({
 }));
 
 vi.mock('../tabs/PersonnelTab', () => ({
-  PersonnelTab: () => <div data-testid="personnel-tab" />,
+  PersonnelTab: ({
+    onCallFontScale,
+    onOnCallFontScaleChange,
+  }: {
+    onCallFontScale?: number;
+    onOnCallFontScaleChange?: (scale: number) => void;
+  }) => {
+    lastPersonnelTabProps = { onCallFontScale, onOnCallFontScaleChange };
+    return <div data-testid="personnel-tab" />;
+  },
 }));
 
-vi.mock('../tabs/NotesTab', () => ({
-  NotesTab: () => <div data-testid="notes-tab" />,
+vi.mock('../features/knowledge/KnowledgeWorkspace', () => ({
+  KnowledgeWorkspace: (props: NonNullable<typeof lastKnowledgeWorkspaceProps>) => {
+    lastKnowledgeWorkspaceProps = props;
+    return (
+      <div
+        data-testid="knowledge-workspace"
+        data-active={props.active}
+        data-relay-mode={props.relayMode}
+      />
+    );
+  },
 }));
 
 vi.mock('../tabs/CloudStatusTab', () => ({
-  CloudStatusTab: () => <div data-testid="cloud-status-tab" />,
+  CloudStatusTab: (props: NonNullable<typeof lastCloudStatusTabProps>) => {
+    lastCloudStatusTabProps = props;
+    return <div data-testid="cloud-status-tab" />;
+  },
+}));
+
+vi.mock('../tabs/DynatraceProblemsTab', () => ({
+  DynatraceProblemsTab: (props: NonNullable<typeof lastDynatraceProblemsProps>) => {
+    lastDynatraceProblemsProps = props;
+    return <div data-testid="dynatrace-problems-tab" data-active={props.active} />;
+  },
 }));
 
 vi.mock('../tabs/AlertsTab', () => ({
@@ -272,7 +395,7 @@ vi.mock('../components/SettingsModal', () => ({
     (() => {
       lastSettingsModalProps = { dynatrace };
       return isOpen ? (
-        <div data-testid="settings-modal">
+        <div data-testid="settings-tab">
           <button onClick={onClose}>close-settings</button>
           <button onClick={onOpenDataManager}>open-data-manager</button>
         </div>
@@ -281,16 +404,14 @@ vi.mock('../components/SettingsModal', () => ({
 }));
 
 vi.mock('../components/DataManagerModal', () => ({
-  DataManagerModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
-    isOpen ? (
+  DataManagerModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+    lastDataManagerModalProps = { isOpen };
+    return isOpen ? (
       <div data-testid="data-manager-modal">
         <button onClick={onClose}>close-data-manager</button>
       </div>
-    ) : null,
-}));
-
-vi.mock('../components/PopoutBoard', () => ({
-  PopoutBoard: () => <div data-testid="popout-board" />,
+    ) : null;
+  },
 }));
 
 // ── mock app hooks ───────────────────────────────────────────────────────────
@@ -335,18 +456,25 @@ vi.mock('../hooks/useAppAssembler', () => ({
   }),
 }));
 
+const { mockLoggerWarn } = vi.hoisted(() => ({ mockLoggerWarn: vi.fn() }));
 vi.mock('../utils/logger', () => ({
   loggers: {
-    app: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+    app: { error: vi.fn(), info: vi.fn(), warn: mockLoggerWarn, debug: vi.fn() },
   },
 }));
 
 vi.mock('../hooks/useAppCloudStatus', () => ({
-  useAppCloudStatus: () => ({
-    statusData: null,
-    loading: false,
-    refetch: vi.fn(),
-  }),
+  useAppCloudStatus: (
+    _showToast: unknown,
+    onOpenProvider?: (provider: CloudStatusProvider) => void,
+  ) => {
+    lastCloudStatusOpenProvider = onOpenProvider;
+    return {
+      statusData: null,
+      loading: false,
+      refetch: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('../hooks/useDynatraceDashboards', () => ({
@@ -359,6 +487,24 @@ vi.mock('../services/contactService', () => ({
 }));
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * `globalThis.api` is typed as the complete preload bridge, but these tests only install the
+ * handful of members `App` actually reaches for. `vi.stubGlobal` installs the partial without a
+ * cast, while `Partial<BridgeAPI>` keeps every stubbed member checked against the real contract.
+ */
+function stubBridgeApi(overrides: Partial<BridgeAPI>): void {
+  vi.stubGlobal('api', overrides);
+}
+
+/**
+ * `App` and `WindowControls` close through `globalThis.window.api`, so these tests swap in a
+ * stand-in window carrying only that bridge member. `globalThis.window` is declared as the full
+ * DOM `Window`, so it has to be reached through a structural view of the global object.
+ */
+function stubWindowBridge(api: Pick<BridgeAPI, 'windowClose'>): void {
+  (globalThis as { window: unknown }).window = { api };
+}
 
 function renderApp(searchParams = '', props: Partial<React.ComponentProps<typeof MainApp>> = {}) {
   // Stub globalThis.location.search
@@ -376,6 +522,18 @@ describe('MainApp', () => {
     mockSettingsOpen = false;
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    lastDataManagerModalProps = null;
+    lastKnowledgeWorkspaceProps = null;
+    lastCloudStatusTabProps = null;
+    lastDynatraceProblemsProps = null;
+    lastCloudStatusOpenProvider = undefined;
+    lastPersonnelTabProps = null;
+    localStorage.removeItem('relay-oncall-display-size');
+    localStorage.removeItem('relay-oncall-font-scale');
+    acknowledgeKnowledgeDestinationOpen('wiki');
+    acknowledgeKnowledgeDestinationOpen('contacts');
+    acknowledgeKnowledgeDestinationOpen('servers');
+    acknowledgeKnowledgeDocumentOpen('kb-1');
     mockUseDynatraceDashboards.mockReturnValue(mockDynatraceHookState);
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
@@ -388,6 +546,14 @@ describe('MainApp', () => {
     mockActiveTab = 'Compose';
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    lastDataManagerModalProps = null;
+    lastCloudStatusTabProps = null;
+    lastDynatraceProblemsProps = null;
+    lastCloudStatusOpenProvider = undefined;
+    acknowledgeKnowledgeDestinationOpen('wiki');
+    acknowledgeKnowledgeDestinationOpen('contacts');
+    acknowledgeKnowledgeDestinationOpen('servers');
+    acknowledgeKnowledgeDocumentOpen('kb-1');
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -401,12 +567,102 @@ describe('MainApp', () => {
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
   });
 
+  it('mounts Radar queue notifications in the desktop main window and opens Radar', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp();
+      fireEvent.click(screen.getByTestId('radar-queue-notification-manager'));
+
+      expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
+  it('checks GitHub releases from the desktop main window', async () => {
+    const previousApi = globalThis.api;
+    const checkForUpdates = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        updateAvailable: true,
+        installable: true,
+        assetSizeBytes: 140_000_000,
+      },
+    });
+    globalThis.api = {
+      ...previousApi,
+      runtime: ELECTRON_RUNTIME,
+      checkForUpdates,
+      openReleasesPage: vi.fn().mockResolvedValue(true),
+    } as typeof globalThis.api;
+
+    try {
+      renderApp();
+      const reminder = await screen.findByRole('button', {
+        name: 'Relay v1.1.0 is available. Review update',
+      });
+      expect(checkForUpdates).toHaveBeenCalledOnce();
+      expect(reminder.closest('.header-actions')).not.toBeNull();
+      expect(screen.getAllByRole('button', { name: /Relay v1\.1\.0 is available/u })).toHaveLength(
+        1,
+      );
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
+  it('does not mount Radar queue notifications in a desktop popout', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: ELECTRON_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp('?popout=dynatrace');
+
+      expect(screen.queryByTestId('radar-queue-notification-manager')).not.toBeInTheDocument();
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
+  it('mounts Radar queue notifications in Relay Web and opens Radar', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: WEB_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp();
+      fireEvent.click(screen.getByTestId('radar-queue-notification-manager'));
+
+      expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+    } finally {
+      globalThis.api = previousApi;
+    }
+  });
+
   it('renders the active tab breadcrumb', () => {
     renderApp();
     // activeTab is 'Compose' → breadcrumb shows "Relay / Compose"
     const breadcrumb = screen.getByText(/Relay \//);
     expect(breadcrumb).toBeInTheDocument();
     expect(breadcrumb.closest('.header-breadcrumb')).toBeInTheDocument();
+  });
+
+  it('marks the retained Problems tab active only while it is selected', async () => {
+    mockActiveTab = 'Problems';
+    const { rerender } = renderApp();
+
+    await vi.waitFor(() => expect(lastDynatraceProblemsProps?.active).toBe(true));
+
+    mockActiveTab = 'Compose';
+    rerender(<MainApp />);
+    expect(lastDynatraceProblemsProps?.active).toBe(false);
+
+    mockActiveTab = 'Problems';
+    rerender(<MainApp />);
+    expect(lastDynatraceProblemsProps?.active).toBe(true);
   });
 
   it('renders AssemblerTab by default (Compose is mounted)', async () => {
@@ -416,15 +672,63 @@ describe('MainApp', () => {
     });
   });
 
-  it('opens settings modal when sidebar settings button is clicked', () => {
+  it('does not mount closed settings or data-management surfaces at startup', () => {
+    renderApp();
+
+    expect(lastSettingsModalProps).toBeNull();
+    expect(lastDataManagerModalProps).toBeNull();
+  });
+
+  it('renders Knowledge as a retained top-level tab with the correct breadcrumb', async () => {
+    mockActiveTab = 'Knowledge';
+    renderApp('', { relayConfig: { mode: 'server', port: 8090 } as never });
+
+    await vi.waitFor(() => expect(screen.getByTestId('knowledge-workspace')).toBeInTheDocument());
+    expect(screen.getByTestId('knowledge-workspace')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('knowledge-workspace')).toHaveAttribute('data-relay-mode', 'server');
+    expect(screen.getByText('Relay / Knowledge')).toBeInTheDocument();
+    expect(lastKnowledgeWorkspaceProps?.contacts).toEqual([]);
+    expect(lastKnowledgeWorkspaceProps?.groups).toEqual([]);
+    expect(lastKnowledgeWorkspaceProps?.servers).toEqual([]);
+    expect(lastKnowledgeWorkspaceProps?.onAddToAssembler).toBe(mockHandleAddToAssembler);
+  });
+
+  it('navigates to Settings when the sidebar settings button is clicked', () => {
     renderApp();
     fireEvent.click(screen.getByText('open-settings'));
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Settings');
   });
 
   it('renders header search bar', () => {
     renderApp();
     expect(screen.getByTestId('header-search')).toBeInTheDocument();
+  });
+
+  it('durably routes a global document result to Knowledge and Wiki before activation', () => {
+    const calls: string[] = [];
+    const onDocument = () => calls.push('document');
+    const onDestination = (event: Event) => {
+      calls.push(`destination:${(event as CustomEvent).detail}`);
+      expect(mockSetActiveTab).not.toHaveBeenCalled();
+    };
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, onDocument);
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
+    renderApp();
+    fireEvent.click(screen.getByText('open-knowledge'));
+
+    expect(calls).toEqual(['document', 'destination:wiki']);
+    expect(getPendingKnowledgeDocumentOpen()).toEqual({
+      documentId: 'kb-1',
+      headingId: 'failover',
+      pageIndex: 3,
+      highlightText: 'failover',
+      normalizedStart: 48,
+      normalizedEnd: 56,
+    });
+    expect(getPendingKnowledgeDestinationOpen()).toBe('wiki');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+    globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, onDocument);
+    globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
   });
 
   it('mounts global alert reminders', () => {
@@ -501,67 +805,86 @@ describe('MainApp', () => {
   });
 
   it('disables Dynatrace dashboard subscriptions in popout mode', () => {
-    renderApp('?popout=board');
+    renderApp('?popout=dynatrace');
 
     expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast, { enabled: false });
   });
 
-  it('passes the Dynatrace bundle to SettingsModal when settings are open', async () => {
-    mockSettingsOpen = true;
+  it('passes the Dynatrace bundle to the Settings tab', async () => {
+    mockActiveTab = 'Settings';
     renderApp();
 
     await vi.waitFor(() => {
-      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('settings-tab')).toBeInTheDocument();
     });
 
     expect(lastSettingsModalProps?.dynatrace).toBe(mockDynatraceHookState);
   });
 
+  it('does not pass on-call board display controls to the Settings tab', async () => {
+    mockActiveTab = 'Settings';
+    renderApp();
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('settings-tab')).toBeInTheDocument();
+    });
+
+    expect('onCallFontScale' in (lastSettingsModalProps ?? {})).toBe(false);
+    expect('onOnCallFontScaleChange' in (lastSettingsModalProps ?? {})).toBe(false);
+  });
+
+  it('passes and persists the selected on-call board font scale through the main board', async () => {
+    localStorage.setItem('relay-oncall-font-scale', '125');
+    mockActiveTab = 'Personnel';
+
+    renderApp();
+
+    await vi.waitFor(() => {
+      expect(lastPersonnelTabProps?.onCallFontScale).toBe(125);
+    });
+
+    act(() => {
+      lastPersonnelTabProps?.onOnCallFontScaleChange?.(115);
+    });
+
+    expect(localStorage.getItem('relay-oncall-font-scale')).toBe('115');
+    expect(lastPersonnelTabProps?.onCallFontScale).toBe(115);
+  });
+
   it('opens settings on Cmd+, keydown', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: ',', metaKey: true });
-    });
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    fireEvent.keyDown(window, { key: ',', metaKey: true });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Settings');
   });
 
-  it('navigates tab on Cmd+1', () => {
+  it.each([
+    ['1', 'Compose'],
+    ['2', 'Alerts'],
+    ['3', 'Personnel'],
+    ['4', 'Knowledge'],
+    ['5', 'Status'],
+    ['6', 'Problems'],
+  ])('navigates on Cmd+%s to %s', (key, destination) => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '1', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
+    fireEvent.keyDown(window, { key, metaKey: true });
+    expect(mockSetActiveTab).toHaveBeenCalledWith(destination);
   });
 
-  it('navigates tab on Cmd+2', () => {
+  it.each(['8', '9'])('does not assign Cmd+%s', (key) => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '2', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
-  });
-
-  it('navigates tab on Cmd+7 (Alerts)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+    fireEvent.keyDown(window, { key, metaKey: true });
+    expect(mockSetActiveTab).not.toHaveBeenCalled();
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
-    });
+    fireEvent.keyDown(window, { key: '?', metaKey: true, shiftKey: true });
     expect(screen.getByTestId('shortcuts-modal')).toBeInTheDocument();
   });
 
   it('closes shortcuts modal', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '?', metaKey: true, shiftKey: true });
-    });
+    fireEvent.keyDown(window, { key: '?', metaKey: true, shiftKey: true });
     fireEvent.click(screen.getByText('close-shortcuts'));
     expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument();
   });
@@ -573,6 +896,44 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
   });
 
+  it('routes a contact result to an exact one-shot Knowledge request without changing Compose', () => {
+    mockActiveTab = 'Knowledge';
+    renderApp();
+
+    fireEvent.click(screen.getByText('open-contact-record'));
+
+    expect(lastKnowledgeWorkspaceProps?.recordOpenRequest).toMatchObject({
+      destination: 'contacts',
+      recordKey: 'id:contact_1',
+    });
+    expect(mockHandleAddManual).not.toHaveBeenCalled();
+  });
+
+  it('keeps the exact-record request identity stable across unrelated App rerenders', () => {
+    mockActiveTab = 'Knowledge';
+    const { rerender } = renderApp();
+    fireEvent.click(screen.getByText('open-server-record'));
+    const request = lastKnowledgeWorkspaceProps?.recordOpenRequest;
+
+    rerender(<MainApp />);
+
+    expect(lastKnowledgeWorkspaceProps?.recordOpenRequest).toBe(request);
+  });
+
+  it('reports a missing exact record without changing Compose', () => {
+    mockActiveTab = 'Knowledge';
+    renderApp();
+    fireEvent.click(screen.getByText('open-contact-record'));
+    const request = lastKnowledgeWorkspaceProps?.recordOpenRequest;
+    expect(request).toBeDefined();
+    if (!request) throw new Error('Expected a Knowledge record-open request');
+
+    act(() => lastKnowledgeWorkspaceProps?.onRecordUnavailable?.(request));
+
+    expect(mockShowToast).toHaveBeenCalledWith('That contact is no longer available.', 'info');
+    expect(mockHandleAddManual).not.toHaveBeenCalled();
+  });
+
   it('opens AddContactModal when HeaderSearch open-add-contact is used', () => {
     renderApp();
     fireEvent.click(screen.getByText('open-add-contact'));
@@ -580,8 +941,8 @@ describe('MainApp', () => {
   });
 
   it('shows popout mode when ?popout search param is present', () => {
-    renderApp('?popout=board');
-    expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
+    renderApp('?popout=dynatrace');
+    expect(screen.getByText('RELAY')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
   });
 
@@ -609,63 +970,54 @@ describe('MainApp', () => {
     });
   });
 
-  it('navigates to tabs via sidebar buttons', () => {
+  it('normalizes legacy sidebar tab requests through the retained workspace', () => {
+    const destinations: string[] = [];
+    const onDestination = (event: Event) => {
+      destinations.push((event as CustomEvent).detail);
+    };
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
     renderApp();
     fireEvent.click(screen.getByText('nav-personnel'));
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
 
+    mockSetActiveTab.mockClear();
     fireEvent.click(screen.getByText('nav-people'));
-    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+    expect(destinations).toEqual(['contacts']);
+    expect(getPendingKnowledgeDestinationOpen()).toBe('contacts');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
 
+    mockSetActiveTab.mockClear();
     fireEvent.click(screen.getByText('nav-servers'));
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+    expect(destinations).toEqual(['contacts', 'servers']);
+    expect(getPendingKnowledgeDestinationOpen()).toBe('servers');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+
+    mockSetActiveTab.mockClear();
+    fireEvent.click(screen.getByText('nav-notes'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
+    globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
   });
 
-  it('navigates tab on Cmd+3 (People)', () => {
+  it('opens the selected provider when a cloud-status toast action is used', async () => {
+    mockActiveTab = 'Status';
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '3', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
-  });
+    await vi.waitFor(() => expect(screen.getByTestId('cloud-status-tab')).toBeInTheDocument());
 
-  it('navigates tab on Cmd+4 (Servers)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '4', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
-  });
+    act(() => lastCloudStatusOpenProvider?.('mist_emea'));
 
-  it('navigates tab on Cmd+5 (Status)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '5', metaKey: true });
-    });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
-  });
+    expect(lastCloudStatusTabProps?.selectedProvider).toBe('mist_emea');
 
-  it('navigates tab on Cmd+6 (Notes)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Notes');
-  });
-
-  it('navigates tab on Cmd+7 (Alerts)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
-    });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+    act(() => lastCloudStatusTabProps?.onSelectedProviderChange?.(null));
+    expect(lastCloudStatusTabProps?.selectedProvider).toBeNull();
   });
 
   it('focuses search on Cmd+K', () => {
     renderApp();
-    let handled = true;
-    act(() => {
-      handled = fireEvent.keyDown(globalThis, { key: 'k', metaKey: true, cancelable: true });
+    const handled = fireEvent.keyDown(window, {
+      key: 'k',
+      metaKey: true,
+      cancelable: true,
     });
     expect(handled).toBe(false);
   });
@@ -677,30 +1029,45 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
   });
 
-  it('renders popout without board route', () => {
-    renderApp('?popout=other');
-    expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
-    // PopoutBoard should NOT render because route doesn't include 'board'
-    expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
-  });
+  it.each([
+    ['go-contacts', 'contacts'],
+    ['go-servers', 'servers'],
+  ] as const)(
+    'opens %s inside Knowledge before activating the outer tab',
+    (button, destination) => {
+      const calls: string[] = [];
+      const onDestination = (event: Event) => {
+        calls.push((event as CustomEvent).detail);
+        expect(mockSetActiveTab).not.toHaveBeenCalled();
+      };
+      globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
+      renderApp();
 
-  it('renders the Dynatrace popout shell without the on-call board', () => {
+      fireEvent.click(screen.getByText(button));
+
+      expect(calls).toEqual([destination]);
+      expect(getPendingKnowledgeDestinationOpen()).toBe(destination);
+      expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+      globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
+    },
+  );
+
+  it('renders the Dynatrace popout shell', () => {
     renderApp('?popout=dynatrace&name=NOC%20Dashboard');
 
-    expect(screen.getByText('RELAY DYNATRACE')).toBeInTheDocument();
+    expect(screen.getByText('RELAY')).toBeInTheDocument();
     expect(screen.getByText('NOC Dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
-    expect(screen.queryByText('RELAY ON-CALL BOARD')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
+    expect(screen.queryByText('RELAY DYNATRACE')).not.toBeInTheDocument();
   });
 
   it('opens data manager modal from settings', async () => {
-    mockSettingsOpen = true;
+    mockActiveTab = 'Settings';
     renderApp();
 
-    // Settings modal should be open since settingsOpen is true
+    // Settings tab should be active.
     await vi.waitFor(() => {
-      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('settings-tab')).toBeInTheDocument();
     });
 
     // Click open-data-manager button inside settings
@@ -712,23 +1079,87 @@ describe('MainApp', () => {
   });
 
   it('adds platform class to body on mount', () => {
-    (globalThis as Window & { api?: { platform: string } }).api = {
-      platform: 'darwin',
-    } as typeof globalThis.api;
+    stubBridgeApi({ platform: 'darwin' });
     renderApp();
     expect(document.body.classList.contains('platform-darwin')).toBe(true);
   });
 
   it('adds is-popout class to body in popout mode', () => {
-    renderApp('?popout=board');
+    renderApp('?popout=dynatrace');
     expect(document.body.classList.contains('is-popout')).toBe(true);
   });
+});
 
-  it('renders popout board when popout param contains board', async () => {
-    renderApp('?popout=board');
-    await vi.waitFor(() => {
-      expect(screen.getByTestId('popout-board')).toBeInTheDocument();
-    });
+describe('RetainedTabPanel', () => {
+  it('keeps exactly one active class while switching between retained siblings', () => {
+    const { container, rerender } = render(
+      <>
+        <RetainedTabPanel active>
+          <div>Alerts</div>
+        </RetainedTabPanel>
+        <RetainedTabPanel active={false}>
+          <div>Notes</div>
+        </RetainedTabPanel>
+      </>,
+    );
+
+    rerender(
+      <>
+        <RetainedTabPanel active={false}>
+          <div>Alerts</div>
+        </RetainedTabPanel>
+        <RetainedTabPanel active>
+          <div>Notes</div>
+        </RetainedTabPanel>
+      </>,
+    );
+
+    expect(container.querySelectorAll('.tab-panel--active')).toHaveLength(1);
+    expect(container.querySelector('.tab-panel--active')).toHaveTextContent('Notes');
+    expect(container.querySelector('.tab-panel--active')).toHaveAttribute('data-state', 'active');
+    expect(container.querySelector('.tab-panel:not(.tab-panel--active)')).toHaveAttribute(
+      'data-state',
+      'retained',
+    );
+  });
+
+  it('preserves local state while cleaning up hidden effects', () => {
+    const effectMounted = vi.fn();
+    const effectCleaned = vi.fn();
+
+    function StatefulPanel() {
+      const [value, setValue] = React.useState('draft');
+      React.useEffect(() => {
+        effectMounted();
+        return effectCleaned;
+      }, []);
+      return <input value={value} onChange={(event) => setValue(event.target.value)} />;
+    }
+
+    const { container, rerender } = render(
+      <RetainedTabPanel active>
+        <StatefulPanel />
+      </RetainedTabPanel>,
+    );
+    fireEvent.change(container.querySelector('input')!, { target: { value: 'operator draft' } });
+
+    rerender(
+      <RetainedTabPanel active={false}>
+        <StatefulPanel />
+      </RetainedTabPanel>,
+    );
+
+    expect(effectCleaned).toHaveBeenCalledOnce();
+    expect(container.querySelector('input')).toHaveValue('operator draft');
+
+    rerender(
+      <RetainedTabPanel active>
+        <StatefulPanel />
+      </RetainedTabPanel>,
+    );
+
+    expect(effectMounted).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('input')).toHaveValue('operator draft');
   });
 });
 
@@ -737,6 +1168,7 @@ describe('App default export', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    localStorage.clear();
     lastConnectionManagerProps = null;
     mockIsConfigured.mockResolvedValue(true);
     mockGetConfig.mockResolvedValue({
@@ -754,7 +1186,7 @@ describe('App default export', () => {
     });
     mockSaveConfig.mockResolvedValue(true);
     mockStartPocketBase.mockResolvedValue(true);
-    globalThis.api = {
+    stubBridgeApi({
       isConfigured: mockIsConfigured,
       getConfig: mockGetConfig,
       getPbConnection: mockGetPbConnection,
@@ -762,12 +1194,8 @@ describe('App default export', () => {
       startPocketBase: mockStartPocketBase,
       relaunchApp: mockRelaunchApp,
       platform: 'win32',
-    } as typeof globalThis.api;
-    (
-      globalThis as unknown as { window: { api: { windowClose: ReturnType<typeof vi.fn> } } }
-    ).window = {
-      api: { windowClose: vi.fn() },
-    } as unknown as typeof globalThis.window;
+    });
+    stubWindowBridge({ windowClose: vi.fn() });
   });
 
   it('renders without crashing', async () => {
@@ -780,9 +1208,38 @@ describe('App default export', () => {
     expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
   });
 
+  it('clears the retired local selection during startup without blocking Relay', async () => {
+    const retiredSelectionKey = ['relay', 'selectedOperatorId'].join('.');
+    localStorage.setItem(retiredSelectionKey, 'retired-record');
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+    expect(localStorage.getItem(retiredSelectionKey)).toBeNull();
+  });
+
+  it('mounts privileged access directly inside the initialized connection', async () => {
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    const connectionManager = await screen.findByTestId('connection-manager');
+    const privilegedProvider = screen.getByTestId('privileged-access-provider');
+    expect(connectionManager).toContainElement(privilegedProvider);
+    expect(screen.queryByTestId('operator-provider')).toBeNull();
+  });
+
   it('uses NoopToastProvider in popout mode', async () => {
     Object.defineProperty(globalThis, 'location', {
-      value: { search: '?popout=board' },
+      value: { search: '?popout=dynatrace' },
       writable: true,
     });
     const { default: App } = await import('../App');
@@ -821,6 +1278,26 @@ describe('App default export', () => {
     expect(mockGetPbConnection).not.toHaveBeenCalled();
   });
 
+  it('returns an unauthenticated web runtime to the outer session gate', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    const onWebSessionRequired = vi.fn();
+    globalThis.api = {
+      ...globalThis.api,
+      runtime: WEB_RUNTIME,
+    } as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App onWebSessionRequired={onWebSessionRequired} />);
+
+    await vi.waitFor(() => expect(onWebSessionRequired).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
+    expect(mockGetPbConnection).not.toHaveBeenCalled();
+  });
+
   it('shows an error state when startup authentication fails', async () => {
     mockGetPbConnection.mockResolvedValue({ ok: false, error: 'auth-failed' });
     Object.defineProperty(globalThis, 'location', {
@@ -834,6 +1311,30 @@ describe('App default export', () => {
     expect(await screen.findByText('PocketBase authentication failed.')).toBeInTheDocument();
     expect(screen.getByText('Reconfigure')).toBeInTheDocument();
     expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
+  });
+
+  it('starts the main app from a verified cache when the LAN server is unavailable', async () => {
+    mockGetPbConnection.mockResolvedValue({
+      ok: false,
+      error: 'pb-unavailable',
+      offlineAvailable: true,
+      pbUrl: 'https://relay.example.com',
+      lastSyncAt: 200,
+    });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+    expect(lastConnectionManagerProps).toMatchObject({
+      pbUrl: 'https://relay.example.com',
+      pbAuth: null,
+      offlineMode: true,
+    });
   });
 
   it('shows an error if startup connection bootstrap times out', async () => {
@@ -878,6 +1379,50 @@ describe('App default export', () => {
     expect(mockStartPocketBase).not.toHaveBeenCalled();
   });
 
+  it('treats a failed saveConfig result object as a failure, not a truthy success', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    // The handler may answer with a result object rather than a bare boolean;
+    // read as a plain truthy value this relaunched into a half-written config.
+    mockSaveConfig.mockResolvedValue({ ok: false, discardedPendingCount: 0 });
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    expect(await screen.findByText('Failed to save configuration.')).toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled();
+    expect(mockRelaunchApp).not.toHaveBeenCalled();
+  });
+
+  it('accepts a successful saveConfig result object and reports discarded offline changes', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue({ ok: true, discardedPendingCount: 2 });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload: vi.fn() },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    await vi.waitFor(() => expect(mockRelaunchApp).toHaveBeenCalled());
+    expect(screen.queryByText('Failed to save configuration.')).not.toBeInTheDocument();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      'Reconfiguration discarded unsynced offline changes',
+      { discardedPendingCount: 2 },
+    );
+  });
+
   it('shows unavailable error when connection result is not auth-failed or not-configured', async () => {
     mockGetPbConnection.mockResolvedValue({ ok: false, error: 'unavailable' });
     Object.defineProperty(globalThis, 'location', {
@@ -915,6 +1460,25 @@ describe('App default export', () => {
     render(<App />);
 
     expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
+  });
+
+  it('returns invalid browser configuration to the outer session gate', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'invalid-config' });
+    const onWebSessionRequired = vi.fn();
+    globalThis.api = {
+      ...globalThis.api,
+      runtime: WEB_RUNTIME,
+    } as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App onWebSessionRequired={onWebSessionRequired} />);
+
+    await vi.waitFor(() => expect(onWebSessionRequired).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
   });
 
   it('shows generic error when checkConfig throws a non-timeout error', async () => {
@@ -1059,9 +1623,7 @@ describe('App default export', () => {
     // Make isConfigured hang so we stay in 'checking' phase
     mockIsConfigured.mockImplementation(() => new Promise(() => undefined));
     const mockWindowClose = vi.fn();
-    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
-      api: { windowClose: mockWindowClose },
-    } as unknown as typeof globalThis.window;
+    stubWindowBridge({ windowClose: mockWindowClose });
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -1076,12 +1638,28 @@ describe('App default export', () => {
     expect(mockWindowClose).toHaveBeenCalled();
   });
 
+  it('does not expose desktop window controls while browser startup is checking', async () => {
+    mockIsConfigured.mockImplementation(() => new Promise(() => undefined));
+    globalThis.api = {
+      ...globalThis.api,
+      runtime: WEB_RUNTIME,
+    } as typeof globalThis.api;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(screen.getByText('Initializing...')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Close')).not.toBeInTheDocument();
+  });
+
   it('calls windowClose when close button is clicked in error state', async () => {
     mockGetPbConnection.mockResolvedValue({ ok: false, error: 'unavailable' });
     const mockWindowClose = vi.fn();
-    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
-      api: { windowClose: mockWindowClose },
-    } as unknown as typeof globalThis.window;
+    stubWindowBridge({ windowClose: mockWindowClose });
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,

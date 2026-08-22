@@ -38,6 +38,16 @@ const SAMPLE_BACKUPS: BackupEntry[] = [
   { name: '2026-03-24T08-00-00-000Z.zip', date: '2026-03-24T08:00:00.000Z', size: 1_200_000 },
 ];
 
+/**
+ * findAllByText already fails the test when nothing matches; the explicit throw
+ * only narrows the indexed access for the type checker.
+ */
+const clickFirstRestore = async (): Promise<void> => {
+  const [firstRestore] = await screen.findAllByText('Restore');
+  if (!firstRestore) throw new Error('Expected at least one Restore button to be rendered');
+  fireEvent.click(firstRestore);
+};
+
 describe('DataManagerBackups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -75,7 +85,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockResolvedValue({ success: true, data: 'new-backup.zip' });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -86,8 +96,7 @@ describe('DataManagerBackups', () => {
   it('shows confirmation dialog before restore', async () => {
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    await clickFirstRestore();
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
@@ -99,8 +108,7 @@ describe('DataManagerBackups', () => {
 
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -111,12 +119,53 @@ describe('DataManagerBackups', () => {
   it('cancels restore confirmation', async () => {
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    await clickFirstRestore();
 
     expect(screen.getByText(/This will replace all current data/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByText(/This will replace all current data/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/This will replace all current data/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('confirms the restore inside a dismissible dialog', async () => {
+    render(<DataManagerBackups />);
+
+    await clickFirstRestore();
+
+    // A destructive confirmation buried below a 13-entry list reads as a
+    // no-op click; it has to own focus and answer Escape.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/This will replace all current data/);
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/This will replace all current data/)).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps a restoring state on screen until the restore settles', async () => {
+    let settleRestore!: (result: IpcResult) => void;
+    mockRestoreBackup.mockReturnValue(
+      new Promise<IpcResult>((resolve) => {
+        settleRestore = resolve;
+      }),
+    );
+    render(<DataManagerBackups />);
+
+    await clickFirstRestore();
+    fireEvent.click(screen.getByText('Confirm Restore'));
+
+    await screen.findByText('Restoring...');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    settleRestore({ success: false, error: 'Corrupt backup' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Corrupt backup')).toBeInTheDocument();
+    });
   });
 
   it('shows error when listBackups fails', async () => {
@@ -132,7 +181,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockResolvedValue({ success: false, error: 'Disk full' });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -144,7 +193,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockResolvedValue({ success: false });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -156,7 +205,7 @@ describe('DataManagerBackups', () => {
     mockCreateBackup.mockRejectedValue(new Error('unexpected'));
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getByText('Create Backup'));
+    await screen.findByText('Create Backup');
     fireEvent.click(screen.getByText('Create Backup'));
 
     await waitFor(() => {
@@ -168,8 +217,7 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockResolvedValue({ success: false, error: 'Corrupt backup' });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -181,8 +229,7 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockResolvedValue({ success: false });
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
@@ -194,8 +241,7 @@ describe('DataManagerBackups', () => {
     mockRestoreBackup.mockRejectedValue(new Error('unexpected'));
     render(<DataManagerBackups />);
 
-    await waitFor(() => screen.getAllByText('Restore'));
-    fireEvent.click(screen.getAllByText('Restore')[0]);
+    await clickFirstRestore();
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {

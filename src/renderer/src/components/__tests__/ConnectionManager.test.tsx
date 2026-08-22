@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 
 // ---------------------------------------------------------------------------
 // Mock usePocketBase hook
@@ -37,9 +38,10 @@ describe('ConnectionManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConnectionState = 'connecting';
-    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
-      api: { windowClose: vi.fn() },
-    } as unknown as typeof globalThis.window;
+    globalThis.api = {
+      runtime: ELECTRON_RUNTIME,
+      windowClose: vi.fn(),
+    } as never;
   });
 
   // ── Connecting State ──
@@ -131,5 +133,28 @@ describe('ConnectionManager', () => {
       </ConnectionManager>,
     );
     expect(screen.getByText('child-content')).toBeInTheDocument();
+  });
+
+  it('keeps browser work mounted under an in-place session-expired overlay', async () => {
+    mockConnectionState = 'auth-failed';
+    globalThis.api = { runtime: WEB_RUNTIME } as never;
+    const onWebReauthenticate = vi.fn(async () => true);
+    render(
+      <ConnectionManager
+        {...defaultProps}
+        onWebReauthenticate={onWebReauthenticate}
+        onWebSessionRequired={vi.fn()}
+      >
+        <input aria-label="Unsaved work" defaultValue="Draft" />
+      </ConnectionManager>,
+    );
+
+    expect(screen.getByLabelText('Unsaved work')).toHaveValue('Draft');
+    fireEvent.change(screen.getByLabelText('Connection passphrase'), {
+      target: { value: 'correct-value' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    expect(onWebReauthenticate).toHaveBeenCalledWith('correct-value');
+    expect(screen.getByLabelText('Unsaved work')).toHaveValue('Draft');
   });
 });

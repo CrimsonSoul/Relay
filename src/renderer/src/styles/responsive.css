@@ -8,6 +8,194 @@
   }
 }
 
+/* Compact workstation shell: preserve the full navigation set while returning
+   horizontal space to operational content in half-screen and narrow windows. */
+@media (max-width: 1200px) {
+  :root {
+    --sidebar-width-collapsed: 64px;
+  }
+
+  .sidebar-shell {
+    flex: 0 0 var(--sidebar-width-collapsed);
+    min-width: var(--sidebar-width-collapsed);
+  }
+
+  .sidebar {
+    transition: width var(--motion-duration-state) var(--motion-ease-out);
+  }
+
+  .sidebar-app-icon {
+    align-items: center;
+    padding-inline: 0;
+  }
+
+  .sidebar-app-icon-label {
+    font-size: 0;
+  }
+
+  .sidebar-app-icon-label::before {
+    content: 'r';
+    font-size: var(--text-lg);
+  }
+
+  .sidebar-app-icon-label::after {
+    font-size: var(--text-lg);
+  }
+
+  .sidebar-nav {
+    width: 100%;
+  }
+
+  .sidebar-button {
+    --sidebar-button-width: 56px;
+    --sidebar-button-height: 48px;
+
+    align-items: center;
+    padding: 0;
+    border-left-width: 3px;
+  }
+
+  .sidebar-button-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sidebar-button-label {
+    display: none;
+  }
+
+  .sidebar-button-status-dot {
+    right: 5px;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar {
+    width: 136px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon {
+    align-items: flex-start;
+    padding-inline: 22px 0;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon-label {
+    font-size: var(--text-lg);
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-app-icon-label::before {
+    content: none;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-button {
+    --sidebar-button-width: 120px;
+
+    align-items: flex-start;
+    padding: 8px 10px;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-button-label {
+    display: block;
+  }
+
+  .sidebar-shell:is(:hover, :focus-within) .sidebar-button-status-dot {
+    right: 10px;
+  }
+
+  .sidebar-footer {
+    width: 100%;
+    padding: 8px 4px;
+  }
+
+  .world-clock-container {
+    display: none;
+  }
+
+  .release-update-indicator__wide-label {
+    display: none;
+  }
+
+  .release-update-indicator.tactile-button {
+    padding-inline: 10px;
+  }
+
+  .app-header {
+    padding-inline: 20px;
+  }
+
+  .header-title-container {
+    min-width: 0;
+  }
+
+  .header-breadcrumb {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-search-container {
+    min-width: 180px;
+    padding-inline: 16px 0;
+  }
+}
+
+/* At the desktop window minimum, Windows controls consume most of the header.
+   Keep search usable but let it yield to the persistent release state. */
+@media (max-width: 720px) {
+  .header-title-container {
+    display: none;
+  }
+
+  .header-search-container {
+    min-width: 0;
+    padding-inline: 0 8px;
+    overflow: hidden;
+  }
+
+  .header-search-bar {
+    min-width: 0;
+  }
+
+  .header-search-bar-shortcut {
+    display: none;
+  }
+
+  .release-update-indicator.tactile-button {
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 520px) {
+  .release-update-modal .modal-footer-generic {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .release-update-modal .modal-footer-generic > .tactile-button {
+    width: 100%;
+  }
+
+  .release-update-modal__step {
+    gap: 5px;
+    font-size: var(--text-2xs);
+  }
+
+  .release-update-modal__content {
+    gap: var(--space-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .web-runtime-banner__warning {
+    max-width: 320px;
+  }
+}
+
 /* Shared Responsive Grid */
 .relay-grid {
   display: grid;
@@ -33,36 +221,6 @@
   justify-content: center;
 }
 
-/* Notes variant */
-.relay-grid--notes {
-  overflow-y: overlay;
-  flex: 1;
-  padding: 8px;
-}
-
-.notes-masonry-columns {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.notes-masonry-column {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* Wider gaps for large font mode (10ft viewing) */
-.relay-grid--notes[data-font-size='lg'] .notes-masonry-columns {
-  gap: 20px;
-}
-
-.relay-grid--notes[data-font-size='lg'] .notes-masonry-column {
-  gap: 20px;
-}
-
 /* Fixed 2-Column Grid for Pop-out (View Only) */
 .relay-grid--masonry {
   --grid-gap: 24px;
@@ -85,10 +243,6 @@
   .relay-grid--oncall {
     grid-template-columns: 1fr;
     --grid-gap: 12px;
-  }
-
-  .notes-masonry-columns {
-    flex-direction: column;
   }
 }
 
@@ -236,4 +390,13 @@
 :focus-visible {
   outline: 3px solid var(--color-accent) !important;
   outline-offset: 2px !important;
+}
+
+/* Native form controls already communicate focus through their border and
+   halo. Suppress the fallback outline so those treatments do not stack. */
+:where(input, textarea, select):focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 2px var(--color-accent-dim) !important;
 }
