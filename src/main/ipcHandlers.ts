@@ -36,6 +36,8 @@ import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager'
 import type { RelayWebServerManager } from './web/RelayWebServerManager';
 import type { WebApprovalCodeStore } from './web/WebApprovalCodeStore';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
+import { setupWorkstationAwakeHandlers } from './handlers/workstationAwakeHandlers';
+import type { WorkstationAwakeService } from './power/WorkstationAwakeService';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -60,6 +62,7 @@ export function setupIpcHandlers(opts: {
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
   getWebApprovalCodes?: () => WebApprovalCodeStore | null;
   getRelayWebServerManager?: () => RelayWebServerManager | null;
+  getWorkstationAwakeService?: () => WorkstationAwakeService | null;
   subscribePrivilegedSessionChanged?: (
     listener: (view: PrivilegedSessionView) => void,
   ) => () => void;
@@ -87,6 +90,7 @@ export function setupIpcHandlers(opts: {
     getPrivilegedRuntime,
     getWebApprovalCodes,
     getRelayWebServerManager,
+    getWorkstationAwakeService,
     subscribePrivilegedSessionChanged,
     subscribeWebApprovalRequestsChanged,
     onPrivilegedCredentialChanged,
@@ -106,6 +110,9 @@ export function setupIpcHandlers(opts: {
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
   safeSetup('radar', () => setupRadarHandlers());
   safeSetup('releaseUpdates', () => setupReleaseUpdateHandlers());
+  safeSetup('workstationAwake', () =>
+    setupWorkstationAwakeHandlers(getWorkstationAwakeService ?? (() => null)),
+  );
 
   safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager?.() ?? null));
 

@@ -8,8 +8,10 @@ import {
 } from './windows-package-contract.mjs';
 import {
   resolveElectronBuilderArgs,
+  resolveHostNativeDependencyRestore,
   resolveMakensisCommand,
   resolvePackageMode,
+  resolveWindowsNativeDependencyInstall,
 } from './package-windows.mjs';
 
 describe('Windows package contract', () => {
@@ -56,6 +58,37 @@ describe('Windows package contract', () => {
     expect(() => resolvePackageMode(['--fixture', '--compile-launcher-only'])).toThrow(
       /cannot be combined/i,
     );
+  });
+
+  it('stages the Windows Koffi binary before cross-platform packaging', () => {
+    expect(resolveWindowsNativeDependencyInstall('3.1.6', 'darwin')).toEqual([
+      'install',
+      '--no-save',
+      '--ignore-scripts',
+      '--force',
+      '@koromix/koffi-win32-x64@3.1.6',
+    ]);
+    expect(resolveWindowsNativeDependencyInstall('3.1.6', 'win32')).toEqual([
+      'install',
+      '--no-save',
+      '--ignore-scripts',
+      '@koromix/koffi-win32-x64@3.1.6',
+    ]);
+    expect(() => resolveWindowsNativeDependencyInstall('latest', 'darwin')).toThrow(
+      /Koffi version/i,
+    );
+  });
+
+  it('restores host native dependencies after Windows packaging', () => {
+    expect(resolveHostNativeDependencyRestore()).toEqual([
+      'rebuild',
+      'better-sqlite3',
+      '--build-from-source',
+    ]);
+
+    const source = readFileSync('scripts/package-windows.mjs', 'utf8');
+    expect(source).toContain('finally {');
+    expect(source).toContain('await restoreHostNativeDependencies()');
   });
 
   it('marks untracked non-ignored package inputs as dirty', () => {

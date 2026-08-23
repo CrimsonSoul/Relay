@@ -1601,6 +1601,25 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('button', { name: 'Open Teams Draft' })).toBeVisible();
   });
 
+  test('Workstation Settings exposes platform-accurate keep-awake protection', async () => {
+    await goToTab(window, 'sidebar-settings', 'Settings');
+    await window.getByRole('tab', { name: 'Workstation', exact: true }).click();
+
+    const toggle = window.getByRole('switch', {
+      name: 'Keep this PC awake while Relay is running',
+    });
+    await expect(toggle).toBeVisible();
+    if (process.platform === 'win32') {
+      await expect(toggle).toBeEnabled();
+      await expect(toggle).toBeChecked();
+      await expect(window.getByText('Active', { exact: true })).toBeVisible();
+    } else {
+      await expect(toggle).toBeDisabled();
+      await expect(toggle).not.toBeChecked();
+      await expect(window.getByText('Windows only', { exact: true })).toBeVisible();
+    }
+  });
+
   test('Knowledge launches Wiki, Contacts, and Servers in order and retains contextual state', async () => {
     const suffix = uniqueSuffix();
     const contactName = `Knowledge Contact ${suffix}`;

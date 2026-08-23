@@ -186,6 +186,9 @@ const api: BridgeAPI = {
   getWebServerState: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_GET_STATE),
   saveWebServerConfig: (input) => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_SAVE_CONFIG, input),
   retryWebServer: () => ipcRenderer.invoke(IPC_CHANNELS.WEB_SERVER_RETRY),
+  getWorkstationAwakeState: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSTATION_AWAKE_GET_STATE),
+  setWorkstationAwakeEnabled: (enabled) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSTATION_AWAKE_SET_ENABLED, enabled),
   // Cache (offline)
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
   cacheQueryRead: (collection: string, queryKey: string) =>

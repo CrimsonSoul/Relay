@@ -65,6 +65,8 @@ import {
   setPrivilegedRuntime,
   getPrivilegedHost,
   setPrivilegedHost,
+  getWorkstationAwakeService,
+  setWorkstationAwakeService,
   subscribePrivilegedSessionChanged,
   getDefaultDataPath,
   getDataRoot,
@@ -95,6 +97,7 @@ beforeEach(() => {
   setKnowledgeSearchService(null);
   setPrivilegedRuntime(null);
   setPrivilegedHost(null);
+  setWorkstationAwakeService(null);
   resetDataRootCache();
 });
 
@@ -310,6 +313,17 @@ describe('setupIpc', () => {
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getPrivilegedRuntime?.()).toBe(runtime);
     expect(options?.subscribePrivilegedSessionChanged).toEqual(expect.any(Function));
+  });
+
+  it('passes the live workstation keep-awake service getter to setupIpcHandlers', () => {
+    const service = { getState: vi.fn(), setEnabled: vi.fn() } as never;
+    setWorkstationAwakeService(service);
+
+    setupIpc();
+
+    const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
+    expect(getWorkstationAwakeService()).toBe(service);
+    expect(options?.getWorkstationAwakeService?.()).toBe(service);
   });
 });
 

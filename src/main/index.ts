@@ -1,4 +1,13 @@
-import { app, BrowserWindow, session, dialog, ipcMain, crashReporter, safeStorage } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  session,
+  dialog,
+  ipcMain,
+  crashReporter,
+  safeStorage,
+  powerSaveBlocker,
+} from 'electron';
 import { join } from 'node:path';
 import { loggers } from './logger';
 import { AppConfig, type RelayConfig, type ServerConfig } from './config/AppConfig';
@@ -46,6 +55,8 @@ import {
   subscribePrivilegedSessionChanged,
   getRelayWebServerManager,
   setRelayWebServerManager,
+  getWorkstationAwakeService,
+  setWorkstationAwakeService,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, showAndFocusWindow } from './app/windowFactory';
@@ -104,6 +115,10 @@ import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
 import { configureE2EDesktopIsolation } from './app/e2eSafety';
 import { installMacOsTypeOfServiceGuard } from './app/typeOfServiceGuard';
+import { WorkstationAwakeManager } from './power/WorkstationAwakeManager';
+import { WorkstationAwakePreferenceStore } from './power/WorkstationAwakePreferenceStore';
+import { WorkstationAwakeService } from './power/WorkstationAwakeService';
+import { createWindowsInputPulse } from './power/windowsInputPulse';
 
 installMacOsTypeOfServiceGuard();
 const startupState = createStartupStateController();
@@ -274,6 +289,8 @@ if (gotLock) {
       cancelGpuDiagnostics = null;
       cancelWindowsRuntimeCleanup?.();
       cancelWindowsRuntimeCleanup = null;
+      getWorkstationAwakeService()?.shutdown();
+      setWorkstationAwakeService(null);
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
       void getRelayWebServerManager()?.stop();
@@ -332,6 +349,35 @@ if (gotLock) {
       startupTimeline.mark('electron-ready');
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
+
+      let windowsInputPulse: (() => boolean) | null = null;
+      const workstationAwakeManager = new WorkstationAwakeManager({
+        platform: process.platform,
+        powerSaveBlocker,
+        pulseInput: () => {
+          if (process.platform !== 'win32') return false;
+          try {
+            windowsInputPulse ??= createWindowsInputPulse();
+            return windowsInputPulse();
+          } catch (error) {
+            loggers.main.warn('Windows rejected the workstation keep-awake input pulse', {
+              error,
+            });
+            return false;
+          }
+        },
+      });
+      const workstationAwakeService = new WorkstationAwakeService(
+        workstationAwakeManager,
+        new WorkstationAwakePreferenceStore(app.getPath('userData')),
+      );
+      setWorkstationAwakeService(workstationAwakeService);
+      const workstationAwakeState = workstationAwakeService.initialize();
+      loggers.main.info('Workstation keep-awake initialized', {
+        supported: workstationAwakeState.supported,
+        enabled: workstationAwakeState.enabled,
+        status: workstationAwakeState.status,
+      });
 
       setupPermissions(session.defaultSession);
       cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {

@@ -22,6 +22,7 @@ const buildIdentityPath = join(generatedDir, 'relay-build-id.txt');
 const fixtureAppDir = join(generatedDir, 'relay-fixture-app');
 const fixtureExecutablePath = join(fixtureAppDir, 'Relay.exe');
 const fixtureIdentityPath = join(fixtureAppDir, 'resources', 'relay-build-id.txt');
+const packageJson = require(join(projectDir, 'package.json'));
 
 function printUsage() {
   console.log(`Usage: node scripts/package-windows.mjs [electron-builder options]
@@ -118,6 +119,41 @@ export function resolvePackageMode(args) {
   return { compileOnly, fixture };
 }
 
+export function resolveWindowsNativeDependencyInstall(koffiVersion, platform = process.platform) {
+  if (!/^\d+\.\d+\.\d+$/u.test(koffiVersion)) {
+    throw new Error('Koffi version must be an exact semantic version');
+  }
+
+  const args = ['install', '--no-save', '--ignore-scripts'];
+  if (platform !== 'win32') args.push('--force');
+  args.push(`@koromix/koffi-win32-x64@${koffiVersion}`);
+  return args;
+}
+
+export function resolveHostNativeDependencyRestore() {
+  return ['rebuild', 'better-sqlite3', '--build-from-source'];
+}
+
+async function runNpm(args) {
+  const npmExecPath = process.env.npm_execpath;
+  if (npmExecPath) {
+    await run(process.execPath, [npmExecPath, ...args]);
+    return;
+  }
+
+  await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', args);
+}
+
+async function stageWindowsNativeDependencies() {
+  const koffiVersion = packageJson.dependencies?.koffi;
+  await runNpm(resolveWindowsNativeDependencyInstall(koffiVersion));
+}
+
+async function restoreHostNativeDependencies() {
+  console.log('Restoring better-sqlite3 for the current Node ABI...');
+  await runNpm(resolveHostNativeDependencyRestore());
+}
+
 async function compileLauncher(harness) {
   await mkdir(generatedDir, { recursive: true });
   const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
@@ -184,21 +220,27 @@ export async function packageWindows(args = process.argv.slice(2)) {
   const buildId = await writeBuildDefines(harness);
   if (fixture) {
     await compileFixtureRuntime(buildId);
+  } else {
+    await stageWindowsNativeDependencies();
   }
   const electronBuilderCli = require.resolve('electron-builder/out/cli/cli.js');
   const forwardedArgs = resolveElectronBuilderArgs(args);
   if (fixture) {
     forwardedArgs.push('--prepackaged', fixtureAppDir);
   }
-  await run(process.execPath, [
-    electronBuilderCli,
-    '--win',
-    'nsis',
-    '--x64',
-    '--config',
-    'electron-builder.yml',
-    ...forwardedArgs,
-  ]);
+  try {
+    await run(process.execPath, [
+      electronBuilderCli,
+      '--win',
+      'nsis',
+      '--x64',
+      '--config',
+      'electron-builder.yml',
+      ...forwardedArgs,
+    ]);
+  } finally {
+    await restoreHostNativeDependencies();
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

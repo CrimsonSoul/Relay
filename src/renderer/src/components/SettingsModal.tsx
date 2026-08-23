@@ -15,6 +15,7 @@ import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { AdministrationSettings } from './settings/AdministrationSettings';
 import { AboutSettings } from './settings/AboutSettings';
+import { WorkstationSettings } from './settings/WorkstationSettings';
 import { AppearanceSettings, AppearanceSettingsProvider } from './settings/AppearanceSettings';
 import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 import {
@@ -59,10 +60,11 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
 };
 
 type SettingsSectionId =
-  'appearance' | 'connection' | 'access' | 'administration' | 'dynatrace' | 'about';
+  'appearance' | 'workstation' | 'connection' | 'access' | 'administration' | 'dynatrace' | 'about';
 
 const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
+  { id: 'workstation', label: 'Workstation' },
   { id: 'connection', label: 'Relay data' },
   { id: 'access', label: 'Access' },
   { id: 'administration', label: 'Administration' },
@@ -99,6 +101,25 @@ function SettingsShell({
 
   if (!isOpen) return null;
 
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % sections.length;
+    if (event.key === 'ArrowLeft')
+      nextIndex = (currentIndex - 1 + sections.length) % sections.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = sections.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextSection = sections[nextIndex];
+    if (!nextSection) return;
+    onSectionChange(nextSection.id);
+    globalThis.document.getElementById(`settings-tab-${nextSection.id}`)?.focus();
+  };
+
   return (
     <section className="settings-page" aria-labelledby="settings-page-title">
       <header className="settings-page__header">
@@ -113,17 +134,26 @@ function SettingsShell({
         </div>
       </header>
 
-      <div className="settings-page__tabs" aria-label="Settings sections" role="tablist">
-        {sections.map((section) => (
+      <div
+        className="settings-page__tabs"
+        aria-label="Settings sections"
+        aria-orientation="horizontal"
+        role="tablist"
+      >
+        {sections.map((section, index) => (
           <button
             key={section.id}
+            id={`settings-tab-${section.id}`}
             type="button"
             role="tab"
             aria-selected={activeSection === section.id}
+            aria-controls="settings-panel"
+            tabIndex={activeSection === section.id ? 0 : -1}
             className={`settings-page__tab${
               activeSection === section.id ? ' settings-page__tab--active' : ''
             }`}
             onClick={() => onSectionChange(section.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
             {section.label}
           </button>
@@ -131,9 +161,11 @@ function SettingsShell({
       </div>
 
       <div
+        id="settings-panel"
         className="settings-page__workspace"
         role="tabpanel"
-        aria-label={sections.find((section) => section.id === activeSection)?.label}
+        aria-labelledby={`settings-tab-${activeSection}`}
+        tabIndex={0}
       >
         {children}
       </div>
@@ -589,6 +621,9 @@ const SettingsModalContent: React.FC<Props> = ({
         if (section.id === 'about') {
           return presentation === 'page' && Boolean(globalThis.api?.getAppVersion);
         }
+        if (section.id === 'workstation') {
+          return Boolean(globalThis.api?.getWorkstationAwakeState);
+        }
         return (
           section.id !== 'administration' ||
           (privilegedSession.state === 'active' &&
@@ -640,6 +675,7 @@ const SettingsModalContent: React.FC<Props> = ({
       }`}
     >
       <AppearanceSettings active={presentation === 'modal' || activeSection === 'appearance'} />
+      {(presentation === 'modal' || activeSection === 'workstation') && <WorkstationSettings />}
       <RelayConnectionSettings
         active={presentation === 'modal' || activeSection === 'connection'}
         onClose={onClose}

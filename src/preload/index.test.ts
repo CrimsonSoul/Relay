@@ -174,6 +174,14 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'webServer:retry');
   });
 
+  it('exposes only get and boolean-set controls for workstation keep-awake', async () => {
+    await api.getWorkstationAwakeState?.();
+    await api.setWorkstationAwakeEnabled?.(false);
+
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'workstationAwake:getState');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'workstationAwake:setEnabled', false);
+  });
+
   it('exposes cover bytes through the narrow Knowledge cover channel', async () => {
     const request = { documentId: 'document1', checksum: 'a'.repeat(64) };
     await api.getKnowledgeCover(request);

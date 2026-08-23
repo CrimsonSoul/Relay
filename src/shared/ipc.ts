@@ -25,6 +25,7 @@ import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledg
 import type { OfflineWritableCollection } from './offlineCollections';
 import type { RelayRuntimeDescriptor } from './runtime';
 import type { RelayUpdateCheck, RelayUpdateSnapshot } from './releases';
+import type { WorkstationAwakeState } from './workstationAwake';
 
 export {
   OFFLINE_WRITABLE_COLLECTIONS,
@@ -704,6 +705,9 @@ export type BridgeAPI = {
     callback: (notification: { title: string; message: string }) => void,
   ) => () => void;
   onPbCrashed: (callback: (info: { error: string }) => void) => () => void;
+  /** Windows desktop-only local workstation inactivity protection. */
+  getWorkstationAwakeState?: () => Promise<WorkstationAwakeState>;
+  setWorkstationAwakeEnabled?: (enabled: boolean) => Promise<IpcResult<WorkstationAwakeState>>;
   logToMain: (entry: LogEntry) => void;
   // Drag and Drop Sync
   notifyDragStart: () => void;
@@ -954,6 +958,8 @@ export const IPC_CHANNELS = {
   PB_CRASHED: 'pb:crashed',
   APP_ERROR_NOTIFICATION: 'app:error-notification',
   APP_RELAUNCH: 'app:relaunch',
+  WORKSTATION_AWAKE_GET_STATE: 'workstationAwake:getState',
+  WORKSTATION_AWAKE_SET_ENABLED: 'workstationAwake:setEnabled',
   // Backups
   BACKUP_LIST: 'backup:list',
   BACKUP_CREATE: 'backup:create',

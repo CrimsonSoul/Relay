@@ -180,6 +180,22 @@ download, install, restart, notification, or indicator capabilities. The GitHub 
 and protected release workflow are the update trust root; the downloaded bootstrap does not have an
 independent publisher signature.
 
+### Windows workstation keep-awake
+
+Packaged Windows Relay enables workstation inactivity protection by default. The main process owns
+an Electron `prevent-display-sleep` blocker and sends an F15 press/release pair through the Windows
+`SendInput` API every 30 seconds. The native call is bound directly through the pinned `koffi`
+dependency; Relay does not spawn PowerShell, install a service, or request administrator access.
+The renderer can only read the public state or submit a boolean preference through validated,
+trusted-sender IPC.
+
+The preference is local to the Electron profile in `workstation-preferences.json`, separate from
+PocketBase and shared Relay data. A missing preference defaults to enabled; unreadable or malformed
+state fails closed. Relay releases the timer and display blocker during normal shutdown. Native
+input or display-blocker failures produce a degraded state in Settings rather than claiming full
+protection. The feature does not override a manual lock, sign-out, shutdown, lid-close sleep, or an
+organization policy that rejects synthetic input. Relay Web has no workstation capability.
+
 ### Service Status
 
 `src/main/handlers/cloudStatus/CloudStatusManager.ts` polls approved public status sources and owns

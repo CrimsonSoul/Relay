@@ -111,6 +111,12 @@ function createBridgeMock() {
     }),
     saveWebServerConfig: vi.fn(),
     retryWebServer: vi.fn(),
+    getWorkstationAwakeState: vi.fn().mockResolvedValue({
+      supported: true,
+      enabled: true,
+      status: 'active',
+    }),
+    setWorkstationAwakeEnabled: vi.fn(),
     writeClipboard: vi.fn(),
     getAppVersion: vi.fn().mockResolvedValue('1.0.0'),
     openReleasesPage: vi.fn().mockResolvedValue(true),
@@ -173,10 +179,40 @@ describe('SettingsModal', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
   });
 
+  it('connects Settings tabs to their panel and supports arrow-key navigation', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    const appearanceTab = screen.getByRole('tab', { name: 'Appearance' });
+    expect(appearanceTab).toHaveAttribute('aria-controls', 'settings-panel');
+    expect(screen.getByRole('tabpanel', { name: 'Appearance' })).toHaveAttribute(
+      'aria-labelledby',
+      'settings-tab-appearance',
+    );
+
+    fireEvent.keyDown(appearanceTab, { key: 'ArrowRight' });
+
+    const workstationTab = screen.getByRole('tab', { name: 'Workstation' });
+    expect(workstationTab).toHaveAttribute('aria-selected', 'true');
+    expect(workstationTab).toHaveFocus();
+  });
+
   it('removes the obsolete Operator roster section', () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
     expect(screen.queryByRole('tab', { name: 'Operators' })).toBeNull();
+  });
+
+  it('offers local Windows inactivity protection as a peer Settings section', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Workstation' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Workstation' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('switch', {
+        name: 'Keep this PC awake while Relay is running',
+      }),
+    ).toBeChecked();
   });
 
   it('offers Access as a peer Settings page section', () => {
