@@ -307,6 +307,45 @@ try {
     throw 'Relay bootstrap did not repair content corruption beyond the PE header.'
   }
 
+  $currentRuntime = Join-Path $runtimeVersionsRoot $ExpectedBuildId
+  $currentFfmpeg = Join-Path $currentRuntime 'ffmpeg.dll'
+  $expectedFfmpegHash = (Get-FileHash -LiteralPath $currentFfmpeg -Algorithm SHA512).Hash
+  $corruptStream = [IO.File]::Open(
+    $currentFfmpeg,
+    [IO.FileMode]::Append,
+    [IO.FileAccess]::Write,
+    [IO.FileShare]::None
+  )
+  try {
+    $corruptStream.WriteByte(0)
+  }
+  finally {
+    $corruptStream.Dispose()
+  }
+  $dllRepairPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+  if ((Get-FileHash -LiteralPath $currentFfmpeg -Algorithm SHA512).Hash -ne $expectedFfmpegHash) {
+    throw 'Relay bootstrap did not repair a corrupted Electron DLL.'
+  }
+
+  $currentPocketBaseHook = Join-Path $currentRuntime 'resources\pocketbase\hooks\relay_privileged_reauth.pb.js'
+  $expectedPocketBaseHookHash = (Get-FileHash -LiteralPath $currentPocketBaseHook -Algorithm SHA512).Hash
+  $corruptStream = [IO.File]::Open(
+    $currentPocketBaseHook,
+    [IO.FileMode]::Append,
+    [IO.FileAccess]::Write,
+    [IO.FileShare]::None
+  )
+  try {
+    $corruptStream.WriteByte(0)
+  }
+  finally {
+    $corruptStream.Dispose()
+  }
+  $hookRepairPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+  if ((Get-FileHash -LiteralPath $currentPocketBaseHook -Algorithm SHA512).Hash -ne $expectedPocketBaseHookHash) {
+    throw 'Relay bootstrap did not repair a corrupted PocketBase hook.'
+  }
+
   $brokenCurrentBuildId = 'smoke-broken-current'
   $brokenCurrentRuntime = Join-Path $runtimeVersionsRoot $brokenCurrentBuildId
   New-Item -ItemType Directory -Path $brokenCurrentRuntime -Force | Out-Null
@@ -355,6 +394,8 @@ try {
     PreviousBuildId = $ExpectedPreviousBuildId
     CorruptRuntimeRepaired = $true
     ContentCorruptionRepaired = $true
+    DllCorruptionRepaired = $true
+    PocketBaseHookCorruptionRepaired = $true
     MissingExecutableRepaired = $true
     BrokenCurrentPreservedPrevious = $true
     ConcurrentPreparation = $true
@@ -368,6 +409,8 @@ try {
     CurrentRepairPreparationMs = $currentRepairPreparationMs
     ExecutableRepairPreparationMs = $executableRepairPreparationMs
     ContentRepairPreparationMs = $contentRepairPreparationMs
+    DllRepairPreparationMs = $dllRepairPreparationMs
+    HookRepairPreparationMs = $hookRepairPreparationMs
     Launcher = $launcherPath
     DataUnchanged = $true
   } | ConvertTo-Json

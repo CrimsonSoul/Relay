@@ -64,6 +64,7 @@ Var RelayCatalogRuntimeHash
 Var RelayCatalogVersion
 Var RelayCatalogReleaseTag
 Var RelayCatalogCommit
+Var RelayCatalogInstallerHash
 Var RelayCatalogServerEpoch
 Var RelayCatalogClientEpoch
 Var RelayCatalogHealth
@@ -78,6 +79,8 @@ Var RelayRequest
 Var RelayPrepared
 Var RelayProbationResult
 Var RelayRollbackRequest
+Var RelaySettlement
+Var RelaySettlementNew
 Var RelayCandidate
 Var RelayCurrent
 Var RelayPrevious0
@@ -153,6 +156,7 @@ Var RelayRestoreJournalExpectedCurrent
 Var RelayCatalogCurrent
 Var RelayCatalogCandidate
 Var RelayCatalogTransaction
+Var RelayCatalogPrevious0
 Var RelayManualProtocol
 Var RelayManualTransaction
 Var RelayManualSource
@@ -169,6 +173,14 @@ Var RelayManualTargetServerEpoch
 Var RelayManualTargetClientEpoch
 Var RelayNewPrevious1
 Var RelayNewPrevious2
+Var RelaySettlementProtocol
+Var RelaySettlementTransaction
+Var RelaySettlementOutcome
+Var RelaySettlementSource
+Var RelaySettlementTarget
+Var RelaySettlementWriteResult
+Var RelayReconcileSettled
+Var RelayReconcileFingerprintFound
 Var RelayProbationProcessInfo
 Var RelayProbationStartupInfo
 Var RelayProbationProcessHandle
@@ -461,6 +473,133 @@ RelayFailedFingerprintLoop:
 RelayFailedFingerprintDone:
 FunctionEnd
 
+Function RelayWriteSettlementIntent
+  StrCpy $RelaySettlementWriteResult "0"
+  Delete "$RelaySettlementNew"
+  ClearErrors
+  WriteINIStr "$RelaySettlementNew" "Settlement" "protocol" "${RELAY_RECOVERY_STATE_PROTOCOL}"
+  WriteINIStr "$RelaySettlementNew" "Settlement" "transactionId" "$RelayTransactionId"
+  WriteINIStr "$RelaySettlementNew" "Settlement" "outcome" "$RelaySettlementOutcome"
+  WriteINIStr "$RelaySettlementNew" "Settlement" "sourceBuildId" "$RelayTransactionSource"
+  WriteINIStr "$RelaySettlementNew" "Settlement" "targetBuildId" "$RelayTransactionTarget"
+  IfErrors RelayWriteSettlementIntentFailed
+  System::Call 'kernel32::MoveFileExW(w "$RelaySettlementNew", w "$RelaySettlement", i 9) i.r0'
+  ${If} $0 != 0
+    StrCpy $RelaySettlementWriteResult "1"
+    Return
+  ${EndIf}
+
+RelayWriteSettlementIntentFailed:
+  Delete "$RelaySettlementNew"
+FunctionEnd
+
+Function RelayReconcileSettledUpdateRequest
+  ; A settlement intent is written before the catalog commit. It lets the next
+  ; launcher prove exactly which transaction reached a terminal state if the
+  ; previous launcher died before removing update-request.ini.
+  Delete "$RelaySettlementNew"
+  ${IfNot} ${FileExists} "$RelaySettlement"
+    Return
+  ${EndIf}
+  ${IfNot} ${FileExists} "$RelayRequest"
+    Delete "$RelaySettlement"
+    Return
+  ${EndIf}
+
+  ReadINIStr $RelaySettlementProtocol "$RelaySettlement" "Settlement" "protocol"
+  ReadINIStr $RelaySettlementTransaction "$RelaySettlement" "Settlement" "transactionId"
+  ReadINIStr $RelaySettlementOutcome "$RelaySettlement" "Settlement" "outcome"
+  ReadINIStr $RelaySettlementSource "$RelaySettlement" "Settlement" "sourceBuildId"
+  ReadINIStr $RelaySettlementTarget "$RelaySettlement" "Settlement" "targetBuildId"
+  ReadINIStr $RelayRequestProtocol "$RelayRequest" "RecoveryRequest" "protocol"
+  ReadINIStr $RelayRequestTransaction "$RelayRequest" "RecoveryRequest" "transactionId"
+  ReadINIStr $RelayRequestTargetVersion "$RelayRequest" "RecoveryRequest" "targetVersion"
+  ReadINIStr $RelayRequestTargetCommitish "$RelayRequest" "RecoveryRequest" "targetCommitish"
+  ReadINIStr $RelayRequestInstallerHash "$RelayRequest" "RecoveryRequest" "targetInstallerSha256"
+  ReadINIStr $RelayRequestCheckpoint "$RelayRequest" "RecoveryRequest" "checkpoint"
+  ReadINIStr $RelaySourceBuild "$RelayRequest" "Source" "buildId"
+  !insertmacro RelayValidateTransactionId "$RelaySettlementTransaction" $RelayTransactionIsValid
+  ${If} $RelaySettlementProtocol != "${RELAY_RECOVERY_STATE_PROTOCOL}"
+  ${OrIf} $RelayRequestProtocol != "${RELAY_RECOVERY_STATE_PROTOCOL}"
+  ${OrIf} $RelayTransactionIsValid != "1"
+  ${OrIf} $RelaySettlementTransaction != $RelayRequestTransaction
+  ${OrIf} $RelaySettlementSource != $RelaySourceBuild
+  ${OrIf} $RelaySettlementSource == $RelaySettlementTarget
+  ${OrIf} $RelayRequestCheckpoint != "complete"
+    Return
+  ${EndIf}
+  !insertmacro RelayValidateBuildId "$RelaySettlementSource" $RelayBuildIsValid
+  ${If} $RelayBuildIsValid != "1"
+    Return
+  ${EndIf}
+  !insertmacro RelayValidateBuildId "$RelaySettlementTarget" $RelayBuildIsValid
+  ${If} $RelayBuildIsValid != "1"
+    Return
+  ${EndIf}
+
+  ReadINIStr $RelayProtocol "$RelayState" "Relay" "protocol"
+  ReadINIStr $RelayCatalogCurrent "$RelayState" "Relay" "current"
+  ReadINIStr $RelayCatalogCandidate "$RelayState" "Relay" "candidate"
+  ReadINIStr $RelayCatalogTransaction "$RelayState" "Transaction" "id"
+  ReadINIStr $RelayCatalogPrevious0 "$RelayState" "Relay" "previous0"
+  ${If} $RelayProtocol != "${RELAY_RECOVERY_STATE_PROTOCOL}"
+  ${OrIf} $RelayCatalogCandidate != ""
+  ${OrIf} $RelayCatalogTransaction != ""
+    Return
+  ${EndIf}
+
+  StrCpy $RelayReconcileSettled "0"
+  ${If} $RelaySettlementOutcome == "promoted"
+    ReadINIStr $RelayCatalogVersion "$RelayState" "Build.$RelayCatalogCurrent" "version"
+    ReadINIStr $RelayCatalogCommit "$RelayState" "Build.$RelayCatalogCurrent" "targetCommitish"
+    ReadINIStr $RelayCatalogInstallerHash "$RelayState" "Build.$RelayCatalogCurrent" "installerSha256"
+    ${If} $RelayCatalogCurrent == $RelaySettlementTarget
+    ${AndIf} $RelayCatalogPrevious0 == $RelaySettlementSource
+    ${AndIf} $RelayCatalogVersion == $RelayRequestTargetVersion
+    ${AndIf} $RelayCatalogCommit == $RelayRequestTargetCommitish
+    ${AndIf} $RelayCatalogInstallerHash == $RelayRequestInstallerHash
+      StrCpy $RelayReconcileSettled "1"
+    ${EndIf}
+  ${ElseIf} $RelaySettlementOutcome == "rolled-back"
+    ReadINIStr $RelayCatalogVersion "$RelayState" "Build.$RelaySettlementTarget" "version"
+    ReadINIStr $RelayFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"
+    StrCpy $RelayFailedFingerprint "v$RelayRequestTargetVersion@$RelayRequestTargetCommitish"
+    StrCpy $RelayFailedFingerprintIndex 1
+    StrCpy $RelayReconcileFingerprintFound "0"
+
+RelayReconcileFingerprintLoop:
+    ${If} $RelayFailedFingerprintIndex <= 16
+      ${WordFind} "$RelayFailedFingerprints," "," "+$RelayFailedFingerprintIndex" $RelayExistingFingerprint
+      ${If} $RelayExistingFingerprint == ""
+      ${OrIf} $RelayExistingFingerprint == "1"
+        Goto RelayReconcileFingerprintDone
+      ${EndIf}
+      ${If} $RelayExistingFingerprint == $RelayFailedFingerprint
+        StrCpy $RelayReconcileFingerprintFound "1"
+        Goto RelayReconcileFingerprintDone
+      ${EndIf}
+      IntOp $RelayFailedFingerprintIndex $RelayFailedFingerprintIndex + 1
+      Goto RelayReconcileFingerprintLoop
+    ${EndIf}
+
+RelayReconcileFingerprintDone:
+    ${If} $RelayCatalogCurrent == $RelaySettlementSource
+    ${AndIf} $RelayCatalogVersion == ""
+    ${AndIf} $RelayReconcileFingerprintFound == "1"
+      StrCpy $RelayReconcileSettled "1"
+    ${EndIf}
+  ${EndIf}
+
+  ${If} $RelayReconcileSettled == "1"
+    Delete "$RelayRequest"
+    ${IfNot} ${FileExists} "$RelayRequest"
+      Delete "$RelayPrepared"
+      Delete "$RelayProbationResult"
+      Delete "$RelaySettlement"
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
 !macro RelayTryRuntime BUILD_ID
   !insertmacro RelayRuntimeIsUsable "${BUILD_ID}" $RelayRuntimeIsUsable
   ${If} $RelayRuntimeIsUsable == "1"
@@ -516,12 +655,15 @@ Section
   StrCpy $RelayPrepared "$RelayRoot\Recovery\prepared.ini"
   StrCpy $RelayProbationResult "$RelayRoot\Recovery\probation-result.ini"
   StrCpy $RelayRollbackRequest "$RelayRoot\Recovery\rollback-request.ini"
+  StrCpy $RelaySettlement "$RelayRoot\Recovery\settled-update.ini"
+  StrCpy $RelaySettlementNew "$RelayRoot\Recovery\settled-update.ini.new"
   StrCpy $RelayRestoreJournal "$APPDATA\Relay\recovery-rollback.ini"
   StrCpy $RelayRecoveryRequested "0"
   ${If} $RelayArgs == "${RELAY_RECOVERY_ARGUMENT}"
     StrCpy $RelayRecoveryRequested "1"
   ${EndIf}
 
+  Call RelayReconcileSettledUpdateRequest
   Call RelayCleanupCompletedServerRestore
   ReadINIStr $RelayProtocol "$RelayState" "Relay" "protocol"
   ${If} $RelayProtocol == "${RELAY_LEGACY_STATE_PROTOCOL}"
@@ -904,13 +1046,16 @@ PromoteCandidate:
   ${If} $RelayDroppedBuild != ""
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"
   ${EndIf}
+  StrCpy $RelaySettlementOutcome "promoted"
+  Call RelayWriteSettlementIntent
+  ${If} $RelaySettlementWriteResult != "1"
+    Goto NoUsableRuntime
+  ${EndIf}
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
     Goto RollbackCandidate
   ${EndIf}
-  Delete "$RelayRequest"
-  Delete "$RelayPrepared"
-  Delete "$RelayProbationResult"
+  Call RelayReconcileSettledUpdateRequest
   StrCpy $RelayBuildId $RelayCandidate
   StrCpy $RelayArgs ""
   !insertmacro RelayTryRuntime "$RelayBuildId"
@@ -938,14 +1083,17 @@ RollbackCandidate:
   WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"
   DeleteINISec "$RelayStateNew" "Build.$RelayCandidate"
   DeleteINISec "$RelayStateNew" "Transaction"
+  StrCpy $RelaySettlementOutcome "rolled-back"
+  Call RelayWriteSettlementIntent
+  ${If} $RelaySettlementWriteResult != "1"
+    Goto NoUsableRuntime
+  ${EndIf}
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
     Goto NoUsableRuntime
   ${EndIf}
+  Call RelayReconcileSettledUpdateRequest
   Call RelayFinalizeServerRestore
-  Delete "$RelayRequest"
-  Delete "$RelayPrepared"
-  Delete "$RelayProbationResult"
   StrCpy $RelayBuildId $RelayCurrent
   StrCpy $RelayArgs ""
   !insertmacro RelayTryRuntime "$RelayBuildId"

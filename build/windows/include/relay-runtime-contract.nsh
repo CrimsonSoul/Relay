@@ -16,8 +16,17 @@
 !define RELAY_RELEASES_URL "https://github.com/CrimsonSoul/Relay/releases"
 !define RELAY_INNER_EXECUTABLE "Relay.exe"
 !define RELAY_RUNTIME_MARKER ".relay-runtime-ready"
+!define RELAY_D3D_COMPILER_DLL "d3dcompiler_47.dll"
+!define RELAY_DX_COMPILER_DLL "dxcompiler.dll"
+!define RELAY_DXIL_DLL "dxil.dll"
+!define RELAY_FFMPEG_DLL "ffmpeg.dll"
+!define RELAY_LIB_EGL_DLL "libEGL.dll"
+!define RELAY_LIB_GLES_V2_DLL "libGLESv2.dll"
+!define RELAY_VK_SWIFTSHADER_DLL "vk_swiftshader.dll"
+!define RELAY_VULKAN_DLL "vulkan-1.dll"
 !define RELAY_APP_ASAR "resources\app.asar"
 !define RELAY_POCKETBASE_EXECUTABLE "resources\pocketbase\win32-x64\pocketbase.exe"
+!define RELAY_POCKETBASE_HOOK "resources\pocketbase\hooks\relay_privileged_reauth.pb.js"
 !define RELAY_BETTER_SQLITE3_NATIVE "resources\app.asar.unpacked\node_modules\better-sqlite3\build\Release\better_sqlite3.node"
 !define RELAY_KOFFI_NATIVE "resources\app.asar.unpacked\node_modules\@koromix\koffi-win32-x64\win32_x64\koffi.node"
 !define RELAY_BUILD_ID_FIRST_CHARSET "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -60,7 +69,43 @@ Var RelayContractIntegrityFileResult
   ${If} $RelayContractIntegrityFileResult != "1"
     StrCpy ${RESULT} "0"
   ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "d3dCompilerSha512" "${RELAY_D3D_COMPILER_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "dxCompilerSha512" "${RELAY_DX_COMPILER_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "dxilSha512" "${RELAY_DXIL_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "ffmpegSha512" "${RELAY_FFMPEG_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "libEglSha512" "${RELAY_LIB_EGL_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "libGlesV2Sha512" "${RELAY_LIB_GLES_V2_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "vkSwiftshaderSha512" "${RELAY_VK_SWIFTSHADER_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "vulkanSha512" "${RELAY_VULKAN_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
   !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "appAsarSha512" "${RELAY_APP_ASAR}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "pocketbaseHookSha512" "${RELAY_POCKETBASE_HOOK}" $RelayContractIntegrityFileResult
   ${If} $RelayContractIntegrityFileResult != "1"
     StrCpy ${RESULT} "0"
   ${EndIf}

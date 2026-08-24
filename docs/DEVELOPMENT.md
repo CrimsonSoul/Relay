@@ -99,17 +99,20 @@ the current runtime plus the three most recently promoted runtimes. Before resta
 stops PocketBase and takes a complete data snapshot; client mode checkpoints its local cache and
 pending-change databases. The candidate must complete a 60-second supervised health probation
 within the shared 195-second launcher deadline before promotion. Every protocol-2 runtime marker
-contains SHA-512 hashes for the executable, application archive, PocketBase, `better-sqlite3`, and
-Koffi; the catalog binds the marker hash, and both native and TypeScript recovery paths verify the
-marker plus those files. A failed candidate is removed, the server snapshot is restored when
-applicable, the prior runtime resumes, and that exact immutable `tag@commit` fingerprint is retained
-in a bounded quarantine history rather than blocking a different commit at the same version.
+contains SHA-512 hashes for the executable, every shipped Electron DLL, application archive,
+PocketBase executable and privileged hook, `better-sqlite3`, and Koffi; the catalog binds the marker
+hash, and both native and TypeScript recovery paths verify the marker plus those files. A failed
+candidate is removed, the server snapshot is restored when applicable, the prior runtime resumes,
+and that exact immutable `tag@commit` fingerprint is retained in a bounded quarantine history rather
+than blocking a different commit at the same version.
 
 If restart preparation fails after server or client teardown begins, Relay restarts through the
 stable supervisor so the current runtime and its services return without accepting an incomplete
 candidate. Server restoration keeps the displaced live-data tree until the journal is complete and
 the activated catalog proves the intended build is current; interrupted cleanup is retried on the
-next launcher start.
+next launcher start. Promotion and automatic rollback write a transaction-bound settlement intent
+before activating `state.ini`. On startup the launcher proves that intent against the terminal
+catalog state and clears an interrupted update request before retrying displaced-data cleanup.
 
 **Settings > About > Recovery** is the normal operator surface. Only a freshly reauthenticated Owner
 can roll back or repair. A server rollback snapshots the version being left before restoring the

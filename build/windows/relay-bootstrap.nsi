@@ -37,8 +37,17 @@ Var RelayMarkerExecutable
 Var RelayMarkerPayloadHash
 Var RelayMarkerHash
 Var RelayExecutableHash
+Var RelayD3dCompilerHash
+Var RelayDxCompilerHash
+Var RelayDxilHash
+Var RelayFfmpegHash
+Var RelayLibEglHash
+Var RelayLibGlesV2Hash
+Var RelayVkSwiftshaderHash
+Var RelayVulkanHash
 Var RelayAppAsarHash
 Var RelayPocketBaseHash
+Var RelayPocketBaseHookHash
 Var RelayBetterSqlite3Hash
 Var RelayKoffiHash
 Var RelayContentIntegrity
@@ -479,8 +488,17 @@ Section
 
   StrCpy $RelayMarker "$RelayStaging\${RELAY_RUNTIME_MARKER}"
   ${StdUtils.HashFile} $RelayExecutableHash "SHA2-512" "$RelayStaging\${APP_EXECUTABLE_FILENAME}"
+  ${StdUtils.HashFile} $RelayD3dCompilerHash "SHA2-512" "$RelayStaging\${RELAY_D3D_COMPILER_DLL}"
+  ${StdUtils.HashFile} $RelayDxCompilerHash "SHA2-512" "$RelayStaging\${RELAY_DX_COMPILER_DLL}"
+  ${StdUtils.HashFile} $RelayDxilHash "SHA2-512" "$RelayStaging\${RELAY_DXIL_DLL}"
+  ${StdUtils.HashFile} $RelayFfmpegHash "SHA2-512" "$RelayStaging\${RELAY_FFMPEG_DLL}"
+  ${StdUtils.HashFile} $RelayLibEglHash "SHA2-512" "$RelayStaging\${RELAY_LIB_EGL_DLL}"
+  ${StdUtils.HashFile} $RelayLibGlesV2Hash "SHA2-512" "$RelayStaging\${RELAY_LIB_GLES_V2_DLL}"
+  ${StdUtils.HashFile} $RelayVkSwiftshaderHash "SHA2-512" "$RelayStaging\${RELAY_VK_SWIFTSHADER_DLL}"
+  ${StdUtils.HashFile} $RelayVulkanHash "SHA2-512" "$RelayStaging\${RELAY_VULKAN_DLL}"
   ${StdUtils.HashFile} $RelayAppAsarHash "SHA2-512" "$RelayStaging\${RELAY_APP_ASAR}"
   ${StdUtils.HashFile} $RelayPocketBaseHash "SHA2-512" "$RelayStaging\${RELAY_POCKETBASE_EXECUTABLE}"
+  ${StdUtils.HashFile} $RelayPocketBaseHookHash "SHA2-512" "$RelayStaging\${RELAY_POCKETBASE_HOOK}"
   ${StdUtils.HashFile} $RelayBetterSqlite3Hash "SHA2-512" "$RelayStaging\${RELAY_BETTER_SQLITE3_NATIVE}"
   ${StdUtils.HashFile} $RelayKoffiHash "SHA2-512" "$RelayStaging\${RELAY_KOFFI_NATIVE}"
   ClearErrors
@@ -495,8 +513,17 @@ Section
   WriteINIStr "$RelayMarker" "Relay" "clientDataEpoch" "${RELAY_CLIENT_DATA_EPOCH}"
   WriteINIStr "$RelayMarker" "Relay" "installedAt" "${RELAY_PACKAGED_AT}"
   WriteINIStr "$RelayMarker" "Integrity" "executableSha512" "$RelayExecutableHash"
+  WriteINIStr "$RelayMarker" "Integrity" "d3dCompilerSha512" "$RelayD3dCompilerHash"
+  WriteINIStr "$RelayMarker" "Integrity" "dxCompilerSha512" "$RelayDxCompilerHash"
+  WriteINIStr "$RelayMarker" "Integrity" "dxilSha512" "$RelayDxilHash"
+  WriteINIStr "$RelayMarker" "Integrity" "ffmpegSha512" "$RelayFfmpegHash"
+  WriteINIStr "$RelayMarker" "Integrity" "libEglSha512" "$RelayLibEglHash"
+  WriteINIStr "$RelayMarker" "Integrity" "libGlesV2Sha512" "$RelayLibGlesV2Hash"
+  WriteINIStr "$RelayMarker" "Integrity" "vkSwiftshaderSha512" "$RelayVkSwiftshaderHash"
+  WriteINIStr "$RelayMarker" "Integrity" "vulkanSha512" "$RelayVulkanHash"
   WriteINIStr "$RelayMarker" "Integrity" "appAsarSha512" "$RelayAppAsarHash"
   WriteINIStr "$RelayMarker" "Integrity" "pocketbaseSha512" "$RelayPocketBaseHash"
+  WriteINIStr "$RelayMarker" "Integrity" "pocketbaseHookSha512" "$RelayPocketBaseHookHash"
   WriteINIStr "$RelayMarker" "Integrity" "betterSqlite3Sha512" "$RelayBetterSqlite3Hash"
   WriteINIStr "$RelayMarker" "Integrity" "koffiSha512" "$RelayKoffiHash"
   IfErrors 0 +3

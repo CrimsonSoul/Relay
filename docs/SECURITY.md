@@ -183,12 +183,12 @@ unreferenced build records invalidate recovery rather than widening the trusted 
 Runtime roots, recovery metadata, repair staging, and server snapshots are re-resolved beneath their
 fixed app-owned parents. Relay rejects symbolic links, reparse points, non-direct children, changed
 executables, and incomplete markers. A protocol-2 runtime marker records SHA-512 hashes for the
-executable, application archive, PocketBase, `better-sqlite3`, and Koffi; its own SHA-512 must agree
-with the catalog along with build ID, version, tag, full commit, recovery protocol, and server/client
-data epochs. Catalog and request updates use private directories plus write-then-rename activation;
-the native launcher serializes mutation with a no-sharing lock. Cleanup fails closed when the
-catalog, roots, marker, or transaction state cannot be proved and never deletes a referenced runtime
-or snapshot.
+executable, every shipped Electron DLL, application archive, PocketBase executable and privileged
+hook, `better-sqlite3`, and Koffi; its own SHA-512 must agree with the catalog along with build ID,
+version, tag, full commit, recovery protocol, and server/client data epochs. Catalog and request
+updates use private directories plus write-then-rename activation; the native launcher serializes
+mutation with a no-sharing lock. Cleanup fails closed when the catalog, roots, marker, or transaction
+state cannot be proved and never deletes a referenced runtime or snapshot.
 
 Server snapshots are taken only after PocketBase and server-owned services stop. Relay rejects
 redirected or unsupported entries, scans the source and copy, requires free space for twice the data
@@ -209,6 +209,13 @@ PocketBase runs in a kill-on-close Job Object so a failed candidate cannot leave
 behind. A failed candidate's exact immutable `tag@commit` fingerprint is retained in a bounded
 history and suppressed by future update checks rather than suppressing an unrelated later commit at
 the same semantic version.
+
+Immediately before promotion or automatic rollback activates its terminal catalog, the launcher
+atomically writes a settlement intent bound to that update transaction, source build, target build,
+and outcome. If the launcher is interrupted after the catalog commit, the next startup validates the
+intent, request, catalog identity, target metadata or failed-release fingerprint, and absence of an
+active candidate or transaction before removing the stale request. This reconciliation runs before
+server-data cleanup so a long cleanup cannot indefinitely leave the recovery UI busy.
 
 Reading recovery state still requires trusted-sender IPC. Repair and rollback additionally require
 an active Owner session, fresh password reauthentication, bounded validated input, and the shared

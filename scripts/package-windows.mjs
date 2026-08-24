@@ -25,6 +25,31 @@ const fixtureIdentityPath = join(fixtureAppDir, 'resources', 'relay-build-id.txt
 const recoveryTimingPath = join(projectDir, 'build', 'windows', 'recovery-timing.json');
 const packageJson = require(join(projectDir, 'package.json'));
 
+export const FIXTURE_RUNTIME_INTEGRITY_FILES = [
+  ['d3dcompiler_47.dll', 'relay fixture d3d compiler'],
+  ['dxcompiler.dll', 'relay fixture dx compiler'],
+  ['dxil.dll', 'relay fixture dxil'],
+  ['ffmpeg.dll', 'relay fixture ffmpeg'],
+  ['libEGL.dll', 'relay fixture libEGL'],
+  ['libGLESv2.dll', 'relay fixture libGLESv2'],
+  ['vk_swiftshader.dll', 'relay fixture vk swiftshader'],
+  ['vulkan-1.dll', 'relay fixture vulkan'],
+  ['resources/app.asar', 'relay fixture app archive'],
+  ['resources/pocketbase/win32-x64/pocketbase.exe', 'relay fixture pocketbase'],
+  [
+    'resources/pocketbase/hooks/relay_privileged_reauth.pb.js',
+    '// relay fixture privileged reauthentication hook\n',
+  ],
+  [
+    'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+    'relay fixture better-sqlite3',
+  ],
+  [
+    'resources/app.asar.unpacked/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node',
+    'relay fixture koffi',
+  ],
+];
+
 function printUsage() {
   console.log(`Usage: node scripts/package-windows.mjs [electron-builder options]
 
@@ -211,19 +236,7 @@ async function compileFixtureRuntime(buildId) {
     },
   );
   await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');
-  const fixtureFiles = [
-    ['resources/app.asar', 'relay fixture app archive'],
-    ['resources/pocketbase/win32-x64/pocketbase.exe', 'relay fixture pocketbase'],
-    [
-      'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
-      'relay fixture better-sqlite3',
-    ],
-    [
-      'resources/app.asar.unpacked/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node',
-      'relay fixture koffi',
-    ],
-  ];
-  for (const [relativePath, contents] of fixtureFiles) {
+  for (const [relativePath, contents] of FIXTURE_RUNTIME_INTEGRITY_FILES) {
     const path = join(fixtureAppDir, relativePath);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, contents, 'utf8');

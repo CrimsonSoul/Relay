@@ -8,8 +8,20 @@ const MAX_MARKER_BYTES = 32 * 1_024;
 const MARKER_FILE = '.relay-runtime-ready';
 const INTEGRITY_FILES = [
   ['executableSha512', 'Relay.exe'],
+  ['d3dCompilerSha512', 'd3dcompiler_47.dll'],
+  ['dxCompilerSha512', 'dxcompiler.dll'],
+  ['dxilSha512', 'dxil.dll'],
+  ['ffmpegSha512', 'ffmpeg.dll'],
+  ['libEglSha512', 'libEGL.dll'],
+  ['libGlesV2Sha512', 'libGLESv2.dll'],
+  ['vkSwiftshaderSha512', 'vk_swiftshader.dll'],
+  ['vulkanSha512', 'vulkan-1.dll'],
   ['appAsarSha512', join('resources', 'app.asar')],
   ['pocketbaseSha512', join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe')],
+  [
+    'pocketbaseHookSha512',
+    join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'),
+  ],
   [
     'betterSqlite3Sha512',
     join(

@@ -200,9 +200,9 @@ candidate, and the three most recently healthy runtimes under `%LOCALAPPDATA%\Re
 `state.ini` binds every retained build to its version, immutable release tag and commit, runtime
 marker SHA-512, installer SHA-256 when known, data-compatibility epochs, install time, health, and
 server snapshot. A protocol-2 marker independently binds SHA-512 hashes for `Relay.exe`, `app.asar`,
-PocketBase, `better-sqlite3`, and Koffi. The launcher starts a runtime only when the marker hash,
-every launch-critical file, and the catalog identity agree and the path remains inside the managed
-runtime root.
+every shipped Electron DLL, the PocketBase executable and privileged hook, `better-sqlite3`, and
+Koffi. The launcher starts a runtime only when the marker hash, every launch-critical file, and the
+catalog identity agree and the path remains inside the managed runtime root.
 
 An update becomes a recovery transaction before Relay restarts. Server mode first stops
 PocketBase and server-owned services, then copies the stopped `data` directory into a complete,
@@ -224,6 +224,11 @@ displaced data is removed only after the journal is complete and the activated c
 intended build is current; an interrupted cleanup is retried at launcher startup. Old runtime and
 snapshot directories are removed only when they are not referenced by the strict catalog and no
 update or recovery request is active.
+
+Before either promotion or automatic rollback commits its terminal catalog, the launcher atomically
+writes a transaction-bound settlement intent. A startup interrupted immediately after that commit
+reconciles the intent with the request and committed outcome, removes the now-stale request, and only
+then performs any journaled displaced-data cleanup.
 
 **Settings > About > Recovery** shows retained health and offers Owner-only repair or rollback after
 a fresh password check. A manual server rollback first snapshots the build being left, then swaps

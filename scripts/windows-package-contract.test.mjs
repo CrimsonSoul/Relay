@@ -7,6 +7,7 @@ import {
   validateBuildId,
 } from './windows-package-contract.mjs';
 import {
+  FIXTURE_RUNTIME_INTEGRITY_FILES,
   resolveElectronBuilderArgs,
   resolveHostNativeDependencyRestore,
   resolveMakensisCommand,
@@ -120,6 +121,33 @@ describe('Windows package contract', () => {
     expect(fixture).toContain('RELAY_BENCHMARK_RUN_ID');
     expect(fixture).toContain('Relay\\startup-benchmark');
     expect(fixture).toContain('.complete');
+  });
+
+  it('keeps fixture payloads in parity with every non-executable runtime integrity file', () => {
+    const contract = readFileSync('build/windows/include/relay-runtime-contract.nsh', 'utf8');
+    const expectedPaths = [
+      'd3dcompiler_47.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
+      'ffmpeg.dll',
+      'libEGL.dll',
+      'libGLESv2.dll',
+      'vk_swiftshader.dll',
+      'vulkan-1.dll',
+      'resources/app.asar',
+      'resources/pocketbase/win32-x64/pocketbase.exe',
+      'resources/pocketbase/hooks/relay_privileged_reauth.pb.js',
+      'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+      'resources/app.asar.unpacked/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node',
+    ];
+
+    expect(FIXTURE_RUNTIME_INTEGRITY_FILES.map(([path]) => path)).toEqual(expectedPaths);
+    expect(FIXTURE_RUNTIME_INTEGRITY_FILES.find(([path]) => path.endsWith('.pb.js'))?.[1]).toMatch(
+      /^\/\//u,
+    );
+    for (const path of expectedPaths) {
+      expect(contract).toContain(path.replaceAll('/', '\\'));
+    }
   });
 
   it('runs the bundled NSIS executable directly instead of spawning its Windows cmd wrapper', () => {

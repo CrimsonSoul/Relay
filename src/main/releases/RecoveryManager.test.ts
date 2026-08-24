@@ -49,7 +49,19 @@ function build(
 
 const runtimeContents = new Map<string, Buffer>([
   ['Relay.exe', Buffer.from([0x4d, 0x5a, 0x00])],
+  ['d3dcompiler_47.dll', Buffer.from('fixture d3d compiler')],
+  ['dxcompiler.dll', Buffer.from('fixture dx compiler')],
+  ['dxil.dll', Buffer.from('fixture dxil')],
+  ['ffmpeg.dll', Buffer.from('fixture ffmpeg')],
+  ['libEGL.dll', Buffer.from('fixture libEGL')],
+  ['libGLESv2.dll', Buffer.from('fixture libGLESv2')],
+  ['vk_swiftshader.dll', Buffer.from('fixture vk swiftshader')],
+  ['vulkan-1.dll', Buffer.from('fixture vulkan')],
   [join('resources', 'app.asar'), Buffer.from('fixture app archive')],
+  [
+    join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'),
+    Buffer.from('fixture privileged reauthentication hook'),
+  ],
   [
     join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe'),
     Buffer.from('fixture pocketbase'),
@@ -100,8 +112,17 @@ function runtimeMarker(record: RecoveryBuildRecord): string {
     '',
     '[Integrity]',
     `executableSha512=${runtimeFileHash('Relay.exe')}`,
+    `d3dCompilerSha512=${runtimeFileHash('d3dcompiler_47.dll')}`,
+    `dxCompilerSha512=${runtimeFileHash('dxcompiler.dll')}`,
+    `dxilSha512=${runtimeFileHash('dxil.dll')}`,
+    `ffmpegSha512=${runtimeFileHash('ffmpeg.dll')}`,
+    `libEglSha512=${runtimeFileHash('libEGL.dll')}`,
+    `libGlesV2Sha512=${runtimeFileHash('libGLESv2.dll')}`,
+    `vkSwiftshaderSha512=${runtimeFileHash('vk_swiftshader.dll')}`,
+    `vulkanSha512=${runtimeFileHash('vulkan-1.dll')}`,
     `appAsarSha512=${runtimeFileHash(join('resources', 'app.asar'))}`,
     `pocketbaseSha512=${runtimeFileHash(join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe'))}`,
+    `pocketbaseHookSha512=${runtimeFileHash(join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'))}`,
     `betterSqlite3Sha512=${runtimeFileHash(join('resources', 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'))}`,
     `koffiSha512=${runtimeFileHash(join('resources', 'app.asar.unpacked', 'node_modules', '@koromix', 'koffi-win32-x64', 'win32_x64', 'koffi.node'))}`,
   ].join('\n')}\n`;
@@ -253,6 +274,25 @@ describe('RecoveryManager', () => {
       join(relayRoot, 'Runtime', previous.buildId, 'resources', 'app.asar'),
       'corrupted app archive',
     );
+
+    expect((await createManager('client', execPath).getState()).retainedBuilds[0]).toMatchObject({
+      status: 'runtime-missing',
+      rollbackAvailable: false,
+      repairAvailable: true,
+    });
+  });
+
+  it.each([
+    ['an Electron DLL', 'ffmpeg.dll'],
+    [
+      'the PocketBase privileged hook',
+      join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'),
+    ],
+  ])('reports a retained runtime with corrupted %s as unavailable', async (_label, path) => {
+    const execPath = await makeRuntime(current);
+    await makeRuntime(previous);
+    await writeCatalog();
+    await writeFile(join(relayRoot, 'Runtime', previous.buildId, path), 'corrupted component');
 
     expect((await createManager('client', execPath).getState()).retainedBuilds[0]).toMatchObject({
       status: 'runtime-missing',
