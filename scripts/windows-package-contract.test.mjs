@@ -157,6 +157,16 @@ describe('Windows package contract', () => {
     expect(fixture.slice(probationExitIndex, benchmarkIndex)).toContain('Quit');
   });
 
+  it('preserves the complete hyphenated probation transaction in the fixture receipt', () => {
+    const fixture = readFileSync('build/windows/relay-ci-fixture.nsi', 'utf8');
+
+    expect(fixture).toContain('StrCpy $RelayFixtureOption $RelayFixtureArgs 27');
+    expect(fixture).toContain('StrCpy $RelayFixtureTransaction $RelayFixtureArgs "" 27');
+    expect(fixture).not.toContain(
+      '${GetOptions} "$RelayFixtureArgs" "--relay-recovery-probation="',
+    );
+  });
+
   it('keeps fixture payloads in parity with every non-executable runtime integrity file', () => {
     const contract = readFileSync('build/windows/include/relay-runtime-contract.nsh', 'utf8');
     const expectedPaths = [

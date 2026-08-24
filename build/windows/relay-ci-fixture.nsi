@@ -18,6 +18,7 @@ ShowInstDetails nevershow
 !endif
 
 Var RelayFixtureArgs
+Var RelayFixtureOption
 Var RelayFixtureRecoveryRoot
 Var RelayFixtureTransaction
 
@@ -27,7 +28,17 @@ OutFile "${RELAY_FIXTURE_OUT}"
 Section
   ${GetParameters} $RelayFixtureArgs
   StrCpy $RelayFixtureTransaction ""
-  ${GetOptions} "$RelayFixtureArgs" "--relay-recovery-probation=" $RelayFixtureTransaction
+  StrCpy $RelayFixtureOption $RelayFixtureArgs 1
+  ${If} $RelayFixtureOption == '$\"'
+    StrCpy $RelayFixtureOption $RelayFixtureArgs 1 -1
+    ${If} $RelayFixtureOption == '$\"'
+      StrCpy $RelayFixtureArgs $RelayFixtureArgs -1 1
+    ${EndIf}
+  ${EndIf}
+  StrCpy $RelayFixtureOption $RelayFixtureArgs 27
+  ${If} $RelayFixtureOption == "--relay-recovery-probation="
+    StrCpy $RelayFixtureTransaction $RelayFixtureArgs "" 27
+  ${EndIf}
   ${If} $RelayFixtureTransaction != ""
     !ifdef RELAY_FIXTURE_ROOT
       StrCpy $RelayFixtureRecoveryRoot "${RELAY_FIXTURE_ROOT}\Recovery"
