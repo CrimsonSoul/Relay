@@ -1,7 +1,7 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 import { AlertForm as BaseAlertForm, type AlertFormProps } from '../AlertForm';
 import {
   AlertDraftProvider,
@@ -126,7 +126,7 @@ describe('AlertForm', () => {
   });
 
   it('uses the base font for alert form labels and controls', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const baseFontSelectors = [
       '.alerts-step-index',
       '.alerts-step-status',
@@ -148,7 +148,7 @@ describe('AlertForm', () => {
   });
 
   it('uses the app accent color for guided step numbers', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const stepIndex = /\.alerts-step-index\s*\{[^}]*\}/m.exec(css)?.[0];
 
     expect(stepIndex).toContain('color: var(--color-accent-text)');
@@ -159,7 +159,7 @@ describe('AlertForm', () => {
   });
 
   it('keeps select arrows and collapsed branding controls comfortably spaced', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const inputFocus =
       /\.alerts-input:focus,[\s\S]*?\.alerts-input:focus-visible\s*\{[^}]*\}/m.exec(css)?.[0];
     const timezoneSelect = /\.alerts-event-time-tz\s*\{[^}]*\}/m.exec(css)?.[0];
@@ -563,7 +563,7 @@ describe('AlertForm', () => {
     render(<AlertForm {...defaultProps} />);
 
     const bodyEditor = screen.getByTestId('body-editor');
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
 
     expect(screen.queryByRole('group', { name: 'Alert font size' })).not.toBeInTheDocument();
     expect(screen.queryByText('Alert Font Size')).not.toBeInTheDocument();

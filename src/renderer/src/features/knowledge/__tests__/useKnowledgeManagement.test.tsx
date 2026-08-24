@@ -5,11 +5,14 @@ import type { PrivilegedReauthenticationProof } from '@shared/ipc';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
+import { usePrivilegedCommands } from '../../../contexts/PrivilegedCommandContext';
 import { useKnowledgeManagement } from '../useKnowledgeManagement';
 
 vi.mock('../../../contexts/PrivilegedAccessContext', () => ({ usePrivilegedAccess: vi.fn() }));
+vi.mock('../../../contexts/PrivilegedCommandContext', () => ({ usePrivilegedCommands: vi.fn() }));
 
 const usePrivilegedAccessMock = vi.mocked(usePrivilegedAccess);
+const usePrivilegedCommandsMock = vi.mocked(usePrivilegedCommands);
 const snapshot: KnowledgeManagementSnapshot = {
   mode: 'managed',
   categories: [],
@@ -181,10 +184,10 @@ describe('useKnowledgeManagement', () => {
       () =>
         ({
           session: currentSession,
-          submitCommand,
           reauthenticate,
         }) as never,
     );
+    usePrivilegedCommandsMock.mockReturnValue({ submitCommand } as never);
     globalThis.api = {
       selectAndQueueKnowledgePdfs: vi.fn(async () => ({ ok: true, uploads: [] })),
       getKnowledgeUploadQueue: vi.fn(async () => uploadQueue),
@@ -519,6 +522,58 @@ describe('useKnowledgeManagement', () => {
 
     await expect(retryResult).resolves.toBe(false);
     expect(result.current.snapshot).toBeNull();
+  });
+
+  it('rejects a late pagination page from a stale management identity', async () => {
+    const accountAFirstPage = snapshotWithTitle('Account A first page');
+    accountAFirstPage.documents.nextCursor = 'account-a-page-2';
+    const accountALatePage = snapshotWithTitle('Account A late page');
+    accountALatePage.documents.items[0] = {
+      ...accountALatePage.documents.items[0]!,
+      id: 'document-account-a-late',
+      fileName: 'Account A late.pdf',
+    };
+    const accountBSnapshot = snapshotWithTitle('Account B current page');
+    accountBSnapshot.documents.items[0] = {
+      ...accountBSnapshot.documents.items[0]!,
+      id: 'document-account-b',
+      fileName: 'Account B.pdf',
+    };
+    const latePage = deferred<PrivilegedCommandResult>();
+    submitCommand.mockImplementation((input) => {
+      if (input.command !== 'knowledge.snapshot.read') {
+        return Promise.resolve({ ok: true, requestId: 'request-1', value: {} });
+      }
+      if (input.payload.cursor === 'account-a-page-2') return latePage.promise;
+      return Promise.resolve(
+        okSnapshot(
+          currentSession.accountId === publisherSession.accountId
+            ? accountAFirstPage
+            : accountBSnapshot,
+        ),
+      );
+    });
+    const { result, rerender } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(accountAFirstPage));
+
+    let loadMoreResult!: Promise<boolean>;
+    act(() => {
+      loadMoreResult = result.current.loadMore('documents');
+    });
+    currentSession = { ...publisherSession, accountId: 'account-other' };
+    rerender();
+    await waitFor(() => expect(result.current.snapshot).toEqual(accountBSnapshot));
+
+    let loadMoreAccepted = true;
+    await act(async () => {
+      latePage.resolve(okSnapshot(accountALatePage));
+      loadMoreAccepted = await loadMoreResult;
+    });
+
+    expect(loadMoreAccepted).toBe(false);
+    expect(result.current.snapshot?.documents.items.map(({ id }) => id)).toEqual([
+      'document-account-b',
+    ]);
   });
 
   it('treats a post-commit server error as success when the authoritative snapshot proves it', async () => {
@@ -1221,6 +1276,108 @@ describe('useKnowledgeManagement', () => {
     await act(() => result.current.loadMoreAudit());
     expect(result.current.auditEvents.map(({ id }) => id)).toEqual(['audit-1', 'audit-2']);
     expect(result.current.auditNextCursor).toBeNull();
+  });
+
+  it('rejects a late audit read from a stale management identity', async () => {
+    const lateAudit = deferred<PrivilegedCommandResult>();
+    const accountAEvent = {
+      id: 'audit-account-a',
+      requestId: 'request-audit-account-a',
+      action: 'published',
+      targetId: 'document-account-a',
+      fileName: 'Account A.pdf',
+      title: 'Account A runbook',
+      category: 'Operations',
+      accountId: 'account-publisher',
+      actorDisplayName: 'Paris',
+      occurredAt: '2026-07-16T01:00:00.000Z',
+    };
+    submitCommand.mockImplementation((input) =>
+      input.command === 'knowledge.snapshot.read'
+        ? Promise.resolve(okSnapshot(snapshot))
+        : lateAudit.promise,
+    );
+    const { result, rerender } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    let auditResult!: Promise<boolean>;
+    act(() => {
+      auditResult = result.current.readAudit();
+    });
+    currentSession = { ...publisherSession, accountId: 'account-other' };
+    rerender();
+
+    let auditAccepted = true;
+    await act(async () => {
+      lateAudit.resolve({
+        ok: true,
+        requestId: 'late-audit-read',
+        value: { items: [accountAEvent], nextCursor: null },
+      });
+      auditAccepted = await auditResult;
+    });
+
+    expect(auditAccepted).toBe(false);
+    expect(result.current.auditEvents).toEqual([]);
+  });
+
+  it('rejects late audit pagination from a stale management identity', async () => {
+    const firstEvent = {
+      id: 'audit-first',
+      requestId: 'request-audit-first',
+      action: 'published',
+      targetId: 'document-first',
+      fileName: 'First.pdf',
+      title: 'First runbook',
+      category: 'Operations',
+      accountId: 'account-publisher',
+      actorDisplayName: 'Paris',
+      occurredAt: '2026-07-16T01:00:00.000Z',
+    };
+    const accountALateEvent = {
+      ...firstEvent,
+      id: 'audit-account-a-late',
+      requestId: 'request-audit-account-a-late',
+      targetId: 'document-account-a-late',
+      fileName: 'Account A late.pdf',
+      title: 'Account A late runbook',
+    };
+    const lateAuditPage = deferred<PrivilegedCommandResult>();
+    submitCommand.mockImplementation((input) => {
+      if (input.command === 'knowledge.snapshot.read') {
+        return Promise.resolve(okSnapshot(snapshot));
+      }
+      if (input.payload.cursor === 'audit-page-2') return lateAuditPage.promise;
+      return Promise.resolve({
+        ok: true,
+        requestId: 'initial-audit-read',
+        value: { items: [firstEvent], nextCursor: 'audit-page-2' },
+      });
+    });
+    const { result, rerender } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+    await act(() => result.current.readAudit());
+    expect(result.current.auditEvents.map(({ id }) => id)).toEqual(['audit-first']);
+
+    let auditResult!: Promise<boolean>;
+    act(() => {
+      auditResult = result.current.loadMoreAudit();
+    });
+    currentSession = { ...publisherSession, accountId: 'account-other' };
+    rerender();
+
+    let auditAccepted = true;
+    await act(async () => {
+      lateAuditPage.resolve({
+        ok: true,
+        requestId: 'late-audit-page',
+        value: { items: [accountALateEvent], nextCursor: null },
+      });
+      auditAccepted = await auditResult;
+    });
+
+    expect(auditAccepted).toBe(false);
+    expect(result.current.auditEvents).toEqual([]);
   });
 
   it('re-reads a filtered documents list whose debounced read was throttled', async () => {

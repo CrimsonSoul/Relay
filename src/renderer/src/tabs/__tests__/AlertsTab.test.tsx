@@ -4,6 +4,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { WEB_RUNTIME } from '@shared/runtime';
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 
 function cssBlock(css: string, selector: string): string | undefined {
   const selectorStart = css.indexOf(selector);
@@ -577,7 +578,7 @@ describe('AlertsTab', () => {
   });
 
   it('renders one divider between the Alert definition header and its first step', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const paneHeader = declarations(cssBlock(css, '.alerts-pane-header') ?? '');
     const step = declarations(cssBlock(css, '.alerts-step-section') ?? '');
     const firstStep = declarations(
@@ -590,10 +591,7 @@ describe('AlertsTab', () => {
   });
 
   it('keeps the two-pane Alerts grid within the shell content width above its 1100px stack breakpoint', () => {
-    const alertsCss = readFileSync(
-      resolve(process.cwd(), 'src/renderer/src/tabs/alerts.css'),
-      'utf8',
-    );
+    const alertsCss = readCssBundle('tabs/alerts.css');
     const responsiveCss = readFileSync(
       resolve(process.cwd(), 'src/renderer/src/styles/responsive.css'),
       'utf8',

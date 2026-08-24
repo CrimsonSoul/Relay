@@ -25,7 +25,6 @@ import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
 import { useDynatraceProblemShortcuts } from '../hooks/useDynatraceProblemShortcuts';
 import {
   MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
-  formatDynatraceTicketReferenceNote,
   parseDynatraceTicketReferenceNote,
 } from '../services/dynatraceProblemsService';
 import {
@@ -33,86 +32,23 @@ import {
   onConnectionStateChange,
   type ConnectionState,
 } from '../services/pocketbase';
+import {
+  buildDynatraceProblemQueueModel,
+  isProblemAddressed,
+  PROBLEM_FILTERS,
+  readHistoryPreferences,
+  writeHistoryPreferences,
+  type HistoryPreferences,
+  type HistoryResponseFilter,
+  type HistorySort,
+  type ProblemFilter,
+  type ProblemResponseSummary,
+} from './dynatraceProblemQueueModel';
+import {
+  useProblemDispositionWorkflow,
+  type ProblemSavingAction,
+} from './useProblemDispositionWorkflow';
 import './dynatrace-problems.css';
-
-type ProblemFilter = 'unaddressed' | 'addressed' | 'resolved';
-type HistorySort = 'newest' | 'addressed-first' | 'response-first' | 'no-response-first';
-type HistoryResponseFilter = 'all' | 'local-response' | 'addressed' | 'notes' | 'tickets' | 'none';
-
-type ProblemResponseSummary = {
-  addressed: boolean;
-  hasLocalResponse: boolean;
-  nocNoteCount: number;
-  responder: string;
-  ticketReferences: string[];
-};
-
-type HistoryPreferences = {
-  sort: HistorySort;
-  responseFilter: HistoryResponseFilter;
-};
-
-const FILTERS: Array<{ id: ProblemFilter; label: string }> = [
-  { id: 'unaddressed', label: 'Unaddressed' },
-  { id: 'addressed', label: 'Addressed locally' },
-  { id: 'resolved', label: 'History' },
-];
-
-const HISTORY_PREFERENCES_STORAGE_KEY = 'relay-dynatrace-history-preferences';
-const DEFAULT_HISTORY_PREFERENCES: HistoryPreferences = {
-  sort: 'newest',
-  responseFilter: 'all',
-};
-const EMPTY_RESPONSE_SUMMARY: ProblemResponseSummary = {
-  addressed: false,
-  hasLocalResponse: false,
-  nocNoteCount: 0,
-  responder: '',
-  ticketReferences: [],
-};
-const HISTORY_SORTS = new Set<HistorySort>([
-  'newest',
-  'addressed-first',
-  'response-first',
-  'no-response-first',
-]);
-const HISTORY_RESPONSE_FILTERS = new Set<HistoryResponseFilter>([
-  'all',
-  'local-response',
-  'addressed',
-  'notes',
-  'tickets',
-  'none',
-]);
-
-function readHistoryPreferences(): HistoryPreferences {
-  try {
-    const stored = globalThis.localStorage?.getItem(HISTORY_PREFERENCES_STORAGE_KEY);
-    if (!stored) return DEFAULT_HISTORY_PREFERENCES;
-    const parsed = JSON.parse(stored) as Partial<HistoryPreferences>;
-    return {
-      sort:
-        typeof parsed.sort === 'string' && HISTORY_SORTS.has(parsed.sort as HistorySort)
-          ? (parsed.sort as HistorySort)
-          : DEFAULT_HISTORY_PREFERENCES.sort,
-      responseFilter:
-        typeof parsed.responseFilter === 'string' &&
-        HISTORY_RESPONSE_FILTERS.has(parsed.responseFilter as HistoryResponseFilter)
-          ? (parsed.responseFilter as HistoryResponseFilter)
-          : DEFAULT_HISTORY_PREFERENCES.responseFilter,
-    };
-  } catch {
-    return DEFAULT_HISTORY_PREFERENCES;
-  }
-}
-
-function writeHistoryPreferences(preferences: HistoryPreferences): void {
-  try {
-    globalThis.localStorage?.setItem(HISTORY_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
-  } catch {
-    // Preference persistence is best-effort; History remains fully usable without it.
-  }
-}
 
 function severityLabel(severity: DynatraceProblemSeverity): string {
   switch (severity) {
@@ -201,34 +137,6 @@ function formatDuration(problem: DynatraceProblemRecord): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-function isAddressed(state: DynatraceProblemStateRecord | undefined): boolean {
-  return state?.addressed === true;
-}
-
-function matchesFilter(
-  problem: DynatraceProblemRecord,
-  state: DynatraceProblemStateRecord | undefined,
-  filter: ProblemFilter,
-): boolean {
-  if (filter === 'resolved') return problem.status === 'CLOSED';
-  if (problem.status !== 'OPEN') return false;
-  return filter === 'addressed' ? isAddressed(state) : !isAddressed(state);
-}
-
-function searchableText(problem: DynatraceProblemRecord): string {
-  return [
-    problem.title,
-    problem.displayId,
-    problem.problemId,
-    problem.rootCauseName,
-    ...problem.affectedEntities.flatMap((entity) => [entity.name, entity.id, entity.type]),
-    ...problem.impactedEntities.flatMap((entity) => [entity.name, entity.id, entity.type]),
-    ...(problem.alertingProfiles ?? []),
-  ]
-    .join(' ')
-    .toLowerCase();
-}
-
 function getPrimaryEntity(problem: DynatraceProblemRecord): {
   kind: 'Root cause' | 'Host' | 'Entity';
   name: string;
@@ -252,96 +160,6 @@ function getPrimaryEntity(problem: DynatraceProblemRecord): {
     name: entity.name,
     additionalCount: Math.max(0, uniqueEntities.length - 1),
   };
-}
-
-function problemSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): number {
-  return b.startTime - a.startTime || b.id.localeCompare(a.id);
-}
-
-function summarizeProblemResponse(
-  state: DynatraceProblemStateRecord | undefined,
-  notes: DynatraceProblemNoteRecord[],
-): ProblemResponseSummary {
-  const ticketReferenceTimes = new Map<string, number>();
-  let nocNoteCount = 0;
-  let latestAttributedNote: DynatraceProblemNoteRecord | undefined;
-
-  for (const note of notes) {
-    const ticketReference = parseDynatraceTicketReferenceNote(note.note);
-    if (ticketReference) {
-      const createdAt = new Date(note.created).getTime();
-      const timestamp = Number.isFinite(createdAt) ? createdAt : 0;
-      const previousTimestamp = ticketReferenceTimes.get(ticketReference);
-      if (previousTimestamp === undefined || timestamp >= previousTimestamp) {
-        ticketReferenceTimes.set(ticketReference, timestamp);
-      }
-    } else {
-      nocNoteCount += 1;
-    }
-    if (
-      note.author?.trim() &&
-      (!latestAttributedNote ||
-        new Date(note.created).getTime() >= new Date(latestAttributedNote.created).getTime())
-    ) {
-      latestAttributedNote = note;
-    }
-  }
-
-  const addressed = isAddressed(state);
-  return {
-    addressed,
-    hasLocalResponse: addressed || notes.length > 0,
-    nocNoteCount,
-    responder: state?.addressedBy?.trim() || latestAttributedNote?.author?.trim() || '',
-    ticketReferences: [...ticketReferenceTimes]
-      .sort(([, aTimestamp], [, bTimestamp]) => bTimestamp - aTimestamp)
-      .map(([reference]) => reference),
-  };
-}
-
-function matchesHistoryResponseFilter(
-  summary: ProblemResponseSummary,
-  responseFilter: HistoryResponseFilter,
-): boolean {
-  switch (responseFilter) {
-    case 'local-response':
-      return summary.hasLocalResponse;
-    case 'addressed':
-      return summary.addressed;
-    case 'notes':
-      return summary.nocNoteCount > 0;
-    case 'tickets':
-      return summary.ticketReferences.length > 0;
-    case 'none':
-      return !summary.hasLocalResponse;
-    default:
-      return true;
-  }
-}
-
-function historyProblemSort(
-  a: DynatraceProblemRecord,
-  b: DynatraceProblemRecord,
-  sort: HistorySort,
-  responseSummaries: Map<string, ProblemResponseSummary>,
-): number {
-  const aSummary = responseSummaries.get(a.problemId);
-  const bSummary = responseSummaries.get(b.problemId);
-  let aRank = 0;
-  let bRank = 0;
-
-  if (sort === 'addressed-first') {
-    aRank = aSummary?.addressed ? 0 : 1;
-    bRank = bSummary?.addressed ? 0 : 1;
-  } else if (sort === 'response-first') {
-    aRank = aSummary?.hasLocalResponse ? 0 : 1;
-    bRank = bSummary?.hasLocalResponse ? 0 : 1;
-  } else if (sort === 'no-response-first') {
-    aRank = aSummary?.hasLocalResponse ? 1 : 0;
-    bRank = bSummary?.hasLocalResponse ? 1 : 0;
-  }
-
-  return aRank - bRank || problemSort(a, b);
 }
 
 function EntityList({ entities }: Readonly<{ entities: DynatraceEntityRef[] }>) {
@@ -536,7 +354,7 @@ function ProblemQueueRow({
   const { problems, states, responseSummaries, selectedProblemId, historyMode, onSelect } = data;
   const problem = problems[index];
   if (!problem) return null;
-  const addressed = isAddressed(states.get(problem.problemId));
+  const addressed = isProblemAddressed(states.get(problem.problemId));
   const responseSummary = responseSummaries.get(problem.problemId);
   const selected = problem.problemId === selectedProblemId;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
@@ -748,22 +566,6 @@ function ProblemQueue({
   );
 }
 
-type ProblemSavingAction = 'address' | 'response' | 'refresh' | null;
-
-type PendingDispositionResponse = {
-  noteId: string;
-  resolver: DynatraceProblemResolver;
-};
-
-/** The unsaved local response an operator is composing for one problem. */
-type ProblemDraft = {
-  ticket: string;
-  note: string;
-  resolver: DynatraceProblemResolver | '';
-};
-
-const EMPTY_PROBLEM_DRAFT: ProblemDraft = { ticket: '', note: '', resolver: '' };
-
 type ProblemDetailProps = {
   problem: DynatraceProblemRecord | undefined;
   state: DynatraceProblemStateRecord | undefined;
@@ -853,7 +655,7 @@ function ProblemDetail({
     );
   }
 
-  const addressed = isAddressed(state);
+  const addressed = isProblemAddressed(state);
   const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
   const hasDraftedResponse = ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
   const responseRequirementMet = hasDraftedResponse || hasPendingDispositionResponse;
@@ -1142,15 +944,6 @@ export const DynatraceProblemsTab: React.FC<{
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const lastSelectedProblemIdRef = useRef<string | null>(null);
-  // Drafts are keyed by problem so an in-progress NOC note survives anything that moves
-  // the selection — a keystroke in the search box, or a background sync flipping the
-  // problem to CLOSED and pushing it out of the open queues. Losing that text mid-incident
-  // is unrecoverable; it exists nowhere else until it is saved.
-  const [draftsByProblemId, setDraftsByProblemId] = useState<Record<string, ProblemDraft>>({});
-  const [pendingDispositionResponses, setPendingDispositionResponses] = useState<
-    Record<string, PendingDispositionResponse>
-  >({});
-  const [savingAction, setSavingAction] = useState<ProblemSavingAction>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
   useEffect(() => onConnectionStateChange(setConnectionState), []);
@@ -1171,37 +964,30 @@ export const DynatraceProblemsTab: React.FC<{
     setHistoryPreferences((current) => ({ ...current, responseFilter }));
   }, []);
 
-  const counts = useMemo(() => {
-    let unaddressed = 0;
-    let addressed = 0;
-    let loadedHistory = 0;
-    for (const problem of problems) {
-      if (problem.status === 'CLOSED') {
-        loadedHistory += 1;
-        continue;
-      }
-      if (isAddressed(stateByProblemId.get(problem.problemId))) addressed += 1;
-      else unaddressed += 1;
-    }
-    return {
-      unaddressed,
-      addressed,
-      resolved: Math.max(totalHistoryCount, loadedHistory),
-      loadedHistory,
-    };
-  }, [problems, stateByProblemId, totalHistoryCount]);
-
-  const unaddressedProblemIds = useMemo(
-    () =>
-      problems
-        .filter(
-          (problem) =>
-            problem.status !== 'CLOSED' && !isAddressed(stateByProblemId.get(problem.problemId)),
-        )
-        .sort(problemSort)
-        .map((problem) => problem.problemId),
-    [problems, stateByProblemId],
-  );
+  const { counts, unaddressedProblemIds, responseSummaries, filteredProblems, historyScopeCount } =
+    useMemo(
+      () =>
+        buildDynatraceProblemQueueModel({
+          problems,
+          stateByProblemId,
+          notesByProblemId,
+          totalHistoryCount,
+          filter,
+          query,
+          historySort,
+          historyResponseFilter,
+        }),
+      [
+        filter,
+        historyResponseFilter,
+        historySort,
+        notesByProblemId,
+        problems,
+        query,
+        stateByProblemId,
+        totalHistoryCount,
+      ],
+    );
 
   const selectUnaddressedProblem = useCallback((problemId: string) => {
     setFilter('unaddressed');
@@ -1223,85 +1009,32 @@ export const DynatraceProblemsTab: React.FC<{
     onNoUnaddressedProblems: reportNoUnaddressedProblems,
   });
 
-  const responseSummaries = useMemo(() => {
-    const summaries = new Map<string, ProblemResponseSummary>();
-    for (const problem of problems) {
-      summaries.set(
-        problem.problemId,
-        summarizeProblemResponse(
-          stateByProblemId.get(problem.problemId),
-          notesByProblemId.get(problem.problemId) ?? [],
-        ),
-      );
-    }
-    return summaries;
-  }, [notesByProblemId, problems, stateByProblemId]);
-
-  const { filteredProblems, historyScopeCount } = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const scopedProblems = problems
-      .filter((problem) => matchesFilter(problem, stateByProblemId.get(problem.problemId), filter))
-      .filter((problem) => !normalizedQuery || searchableText(problem).includes(normalizedQuery));
-    const visibleProblems = scopedProblems
-      .filter(
-        (problem) =>
-          filter !== 'resolved' ||
-          matchesHistoryResponseFilter(
-            responseSummaries.get(problem.problemId) ?? EMPTY_RESPONSE_SUMMARY,
-            historyResponseFilter,
-          ),
-      )
-      .sort((a, b) =>
-        filter === 'resolved'
-          ? historyProblemSort(a, b, historySort, responseSummaries)
-          : problemSort(a, b),
-      );
-    return {
-      filteredProblems: visibleProblems,
-      historyScopeCount: filter === 'resolved' ? scopedProblems.length : 0,
-    };
-  }, [
-    filter,
-    historyResponseFilter,
-    historySort,
-    problems,
-    query,
-    responseSummaries,
-    stateByProblemId,
-  ]);
-
+  const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
+  const selectedState = selectedProblem
+    ? stateByProblemId.get(selectedProblem.problemId)
+    : undefined;
+  const selectedNotes = selectedProblem
+    ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
+    : [];
   const {
-    ticket: ticketDraft,
-    note: noteDraft,
-    resolver: resolverDraft,
-  } = selectedProblemId
-    ? (draftsByProblemId[selectedProblemId] ?? EMPTY_PROBLEM_DRAFT)
-    : EMPTY_PROBLEM_DRAFT;
-  const hasUnsavedDraft =
-    ticketDraft.trim().length > 0 || noteDraft.trim().length > 0 || resolverDraft.length > 0;
-
-  const updateSelectedDraft = useCallback(
-    (patch: Partial<ProblemDraft>) => {
-      if (!selectedProblemId) return;
-      setDraftsByProblemId((current) => ({
-        ...current,
-        [selectedProblemId]: { ...(current[selectedProblemId] ?? EMPTY_PROBLEM_DRAFT), ...patch },
-      }));
-    },
-    [selectedProblemId],
-  );
-  const setTicketDraft = useCallback(
-    (value: string) => updateSelectedDraft({ ticket: value }),
-    [updateSelectedDraft],
-  );
-  const setNoteDraft = useCallback(
-    (value: string) => updateSelectedDraft({ note: value }),
-    [updateSelectedDraft],
-  );
-  const setResolverDraft = useCallback(
-    (value: DynatraceProblemResolver | '') => updateSelectedDraft({ resolver: value }),
-    [updateSelectedDraft],
-  );
+    ticketDraft,
+    noteDraft,
+    resolverDraft,
+    hasUnsavedDraft,
+    hasPendingDispositionResponse,
+    savingAction,
+    setTicketDraft,
+    setNoteDraft,
+    setResolverDraft,
+    handleSaveResponse,
+    handleAddressToggle,
+    runExclusive,
+  } = useProblemDispositionWorkflow({
+    selectedProblem,
+    selectedState,
+    addNote,
+    setAddressed,
+  });
 
   useEffect(() => {
     if (filteredProblems.some((problem) => problem.problemId === selectedProblemId)) return;
@@ -1310,26 +1043,6 @@ export const DynatraceProblemsTab: React.FC<{
     if (hasUnsavedDraft) return;
     setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
   }, [filteredProblems, hasUnsavedDraft, selectedProblemId]);
-
-  const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
-  const selectedState = selectedProblem
-    ? stateByProblemId.get(selectedProblem.problemId)
-    : undefined;
-  const selectedNotes = selectedProblem
-    ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
-    : [];
-  const selectedPendingDispositionResponse = selectedProblem
-    ? pendingDispositionResponses[selectedProblem.problemId]
-    : undefined;
-  const pendingDispositionResponseNoteId =
-    selectedPendingDispositionResponse?.resolver === resolverDraft
-      ? selectedPendingDispositionResponse.noteId
-      : '';
-  const addSelectedProblemNote = useCallback(
-    (problemId: string, note: string) =>
-      resolverDraft ? addNote(problemId, note, resolverDraft) : addNote(problemId, note),
-    [addNote, resolverDraft],
-  );
   const handleOpenDynatrace = useCallback(
     async (problem: DynatraceProblemRecord) => {
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
@@ -1359,130 +1072,23 @@ export const DynatraceProblemsTab: React.FC<{
     [showToast],
   );
 
-  const saveDraftedResponses = async (
-    problemId: string,
-    onResponsePersisted?: (noteId: string) => void,
-  ) => {
-    let responseNoteId = '';
-    if (ticketDraft.trim()) {
-      const ticketNote = await addSelectedProblemNote(
-        problemId,
-        formatDynatraceTicketReferenceNote(ticketDraft),
-      );
-      responseNoteId = ticketNote.id;
-      if (responseNoteId) onResponsePersisted?.(responseNoteId);
-      setTicketDraft('');
-    }
-    if (noteDraft.trim()) {
-      const nocNote = await addSelectedProblemNote(problemId, noteDraft);
-      responseNoteId ||= nocNote.id;
-      if (responseNoteId) onResponsePersisted?.(responseNoteId);
-      setNoteDraft('');
-    }
-    if (!responseNoteId) {
-      throw new Error(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-      );
-    }
-    return responseNoteId;
-  };
-
-  const handleSaveResponse = async () => {
-    if (
-      !selectedProblem ||
-      !resolverDraft ||
-      (!ticketDraft.trim() && !noteDraft.trim()) ||
-      savingAction
-    )
-      return;
-    setSavingAction('response');
-    try {
-      await saveDraftedResponses(selectedProblem.problemId);
-      showToast('Local response saved', 'success');
-    } catch (saveError) {
-      showToast(
-        saveError instanceof Error ? saveError.message : 'Failed to save local response',
-        'error',
-      );
-    } finally {
-      setSavingAction(null);
-    }
-  };
-
-  const handleAddressToggle = async () => {
-    if (!selectedProblem || savingAction) return;
-    const nextAddressed = !isAddressed(selectedState);
-    if (nextAddressed && !resolverDraft) {
-      showToast('Select your name from the resolver list.', 'warning');
-      return;
-    }
-    const hasDraftedResponse = Boolean(ticketDraft.trim() || noteDraft.trim());
-    if (nextAddressed && !hasDraftedResponse && !pendingDispositionResponseNoteId) {
-      showToast(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-        'warning',
-      );
-      return;
-    }
-    setSavingAction('address');
-    try {
-      let responseNoteId = pendingDispositionResponseNoteId || undefined;
-      if (nextAddressed) {
-        const resolver = resolverDraft as DynatraceProblemResolver;
-        if (hasDraftedResponse) {
-          responseNoteId = await saveDraftedResponses(selectedProblem.problemId, (noteId) => {
-            setPendingDispositionResponses((current) => ({
-              ...current,
-              [selectedProblem.problemId]: { noteId, resolver },
-            }));
-          });
-        }
-      }
-      await setAddressed(
-        selectedProblem.problemId,
-        nextAddressed,
-        responseNoteId,
-        nextAddressed ? resolverDraft : undefined,
-      );
-      setPendingDispositionResponses((current) => {
-        if (!current[selectedProblem.problemId]) return current;
-        const next = { ...current };
-        delete next[selectedProblem.problemId];
-        return next;
-      });
-      setResolverDraft('');
-      showToast(
-        nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
-        'success',
-      );
-    } catch (saveError) {
-      showToast(
-        saveError instanceof Error ? saveError.message : 'Failed to update local problem state',
-        'error',
-      );
-    } finally {
-      setSavingAction(null);
-    }
-  };
-
   const handleRefresh = async () => {
     if (savingAction) return;
-    setSavingAction('refresh');
-    try {
-      const canSyncDynatrace = relayMode === 'server' && globalThis.api?.runtime?.kind !== 'web';
-      if (canSyncDynatrace && sync?.state !== 'disabled') {
-        const result = await globalThis.api?.syncDynatraceProblems();
-        if (result && !result.success) throw new Error(result.error || 'Dynatrace sync failed.');
+    await runExclusive('refresh', async () => {
+      try {
+        const canSyncDynatrace = relayMode === 'server' && globalThis.api?.runtime?.kind !== 'web';
+        if (canSyncDynatrace && sync?.state !== 'disabled') {
+          const result = await globalThis.api?.syncDynatraceProblems();
+          if (result && !result.success) throw new Error(result.error || 'Dynatrace sync failed.');
+        }
+        await refetch();
+      } catch (refreshError) {
+        showToast(
+          refreshError instanceof Error ? refreshError.message : 'Failed to refresh problems',
+          'error',
+        );
       }
-      await refetch();
-    } catch (refreshError) {
-      showToast(
-        refreshError instanceof Error ? refreshError.message : 'Failed to refresh problems',
-        'error',
-      );
-    } finally {
-      setSavingAction(null);
-    }
+    });
   };
 
   if (loading && problems.length === 0) return <TabFallback />;
@@ -1511,7 +1117,7 @@ export const DynatraceProblemsTab: React.FC<{
       <TabCommandBar ariaLabel="Problem queue actions">
         <TabCommandGroup kind="utility" className="dt-problems__toolbar">
           <fieldset className="dt-problems__filters" aria-label="Problem queue filters">
-            {FILTERS.map((item) => (
+            {PROBLEM_FILTERS.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -1618,7 +1224,7 @@ export const DynatraceProblemsTab: React.FC<{
           problem={selectedProblem}
           state={selectedState}
           notes={selectedNotes}
-          hasPendingDispositionResponse={Boolean(pendingDispositionResponseNoteId)}
+          hasPendingDispositionResponse={hasPendingDispositionResponse}
           resolverDraft={resolverDraft}
           ticketDraft={ticketDraft}
           noteDraft={noteDraft}

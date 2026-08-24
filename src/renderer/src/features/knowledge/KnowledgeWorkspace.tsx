@@ -18,6 +18,7 @@ import {
   OPEN_KNOWLEDGE_DOCUMENT_EVENT,
 } from './knowledgeNavigation';
 import type { KnowledgeRecordOpenRequest } from './knowledgeRecordNavigation';
+import './knowledge.css';
 import './knowledgeWorkspace.css';
 
 const WikiSurface = lazy(() =>

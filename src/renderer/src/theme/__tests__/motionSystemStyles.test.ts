@@ -1,16 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 
 const themeCss = readFileSync(resolve(process.cwd(), 'src/renderer/src/styles/theme.css'), 'utf8');
 const animationCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/animations.css'),
   'utf8',
 );
-const componentsCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
-  'utf8',
-);
+const componentsCss = readCssBundle('styles/components.css');
 const modalsCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/modals.css'),
   'utf8',
@@ -19,10 +17,7 @@ const statusbarCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/components/statusbar.css'),
   'utf8',
 );
-const knowledgeCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
-  'utf8',
-);
+const knowledgeCss = readCssBundle('features/knowledge/knowledge.css');
 const knowledgeWorkspaceCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledgeWorkspace.css'),
   'utf8',

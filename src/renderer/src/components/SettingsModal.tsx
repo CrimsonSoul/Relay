@@ -26,6 +26,7 @@ import {
   RelayConnectionSettings,
   RelayConnectionUiProvider,
 } from './settings/RelayConnectionSettings';
+import './settings/settings.css';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];

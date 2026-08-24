@@ -1,15 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readCssBundle } from '../styles/readCssBundle.test-util';
 
 const responsiveCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/styles/responsive.css'),
   'utf8',
 );
-const componentsCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
-  'utf8',
-);
+const componentsCss = readCssBundle('styles/components.css');
 const dynatraceCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/tabs/dynatrace-problems.css'),
   'utf8',

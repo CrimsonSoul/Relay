@@ -1,7 +1,7 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import { AlertBodyEditor } from '../AlertBodyEditor';
 
 // --- Mocks ---
@@ -78,7 +78,7 @@ describe('AlertBodyEditor', () => {
   });
 
   it('lets the editor grow with text and starts tall enough for the highlight menu', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const editableBody = /\.alerts-editable-body\s*\{[^}]*\}/m.exec(css)?.[0];
 
     expect(editableBody).toContain('min-height: 224px');

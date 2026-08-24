@@ -1,48 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import {
-  knowledgeCategoryKey,
-  normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
-  normalizeKnowledgeUploadQueueView,
-  type KnowledgeAuditEventView,
-  type KnowledgeCategoryRecord,
-  type KnowledgeDocumentType,
   type KnowledgeManagementSnapshot,
   type KnowledgePage,
-  type KnowledgeUploadQueueView,
   type KnowledgeUploadSelectionResult,
 } from '@shared/knowledge';
-import type { PrivilegedCommandError, PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
-
-// Typed as a total record so a new PrivilegedCommandError cannot be added without copy: an
-// unmapped code used to make commandError() hand `undefined` to the error banner.
-const SAFE_ERRORS: Record<PrivilegedCommandError, string> = {
-  unauthorized: 'Wiki publisher access is required.',
-  locked: 'Publisher access is signed out. Sign in again.',
-  offline: 'Wiki management is unavailable while Relay is offline.',
-  'pairing-required': 'Pair this workstation before managing the Wiki.',
-  'invalid-request': 'Relay rejected the Wiki request.',
-  'insufficient-storage': 'Relay does not have enough storage to complete that action.',
-  'duplicate-file-name':
-    'A published document with this PDF filename already exists. Replace it or rename the PDF.',
-  expired: 'The request expired. Try again.',
-  replayed: 'Relay could not safely repeat that request.',
-  conflict: 'This item changed on the server. Review the refreshed information and try again.',
-  // Deliberately not "refresh and try again": a throttled request has not lost a race, and
-  // retrying immediately only spends more of the budget.
-  'rate-limited': 'Too many Wiki requests. Wait a few minutes and try again.',
-  'server-error': 'Relay could not complete the Wiki request.',
-};
-
-const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
-  restartRecovery: false,
-  activeBatchId: null,
-  totalBytes: 0,
-  acknowledgedBytes: 0,
-  items: [],
-};
+import { usePrivilegedCommands } from '../../contexts/PrivilegedCommandContext';
+import { useKnowledgeUploadQueue } from './useKnowledgeUploadQueue';
+import { normalizeKnowledgeAuditPage, useKnowledgeAudit } from './useKnowledgeAudit';
+import { KNOWLEDGE_MANAGEMENT_ERRORS, knowledgeCommandError } from './knowledgeManagementErrors';
+import {
+  createKnowledgeMutationActions,
+  type KnowledgeConfirmationCollection,
+  type KnowledgeMutationConfirmation,
+} from './knowledgeMutationCoordinator';
 
 const REAUTHENTICATION_ERROR = 'Password confirmation was not accepted. Try again.';
 
@@ -52,10 +25,6 @@ const QUERY_DEBOUNCE_MS = 250;
 // keeps failing poll the shared budget forever; the error banner is what reports the rest.
 const QUERY_RETRY_DELAY_MS = 1_000;
 const QUERY_RETRY_LIMIT = 2;
-
-function commandError(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
-  return SAFE_ERRORS[result.error];
-}
 
 /**
  * A background poll only re-reads the first page. Splice the refreshed page over the pages the
@@ -87,62 +56,36 @@ function mergeKnowledgeSnapshot(
   };
 }
 
-function normalizeAuditPage(value: unknown): KnowledgePage<KnowledgeAuditEventView> | null {
-  if (!value || typeof value !== 'object' || !('items' in value)) return null;
-  const { items, nextCursor } = value as { items: unknown; nextCursor?: unknown };
-  if (!Array.isArray(items)) return null;
-  if (nextCursor !== null && typeof nextCursor !== 'string') return null;
-  const normalized = items.map(normalizeKnowledgeAuditEventView);
-  return normalized.includes(null)
-    ? null
-    : { items: normalized as KnowledgeAuditEventView[], nextCursor };
-}
-
 type SnapshotRead =
   { snapshot: KnowledgeManagementSnapshot; error: null } | { snapshot: null; error: string };
-
-type MutationConfirmation = (snapshot: KnowledgeManagementSnapshot) => boolean;
-type ConfirmationCollection = 'documents' | 'trash' | 'uploads';
-type DocumentAssignment = { documentId: string; expectedRevision: number };
-
-function confirmsDocumentAssignments(
-  authoritative: KnowledgeManagementSnapshot,
-  documents: DocumentAssignment[],
-  categoryId: string,
-): boolean {
-  return documents.every(({ documentId, expectedRevision }) => {
-    const current = authoritative.documents.items.find(({ id }) => id === documentId);
-    return current?.categoryId === categoryId && current.revision > expectedRevision;
-  });
-}
 
 export function useKnowledgeManagement(
   onLibraryChanged?: () => void | Promise<void>,
   documentQuery = '',
 ) {
-  const { session, submitCommand, reauthenticate } = usePrivilegedAccess();
+  const { session, reauthenticate } = usePrivilegedAccess();
+  const { submitCommand } = usePrivilegedCommands();
   const [snapshot, setSnapshot] = useState<KnowledgeManagementSnapshot | null>(null);
-  const [auditEvents, setAuditEvents] = useState<KnowledgeAuditEventView[]>([]);
-  const [auditNextCursor, setAuditNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [uploadQueue, setUploadQueue] = useState<KnowledgeUploadQueueView>(EMPTY_UPLOAD_QUEUE);
   const [error, setError] = useState<string | null>(null);
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
   const managementIdentity = canManage
     ? `${session.accountId}\u0000${session.deviceId ?? 'server-local'}`
     : null;
+  const { auditEvents, auditNextCursor, readAudit, loadMoreAudit, resetAudit } = useKnowledgeAudit({
+    canManage,
+    managementIdentity,
+    submitCommand,
+    setBusy,
+    setError,
+  });
   const managementIdentityRef = useRef(managementIdentity);
   const refreshGenerationRef = useRef(0);
-  const uploadQueueRef = useRef<KnowledgeUploadQueueView>(EMPTY_UPLOAD_QUEUE);
-  const uploadQueueGenerationRef = useRef(0);
-  const uploadQueueHydratedIdentityRef = useRef<string | null>(null);
-  const uploadQueueRequestRef = useRef<{
-    identity: string;
-    promise: Promise<KnowledgeUploadQueueView | null>;
-  } | null>(null);
+  const loadMoreOperationRef = useRef(0);
   const mountedRef = useRef(true);
   const trimmedQuery = documentQuery.trim();
+  const visibleQueryRef = useRef(trimmedQuery);
   // Reads stay pinned to the query the operator can already see so a cursor issued for one
   // filter is never spent against another.
   const appliedQueryRef = useRef(trimmedQuery);
@@ -151,60 +94,7 @@ export function useKnowledgeManagement(
   // a snapshot actually came back for separately; the debounce below retries against this.
   const settledQueryRef = useRef(trimmedQuery);
   managementIdentityRef.current = managementIdentity;
-  uploadQueueRef.current = uploadQueue;
-
-  const refreshUploadQueue = useCallback((): Promise<KnowledgeUploadQueueView | null> => {
-    const expectedIdentity = managementIdentityRef.current;
-    const readQueue = globalThis.api?.getKnowledgeUploadQueue;
-    if (!expectedIdentity || !readQueue) return Promise.resolve(null);
-    const generation = uploadQueueGenerationRef.current + 1;
-    uploadQueueGenerationRef.current = generation;
-    let operation!: Promise<KnowledgeUploadQueueView | null>;
-    operation = (async () => {
-      try {
-        const normalized = normalizeKnowledgeUploadQueueView(await readQueue());
-        if (
-          !normalized ||
-          !mountedRef.current ||
-          generation !== uploadQueueGenerationRef.current ||
-          managementIdentityRef.current !== expectedIdentity
-        ) {
-          return null;
-        }
-        uploadQueueRef.current = normalized;
-        uploadQueueHydratedIdentityRef.current = expectedIdentity;
-        setUploadQueue(normalized);
-        return normalized;
-      } finally {
-        if (uploadQueueRequestRef.current?.promise === operation) {
-          uploadQueueRequestRef.current = null;
-        }
-      }
-    })();
-    uploadQueueRequestRef.current = { identity: expectedIdentity, promise: operation };
-    return operation;
-  }, []);
-
-  const ensureUploadQueueHydrated =
-    useCallback(async (): Promise<KnowledgeUploadQueueView | null> => {
-      const expectedIdentity = managementIdentityRef.current;
-      if (!expectedIdentity) return null;
-      if (uploadQueueHydratedIdentityRef.current === expectedIdentity) {
-        return uploadQueueRef.current;
-      }
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const pending = uploadQueueRequestRef.current;
-        const queue = await (pending?.identity === expectedIdentity
-          ? pending.promise
-          : refreshUploadQueue());
-        if (managementIdentityRef.current !== expectedIdentity) return null;
-        if (queue) return queue;
-        if (uploadQueueHydratedIdentityRef.current === expectedIdentity) {
-          return uploadQueueRef.current;
-        }
-      }
-      return null;
-    }, [refreshUploadQueue]);
+  visibleQueryRef.current = trimmedQuery;
 
   const readSnapshot = useCallback(
     async (cursor: string | null, query = appliedQueryRef.current): Promise<SnapshotRead> => {
@@ -214,7 +104,7 @@ export function useKnowledgeManagement(
         expectedRevision: null,
       });
       if (!result.ok) {
-        return { snapshot: null, error: commandError(result) };
+        return { snapshot: null, error: knowledgeCommandError(result) };
       }
       const normalized = normalizeKnowledgeManagementSnapshot(result.value);
       if (!normalized) {
@@ -223,15 +113,6 @@ export function useKnowledgeManagement(
       return { snapshot: normalized, error: null };
     },
     [submitCommand],
-  );
-
-  const requestSnapshot = useCallback(
-    async (cursor: string | null): Promise<KnowledgeManagementSnapshot | null> => {
-      const result = await readSnapshot(cursor);
-      if (!result.snapshot) setError(result.error);
-      return result.snapshot;
-    },
-    [readSnapshot],
   );
 
   const loadSnapshot = useCallback(
@@ -273,70 +154,31 @@ export function useKnowledgeManagement(
 
   const refresh = useCallback(() => loadSnapshot(false), [loadSnapshot]);
   const pollSnapshot = useCallback(() => loadSnapshot(true), [loadSnapshot]);
+  const { uploadQueue, refreshUploadQueue, ensureUploadQueueHydrated } = useKnowledgeUploadQueue({
+    canManage,
+    managementIdentity,
+    serverUploads: snapshot?.uploads.items,
+    pollSnapshot,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       refreshGenerationRef.current += 1;
-      uploadQueueGenerationRef.current += 1;
-      uploadQueueRequestRef.current = null;
+      loadMoreOperationRef.current += 1;
     };
   }, []);
 
   useEffect(() => {
     refreshGenerationRef.current += 1;
-    uploadQueueGenerationRef.current += 1;
-    uploadQueueRequestRef.current = null;
-    uploadQueueHydratedIdentityRef.current = null;
-    uploadQueueRef.current = EMPTY_UPLOAD_QUEUE;
+    loadMoreOperationRef.current += 1;
     setSnapshot(null);
-    setAuditEvents([]);
-    setAuditNextCursor(null);
-    setUploadQueue(EMPTY_UPLOAD_QUEUE);
+    resetAudit();
+    setBusy(null);
     setError((current) => (canManage || current !== REAUTHENTICATION_ERROR ? null : current));
     if (canManage) void refresh();
-  }, [canManage, managementIdentity, refresh]);
-
-  useEffect(() => {
-    if (!canManage || !managementIdentity) return;
-    let active = true;
-    const expectedIdentity = managementIdentity;
-    const acceptQueue = (value: unknown) => {
-      const normalized = normalizeKnowledgeUploadQueueView(value);
-      if (active && normalized && managementIdentityRef.current === expectedIdentity) {
-        uploadQueueGenerationRef.current += 1;
-        uploadQueueHydratedIdentityRef.current = expectedIdentity;
-        uploadQueueRef.current = normalized;
-        setUploadQueue(normalized);
-      }
-    };
-    void refreshUploadQueue();
-    const unsubscribe = globalThis.api?.onKnowledgeUploadQueueChanged?.(acceptQueue);
-    return () => {
-      active = false;
-      unsubscribe?.();
-    };
-  }, [canManage, managementIdentity, refreshUploadQueue]);
-
-  useEffect(() => {
-    if (!canManage || uploadQueue.items.length === 0) return;
-    const terminal = new Set(['ready', 'failed', 'cancelled', 'published']);
-    const serverStates = new Map(
-      (snapshot?.uploads.items ?? []).map((upload) => [upload.id, upload.state]),
-    );
-    const needsServerRefresh = uploadQueue.items.some((item) => {
-      if (item.cancelPending) return true;
-      if (terminal.has(item.state)) return false;
-      return !item.uploadId || !terminal.has(serverStates.get(item.uploadId) ?? '');
-    });
-    if (!needsServerRefresh) return;
-    const timer = window.setInterval(() => {
-      void pollSnapshot();
-      void refreshUploadQueue();
-    }, 2_000);
-    return () => window.clearInterval(timer);
-  }, [canManage, pollSnapshot, refreshUploadQueue, snapshot?.uploads.items, uploadQueue.items]);
+  }, [canManage, managementIdentity, refresh, resetAudit]);
 
   // Every read is pinned to `appliedQueryRef`, so the new filter has to be claimed the moment the
   // debounce fires or retries would keep re-reading the query the operator already left behind.
@@ -377,7 +219,7 @@ export function useKnowledgeManagement(
           expectedRevision: null,
         });
         if (managementIdentityRef.current !== expectedIdentity || !result.ok) return false;
-        const page = normalizeAuditPage(result.value);
+        const page = normalizeKnowledgeAuditPage(result.value);
         if (!page) return false;
         if (page.items.some((event) => event.requestId === requestId)) return true;
         cursor = page.nextCursor;
@@ -392,7 +234,7 @@ export function useKnowledgeManagement(
   const readConfirmationSnapshot = useCallback(
     async (
       initial: KnowledgeManagementSnapshot,
-      collections: ConfirmationCollection[],
+      collections: KnowledgeConfirmationCollection[],
       expectedIdentity: string | null,
     ): Promise<KnowledgeManagementSnapshot | null> => {
       let authoritative = initial;
@@ -432,9 +274,9 @@ export function useKnowledgeManagement(
 
   const confirmMutation = useCallback(
     async (
-      predicate: MutationConfirmation | undefined,
+      predicate: KnowledgeMutationConfirmation | undefined,
       expectedIdentity: string | null,
-      collections: ConfirmationCollection[] = [],
+      collections: KnowledgeConfirmationCollection[] = [],
       requestId: string | null = null,
       requireAudit = false,
     ): Promise<boolean> => {
@@ -479,8 +321,8 @@ export function useKnowledgeManagement(
     async (
       request: PublicPrivilegedCommandRequest,
       busyKey: string,
-      confirmation?: MutationConfirmation,
-      confirmationCollections?: ConfirmationCollection[],
+      confirmation?: KnowledgeMutationConfirmation,
+      confirmationCollections?: KnowledgeConfirmationCollection[],
       requireAudit = true,
     ): Promise<boolean> => {
       if (!canManage) return false;
@@ -504,7 +346,7 @@ export function useKnowledgeManagement(
             await settleConfirmedMutation();
             return true;
           }
-          setError(commandError(result));
+          setError(knowledgeCommandError(result));
           return false;
         }
         await Promise.all([refresh(), refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
@@ -522,7 +364,7 @@ export function useKnowledgeManagement(
           await settleConfirmedMutation();
           return true;
         }
-        setError(SAFE_ERRORS['server-error']);
+        setError(KNOWLEDGE_MANAGEMENT_ERRORS['server-error']);
         return false;
       } finally {
         setBusy(null);
@@ -598,67 +440,36 @@ export function useKnowledgeManagement(
     [canManage, refresh, refreshUploadQueue],
   );
 
-  const requestAuditPage = useCallback(
-    async (cursor: string | null): Promise<KnowledgePage<KnowledgeAuditEventView> | null> => {
-      const result = await submitCommand({
-        command: 'knowledge.audit.read',
-        payload: { cursor, pageSize: 25, targetId: null },
-        expectedRevision: null,
-      });
-      if (!result.ok) {
-        setError(commandError(result));
-        return null;
-      }
-      const normalized = normalizeAuditPage(result.value);
-      if (!normalized) setError('Relay returned an invalid Wiki audit history.');
-      return normalized;
-    },
-    [submitCommand],
-  );
-
-  const readAudit = useCallback(async (): Promise<boolean> => {
-    if (!canManage) return false;
-    setBusy('audit');
-    setError(null);
-    try {
-      const page = await requestAuditPage(null);
-      if (!page) return false;
-      setAuditEvents(page.items);
-      setAuditNextCursor(page.nextCursor);
-      return true;
-    } finally {
-      setBusy(null);
-    }
-  }, [canManage, requestAuditPage]);
-
-  const loadMoreAudit = useCallback(async (): Promise<boolean> => {
-    if (!canManage || !auditNextCursor) return false;
-    setBusy('more:audit');
-    setError(null);
-    try {
-      const page = await requestAuditPage(auditNextCursor);
-      if (!page) return false;
-      setAuditEvents((current) => {
-        const existing = new Set(current.map(({ id }) => id));
-        return [...current, ...page.items.filter(({ id }) => !existing.has(id))];
-      });
-      setAuditNextCursor(page.nextCursor);
-      return true;
-    } finally {
-      setBusy(null);
-    }
-  }, [auditNextCursor, canManage, requestAuditPage]);
-
   const loadMore = useCallback(
     async (page: 'documents' | 'trash' | 'uploads'): Promise<boolean> => {
       const cursor = snapshot?.[page].nextCursor;
-      if (!cursor) return false;
-      setBusy(`more:${page}`);
+      const expectedIdentity = managementIdentityRef.current;
+      const expectedQuery = appliedQueryRef.current;
+      if (!canManage || !cursor || !expectedIdentity || visibleQueryRef.current !== expectedQuery) {
+        return false;
+      }
+      const expectedGeneration = refreshGenerationRef.current;
+      const operation = loadMoreOperationRef.current + 1;
+      loadMoreOperationRef.current = operation;
+      const busyKey = `more:${page}`;
+      const isCurrent = () =>
+        mountedRef.current &&
+        managementIdentityRef.current === expectedIdentity &&
+        refreshGenerationRef.current === expectedGeneration &&
+        appliedQueryRef.current === expectedQuery &&
+        visibleQueryRef.current === expectedQuery;
+      setBusy(busyKey);
       setError(null);
       try {
-        const next = await requestSnapshot(cursor);
-        if (!next) return false;
+        const result = await readSnapshot(cursor, expectedQuery);
+        if (!isCurrent()) return false;
+        const next = result.snapshot;
+        if (!next) {
+          setError(result.error);
+          return false;
+        }
         setSnapshot((current) => {
+          if (!isCurrent()) return current;
           if (!current) return next;
           const existing = new Set(current[page].items.map(({ id }) => id));
           const items = next[page].items.filter(({ id }) => !existing.has(id));
@@ -672,10 +483,16 @@ export function useKnowledgeManagement(
         });
         return true;
       } finally {
-        setBusy(null);
+        if (
+          mountedRef.current &&
+          managementIdentityRef.current === expectedIdentity &&
+          loadMoreOperationRef.current === operation
+        ) {
+          setBusy((current) => (current === busyKey ? null : current));
+        }
       }
     },
-    [requestSnapshot, snapshot],
+    [canManage, readSnapshot, snapshot],
   );
 
   const deletePermanently = useCallback(
@@ -769,6 +586,7 @@ export function useKnowledgeManagement(
     },
     [ensureUploadQueueHydrated, execute, runUploadControl, snapshot?.uploads.items],
   );
+  const mutationActions = createKnowledgeMutationActions({ execute, snapshot });
 
   return {
     canManage,
@@ -828,258 +646,7 @@ export function useKnowledgeManagement(
       );
     },
     clearError: () => setError(null),
-    retrySearchIndex: (documentId: string) =>
-      execute(
-        {
-          command: 'knowledge.document.search-index.retry',
-          payload: { documentId },
-          expectedRevision: null,
-        },
-        `search-index:${documentId}`,
-        (authoritative) =>
-          authoritative.documents.items.some(
-            (document) => document.id === documentId && document.searchIndexState !== 'failed',
-          ),
-        ['documents'],
-        false,
-      ),
-    publish: (
-      uploadId: string,
-      title: string,
-      category: string,
-      documentType: KnowledgeDocumentType = 'sop',
-    ) =>
-      execute(
-        {
-          command: 'knowledge.document.publish',
-          payload: { uploadId, title, category, documentType },
-          expectedRevision: null,
-        },
-        `publish:${uploadId}`,
-        (authoritative) =>
-          !authoritative.uploads.items.some(
-            ({ id, state }) => id === uploadId && state !== 'published',
-          ) &&
-          authoritative.documents.items.some(
-            (document) =>
-              document.lifecycleState === 'active' &&
-              document.displayTitle === title.trim().replace(/\s+/g, ' ') &&
-              knowledgeCategoryKey(document.category) === knowledgeCategoryKey(category) &&
-              document.documentType === documentType,
-          ),
-        ['documents', 'uploads'],
-        true,
-      ),
-    replace: (uploadId: string, documentId: string, expectedRevision: number) => {
-      const current = snapshot?.documents.items.find(({ id }) => id === documentId);
-      return execute(
-        {
-          command: 'knowledge.document.replace',
-          payload: { uploadId, documentId, expectedRevision },
-          expectedRevision: null,
-        },
-        `replace:${documentId}`,
-        (authoritative) =>
-          !authoritative.uploads.items.some(
-            ({ id, state }) => id === uploadId && state !== 'published',
-          ) &&
-          authoritative.documents.items.some(
-            (document) =>
-              document.id === documentId &&
-              document.revision > expectedRevision &&
-              (!current ||
-                (document.displayTitle === current.displayTitle &&
-                  document.categoryId === current.categoryId &&
-                  document.documentType === current.documentType &&
-                  document.fileName === current.fileName &&
-                  document.publishedAt === current.publishedAt &&
-                  document.publishedByName === current.publishedByName)),
-          ),
-        ['documents', 'uploads'],
-        true,
-      );
-    },
-    setTitle: (documentId: string, expectedRevision: number, title: string) =>
-      execute(
-        {
-          command: 'knowledge.document.title.set',
-          payload: { documentId, expectedRevision, title },
-          expectedRevision: null,
-        },
-        `title:${documentId}`,
-        (authoritative) =>
-          authoritative.documents.items.some(
-            (document) =>
-              document.id === documentId &&
-              document.revision > expectedRevision &&
-              document.displayTitle === title,
-          ),
-      ),
-    setCategory: (documentId: string, expectedRevision: number, category: string) =>
-      execute(
-        {
-          command: 'knowledge.document.category.set',
-          payload: { documentId, expectedRevision, category },
-          expectedRevision: null,
-        },
-        `category:${documentId}`,
-        (authoritative) =>
-          authoritative.documents.items.some(
-            (document) =>
-              document.id === documentId &&
-              document.revision > expectedRevision &&
-              document.category === category,
-          ),
-      ),
-    renameCategory: (from: string, to: string, expectedDocumentRevisions: Record<string, number>) =>
-      execute(
-        {
-          command: 'knowledge.category.rename',
-          payload: { from, to, expectedDocumentRevisions },
-          expectedRevision: null,
-        },
-        `category:${from}`,
-        (authoritative) =>
-          authoritative.categories.some(({ name }) => name === to) &&
-          !authoritative.categories.some(({ name }) => name === from) &&
-          !authoritative.documents.items.some(({ category }) => category === from),
-      ),
-    createCategory: (name: string, afterCategoryId: string | null) =>
-      execute(
-        {
-          command: 'knowledge.category.create',
-          payload: { name, afterCategoryId },
-          expectedRevision: null,
-        },
-        'category:create',
-        (authoritative) => authoritative.categories.some(({ name: current }) => current === name),
-      ),
-    setCategoryName: (categoryId: string, name: string, expectedRevision: number) =>
-      execute(
-        {
-          command: 'knowledge.category.name.set',
-          payload: { categoryId, name, expectedRevision },
-          expectedRevision: null,
-        },
-        `category:name:${categoryId}`,
-        (authoritative) =>
-          authoritative.categories.some(
-            (category) =>
-              category.id === categoryId &&
-              category.name === name &&
-              category.revision > expectedRevision,
-          ),
-      ),
-    setCategoryOrder: (categories: KnowledgeCategoryRecord[]) =>
-      execute(
-        {
-          command: 'knowledge.category.order.set',
-          payload: {
-            orderedCategoryIds: categories.map(({ id }) => id),
-            expectedRevisions: Object.fromEntries(
-              categories.map(({ id, revision }) => [id, revision]),
-            ),
-          },
-          expectedRevision: null,
-        },
-        'category:order',
-        (authoritative) => {
-          const expectedIds = categories.map(({ id }) => id);
-          return (
-            authoritative.categories.length === expectedIds.length &&
-            authoritative.categories.every(({ id }, index) => id === expectedIds[index])
-          );
-        },
-      ),
-    deleteCategory: (
-      categoryId: string,
-      replacementCategoryId: string,
-      expectedRevision: number,
-      expectedDocumentRevisions: Record<string, number>,
-    ) =>
-      execute(
-        {
-          command: 'knowledge.category.delete',
-          payload: {
-            categoryId,
-            replacementCategoryId,
-            expectedRevision,
-            expectedDocumentRevisions,
-          },
-          expectedRevision: null,
-        },
-        `category:delete:${categoryId}`,
-        (authoritative) =>
-          !authoritative.categories.some(({ id }) => id === categoryId) &&
-          !authoritative.documents.items.some(
-            ({ categoryId: currentCategoryId }) => currentCategoryId === categoryId,
-          ),
-      ),
-    setDocumentMetadata: (
-      document: { id: string; revision: number },
-      title: string,
-      categoryId: string,
-      documentType: KnowledgeDocumentType,
-    ) =>
-      execute(
-        {
-          command: 'knowledge.document.metadata.set',
-          payload: {
-            documentId: document.id,
-            title,
-            categoryId,
-            documentType,
-            expectedRevision: document.revision,
-          },
-          expectedRevision: null,
-        },
-        `metadata:${document.id}`,
-        (authoritative) =>
-          authoritative.documents.items.some(
-            (current) =>
-              current.id === document.id &&
-              current.revision > document.revision &&
-              current.displayTitle === title &&
-              current.categoryId === categoryId &&
-              current.documentType === documentType,
-          ),
-      ),
-    assignDocumentCategories: (categoryId: string, documents: DocumentAssignment[]) =>
-      execute(
-        {
-          command: 'knowledge.documents.category.assign',
-          payload: { categoryId, documents },
-          expectedRevision: null,
-        },
-        'documents:category',
-        (authoritative) => confirmsDocumentAssignments(authoritative, documents, categoryId),
-      ),
-    trash: (payload: { documentId: string; expectedRevision: number }) =>
-      execute(
-        { command: 'knowledge.document.trash', payload, expectedRevision: null },
-        `trash:${payload.documentId}`,
-        (authoritative) =>
-          !authoritative.documents.items.some(({ id }) => id === payload.documentId) &&
-          authoritative.trash.items.some(
-            (document) =>
-              document.id === payload.documentId &&
-              document.revision > payload.expectedRevision &&
-              document.lifecycleState === 'trashed',
-          ),
-      ),
-    restore: (payload: { documentId: string; expectedRevision: number }) =>
-      execute(
-        { command: 'knowledge.document.restore', payload, expectedRevision: null },
-        `restore:${payload.documentId}`,
-        (authoritative) =>
-          !authoritative.trash.items.some(({ id }) => id === payload.documentId) &&
-          authoritative.documents.items.some(
-            (document) =>
-              document.id === payload.documentId &&
-              document.revision > payload.expectedRevision &&
-              document.lifecycleState === 'active',
-          ),
-      ),
+    ...mutationActions,
     deletePermanently,
   };
 }

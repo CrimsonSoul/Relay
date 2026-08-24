@@ -11,8 +11,19 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mainEntry = path.join(__dirname, '../fixtures/layoutElectronMain.cjs');
+const rendererAssetsDirectory = path.join(__dirname, '../../dist/renderer/assets');
+const knowledgeCssAssets = fs
+  .readdirSync(rendererAssetsDirectory)
+  .filter((fileName) => fileName.startsWith('KnowledgeWorkspace-') && fileName.endsWith('.css'));
+
+if (knowledgeCssAssets.length !== 1) {
+  throw new Error(
+    `Expected one emitted KnowledgeWorkspace CSS asset, found ${knowledgeCssAssets.length}: ${knowledgeCssAssets.join(', ')}`,
+  );
+}
+
 const knowledgeCss = fs.readFileSync(
-  path.join(__dirname, '../../src/renderer/src/features/knowledge/knowledge.css'),
+  path.join(rendererAssetsDirectory, knowledgeCssAssets[0]),
   'utf8',
 );
 

@@ -1,0 +1,587 @@
+/* Tactile Button — ink language: square, flat, weight-led */
+.tactile-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--font-family-base);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  padding: 9px 20px;
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text-secondary);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-micro);
+  outline: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tactile-button:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+  background: var(--color-bg-card-hover);
+}
+
+.tactile-button:active:not(:disabled) {
+  background: var(--color-active-overlay);
+  transform: scale(0.985);
+}
+
+.tactile-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-accent-dim);
+  border-color: var(--accent);
+}
+
+.tactile-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tactile-button:disabled:hover {
+  background: transparent;
+  border-color: var(--color-border-strong);
+  color: var(--color-text-secondary);
+}
+
+/* Primary: accent fill, black ink */
+.tactile-button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent) !important;
+  font-weight: 800;
+}
+
+.tactile-button--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Ghost: dim text only */
+.tactile-button--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-tertiary);
+}
+
+.tactile-button--ghost:hover {
+  background: var(--color-hover-overlay);
+  color: var(--color-text-primary);
+  border-color: transparent;
+}
+
+/* Danger: alarm fill, fixed under every scheme */
+.tactile-button--danger {
+  background: var(--alarm);
+  border-color: var(--alarm);
+  color: #000000;
+  font-weight: 800;
+}
+
+.tactile-button--danger:hover {
+  background: var(--alarm-bright);
+  border-color: var(--alarm-bright);
+}
+
+/* Active (toggled-on) state: accent ink */
+.tactile-button.is-active {
+  background: var(--accent-dim);
+  color: var(--accent-bright);
+  border-color: transparent;
+}
+
+/* Persistent release state: visible without competing with operational alerts. */
+.release-update-indicator.tactile-button {
+  flex: 0 0 auto;
+  padding-inline: 12px;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--color-border-strong));
+  background: var(--accent-subtle);
+  color: var(--accent-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.release-update-indicator.tactile-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent-bright);
+}
+
+.release-update-indicator .tactile-button-label {
+  gap: 0;
+}
+
+.release-update-indicator__wide-label {
+  margin-inline-end: 4px;
+}
+
+.release-update-indicator__dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Manual GitHub update flow. The sequence stays legible without competing with operational UI. */
+.release-update-modal__content {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.release-update-modal__steps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-update-modal__steps::before {
+  content: '';
+  position: absolute;
+  top: 11px;
+  right: 16.667%;
+  left: 16.667%;
+  height: 1px;
+  background: var(--color-border-strong);
+}
+
+.release-update-modal__step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+}
+
+.release-update-modal__step[data-state='current'],
+.release-update-modal__step[data-state='complete'] {
+  color: var(--color-text-primary);
+}
+
+.release-update-modal__step-marker {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-round);
+  background: var(--color-bg-surface-elevated);
+  color: var(--color-text-tertiary);
+}
+
+.release-update-modal__step[data-state='current'] .release-update-modal__step-marker {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
+.release-update-modal__step[data-state='complete'] .release-update-modal__step-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.release-update-modal__step-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+}
+
+.release-update-modal__message {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+}
+
+.release-update-modal__message[role='alert'] {
+  color: var(--alarm-bright);
+}
+
+.release-update-modal__progress {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.release-update-modal__progress progress {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--color-border);
+  color: var(--accent);
+  appearance: none;
+}
+
+.release-update-modal__progress progress::-webkit-progress-bar {
+  background: var(--color-border);
+}
+
+.release-update-modal__progress progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.release-update-modal__progress progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.release-update-modal__trust {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.release-update-modal__trust-icon {
+  margin-top: 1px;
+  color: var(--accent-bright);
+}
+
+.release-update-modal__trust > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.release-update-modal__trust strong {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+.release-update-modal__trust span {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.release-update-modal__footer-status {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+/* Compact segmented size selector — shared by on-call and notes */
+.size-segmented-control {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 28px);
+  align-items: center;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: transparent;
+  flex: 0 0 auto;
+}
+
+.size-segmented-option {
+  width: 28px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.size-segmented-option:hover,
+.size-segmented-option:focus-visible {
+  color: var(--color-text-primary);
+  background: var(--color-hover-overlay);
+  outline: none;
+}
+
+.size-segmented-option--active,
+.size-segmented-option--active:hover,
+.size-segmented-option--active:focus-visible {
+  color: var(--color-text-primary);
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+/* Tactile Field */
+:is(input, select, textarea).tactile-input.tactile-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 44px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  padding-left: 16px;
+  padding-right: 44px;
+  outline: none;
+}
+
+select.tactile-input.tactile-input {
+  color-scheme: dark;
+}
+
+select.tactile-input.tactile-input option {
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface);
+}
+
+:is(input, select, textarea).tactile-input.tactile-input:hover:not(:disabled) {
+  border-color: var(--color-text-tertiary);
+}
+
+:is(input, select, textarea).tactile-input.tactile-input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--color-accent-dim);
+}
+
+:is(input, select, textarea).tactile-input.tactile-input[aria-invalid='true'] {
+  border-color: var(--alarm);
+}
+
+:is(input, select, textarea).tactile-input.tactile-input:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-surface-2);
+  opacity: 0.72;
+}
+
+input.tactile-input.tactile-input::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 1;
+}
+
+textarea.tactile-input.tactile-input {
+  height: auto;
+  min-height: 116px;
+  padding: 12px 16px;
+  line-height: var(--leading-normal);
+  resize: vertical;
+}
+
+/* SearchInput supplies Relay's own clear button; suppress WebKit's duplicate. */
+input.tactile-input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Sizes */
+.tactile-button--sm {
+  padding: 7px 16px;
+  font-size: 13px;
+}
+
+.tactile-button--md {
+  height: 48px;
+  padding: 0 24px;
+  font-size: var(--text-md);
+}
+
+/* Icon Only Modifier */
+.tactile-button--icon-only {
+  padding: 0;
+  width: 40px;
+  justify-content: center;
+}
+
+.tactile-button--sm.tactile-button--icon-only {
+  width: 34px;
+}
+
+.tactile-button.is-block {
+  width: 100%;
+}
+
+/* Card Lift Effect — removed lifts; hover via color only */
+.lift-on-hover {
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast) !important;
+}
+
+.lift-on-hover:hover {
+  z-index: 10;
+}
+
+/* Window Controls */
+.window-controls-bar {
+  display: flex;
+  height: 48px;
+  -webkit-app-region: no-drag;
+  z-index: var(--z-window-controls);
+  position: relative;
+  pointer-events: auto;
+}
+
+.window-control-btn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: default;
+  transition:
+    background var(--transition-micro),
+    color var(--transition-micro);
+  -webkit-app-region: no-drag;
+  outline: none;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.window-control-btn::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: transparent;
+  transition: background var(--transition-micro);
+  z-index: -1;
+  border-radius: 2px;
+}
+
+.window-control-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.window-control-btn:hover::before {
+  background: var(--color-active-overlay);
+}
+
+.window-control-btn.close-btn:hover::before {
+  background: #e81123;
+}
+
+.window-control-btn.close-btn:hover {
+  color: #ffffff;
+}
+
+/* Relay Web keeps the desktop shell and adds one compact, persistent trust-boundary marker. */
+.web-runtime-banner {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: min(560px, calc(100vw - var(--sidebar-width-collapsed) - 32px));
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--color-border-strong);
+  background: color-mix(in srgb, var(--color-bg-surface) 94%, transparent);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.web-runtime-banner__label {
+  color: var(--accent);
+  font-family: var(--font-family-mono);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.web-runtime-banner__warning {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-connection-status {
+  position: fixed;
+  top: var(--space-3);
+  left: 50%;
+  z-index: var(--z-critical);
+  translate: -50% 0;
+  padding: 7px 12px;
+  border: 1px solid var(--color-warning, #d8a23f);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.web-reauthentication {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-critical);
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--color-bg-app) 78%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.web-reauthentication__panel {
+  display: grid;
+  width: min(100%, 460px);
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-xl);
+}
+
+.web-reauthentication__panel h2,
+.web-reauthentication__panel p {
+  margin: 0;
+}
+
+.web-reauthentication__panel p {
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.web-reauthentication__context {
+  color: var(--alarm-bright);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+}
+
+.web-reauthentication__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

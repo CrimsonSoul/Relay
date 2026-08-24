@@ -10,14 +10,13 @@ import React, {
 import type {
   PrivilegedPairingCompletionInput,
   PrivilegedReauthenticationProof,
-  PublicPrivilegedCommandRequest,
 } from '@shared/ipc';
 import {
   normalizePrivilegedSessionView,
   type PrivilegedPairingChallengeView,
   type PrivilegedSessionView,
 } from '@shared/privilegedAccess';
-import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
+import { PrivilegedCommandProvider } from './PrivilegedCommandContext';
 
 const SIGNED_OUT_SESSION: PrivilegedSessionView = {
   state: 'signed-out',
@@ -35,7 +34,7 @@ const OFFLINE_SESSION: PrivilegedSessionView = {
   state: 'offline',
 };
 
-type BusyAction = 'login' | 'logout' | 'reauthenticate' | 'pair' | 'challenge' | 'command';
+type BusyAction = 'login' | 'logout' | 'reauthenticate' | 'pair' | 'challenge';
 
 export type PrivilegedAccessContextValue = {
   session: PrivilegedSessionView;
@@ -51,7 +50,6 @@ export type PrivilegedAccessContextValue = {
     targetAccountId: string,
   ) => Promise<PrivilegedPairingChallengeView | null>;
   completePairing: (input: PrivilegedPairingCompletionInput) => Promise<boolean>;
-  submitCommand: (input: PublicPrivilegedCommandRequest) => Promise<PrivilegedCommandResult>;
 };
 
 const PrivilegedAccessContext = createContext<PrivilegedAccessContextValue | null>(null);
@@ -79,7 +77,10 @@ const normalizeOr = (value: unknown, fallback: PrivilegedSessionView) =>
   normalizePrivilegedSessionView(value) ?? fallback;
 
 export function PrivilegedAccessProvider({ children }: Readonly<{ children: ReactNode }>) {
-  const [session, setSession] = useState<PrivilegedSessionView>(SIGNED_OUT_SESSION);
+  const [{ session, sessionEpoch }, setSessionState] = useState(() => ({
+    session: SIGNED_OUT_SESSION,
+    sessionEpoch: 0,
+  }));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<BusyAction | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +89,12 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
   );
 
   const clearError = useCallback(() => setError(null), []);
+  const setSession = useCallback((nextSession: PrivilegedSessionView) => {
+    setSessionState((current) => ({
+      session: nextSession,
+      sessionEpoch: current.sessionEpoch + 1,
+    }));
+  }, []);
   const showFailure = useCallback((code: keyof typeof ERROR_MESSAGES) => {
     setError(ERROR_MESSAGES[code]);
   }, []);
@@ -123,7 +130,7 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [setSession]);
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -154,7 +161,7 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
         setBusy(null);
       }
     },
-    [showFailure],
+    [setSession, showFailure],
   );
 
   const logout = useCallback(async () => {
@@ -169,7 +176,7 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [setSession]);
 
   const reauthenticate = useCallback(
     async (password: string) => {
@@ -249,27 +256,7 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
         setBusy(null);
       }
     },
-    [session, showFailure],
-  );
-
-  const submitCommand = useCallback(
-    async (input: PublicPrivilegedCommandRequest): Promise<PrivilegedCommandResult> => {
-      const api = globalThis.api;
-      if (!api) return { ok: false, error: 'offline' };
-      setBusy('command');
-      setError(null);
-      try {
-        const result = await api.submitPrivilegedCommand(input);
-        if (!result.ok) setError(result.message || ERROR_MESSAGES[result.error]);
-        return result;
-      } catch {
-        showFailure('server-error');
-        return { ok: false, error: 'server-error' };
-      } finally {
-        setBusy(null);
-      }
-    },
-    [showFailure],
+    [session, setSession, showFailure],
   );
 
   const value = useMemo<PrivilegedAccessContextValue>(
@@ -285,7 +272,6 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       reauthenticate,
       createPairingChallenge,
       completePairing,
-      submitCommand,
     }),
     [
       busy,
@@ -299,12 +285,13 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       pairingChallenge,
       reauthenticate,
       session,
-      submitCommand,
     ],
   );
 
   return (
-    <PrivilegedAccessContext.Provider value={value}>{children}</PrivilegedAccessContext.Provider>
+    <PrivilegedCommandProvider sessionEpoch={sessionEpoch}>
+      <PrivilegedAccessContext.Provider value={value}>{children}</PrivilegedAccessContext.Provider>
+    </PrivilegedCommandProvider>
   );
 }
 

@@ -1,27 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import postcss, { type Declaration, type Rule } from 'postcss';
 import { describe, expect, it } from 'vitest';
-
-const rendererRoot = resolve(process.cwd(), 'src/renderer/src');
-
-function directImports(path: string): string[] {
-  const absolutePath = resolve(rendererRoot, path);
-  const source = readFileSync(absolutePath, 'utf8');
-  return [...source.matchAll(/@import\s+['"]([^'"]+)['"];?/g)].map((match) => match[1]!);
-}
-
-function expandImports(path: string, visited = new Set<string>()): string {
-  const absolutePath = resolve(rendererRoot, path);
-  if (visited.has(absolutePath)) return '';
-  visited.add(absolutePath);
-  const source = readFileSync(absolutePath, 'utf8');
-  return source.replace(/@import\s+['"]([^'"]+)['"];?/g, (_statement, importPath: string) => {
-    const imported = resolve(dirname(absolutePath), importPath);
-    const relative = imported.slice(rendererRoot.length + 1);
-    return expandImports(relative, visited);
-  });
-}
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 
 function finalDeclarations(source: string, selector: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -44,18 +23,13 @@ function topLevelRuleIndex(source: string, selector: string): number {
 }
 
 describe('Settings stylesheet outcomes', () => {
-  const styles = expandImports('styles.css');
+  const styles = [
+    readCssBundle('styles/components.css'),
+    readCssBundle('components/settings/settings.css'),
+    readCssBundle('styles/components-after-settings.css'),
+  ].join('\n');
 
-  it('preserves the original components-before, Settings, components-after cascade', () => {
-    const manifestImports = directImports('styles.css');
-    const componentsIndex = manifestImports.indexOf('./styles/components.css');
-
-    expect(manifestImports.slice(componentsIndex, componentsIndex + 3)).toEqual([
-      './styles/components.css',
-      './components/settings/settings.css',
-      './styles/components-after-settings.css',
-    ]);
-
+  it('preserves the shared-before, Settings, settings-overrides cascade', () => {
     expect(topLevelRuleIndex(styles, '.context-menu-item-label')).toBeLessThan(
       topLevelRuleIndex(styles, '.settings-page'),
     );
