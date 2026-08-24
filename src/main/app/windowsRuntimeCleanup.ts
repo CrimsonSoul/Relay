@@ -428,9 +428,8 @@ async function isSafeSnapshotDeletionPath(
 ): Promise<boolean> {
   const currentRoot = await resolveManagedSnapshotRoot(requestedUserDataRoot);
   if (
-    !currentRoot ||
-    currentRoot.userDataRoot.toLowerCase() !== initialRoot.userDataRoot.toLowerCase() ||
-    currentRoot.snapshotsRoot.toLowerCase() !== initialRoot.snapshotsRoot.toLowerCase()
+    currentRoot?.userDataRoot.toLowerCase() !== initialRoot.userDataRoot.toLowerCase() ||
+    currentRoot?.snapshotsRoot.toLowerCase() !== initialRoot.snapshotsRoot.toLowerCase()
   ) {
     return false;
   }

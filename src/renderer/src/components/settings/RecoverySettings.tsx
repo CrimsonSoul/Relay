@@ -194,15 +194,15 @@ export function RecoverySettings() {
       </div>
 
       {state.fallbackActive && state.runningVersion && (
-        <p className="settings-recovery__notice" role="status">
+        <output className="settings-recovery__notice">
           Relay is running retained v{state.runningVersion} for recovery. The catalog still points
           to v{state.currentVersion}; roll back below to make this version current.
-        </p>
+        </output>
       )}
       {state.status === 'busy' && (
-        <p className="settings-recovery__notice" role="status">
+        <output className="settings-recovery__notice">
           An update or recovery operation is already in progress.
-        </p>
+        </output>
       )}
       {state.retainedBuilds.length === 0 && (
         <p className="settings-recovery__notice">No previous Windows versions are retained yet.</p>
@@ -296,13 +296,15 @@ export function RecoverySettings() {
         </form>
       )}
 
-      {feedback && (
-        <p
-          className={`settings-recovery__feedback settings-recovery__feedback--${feedback.tone}`}
-          role={feedback.tone === 'error' ? 'alert' : 'status'}
-        >
+      {feedback?.tone === 'error' && (
+        <p className="settings-recovery__feedback settings-recovery__feedback--error" role="alert">
           {feedback.message}
         </p>
+      )}
+      {feedback?.tone === 'success' && (
+        <output className="settings-recovery__feedback settings-recovery__feedback--success">
+          {feedback.message}
+        </output>
       )}
     </section>
   );

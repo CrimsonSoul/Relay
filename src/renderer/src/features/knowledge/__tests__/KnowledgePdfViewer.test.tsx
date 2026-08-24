@@ -537,8 +537,14 @@ describe('KnowledgePdfViewer', () => {
     expect(back).toBeInTheDocument();
     expect(back.closest('.knowledge-viewer__leading')).toBeInTheDocument();
     expect(back.closest('.knowledge-viewer__heading')).toBeNull();
-    expect(screen.getByRole('group', { name: 'Page navigation' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Zoom controls' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Page navigation' })).toHaveProperty(
+      'tagName',
+      'FIELDSET',
+    );
+    expect(screen.getByRole('group', { name: 'Zoom controls' })).toHaveProperty(
+      'tagName',
+      'FIELDSET',
+    );
     expect(screen.getByText('100%')).toBeInTheDocument();
 
     const viewButton = screen.getByRole('button', { name: 'View options: Single page' });
@@ -546,6 +552,7 @@ describe('KnowledgePdfViewer', () => {
     fireEvent.click(viewButton);
 
     const options = screen.getByRole('dialog', { name: 'View options' });
+    expect(options).toHaveProperty('tagName', 'DIALOG');
     expect(within(options).getByRole('button', { name: 'Fit width' })).toBeInTheDocument();
     expect(within(options).getByRole('button', { name: 'Continuous scrolling' })).toHaveAttribute(
       'aria-pressed',

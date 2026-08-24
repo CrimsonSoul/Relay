@@ -149,7 +149,7 @@ export function parseRecoveryRepairRequest(text: string): RecoveryRepairRequest 
     'checkpoint',
     'requestedAt',
   ]);
-  if (!values || values.get('protocol') !== '2' || values.get('checkpoint') !== 'pending') {
+  if (values?.get('protocol') !== '2' || values.get('checkpoint') !== 'pending') {
     return null;
   }
   const request: RecoveryRepairRequest = {
@@ -192,7 +192,7 @@ export function parseRecoveryRepairReceipt(text: string): RecoveryRepairReceipt 
     'installerSha256',
     'completedAt',
   ]);
-  if (!values || values.get('protocol') !== '2') return null;
+  if (values?.get('protocol') !== '2') return null;
   const receipt: RecoveryRepairReceipt = {
     protocol: 2,
     transactionId: values.get('transactionId') ?? '',
@@ -213,7 +213,7 @@ function isDirectChild(parent: string, child: string, expectedName: string): boo
 
 async function resolveRecoveryDirectory(
   relayRoot: string,
-  createPrivateDirectory?: (path: string) => unknown | Promise<unknown>,
+  createPrivateDirectory?: (path: string) => unknown,
 ): Promise<string> {
   const recoveryDirectory = join(relayRoot, 'Recovery');
   try {
@@ -240,7 +240,7 @@ async function resolveRecoveryDirectory(
 export async function writeRecoveryRepairRequest(
   relayRoot: string,
   request: RecoveryRepairRequest,
-  createPrivateDirectory: (path: string) => unknown | Promise<unknown>,
+  createPrivateDirectory: (path: string) => unknown,
 ): Promise<string> {
   const contents = serializeRecoveryRepairRequest(request);
   const recoveryDirectory = await resolveRecoveryDirectory(relayRoot, createPrivateDirectory);

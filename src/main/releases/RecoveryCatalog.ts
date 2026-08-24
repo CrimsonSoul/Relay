@@ -87,7 +87,7 @@ function parseInteger(value: string | undefined): number | null {
 }
 
 function nullable(value: string | undefined): string | null {
-  return value ? value : null;
+  return value || null;
 }
 
 export function isRecoveryBuildRecord(value: RecoveryBuildRecord): boolean {
@@ -506,7 +506,7 @@ export function createRecoveryBaseline(
 ): RecoveryCatalog | null {
   const ini = parseIni(legacyState);
   const relay = ini?.get('Relay');
-  if (!ini || !relay || relay.get('protocol') !== '1') return null;
+  if (relay?.get('protocol') !== '1') return null;
   const currentBuildId = relay.get('current') ?? '';
   const previousBuildId = nullable(relay.get('previous'));
   if (!isBuildId(currentBuildId) || (previousBuildId !== null && !isBuildId(previousBuildId))) {

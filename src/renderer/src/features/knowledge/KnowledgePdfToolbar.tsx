@@ -93,9 +93,8 @@ export function KnowledgePdfToolbar({
         </div>
       </div>
       <div className="knowledge-viewer__controls" aria-label="PDF controls">
-        <div
+        <fieldset
           className="knowledge-viewer__control-group knowledge-viewer__page-controls"
-          role="group"
           aria-label="Page navigation"
         >
           <button
@@ -127,10 +126,9 @@ export function KnowledgePdfToolbar({
           >
             →
           </button>
-        </div>
-        <div
+        </fieldset>
+        <fieldset
           className="knowledge-viewer__control-group knowledge-viewer__zoom-controls"
-          role="group"
           aria-label="Zoom controls"
         >
           <button
@@ -150,7 +148,7 @@ export function KnowledgePdfToolbar({
           >
             +
           </button>
-        </div>
+        </fieldset>
         <div ref={viewOptionsRef} className="knowledge-viewer__view-menu">
           <button
             ref={viewOptionsButtonRef}
@@ -166,10 +164,10 @@ export function KnowledgePdfToolbar({
             <span aria-hidden="true">▾</span>
           </button>
           {viewOptionsOpen && (
-            <div
+            <dialog
               id="knowledge-view-options"
               className="knowledge-viewer__view-panel"
-              role="dialog"
+              open
               aria-label="View options"
               data-motion="popover"
             >
@@ -201,7 +199,7 @@ export function KnowledgePdfToolbar({
                 <span>Single page</span>
                 <span aria-hidden="true">{viewMode === 'single' ? '✓' : ''}</span>
               </button>
-            </div>
+            </dialog>
           )}
         </div>
       </div>

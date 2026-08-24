@@ -52,7 +52,7 @@ export type RecoveryManagerOptions = {
   execPath: string;
   userDataRoot: string;
   getMode: () => RecoveryInstallationMode;
-  createPrivateDirectory: (path: string) => unknown | Promise<unknown>;
+  createPrivateDirectory: (path: string) => unknown;
   prepareRollback: (input: PrepareRollbackInput) => Promise<PrepareRollbackResult>;
   repairRuntime: (input: RepairRuntimeInput) => Promise<boolean>;
   relaunch: (options: { execPath: string }) => void;
@@ -228,8 +228,7 @@ async function hasValidServerSnapshot(
     }
     const marker = parseIniSection(await readFile(markerPath, 'utf8'), 'Snapshot');
     return Boolean(
-      marker &&
-      marker.get('protocol') === '1' &&
+      marker?.get('protocol') === '1' &&
       marker.get('snapshotId') === target.rollbackSnapshotId &&
       UUID_V4_PATTERN.test(marker.get('transactionId') ?? '') &&
       marker.get('sourceBuildId') === target.buildId &&
@@ -462,12 +461,7 @@ export class RecoveryManager {
       (build) => build.buildId === targetBuildId,
     );
     const targetBuild = inspection?.catalog.builds.find((build) => build.buildId === targetBuildId);
-    if (
-      !inspection ||
-      inspection.state.status !== 'ready' ||
-      !targetView?.repairAvailable ||
-      !targetBuild
-    ) {
+    if (inspection?.state.status !== 'ready' || !targetView?.repairAvailable || !targetBuild) {
       return { success: false, error: 'target-unavailable' };
     }
     try {
@@ -500,8 +494,7 @@ export class RecoveryManager {
     );
     const targetBuild = inspection?.catalog.builds.find((build) => build.buildId === targetBuildId);
     if (
-      !inspection ||
-      inspection.state.status !== 'ready' ||
+      inspection?.state.status !== 'ready' ||
       (mode !== 'server' && mode !== 'client') ||
       !targetView?.rollbackAvailable ||
       !targetBuild

@@ -146,7 +146,7 @@ export async function readRecoveryRuntimeMarker(
     }
     if (relay.get('protocol') !== '2' || sections.size !== 2) return null;
     const integrity = sections.get('Integrity');
-    if (!integrity || integrity.size !== INTEGRITY_FILES.length) return null;
+    if (integrity?.size !== INTEGRITY_FILES.length) return null;
     const contentVerified = (
       await Promise.all(
         INTEGRITY_FILES.map(([key, relativePath]) =>

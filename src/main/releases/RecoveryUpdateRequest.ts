@@ -129,8 +129,7 @@ export function parseRecoveryUpdateRequest(text: string): RecoveryUpdateRequest 
     'rollbackSnapshotId',
   ] as const;
   if (
-    !ini ||
-    ini.size !== 2 ||
+    ini?.size !== 2 ||
     !request ||
     !source ||
     !hasExactKeys(request, requestKeys) ||
@@ -224,7 +223,7 @@ function isDirectChild(parent: string, child: string, expectedName: string): boo
 
 async function resolveRecoveryDirectory(
   relayRoot: string,
-  createPrivateDirectory?: (path: string) => unknown | Promise<unknown>,
+  createPrivateDirectory?: (path: string) => unknown,
 ): Promise<string> {
   const recoveryDirectory = join(relayRoot, 'Recovery');
   try {
@@ -252,7 +251,7 @@ async function resolveRecoveryDirectory(
 export async function writeRecoveryUpdateRequest(
   relayRoot: string,
   request: RecoveryUpdateRequest,
-  createPrivateDirectory: (path: string) => unknown | Promise<unknown>,
+  createPrivateDirectory: (path: string) => unknown,
 ): Promise<string> {
   const serialized = serializeRecoveryUpdateRequest(request);
   const recoveryDirectory = await resolveRecoveryDirectory(relayRoot, createPrivateDirectory);
@@ -302,7 +301,7 @@ export async function completeRecoveryUpdateRequest(
   snapshotId: string | null,
 ): Promise<RecoveryUpdateRequest> {
   const request = await readRecoveryUpdateRequest(relayRoot);
-  if (!request || request.transactionId !== transactionId) {
+  if (request?.transactionId !== transactionId) {
     throw new Error('Recovery update transaction did not match');
   }
   const completed: RecoveryUpdateRequest = {

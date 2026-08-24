@@ -706,9 +706,12 @@
 .knowledge-viewer__control-group {
   display: inline-flex;
   height: 38px;
+  min-inline-size: 0;
   flex: none;
   align-items: stretch;
   overflow: visible;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -794,6 +797,7 @@
   display: grid;
   width: 232px;
   overflow: hidden;
+  margin: 0;
   padding: 0;
   border: 1px solid var(--color-border-strong);
   border-radius: 2px;

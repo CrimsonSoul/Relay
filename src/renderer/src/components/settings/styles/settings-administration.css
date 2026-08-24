@@ -297,6 +297,11 @@
   color: var(--color-text-primary);
 }
 
+.role-accounts__credential-target {
+  min-inline-size: 0;
+  margin: 0;
+}
+
 .administration-feedback {
   border-color: color-mix(in srgb, var(--ok) 70%, var(--color-border));
   color: #6ad982;

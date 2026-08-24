@@ -154,7 +154,7 @@ function isDirectChild(parent: string, child: string, expectedName: string): boo
 
 async function resolveRecoveryDirectory(
   relayRoot: string,
-  createPrivateDirectory?: (path: string) => unknown | Promise<unknown>,
+  createPrivateDirectory?: (path: string) => unknown,
 ): Promise<string> {
   const recoveryDirectory = join(relayRoot, 'Recovery');
   try {
@@ -181,7 +181,7 @@ async function resolveRecoveryDirectory(
 export async function writeRecoveryRollbackRequest(
   relayRoot: string,
   request: RecoveryRollbackRequest,
-  createPrivateDirectory: (path: string) => unknown | Promise<unknown>,
+  createPrivateDirectory: (path: string) => unknown,
 ): Promise<string> {
   const contents = serializeRecoveryRollbackRequest(request);
   const recoveryDirectory = await resolveRecoveryDirectory(relayRoot, createPrivateDirectory);
@@ -226,7 +226,7 @@ export async function completeRecoveryRollbackRequest(
   sourceSnapshotId: string | null,
 ): Promise<RecoveryRollbackRequest> {
   const request = await readRecoveryRollbackRequest(relayRoot);
-  if (!request || request.transactionId !== transactionId || request.checkpoint !== 'pending') {
+  if (request?.transactionId !== transactionId || request.checkpoint !== 'pending') {
     throw new Error('Recovery rollback transaction did not match');
   }
   const completed: RecoveryRollbackRequest = {

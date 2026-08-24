@@ -21,8 +21,7 @@ export async function prepareRecoveryRestart(
     const request = await options.getRequest();
     const currentMode = options.getCurrentMode();
     if (
-      !request ||
-      request.transactionId !== options.transactionId ||
+      request?.transactionId !== options.transactionId ||
       request.checkpoint !== 'pending' ||
       request.mode !== currentMode
     ) {

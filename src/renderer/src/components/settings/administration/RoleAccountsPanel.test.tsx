@@ -274,6 +274,7 @@ describe('RoleAccountsPanel', () => {
     expect(screen.getByText(/resets stay on this Relay server PC/i)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Set credential for Charles Gibbs' }));
     const target = screen.getByRole('group', { name: 'Credential target' });
+    expect(target).toHaveProperty('tagName', 'FIELDSET');
     expect(within(target).getByText('Charles Gibbs')).toBeVisible();
     expect(within(target).getByText('@charles')).toBeVisible();
     fireEvent.change(screen.getByLabelText('New password'), {

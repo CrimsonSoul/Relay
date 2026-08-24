@@ -70,7 +70,7 @@ export type ReleaseUpdateManagerOptions = {
   writeRecoveryRequest?: (
     relayRoot: string,
     request: RecoveryUpdateRequest,
-    createPrivateDirectory: (path: string) => unknown | Promise<unknown>,
+    createPrivateDirectory: (path: string) => unknown,
   ) => Promise<string>;
   prepareRecoveryRestart?: (transactionId: string) => Promise<PrepareRecoveryRestartResult>;
   now?: () => Date;

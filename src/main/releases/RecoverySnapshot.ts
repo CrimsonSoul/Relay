@@ -24,7 +24,7 @@ type RecoverySnapshotOptions = {
   transactionId: string;
   sourceBuildId: string;
   dataEpoch: number;
-  createPrivateDirectory: (path: string) => unknown | Promise<unknown>;
+  createPrivateDirectory: (path: string) => unknown;
   snapshotId: string;
   now?: () => Date;
   statfs?: (path: string) => Promise<StatFsResult>;

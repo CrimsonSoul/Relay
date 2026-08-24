@@ -105,8 +105,7 @@ export async function resolveRecoveryProbationContext(
   const candidate = catalog?.builds.find((build) => build.buildId === catalog.candidateBuildId);
   if (
     !catalog ||
-    !transaction ||
-    transaction.id !== options.transactionId ||
+    transaction?.id !== options.transactionId ||
     transaction.kind !== 'update' ||
     transaction.phase !== 'probation' ||
     transaction.sourceBuildId !== catalog.currentBuildId ||

@@ -314,9 +314,11 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'About' }));
 
     expect(await screen.findByText('Faster update preparation')).toBeVisible();
-    expect(
-      await screen.findByText('Showing saved release notes. GitHub refresh unavailable.'),
-    ).toBeVisible();
+    const savedReleaseNotice = await screen.findByText(
+      'Showing saved release notes. GitHub refresh unavailable.',
+    );
+    expect(savedReleaseNotice).toBeVisible();
+    expect(savedReleaseNotice.closest('output')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
   });
 
@@ -364,7 +366,9 @@ describe('SettingsModal', () => {
         password: 'correct horse battery staple',
       }),
     );
-    expect(await screen.findByText('Restarting Relay with v1.5.0…')).toBeVisible();
+    const restartFeedback = await screen.findByText('Restarting Relay with v1.5.0…');
+    expect(restartFeedback).toBeVisible();
+    expect(restartFeedback.closest('output')).not.toBeNull();
   });
 
   it('lets the active Owner repair a missing retained runtime from its exact GitHub release', async () => {
@@ -455,7 +459,9 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'About' }));
 
     expect(await screen.findByText('Recovery runtime · v1.5.0')).toBeVisible();
-    expect(screen.getByText(/catalog still points to v1\.6\.0/i)).toBeVisible();
+    const fallbackNotice = screen.getByText(/catalog still points to v1\.6\.0/i);
+    expect(fallbackNotice).toBeVisible();
+    expect(fallbackNotice.closest('output')).not.toBeNull();
   });
 
   it('offers Administration to the authenticated Relay administrator', () => {

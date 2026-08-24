@@ -50,7 +50,7 @@ type RecoveryRuntimeRepairOptions = {
     destinationPath: string,
   ) => Promise<{ bytes: number; sha256: string }>;
   spawnInstaller: (path: string, args: string[]) => Promise<number | null>;
-  createPrivateDirectory: (path: string) => unknown | Promise<unknown>;
+  createPrivateDirectory: (path: string) => unknown;
   now: () => Date;
   randomUuid: () => string;
 };
@@ -241,8 +241,7 @@ export async function repairRecoveryRuntime(
 
     const receipt = await readRecoveryRepairReceipt(realRelayRoot);
     if (
-      !receipt ||
-      receipt.transactionId !== transactionId ||
+      receipt?.transactionId !== transactionId ||
       receipt.buildId !== input.targetBuild.buildId ||
       receipt.version !== input.targetBuild.version ||
       receipt.targetCommitish !== input.targetBuild.targetCommitish ||

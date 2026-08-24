@@ -123,14 +123,13 @@ export function RoleAccountCredentialManager({
       ) : (
         <form className="administration-field-grid" onSubmit={(event) => void save(event)}>
           {credentialAccount && (
-            <div
+            <fieldset
               className="administration-callout role-accounts__credential-target"
-              role="group"
               aria-label="Credential target"
             >
               <strong>{credentialAccount.displayName}</strong>
               <span>@{credentialAccount.username}</span>
-            </div>
+            </fieldset>
           )}
           <label className="administration-field">
             <span>New password</span>

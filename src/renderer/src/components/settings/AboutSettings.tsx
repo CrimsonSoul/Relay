@@ -145,12 +145,12 @@ export function AboutSettings() {
         </div>
       )}
       {notesState === 'stale' && releases.length > 0 && (
-        <div className="settings-release-history__offline" role="status">
+        <output className="settings-release-history__offline">
           <span>Showing saved release notes. GitHub refresh unavailable.</span>
           <TactileButton type="button" size="sm" onClick={() => void loadReleaseNotes()}>
             Try again
           </TactileButton>
-        </div>
+        </output>
       )}
 
       {releases.length > 0 && (
