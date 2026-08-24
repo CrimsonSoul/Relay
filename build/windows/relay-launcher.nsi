@@ -190,10 +190,13 @@ Var RelayProbationWaitResult
 Function RelayRunProbation
   StrCpy $RelayExitCode "1"
   StrCpy $RelayProbationWaitResult "allocation-failed"
-  System::Call '*(p 0, p 0, i 0, i 0)p.r0'
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "allocating"
+  !endif
+  System::Call '*(p,p,i,i)p.r0'
   StrCpy $RelayProbationProcessInfo $0
-  System::Call '*(i 68, p 0, p 0, p 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, p 0, p 0, p 0, p 0)p.r0'
-  StrCpy $RelayProbationStartupInfo $0
+  System::Alloc 68
+  Pop $RelayProbationStartupInfo
   ${If} $RelayProbationProcessInfo == 0
   ${OrIf} $RelayProbationStartupInfo == 0
     ${If} $RelayProbationProcessInfo != 0
@@ -204,19 +207,29 @@ Function RelayRunProbation
     ${EndIf}
     Return
   ${EndIf}
+  System::Call '*$RelayProbationStartupInfo(i 68)'
   StrCpy $RelayArgs '"$RelayExecutable" ${RELAY_RECOVERY_PROBATION_PREFIX}$RelayTransactionId'
   StrCpy $RelayProbationWaitResult "create-failed"
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "creating"
+  !endif
   System::Call 'kernel32::CreateProcessW(w "$RelayExecutable", w "$RelayArgs", p 0, p 0, i 0, i 0x04000000, p 0, w "$RelayRuntimeDir", p $RelayProbationStartupInfo, p $RelayProbationProcessInfo) i.r0'
   ${If} $0 == 0
     System::Free $RelayProbationStartupInfo
     System::Free $RelayProbationProcessInfo
     Return
   ${EndIf}
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "created"
+  !endif
   System::Call '*$RelayProbationProcessInfo(p.r1,p.r2,i.r3,i.r4)'
   StrCpy $RelayProbationProcessHandle $1
   StrCpy $RelayProbationThreadHandle $2
   System::Call 'kernel32::WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS}) i.r0'
   StrCpy $RelayProbationWaitResult $0
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "waited"
+  !endif
   ${If} $RelayProbationWaitResult == 258
     ; A wedged candidate cannot hold the stable launcher indefinitely.
     System::Call 'kernel32::TerminateProcess(p $RelayProbationProcessHandle, i 1) i.r0'

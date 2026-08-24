@@ -334,7 +334,22 @@ function Invoke-StableFallback {
     $launcher = Start-Process -FilePath $launcherPath -PassThru
     Wait-ProcessWithTimeout -Process $launcher -Context 'Stable fallback launch' -TimeoutSeconds 60
     if ($launcher.ExitCode -ne 0) {
-      throw "Stable launcher exited with code $($launcher.ExitCode)."
+      $recoveryFiles = if (Test-Path -LiteralPath $recoveryRoot) {
+        (Get-ChildItem -LiteralPath $recoveryRoot -Force | Select-Object -ExpandProperty Name) -join ','
+      } else {
+        '<missing>'
+      }
+      $stateSummary = if (Test-Path -LiteralPath $statePath) {
+        (Get-Content -LiteralPath $statePath) -join '; '
+      } else {
+        '<missing>'
+      }
+      $probationDiagnostic = if (Test-Path -LiteralPath $probationDiagnosticPath) {
+        (Get-Content -LiteralPath $probationDiagnosticPath) -join '; '
+      } else {
+        '<missing>'
+      }
+      throw "Stable launcher exited with code $($launcher.ExitCode): context=$Context; recoveryFiles=$recoveryFiles; probationDiagnostic=$probationDiagnostic; state=$stateSummary"
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
     while (-not (Test-Path -LiteralPath $exitMarker) -and [DateTime]::UtcNow -lt $deadline) {

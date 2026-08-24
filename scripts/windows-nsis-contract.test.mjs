@@ -282,7 +282,10 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain(
       'CreateProcessW(w "$RelayExecutable", w "$RelayArgs", p 0, p 0, i 0, i 0x04000000',
     );
-    expect(source).toContain("System::Call '*(i 68, p 0, p 0, p 0");
+    expect(source).toContain('System::Alloc 68');
+    expect(source).toContain('Pop $RelayProbationStartupInfo');
+    expect(source).toContain("System::Call '*$RelayProbationStartupInfo(i 68)'");
+    expect(source).not.toContain("System::Call '*(i 68, p 0, p 0, p 0");
     expect(source).not.toContain('ResumeThread');
     expect(source).not.toContain('i 0x00000004');
     expect(source).toContain(
@@ -651,6 +654,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain("$bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'");
     expect(harness).toContain('Boundary bootstrap failure:');
     expect(harness).toContain('probation-diagnostic.ini');
+    expect(harness).toContain('Stable launcher exited with code $($launcher.ExitCode):');
+    expect(harness).toContain('probationDiagnostic=$probationDiagnostic');
     expect(harness).toContain("Get-IniValue -Path $statePath -Key 'previous0'");
     expect(harness).not.toContain("Get-IniValue -Path $statePath -Key 'previous')");
     expect(bootstrap).not.toMatch(/bootstrap-root|install-dir/i);
