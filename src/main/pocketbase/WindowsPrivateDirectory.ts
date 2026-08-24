@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { win32 } from 'node:path';
 
-const WINDOWS_PRIVATE_DIRECTORY_TIMEOUT_MS = 5_000;
+const WINDOWS_PRIVATE_DIRECTORY_TIMEOUT_MS = 15_000;
 
 function getWindowsPowerShellPath(): string {
   const systemRoot = process.env.SystemRoot ?? process.env.windir;

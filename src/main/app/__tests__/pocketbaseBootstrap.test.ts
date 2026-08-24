@@ -722,7 +722,7 @@ describe('pocketbaseBootstrap', () => {
     expect(aclScript).toContain('ObjectInherit');
     expect(aclScript).not.toContain(secret);
     expect(powerShellOptions).toEqual({
-      timeout: 5_000,
+      timeout: 15_000,
       stdio: 'ignore',
       windowsHide: true,
     });
