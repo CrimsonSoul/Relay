@@ -182,6 +182,17 @@
   .release-update-modal__content {
     gap: var(--space-4);
   }
+
+  .release-update-modal__notes {
+    margin-inline: calc(var(--space-4) * -1);
+    padding: var(--space-4);
+  }
+
+  .release-update-modal__notes-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

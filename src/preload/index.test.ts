@@ -53,6 +53,8 @@ describe('preload Knowledge web link bridge', () => {
   it('exposes only dedicated application release actions', async () => {
     expect(api.getAppVersion).toBeTypeOf('function');
     expect(api.checkForUpdates).toBeTypeOf('function');
+    expect(api.getCachedReleaseNotes).toBeTypeOf('function');
+    expect(api.refreshReleaseNotes).toBeTypeOf('function');
     expect(api.getUpdateState).toBeTypeOf('function');
     expect(api.downloadUpdate).toBeTypeOf('function');
     expect(api.cancelUpdateDownload).toBeTypeOf('function');
@@ -63,12 +65,15 @@ describe('preload Knowledge web link bridge', () => {
 
     await api.getAppVersion!();
     await api.checkForUpdates!();
+    await api.getCachedReleaseNotes!();
+    await api.refreshReleaseNotes!();
     await api.getUpdateState!();
     await api.downloadUpdate!();
     await api.cancelUpdateDownload!();
     await api.installUpdate!();
     await api.restartToUpdate!();
     await api.openReleasesPage!();
+    await api.openReleasesPage!('1.1.0');
 
     const callback = vi.fn();
     const unsubscribe = api.onUpdateStateChanged!(callback);
@@ -89,12 +94,15 @@ describe('preload Knowledge web link bridge', () => {
 
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(1, 'app:getVersion');
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(2, 'app:checkForUpdates');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'app:updateGetState');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, 'app:updateDownload');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, 'app:updateCancelDownload');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, 'app:updateInstall');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, 'app:updateRestart');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, 'app:openReleases');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(3, 'app:releaseNotesGetCached');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(4, 'app:releaseNotesRefresh');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, 'app:updateGetState');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, 'app:updateDownload');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, 'app:updateCancelDownload');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, 'app:updateInstall');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(9, 'app:updateRestart');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(10, 'app:openReleases');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(11, 'app:openReleases', '1.1.0');
     expect(callback).toHaveBeenCalledWith(update);
     expect(electronMocks.removeListener).toHaveBeenCalledWith('app:updateStateChanged', handler);
   });
@@ -105,6 +113,22 @@ describe('preload Knowledge web link bridge', () => {
     await api.openServiceDeskUrl(url);
 
     expect(electronMocks.invoke).toHaveBeenCalledWith('shell:openServiceDeskUrl', url);
+  });
+
+  it('exposes bounded recovery state and fixed rollback and repair requests', async () => {
+    const rollback = {
+      targetBuildId: 'r2-previous',
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords -- Synthetic bridge-boundary credential.
+      password: 'Test-access-value-123!',
+    };
+
+    await api.getRecoveryState!();
+    await api.rollbackToRecoveryBuild!(rollback);
+    await api.repairRecoveryBuild!(rollback);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('app:recoveryGetState');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('app:recoveryRollback', rollback);
+    expect(electronMocks.invoke).toHaveBeenCalledWith('app:recoveryRepair', rollback);
   });
 
   it('forwards query-scoped offline cache membership over dedicated channels', async () => {

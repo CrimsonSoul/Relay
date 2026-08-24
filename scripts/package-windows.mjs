@@ -194,11 +194,20 @@ async function compileFixtureRuntime(buildId) {
 }
 
 async function writeBuildDefines(harness) {
-  const buildId = resolveBuildId({ env: process.env, ...readGitState() });
+  const gitState = readGitState();
+  const buildId = resolveBuildId({ env: process.env, ...gitState });
+  const version = process.env.RELAY_RELEASE_VERSION || packageJson.version;
   await mkdir(generatedDir, { recursive: true });
   await writeFile(
     buildDefinesPath,
-    renderBuildDefines({ buildId, launcherFile, harnessRoot: harness?.root }),
+    renderBuildDefines({
+      buildId,
+      launcherFile,
+      version,
+      targetCommitish: gitState.gitSha.toLowerCase(),
+      packagedAt: new Date().toISOString(),
+      harnessRoot: harness?.root,
+    }),
     'utf8',
   );
   await writeFile(buildIdentityPath, `${buildId}\n`, 'utf8');

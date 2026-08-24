@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createReadStream, type Dirent } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, realpath, rm } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   compareRelayVersions,
   type RelayUpdateCheck,
@@ -21,12 +21,19 @@ import type {
   RelayInstallableRelease,
   ReleaseUpdateService,
 } from './ReleaseUpdateService';
+import {
+  isRecoveryBuildRecord,
+  parseRecoveryCatalog,
+  type RecoveryBuildRecord,
+} from './RecoveryCatalog';
+import { writeRecoveryUpdateRequest, type RecoveryUpdateRequest } from './RecoveryUpdateRequest';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const LOWER_HEX_PATTERN = /^[0-9a-f]+$/u;
 const INSTALLER_NAME = 'Relay.exe';
 const PREPARE_ONLY_ARGUMENT = '/relay-prepare-only';
+const RECOVERY_TRANSACTION_ARGUMENT = '/relay-transaction=';
 const ABANDONED_STAGING_AGE_MS = 24 * 60 * 60 * 1_000;
 const DOWNLOAD_RETRY_FAILURES = new Set<RelayUpdateFailureCode>([
   'download-failed',
@@ -57,12 +64,21 @@ export type ReleaseUpdateManagerOptions = {
   extractInstaller?: ExtractInstaller;
   spawnInstaller?: (path: string, args: string[]) => Promise<number | null>;
   createPrivateDirectory?: (path: string) => unknown;
+  getInstallationMode?: () => 'server' | 'client' | 'unconfigured';
+  writeRecoveryRequest?: (
+    relayRoot: string,
+    request: RecoveryUpdateRequest,
+    createPrivateDirectory: (path: string) => unknown | Promise<unknown>,
+  ) => Promise<string>;
+  prepareRecoveryRestart?: (transactionId: string) => Promise<boolean>;
+  now?: () => Date;
   relaunch?: (options: { execPath: string }) => void;
   quit?: () => void;
 };
 
 type StagedUpdate = {
   version: string;
+  targetCommitish: string;
   directory: string;
   installerPath: string;
   installerBytes: number;
@@ -87,6 +103,34 @@ function initialSnapshot(currentVersion: string): RelayUpdateSnapshot {
     totalBytes: null,
     failureCode: null,
   };
+}
+
+function preservesManualUpdateProgress(
+  state: RelayUpdateSnapshot,
+  nextVersion: string | null,
+): boolean {
+  if (state.latestVersion !== nextVersion) return false;
+  if (
+    state.phase === 'downloading' ||
+    state.phase === 'downloaded' ||
+    state.phase === 'installing' ||
+    state.phase === 'ready-to-restart'
+  ) {
+    return true;
+  }
+  return (
+    state.phase === 'error' &&
+    (state.failureCode === 'install-failed' || state.failureCode === 'restart-unavailable')
+  );
+}
+
+function unavailableReason(
+  supportsInstallation: boolean,
+  releaseQuarantined: boolean,
+): RelayUpdateFailureCode | null {
+  if (!supportsInstallation) return 'unsupported';
+  if (releaseQuarantined) return 'release-quarantined';
+  return null;
 }
 
 function isDirectChild(parent: string, child: string, expectedName: string): boolean {
@@ -169,6 +213,64 @@ async function resolveManagedRoot(
   } catch {
     return null;
   }
+}
+
+function readMarkerValues(text: string): Map<string, string> {
+  const values = new Map<string, string>();
+  let inRelaySection = false;
+  for (const rawLine of text.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('[') && line.endsWith(']')) {
+      inRelaySection = line === '[Relay]';
+      continue;
+    }
+    if (!inRelaySection) continue;
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (!values.has(key)) values.set(key, value);
+  }
+  return values;
+}
+
+async function readCurrentRecoveryBuild(
+  execPath: string,
+  currentVersion: string,
+  observedAt: string,
+): Promise<RecoveryBuildRecord> {
+  const runtimeDirectory = dirname(execPath);
+  const buildId = runtimeDirectory.slice(runtimeDirectory.lastIndexOf(sep) + 1);
+  const marker = readMarkerValues(
+    await readFile(join(runtimeDirectory, '.relay-runtime-ready'), 'utf8'),
+  );
+  const recoveryProtocol = Number(marker.get('protocol'));
+  const serverDataEpoch = Number(marker.get('serverDataEpoch') ?? '1');
+  const clientDataEpoch = Number(marker.get('clientDataEpoch') ?? '1');
+  const inferredCommit = /^r\d+-([0-9a-f]{40})$/u.exec(buildId)?.[1] ?? '';
+  const record: RecoveryBuildRecord = {
+    buildId,
+    version: currentVersion,
+    releaseTag: `v${currentVersion}`,
+    targetCommitish: marker.get('targetCommitish') ?? inferredCommit,
+    runtimeSha512: marker.get('payloadHash') ?? '',
+    installerSha256: marker.get('installerSha256') || null,
+    recoveryProtocol,
+    serverDataEpoch,
+    clientDataEpoch,
+    installedAt: marker.get('installedAt') ?? observedAt,
+    health: 'healthy',
+    rollbackSnapshotId: null,
+  };
+  if (
+    marker.get('buildId') !== buildId ||
+    marker.get('executable') !== INSTALLER_NAME ||
+    !isRecoveryBuildRecord(record)
+  ) {
+    throw new Error('Current Relay runtime did not have verified recovery metadata');
+  }
+  return record;
 }
 
 function spawnInstallerAndWait(path: string, args: string[]): Promise<number | null> {
@@ -267,6 +369,7 @@ export class ReleaseUpdateManager {
   private restartPromise: Promise<boolean> | null = null;
   private noteCheckPromise: Promise<RelayUpdateSnapshot> | null = null;
   private initializationPromise: Promise<void> | null = null;
+  private recoveryTransactionId: string | null = null;
 
   constructor(options: ReleaseUpdateManagerOptions) {
     this.options = {
@@ -281,6 +384,10 @@ export class ReleaseUpdateManager {
       extractInstaller: options.extractInstaller ?? extractVerifiedRelayInstaller,
       spawnInstaller: options.spawnInstaller ?? spawnInstallerAndWait,
       createPrivateDirectory: options.createPrivateDirectory ?? createWindowsPrivateDirectory,
+      getInstallationMode: options.getInstallationMode ?? (() => 'unconfigured'),
+      writeRecoveryRequest: options.writeRecoveryRequest ?? writeRecoveryUpdateRequest,
+      prepareRecoveryRestart: options.prepareRecoveryRestart ?? (async () => true),
+      now: options.now ?? (() => new Date()),
       relaunch: options.relaunch ?? (() => undefined),
       quit: options.quit ?? (() => undefined),
     };
@@ -318,32 +425,29 @@ export class ReleaseUpdateManager {
     }
     if (this.staged && this.staged.version !== nextVersion) await this.clearStagedUpdate();
 
-    const preservesManualProgress =
-      this.state.latestVersion === nextVersion &&
-      (this.state.phase === 'downloading' ||
-        this.state.phase === 'downloaded' ||
-        this.state.phase === 'installing' ||
-        this.state.phase === 'ready-to-restart' ||
-        (this.state.phase === 'error' &&
-          (this.state.failureCode === 'install-failed' ||
-            this.state.failureCode === 'restart-unavailable')));
-    if (check.updateAvailable && preservesManualProgress) return this.snapshot();
+    if (check.updateAvailable && preservesManualUpdateProgress(this.state, nextVersion)) {
+      return this.snapshot();
+    }
 
     if (!check.updateAvailable) {
       this.publish(initialSnapshot(check.currentVersion));
       return this.snapshot();
     }
 
-    const supportsInstallation = Boolean(await this.supportedManagedRoot());
+    const managedRoot = await this.supportedManagedRoot();
+    const supportsInstallation = Boolean(managedRoot);
+    const releaseQuarantined = managedRoot
+      ? await this.isReleaseQuarantined(managedRoot, check.latestVersion)
+      : false;
 
     this.publish({
       phase: 'available',
       currentVersion: check.currentVersion,
       latestVersion: check.latestVersion,
-      installable: check.installable && supportsInstallation,
+      installable: check.installable && supportsInstallation && !releaseQuarantined,
       downloadedBytes: 0,
       totalBytes: check.assetSizeBytes,
-      failureCode: supportsInstallation ? null : 'unsupported',
+      failureCode: unavailableReason(supportsInstallation, releaseQuarantined),
     });
     return this.snapshot();
   }
@@ -406,6 +510,7 @@ export class ReleaseUpdateManager {
 
     const staged = this.staged;
     this.publish({ ...this.state, phase: 'installing', failureCode: null });
+    let requestPath: string | null = null;
     try {
       await this.validateStagedInstaller(staged);
     } catch {
@@ -414,14 +519,46 @@ export class ReleaseUpdateManager {
     }
 
     try {
+      const managedRoot = await this.supportedManagedRoot();
+      if (!managedRoot) return this.fail('unsupported');
+      const transactionId = randomUUID();
+      const requestedAt = this.options.now().toISOString();
+      const request: RecoveryUpdateRequest = {
+        protocol: 2,
+        transactionId,
+        source: await readCurrentRecoveryBuild(
+          this.options.execPath,
+          this.options.getCurrentVersion(),
+          requestedAt,
+        ),
+        targetVersion: staged.version,
+        targetCommitish: staged.targetCommitish,
+        targetInstallerSha256: staged.installerSha256,
+        mode: this.options.getInstallationMode(),
+        checkpoint: 'pending',
+        snapshotId: null,
+        requestedAt,
+      };
+      requestPath = await this.options.writeRecoveryRequest(
+        managedRoot.root,
+        request,
+        this.options.createPrivateDirectory,
+      );
       const exitCode = await this.options.spawnInstaller(staged.installerPath, [
         PREPARE_ONLY_ARGUMENT,
+        `${RECOVERY_TRANSACTION_ARGUMENT}${transactionId}`,
       ]);
-      if (exitCode !== 0) return this.fail('install-failed');
+      if (exitCode !== 0) {
+        await rm(requestPath, { force: true }).catch(() => undefined);
+        return this.fail('install-failed');
+      }
+      this.recoveryTransactionId = transactionId;
       await this.clearStagedUpdate();
       this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
       return this.snapshot();
     } catch {
+      if (requestPath) await rm(requestPath, { force: true }).catch(() => undefined);
+      this.recoveryTransactionId = null;
       return this.fail('install-failed');
     }
   }
@@ -453,6 +590,13 @@ export class ReleaseUpdateManager {
       this.fail('restart-unavailable');
       return false;
     }
+    if (
+      !this.recoveryTransactionId ||
+      !(await this.options.prepareRecoveryRestart(this.recoveryTransactionId))
+    ) {
+      this.fail('restart-unavailable');
+      return false;
+    }
 
     this.options.relaunch({ execPath: managedRoot.stableLauncher });
     this.options.quit();
@@ -461,6 +605,7 @@ export class ReleaseUpdateManager {
 
   private async performDownload(controller: AbortController): Promise<RelayUpdateSnapshot> {
     await this.initialize();
+    if (this.state.failureCode === 'release-quarantined') return this.snapshot();
     if (controller.signal.aborted) return this.restoreAvailableAfterCancellation();
     const managedRoot = await this.supportedManagedRoot();
     if (controller.signal.aborted) return this.restoreAvailableAfterCancellation();
@@ -592,6 +737,7 @@ export class ReleaseUpdateManager {
       }
       return {
         version: release.version,
+        targetCommitish: release.targetCommitish,
         directory,
         installerPath,
         installerBytes: installer.bytes,
@@ -613,6 +759,29 @@ export class ReleaseUpdateManager {
       return null;
     }
     return resolveManagedRoot(this.options.localAppData, this.options.execPath);
+  }
+
+  private async isReleaseQuarantined(managedRoot: ManagedRoot, version: string): Promise<boolean> {
+    const statePath = join(managedRoot.realRoot, 'state.ini');
+    try {
+      const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
+      if (
+        !stats.isFile() ||
+        stats.isSymbolicLink() ||
+        stats.size > 128 * 1_024 ||
+        !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
+      ) {
+        return false;
+      }
+      const catalog = parseRecoveryCatalog(await readFile(resolvedStatePath, 'utf8'));
+      return (
+        catalog?.failedReleaseFingerprints.some((fingerprint) =>
+          fingerprint.startsWith(`v${version}@`),
+        ) ?? false
+      );
+    } catch {
+      return false;
+    }
   }
 
   private async cleanupAbandonedStaging(): Promise<void> {

@@ -200,6 +200,21 @@ describe('processLifecycle', () => {
     expect(win.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
   });
 
+  it('does not reload or relaunch after GPU failures during supervised probation', async () => {
+    const { setupAppLifecycleListeners } = await import('../processLifecycle');
+    const win = createMockWindow();
+    mocks.mockBrowserWindow.getAllWindows.mockReturnValue([win]);
+
+    setupAppLifecycleListeners({ allowRecovery: false });
+    mocks.appHandlers.get('child-process-gone')?.({}, { type: 'GPU', reason: 'crashed' });
+    mocks.appHandlers.get('child-process-gone')?.({}, { type: 'GPU', reason: 'crashed' });
+    mocks.appHandlers.get('child-process-gone')?.({}, { type: 'GPU', reason: 'crashed' });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(win.webContents.reloadIgnoringCache).not.toHaveBeenCalled();
+    expect(mocks.requestAppRelaunch).not.toHaveBeenCalled();
+  });
+
   it('requests a recorded relaunch after repeated GPU process failures', async () => {
     const { setupAppLifecycleListeners } = await import('../processLifecycle');
 

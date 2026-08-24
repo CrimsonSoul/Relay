@@ -105,4 +105,21 @@ describe('errorHandlers', () => {
     expect(mocks.requestAppQuit).toHaveBeenCalledWith('fatal-main-process-error-e2e');
     expect(process.exitCode).toBe(1);
   });
+
+  it('fails launcher-supervised probation without spawning an app relaunch', async () => {
+    const { setupErrorHandlers } = await import('../errorHandlers');
+    setupErrorHandlers({
+      platform: 'win32',
+      isPackaged: true,
+      nodeEnv: 'production',
+      allowAutoRelaunch: false,
+      suppressDesktopSideEffects: true,
+    });
+
+    processHandlers.get('uncaughtException')?.(new Error('probation failed'), 'uncaughtException');
+
+    expect(mocks.requestAppRelaunch).not.toHaveBeenCalled();
+    expect(mocks.requestAppQuit).toHaveBeenCalledWith('fatal-main-process-error-e2e');
+    expect(process.exitCode).toBe(1);
+  });
 });

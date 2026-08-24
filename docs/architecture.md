@@ -146,6 +146,15 @@ notification discovery separate from installability: installation additionally r
 immutable flag, the exact versioned ZIP and checksum assets, uploaded state, bounded sizes, GitHub
 SHA-256 digests, fixed asset API URLs, and a 40-character target commit.
 
+The same validated response retains the release title, Markdown body, publication time, version,
+and immutable state for the in-app release-notes reader. Settings reads a schema-validated,
+atomically written `release-notes.json` cache from the Electron user-data directory before starting
+a background refresh of GitHub's fixed release-history endpoint. The cache holds at most ten stable
+releases, bounds every field and the complete response, preserves immutable entries by version, and
+persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again.
+An offline or malformed refresh leaves the last valid cache readable and cannot affect update
+discovery or installation.
+
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **Review
 update** action. The validated latest version also drives a non-dismissible header indicator that
@@ -154,7 +163,9 @@ Restart as the operator progresses. A failed refresh does not clear a previously
 and a same-version check cannot overwrite a download or restart-ready state.
 
 The **Update Relay** dialog is the only renderer workflow. Its fixed preload actions carry no URL,
-path, filename, version, or command argument from the renderer. `ReleaseUpdateManager` owns the
+path, filename, or command argument from the renderer. Its release-review action may carry only a
+validated normal version, which the main process expands beneath Relay's fixed Releases URL.
+`ReleaseUpdateManager` owns the
 state machine and requires separate **Download update**, **Install update**, and **Restart Relay**
 requests. Unsupported or unpackaged desktop runtimes retain notification-only GitHub review and do
 not expose an enabled install action. The downloader re-fetches the release before use, follows at
@@ -179,6 +190,48 @@ failures appear inside the dialog or as a recovery toast. Relay Web has none of 
 download, install, restart, notification, or indicator capabilities. The GitHub immutable release
 and protected release workflow are the update trust root; the downloaded bootstrap does not have an
 independent publisher signature.
+
+### Windows retained-build recovery
+
+Packaged Windows x64 installations use the stable `%LOCALAPPDATA%\Relay\Relay.exe` launcher as a
+native recovery supervisor. Recovery protocol 2 stores one current runtime, one temporary update
+candidate, and the three most recently healthy runtimes under `%LOCALAPPDATA%\Relay\Runtime`.
+`state.ini` binds every retained build to its version, immutable release tag and commit, runtime
+SHA-512, installer SHA-256 when known, data-compatibility epochs, install time, health, and server
+snapshot. The launcher starts a runtime only when its marker matches that catalog identity and the
+path remains inside the managed runtime root.
+
+An update becomes a recovery transaction before Relay restarts. Server mode first stops
+PocketBase and server-owned services, then copies the stopped `data` directory into a complete,
+privately permissioned snapshot under the Electron user-data `RecoverySnapshots` directory. Client
+mode checkpoints both local SQLite stores so the cache and pending mutation queue remain intact.
+The launcher then starts the candidate in a restricted probation run: Relay must finish local
+startup, mount the renderer, keep the relevant local data plane healthy for at least 60 seconds,
+and write a transaction-bound receipt. PocketBase is placed in a Windows kill-on-close Job Object
+and automatic app/process recovery is disabled during probation so a crash reaches the supervisor.
+
+A healthy candidate is promoted atomically and the former current build becomes the newest retained
+rollback target. A failed, exited, or wedged candidate gets at most two probation attempts. The
+launcher restores the stopped pre-update server snapshot when applicable, removes the candidate
+from the catalog, resumes the prior current runtime, and quarantines that exact `tag@commit`
+fingerprint from in-app installation until a different release is published. Old runtime and
+snapshot directories are removed only when they are not referenced by the strict catalog and no
+update or recovery request is active.
+
+**Settings > About > Recovery** shows retained health and offers Owner-only repair or rollback after
+a fresh password check. A manual server rollback first snapshots the build being left, then swaps
+in the selected build's saved server data; a later rollback can therefore move in either direction.
+Client rollback changes the runtime only and preserves its checkpointed cache and pending changes.
+Rollbacks are allowed only when both server and client data epochs match. If a retained runtime is
+missing, repair resolves that exact immutable GitHub tag and 40-character commit, repeats the normal
+archive and checksum verification, and lets the matching historical bootstrap restore only that
+runtime; it does not change active data or the recovery catalog.
+
+The Start-menu **Relay Recovery** shortcut tries retained healthy builds before the catalog's
+current build and opens the Recovery screen. Normal launcher startup also falls back to a retained
+build with that screen when the current runtime cannot be started. If no catalog-bound runtime can
+run, the native launcher opens Relay's fixed published Releases page, so recovery does not depend on
+the Electron renderer being healthy.
 
 ### Windows workstation keep-awake
 

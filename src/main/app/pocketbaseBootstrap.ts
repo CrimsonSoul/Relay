@@ -584,15 +584,24 @@ type ManagedPocketBaseProcessConfig = Readonly<{
   hooksDir: string;
   host: string;
   port: number;
+  restartOnCrash?: boolean;
+  useWindowsJobObject?: boolean;
 }>;
 
-function createManagedPocketBaseProcess(config: ManagedPocketBaseProcessConfig): PocketBaseProcess {
+function createManagedPocketBaseProcess(
+  config: ManagedPocketBaseProcessConfig,
+  onCrash?: (error: string) => void,
+): PocketBaseProcess {
   const processInstance = new PocketBaseProcess(config);
   processInstance.onCrash((error) => {
     loggers.pocketbase.error('PocketBase crashed', { error });
     // Notify all renderer windows immediately so they can show an error
     // state without waiting for the next health check poll.
     broadcastToAllWindows(IPC_CHANNELS.PB_CRASHED, { error });
+    if (onCrash) {
+      onCrash(error);
+      return;
+    }
     requestAppRelaunch('pocketbase-crash-loop', { exitCode: 1 });
   });
   return processInstance;
@@ -681,6 +690,8 @@ export type PocketBaseStartOptions = Readonly<{
   onHealthy?: () => void;
   onCredentialsReady?: () => void;
   onSchemaReady?: () => void;
+  restartOnCrash?: boolean;
+  onCrash?: (error: string) => void;
 }>;
 
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
@@ -744,15 +755,20 @@ const doStartPocketBase = async (
       dataDir: pbDataDir,
       hooksDir,
       port: serverConfig.port,
+      restartOnCrash: options.restartOnCrash,
+      useWindowsJobObject: process.platform === 'win32' && app.isPackaged,
     };
     const startContext: PocketBaseStartContext = { binaryPath, port: serverConfig.port };
 
     // Apply the authoritative PocketBase rate policy while bound to loopback.
     // A LAN listener is created only after that policy has been persisted.
-    let pbProcess = createManagedPocketBaseProcess({
-      ...processConfig,
-      host: '127.0.0.1',
-    });
+    let pbProcess = createManagedPocketBaseProcess(
+      {
+        ...processConfig,
+        host: '127.0.0.1',
+      },
+      options.onCrash,
+    );
     managedPbProcess = pbProcess;
     setPbProcess(pbProcess);
 
@@ -772,10 +788,13 @@ const doStartPocketBase = async (
     await enforcePocketBaseAuthRateLimit(pb, pbProcess);
     if (serverConfig.bindHost !== '127.0.0.1') {
       await pbProcess.stop();
-      pbProcess = createManagedPocketBaseProcess({
-        ...processConfig,
-        host: serverConfig.bindHost,
-      });
+      pbProcess = createManagedPocketBaseProcess(
+        {
+          ...processConfig,
+          host: serverConfig.bindHost,
+        },
+        options.onCrash,
+      );
       managedPbProcess = pbProcess;
       setPbProcess(pbProcess);
       await startManagedProcess(pbProcess, startContext);

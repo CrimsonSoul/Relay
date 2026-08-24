@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { RelayUpdateCheck, RelayUpdateSnapshot } from '@shared/releases';
+import type { RelayReleaseNotes, RelayUpdateCheck, RelayUpdateSnapshot } from '@shared/releases';
 import { useToast } from './Toast';
 import { TactileButton } from './TactileButton';
 import { ReleaseUpdateModal } from './ReleaseUpdateModal';
@@ -89,6 +89,7 @@ function supportsManualUpdateFlow(): boolean {
 export function ReleaseUpdateNotificationManager() {
   const { showToast } = useToast();
   const [update, setUpdate] = useState<RelayUpdateSnapshot | null>(null);
+  const [releaseNotes, setReleaseNotes] = useState<RelayReleaseNotes | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const lastNotifiedVersionRef = useRef<string | null>(readLastNotifiedVersion());
   const openingRef = useRef(false);
@@ -96,20 +97,23 @@ export function ReleaseUpdateNotificationManager() {
   const cancelActionRef = useRef(false);
   const mountedRef = useRef(true);
 
-  const handleOpenReleases = useCallback(async () => {
-    if (openingRef.current) return;
-    openingRef.current = true;
-    try {
-      const opened = await globalThis.api?.openReleasesPage?.();
-      if (!opened) throw new Error('Release page did not open');
-    } catch {
-      showToast('Could not open GitHub Releases. Check your connection and try again.', 'error', {
-        title: 'Release page unavailable',
-      });
-    } finally {
-      openingRef.current = false;
-    }
-  }, [showToast]);
+  const handleOpenReleases = useCallback(
+    async (version?: string) => {
+      if (openingRef.current) return;
+      openingRef.current = true;
+      try {
+        const opened = await globalThis.api?.openReleasesPage?.(version);
+        if (!opened) throw new Error('Release page did not open');
+      } catch {
+        showToast('Could not open GitHub Releases. Check your connection and try again.', 'error', {
+          title: 'Release page unavailable',
+        });
+      } finally {
+        openingRef.current = false;
+      }
+    },
+    [showToast],
+  );
 
   const handleReviewUpdate = useCallback(() => {
     if (supportsManualUpdateFlow()) {
@@ -128,9 +132,12 @@ export function ReleaseUpdateNotificationManager() {
       if (!mountedRef.current || !next) return;
       if (!next.updateAvailable) {
         setUpdate(null);
+        setReleaseNotes(null);
         setIsModalOpen(false);
         return;
       }
+
+      setReleaseNotes(next.releaseNotes);
 
       const fallback = advisorySnapshot(next);
       setUpdate((current) => {
@@ -282,13 +289,14 @@ export function ReleaseUpdateNotificationManager() {
       <ReleaseUpdateModal
         isOpen={isModalOpen}
         update={update}
+        releaseNotes={releaseNotes}
         onClose={() => setIsModalOpen(false)}
         onDownload={handleDownload}
         onCancelDownload={() => void handleCancelDownload()}
         onInstall={handleInstall}
         onRestart={() => void handleRestart()}
         onCheckAgain={() => void checkForRelease()}
-        onOpenReleases={() => void handleOpenReleases()}
+        onOpenReleases={() => void handleOpenReleases(update.latestVersion ?? undefined)}
       />
     </>
   );

@@ -1,6 +1,8 @@
 import { app, ipcMain, shell } from 'electron';
+import { join } from 'node:path';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import {
+  compareRelayVersions,
   RELAY_RELEASES_URL,
   type RelayUpdateCheck,
   type RelayUpdateSnapshot,
@@ -8,11 +10,13 @@ import {
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
 import { shouldSuppressDesktopSideEffects } from '../app/e2eSafety';
+import { getAppConfig } from '../app/appState';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { RelayInstallableRelease } from '../releases/ReleaseUpdateService';
+import type { ReleaseNotesProvider } from './releaseNotesHandlers';
 
-type ReleaseUpdateChecker = {
+type ReleaseUpdateChecker = ReleaseNotesProvider & {
   check: () => Promise<RelayUpdateCheck>;
 };
 
@@ -54,7 +58,13 @@ function authoritativeCheck(
     updateAvailable: true,
     installable: snapshot.installable,
     assetSizeBytes: snapshot.totalBytes,
+    releaseNotes: fallback.releaseNotes,
   };
+}
+
+async function prepareProductionRecoveryRestart(transactionId: string): Promise<boolean> {
+  const recovery = await import('../releases/productionRecoveryRestart');
+  return recovery.prepareProductionRecoveryRestart(transactionId);
 }
 
 export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions = {}): void {
@@ -64,7 +74,10 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
   const getService = () => {
     servicePromise ??= import('../releases/ReleaseUpdateService').then(
       ({ ReleaseUpdateService }) =>
-        new ReleaseUpdateService({ getCurrentVersion: () => app.getVersion() }),
+        new ReleaseUpdateService({
+          getCurrentVersion: () => app.getVersion(),
+          cacheFilePath: join(app.getPath('userData'), 'release-notes.json'),
+        }),
     );
     return servicePromise;
   };
@@ -94,6 +107,8 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
           isPackaged: app.isPackaged,
           localAppData: process.env.LOCALAPPDATA ?? '',
           execPath: process.execPath,
+          getInstallationMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
+          prepareRecoveryRestart: prepareProductionRecoveryRestart,
           relaunch: (relaunchOptions) => app.relaunch(relaunchOptions),
           quit: () => app.quit(),
         });
@@ -128,6 +143,14 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         return { success: false, error: 'unavailable' };
       }
     },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.APP_RELEASE_NOTES_GET_CACHED, async (event) =>
+    (await import('./releaseNotesHandlers')).getCachedReleaseNotes(event, getService),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.APP_RELEASE_NOTES_REFRESH, async (event) =>
+    (await import('./releaseNotesHandlers')).refreshReleaseNotes(event, getService),
   );
 
   ipcMain.handle(
@@ -224,17 +247,27 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.APP_OPEN_RELEASES, async (event): Promise<boolean> => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_OPEN_RELEASES)) return false;
-    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
-    if (shouldSuppressDesktopSideEffects()) return true;
+  ipcMain.handle(
+    IPC_CHANNELS.APP_OPEN_RELEASES,
+    async (event, version?: unknown): Promise<boolean> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_OPEN_RELEASES)) return false;
+      if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
+      let releaseUrl = RELAY_RELEASES_URL;
+      if (version !== undefined) {
+        if (typeof version !== 'string' || compareRelayVersions(version, version) === null) {
+          return false;
+        }
+        releaseUrl = `${RELAY_RELEASES_URL}/tag/v${version}`;
+      }
+      if (shouldSuppressDesktopSideEffects()) return true;
 
-    try {
-      await shell.openExternal(RELAY_RELEASES_URL);
-      return true;
-    } catch (error) {
-      loggers.security.error('Could not open the Relay releases page', { error });
-      return false;
-    }
-  });
+      try {
+        await shell.openExternal(releaseUrl);
+        return true;
+      } catch (error) {
+        loggers.security.error('Could not open the Relay releases page', { error });
+        return false;
+      }
+    },
+  );
 }

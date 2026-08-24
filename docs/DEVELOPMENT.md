@@ -86,6 +86,34 @@ separate manual actions: **Download update**, **Install update**, and **Restart 
 downloads, executes, or restarts from a release check alone. Mutable or malformed releases remain
 reviewable on the fixed GitHub Releases page but are not installable.
 
+The update dialog also renders the validated latest-release notes. **Settings > About** reads up to
+ten stable releases from the persistent desktop cache immediately, then refreshes the fixed GitHub
+history endpoint in the background. Conditional ETag requests avoid downloading an unchanged
+history; immutable cached notes are never replaced. Cached notes remain available offline, while a
+first-load failure offers an explicit retry and does not affect updater actions.
+
+Packaged Windows x64 updates also participate in retained-build recovery. The stable launcher keeps
+the current runtime plus the three most recently promoted runtimes. Before restart, server mode
+stops PocketBase and takes a complete data snapshot; client mode checkpoints its local cache and
+pending-change databases. The candidate must complete a 60-second supervised health probation
+before promotion. A failed candidate is removed, the server snapshot is restored when applicable,
+the prior runtime resumes, and that exact immutable release fingerprint is quarantined from another
+in-app install attempt.
+
+**Settings > About > Recovery** is the normal operator surface. Only a freshly reauthenticated Owner
+can roll back or repair. A server rollback snapshots the version being left before restoring the
+selected version's snapshot, while client rollback preserves the cache and pending queue. Data epoch
+mismatches block rollback. A missing retained runtime can be rebuilt from only its exact immutable
+GitHub tag and full commit; repair does not alter current data or select the repaired build. The
+Start-menu **Relay Recovery** shortcut and automatic launcher fallback open this same screen from a
+verified retained runtime when the current runtime cannot start.
+
+A new installation establishes a recovery baseline with no predecessors. An installation upgraded
+from legacy launcher state establishes the protocol-2 baseline during its first subsequent in-app
+update, using the executing recovery-capable runtime as the only initial predecessor; an older
+runtime without complete recovery identity is never guessed into the catalog. Therefore rollback
+choices appear only after at least one recovery-aware update has passed probation.
+
 The first release containing this updater must still be downloaded and installed manually by users
 running an older build. Subsequent compatible releases can use the in-app flow. Relay Web does not
 receive the desktop updater bridge. A failed or malformed GitHub response remains silent so update
@@ -96,7 +124,12 @@ Focused renderer coverage for this flow must verify the dynamic release label, l
 replacement, persistence after a failed refresh, one notification per version, the recoverable
 open-release error, malformed-success handling, desktop-only rendering, the three manual actions,
 download progress and cancellation, immutable-release refusal, wide and compact-shell label
-variants, and 400 px minimum-width geometry with the Windows window-control reservation.
+variants, structured release-note rendering, cached/offline history states, and 400 px minimum-width
+geometry with the Windows window-control reservation. Recovery coverage must also exercise strict
+catalog/request parsing, current-plus-three rotation, stopped server snapshots, client WAL
+checkpoints, probation success and failure, PocketBase Job Object containment, native promotion and
+restore contracts, Owner reauthentication, incompatible or missing rollback targets, exact-tag
+repair, fallback-runtime UI, and transaction-aware runtime/snapshot cleanup.
 
 Release runs queue instead of cancelling one another. A rerun treats a release attached to the exact
 commit as complete only when the ZIP and checksum are both present, their uploaded metadata and
@@ -504,6 +537,14 @@ npm run test:knowledge-upload-soak
 stale `dist` tree. Test-mode Electron windows remain native-hidden and unfocused; on macOS the test
 process also uses accessory activation policy so the suite does not take over the interactive
 desktop. Run the command through npm so its native-module ABI restoration always executes.
+
+Changes to the Windows bootstrap, stable launcher, retained-runtime metadata, rollback, or repair
+path also require `npm run build:win`. The local package script compiles both NSIS executables,
+produces the Windows package for target-binary inspection, and restores the host `better-sqlite3`
+module afterward. The Windows CI package job additionally exercises the persistent-bootstrap
+boundary harness. Unit and source-contract tests are valuable on macOS, but only that Windows job
+and a packaged Windows smoke test exercise the actual native process supervisor, Job Object,
+shortcut, snapshot swap, and probation lifecycle together.
 
 `npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 

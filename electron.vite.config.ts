@@ -65,6 +65,13 @@ function rendererManualChunk(id: string): string | undefined {
 function mainManualChunk(id: string): string | undefined {
   const normalizedId = id.replaceAll('\\', '/');
   if (
+    normalizedId.endsWith('/src/main/app/startupState.ts') ||
+    normalizedId.endsWith('/src/main/releases/RecoveryLaunchIntent.ts') ||
+    normalizedId.endsWith('/src/main/releases/RecoveryProbationArgument.ts')
+  ) {
+    return 'startup-state';
+  }
+  if (
     normalizedId.endsWith('/src/main/power/WorkstationAwakeManager.ts') ||
     normalizedId.endsWith('/src/main/power/WorkstationAwakeService.ts') ||
     normalizedId.endsWith('/src/main/power/windowsInputPulse.ts') ||

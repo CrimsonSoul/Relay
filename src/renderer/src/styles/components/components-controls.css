@@ -247,6 +247,101 @@
   background: var(--accent);
 }
 
+.release-update-modal__notes {
+  display: grid;
+  gap: var(--space-4);
+  margin-inline: calc(var(--space-5) * -1);
+  padding: var(--space-5);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--accent) 4%, var(--color-bg-surface));
+}
+
+.release-update-modal__notes-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.release-update-modal__notes-heading h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+}
+
+.release-update-modal__notes-heading time {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.release-update-modal__notes-content {
+  max-height: 250px;
+  padding-right: var(--space-2);
+  overflow-y: auto;
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.release-update-modal__notes-unavailable {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.release-notes-content {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.release-notes-content > :first-child {
+  margin-top: 0;
+}
+
+.release-notes-content > :last-child {
+  margin-bottom: 0;
+}
+
+.release-notes-content h4 {
+  margin: var(--space-5) 0 var(--space-2);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+}
+
+.release-notes-content p,
+.release-notes-content ul,
+.release-notes-content ol {
+  max-width: 72ch;
+  margin: 0 0 var(--space-3);
+}
+
+.release-notes-content ul,
+.release-notes-content ol {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+}
+
+.release-notes-content li::marker {
+  color: var(--accent-bright);
+}
+
+.release-notes-content code {
+  padding: 1px 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: 0.92em;
+}
+
 .release-update-modal__trust {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);

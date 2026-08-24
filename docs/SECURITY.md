@@ -164,8 +164,63 @@ immutable release and its protected workflow provide integrity and provenance wi
 root, but they do not provide Authenticode publisher identity if GitHub or the release authority is
 compromised. Keep repository protections and release immutability enabled, review the fixed GitHub
 release when in doubt, and do not describe this path as equivalent to a publisher-signed updater.
-Opening release details continues to use the fixed Relay Releases URL through a rate-limited IPC
-handler.
+Release-note bodies are bounded and schema-validated in the main process, persisted atomically with
+owner-only file permissions, and rendered as React text nodes through a small Markdown subset; raw
+GitHub HTML and arbitrary links are never injected. Opening release details continues to use a
+rate-limited IPC handler. The renderer may supply only an optional normal semantic version, which
+the main process validates before appending it to the fixed Relay Releases URL.
+
+### Retained Runtime And Rollback Safety
+
+Recovery is limited to packaged Windows x64 Relay. The stable native launcher and bootstrap own all
+runtime selection, catalog mutation, candidate promotion, server-data restoration, and fallback
+launching; the renderer cannot supply an executable, path, URL, command line, release tag, or commit.
+The protocol-2 catalog is strict and bounded: it accepts only the current build, at most three
+healthy predecessors, and one transaction-bound candidate. Unknown sections, duplicate keys,
+invalid IDs, malformed hashes or timestamps, inconsistent health, incompatible data epochs, and
+unreferenced build records invalidate recovery rather than widening the trusted set.
+
+Runtime roots, recovery metadata, repair staging, and server snapshots are re-resolved beneath their
+fixed app-owned parents. Relay rejects symbolic links, reparse points, non-direct children, changed
+executables, and incomplete markers. A runtime marker must agree with the catalog on build ID,
+SHA-512, version, tag, full commit, recovery protocol, and server/client data epochs. Catalog and
+request updates use private directories plus write-then-rename activation; the native launcher
+serializes mutation with a no-sharing lock. Cleanup fails closed when the catalog, roots, marker, or
+transaction state cannot be proved and never deletes a referenced runtime or snapshot.
+
+Server snapshots are taken only after PocketBase and server-owned services stop. Relay rejects
+redirected or unsupported entries, scans the source and copy, requires free space for twice the data
+size plus a 512 MiB margin, writes the completion marker last, and atomically activates the snapshot
+directory. Native restoration validates the transaction and source identity, journals the swap, and
+keeps the displaced live directory until the authoritative snapshot has become live. Client mode
+does not rewind shared server state; it closes successfully checkpointed local cache and pending
+mutation databases before the runtime transition. A rollback is blocked when either data epoch
+differs.
+
+Candidate health is established by the stable launcher, not by the candidate declaring itself
+current. The candidate receipt is accepted only for the active transaction after renderer mount,
+local startup completion, and 60 seconds of relevant data-plane health. The native supervisor uses
+a bounded process wait and at most two attempts. During probation Relay disables its normal crash
+watchdog, window reload, and process auto-relaunch behavior; packaged Windows PocketBase runs in a
+kill-on-close Job Object so a failed candidate cannot leave the embedded server behind. A failed
+candidate's exact immutable `tag@commit` fingerprint is suppressed by future update checks rather
+than suppressing an unrelated later release with the same version comparison context.
+
+Reading recovery state still requires trusted-sender IPC. Repair and rollback additionally require
+an active Owner session, fresh password reauthentication, bounded validated input, and the shared
+reauthentication rate limiter; GitHub repair also consumes the network-action limit. Repair resolves
+the exact retained version and full commit from the fixed Relay repository, requires an immutable
+release and the normal ZIP/checksum/digest checks, and asks that historical bootstrap to recreate
+only its matching catalog-bound runtime. If the saved installer hash is known, it must match too.
+The bootstrap receipt is bound to the transaction, build, version, commit, runtime hash, and installer
+hash. Repair never promotes a build, changes current data, replaces the stable launcher, or rewrites
+the catalog.
+
+The native Recovery shortcut prefers retained builds and the normal launcher falls back to them when
+the current runtime is unusable, keeping the recovery screen reachable when the current Electron
+bundle is broken. If no validated runtime starts, only the fixed Relay Releases URL is opened. This
+fallback inherits the release trust limitation above: releases are immutable and digest-verified,
+but not independently Authenticode-signed.
 
 ### External Dashboard Popouts
 

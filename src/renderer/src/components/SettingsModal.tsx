@@ -44,6 +44,7 @@ type Props = {
   onReconfigure?: () => void;
   dynatrace?: DynatraceSettingsProps;
   presentation?: 'modal' | 'page';
+  initialSection?: SettingsSectionId;
 };
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
@@ -612,10 +613,11 @@ const SettingsModalContent: React.FC<Props> = ({
   onReconfigure,
   dynatrace,
   presentation = 'modal',
+  initialSection = 'appearance',
 }) => {
   const { session: privilegedSession } = usePrivilegedAccess();
   const { relayMode, loading: relayConfigLoading } = useRelayConfiguration();
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection);
   const settingsSections = useMemo(
     () =>
       SETTINGS_SECTIONS.filter((section) => {

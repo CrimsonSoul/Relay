@@ -1,5 +1,12 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { RELAY_LATEST_RELEASE_API_URL } from '@shared/releases';
+import {
+  relayReleaseByTagApiUrl,
+  RELAY_LATEST_RELEASE_API_URL,
+  RELAY_RELEASE_HISTORY_API_URL,
+} from '@shared/releases';
 import { ReleaseUpdateService } from './ReleaseUpdateService';
 
 const COMMIT_SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -145,6 +152,181 @@ describe('ReleaseUpdateService', () => {
       updateAvailable: true,
       installable: true,
       assetSizeBytes: 140_000_000,
+      releaseNotes: {
+        version: '1.1.0',
+        title: 'Relay v1.1.0',
+        body: 'Generated release notes.',
+        publishedAt: '2026-08-12T12:44:01Z',
+        immutable: true,
+      },
+    });
+  });
+
+  it('persists stable release notes and serves them from a new service instance', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'relay-release-notes-'));
+    const cacheFilePath = join(directory, 'release-notes.json');
+    try {
+      const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+        expect(input).toBe(RELAY_RELEASE_HISTORY_API_URL);
+        return jsonResponse([githubRelease('v1.2.0'), githubRelease('v1.1.0')]);
+      });
+      const service = new ReleaseUpdateService({
+        fetch,
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+
+      await expect(service.refreshReleaseNotes()).resolves.toEqual([
+        {
+          version: '1.2.0',
+          title: 'Relay v1.2.0',
+          body: 'Generated release notes.',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
+        {
+          version: '1.1.0',
+          title: 'Relay v1.1.0',
+          body: 'Generated release notes.',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
+      ]);
+
+      const offlineService = new ReleaseUpdateService({
+        fetch: async () => {
+          throw new Error('offline');
+        },
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+      await expect(offlineService.getCachedReleaseNotes()).resolves.toHaveLength(2);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('adds a discovered latest release to cached history without replacing immutable notes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'relay-release-notes-'));
+    const cacheFilePath = join(directory, 'release-notes.json');
+    try {
+      const seed = new ReleaseUpdateService({
+        fetch: async () =>
+          jsonResponse([
+            githubRelease('v1.1.0', { body: 'Original immutable notes.' }),
+            githubRelease('v1.0.0'),
+          ]),
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+      await seed.refreshReleaseNotes();
+
+      const updater = new ReleaseUpdateService({
+        fetch: async () => jsonResponse(githubRelease('v1.2.0')),
+        getCurrentVersion: () => '1.1.0',
+        cacheFilePath,
+      });
+      await updater.check();
+
+      await expect(updater.getCachedReleaseNotes()).resolves.toMatchObject([
+        { version: '1.2.0', body: 'Generated release notes.' },
+        { version: '1.1.0', body: 'Original immutable notes.' },
+        { version: '1.0.0' },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('does not replace cached immutable notes during a history refresh', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'relay-release-notes-'));
+    const cacheFilePath = join(directory, 'release-notes.json');
+    try {
+      const seed = new ReleaseUpdateService({
+        fetch: async () =>
+          jsonResponse([githubRelease('v1.1.0', { body: 'Original immutable notes.' })]),
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+      await seed.refreshReleaseNotes();
+
+      const refresh = new ReleaseUpdateService({
+        fetch: async () =>
+          jsonResponse([
+            githubRelease('v1.2.0'),
+            githubRelease('v1.1.0', { body: 'Changed notes.', immutable: false }),
+          ]),
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+
+      await expect(refresh.refreshReleaseNotes()).resolves.toMatchObject([
+        { version: '1.2.0' },
+        { version: '1.1.0', body: 'Original immutable notes.', immutable: true },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('uses a persisted ETag to avoid downloading unchanged release notes again', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'relay-release-notes-'));
+    const cacheFilePath = join(directory, 'release-notes.json');
+    try {
+      const seed = new ReleaseUpdateService({
+        fetch: async () =>
+          jsonResponse([githubRelease('v1.1.0')], {
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              etag: '"release-history-1"',
+            },
+          }),
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+      await seed.refreshReleaseNotes();
+
+      const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+        expect(init?.headers).toMatchObject({ 'If-None-Match': '"release-history-1"' });
+        return new Response(null, { status: 304 });
+      });
+      const next = new ReleaseUpdateService({
+        fetch,
+        getCurrentVersion: () => '1.0.0',
+        cacheFilePath,
+      });
+
+      await expect(next.refreshReleaseNotes()).resolves.toMatchObject([{ version: '1.1.0' }]);
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('drops oversized release-note fields before they reach the cache or renderer', async () => {
+    const service = new ReleaseUpdateService({
+      fetch: async () =>
+        jsonResponse([
+          githubRelease('v1.2.0', { body: 'x'.repeat(70_000) }),
+          githubRelease('v1.1.0'),
+        ]),
+      getCurrentVersion: () => '1.0.0',
+    });
+
+    await expect(service.refreshReleaseNotes()).resolves.toMatchObject([{ version: '1.1.0' }]);
+  });
+
+  it('keeps update discovery available when a release has no readable notes', async () => {
+    const service = new ReleaseUpdateService({
+      fetch: async () => jsonResponse(githubRelease('v1.1.0', { body: null })),
+      getCurrentVersion: () => '1.0.0',
+    });
+
+    await expect(service.check()).resolves.toMatchObject({
+      latestVersion: '1.1.0',
+      updateAvailable: true,
+      installable: true,
+      releaseNotes: null,
     });
   });
 
@@ -163,6 +345,13 @@ describe('ReleaseUpdateService', () => {
       updateAvailable: false,
       installable: false,
       assetSizeBytes: null,
+      releaseNotes: {
+        version: latestVersion,
+        title: `Relay v${latestVersion}`,
+        body: 'Generated release notes.',
+        publishedAt: '2026-08-12T12:44:01Z',
+        immutable: true,
+      },
     });
   });
 
@@ -178,6 +367,13 @@ describe('ReleaseUpdateService', () => {
       updateAvailable: true,
       installable: false,
       assetSizeBytes: null,
+      releaseNotes: {
+        version: '1.1.0',
+        title: 'Relay v1.1.0',
+        body: 'Generated release notes.',
+        publishedAt: '2026-08-12T12:44:01Z',
+        immutable: false,
+      },
     });
   });
 
@@ -268,6 +464,32 @@ describe('ReleaseUpdateService', () => {
       },
     });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves an immutable historical release only through its exact canonical tag', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      expect(input).toBe(relayReleaseByTagApiUrl('1.1.0'));
+      return jsonResponse(githubRelease('v1.1.0'));
+    });
+    const service = new ReleaseUpdateService({ fetch, getCurrentVersion: () => '1.2.0' });
+
+    await expect(service.resolveInstallableByTag('1.1.0', COMMIT_SHA)).resolves.toMatchObject({
+      version: '1.1.0',
+      targetCommitish: COMMIT_SHA,
+    });
+  });
+
+  it.each([
+    ['a mutable release', githubRelease('v1.1.0', { immutable: false })],
+    ['a substituted tag', githubRelease('v1.2.0')],
+    ['a substituted commit', githubRelease('v1.1.0', { target_commitish: 'f'.repeat(40) })],
+  ])('refuses exact-tag recovery from %s', async (_label, response) => {
+    const service = new ReleaseUpdateService({
+      fetch: async () => jsonResponse(response),
+      getCurrentVersion: () => '1.2.0',
+    });
+
+    await expect(service.resolveInstallableByTag('1.1.0', COMMIT_SHA)).rejects.toThrow();
   });
 
   it('refuses installation when the refreshed latest release becomes mutable', async () => {
@@ -399,6 +621,13 @@ describe('ReleaseUpdateService', () => {
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
+        releaseNotes: {
+          version: '1.1.0',
+          title: 'Relay v1.1.0',
+          body: 'Generated release notes.',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
       },
       {
         currentVersion: '1.0.0',
@@ -406,6 +635,13 @@ describe('ReleaseUpdateService', () => {
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
+        releaseNotes: {
+          version: '1.1.0',
+          title: 'Relay v1.1.0',
+          body: 'Generated release notes.',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
       },
     ]);
   });

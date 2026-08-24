@@ -183,6 +183,10 @@
   --modal-width: 560px;
 }
 
+.modal-dialog-generic.release-update-modal[data-variant='standard'] {
+  --modal-width: 680px;
+}
+
 .modal-dialog-generic[data-variant='wide'] {
   --modal-width: 820px;
 }

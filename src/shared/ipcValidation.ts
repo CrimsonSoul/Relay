@@ -140,6 +140,20 @@ export const PrivilegedReauthenticationSchema = z
   .object({ password: privilegedPasswordSchema })
   .strict();
 
+export const RecoveryRollbackSchema = z
+  .object({
+    targetBuildId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9._-]*$/)
+      .refine((value) => !value.endsWith('.')),
+    password: privilegedPasswordSchema,
+  })
+  .strict();
+
+export const RecoveryRepairSchema = RecoveryRollbackSchema;
+
 export const PrivilegedInitialOwnerSetupSchema = z
   .object({
     username: privilegedUsernameSchema,

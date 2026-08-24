@@ -15,6 +15,7 @@ const WATCHDOG_FLAG = '--relay-watchdog';
 const PARENT_PID_PREFIX = '--relay-parent-pid=';
 const STARTED_AT_PREFIX = '--relay-watchdog-started-at=';
 const RESTARTED_FLAG = '--relay-restarted-by-watchdog';
+const RECOVERY_PROBATION_PREFIX = '--relay-recovery-probation=';
 const LAST_EXIT_MARKER = 'last-exit.json';
 
 type WatchdogOptions = {
@@ -98,6 +99,7 @@ export function startCrashWatchdog(options: WatchdogOptions = {}): void {
 
   if (platform !== 'win32' || !isPackaged || env.RELAY_DISABLE_CRASH_WATCHDOG === '1') return;
   if (argv.includes(WATCHDOG_FLAG)) return;
+  if (argv.some((argument) => argument.startsWith(RECOVERY_PROBATION_PREFIX))) return;
 
   const execPath = options.execPath ?? process.execPath;
   const pid = options.pid ?? process.pid;

@@ -1,5 +1,7 @@
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const LAUNCHER_FILE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,62}\.exe$/i;
+const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const RESERVED_WINDOWS_NAMES = new Set([
   'con',
   'prn',
@@ -71,15 +73,41 @@ export function resolveHarnessConfig(env = {}) {
   return { root: validateHarnessRoot(root) };
 }
 
-export function renderBuildDefines({ buildId, launcherFile, harnessRoot }) {
+export function renderBuildDefines({
+  buildId,
+  launcherFile,
+  version,
+  targetCommitish,
+  packagedAt,
+  harnessRoot,
+}) {
   const safeBuildId = validateBuildId(buildId);
   if (typeof launcherFile !== 'string' || !LAUNCHER_FILE_PATTERN.test(launcherFile)) {
     throw new Error('Windows launcher filename must be a path-free .exe filename');
+  }
+  if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) {
+    throw new Error('Windows package version must be a canonical normal semantic version');
+  }
+  if (typeof targetCommitish !== 'string' || !COMMIT_PATTERN.test(targetCommitish)) {
+    throw new Error('Windows package target commit must be a full lowercase Git SHA');
+  }
+  if (
+    typeof packagedAt !== 'string' ||
+    !Number.isFinite(Date.parse(packagedAt)) ||
+    new Date(packagedAt).toISOString() !== packagedAt
+  ) {
+    throw new Error('Windows package timestamp must be a canonical ISO timestamp');
   }
 
   const defines = [
     `!define RELAY_BUILD_ID "${safeBuildId}"`,
     `!define RELAY_LAUNCHER_FILE "${launcherFile}"`,
+    `!define RELAY_BUILD_VERSION "${version}"`,
+    `!define RELAY_TARGET_COMMITISH "${targetCommitish}"`,
+    `!define RELAY_PACKAGED_AT "${packagedAt}"`,
+    '!define RELAY_RECOVERY_PROTOCOL "2"',
+    '!define RELAY_SERVER_DATA_EPOCH "1"',
+    '!define RELAY_CLIENT_DATA_EPOCH "1"',
   ];
   if (harnessRoot) {
     defines.push(

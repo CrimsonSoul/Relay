@@ -18,6 +18,7 @@ vi.mock('@shared/types', () => ({
 const mockSetupCloudStatusHandlers = vi.fn();
 const mockSetupWindowHandlers = vi.fn();
 const mockSetupReleaseUpdateHandlers = vi.fn();
+const mockSetupRecoveryHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
@@ -32,6 +33,9 @@ vi.mock('../handlers/windowHandlers', () => ({
 }));
 vi.mock('../handlers/releaseUpdateHandlers', () => ({
   setupReleaseUpdateHandlers: (...args: unknown[]) => mockSetupReleaseUpdateHandlers(...args),
+}));
+vi.mock('../handlers/recoveryHandlers', () => ({
+  setupRecoveryHandlers: (...args: unknown[]) => mockSetupRecoveryHandlers(...args),
 }));
 vi.mock('../handlers/setupHandlers', () => ({
   setupSetupHandlers: (...args: unknown[]) => mockSetupSetupHandlers(...args),
@@ -64,12 +68,13 @@ function makeOpts(overrides: Record<string, unknown> = {}) {
 }
 
 describe('setupIpcHandlers', () => {
-  it('calls all handler setup functions', () => {
-    setupIpcHandlers(makeOpts());
+  it('calls all handler setup functions', async () => {
+    await setupIpcHandlers(makeOpts());
 
     expect(mockSetupCloudStatusHandlers).toHaveBeenCalled();
     expect(mockSetupWindowHandlers).toHaveBeenCalled();
     expect(mockSetupReleaseUpdateHandlers).toHaveBeenCalled();
+    expect(mockSetupRecoveryHandlers).toHaveBeenCalled();
     expect(mockSetupSetupHandlers).toHaveBeenCalled();
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
@@ -77,14 +82,14 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalled();
   });
 
-  it('passes live PDF and PocketBase-backed status services to knowledge handlers', () => {
+  it('passes live PDF and PocketBase-backed status services to knowledge handlers', async () => {
     const getKnowledgePdfService = vi.fn();
     const getKnowledgeCoverService = vi.fn();
     const getKnowledgeUploadService = vi.fn();
     const getKnowledgeSearchService = vi.fn();
     const getPbClient = vi.fn(() => null);
 
-    setupIpcHandlers(
+    await setupIpcHandlers(
       makeOpts({
         getKnowledgePdfService,
         getKnowledgeCoverService,
@@ -107,29 +112,29 @@ describe('setupIpcHandlers', () => {
     );
   });
 
-  it('passes getMainWindow and getDataRoot to window handlers', () => {
+  it('passes getMainWindow and getDataRoot to window handlers', async () => {
     const getMainWindow = vi.fn();
     const getDataRoot = vi.fn();
-    setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot }));
+    await setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot }));
 
     expect(mockSetupWindowHandlers).toHaveBeenCalledWith(getMainWindow, getDataRoot);
   });
 
-  it('passes cache-related getters to setup handlers', () => {
+  it('passes cache-related getters to setup handlers', async () => {
     const getAppConfig = vi.fn();
     const getCache = vi.fn();
     const getPendingChanges = vi.fn();
-    setupIpcHandlers(makeOpts({ getAppConfig, getCache, getPendingChanges }));
+    await setupIpcHandlers(makeOpts({ getAppConfig, getCache, getPendingChanges }));
 
     expect(mockSetupSetupHandlers).toHaveBeenCalledWith(getAppConfig, getCache, getPendingChanges);
   });
 
-  it('passes cache, pending, sync, config getters to cache handlers', () => {
+  it('passes cache, pending, sync, config getters to cache handlers', async () => {
     const getCache = vi.fn();
     const getPendingChanges = vi.fn();
     const getSyncManager = vi.fn();
     const getAppConfig = vi.fn();
-    setupIpcHandlers(makeOpts({ getCache, getPendingChanges, getSyncManager, getAppConfig }));
+    await setupIpcHandlers(makeOpts({ getCache, getPendingChanges, getSyncManager, getAppConfig }));
 
     expect(mockSetupCacheHandlers).toHaveBeenCalledWith(
       getCache,
@@ -139,17 +144,17 @@ describe('setupIpcHandlers', () => {
     );
   });
 
-  it('passes backup manager, restartPb, and cache to backup handlers', () => {
+  it('passes backup manager, restartPb, and cache to backup handlers', async () => {
     const getBackupManager = vi.fn();
     const restartPb = vi.fn();
     const getCache = vi.fn();
-    setupIpcHandlers(makeOpts({ getBackupManager, restartPb, getCache }));
+    await setupIpcHandlers(makeOpts({ getBackupManager, restartPb, getCache }));
 
     expect(mockSetupBackupHandlers).toHaveBeenCalledWith(getBackupManager, restartPb, getCache);
   });
 
-  it('does not register retired roster handlers', () => {
-    setupIpcHandlers(makeOpts());
+  it('does not register retired roster handlers', async () => {
+    await setupIpcHandlers(makeOpts());
 
     const retiredPrefix = ['relay', 'Operator:'].join('');
     expect(
@@ -159,13 +164,13 @@ describe('setupIpcHandlers', () => {
     ).toBe(false);
   });
 
-  it('passes live runtime and public session subscription to privileged handlers', () => {
+  it('passes live runtime and public session subscription to privileged handlers', async () => {
     const runtime = { getView: vi.fn() };
     const getPrivilegedRuntime = vi.fn(() => runtime);
     const subscribePrivilegedSessionChanged = vi.fn(() => vi.fn());
     const appConfig = { load: vi.fn(() => ({ mode: 'server' })) };
 
-    setupIpcHandlers(
+    await setupIpcHandlers(
       makeOpts({
         getAppConfig: vi.fn(() => appConfig),
         getPrivilegedRuntime,
@@ -183,12 +188,12 @@ describe('setupIpcHandlers', () => {
     );
   });
 
-  it('continues registering handlers if one setup throws', () => {
+  it('continues registering handlers if one setup throws', async () => {
     mockSetupCloudStatusHandlers.mockImplementation(() => {
       throw new Error('cloud status setup failed');
     });
 
-    setupIpcHandlers(makeOpts());
+    await setupIpcHandlers(makeOpts());
 
     // cloud status failed but others should still be called
     expect(mockSetupWindowHandlers).toHaveBeenCalled();
@@ -198,9 +203,9 @@ describe('setupIpcHandlers', () => {
     );
   });
 
-  it('provides default no-op getters for optional parameters', () => {
+  it('provides default no-op getters for optional parameters', async () => {
     // Call with only required params — optional getters should default gracefully
-    setupIpcHandlers({
+    await setupIpcHandlers({
       getMainWindow: vi.fn(),
       getDataRoot: vi.fn(async () => '/data'),
     });

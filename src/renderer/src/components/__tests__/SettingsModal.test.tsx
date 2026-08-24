@@ -119,7 +119,55 @@ function createBridgeMock() {
     setWorkstationAwakeEnabled: vi.fn(),
     writeClipboard: vi.fn(),
     getAppVersion: vi.fn().mockResolvedValue('1.0.0'),
+    getCachedReleaseNotes: vi.fn().mockResolvedValue([
+      {
+        version: '1.1.0',
+        title: 'Relay v1.1.0',
+        body: '## Highlights\n\n- Faster update preparation',
+        publishedAt: '2026-08-12T12:44:01Z',
+        immutable: true,
+      },
+      {
+        version: '1.0.0',
+        title: 'Relay v1.0.0',
+        body: 'Initial protected release.',
+        publishedAt: '2026-07-28T12:44:01Z',
+        immutable: true,
+      },
+    ]),
+    refreshReleaseNotes: vi.fn().mockResolvedValue({
+      success: true,
+      data: [
+        {
+          version: '1.1.0',
+          title: 'Relay v1.1.0',
+          body: '## Highlights\n\n- Faster update preparation',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
+        {
+          version: '1.0.0',
+          title: 'Relay v1.0.0',
+          body: 'Initial protected release.',
+          publishedAt: '2026-07-28T12:44:01Z',
+          immutable: true,
+        },
+      ],
+    }),
     openReleasesPage: vi.fn().mockResolvedValue(true),
+    getRecoveryState: vi.fn().mockResolvedValue({
+      supported: false,
+      status: 'unavailable',
+      mode: 'unconfigured',
+      currentBuildId: null,
+      currentVersion: null,
+      runningBuildId: null,
+      runningVersion: null,
+      fallbackActive: false,
+      retainedBuilds: [],
+    }),
+    rollbackToRecoveryBuild: vi.fn().mockResolvedValue({ success: true, data: true }),
+    repairRecoveryBuild: vi.fn().mockResolvedValue({ success: true, data: true }),
   };
 }
 
@@ -231,9 +279,183 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'About' }));
 
     expect(screen.getByRole('tabpanel', { name: 'About' })).toBeInTheDocument();
-    expect(await screen.findByText('v1.0.0')).toBeVisible();
+    expect(await screen.findAllByText('v1.0.0')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'View releases' }));
     await waitFor(() => expect(mockApi.openReleasesPage).toHaveBeenCalledOnce());
+  });
+
+  it('can open directly to About for the native Recovery shortcut', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" initialSection="about" />);
+
+    expect(screen.getByRole('tab', { name: 'About' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('heading', { name: 'About Relay' })).toBeVisible();
+  });
+
+  it('shows cached release history immediately with latest and installed context', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    expect(await screen.findByRole('heading', { name: 'Release notes' })).toBeVisible();
+    const latest = screen.getByRole('button', { name: /Relay v1\.1\.0 release notes/u });
+    expect(latest).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Latest')).toBeVisible();
+    expect(screen.getByText('Installed')).toBeVisible();
+    expect(screen.getByText('Faster update preparation')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: /Relay v1\.0\.0 release notes/u }));
+    expect(screen.getByText('Initial protected release.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'View v1.0.0 on GitHub' }));
+    await waitFor(() => expect(mockApi.openReleasesPage).toHaveBeenCalledWith('1.0.0'));
+  });
+
+  it('keeps cached release notes readable when the background refresh is offline', async () => {
+    mockApi.refreshReleaseNotes.mockResolvedValueOnce({ success: false, error: 'unavailable' });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    expect(await screen.findByText('Faster update preparation')).toBeVisible();
+    expect(
+      await screen.findByText('Showing saved release notes. GitHub refresh unavailable.'),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
+  });
+
+  it('lets the active Owner confirm a retained Windows rollback with a fresh password', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'owner', accountId: 'account-owner' },
+    });
+    mockApi.getRecoveryState.mockResolvedValueOnce({
+      supported: true,
+      status: 'ready',
+      mode: 'server',
+      currentBuildId: 'r2-current',
+      currentVersion: '1.6.0',
+      runningBuildId: 'r2-current',
+      runningVersion: '1.6.0',
+      fallbackActive: false,
+      retainedBuilds: [
+        {
+          buildId: 'r2-previous',
+          version: '1.5.0',
+          releaseTag: 'v1.5.0',
+          installedAt: '2026-08-20T15:00:00.000Z',
+          status: 'ready',
+          rollbackAvailable: true,
+          repairAvailable: false,
+          githubFallbackAvailable: false,
+        },
+      ],
+    });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    expect(await screen.findByRole('heading', { name: 'Recovery' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Roll back to v1.5.0' }));
+    expect(screen.getByText(/restore the server data snapshot/i)).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText('Owner password'), {
+      target: { value: 'correct horse battery staple' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm rollback' }));
+
+    await waitFor(() =>
+      expect(mockApi.rollbackToRecoveryBuild).toHaveBeenCalledWith({
+        targetBuildId: 'r2-previous',
+        password: 'correct horse battery staple',
+      }),
+    );
+    expect(await screen.findByText('Restarting Relay with v1.5.0…')).toBeVisible();
+  });
+
+  it('lets the active Owner repair a missing retained runtime from its exact GitHub release', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'owner', accountId: 'account-owner' },
+    });
+    const missingState = {
+      supported: true,
+      status: 'ready' as const,
+      mode: 'client' as const,
+      currentBuildId: 'r2-current',
+      currentVersion: '1.6.0',
+      runningBuildId: 'r2-current',
+      runningVersion: '1.6.0',
+      fallbackActive: false,
+      retainedBuilds: [
+        {
+          buildId: 'r2-previous',
+          version: '1.5.0',
+          releaseTag: 'v1.5.0',
+          installedAt: '2026-08-20T15:00:00.000Z',
+          status: 'runtime-missing' as const,
+          rollbackAvailable: false,
+          repairAvailable: true,
+          githubFallbackAvailable: true,
+        },
+      ],
+    };
+    mockApi.getRecoveryState.mockResolvedValueOnce(missingState).mockResolvedValueOnce({
+      ...missingState,
+      retainedBuilds: [
+        {
+          ...missingState.retainedBuilds[0],
+          status: 'ready',
+          rollbackAvailable: true,
+          repairAvailable: false,
+          githubFallbackAvailable: false,
+        },
+      ],
+    });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Repair v1.5.0 from GitHub' }));
+    expect(screen.getByText(/exact immutable v1\.5\.0 release/i)).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Owner password'), {
+      target: { value: 'correct horse battery staple' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm repair' }));
+
+    await waitFor(() =>
+      expect(mockApi.repairRecoveryBuild).toHaveBeenCalledWith({
+        targetBuildId: 'r2-previous',
+        password: 'correct horse battery staple',
+      }),
+    );
+    expect(await screen.findByText('v1.5.0 is repaired and ready to roll back.')).toBeVisible();
+    expect(mockApi.getRecoveryState).toHaveBeenCalledTimes(2);
+  });
+
+  it('explains when Relay is running a retained recovery runtime', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'owner', accountId: 'account-owner' },
+    });
+    mockApi.getRecoveryState.mockResolvedValueOnce({
+      supported: true,
+      status: 'ready',
+      mode: 'server',
+      currentBuildId: 'r2-current',
+      currentVersion: '1.6.0',
+      runningBuildId: 'r2-previous',
+      runningVersion: '1.5.0',
+      fallbackActive: true,
+      retainedBuilds: [
+        {
+          buildId: 'r2-previous',
+          version: '1.5.0',
+          releaseTag: 'v1.5.0',
+          installedAt: '2026-08-20T15:00:00.000Z',
+          status: 'ready',
+          rollbackAvailable: true,
+          repairAvailable: false,
+          githubFallbackAvailable: false,
+        },
+      ],
+    });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'About' }));
+
+    expect(await screen.findByText('Recovery runtime · v1.5.0')).toBeVisible();
+    expect(screen.getByText(/catalog still points to v1\.6\.0/i)).toBeVisible();
   });
 
   it('offers Administration to the authenticated Relay administrator', () => {

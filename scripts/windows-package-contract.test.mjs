@@ -201,13 +201,47 @@ describe('Windows package contract', () => {
       renderBuildDefines({
         buildId: 'r1-abc',
         launcherFile: 'RelayLauncher.exe',
+        version: '1.7.0',
+        targetCommitish: '1'.repeat(40),
+        packagedAt: '2026-08-24T15:00:00.000Z',
       }),
-    ).toBe('!define RELAY_BUILD_ID "r1-abc"\n!define RELAY_LAUNCHER_FILE "RelayLauncher.exe"\n');
+    ).toBe(
+      [
+        '!define RELAY_BUILD_ID "r1-abc"',
+        '!define RELAY_LAUNCHER_FILE "RelayLauncher.exe"',
+        '!define RELAY_BUILD_VERSION "1.7.0"',
+        `!define RELAY_TARGET_COMMITISH "${'1'.repeat(40)}"`,
+        '!define RELAY_PACKAGED_AT "2026-08-24T15:00:00.000Z"',
+        '!define RELAY_RECOVERY_PROTOCOL "2"',
+        '!define RELAY_SERVER_DATA_EPOCH "1"',
+        '!define RELAY_CLIENT_DATA_EPOCH "1"',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('rejects build metadata that cannot safely enter launcher receipts', () => {
+    const valid = {
+      buildId: 'r1-abc',
+      launcherFile: 'RelayLauncher.exe',
+      version: '1.7.0',
+      targetCommitish: '1'.repeat(40),
+      packagedAt: '2026-08-24T15:00:00.000Z',
+    };
+
+    expect(() => renderBuildDefines({ ...valid, version: '1.7.0-beta.1' })).toThrow(/version/i);
+    expect(() => renderBuildDefines({ ...valid, targetCommitish: 'main' })).toThrow(/commit/i);
   });
 
   it('rejects unsafe launcher filenames in generated NSIS input', () => {
     expect(() =>
-      renderBuildDefines({ buildId: 'r1-abc', launcherFile: '../RelayLauncher.exe' }),
+      renderBuildDefines({
+        buildId: 'r1-abc',
+        launcherFile: '../RelayLauncher.exe',
+        version: '1.7.0',
+        targetCommitish: '1'.repeat(40),
+        packagedAt: '2026-08-24T15:00:00.000Z',
+      }),
     ).toThrow(/launcher filename/i);
   });
 
@@ -252,6 +286,9 @@ describe('Windows package contract', () => {
       renderBuildDefines({
         buildId: 'h1-abc',
         launcherFile: 'RelayLauncher.exe',
+        version: '1.7.0',
+        targetCommitish: '1'.repeat(40),
+        packagedAt: '2026-08-24T15:00:00.000Z',
         harnessRoot: String.raw`C:\runner temp\relay-boundary`,
       }),
     ).toContain('!define RELAY_BOOTSTRAP_HARNESS_ROOT "C:\\runner temp\\relay-boundary"');

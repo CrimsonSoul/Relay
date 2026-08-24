@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { RelayUpdateSnapshot } from '@shared/releases';
+import type { RelayReleaseNotes, RelayUpdateSnapshot } from '@shared/releases';
 import { ReleaseUpdateModal } from '../ReleaseUpdateModal';
 
 function snapshot(overrides: Partial<RelayUpdateSnapshot> = {}): RelayUpdateSnapshot {
@@ -16,7 +16,18 @@ function snapshot(overrides: Partial<RelayUpdateSnapshot> = {}): RelayUpdateSnap
   };
 }
 
-function renderModal(update = snapshot()) {
+const DEFAULT_RELEASE_NOTES: RelayReleaseNotes = {
+  version: '1.1.0',
+  title: 'Relay v1.1.0',
+  body: '## Highlights\n\n- Faster update preparation\n- Clearer recovery messages',
+  publishedAt: '2026-08-12T12:44:01Z',
+  immutable: true,
+};
+
+function renderModal(
+  update = snapshot(),
+  releaseNotes: RelayReleaseNotes | null = DEFAULT_RELEASE_NOTES,
+) {
   const actions = {
     onClose: vi.fn(),
     onDownload: vi.fn(),
@@ -26,7 +37,7 @@ function renderModal(update = snapshot()) {
     onCheckAgain: vi.fn(),
     onOpenReleases: vi.fn(),
   };
-  render(<ReleaseUpdateModal isOpen update={update} {...actions} />);
+  render(<ReleaseUpdateModal isOpen update={update} releaseNotes={releaseNotes} {...actions} />);
   return actions;
 }
 
@@ -46,6 +57,27 @@ describe('ReleaseUpdateModal', () => {
     expect(actions.onDownload).toHaveBeenCalledOnce();
     expect(actions.onInstall).not.toHaveBeenCalled();
     expect(actions.onRestart).not.toHaveBeenCalled();
+  });
+
+  it('shows the discovered release notes as structured readable content', () => {
+    renderModal();
+
+    expect(screen.getByRole('heading', { name: "What's new in v1.1.0" })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Highlights' })).toBeVisible();
+    expect(screen.getByText('Faster update preparation')).toBeVisible();
+    expect(screen.getByText('Clearer recovery messages')).toBeVisible();
+  });
+
+  it('keeps the update flow usable when release notes are unavailable', () => {
+    renderModal(snapshot(), null);
+
+    expect(screen.getByRole('heading', { name: "What's new in v1.1.0" })).toBeVisible();
+    expect(
+      screen.getByText(
+        'Release notes are not available yet. You can still review this release on GitHub.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Download update' })).toBeVisible();
   });
 
   it('shows bounded byte progress and only a cancel action while downloading', () => {

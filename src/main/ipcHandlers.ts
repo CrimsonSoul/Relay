@@ -44,7 +44,7 @@ import type { WorkstationAwakeService } from './power/WorkstationAwakeService';
  * Each handler group is wrapped in try/catch to prevent a single failure
  * from leaving all subsequent handlers unregistered.
  */
-export function setupIpcHandlers(opts: {
+export async function setupIpcHandlers(opts: {
   getMainWindow: () => BrowserWindow | null;
   getDataRoot: () => Promise<string>;
   getAppConfig?: () => AppConfig | null;
@@ -71,7 +71,7 @@ export function setupIpcHandlers(opts: {
   ) => () => void;
   onPrivilegedCredentialChanged?: (accountId: string) => void;
   restartPb?: () => Promise<boolean>;
-}) {
+}): Promise<void> {
   const {
     getMainWindow,
     getDataRoot,
@@ -204,4 +204,18 @@ export function setupIpcHandlers(opts: {
       getCache ?? (() => null),
     ),
   );
+
+  try {
+    const { setupRecoveryHandlers } = await import('./handlers/recoveryHandlers');
+    safeSetup('recovery', () =>
+      setupRecoveryHandlers({
+        getRuntime: getPrivilegedRuntime ?? (() => null),
+        getMode: () => getAppConfig?.()?.load()?.mode ?? 'unconfigured',
+      }),
+    );
+  } catch (err) {
+    loggers.main.error('Failed to load recovery handlers', {
+      error: getErrorMessage(err),
+    });
+  }
 }

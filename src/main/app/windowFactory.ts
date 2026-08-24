@@ -138,6 +138,7 @@ async function loadMainWindowRenderer(mainWindow: BrowserWindow, isDev: boolean)
 export type CreateWindowOptions = Readonly<{
   onWindowCreated?: () => void;
   onShellReady?: () => void;
+  autoRecover?: boolean;
 }>;
 
 export async function createWindow(options: CreateWindowOptions = {}): Promise<void> {
@@ -205,7 +206,10 @@ export async function createWindow(options: CreateWindowOptions = {}): Promise<v
   lockWindowZoom(mainWindow);
 
   setupWindowListeners(mainWindow);
-  attachWindowLifecycleListeners(mainWindow, { label: 'main', autoReload: true });
+  attachWindowLifecycleListeners(mainWindow, {
+    label: 'main',
+    autoReload: options.autoRecover !== false,
+  });
 
   // Configure spellchecker languages
   mainWindow.webContents.session.setSpellCheckerLanguages(['en-US']);

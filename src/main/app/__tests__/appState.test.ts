@@ -263,8 +263,8 @@ describe('getDataRoot', () => {
 });
 
 describe('setupIpc', () => {
-  it('calls all IPC setup functions', () => {
-    setupIpc();
+  it('calls all IPC setup functions', async () => {
+    await setupIpc();
 
     expect(setupIpcHandlers).toHaveBeenCalled();
     expect(setupAuthHandlers).toHaveBeenCalled();
@@ -272,54 +272,54 @@ describe('setupIpc', () => {
     expect(setupLoggerHandlers).toHaveBeenCalled();
   });
 
-  it('passes restartPb to setupIpcHandlers', () => {
+  it('passes restartPb to setupIpcHandlers', async () => {
     const restartPb = vi.fn();
 
-    setupIpc(restartPb as never);
+    await setupIpc(restartPb as never);
 
     expect(setupIpcHandlers).toHaveBeenCalledWith(expect.objectContaining({ restartPb }));
   });
 
-  it('passes the current authenticated PocketBase client getter to setupIpcHandlers', () => {
+  it('passes the current authenticated PocketBase client getter to setupIpcHandlers', async () => {
     const client = { authStore: { isValid: true } } as never;
     setPbClient(client);
 
-    setupIpc();
+    await setupIpc();
 
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getPbClient).toEqual(expect.any(Function));
     expect(options?.getPbClient?.()).toBe(client);
   });
 
-  it('passes live knowledge service getters to setupIpcHandlers', () => {
+  it('passes live knowledge service getters to setupIpcHandlers', async () => {
     const pdfService = { getPdf: vi.fn() } as never;
     const searchService = { search: vi.fn() } as never;
     setKnowledgePdfService(pdfService);
     setKnowledgeSearchService(searchService);
 
-    setupIpc();
+    await setupIpc();
 
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getKnowledgePdfService?.()).toBe(pdfService);
     expect(options?.getKnowledgeSearchService?.()).toBe(searchService);
   });
 
-  it('passes live privileged runtime and event getters to setupIpcHandlers', () => {
+  it('passes live privileged runtime and event getters to setupIpcHandlers', async () => {
     const runtime = { getView: vi.fn(), onSessionChanged: vi.fn(() => vi.fn()) } as never;
     setPrivilegedRuntime(runtime);
 
-    setupIpc();
+    await setupIpc();
 
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getPrivilegedRuntime?.()).toBe(runtime);
     expect(options?.subscribePrivilegedSessionChanged).toEqual(expect.any(Function));
   });
 
-  it('passes the live workstation keep-awake service getter to setupIpcHandlers', () => {
+  it('passes the live workstation keep-awake service getter to setupIpcHandlers', async () => {
     const service = { getState: vi.fn(), setEnabled: vi.fn() } as never;
     setWorkstationAwakeService(service);
 
-    setupIpc();
+    await setupIpc();
 
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(getWorkstationAwakeService()).toBe(service);

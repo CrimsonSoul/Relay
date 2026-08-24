@@ -8,7 +8,7 @@ import {
   safeStorage,
   powerSaveBlocker,
 } from 'electron';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { loggers } from './logger';
 import { AppConfig, type RelayConfig, type ServerConfig } from './config/AppConfig';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -110,7 +110,6 @@ import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
 import { setupStartupIpc, shouldExitAfterStartupBenchmark } from './app/startupIpc';
 import { runStartupSequence } from './app/startupSequence';
-import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';
 import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
 import { configureE2EDesktopIsolation } from './app/e2eSafety';
@@ -119,9 +118,19 @@ import { WorkstationAwakeManager } from './power/WorkstationAwakeManager';
 import { WorkstationAwakePreferenceStore } from './power/WorkstationAwakePreferenceStore';
 import { WorkstationAwakeService } from './power/WorkstationAwakeService';
 import { createWindowsInputPulse } from './power/windowsInputPulse';
+import { parseRecoveryProbationArgument } from './releases/RecoveryProbationArgument';
+import { parseRecoveryLaunchIntent } from './releases/RecoveryLaunchIntent';
 
 installMacOsTypeOfServiceGuard();
-const startupState = createStartupStateController();
+const recoveryProbationArgument = parseRecoveryProbationArgument();
+const recoveryProbationRequested = recoveryProbationArgument.requested;
+const recoveryLaunchIntent = recoveryProbationRequested
+  ? null
+  : parseRecoveryLaunchIntent(process.argv, process.platform, app.isPackaged);
+let startupMetadata: Parameters<typeof createStartupStateController>[0] = {};
+if (recoveryProbationRequested) startupMetadata = { recoveryMode: 'probation' };
+else if (recoveryLaunchIntent) startupMetadata = { launchIntent: recoveryLaunchIntent };
+const startupState = createStartupStateController(startupMetadata);
 const startupTimeline = createStartupTimeline();
 
 /** Server startup either succeeded or failed with a cause worth showing. */
@@ -182,6 +191,184 @@ async function waitForStartupTestDelay(): Promise<void> {
   const requestedDelay = Number(process.env.RELAY_E2E_STARTUP_DELAY_MS);
   if (!Number.isFinite(requestedDelay) || requestedDelay <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, Math.min(requestedDelay, 5_000)));
+}
+
+type RecoveryProbationRuntime = {
+  controller: ReturnType<
+    typeof import('./releases/RecoveryProbation').createRecoveryProbationController
+  >;
+  setMode: (mode: RelayConfig['mode'] | 'unconfigured') => void;
+};
+
+function isRecoveryProbationHealthy(mode: RelayConfig['mode'] | 'unconfigured'): boolean {
+  const mainWindow = getMainWindow();
+  if (
+    startupState.getSnapshot().phase !== 'ready' ||
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isCrashed()
+  ) {
+    return false;
+  }
+  if (mode === 'server') return getPbProcess()?.isRunning() === true;
+  if (mode === 'client') return getOfflineCache() !== null && getPendingChanges() !== null;
+  return true;
+}
+
+async function initializeRecoveryProbation(
+  cleanupAppResources: () => void,
+): Promise<RecoveryProbationRuntime | null> {
+  if (!recoveryProbationRequested) return null;
+  if (
+    process.platform !== 'win32' ||
+    !app.isPackaged ||
+    recoveryProbationArgument.transactionId === null
+  ) {
+    throw new Error('Relay recovery probation request was invalid');
+  }
+  const {
+    createRecoveryProbationController,
+    resolveRecoveryProbationContext,
+    writeRecoveryProbationReceipt,
+  } = await import('./releases/RecoveryProbation');
+  const relayRoot = dirname(dirname(dirname(process.execPath)));
+  const context = await resolveRecoveryProbationContext({
+    relayRoot,
+    execPath: process.execPath,
+    transactionId: recoveryProbationArgument.transactionId,
+  });
+  let mode: RelayConfig['mode'] | 'unconfigured' = 'unconfigured';
+  const controller = createRecoveryProbationController({
+    durationMs: 60_000,
+    startupDeadlineMs: 120_000,
+    isHealthy: () => isRecoveryProbationHealthy(mode),
+    writeHealthyReceipt: (durationMs) => writeRecoveryProbationReceipt(context, durationMs),
+    complete: (healthy) => {
+      loggers.main.info('Recovery probation completed', { healthy });
+      recordAppExitMarker(healthy ? 'recovery-probation-healthy' : 'recovery-probation-failed');
+      cleanupAppResources();
+      app.exit(healthy ? 0 : 1);
+    },
+  });
+  return {
+    controller,
+    setMode: (nextMode) => {
+      mode = nextMode;
+    },
+  };
+}
+
+function startRadarForRuntime(
+  radarManager: RadarManager,
+  probationRuntime: RecoveryProbationRuntime | null,
+): void {
+  if (!probationRuntime) radarManager.start();
+}
+
+function serverConfigForRuntime(
+  config: ServerConfig,
+  probationRuntime: RecoveryProbationRuntime | null,
+): ServerConfig {
+  if (!probationRuntime) return config;
+  return {
+    ...config,
+    bindHost: '127.0.0.1',
+    web: { enabled: false, port: config.web?.port ?? 8091 },
+  };
+}
+
+function probationCrashHandler(
+  probationRuntime: RecoveryProbationRuntime | null,
+): (() => void) | undefined {
+  if (!probationRuntime) return undefined;
+  return () => probationRuntime.controller.fail();
+}
+
+async function applyRelayWebConfigForRuntime(
+  config: ServerConfig,
+  probationRuntime: RecoveryProbationRuntime | null,
+): Promise<void> {
+  if (!probationRuntime) await getRelayWebServerManager()?.applyConfig(config);
+}
+
+function handleClientInfrastructureFailure(
+  error: unknown,
+  probationRuntime: RecoveryProbationRuntime | null,
+): void {
+  if (probationRuntime) throw error;
+  loggers.pocketbase.warn('Could not initialize offline infrastructure — local cache unavailable', {
+    error,
+  });
+}
+
+type PostWorkspaceRuntimeHandles = {
+  cleanupMaintenance: (() => void) | null;
+  stopMemoryHeartbeat: (() => void) | null;
+  cancelWindowsRuntimeCleanup: (() => void) | null;
+};
+
+async function completePostWorkspaceRuntime(options: {
+  relayConfig: RelayConfig | null;
+  probationRuntime: RecoveryProbationRuntime | null;
+  deferredServerServices: ReturnType<typeof createDeferredServerServices> | null;
+  startPrivilegedAccess: (config: RelayConfig) => Promise<void>;
+}): Promise<PostWorkspaceRuntimeHandles> {
+  if (options.probationRuntime) {
+    options.probationRuntime.setMode(options.relayConfig?.mode ?? 'unconfigured');
+    options.probationRuntime.controller.markLocalStartupComplete();
+    return {
+      cleanupMaintenance: null,
+      stopMemoryHeartbeat: null,
+      cancelWindowsRuntimeCleanup: null,
+    };
+  }
+  if (options.relayConfig?.mode === 'server') {
+    options.deferredServerServices?.schedule(options.relayConfig);
+  } else if (options.relayConfig?.mode === 'client') {
+    void restartKnowledgeSearchRuntime();
+  }
+  startPeriodicCleanup();
+  const cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
+  const stopMemoryHeartbeat = startMemoryHeartbeat();
+  const { scheduleWindowsRuntimeCleanup } = await import('./app/windowsRuntimeCleanup');
+  const cancelWindowsRuntimeCleanup = scheduleWindowsRuntimeCleanup({
+    isPackaged: app.isPackaged,
+    userDataRoot: app.getPath('userData'),
+    onComplete: ({ removed, failed }) => {
+      if (removed.length === 0 && failed.length === 0) return;
+      loggers.main.info('Windows runtime cleanup completed', {
+        removed: removed.length,
+        failed: failed.length,
+      });
+    },
+    onError: (error) => {
+      loggers.main.warn('Windows runtime cleanup failed', { error });
+    },
+  });
+  if (options.relayConfig?.mode === 'client') {
+    await options.startPrivilegedAccess(options.relayConfig);
+  }
+  return { cleanupMaintenance, stopMemoryHeartbeat, cancelWindowsRuntimeCleanup };
+}
+
+function handleBootstrapFailure(
+  errorMessage: string,
+  probationRuntime: RecoveryProbationRuntime | null,
+  cleanupAppResources: () => void,
+): void {
+  if (recoveryProbationRequested) {
+    if (probationRuntime) {
+      probationRuntime.controller.fail();
+    } else {
+      recordAppExitMarker('recovery-probation-startup-failed');
+      cleanupAppResources();
+      app.exit(1);
+    }
+    return;
+  }
+  dialog.showErrorBox('Critical Startup Error', errorMessage);
+  cleanupAppResources();
+  requestAppQuit('startup-failed');
 }
 
 // Keep automated Electron runs off the interactive macOS desktop before the
@@ -268,6 +455,7 @@ if (gotLock) {
     let deferredServerServices: ReturnType<typeof createDeferredServerServices> | null = null;
     let cancelGpuDiagnostics: (() => void) | null = null;
     let cancelWindowsRuntimeCleanup: (() => void) | null = null;
+    let recoveryProbationRuntime: RecoveryProbationRuntime | null = null;
     let cleanupComplete = false;
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
@@ -289,6 +477,8 @@ if (gotLock) {
       cancelGpuDiagnostics = null;
       cancelWindowsRuntimeCleanup?.();
       cancelWindowsRuntimeCleanup = null;
+      recoveryProbationRuntime?.controller.dispose();
+      recoveryProbationRuntime = null;
       getWorkstationAwakeService()?.shutdown();
       setWorkstationAwakeService(null);
       getDynatraceProblemsManager()?.stop();
@@ -350,6 +540,8 @@ if (gotLock) {
       loggers.main.info('Electron ready, performing setup...');
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
 
+      recoveryProbationRuntime = await initializeRecoveryProbation(cleanupAppResources);
+
       let windowsInputPulse: (() => boolean) | null = null;
       const workstationAwakeManager = new WorkstationAwakeManager({
         platform: process.platform,
@@ -382,6 +574,7 @@ if (gotLock) {
       setupPermissions(session.defaultSession);
       cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {
         onRendererMounted: () => {
+          recoveryProbationRuntime?.controller.markRendererMounted();
           if (shouldExitAfterStartupBenchmark(process.env)) {
             requestAppQuit('startup-benchmark-complete');
             return;
@@ -398,6 +591,7 @@ if (gotLock) {
           createWindow({
             onWindowCreated: () => startupTimeline.mark('window-created'),
             onShellReady: () => startupTimeline.mark('shell-ready'),
+            autoRecover: !recoveryProbationRequested,
           }),
         prepareWorkspace: () => workspaceDeferred.promise,
       });
@@ -502,7 +696,7 @@ if (gotLock) {
       // the server-only data managers below.
       const radarManager = new RadarManager();
       setRadarManager(radarManager);
-      radarManager.start();
+      startRadarForRuntime(radarManager, recoveryProbationRuntime);
 
       const startServerDataManagers = () => {
         getDynatraceProblemsManager()?.start();
@@ -539,14 +733,17 @@ if (gotLock) {
       };
 
       const startServerServices = async (config: ServerConfig): Promise<ServerStartOutcome> => {
-        const result = await startPocketBase(config, configDataDir, {
+        const effectiveConfig = serverConfigForRuntime(config, recoveryProbationRuntime);
+        const result = await startPocketBase(effectiveConfig, configDataDir, {
           onHealthy: () => startupTimeline.mark('pocketbase-healthy'),
           onCredentialsReady: () => startupTimeline.mark('credentials-ready'),
           onSchemaReady: () => startupTimeline.mark('schema-ready'),
+          restartOnCrash: !recoveryProbationRuntime,
+          onCrash: probationCrashHandler(recoveryProbationRuntime),
         });
         if (result.status !== 'started') return { started: false, reason: result.reason };
         if (result.privilegedRuntimeReady) {
-          await startPrivilegedAccess(config);
+          await startPrivilegedAccess(effectiveConfig);
         } else {
           loggers.security.warn(
             'Privileged runtime deferred until role account migration completes',
@@ -555,7 +752,7 @@ if (gotLock) {
             },
           );
         }
-        await getRelayWebServerManager()?.applyConfig(config);
+        await applyRelayWebConfigForRuntime(config, recoveryProbationRuntime);
         return { started: true };
       };
 
@@ -616,7 +813,7 @@ if (gotLock) {
         await stopPrivilegedAccess();
         return startServerServicesAfterReady(config);
       };
-      setupIpc(restartPb);
+      await setupIpc(restartPb);
 
       // Register shutdown cleanup before starting embedded services so an early
       // startup failure cannot leave PocketBase or SQLite handles behind.
@@ -647,6 +844,7 @@ if (gotLock) {
         workspaceSettled = true;
         workspaceDeferred.reject(new Error(reason));
         void startupSequence?.catch(() => undefined);
+        recoveryProbationRuntime?.controller.fail();
       };
 
       // Required server startup must settle before the workspace can publish
@@ -670,10 +868,7 @@ if (gotLock) {
           });
           loggers.pocketbase.info('Client-mode offline infrastructure initialized');
         } catch (syncErr) {
-          loggers.pocketbase.warn(
-            'Could not initialize offline infrastructure — local cache unavailable',
-            { error: syncErr },
-          );
+          handleClientInfrastructureFailure(syncErr, recoveryProbationRuntime);
         }
       }
 
@@ -682,31 +877,15 @@ if (gotLock) {
       workspaceSettled = true;
       workspaceDeferred.resolve(relayConfig);
       await startupSequence;
-      if (relayConfig?.mode === 'server') {
-        deferredServerServices?.schedule(relayConfig);
-      } else if (relayConfig?.mode === 'client') {
-        void restartKnowledgeSearchRuntime();
-      }
-      startPeriodicCleanup();
-      cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
-      stopMemoryHeartbeat = startMemoryHeartbeat();
-      cancelWindowsRuntimeCleanup = scheduleWindowsRuntimeCleanup({
-        isPackaged: app.isPackaged,
-        onComplete: ({ removed, failed }) => {
-          if (removed.length === 0 && failed.length === 0) return;
-          loggers.main.info('Windows runtime cleanup completed', {
-            removed: removed.length,
-            failed: failed.length,
-          });
-        },
-        onError: (error) => {
-          loggers.main.warn('Windows runtime cleanup failed', { error });
-        },
+      const postWorkspace = await completePostWorkspaceRuntime({
+        relayConfig,
+        probationRuntime: recoveryProbationRuntime,
+        deferredServerServices,
+        startPrivilegedAccess,
       });
-
-      if (relayConfig?.mode === 'client') {
-        await startPrivilegedAccess(relayConfig);
-      }
+      cleanupMaintenance = postWorkspace.cleanupMaintenance;
+      stopMemoryHeartbeat = postWorkspace.stopMemoryHeartbeat;
+      cancelWindowsRuntimeCleanup = postWorkspace.cancelWindowsRuntimeCleanup;
     } catch (error: unknown) {
       if (!workspaceSettled) {
         workspaceSettled = true;
@@ -715,9 +894,7 @@ if (gotLock) {
       await startupSequence?.catch(() => undefined);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       loggers.main.error('Failed to start application', { error: errorMessage });
-      dialog.showErrorBox('Critical Startup Error', errorMessage);
-      cleanupAppResources();
-      requestAppQuit('startup-failed');
+      handleBootstrapFailure(errorMessage, recoveryProbationRuntime, cleanupAppResources);
     }
   };
 
@@ -736,8 +913,11 @@ if (gotLock) {
   void runBootstrap();
 
   // Global Exception Handlers
-  setupErrorHandlers();
-  setupAppLifecycleListeners();
+  setupErrorHandlers({
+    allowAutoRelaunch: !recoveryProbationRequested,
+    suppressDesktopSideEffects: recoveryProbationRequested,
+  });
+  setupAppLifecycleListeners({ allowRecovery: !recoveryProbationRequested });
 } else if (!isCrashWatchdog) {
   requestAppQuit('single-instance-lock-unavailable');
 }

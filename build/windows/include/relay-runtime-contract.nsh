@@ -4,9 +4,16 @@
 !include "LogicLib.nsh"
 !include "WordFunc.nsh"
 
-!define RELAY_STATE_PROTOCOL "1"
+!define RELAY_LEGACY_STATE_PROTOCOL "1"
+!define RELAY_RECOVERY_STATE_PROTOCOL "2"
+!define RELAY_STATE_PROTOCOL "2"
 !define RELAY_LAUNCHER_PROBE "--relay-launcher-probe"
-!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 101
+!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 102
+!define RELAY_RECOVERY_ARGUMENT "/relay-recovery"
+!define RELAY_RECOVERY_CENTER_ARGUMENT "--relay-recovery-center"
+!define RELAY_RECOVERY_PROBATION_PREFIX "--relay-recovery-probation="
+!define RELAY_REPAIR_ONLY_ARGUMENT "/relay-repair-only"
+!define RELAY_RELEASES_URL "https://github.com/CrimsonSoul/Relay/releases"
 !define RELAY_INNER_EXECUTABLE "Relay.exe"
 !define RELAY_RUNTIME_MARKER ".relay-runtime-ready"
 !define RELAY_BUILD_ID_FIRST_CHARSET "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -21,6 +28,7 @@ Var RelayContractBase
 Var RelayContractBaseLength
 Var RelayContractDevicePrefix
 Var RelayContractDeviceSuffix
+Var RelayContractUuidCharacter
 
 !macro RelayValidateBuildId VALUE RESULT
   StrCpy ${RESULT} "0"
@@ -63,6 +71,38 @@ Var RelayContractDeviceSuffix
                 ${OrIf} $RelayContractDeviceSuffix == "8"
                 ${OrIf} $RelayContractDeviceSuffix == "9"
                   StrCpy ${RESULT} "0"
+                ${EndIf}
+              ${EndIf}
+            ${EndIf}
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro RelayValidateTransactionId VALUE RESULT
+  StrCpy ${RESULT} "0"
+  StrLen $RelayContractLength "${VALUE}"
+  ${If} $RelayContractLength == 36
+    ${StrFilter} "${VALUE}" "" "0123456789abcdef-" "" $RelayContractFiltered
+    ${If} $RelayContractFiltered == "${VALUE}"
+      StrCpy $RelayContractUuidCharacter "${VALUE}" 1 8
+      ${If} $RelayContractUuidCharacter == "-"
+        StrCpy $RelayContractUuidCharacter "${VALUE}" 1 13
+        ${If} $RelayContractUuidCharacter == "-"
+          StrCpy $RelayContractUuidCharacter "${VALUE}" 1 18
+          ${If} $RelayContractUuidCharacter == "-"
+            StrCpy $RelayContractUuidCharacter "${VALUE}" 1 23
+            ${If} $RelayContractUuidCharacter == "-"
+              StrCpy $RelayContractUuidCharacter "${VALUE}" 1 14
+              ${If} $RelayContractUuidCharacter == "4"
+                StrCpy $RelayContractUuidCharacter "${VALUE}" 1 19
+                ${If} $RelayContractUuidCharacter == "8"
+                ${OrIf} $RelayContractUuidCharacter == "9"
+                ${OrIf} $RelayContractUuidCharacter == "a"
+                ${OrIf} $RelayContractUuidCharacter == "b"
+                  StrCpy ${RESULT} "1"
                 ${EndIf}
               ${EndIf}
             ${EndIf}

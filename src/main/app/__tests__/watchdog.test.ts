@@ -121,6 +121,20 @@ describe('watchdog', () => {
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
+  it('does not start a competing watchdog during launcher-supervised probation', async () => {
+    const { startCrashWatchdog } = await import('../watchdog');
+
+    startCrashWatchdog({
+      platform: 'win32',
+      isPackaged: true,
+      execPath: 'Relay.exe',
+      pid: 222,
+      argv: ['Relay.exe', '--relay-recovery-probation=123e4567-e89b-42d3-a456-426614174000'],
+    });
+
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
   it('starts a fresh watchdog for instances relaunched by the watchdog', async () => {
     const { startCrashWatchdog } = await import('../watchdog');
 

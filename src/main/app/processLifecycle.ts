@@ -246,7 +246,9 @@ function recoverWindowsAfterGpuFailure(): void {
 }
 
 /** App-level listeners for GPU / utility child process crashes. */
-export function setupAppLifecycleListeners(): void {
+export function setupAppLifecycleListeners(
+  options: Readonly<{ allowRecovery?: boolean }> = {},
+): void {
   app.on('child-process-gone', (_event, details: Details) => {
     const base = {
       type: details.type,
@@ -258,6 +260,7 @@ export function setupAppLifecycleListeners(): void {
     // GPU crashes are the most suspicious for "black window" reports; flag them loudly.
     if (details.type === 'GPU') {
       loggers.main.error('GPU process gone', base);
+      if (options.allowRecovery === false) return;
       const now = Date.now();
       gpuGoneTimestamps.push(now);
       pruneGpuGoneHistory(now);

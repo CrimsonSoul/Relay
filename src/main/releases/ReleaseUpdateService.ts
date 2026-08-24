@@ -1,9 +1,15 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import {
   compareRelayVersions,
   normalizeRelaySha256Digest,
   normalizeRelayVersionTag,
+  relayReleaseByTagApiUrl,
   relayReleaseAssetNames,
   RELAY_LATEST_RELEASE_API_URL,
+  RELAY_RELEASE_HISTORY_API_URL,
+  type RelayReleaseNotes,
   type RelayUpdateCheck,
 } from '@shared/releases';
 
@@ -14,10 +20,16 @@ type ReleaseUpdateServiceOptions = {
   fetch?: typeof globalThis.fetch;
   getCurrentVersion: () => string;
   requestTimeoutMs?: number;
+  cacheFilePath?: string;
 };
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 const MAX_RELEASE_RESPONSE_BYTES = 64 * 1_024;
+const MAX_RELEASE_HISTORY_RESPONSE_BYTES = 512 * 1_024;
+const MAX_RELEASE_NOTES = 10;
+const MAX_RELEASE_TITLE_CHARACTERS = 200;
+const MAX_RELEASE_BODY_BYTES = 64 * 1_024;
+const RELEASE_NOTES_CACHE_SCHEMA_VERSION = 1;
 const MAX_ARCHIVE_BYTES = 512 * 1_024 * 1_024;
 const MAX_CHECKSUM_BYTES = 256;
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
@@ -43,10 +55,144 @@ type ParsedRelease = {
   version: string;
   immutable: boolean;
   installable: RelayInstallableRelease | null;
+  releaseNotes: RelayReleaseNotes | null;
+};
+
+type StoredReleaseNotes = {
+  schemaVersion: typeof RELEASE_NOTES_CACHE_SCHEMA_VERSION;
+  releases: RelayReleaseNotes[];
+  etag: string | null;
+};
+
+type ReleaseNotesCacheState = {
+  releases: RelayReleaseNotes[];
+  etag: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseReleaseNotes(parsed: Record<string, unknown>): RelayReleaseNotes | null {
+  const version =
+    typeof parsed.tag_name === 'string' ? normalizeRelayVersionTag(parsed.tag_name) : null;
+  if (
+    !version ||
+    typeof parsed.name !== 'string' ||
+    parsed.name.trim().length === 0 ||
+    parsed.name.trim().length > MAX_RELEASE_TITLE_CHARACTERS ||
+    typeof parsed.body !== 'string' ||
+    Buffer.byteLength(parsed.body, 'utf8') > MAX_RELEASE_BODY_BYTES ||
+    typeof parsed.published_at !== 'string' ||
+    !Number.isFinite(Date.parse(parsed.published_at))
+  ) {
+    return null;
+  }
+  return {
+    version,
+    title: parsed.name.trim(),
+    body: parsed.body,
+    publishedAt: parsed.published_at,
+    immutable: parsed.immutable === true,
+  };
+}
+
+function parseCachedReleaseNotes(value: unknown): ReleaseNotesCacheState {
+  const empty: ReleaseNotesCacheState = { releases: [], etag: null };
+  if (!isRecord(value) || value.schemaVersion !== RELEASE_NOTES_CACHE_SCHEMA_VERSION) return empty;
+  if (!Array.isArray(value.releases)) return empty;
+
+  const releases: RelayReleaseNotes[] = [];
+  for (const item of value.releases.slice(0, MAX_RELEASE_NOTES)) {
+    if (!isRecord(item)) continue;
+    const parsed = parseReleaseNotes({
+      tag_name: typeof item.version === 'string' ? `v${item.version}` : null,
+      name: item.title,
+      body: item.body,
+      published_at: item.publishedAt,
+      immutable: item.immutable,
+    });
+    if (parsed) releases.push(parsed);
+  }
+  const etag =
+    typeof value.etag === 'string' && value.etag.length <= 256 && !/[\r\n]/u.test(value.etag)
+      ? value.etag
+      : null;
+  return { releases, etag };
+}
+
+class ReleaseNotesCache {
+  private memory: ReleaseNotesCacheState = { releases: [], etag: null };
+
+  constructor(private readonly filePath?: string) {}
+
+  async read(): Promise<RelayReleaseNotes[]> {
+    return (await this.readState()).releases;
+  }
+
+  async readState(): Promise<ReleaseNotesCacheState> {
+    if (!this.filePath) return this.memory;
+    try {
+      const fileStats = await stat(this.filePath);
+      if (!fileStats.isFile() || fileStats.size > MAX_RELEASE_HISTORY_RESPONSE_BYTES) {
+        return { releases: [], etag: null };
+      }
+      return parseCachedReleaseNotes(JSON.parse(await readFile(this.filePath, 'utf8')));
+    } catch {
+      return { releases: [], etag: null };
+    }
+  }
+
+  async write(releases: RelayReleaseNotes[], etag: string | null = null): Promise<void> {
+    const next = releases.slice(0, MAX_RELEASE_NOTES);
+    this.memory = { releases: next, etag };
+    if (!this.filePath) return;
+
+    const stored: StoredReleaseNotes = {
+      schemaVersion: RELEASE_NOTES_CACHE_SCHEMA_VERSION,
+      releases: next,
+      etag,
+    };
+    const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
+    await mkdir(dirname(this.filePath), { recursive: true });
+    try {
+      await writeFile(temporaryPath, JSON.stringify(stored), {
+        encoding: 'utf8',
+        mode: 0o600,
+        flag: 'wx',
+      });
+      await rename(temporaryPath, this.filePath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async merge(release: RelayReleaseNotes): Promise<void> {
+    const state = await this.readState();
+    const matching = state.releases.find((item) => item.version === release.version);
+    const selected = matching?.immutable ? matching : release;
+    const merged = [selected, ...state.releases.filter((item) => item.version !== release.version)];
+    merged.sort((left, right) => compareRelayVersions(right.version, left.version) ?? 0);
+    await this.write(merged, state.etag);
+  }
+
+  async mergeHistory(
+    releases: RelayReleaseNotes[],
+    etag: string | null,
+  ): Promise<RelayReleaseNotes[]> {
+    const state = await this.readState();
+    const refreshedVersions = new Set(releases.map((release) => release.version));
+    const merged = releases.map((release) => {
+      const cached = state.releases.find((item) => item.version === release.version);
+      return cached?.immutable ? cached : release;
+    });
+    merged.push(...state.releases.filter((release) => !refreshedVersions.has(release.version)));
+    merged.sort((left, right) => compareRelayVersions(right.version, left.version) ?? 0);
+    const next = merged.slice(0, MAX_RELEASE_NOTES);
+    await this.write(next, etag);
+    return next;
+  }
 }
 
 function parseInstallableAsset(
@@ -116,7 +262,10 @@ function parseInstallableRelease(
   };
 }
 
-async function readBoundedResponseBody(response: Response): Promise<string> {
+async function readBoundedResponseBody(
+  response: Response,
+  maximumBytes = MAX_RELEASE_RESPONSE_BYTES,
+): Promise<string> {
   if (!response.body) throw new Error('GitHub release response did not contain a body');
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
@@ -127,7 +276,7 @@ async function readBoundedResponseBody(response: Response): Promise<string> {
       if (result.done) break;
       if (!result.value || result.value.byteLength === 0) continue;
       bytes += result.value.byteLength;
-      if (bytes > MAX_RELEASE_RESPONSE_BYTES) {
+      if (bytes > maximumBytes) {
         await reader.cancel().catch(() => undefined);
         throw new Error('GitHub release response exceeded the size limit');
       }
@@ -171,17 +320,41 @@ async function readLatestRelease(
   const version =
     typeof parsed.tag_name === 'string' ? normalizeRelayVersionTag(parsed.tag_name) : null;
   if (!version) throw new Error('GitHub release response contained an invalid version tag');
+  const releaseNotes = parseReleaseNotes(parsed);
   return {
     version,
     immutable: parsed.immutable === true,
     installable: parseInstallableRelease(parsed, version),
+    releaseNotes,
   };
+}
+
+async function readReleaseHistory(
+  response: Awaited<ReturnType<typeof fetch>>,
+): Promise<RelayReleaseNotes[]> {
+  if (response.status !== 200) {
+    throw new Error(`GitHub release history request returned HTTP ${response.status}`);
+  }
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!contentType.startsWith('application/json')) {
+    throw new Error('GitHub release history response was not JSON');
+  }
+  const body = await readBoundedResponseBody(response, MAX_RELEASE_HISTORY_RESPONSE_BYTES);
+  const parsed = JSON.parse(body) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('GitHub release history response was not a list');
+
+  return parsed
+    .filter((value) => isRecord(value) && value.draft === false && value.prerelease === false)
+    .map((value) => parseReleaseNotes(value as Record<string, unknown>))
+    .filter((value): value is RelayReleaseNotes => value !== null)
+    .slice(0, MAX_RELEASE_NOTES);
 }
 
 export class ReleaseUpdateService {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly getCurrentVersion: () => string;
   private readonly requestTimeoutMs: number;
+  private readonly releaseNotesCache: ReleaseNotesCache;
   private inFlight: { currentVersion: string; promise: Promise<RelayUpdateCheck> } | null = null;
   private lastCheckedInstallableVersion: string | null = null;
 
@@ -189,6 +362,30 @@ export class ReleaseUpdateService {
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.getCurrentVersion = options.getCurrentVersion;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.releaseNotesCache = new ReleaseNotesCache(options.cacheFilePath);
+  }
+
+  getCachedReleaseNotes(): Promise<RelayReleaseNotes[]> {
+    return this.releaseNotesCache.read();
+  }
+
+  async refreshReleaseNotes(): Promise<RelayReleaseNotes[]> {
+    const currentVersion = this.getCurrentVersion();
+    const cached = await this.releaseNotesCache.readState();
+    const response = await this.fetchWithTimeout(
+      RELAY_RELEASE_HISTORY_API_URL,
+      currentVersion,
+      cached.etag,
+    );
+    if (response.status === 304) return cached.releases;
+    const releases = await readReleaseHistory(response);
+    const responseEtag = response.headers.get('etag');
+    return this.releaseNotesCache.mergeHistory(
+      releases,
+      responseEtag && responseEtag.length <= 256 && !/[\r\n]/u.test(responseEtag)
+        ? responseEtag
+        : null,
+    );
   }
 
   check(): Promise<RelayUpdateCheck> {
@@ -229,8 +426,33 @@ export class ReleaseUpdateService {
     return release.installable;
   }
 
+  async resolveInstallableByTag(
+    version: string,
+    expectedTargetCommitish: string,
+  ): Promise<RelayInstallableRelease> {
+    const url = relayReleaseByTagApiUrl(version);
+    if (!url) throw new Error('Recovery release version was invalid');
+    if (!COMMIT_SHA_PATTERN.test(expectedTargetCommitish)) {
+      throw new Error('Recovery release commit was invalid');
+    }
+
+    const release = await readLatestRelease(
+      await this.fetchWithTimeout(url, this.getCurrentVersion()),
+    );
+    if (release.version !== version) throw new Error('Recovery release tag changed');
+    if (!release.immutable) throw new Error('Recovery release is not immutable');
+    if (!release.installable) throw new Error('Recovery release assets are not installable');
+    if (release.installable.targetCommitish !== expectedTargetCommitish) {
+      throw new Error('Recovery release commit changed');
+    }
+    return release.installable;
+  }
+
   private async fetchUpdate(currentVersion: string): Promise<RelayUpdateCheck> {
     const release = await this.fetchRelease(currentVersion);
+    if (release.releaseNotes) {
+      await this.releaseNotesCache.merge(release.releaseNotes).catch(() => undefined);
+    }
     const updateAvailable = compareRelayVersions(release.version, currentVersion) === 1;
     const installable = updateAvailable ? release.installable : null;
     this.lastCheckedInstallableVersion = installable?.version ?? null;
@@ -240,10 +462,21 @@ export class ReleaseUpdateService {
       updateAvailable,
       installable: Boolean(installable),
       assetSizeBytes: installable?.archive.size ?? null,
+      releaseNotes: release.releaseNotes,
     };
   }
 
   private async fetchRelease(currentVersion: string): Promise<ParsedRelease> {
+    return readLatestRelease(
+      await this.fetchWithTimeout(RELAY_LATEST_RELEASE_API_URL, currentVersion),
+    );
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    currentVersion: string,
+    etag: string | null = null,
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
     const request: NoStoreFetchRequestInit = {
@@ -254,12 +487,12 @@ export class ReleaseUpdateService {
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': `Relay/${currentVersion}`,
+        ...(etag ? { 'If-None-Match': etag } : {}),
       },
     };
 
     try {
-      const response = await this.fetchImpl(RELAY_LATEST_RELEASE_API_URL, request);
-      return await readLatestRelease(response);
+      return await this.fetchImpl(url, request);
     } finally {
       clearTimeout(timeout);
     }

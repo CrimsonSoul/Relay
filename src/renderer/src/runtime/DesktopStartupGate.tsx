@@ -7,7 +7,8 @@ export type DesktopStartupBridge = {
   markStartupRendererMounted: () => void;
 };
 
-type AppModule = { default: ComponentType };
+type AppProps = { launchIntent?: 'recovery' };
+type AppModule = { default: ComponentType<AppProps> };
 
 type DesktopStartupGateProps = Readonly<{
   bridge: DesktopStartupBridge;
@@ -42,9 +43,28 @@ function StartupShell({ snapshot }: Readonly<{ snapshot: StartupSnapshot }>) {
   );
 }
 
+function RecoveryProbation({ App }: Readonly<{ App: ComponentType<AppProps> }>) {
+  return (
+    <main className="recovery-probation" aria-busy="true">
+      <div className="recovery-probation__app" aria-hidden="true" inert>
+        <App />
+      </div>
+      <section className="recovery-probation__status" role="status" aria-live="polite">
+        <div className="recovery-probation__signal" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+        <h1>Finishing the update</h1>
+        <p>Relay is checking this version for 60 seconds. It will reopen automatically.</p>
+      </section>
+    </main>
+  );
+}
+
 export function DesktopStartupGate({ bridge, loadApp }: DesktopStartupGateProps) {
   const [snapshot, setSnapshot] = useState(INITIAL_SNAPSHOT);
-  const [App, setApp] = useState<ComponentType | null>(null);
+  const [App, setApp] = useState<ComponentType<AppProps> | null>(null);
   const [appFailed, setAppFailed] = useState(false);
   const appPromise = useRef<Promise<AppModule> | null>(null);
   const mountedReported = useRef(false);
@@ -103,5 +123,10 @@ export function DesktopStartupGate({ bridge, loadApp }: DesktopStartupGateProps)
     );
   }
 
-  return snapshot.phase === 'ready' && App ? <App /> : <StartupShell snapshot={snapshot} />;
+  if (snapshot.phase !== 'ready' || !App) return <StartupShell snapshot={snapshot} />;
+  return snapshot.recoveryMode === 'probation' ? (
+    <RecoveryProbation App={App} />
+  ) : (
+    <App launchIntent={snapshot.launchIntent} />
+  );
 }

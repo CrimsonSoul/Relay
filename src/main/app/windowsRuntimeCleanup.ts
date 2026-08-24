@@ -1,6 +1,7 @@
 import { lstat, open, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { parseRecoveryCatalog } from '../releases/RecoveryCatalog';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const STAGING_DIRECTORY_PATTERN = /^\.staging-[a-z0-9._-]{1,96}$/;
@@ -16,6 +17,8 @@ const RUNTIME_MARKER = '.relay-runtime-ready';
 const QUARANTINE_CREATED_MARKER = '.relay-quarantine-created';
 const STALE_STAGING_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CLEANUP_DELAY_MS = 5 * 60 * 1000;
+const SNAPSHOT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const SNAPSHOT_MARKER_MAX_BYTES = 32 * 1024;
 
 export type WindowsRuntimeCleanupResult = {
   removed: string[];
@@ -26,12 +29,15 @@ export type WindowsRuntimeCleanupResult = {
 type CleanupOptions = {
   root: string;
   execPath: string;
+  userDataRoot?: string;
   nowMs?: number;
   staleStagingAgeMs?: number;
   acquireLock?: (root: string) => Promise<(() => Promise<void>) | null>;
 };
 
 type ManagedRoot = { root: string; runtimeRoot: string };
+
+type ManagedSnapshotRoot = { userDataRoot: string; snapshotsRoot: string };
 
 type CleanupContext = {
   managedRoot: ManagedRoot;
@@ -48,6 +54,7 @@ type ScheduleOptions = {
   isPackaged?: boolean;
   localAppData?: string;
   execPath?: string;
+  userDataRoot?: string;
   delayMs?: number;
   cleanup?: (options: CleanupOptions) => Promise<WindowsRuntimeCleanupResult>;
   setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
@@ -192,11 +199,18 @@ async function readPreservedBuilds(
   const preserved = new Set([executingBuild]);
   try {
     const state = readRelayIni(await readFile(join(root, 'state.ini'), 'utf8'));
-    if (state.protocol !== '1' || !isBuildId(state.current)) return null;
+    if ((state.protocol !== '1' && state.protocol !== '2') || !isBuildId(state.current)) {
+      return null;
+    }
     preserved.add(state.current);
-    if (state.previous) {
-      if (!isBuildId(state.previous)) return null;
-      preserved.add(state.previous);
+    const referencedBuilds =
+      state.protocol === '1'
+        ? [state.previous]
+        : [state.candidate, state.previous0, state.previous1, state.previous2];
+    for (const buildId of referencedBuilds) {
+      if (!buildId) continue;
+      if (!isBuildId(buildId)) return null;
+      preserved.add(buildId);
     }
     return preserved;
   } catch {
@@ -208,7 +222,7 @@ async function readPreservedBuilds(
 async function isCompleteRuntime(directory: string, buildId: string): Promise<boolean> {
   try {
     const marker = readRelayIni(await readFile(join(directory, RUNTIME_MARKER), 'utf8'));
-    return marker.protocol === '1' && marker.buildId === buildId;
+    return (marker.protocol === '1' || marker.protocol === '2') && marker.buildId === buildId;
   } catch {
     return false;
   }
@@ -297,9 +311,178 @@ async function cleanupRuntimeEntry(
   }
 }
 
+async function hasPendingRecoveryRequest(root: string): Promise<boolean> {
+  const recoveryRoot = join(root, 'Recovery');
+  try {
+    const [stats, realRecoveryRoot] = await Promise.all([
+      lstat(recoveryRoot),
+      realpath(recoveryRoot),
+    ]);
+    if (
+      !stats.isDirectory() ||
+      stats.isSymbolicLink() ||
+      relative(root, realRecoveryRoot) !== 'Recovery'
+    ) {
+      return true;
+    }
+    for (const name of ['update-request.ini', 'rollback-request.ini', 'repair-request.ini']) {
+      try {
+        await lstat(join(realRecoveryRoot, name));
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return true;
+      }
+    }
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
+async function readPreservedSnapshotIds(root: string): Promise<Set<string> | null> {
+  try {
+    const catalog = parseRecoveryCatalog(await readFile(join(root, 'state.ini'), 'utf8'));
+    if (!catalog || catalog.transaction || (await hasPendingRecoveryRequest(root))) return null;
+    return new Set(
+      catalog.builds.flatMap((build) =>
+        build.rollbackSnapshotId ? [build.rollbackSnapshotId] : [],
+      ),
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function resolveManagedSnapshotRoot(
+  userDataRoot: string,
+): Promise<ManagedSnapshotRoot | null> {
+  if (!isAbsolute(userDataRoot)) return null;
+  const requestedUserDataRoot = resolve(userDataRoot);
+  const requestedSnapshotsRoot = join(requestedUserDataRoot, 'RecoverySnapshots');
+  try {
+    const [userDataStats, snapshotsStats, realUserDataRoot, realSnapshotsRoot] = await Promise.all([
+      lstat(requestedUserDataRoot),
+      lstat(requestedSnapshotsRoot),
+      realpath(requestedUserDataRoot),
+      realpath(requestedSnapshotsRoot),
+    ]);
+    if (
+      !userDataStats.isDirectory() ||
+      userDataStats.isSymbolicLink() ||
+      !snapshotsStats.isDirectory() ||
+      snapshotsStats.isSymbolicLink() ||
+      relative(realUserDataRoot, realSnapshotsRoot) !== 'RecoverySnapshots'
+    ) {
+      return null;
+    }
+    return { userDataRoot: realUserDataRoot, snapshotsRoot: realSnapshotsRoot };
+  } catch {
+    return null;
+  }
+}
+
+async function isCompleteSnapshot(directory: string, snapshotId: string): Promise<boolean> {
+  const markerPath = join(directory, 'snapshot.ini');
+  try {
+    const stats = await lstat(markerPath);
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.size > SNAPSHOT_MARKER_MAX_BYTES) {
+      return false;
+    }
+    const marker = await readFile(markerPath, 'utf8');
+    const values: Record<string, string> = {};
+    let inSnapshot = false;
+    for (const sourceLine of marker.split(/\r?\n/)) {
+      const line = sourceLine.trim();
+      if (!line) continue;
+      if (line.startsWith('[') && line.endsWith(']')) {
+        inSnapshot = line === '[Snapshot]';
+        continue;
+      }
+      if (!inSnapshot) continue;
+      const separator = line.indexOf('=');
+      if (separator <= 0) return false;
+      const key = line.slice(0, separator).trim();
+      if (!key || key in values) return false;
+      values[key] = line.slice(separator + 1).trim();
+    }
+    return values.protocol === '1' && values.snapshotId === snapshotId && values.complete === '1';
+  } catch {
+    return false;
+  }
+}
+
+async function isSafeSnapshotDeletionPath(
+  initialRoot: ManagedSnapshotRoot,
+  requestedUserDataRoot: string,
+  path: string,
+  snapshotId: string,
+): Promise<boolean> {
+  const currentRoot = await resolveManagedSnapshotRoot(requestedUserDataRoot);
+  if (
+    !currentRoot ||
+    currentRoot.userDataRoot.toLowerCase() !== initialRoot.userDataRoot.toLowerCase() ||
+    currentRoot.snapshotsRoot.toLowerCase() !== initialRoot.snapshotsRoot.toLowerCase()
+  ) {
+    return false;
+  }
+  try {
+    const [stats, realPath] = await Promise.all([lstat(path), realpath(path)]);
+    return (
+      stats.isDirectory() &&
+      !stats.isSymbolicLink() &&
+      relative(currentRoot.snapshotsRoot, realPath) === snapshotId
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function cleanupRecoverySnapshots(
+  root: string,
+  userDataRoot: string,
+  result: WindowsRuntimeCleanupResult,
+): Promise<void> {
+  const managedSnapshotRoot = await resolveManagedSnapshotRoot(userDataRoot);
+  if (!managedSnapshotRoot) return;
+  let entries: Dirent[];
+  try {
+    entries = await readdir(managedSnapshotRoot.snapshotsRoot, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const label = `snapshot:${entry.name}`;
+    const path = join(managedSnapshotRoot.snapshotsRoot, entry.name);
+    try {
+      const preserved = await readPreservedSnapshotIds(root);
+      const stats = await lstat(path);
+      if (
+        !preserved ||
+        !SNAPSHOT_ID_PATTERN.test(entry.name) ||
+        preserved.has(entry.name) ||
+        !entry.isDirectory() ||
+        entry.isSymbolicLink() ||
+        !stats.isDirectory() ||
+        stats.isSymbolicLink() ||
+        !(await isCompleteSnapshot(path, entry.name)) ||
+        !(await isSafeSnapshotDeletionPath(managedSnapshotRoot, userDataRoot, path, entry.name))
+      ) {
+        result.skipped.push(label);
+        continue;
+      }
+      await rm(path, { recursive: true, force: true });
+      result.removed.push(label);
+    } catch {
+      result.failed.push(label);
+    }
+  }
+}
+
 export async function cleanupWindowsRuntimes({
   root,
   execPath,
+  userDataRoot,
   nowMs = Date.now(),
   staleStagingAgeMs = STALE_STAGING_AGE_MS,
   acquireLock = acquireBootstrapLock,
@@ -333,6 +516,7 @@ export async function cleanupWindowsRuntimes({
     for (const entry of entries) {
       await cleanupRuntimeEntry(entry, context, result);
     }
+    if (userDataRoot) await cleanupRecoverySnapshots(managedRoot.root, userDataRoot, result);
   } finally {
     await releaseLock();
   }
@@ -356,6 +540,7 @@ export function scheduleWindowsRuntimeCleanup(options: ScheduleOptions = {}): ()
     void cleanup({
       root: join(localAppData, 'Relay'),
       execPath: options.execPath ?? process.execPath,
+      userDataRoot: options.userDataRoot,
     }).then(options.onComplete, options.onError);
   }, options.delayMs ?? DEFAULT_CLEANUP_DELAY_MS);
   timer.unref?.();

@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
 import { ReleaseUpdateManager, type ReleaseUpdateManagerOptions } from './ReleaseUpdateManager';
+import { parseRecoveryUpdateRequest } from './RecoveryUpdateRequest';
+import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
 
 const CURRENT_VERSION = '1.0.0';
 const INSTALLER = Buffer.from('MZverified staged installer');
@@ -58,6 +60,13 @@ function updateCheck(overrides: Partial<RelayUpdateCheck> = {}): RelayUpdateChec
     updateAvailable: true,
     installable: true,
     assetSizeBytes: 140_000_000,
+    releaseNotes: {
+      version: '1.1.0',
+      title: 'Relay v1.1.0',
+      body: 'Generated release notes.',
+      publishedAt: '2026-08-12T12:44:01Z',
+      immutable: true,
+    },
     ...overrides,
   };
 }
@@ -80,11 +89,15 @@ describe('ReleaseUpdateManager', () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'relay-update-manager-'));
     localAppData = join(tempRoot, 'LocalAppData');
     relayRoot = join(localAppData, 'Relay');
-    runtimeDirectory = join(relayRoot, 'Runtime', 'r1-currentbuild');
+    runtimeDirectory = join(relayRoot, 'Runtime', `r1-${'1'.repeat(40)}`);
     execPath = join(runtimeDirectory, 'Relay.exe');
     stableLauncher = join(relayRoot, 'Relay.exe');
     await mkdir(runtimeDirectory, { recursive: true });
     await writeFile(execPath, 'MZcurrent runtime');
+    await writeFile(
+      join(runtimeDirectory, '.relay-runtime-ready'),
+      `[Relay]\nprotocol=1\nbuildId=r1-${'1'.repeat(40)}\nexecutable=Relay.exe\npayloadHash=${'c'.repeat(128)}\n`,
+    );
     await writeFile(stableLauncher, 'MZstable launcher');
 
     resolveLatestInstallable = vi.fn<ResolveLatestInstallable>(async () => release());
@@ -145,6 +158,48 @@ describe('ReleaseUpdateManager', () => {
     expect(relaunch).not.toHaveBeenCalled();
   });
 
+  it('suppresses the exact immutable release after probation quarantines it', async () => {
+    const currentBuild: RecoveryBuildRecord = {
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512: 'c'.repeat(128),
+      installerSha256: null,
+      recoveryProtocol: 1,
+      serverDataEpoch: 1,
+      clientDataEpoch: 1,
+      installedAt: '2026-08-24T15:00:00.000Z',
+      health: 'healthy',
+      rollbackSnapshotId: null,
+    };
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 3,
+        currentBuildId: currentBuild.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [currentBuild],
+        transaction: null,
+        failedReleaseFingerprints: [`v1.1.0@${release().targetCommitish}`],
+      }),
+    );
+    const updates = manager();
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'available',
+      latestVersion: '1.1.0',
+      installable: false,
+      failureCode: 'release-quarantined',
+    });
+    await expect(updates.download()).resolves.toMatchObject({
+      failureCode: 'release-quarantined',
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+  });
+
   it('requires separate download, install, and restart actions', async () => {
     const updates = manager();
     const snapshots: string[] = [];
@@ -164,7 +219,25 @@ describe('ReleaseUpdateManager', () => {
     await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
     expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
       '/relay-prepare-only',
+      expect.stringMatching(
+        /^\/relay-transaction=[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+      ),
     ]);
+    const recoveryRequest = parseRecoveryUpdateRequest(
+      await readFile(join(relayRoot, 'Recovery', 'update-request.ini'), 'utf8'),
+    );
+    expect(recoveryRequest).toMatchObject({
+      source: {
+        buildId: `r1-${'1'.repeat(40)}`,
+        version: CURRENT_VERSION,
+        recoveryProtocol: 1,
+        runtimeSha512: 'c'.repeat(128),
+      },
+      targetVersion: '1.1.0',
+      targetCommitish: '0123456789abcdef0123456789abcdef01234567',
+      targetInstallerSha256: INSTALLER_SHA256,
+      mode: 'unconfigured',
+    });
     expect(relaunch).not.toHaveBeenCalled();
     expect(quit).not.toHaveBeenCalled();
 
@@ -292,6 +365,21 @@ describe('ReleaseUpdateManager', () => {
     expect(relaunch).not.toHaveBeenCalled();
   });
 
+  it('removes a recovery request when the bootstrap cannot be started', async () => {
+    spawnInstaller.mockRejectedValueOnce(new Error('spawn failed'));
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    await expect(stat(join(relayRoot, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('defers a newer release check while an older release is being prepared', async () => {
     const deferredSpawn: { resolve?: (exitCode: number | null) => void } = {};
     spawnInstaller.mockReturnValueOnce(
@@ -362,6 +450,37 @@ describe('ReleaseUpdateManager', () => {
     await expect(firstRestart).resolves.toBe(true);
     expect(relaunch).toHaveBeenCalledOnce();
     expect(quit).toHaveBeenCalledOnce();
+  });
+
+  it('finishes the recovery checkpoint before handing control to the stable launcher', async () => {
+    const prepareRecoveryRestart = vi.fn(async () => true);
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(expect.stringMatching(/^[0-9a-f-]{36}$/u));
+    expect(prepareRecoveryRestart.mock.invocationCallOrder[0]).toBeLessThan(
+      relaunch.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('keeps Relay open when the recovery checkpoint cannot be completed', async () => {
+    const updates = manager({ prepareRecoveryRestart: async () => false });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(false);
+
+    expect(relaunch).not.toHaveBeenCalled();
+    expect(quit).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'restart-unavailable',
+    });
   });
 
   it('discards a staged older release when discovery advances', async () => {
