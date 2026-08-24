@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  getDocument,
-  GlobalWorkerOptions,
-  type PDFDocumentLoadingTask,
-  type PDFDocumentProxy,
-} from 'pdfjs-dist/build/pdf.mjs';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import {
   KnowledgeContinuousPdf,
@@ -22,15 +23,14 @@ import {
 import { loadKnowledgePdfViewMode, persistKnowledgePdfViewMode } from './knowledgePdfViewMode';
 import type { KnowledgeDocumentSearchMatch } from './knowledgeDocumentSearch';
 import type { KnowledgeSearchNavigationRequest } from './useKnowledgeDocumentSearch';
+import { useKnowledgePdfSession, type KnowledgePdfSession } from './useKnowledgePdfSession';
+import {
+  createKnowledgePdfNavigationState,
+  knowledgePdfNavigationReducer,
+} from './knowledgePdfNavigationState';
+import { KnowledgePdfToolbar } from './KnowledgePdfToolbar';
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
-export type KnowledgePdfSession = {
-  pdf: PDFDocumentProxy;
-  documentId: string;
-  checksum: string;
-  generation: number;
-};
+export type { KnowledgePdfSession } from './useKnowledgePdfSession';
 
 type Props = {
   document: KnowledgeDocumentRecord | null;
@@ -55,18 +55,6 @@ type PendingFocusRequest = {
   target: KnowledgeViewerTarget;
 };
 
-type SingleTopRequest = {
-  documentId: string;
-  checksum: string;
-  target: KnowledgeViewerTarget;
-};
-
-type KnowledgeViewerError = {
-  message: string;
-  documentId: string;
-  checksum: string;
-};
-
 type PendingSearchRequest = {
   key: number;
   result: KnowledgeDocumentSearchMatch;
@@ -80,19 +68,6 @@ const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.4;
 const SCALE_STEP = 0.15;
 const SETTLED_SCROLL_MS = 1_500;
-
-function viewerError(error: string): string {
-  switch (error) {
-    case 'not-available-offline':
-      return 'This document is not cached on this laptop. Reconnect to the Relay server to open it.';
-    case 'not-found':
-      return 'This document is no longer available in the Wiki.';
-    case 'checksum-mismatch':
-      return 'Relay could not verify this document. Refresh the library and try again.';
-    default:
-      return 'Relay could not open this document. Try again after the library refreshes.';
-  }
-}
 
 function viewerTargetsMatch(
   left: KnowledgeViewerTarget | null,
@@ -140,22 +115,16 @@ export function KnowledgePdfViewer({
   const targetPageIndex = target?.pageIndex;
   const targetTop = target?.top;
   const initialNavigationTarget = normalizedViewerTarget(target, knowledgeDocument?.pageCount ?? 0);
-  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [pageIndex, setPageIndex] = useState(0);
+  const [navigationState, dispatchNavigation] = useReducer(
+    knowledgePdfNavigationReducer,
+    initialNavigationTarget,
+    createKnowledgePdfNavigationState,
+  );
+  const { pageIndex, navigationTarget, singleTopRequest } = navigationState;
   const [scale, setScale] = useState(1);
   const [viewMode, setViewMode] = useState(loadKnowledgePdfViewMode);
-  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
-  const [navigationTarget, setNavigationTarget] = useState<KnowledgeViewerTarget | null>(
-    initialNavigationTarget,
-  );
-  const [singleTopRequest, setSingleTopRequest] = useState<SingleTopRequest | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<KnowledgeViewerError | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement>(null);
-  const viewOptionsRef = useRef<HTMLDivElement>(null);
-  const viewOptionsButtonRef = useRef<HTMLButtonElement>(null);
   const continuousPdfRef = useRef<KnowledgeContinuousPdfHandle>(null);
   const pageIndexRef = useRef(0);
   const observedPageIndexRef = useRef(0);
@@ -163,8 +132,59 @@ export function KnowledgePdfViewer({
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
   const settledScrollTimerRef = useRef<number | null>(null);
-  const pdfIdentityRef = useRef<KnowledgePdfSession | null>(null);
-  const loadedDocumentIdentityRef = useRef<string | null>(null);
+  const destinationRequestTokenRef = useRef(0);
+  const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
+  const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
+  const pendingSearchRequestRef = useRef<PendingSearchRequest | null>(null);
+  const handledSearchRequestKeyRef = useRef<number | null>(null);
+  const targetRequestKey = `${documentId ?? ''}:${focusRequestKey ?? ''}:${targetPageIndex ?? ''}:${targetTop ?? ''}`;
+  const previousTargetRef = useRef(target);
+  const previousTargetRequestKeyRef = useRef(targetRequestKey);
+  const previousViewModeRef = useRef(viewMode);
+  const viewModeRef = useRef(viewMode);
+  const activeDocumentRef = useRef({ active, documentId, checksum: documentChecksum });
+
+  const resetForPdfLoad = useCallback(({ preserveViewState }: { preserveViewState: boolean }) => {
+    pendingSearchRequestRef.current = null;
+    handledSearchRequestKeyRef.current = null;
+    readyPageIndicesRef.current.clear();
+    if (!preserveViewState) {
+      setScale(1);
+      pageIndexRef.current = 0;
+      observedPageIndexRef.current = 0;
+    } else {
+      observedPageIndexRef.current = pageIndexRef.current;
+    }
+    dispatchNavigation({ type: 'document-reset', preservePage: preserveViewState });
+    navigationTargetRef.current = null;
+    issuedNavigationTargetRef.current = null;
+    previousTargetRequestKeyRef.current = '';
+    pendingFocusRequestRef.current = undefined;
+  }, []);
+
+  const publishPdfSession = useCallback(
+    (nextSession: KnowledgePdfSession | null) => {
+      if (!nextSession) pendingSearchRequestRef.current = null;
+      onPdfSessionChange?.(nextSession);
+    },
+    [onPdfSessionChange],
+  );
+
+  const {
+    session: pdfSession,
+    sessionRef: pdfIdentityRef,
+    loading,
+    error,
+    retryKey,
+    retry,
+  } = useKnowledgePdfSession({
+    active,
+    documentId,
+    checksum: documentChecksum,
+    onSessionChange: publishPdfSession,
+    onLoadStart: resetForPdfLoad,
+  });
+  const pdf = pdfSession?.pdf ?? null;
   const activePdfIdentity = pdfIdentityRef.current;
   const activePdf =
     active &&
@@ -174,12 +194,6 @@ export function KnowledgePdfViewer({
     activePdfIdentity.checksum === documentChecksum
       ? pdf
       : null;
-  const pdfGenerationRef = useRef(0);
-  const destinationRequestTokenRef = useRef(0);
-  const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
-  const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
-  const pendingSearchRequestRef = useRef<PendingSearchRequest | null>(null);
-  const handledSearchRequestKeyRef = useRef<number | null>(null);
   const normalizedTargetPageIndex =
     targetPageIndex === undefined
       ? undefined
@@ -187,12 +201,6 @@ export function KnowledgePdfViewer({
           targetPageIndex,
           activePdf?.numPages ?? knowledgeDocument?.pageCount ?? 0,
         );
-  const targetRequestKey = `${documentId ?? ''}:${focusRequestKey ?? ''}:${targetPageIndex ?? ''}:${targetTop ?? ''}`;
-  const previousTargetRef = useRef(target);
-  const previousTargetRequestKeyRef = useRef(targetRequestKey);
-  const previousViewModeRef = useRef(viewMode);
-  const viewModeRef = useRef(viewMode);
-  const activeDocumentRef = useRef({ active, documentId, checksum: documentChecksum });
   const focusContextRef = useRef({
     documentId,
     focusRequestKey,
@@ -217,144 +225,6 @@ export function KnowledgePdfViewer({
     return matchesByPage;
   }, [searchMatches]);
   const activeSearchResultId = searchNavigationRequest?.result.id ?? null;
-
-  const closeViewOptions = useCallback((restoreFocus = false) => {
-    setViewOptionsOpen(false);
-    if (restoreFocus) queueMicrotask(() => viewOptionsButtonRef.current?.focus());
-  }, []);
-
-  useEffect(() => {
-    if (!viewOptionsOpen) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && viewOptionsRef.current?.contains(event.target)) return;
-      closeViewOptions();
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      closeViewOptions(true);
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown, true);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [closeViewOptions, viewOptionsOpen]);
-
-  useEffect(() => {
-    setViewOptionsOpen(false);
-  }, [documentId]);
-
-  useEffect(() => {
-    if (!active || !documentId || !documentChecksum || !globalThis.api?.getKnowledgePdf) {
-      setPdf(null);
-      if (!documentId || !documentChecksum) loadedDocumentIdentityRef.current = null;
-      return;
-    }
-
-    let disposed = false;
-    let loadingTask: PDFDocumentLoadingTask | null = null;
-    let loadedPdf: PDFDocumentProxy | null = null;
-    let loadingTaskDestroyed = false;
-    const destroyLoadingTask = async () => {
-      if (!loadingTask || loadingTaskDestroyed) return;
-      loadingTaskDestroyed = true;
-      await loadingTask.destroy();
-    };
-    const generation = pdfGenerationRef.current + 1;
-    const documentIdentity = `${documentId}:${documentChecksum}`;
-    const preserveViewState = loadedDocumentIdentityRef.current === documentIdentity;
-    loadedDocumentIdentityRef.current = documentIdentity;
-    pdfGenerationRef.current = generation;
-    pdfIdentityRef.current = null;
-    pendingSearchRequestRef.current = null;
-    handledSearchRequestKeyRef.current = null;
-    readyPageIndicesRef.current.clear();
-    setPdf(null);
-    if (!preserveViewState) {
-      setPageIndex(0);
-      setScale(1);
-      pageIndexRef.current = 0;
-      observedPageIndexRef.current = 0;
-    } else {
-      observedPageIndexRef.current = pageIndexRef.current;
-    }
-    setNavigationTarget(null);
-    setSingleTopRequest(null);
-    setViewOptionsOpen(false);
-    setLoading(true);
-    setError(null);
-    navigationTargetRef.current = null;
-    issuedNavigationTargetRef.current = null;
-    previousTargetRequestKeyRef.current = '';
-    pendingFocusRequestRef.current = undefined;
-
-    globalThis.api
-      .getKnowledgePdf({
-        documentId,
-        checksum: documentChecksum,
-      })
-      .then(async (result) => {
-        if (disposed) return;
-        if (!result.ok) {
-          setError({
-            message: viewerError(result.error),
-            documentId,
-            checksum: documentChecksum,
-          });
-          return;
-        }
-        loadingTask = getDocument({
-          data: new Uint8Array(result.data),
-          // `isEvalSupported` is intentionally absent: pdf.js 6 removed both the option and the
-          // `new Function` font/pattern path it used to gate, so passing it now only reads like
-          // an active control that no longer exists.
-          disableAutoFetch: true,
-          disableStream: true,
-          enableXfa: false,
-          useWorkerFetch: false,
-        });
-        loadedPdf = await loadingTask.promise;
-        if (disposed) {
-          await destroyLoadingTask();
-          return;
-        }
-        const session: KnowledgePdfSession = {
-          pdf: loadedPdf,
-          documentId,
-          checksum: documentChecksum,
-          generation,
-        };
-        pdfIdentityRef.current = session;
-        onPdfSessionChange?.(session);
-        setPdf(loadedPdf);
-      })
-      .catch(() => {
-        if (!disposed) {
-          setError({
-            message: viewerError('download-failed'),
-            documentId,
-            checksum: documentChecksum,
-          });
-        }
-      })
-      .finally(() => {
-        if (!disposed) setLoading(false);
-      });
-
-    return () => {
-      disposed = true;
-      if (pdfIdentityRef.current?.generation === generation) {
-        pdfIdentityRef.current = null;
-        pendingSearchRequestRef.current = null;
-        onPdfSessionChange?.(null);
-      }
-      void destroyLoadingTask().catch(() => undefined);
-    };
-  }, [active, documentChecksum, documentId, onPdfSessionChange, retryKey]);
 
   useEffect(() => {
     if (!searchNavigationRequest) {
@@ -386,11 +256,11 @@ export function KnowledgePdfViewer({
       generation: identity.generation,
     };
     pageIndexRef.current = pageIndex;
-    setPageIndex(pageIndex);
+    dispatchNavigation({ type: 'page', pageIndex });
     if (viewModeRef.current === 'continuous') {
       continuousPdfRef.current?.scrollToPage(pageIndex);
     }
-  }, [activePdf, documentChecksum, documentId, searchNavigationRequest, viewMode]);
+  }, [activePdf, documentChecksum, documentId, pdfIdentityRef, searchNavigationRequest, viewMode]);
 
   useEffect(() => {
     const isNewTargetRequest =
@@ -408,7 +278,7 @@ export function KnowledgePdfViewer({
     previousTargetRequestKeyRef.current = targetRequestKey;
     navigationTargetRef.current = nextTarget;
     issuedNavigationTargetRef.current = null;
-    setNavigationTarget(nextTarget);
+    dispatchNavigation({ type: 'target', target: nextTarget });
     const activePdfIdentity = pdfIdentityRef.current;
     // `documentId`/`documentChecksum` are undefined while no document is selected, so the
     // identity comparisons must not be reached through optional chaining: `undefined ===
@@ -424,15 +294,18 @@ export function KnowledgePdfViewer({
     if (canApplySingleTarget) {
       if (pageIndexRef.current !== nextTarget.pageIndex) {
         pageIndexRef.current = nextTarget.pageIndex;
-        setPageIndex(nextTarget.pageIndex);
+        dispatchNavigation({ type: 'page', pageIndex: nextTarget.pageIndex });
       } else {
         // The page is already mounted, so it will not report ready again. Hand the target to the
         // single-page settle effect — for an offset destination KnowledgePdfPage performs the
         // scroll itself — so the target is still released and the pending focus request runs.
-        setSingleTopRequest({
-          documentId: activePdfIdentity.documentId,
-          checksum: activePdfIdentity.checksum,
-          target: nextTarget,
+        dispatchNavigation({
+          type: 'single-top',
+          request: {
+            documentId: activePdfIdentity.documentId,
+            checksum: activePdfIdentity.checksum,
+            target: nextTarget,
+          },
         });
       }
     }
@@ -440,6 +313,7 @@ export function KnowledgePdfViewer({
     documentChecksum,
     documentId,
     normalizedTargetPageIndex,
+    pdfIdentityRef,
     target,
     targetRequestKey,
     targetTop,
@@ -454,7 +328,7 @@ export function KnowledgePdfViewer({
       return;
     }
     pageIndexRef.current = normalizedTargetPageIndex;
-    setPageIndex(normalizedTargetPageIndex);
+    dispatchNavigation({ type: 'page', pageIndex: normalizedTargetPageIndex });
   }, [activePdf, normalizedTargetPageIndex]);
 
   useEffect(() => {
@@ -576,7 +450,14 @@ export function KnowledgePdfViewer({
       }
       onActivateResolvedLink({ kind: 'unavailable', reason: 'unsupported' });
     },
-    [activePdf, documentChecksum, documentId, onActivateResolvedLink, onDestinationChange],
+    [
+      activePdf,
+      documentChecksum,
+      documentId,
+      onActivateResolvedLink,
+      onDestinationChange,
+      pdfIdentityRef,
+    ],
   );
 
   const focusPendingRequest = useCallback((pageIndex: number) => {
@@ -608,7 +489,7 @@ export function KnowledgePdfViewer({
       focusPendingRequest(pageIndex);
       navigationTargetRef.current = null;
       issuedNavigationTargetRef.current = null;
-      setNavigationTarget(null);
+      dispatchNavigation({ type: 'target', target: null });
     },
     [cancelSettledScrollRelease, focusPendingRequest],
   );
@@ -628,7 +509,7 @@ export function KnowledgePdfViewer({
       focusPendingRequest(pageIndex);
       navigationTargetRef.current = null;
       issuedNavigationTargetRef.current = null;
-      setNavigationTarget(null);
+      dispatchNavigation({ type: 'target', target: null });
       return true;
     },
     [cancelSettledScrollRelease, focusPendingRequest],
@@ -638,9 +519,7 @@ export function KnowledgePdfViewer({
 
   useEffect(() => {
     if (!singleTopRequest) return;
-    setSingleTopRequest((currentRequest) =>
-      currentRequest === singleTopRequest ? null : currentRequest,
-    );
+    dispatchNavigation({ type: 'consume-single-top', request: singleTopRequest });
     const activePdfIdentity = pdfIdentityRef.current;
     const activeDocument = activeDocumentRef.current;
     const pendingTarget = navigationTargetRef.current;
@@ -662,7 +541,7 @@ export function KnowledgePdfViewer({
     observedPageIndexRef.current = singleTopRequest.target.pageIndex;
     issuedNavigationTargetRef.current = singleTopRequest.target;
     consumeNavigationTarget(singleTopRequest.target.pageIndex);
-  }, [consumeNavigationTarget, singleTopRequest]);
+  }, [consumeNavigationTarget, pdfIdentityRef, singleTopRequest]);
 
   const handlePageStatus = useCallback(
     (status: KnowledgePdfPageStatus) => {
@@ -723,7 +602,7 @@ export function KnowledgePdfViewer({
       }
       if (pageIndexRef.current === nextPageIndex) return;
       pageIndexRef.current = nextPageIndex;
-      setPageIndex(nextPageIndex);
+      dispatchNavigation({ type: 'page', pageIndex: nextPageIndex });
       onPageChange(nextPageIndex);
     },
     [consumeNavigationTarget, onPageChange],
@@ -760,12 +639,12 @@ export function KnowledgePdfViewer({
       });
       observedPageIndexRef.current = readyPageIndex;
       pageIndexRef.current = readyPageIndex;
-      setPageIndex(readyPageIndex);
+      dispatchNavigation({ type: 'page', pageIndex: readyPageIndex });
       onPageChange(readyPageIndex);
       handledSearchRequestKeyRef.current = pendingRequest.key;
       pendingSearchRequestRef.current = null;
     },
-    [onPageChange],
+    [onPageChange, pdfIdentityRef],
   );
 
   const pageTargetTop = navigationTarget?.pageIndex === pageIndex ? navigationTarget.top : null;
@@ -778,14 +657,14 @@ export function KnowledgePdfViewer({
     if (navigationTargetRef.current) {
       navigationTargetRef.current = null;
       issuedNavigationTargetRef.current = null;
-      setNavigationTarget(null);
+      dispatchNavigation({ type: 'target', target: null });
     }
     if (viewMode === 'continuous') {
       continuousPdfRef.current?.scrollToPage(boundedPage);
       return;
     }
     pageIndexRef.current = boundedPage;
-    setPageIndex(boundedPage);
+    dispatchNavigation({ type: 'page', pageIndex: boundedPage });
     onPageChange(boundedPage);
   };
 
@@ -801,18 +680,8 @@ export function KnowledgePdfViewer({
   };
 
   const selectViewMode = (nextMode: 'continuous' | 'single') => {
-    if (nextMode === viewMode) {
-      closeViewOptions(true);
-      return;
-    }
     persistKnowledgePdfViewMode(nextMode);
     setViewMode(nextMode);
-    closeViewOptions(true);
-  };
-
-  const handleFitWidth = () => {
-    void fitWidth();
-    closeViewOptions(true);
   };
 
   if (!knowledgeDocument) {
@@ -831,131 +700,23 @@ export function KnowledgePdfViewer({
       className="knowledge-viewer"
       aria-label={`${knowledgeDocument.title} PDF viewer`}
     >
-      <header className="knowledge-viewer__toolbar">
-        {toolbarLeading && <div className="knowledge-viewer__leading">{toolbarLeading}</div>}
-        <div className="knowledge-viewer__heading">
-          <div className="knowledge-viewer__identity">
-            <span className="knowledge-viewer__eyebrow">{knowledgeDocument.category}</span>
-            <h2>{knowledgeDocument.title}</h2>
-            <span className="knowledge-viewer__section">
-              {currentSection ? `Current section · ${currentSection}` : 'Document overview'}
-            </span>
-          </div>
-        </div>
-        <div className="knowledge-viewer__controls" aria-label="PDF controls">
-          <div
-            className="knowledge-viewer__control-group knowledge-viewer__page-controls"
-            role="group"
-            aria-label="Page navigation"
-          >
-            <button
-              type="button"
-              aria-label="Previous page"
-              disabled={!activePdf || pageIndex === 0}
-              onClick={() => moveToPage(pageIndex - 1)}
-            >
-              ←
-            </button>
-            <span className="knowledge-viewer__page-status" aria-live="polite" aria-atomic="true">
-              <span className="knowledge-viewer__page-status-long" aria-hidden="true">
-                {activePdf ? `Page ${pageIndex + 1} of ${activePdf.numPages}` : 'Loading document'}
-              </span>
-              <span className="knowledge-viewer__page-status-compact" aria-hidden="true">
-                {activePdf ? `${pageIndex + 1} / ${activePdf.numPages}` : 'Loading…'}
-              </span>
-              <span className="sr-only">
-                {activePdf
-                  ? `Current page ${pageIndex + 1} of ${activePdf.numPages}`
-                  : 'Loading current document'}
-              </span>
-            </span>
-            <button
-              type="button"
-              aria-label="Next page"
-              disabled={!activePdf || pageIndex >= activePdf.numPages - 1}
-              onClick={() => moveToPage(pageIndex + 1)}
-            >
-              →
-            </button>
-          </div>
-          <div
-            className="knowledge-viewer__control-group knowledge-viewer__zoom-controls"
-            role="group"
-            aria-label="Zoom controls"
-          >
-            <button
-              type="button"
-              aria-label="Zoom out"
-              disabled={!activePdf || scale <= MIN_SCALE}
-              onClick={() => setScale((current) => Math.max(MIN_SCALE, current - SCALE_STEP))}
-            >
-              −
-            </button>
-            <span className="knowledge-viewer__zoom">{Math.round(scale * 100)}%</span>
-            <button
-              type="button"
-              aria-label="Zoom in"
-              disabled={!activePdf || scale >= MAX_SCALE}
-              onClick={() => setScale((current) => Math.min(MAX_SCALE, current + SCALE_STEP))}
-            >
-              +
-            </button>
-          </div>
-          <div ref={viewOptionsRef} className="knowledge-viewer__view-menu">
-            <button
-              ref={viewOptionsButtonRef}
-              type="button"
-              className="knowledge-viewer__view-trigger"
-              aria-label={`View options: ${viewMode === 'continuous' ? 'Continuous' : 'Single page'}`}
-              aria-haspopup="dialog"
-              aria-expanded={viewOptionsOpen}
-              aria-controls="knowledge-view-options"
-              onClick={() => setViewOptionsOpen((current) => !current)}
-            >
-              <span>View</span>
-              <span aria-hidden="true">▾</span>
-            </button>
-            {viewOptionsOpen && (
-              <div
-                id="knowledge-view-options"
-                className="knowledge-viewer__view-panel"
-                role="dialog"
-                aria-label="View options"
-                data-motion="popover"
-              >
-                <div className="knowledge-viewer__view-heading">View options</div>
-                <button
-                  type="button"
-                  className="knowledge-viewer__view-option"
-                  disabled={!activePdf}
-                  onClick={handleFitWidth}
-                >
-                  <span>Fit width</span>
-                </button>
-                <span className="knowledge-viewer__view-label">Page flow</span>
-                <button
-                  type="button"
-                  className="knowledge-viewer__view-option"
-                  aria-pressed={viewMode === 'continuous'}
-                  onClick={() => selectViewMode('continuous')}
-                >
-                  <span>Continuous scrolling</span>
-                  <span aria-hidden="true">{viewMode === 'continuous' ? '✓' : ''}</span>
-                </button>
-                <button
-                  type="button"
-                  className="knowledge-viewer__view-option"
-                  aria-pressed={viewMode === 'single'}
-                  onClick={() => selectViewMode('single')}
-                >
-                  <span>Single page</span>
-                  <span aria-hidden="true">{viewMode === 'single' ? '✓' : ''}</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <KnowledgePdfToolbar
+        identityKey={documentId}
+        category={knowledgeDocument.category}
+        title={knowledgeDocument.title}
+        currentSection={currentSection}
+        toolbarLeading={toolbarLeading}
+        pageIndex={pageIndex}
+        pageCount={activePdf?.numPages ?? null}
+        scale={scale}
+        viewMode={viewMode}
+        onPreviousPage={() => moveToPage(pageIndex - 1)}
+        onNextPage={() => moveToPage(pageIndex + 1)}
+        onZoomOut={() => setScale((current) => Math.max(MIN_SCALE, current - SCALE_STEP))}
+        onZoomIn={() => setScale((current) => Math.min(MAX_SCALE, current + SCALE_STEP))}
+        onFitWidth={() => void fitWidth()}
+        onSelectViewMode={selectViewMode}
+      />
       {!activePdf && (loading || error) && (
         <div className="knowledge-viewer__viewport" ref={viewportRef} tabIndex={-1}>
           {loading && <div className="knowledge-viewer__loading">Preparing document…</div>}
@@ -964,7 +725,7 @@ export function KnowledgePdfViewer({
               <span className="knowledge-viewer-state__eyebrow">Document unavailable</span>
               <h3>Unable to open this guide</h3>
               <p>{error.message}</p>
-              <button type="button" onClick={() => setRetryKey((current) => current + 1)}>
+              <button type="button" onClick={retry}>
                 Retry document
               </button>
             </div>

@@ -1,26 +1,54 @@
 import { _electron as electron, expect, test } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const mainEntry = join(testDirectory, '../fixtures/layoutElectronMain.cjs');
+const rendererAssetsDirectory = join(testDirectory, '../../dist/renderer/assets');
+
+function readEmittedCssAsset(chunkName: string): string {
+  const matches = readdirSync(rendererAssetsDirectory).filter(
+    (fileName) => fileName.startsWith(`${chunkName}-`) && fileName.endsWith('.css'),
+  );
+
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected one emitted ${chunkName} CSS asset, found ${matches.length}: ${matches.join(', ')}`,
+    );
+  }
+
+  return readFileSync(join(rendererAssetsDirectory, matches[0]), 'utf8');
+}
+
+const localLayerImportPattern = /^@import\s+['"]([^'"]+)['"](?:\s+layer\(([^)]+)\))?\s*;/gm;
+
+function readLayeredCssBundle(relativePath: string): string {
+  const expand = (absolutePath: string, visited: Set<string>): string => {
+    if (visited.has(absolutePath)) return '';
+    visited.add(absolutePath);
+
+    return readFileSync(absolutePath, 'utf8').replace(
+      localLayerImportPattern,
+      (_statement, importPath: string, layerName: string | undefined) => {
+        const importedCss = expand(resolve(dirname(absolutePath), importPath), visited);
+        return layerName ? `@layer ${layerName} {\n${importedCss}\n}` : importedCss;
+      },
+    );
+  };
+
+  return expand(join(testDirectory, '../../src/renderer/src', relativePath), new Set<string>());
+}
+
+const emittedGlobalCss = readEmittedCssAsset('index');
+const emittedSettingsCss = readEmittedCssAsset('SettingsModal');
+const emittedKnowledgeCss = readEmittedCssAsset('KnowledgeWorkspace');
+const emittedAlertsCss = readEmittedCssAsset('AlertsTab');
 const themeCss = readFileSync(
   join(testDirectory, '../../src/renderer/src/styles/theme.css'),
   'utf8',
 );
-const componentsCss = readFileSync(
-  join(testDirectory, '../../src/renderer/src/styles/components.css'),
-  'utf8',
-);
-const settingsCss = readFileSync(
-  join(testDirectory, '../../src/renderer/src/components/settings/settings.css'),
-  'utf8',
-);
-const componentsAfterSettingsCss = readFileSync(
-  join(testDirectory, '../../src/renderer/src/styles/components-after-settings.css'),
-  'utf8',
-);
+const componentsCss = readLayeredCssBundle('styles/components.css');
 const sidebarCss = readFileSync(
   join(testDirectory, '../../src/renderer/src/components/sidebar/sidebar.css'),
   'utf8',
@@ -140,16 +168,125 @@ function contrastRatio(foreground: Rgba, background: Rgba): number {
   );
 }
 
+test('emitted cascade layers preserve top-level and lazy-feature precedence', async () => {
+  const emittedCss = [emittedGlobalCss, emittedSettingsCss, emittedKnowledgeCss, emittedAlertsCss];
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <main>
+        <div data-testid="settings-sublayer-probe">Settings sublayer</div>
+        <div data-testid="settings-override-probe">Settings override</div>
+        <div data-testid="knowledge-sublayer-probe">Knowledge sublayer</div>
+        <div data-testid="alerts-sublayer-probe">Alerts sublayer</div>
+      </main>
+    `);
+
+    for (const css of emittedCss) {
+      await window.addStyleTag({ content: css });
+    }
+
+    await window.addStyleTag({
+      content: `
+        /* Reverse source order makes the production layer declarations own precedence. */
+        @layer relay.settings.integrations {
+          [data-testid='settings-sublayer-probe'] { color: rgb(21, 84, 147); }
+        }
+        @layer relay.settings.administration {
+          [data-testid='settings-sublayer-probe'] { color: rgb(147, 84, 21); }
+        }
+        @layer relay.settings.core {
+          [data-testid='settings-sublayer-probe'] { color: rgb(220, 30, 40); }
+        }
+
+        @layer relay.settings-overrides {
+          [data-testid='settings-override-probe'] { background-color: rgb(34, 68, 102); }
+        }
+        @layer relay.settings.integrations {
+          [data-testid='settings-override-probe'] { background-color: rgb(153, 51, 102); }
+        }
+
+        @layer relay.features.knowledge.responsive {
+          [data-testid='knowledge-sublayer-probe'] { color: rgb(35, 125, 85); }
+        }
+        @layer relay.features.knowledge.management {
+          [data-testid='knowledge-sublayer-probe'] { color: rgb(125, 35, 85); }
+        }
+        @layer relay.features.knowledge.catalog {
+          [data-testid='knowledge-sublayer-probe'] { color: rgb(85, 125, 35); }
+        }
+
+        @layer relay.features.alerts.responsive {
+          [data-testid='alerts-sublayer-probe'] { background-color: rgb(72, 105, 138); }
+        }
+        @layer relay.features.alerts.email-event {
+          [data-testid='alerts-sublayer-probe'] { background-color: rgb(138, 72, 105); }
+        }
+        @layer relay.features.alerts.composer {
+          [data-testid='alerts-sublayer-probe'] { background-color: rgb(105, 138, 72); }
+        }
+      `,
+    });
+
+    await expect(window.getByTestId('settings-sublayer-probe')).toHaveCSS(
+      'color',
+      'rgb(21, 84, 147)',
+    );
+    await expect(window.getByTestId('settings-override-probe')).toHaveCSS(
+      'background-color',
+      'rgb(34, 68, 102)',
+    );
+    await expect(window.getByTestId('knowledge-sublayer-probe')).toHaveCSS(
+      'color',
+      'rgb(35, 125, 85)',
+    );
+    await expect(window.getByTestId('alerts-sublayer-probe')).toHaveCSS(
+      'background-color',
+      'rgb(72, 105, 138)',
+    );
+  } finally {
+    await app.close();
+  }
+});
+
+test('collapsed Wiki reader keeps the PDF viewer full-width at the medium desktop breakpoint', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setViewportSize({ width: 1000, height: 700 });
+    await window.setContent(`
+      <style>${emittedGlobalCss}</style>
+      <style>${emittedKnowledgeCss}</style>
+      <div class="knowledge-tab" style="width: 936px; height: 500px;">
+        <div
+          class="knowledge-workspace"
+          data-library-collapsed="true"
+          style="width: 936px; height: 500px;"
+        >
+          <button class="knowledge-drawer-backdrop" type="button"></button>
+          <aside class="knowledge-drawer"></aside>
+          <section class="knowledge-viewer" data-testid="collapsed-reader-viewer"></section>
+        </div>
+      </div>
+    `);
+
+    await expect(window.locator('.knowledge-drawer')).toBeHidden();
+    await expect(window.getByTestId('collapsed-reader-viewer')).toHaveCSS('width', '936px');
+  } finally {
+    await app.close();
+  }
+});
+
 test('flagged chips retain WCAG text contrast across every Relay accent and opaque background', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
 
   try {
     await window.setContent(`
-      <style>${themeCss}</style>
-      <style data-production-css="components.css">${componentsCss}</style>
-      <style data-production-css="settings.css">${settingsCss}</style>
-      <style data-production-css="components-after-settings.css">${componentsAfterSettingsCss}</style>
+      <style data-production-css="index.css">${emittedGlobalCss}</style>
+      <style data-production-css="SettingsModal.css">${emittedSettingsCss}</style>
       <style>
         html, body { margin: 0; }
         .contrast-host { padding: 8px; }
@@ -165,6 +302,16 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
     `);
 
     const ruleCoverage = await window.evaluate((states) => {
+      type BrowserStyleRule = {
+        readonly selectorText: string;
+        readonly style: { getPropertyValue(property: string): string };
+      };
+      const collectStyleRules = (rules: ArrayLike<object>): BrowserStyleRule[] =>
+        Array.from(rules).flatMap((rule) => {
+          if (rule instanceof globalThis.CSSStyleRule) return [rule];
+          if (!('cssRules' in rule)) return [];
+          return collectStyleRules(rule.cssRules as ArrayLike<object>);
+        });
       const styleRules = Array.from(globalThis.document.styleSheets)
         .filter((styleSheet) => {
           const owner = styleSheet.ownerNode;
@@ -173,19 +320,12 @@ test('flagged chips retain WCAG text contrast across every Relay accent and opaq
             owner.dataset.productionCss !== undefined
           );
         })
-        .flatMap((styleSheet) =>
-          Array.from(styleSheet.cssRules).flatMap((rule) =>
-            rule instanceof globalThis.CSSStyleRule
-              ? [
-                  {
-                    background: rule.style.getPropertyValue('background').trim(),
-                    color: rule.style.getPropertyValue('color').trim(),
-                    selectors: rule.selectorText.split(',').map((part) => part.trim()),
-                  },
-                ]
-              : [],
-          ),
-        );
+        .flatMap((styleSheet) => collectStyleRules(styleSheet.cssRules))
+        .map((rule) => ({
+          background: rule.style.getPropertyValue('background').trim(),
+          color: rule.style.getPropertyValue('color').trim(),
+          selectors: rule.selectorText.split(',').map((part) => part.trim()),
+        }));
 
       return states.map(({ issueKey, selector, className }) => {
         const chip = globalThis.document.querySelector(`[data-issue-key="${issueKey}"]`);

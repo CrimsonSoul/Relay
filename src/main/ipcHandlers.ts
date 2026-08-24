@@ -36,13 +36,15 @@ import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager'
 import type { RelayWebServerManager } from './web/RelayWebServerManager';
 import type { WebApprovalCodeStore } from './web/WebApprovalCodeStore';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
+import { setupWorkstationAwakeHandlers } from './handlers/workstationAwakeHandlers';
+import type { WorkstationAwakeService } from './power/WorkstationAwakeService';
 
 /**
  * Orchestrates all IPC handlers for the application.
  * Each handler group is wrapped in try/catch to prevent a single failure
  * from leaving all subsequent handlers unregistered.
  */
-export function setupIpcHandlers(opts: {
+export async function setupIpcHandlers(opts: {
   getMainWindow: () => BrowserWindow | null;
   getDataRoot: () => Promise<string>;
   getAppConfig?: () => AppConfig | null;
@@ -60,6 +62,7 @@ export function setupIpcHandlers(opts: {
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
   getWebApprovalCodes?: () => WebApprovalCodeStore | null;
   getRelayWebServerManager?: () => RelayWebServerManager | null;
+  getWorkstationAwakeService?: () => WorkstationAwakeService | null;
   subscribePrivilegedSessionChanged?: (
     listener: (view: PrivilegedSessionView) => void,
   ) => () => void;
@@ -68,7 +71,7 @@ export function setupIpcHandlers(opts: {
   ) => () => void;
   onPrivilegedCredentialChanged?: (accountId: string) => void;
   restartPb?: () => Promise<boolean>;
-}) {
+}): Promise<void> {
   const {
     getMainWindow,
     getDataRoot,
@@ -87,6 +90,7 @@ export function setupIpcHandlers(opts: {
     getPrivilegedRuntime,
     getWebApprovalCodes,
     getRelayWebServerManager,
+    getWorkstationAwakeService,
     subscribePrivilegedSessionChanged,
     subscribeWebApprovalRequestsChanged,
     onPrivilegedCredentialChanged,
@@ -106,6 +110,9 @@ export function setupIpcHandlers(opts: {
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
   safeSetup('radar', () => setupRadarHandlers());
   safeSetup('releaseUpdates', () => setupReleaseUpdateHandlers());
+  safeSetup('workstationAwake', () =>
+    setupWorkstationAwakeHandlers(getWorkstationAwakeService ?? (() => null)),
+  );
 
   safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager?.() ?? null));
 
@@ -197,4 +204,18 @@ export function setupIpcHandlers(opts: {
       getCache ?? (() => null),
     ),
   );
+
+  try {
+    const { setupRecoveryHandlers } = await import('./handlers/recoveryHandlers');
+    safeSetup('recovery', () =>
+      setupRecoveryHandlers({
+        getRuntime: getPrivilegedRuntime ?? (() => null),
+        getMode: () => getAppConfig?.()?.load()?.mode ?? 'unconfigured',
+      }),
+    );
+  } catch (err) {
+    loggers.main.error('Failed to load recovery handlers', {
+      error: getErrorMessage(err),
+    });
+  }
 }

@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import type {
   KnowledgeDocumentSearchMatch,
   KnowledgeDocumentSearchSnapshot,
@@ -9,10 +8,7 @@ import type {
 import { KnowledgeDocumentSearchResults } from '../KnowledgeDocumentSearchResults';
 import type { KnowledgeDocumentSearchDisplayResult } from '../useKnowledgeDocumentSearch';
 
-const knowledgeStyles = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
-  'utf8',
-);
+const knowledgeStyles = readCssBundle('features/knowledge/knowledge.css');
 
 function panelMatch(index: number): KnowledgeDocumentSearchMatch {
   return {

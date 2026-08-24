@@ -1,5 +1,6 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { loggers } from '../logger';
+import type { WindowsProcessJob } from './WindowsProcessJob';
 
 const logger = loggers.pocketbase;
 
@@ -17,6 +18,15 @@ export interface PocketBaseConfig {
   host: string;
   port: number;
   platform?: NodeJS.Platform;
+  restartOnCrash?: boolean;
+  useWindowsJobObject?: boolean;
+  createWindowsJob?: () => WindowsProcessJob | Promise<WindowsProcessJob>;
+}
+
+async function createConfiguredWindowsJob(config: PocketBaseConfig): Promise<WindowsProcessJob> {
+  if (config.createWindowsJob) return config.createWindowsJob();
+  const { createWindowsKillOnCloseJob } = await import('./WindowsProcessJob');
+  return createWindowsKillOnCloseJob();
 }
 
 export class PocketBaseProcess {
@@ -29,6 +39,7 @@ export class PocketBaseProcess {
   private readonly restartDelaysMs = [1_000, 5_000, 15_000];
   private stopping = false;
   private onCrashCallback?: (error: string) => void;
+  private windowsJob: WindowsProcessJob | null = null;
 
   constructor(config: PocketBaseConfig) {
     this.config = config;
@@ -93,6 +104,7 @@ export class PocketBaseProcess {
     this.child.once('error', (error) => {
       logger.error('PocketBase process error', { error });
       this.child = null;
+      this.closeWindowsJob();
 
       if (rejectStartupError) {
         rejectStartupError(error);
@@ -108,6 +120,7 @@ export class PocketBaseProcess {
     this.child.on('exit', (code, signal) => {
       logger.warn('PocketBase exited', { code, signal });
       this.child = null;
+      this.closeWindowsJob();
 
       if (!startupSettled && rejectStartupError) {
         rejectStartupError(
@@ -125,8 +138,27 @@ export class PocketBaseProcess {
       }
     });
 
+    const initialize = async () => {
+      if (this.config.useWindowsJobObject) {
+        let job: WindowsProcessJob | null = null;
+        try {
+          job = await createConfiguredWindowsJob(this.config);
+          if (!this.child?.pid || !job.assign(this.child.pid)) {
+            throw new Error('Windows could not assign PocketBase to its Job Object');
+          }
+          this.windowsJob = job;
+        } catch (error) {
+          this.child?.kill('SIGKILL');
+          job?.close();
+          this.child = null;
+          throw error;
+        }
+      }
+      await this.waitForHealthy();
+    };
+
     try {
-      await Promise.race([this.waitForHealthy(), startupError]);
+      await Promise.race([initialize(), startupError]);
     } catch (error) {
       startupSettled = true;
       rejectStartupError = null;
@@ -157,6 +189,7 @@ export class PocketBaseProcess {
       const safetyTimeout = setTimeout(() => {
         logger.warn('PocketBase stop safety timeout, continuing');
         this.child = null;
+        this.closeWindowsJob();
         this.stopping = false;
         resolve();
       }, 10000);
@@ -206,6 +239,7 @@ export class PocketBaseProcess {
     logger.info('Force-killing PocketBase (sync)', { pid });
 
     try {
+      this.closeWindowsJob();
       if (process.platform === 'win32') {
         execFileSync('taskkill', ['/F', '/T', '/PID', pid.toString()], { timeout: 5000 }); // eslint-disable-line sonarjs/no-os-command-from-path
       } else {
@@ -215,6 +249,11 @@ export class PocketBaseProcess {
       // Process may already be dead
     }
     this.child = null;
+  }
+
+  private closeWindowsJob(): void {
+    this.windowsJob?.close();
+    this.windowsJob = null;
   }
 
   private getPlatform(): NodeJS.Platform {
@@ -323,6 +362,10 @@ export class PocketBaseProcess {
   }
 
   private async handleCrash(reason: string): Promise<void> {
+    if (this.config.restartOnCrash === false) {
+      this.onCrashCallback?.(reason);
+      return;
+    }
     const now = Date.now();
     if (this.firstCrashAt === null || now - this.firstCrashAt > this.restartWindowMs) {
       this.firstCrashAt = now;
@@ -353,6 +396,7 @@ export class PocketBaseProcess {
     const child = this.child;
     if (!child) return;
     this.child = null;
+    this.closeWindowsJob();
 
     if (child.exitCode !== null) return;
 

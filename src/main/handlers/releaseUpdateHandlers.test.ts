@@ -3,6 +3,7 @@ import { app, ipcMain, shell } from 'electron';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import {
   RELAY_RELEASES_URL,
+  type RelayReleaseNotes,
   type RelayUpdateCheck,
   type RelayUpdateSnapshot,
 } from '@shared/releases';
@@ -56,6 +57,15 @@ vi.mock('../logger', () => ({
 describe('release update handlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
   const check = vi.fn<() => Promise<RelayUpdateCheck>>();
+  const releaseNotes: RelayReleaseNotes = {
+    version: '1.1.0',
+    title: 'Relay v1.1.0',
+    body: 'Faster update preparation.',
+    publishedAt: '2026-08-12T12:44:01Z',
+    immutable: true,
+  };
+  const getCachedReleaseNotes = vi.fn(async () => [releaseNotes]);
+  const refreshReleaseNotes = vi.fn(async () => [releaseNotes]);
   const updateSnapshot: RelayUpdateSnapshot = {
     phase: 'available',
     currentVersion: '1.0.0',
@@ -101,12 +111,14 @@ describe('release update handlers', () => {
     check.mockResolvedValue({
       currentVersion: '1.0.0',
       latestVersion: '1.1.0',
+      targetCommitish: '0123456789abcdef0123456789abcdef01234567',
       updateAvailable: true,
       installable: true,
       assetSizeBytes: 140_000_000,
+      releaseNotes,
     });
     setupReleaseUpdateHandlers({
-      service: { check },
+      service: { check, getCachedReleaseNotes, refreshReleaseNotes },
       manager: {
         snapshot,
         subscribe,
@@ -119,10 +131,10 @@ describe('release update handlers', () => {
     });
   });
 
-  const invoke = (channel: string) => {
+  const invoke = (channel: string, ...args: unknown[]) => {
     const handler = handlers[channel];
     if (!handler) throw new Error(`Missing handler for ${channel}`);
-    return handler({ sender: {} });
+    return handler({ sender: {} }, ...args);
   };
 
   it('returns Electron package metadata as the installed version', async () => {
@@ -140,9 +152,11 @@ describe('release update handlers', () => {
       data: {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: '0123456789abcdef0123456789abcdef01234567',
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
+        releaseNotes,
       },
     });
     expect(mocks.networkTryConsume).toHaveBeenCalledOnce();
@@ -165,11 +179,25 @@ describe('release update handlers', () => {
       data: {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: '0123456789abcdef0123456789abcdef01234567',
         updateAvailable: true,
         installable: false,
         assetSizeBytes: 140_000_000,
+        releaseNotes,
       },
     });
+  });
+
+  it('returns cached release notes immediately and refreshes them through a separate action', async () => {
+    await expect(invoke(IPC_CHANNELS.APP_RELEASE_NOTES_GET_CACHED)).resolves.toEqual([
+      releaseNotes,
+    ]);
+    await expect(invoke(IPC_CHANNELS.APP_RELEASE_NOTES_REFRESH)).resolves.toEqual({
+      success: true,
+      data: [releaseNotes],
+    });
+    expect(getCachedReleaseNotes).toHaveBeenCalledOnce();
+    expect(refreshReleaseNotes).toHaveBeenCalledOnce();
   });
 
   it('exposes only fixed updater state and manual lifecycle actions', async () => {
@@ -305,10 +333,24 @@ describe('release update handlers', () => {
     expect(mocks.fsTryConsume).toHaveBeenCalledOnce();
   });
 
+  it('opens a validated release tag without accepting renderer-controlled URLs', async () => {
+    await expect(invoke(IPC_CHANNELS.APP_OPEN_RELEASES, '1.1.0')).resolves.toBe(true);
+    expect(shell.openExternal).toHaveBeenCalledWith(`${RELAY_RELEASES_URL}/tag/v1.1.0`);
+
+    vi.mocked(shell.openExternal).mockClear();
+    await expect(invoke(IPC_CHANNELS.APP_OPEN_RELEASES, '1.1.0/../../malicious')).resolves.toBe(
+      false,
+    );
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+
   it('suppresses opening the browser during isolated Electron tests', async () => {
     mocks.suppressDesktopSideEffects.mockReturnValue(true);
 
     await expect(invoke(IPC_CHANNELS.APP_OPEN_RELEASES)).resolves.toBe(true);
+    await expect(invoke(IPC_CHANNELS.APP_OPEN_RELEASES, '1.1.0/../../malicious')).resolves.toBe(
+      false,
+    );
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 

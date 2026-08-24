@@ -4,11 +4,31 @@
 !include "LogicLib.nsh"
 !include "WordFunc.nsh"
 
-!define RELAY_STATE_PROTOCOL "1"
+!define RELAY_LEGACY_STATE_PROTOCOL "1"
+!define RELAY_RECOVERY_STATE_PROTOCOL "2"
+!define RELAY_STATE_PROTOCOL "2"
 !define RELAY_LAUNCHER_PROBE "--relay-launcher-probe"
-!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 101
+!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 102
+!define RELAY_RECOVERY_ARGUMENT "/relay-recovery"
+!define RELAY_RECOVERY_CENTER_ARGUMENT "--relay-recovery-center"
+!define RELAY_RECOVERY_PROBATION_PREFIX "--relay-recovery-probation="
+!define RELAY_REPAIR_ONLY_ARGUMENT "/relay-repair-only"
+!define RELAY_RELEASES_URL "https://github.com/CrimsonSoul/Relay/releases"
 !define RELAY_INNER_EXECUTABLE "Relay.exe"
 !define RELAY_RUNTIME_MARKER ".relay-runtime-ready"
+!define RELAY_D3D_COMPILER_DLL "d3dcompiler_47.dll"
+!define RELAY_DX_COMPILER_DLL "dxcompiler.dll"
+!define RELAY_DXIL_DLL "dxil.dll"
+!define RELAY_FFMPEG_DLL "ffmpeg.dll"
+!define RELAY_LIB_EGL_DLL "libEGL.dll"
+!define RELAY_LIB_GLES_V2_DLL "libGLESv2.dll"
+!define RELAY_VK_SWIFTSHADER_DLL "vk_swiftshader.dll"
+!define RELAY_VULKAN_DLL "vulkan-1.dll"
+!define RELAY_APP_ASAR "resources\app.asar"
+!define RELAY_POCKETBASE_EXECUTABLE "resources\pocketbase\win32-x64\pocketbase.exe"
+!define RELAY_POCKETBASE_HOOK "resources\pocketbase\hooks\relay_privileged_reauth.pb.js"
+!define RELAY_BETTER_SQLITE3_NATIVE "resources\app.asar.unpacked\node_modules\better-sqlite3\build\Release\better_sqlite3.node"
+!define RELAY_KOFFI_NATIVE "resources\app.asar.unpacked\node_modules\@koromix\koffi-win32-x64\win32_x64\koffi.node"
 !define RELAY_BUILD_ID_FIRST_CHARSET "abcdefghijklmnopqrstuvwxyz0123456789"
 !define RELAY_BUILD_ID_CHARSET "abcdefghijklmnopqrstuvwxyz0123456789._-"
 
@@ -21,6 +41,87 @@ Var RelayContractBase
 Var RelayContractBaseLength
 Var RelayContractDevicePrefix
 Var RelayContractDeviceSuffix
+Var RelayContractUuidCharacter
+Var RelayContractIntegrityExpected
+Var RelayContractIntegrityActual
+Var RelayContractIntegrityLength
+Var RelayContractIntegrityFiltered
+Var RelayContractIntegrityFileResult
+
+!macro RelayVerifyRuntimeFile ROOT MARKER KEY RELATIVE_PATH RESULT
+  StrCpy ${RESULT} "0"
+  ReadINIStr $RelayContractIntegrityExpected "${MARKER}" "Integrity" "${KEY}"
+  StrLen $RelayContractIntegrityLength $RelayContractIntegrityExpected
+  ${StrFilter} "$RelayContractIntegrityExpected" "" "0123456789abcdef" "" $RelayContractIntegrityFiltered
+  ${If} $RelayContractIntegrityLength == 128
+  ${AndIf} $RelayContractIntegrityFiltered == $RelayContractIntegrityExpected
+  ${AndIf} ${FileExists} "${ROOT}\${RELATIVE_PATH}"
+    ${StdUtils.HashFile} $RelayContractIntegrityActual "SHA2-512" "${ROOT}\${RELATIVE_PATH}"
+    ${If} $RelayContractIntegrityActual == $RelayContractIntegrityExpected
+      StrCpy ${RESULT} "1"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro RelayVerifyRuntimeContent ROOT MARKER RESULT
+  StrCpy ${RESULT} "1"
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "executableSha512" "${RELAY_INNER_EXECUTABLE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "d3dCompilerSha512" "${RELAY_D3D_COMPILER_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "dxCompilerSha512" "${RELAY_DX_COMPILER_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "dxilSha512" "${RELAY_DXIL_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "ffmpegSha512" "${RELAY_FFMPEG_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "libEglSha512" "${RELAY_LIB_EGL_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "libGlesV2Sha512" "${RELAY_LIB_GLES_V2_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "vkSwiftshaderSha512" "${RELAY_VK_SWIFTSHADER_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "vulkanSha512" "${RELAY_VULKAN_DLL}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "appAsarSha512" "${RELAY_APP_ASAR}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "pocketbaseHookSha512" "${RELAY_POCKETBASE_HOOK}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "pocketbaseSha512" "${RELAY_POCKETBASE_EXECUTABLE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "betterSqlite3Sha512" "${RELAY_BETTER_SQLITE3_NATIVE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "koffiSha512" "${RELAY_KOFFI_NATIVE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+!macroend
 
 !macro RelayValidateBuildId VALUE RESULT
   StrCpy ${RESULT} "0"
@@ -63,6 +164,38 @@ Var RelayContractDeviceSuffix
                 ${OrIf} $RelayContractDeviceSuffix == "8"
                 ${OrIf} $RelayContractDeviceSuffix == "9"
                   StrCpy ${RESULT} "0"
+                ${EndIf}
+              ${EndIf}
+            ${EndIf}
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro RelayValidateTransactionId VALUE RESULT
+  StrCpy ${RESULT} "0"
+  StrLen $RelayContractLength "${VALUE}"
+  ${If} $RelayContractLength == 36
+    ${StrFilter} "${VALUE}" "" "0123456789abcdef-" "" $RelayContractFiltered
+    ${If} $RelayContractFiltered == "${VALUE}"
+      StrCpy $RelayContractUuidCharacter "${VALUE}" 1 8
+      ${If} $RelayContractUuidCharacter == "-"
+        StrCpy $RelayContractUuidCharacter "${VALUE}" 1 13
+        ${If} $RelayContractUuidCharacter == "-"
+          StrCpy $RelayContractUuidCharacter "${VALUE}" 1 18
+          ${If} $RelayContractUuidCharacter == "-"
+            StrCpy $RelayContractUuidCharacter "${VALUE}" 1 23
+            ${If} $RelayContractUuidCharacter == "-"
+              StrCpy $RelayContractUuidCharacter "${VALUE}" 1 14
+              ${If} $RelayContractUuidCharacter == "4"
+                StrCpy $RelayContractUuidCharacter "${VALUE}" 1 19
+                ${If} $RelayContractUuidCharacter == "8"
+                ${OrIf} $RelayContractUuidCharacter == "9"
+                ${OrIf} $RelayContractUuidCharacter == "a"
+                ${OrIf} $RelayContractUuidCharacter == "b"
+                  StrCpy ${RESULT} "1"
                 ${EndIf}
               ${EndIf}
             ${EndIf}

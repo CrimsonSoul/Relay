@@ -57,6 +57,13 @@ describe('ReleaseUpdateNotificationManager', () => {
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
+        releaseNotes: {
+          version: '1.1.0',
+          title: 'Relay v1.1.0',
+          body: '## Highlights\n\n- Faster update preparation',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
       },
     });
     vi.stubGlobal('api', {
@@ -98,6 +105,8 @@ describe('ReleaseUpdateNotificationManager', () => {
     const options = mocks.showToast.mock.calls[0]?.[2];
     await act(async () => options.action.onClick());
     expect(screen.getByRole('dialog', { name: 'Update Relay' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: "What's new in v1.1.0" })).toBeVisible();
+    expect(screen.getByText('Faster update preparation')).toBeVisible();
     expect(openReleasesPage).not.toHaveBeenCalled();
   });
 

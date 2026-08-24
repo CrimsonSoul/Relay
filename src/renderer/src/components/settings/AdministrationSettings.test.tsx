@@ -1,9 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSnapshot } from '@shared/privilegedAccess';
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 
 const { mockUseRelayAdministration, mockUsePrivilegedAccess } = vi.hoisted(() => ({
   mockUseRelayAdministration: vi.fn(),
@@ -19,10 +18,7 @@ vi.mock('../../contexts/PrivilegedAccessContext', () => ({
 
 import { AdministrationSettings } from './AdministrationSettings';
 
-const settingsCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/components/settings/settings.css'),
-  'utf8',
-);
+const settingsCss = readCssBundle('components/settings/settings.css');
 
 const workflowMatcher = `(
   matchesValue(entity_tags, "teams:network")

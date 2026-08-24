@@ -2,12 +2,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedSessionView, RelayAdministrationSnapshot } from '@shared/privilegedAccess';
 
-const { mockUsePrivilegedAccess } = vi.hoisted(() => ({
+const { mockUsePrivilegedAccess, mockUsePrivilegedCommands } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
+  mockUsePrivilegedCommands: vi.fn(),
 }));
 
 vi.mock('../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: mockUsePrivilegedAccess,
+}));
+vi.mock('../contexts/PrivilegedCommandContext', () => ({
+  usePrivilegedCommands: mockUsePrivilegedCommands,
 }));
 
 import { useRelayAdministration } from './useRelayAdministration';
@@ -70,8 +74,8 @@ describe('useRelayAdministration', () => {
     submitCommand.mockResolvedValue({ ok: true, requestId: 'request-snapshot', value: snapshot });
     mockUsePrivilegedAccess.mockReturnValue({
       session: activeSession,
-      submitCommand,
     });
+    mockUsePrivilegedCommands.mockReturnValue({ submitCommand });
   });
 
   it('loads and normalizes the signed administration snapshot for an administrator', async () => {
@@ -126,7 +130,6 @@ describe('useRelayAdministration', () => {
 
     mockUsePrivilegedAccess.mockReturnValue({
       session: { ...activeSession, state: 'offline' },
-      submitCommand,
     });
     rerender();
     await waitFor(() => expect(result.current.snapshot).toBeNull());
@@ -144,17 +147,46 @@ describe('useRelayAdministration', () => {
     expect(submitCommand).toHaveBeenCalledTimes(1);
   });
 
+  it('does not restore a protected snapshot when an in-flight refresh settles after sign-out', async () => {
+    let resolveSnapshot!: (value: {
+      ok: true;
+      requestId: string;
+      value: RelayAdministrationSnapshot;
+    }) => void;
+    const pendingSnapshot = new Promise<{
+      ok: true;
+      requestId: string;
+      value: RelayAdministrationSnapshot;
+    }>((resolve) => {
+      resolveSnapshot = resolve;
+    });
+    submitCommand.mockReturnValueOnce(pendingSnapshot);
+    const { result, rerender } = renderHook(() => useRelayAdministration());
+    await waitFor(() => expect(result.current.loading).toBe(true));
+
+    mockUsePrivilegedAccess.mockReturnValue({ session: { ...activeSession, state: 'signed-out' } });
+    rerender();
+    await waitFor(() => expect(result.current.snapshot).toBeNull());
+
+    await act(async () => {
+      resolveSnapshot({ ok: true, requestId: 'late-snapshot', value: snapshot });
+      await pendingSnapshot;
+    });
+
+    expect(result.current.canAdminister).toBe(false);
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
   it('loads administration for the Owner and rejects a Publisher session', async () => {
     mockUsePrivilegedAccess.mockReturnValue({
       session: { ...activeSession, accountId: 'account-owner', role: 'owner' },
-      submitCommand,
     });
     const { result, rerender } = renderHook(() => useRelayAdministration());
     await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
 
     mockUsePrivilegedAccess.mockReturnValue({
       session: { ...activeSession, accountId: 'account-publisher', role: 'publisher' },
-      submitCommand,
     });
     rerender();
 

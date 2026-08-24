@@ -1,15 +1,18 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import type {
+  RelayReleaseNotes,
   RelayUpdateFailureCode,
   RelayUpdatePhase,
   RelayUpdateSnapshot,
 } from '@shared/releases';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
+import { ReleaseNotesContent } from './release-notes/ReleaseNotesContent';
 
 type ReleaseUpdateModalProps = Readonly<{
   isOpen: boolean;
   update: RelayUpdateSnapshot;
+  releaseNotes?: RelayReleaseNotes | null;
   onClose: () => void;
   onDownload: () => void;
   onCancelDownload: () => void;
@@ -28,6 +31,8 @@ const ERROR_MESSAGES: Record<RelayUpdateFailureCode, string> = {
     'GitHub has not locked this release as immutable, so Relay will not download or run it.',
   'release-changed':
     'The latest GitHub release changed during verification. Check again before downloading.',
+  'release-quarantined':
+    'Relay already tried this exact release and rolled it back. A newer immutable release is required before updating again.',
   'download-failed':
     'The download did not finish. Your current Relay installation was not changed.',
   'verification-failed': 'The downloaded files did not pass integrity checks and were discarded.',
@@ -76,7 +81,9 @@ function stepState(step: UpdateStep, current: UpdateStep): 'complete' | 'current
 
 function phaseMessage(update: RelayUpdateSnapshot): string {
   if (update.phase === 'error' && update.failureCode) return ERROR_MESSAGES[update.failureCode];
-  if (update.failureCode === 'unsupported') return ERROR_MESSAGES.unsupported;
+  if (update.failureCode === 'unsupported' || update.failureCode === 'release-quarantined') {
+    return ERROR_MESSAGES[update.failureCode];
+  }
   if (!update.installable) {
     return 'This release can be reviewed, but Relay cannot install it because GitHub has not locked it as immutable.';
   }
@@ -239,6 +246,7 @@ function modalFooter(
 export function ReleaseUpdateModal({
   isOpen,
   update,
+  releaseNotes,
   onClose,
   onDownload,
   onCancelDownload,
@@ -322,6 +330,36 @@ export function ReleaseUpdateModal({
               {formatBytes(update.downloadedBytes)} of {formatBytes(update.totalBytes)}
             </span>
           </div>
+        )}
+
+        {update.latestVersion && (
+          <section
+            className="release-update-modal__notes"
+            aria-labelledby="release-update-notes-title"
+          >
+            <div className="release-update-modal__notes-heading">
+              <h3 id="release-update-notes-title">What's new in v{update.latestVersion}</h3>
+              {releaseNotes?.version === update.latestVersion && (
+                <time dateTime={releaseNotes.publishedAt}>
+                  {new Intl.DateTimeFormat(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  }).format(new Date(releaseNotes.publishedAt))}
+                </time>
+              )}
+            </div>
+            {releaseNotes?.version === update.latestVersion ? (
+              <ReleaseNotesContent
+                body={releaseNotes.body}
+                className="release-update-modal__notes-content release-notes-content"
+              />
+            ) : (
+              <p className="release-update-modal__notes-unavailable">
+                Release notes are not available yet. You can still review this release on GitHub.
+              </p>
+            )}
+          </section>
         )}
 
         <div className="release-update-modal__trust">

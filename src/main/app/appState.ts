@@ -26,6 +26,7 @@ import type { ProductionPrivilegedHost } from '../privileged/ProductionPrivilege
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import type { RelayWebServerManager } from '../web/RelayWebServerManager';
+import type { WorkstationAwakeService } from '../power/WorkstationAwakeService';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -50,6 +51,7 @@ export interface AppState {
   privilegedRuntime: PrivilegedRuntime | null;
   privilegedHost: ProductionPrivilegedHost | null;
   relayWebServerManager: RelayWebServerManager | null;
+  workstationAwakeService: WorkstationAwakeService | null;
 }
 
 const state: AppState = {
@@ -74,6 +76,7 @@ const state: AppState = {
   privilegedRuntime: null,
   privilegedHost: null,
   relayWebServerManager: null,
+  workstationAwakeService: null,
 };
 
 const privilegedSessionListeners = new Set<(view: PrivilegedSessionView) => void>();
@@ -155,6 +158,9 @@ export function getPrivilegedHost() {
 }
 export function getRelayWebServerManager() {
   return state.relayWebServerManager;
+}
+export function getWorkstationAwakeService() {
+  return state.workstationAwakeService;
 }
 
 // --- Setters ---
@@ -252,6 +258,10 @@ export function setRelayWebServerManager(manager: RelayWebServerManager | null) 
   state.relayWebServerManager = manager;
   log.debug('appState.relayWebServerManager changed');
 }
+export function setWorkstationAwakeService(service: WorkstationAwakeService | null) {
+  state.workstationAwakeService = service;
+  log.debug('appState.workstationAwakeService changed');
+}
 
 export function subscribePrivilegedSessionChanged(
   listener: (view: PrivilegedSessionView) => void,
@@ -311,8 +321,8 @@ export async function getDataRoot(): Promise<string> {
   return dataRootPromise;
 }
 
-export function setupIpc(restartPb?: () => Promise<boolean>) {
-  setupIpcHandlers({
+export async function setupIpc(restartPb?: () => Promise<boolean>): Promise<void> {
+  await setupIpcHandlers({
     getMainWindow: () => state.mainWindow,
     getDataRoot,
     getAppConfig: () => state.appConfig,
@@ -330,6 +340,7 @@ export function setupIpc(restartPb?: () => Promise<boolean>) {
     getPrivilegedRuntime: () => state.privilegedRuntime,
     getWebApprovalCodes: () => state.privilegedHost?.approvalCodes ?? null,
     getRelayWebServerManager: () => state.relayWebServerManager,
+    getWorkstationAwakeService: () => state.workstationAwakeService,
     subscribePrivilegedSessionChanged,
     subscribeWebApprovalRequestsChanged,
     onPrivilegedCredentialChanged: (accountId) =>

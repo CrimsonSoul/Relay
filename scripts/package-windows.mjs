@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -22,6 +22,33 @@ const buildIdentityPath = join(generatedDir, 'relay-build-id.txt');
 const fixtureAppDir = join(generatedDir, 'relay-fixture-app');
 const fixtureExecutablePath = join(fixtureAppDir, 'Relay.exe');
 const fixtureIdentityPath = join(fixtureAppDir, 'resources', 'relay-build-id.txt');
+const recoveryTimingPath = join(projectDir, 'build', 'windows', 'recovery-timing.json');
+const packageJson = require(join(projectDir, 'package.json'));
+
+export const FIXTURE_RUNTIME_INTEGRITY_FILES = [
+  ['d3dcompiler_47.dll', 'relay fixture d3d compiler'],
+  ['dxcompiler.dll', 'relay fixture dx compiler'],
+  ['dxil.dll', 'relay fixture dxil'],
+  ['ffmpeg.dll', 'relay fixture ffmpeg'],
+  ['libEGL.dll', 'relay fixture libEGL'],
+  ['libGLESv2.dll', 'relay fixture libGLESv2'],
+  ['vk_swiftshader.dll', 'relay fixture vk swiftshader'],
+  ['vulkan-1.dll', 'relay fixture vulkan'],
+  ['resources/app.asar', 'relay fixture app archive'],
+  ['resources/pocketbase/win32-x64/pocketbase.exe', 'relay fixture pocketbase'],
+  [
+    'resources/pocketbase/hooks/relay_privileged_reauth.pb.js',
+    '// relay fixture privileged reauthentication hook\n',
+  ],
+  [
+    'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+    'relay fixture better-sqlite3',
+  ],
+  [
+    'resources/app.asar.unpacked/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node',
+    'relay fixture koffi',
+  ],
+];
 
 function printUsage() {
   console.log(`Usage: node scripts/package-windows.mjs [electron-builder options]
@@ -118,15 +145,69 @@ export function resolvePackageMode(args) {
   return { compileOnly, fixture };
 }
 
+export function resolveWindowsNativeDependencyInstall(koffiVersion, platform = process.platform) {
+  if (!/^\d+\.\d+\.\d+$/u.test(koffiVersion)) {
+    throw new Error('Koffi version must be an exact semantic version');
+  }
+
+  const args = ['install', '--no-save', '--ignore-scripts'];
+  if (platform !== 'win32') args.push('--force');
+  args.push(`@koromix/koffi-win32-x64@${koffiVersion}`);
+  return args;
+}
+
+export function resolveHostNativeDependencyRestore() {
+  return ['rebuild', 'better-sqlite3', '--build-from-source'];
+}
+
+async function runNpm(args) {
+  const npmExecPath = process.env.npm_execpath;
+  if (npmExecPath) {
+    await run(process.execPath, [npmExecPath, ...args]);
+    return;
+  }
+
+  await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', args);
+}
+
+async function stageWindowsNativeDependencies() {
+  const koffiVersion = packageJson.dependencies?.koffi;
+  await runNpm(resolveWindowsNativeDependencyInstall(koffiVersion));
+}
+
+async function restoreHostNativeDependencies() {
+  console.log('Restoring better-sqlite3 for the current Node ABI...');
+  await runNpm(resolveHostNativeDependencyRestore());
+}
+
 async function compileLauncher(harness) {
   await mkdir(generatedDir, { recursive: true });
+  const recoveryTiming = JSON.parse(await readFile(recoveryTimingPath, 'utf8'));
+  const requiredTimingValues = [
+    recoveryTiming.startupDeadlineMs,
+    recoveryTiming.probationDurationMs,
+    recoveryTiming.shutdownOverheadMs,
+    recoveryTiming.supervisorTimeoutMs,
+  ];
+  if (
+    requiredTimingValues.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+    recoveryTiming.supervisorTimeoutMs <
+      recoveryTiming.startupDeadlineMs +
+        recoveryTiming.probationDurationMs +
+        recoveryTiming.shutdownOverheadMs
+  ) {
+    throw new Error('Windows recovery timing contract was invalid');
+  }
   const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
   const defines = [
     '-WX',
     '-INPUTCHARSET',
     'UTF8',
+    `-X!addincludedir "${join(projectDir, 'node_modules', 'app-builder-lib', 'templates', 'nsis', 'include')}"`,
     `-DRELAY_LAUNCHER_OUT=${launcherPath}`,
     `-DRELAY_LAUNCHER_ICON=${join(projectDir, 'build', 'icon.ico')}`,
+    `-DRELAY_PROBATION_DURATION_MS=${recoveryTiming.probationDurationMs}`,
+    `-DRELAY_PROBATION_SUPERVISOR_TIMEOUT_MS=${recoveryTiming.supervisorTimeoutMs}`,
   ];
   if (harness) defines.push(`-DRELAY_RUNTIME_ROOT=${harness.root}`);
   defines.push(join(projectDir, 'build', 'windows', 'relay-launcher.nsi'));
@@ -155,14 +236,28 @@ async function compileFixtureRuntime(buildId) {
     },
   );
   await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');
+  for (const [relativePath, contents] of FIXTURE_RUNTIME_INTEGRITY_FILES) {
+    const path = join(fixtureAppDir, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, contents, 'utf8');
+  }
 }
 
 async function writeBuildDefines(harness) {
-  const buildId = resolveBuildId({ env: process.env, ...readGitState() });
+  const gitState = readGitState();
+  const buildId = resolveBuildId({ env: process.env, ...gitState });
+  const version = process.env.RELAY_RELEASE_VERSION || packageJson.version;
   await mkdir(generatedDir, { recursive: true });
   await writeFile(
     buildDefinesPath,
-    renderBuildDefines({ buildId, launcherFile, harnessRoot: harness?.root }),
+    renderBuildDefines({
+      buildId,
+      launcherFile,
+      version,
+      targetCommitish: gitState.gitSha.toLowerCase(),
+      packagedAt: new Date().toISOString(),
+      harnessRoot: harness?.root,
+    }),
     'utf8',
   );
   await writeFile(buildIdentityPath, `${buildId}\n`, 'utf8');
@@ -184,21 +279,27 @@ export async function packageWindows(args = process.argv.slice(2)) {
   const buildId = await writeBuildDefines(harness);
   if (fixture) {
     await compileFixtureRuntime(buildId);
+  } else {
+    await stageWindowsNativeDependencies();
   }
   const electronBuilderCli = require.resolve('electron-builder/out/cli/cli.js');
   const forwardedArgs = resolveElectronBuilderArgs(args);
   if (fixture) {
     forwardedArgs.push('--prepackaged', fixtureAppDir);
   }
-  await run(process.execPath, [
-    electronBuilderCli,
-    '--win',
-    'nsis',
-    '--x64',
-    '--config',
-    'electron-builder.yml',
-    ...forwardedArgs,
-  ]);
+  try {
+    await run(process.execPath, [
+      electronBuilderCli,
+      '--win',
+      'nsis',
+      '--x64',
+      '--config',
+      'electron-builder.yml',
+      ...forwardedArgs,
+    ]);
+  } finally {
+    await restoreHostNativeDependencies();
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

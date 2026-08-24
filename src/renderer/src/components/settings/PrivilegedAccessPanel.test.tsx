@@ -4,13 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { WEB_RUNTIME } from '@shared/runtime';
 
-const { mockUsePrivilegedAccess, mockUseRelayAdministration } = vi.hoisted(() => ({
-  mockUsePrivilegedAccess: vi.fn(),
-  mockUseRelayAdministration: vi.fn(),
-}));
+const { mockUsePrivilegedAccess, mockUsePrivilegedCommands, mockUseRelayAdministration } =
+  vi.hoisted(() => ({
+    mockUsePrivilegedAccess: vi.fn(),
+    mockUsePrivilegedCommands: vi.fn(),
+    mockUseRelayAdministration: vi.fn(),
+  }));
 
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: mockUsePrivilegedAccess,
+}));
+vi.mock('../../contexts/PrivilegedCommandContext', () => ({
+  usePrivilegedCommands: mockUsePrivilegedCommands,
 }));
 vi.mock('../../hooks/useRelayAdministration', () => ({
   useRelayAdministration: mockUseRelayAdministration,
@@ -40,6 +45,12 @@ describe('PrivilegedAccessPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUsePrivilegedCommands.mockReturnValue({
+      busy: false,
+      error: null,
+      clearError: vi.fn(),
+      submitCommand: vi.fn(),
+    });
     mockUseRelayAdministration.mockReturnValue({
       snapshot: {
         accounts: [
@@ -101,6 +112,27 @@ describe('PrivilegedAccessPanel', () => {
     expect(password.value).toBe('');
     expect(password).toHaveFocus();
     expect(screen.queryByText(/operator profile/i)).toBeNull();
+  });
+
+  it('preserves the login username after an active session signs out', () => {
+    const access = mockUsePrivilegedAccess();
+    const { rerender } = render(<PrivilegedAccessPanel relayMode="server" />);
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'ryan' } });
+
+    mockUsePrivilegedAccess.mockReturnValue({
+      ...access,
+      session: session('active', 'owner'),
+    });
+    rerender(<PrivilegedAccessPanel relayMode="server" />);
+    expect(screen.queryByLabelText('Username')).toBeNull();
+
+    mockUsePrivilegedAccess.mockReturnValue({
+      ...access,
+      session: session('signed-out'),
+    });
+    rerender(<PrivilegedAccessPanel relayMode="server" />);
+
+    expect(screen.getByLabelText('Username')).toHaveValue('ryan');
   });
 
   it('shows paired-device guidance and submits the one-time challenge', async () => {
@@ -211,6 +243,29 @@ describe('PrivilegedAccessPanel', () => {
       }),
     );
     expect(login).toHaveBeenCalledWith('ryan', 'a-new-owner-password');
+  });
+
+  it('seeds the login username when automatic first-owner login fails', async () => {
+    const setupInitialAdministratorCredential = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { accountId: 'account-ryan', username: 'ryan' },
+    });
+    login.mockResolvedValueOnce(false);
+    globalThis.api = { setupInitialAdministratorCredential } as never;
+    render(<PrivilegedAccessPanel relayMode="server" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
+    fireEvent.change(screen.getByLabelText('Owner username'), { target: { value: 'Ryan' } });
+    fireEvent.change(screen.getByLabelText('New Owner password'), {
+      target: { value: 'a-new-owner-password' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm Owner password'), {
+      target: { value: 'a-new-owner-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
+
+    await waitFor(() => expect(login).toHaveBeenCalledWith('ryan', 'a-new-owner-password'));
+    expect(screen.getByLabelText('Username')).toHaveValue('ryan');
   });
 
   it('completes browser first-owner setup only after desktop approval', async () => {

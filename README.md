@@ -51,6 +51,7 @@ but that trust model is not a substitute for Authenticode publisher identity.
 - **Client Presence**: Show connected Relay clients in server mode, list hostnames on hover, and notify when clients connect
 - **Dynatrace Dashboards**: Save Dynatrace dashboard URLs in Settings, launch them from the sidebar, support Microsoft SSO, and clear the dashboard session when needed
 - **Data Management**: Export, import, reset, and restore Relay data from the Settings page
+- **Workstation Keep-Awake**: Keep a Windows display active and prevent ordinary inactivity locks while Relay is running, without administrator access or a separate mouse-moving utility
 
 ## Wiki administration
 

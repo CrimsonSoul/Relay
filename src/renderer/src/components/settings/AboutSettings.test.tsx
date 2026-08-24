@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ELECTRON_RUNTIME } from '@shared/runtime';
 import { AboutSettings } from './AboutSettings';
 
+vi.mock('./RecoverySettings', () => ({
+  RecoverySettings: () => null,
+}));
+
 describe('AboutSettings', () => {
   const getAppVersion = vi.fn().mockResolvedValue('1.0.0');
   const openReleasesPage = vi.fn().mockResolvedValue(true);

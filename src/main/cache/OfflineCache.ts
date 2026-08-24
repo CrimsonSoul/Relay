@@ -438,6 +438,16 @@ export class OfflineCache {
     }
   }
 
+  checkpoint(): boolean {
+    try {
+      const [result] = this.db.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>;
+      return result?.busy === 0;
+    } catch (error) {
+      logger.error('Failed to checkpoint offline cache', { error });
+      return false;
+    }
+  }
+
   close(): void {
     this.db.close();
   }

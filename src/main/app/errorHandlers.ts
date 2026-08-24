@@ -13,10 +13,12 @@ type ErrorHandlerOptions = {
   isPackaged?: boolean;
   nodeEnv?: string;
   suppressDesktopSideEffects?: boolean;
+  allowAutoRelaunch?: boolean;
 };
 
 function shouldAutoRelaunchFatalError(options: ErrorHandlerOptions): boolean {
   return (
+    options.allowAutoRelaunch !== false &&
     (options.platform ?? process.platform) === 'win32' &&
     (options.isPackaged ?? app.isPackaged) &&
     (options.nodeEnv ?? process.env.NODE_ENV) !== 'test' &&

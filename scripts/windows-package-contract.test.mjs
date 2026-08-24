@@ -7,9 +7,12 @@ import {
   validateBuildId,
 } from './windows-package-contract.mjs';
 import {
+  FIXTURE_RUNTIME_INTEGRITY_FILES,
   resolveElectronBuilderArgs,
+  resolveHostNativeDependencyRestore,
   resolveMakensisCommand,
   resolvePackageMode,
+  resolveWindowsNativeDependencyInstall,
 } from './package-windows.mjs';
 
 describe('Windows package contract', () => {
@@ -58,6 +61,37 @@ describe('Windows package contract', () => {
     );
   });
 
+  it('stages the Windows Koffi binary before cross-platform packaging', () => {
+    expect(resolveWindowsNativeDependencyInstall('3.1.6', 'darwin')).toEqual([
+      'install',
+      '--no-save',
+      '--ignore-scripts',
+      '--force',
+      '@koromix/koffi-win32-x64@3.1.6',
+    ]);
+    expect(resolveWindowsNativeDependencyInstall('3.1.6', 'win32')).toEqual([
+      'install',
+      '--no-save',
+      '--ignore-scripts',
+      '@koromix/koffi-win32-x64@3.1.6',
+    ]);
+    expect(() => resolveWindowsNativeDependencyInstall('latest', 'darwin')).toThrow(
+      /Koffi version/i,
+    );
+  });
+
+  it('restores host native dependencies after Windows packaging', () => {
+    expect(resolveHostNativeDependencyRestore()).toEqual([
+      'rebuild',
+      'better-sqlite3',
+      '--build-from-source',
+    ]);
+
+    const source = readFileSync('scripts/package-windows.mjs', 'utf8');
+    expect(source).toContain('finally {');
+    expect(source).toContain('await restoreHostNativeDependencies()');
+  });
+
   it('marks untracked non-ignored package inputs as dirty', () => {
     const source = readFileSync('scripts/package-windows.mjs', 'utf8');
 
@@ -89,6 +123,33 @@ describe('Windows package contract', () => {
     expect(fixture).toContain('.complete');
   });
 
+  it('keeps fixture payloads in parity with every non-executable runtime integrity file', () => {
+    const contract = readFileSync('build/windows/include/relay-runtime-contract.nsh', 'utf8');
+    const expectedPaths = [
+      'd3dcompiler_47.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
+      'ffmpeg.dll',
+      'libEGL.dll',
+      'libGLESv2.dll',
+      'vk_swiftshader.dll',
+      'vulkan-1.dll',
+      'resources/app.asar',
+      'resources/pocketbase/win32-x64/pocketbase.exe',
+      'resources/pocketbase/hooks/relay_privileged_reauth.pb.js',
+      'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+      'resources/app.asar.unpacked/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node',
+    ];
+
+    expect(FIXTURE_RUNTIME_INTEGRITY_FILES.map(([path]) => path)).toEqual(expectedPaths);
+    expect(FIXTURE_RUNTIME_INTEGRITY_FILES.find(([path]) => path.endsWith('.pb.js'))?.[1]).toMatch(
+      /^\/\//u,
+    );
+    for (const path of expectedPaths) {
+      expect(contract).toContain(path.replaceAll('/', '\\'));
+    }
+  });
+
   it('runs the bundled NSIS executable directly instead of spawning its Windows cmd wrapper', () => {
     expect(
       resolveMakensisCommand(
@@ -109,6 +170,23 @@ describe('Windows package contract', () => {
         { platform: 'darwin', dirname: () => '', join: (...parts) => parts.join('/') },
       ),
     ).toEqual({ path: '/cache/nsis/makensis', env: { NSISDIR: '/cache/nsis' } });
+  });
+
+  it('derives launcher supervision and application probation from one timing contract', () => {
+    const timing = JSON.parse(readFileSync('build/windows/recovery-timing.json', 'utf8'));
+    const packageSource = readFileSync('scripts/package-windows.mjs', 'utf8');
+    const mainSource = readFileSync('src/main/index.ts', 'utf8');
+
+    expect(timing).toEqual({
+      startupDeadlineMs: 120_000,
+      probationDurationMs: 60_000,
+      shutdownOverheadMs: 15_000,
+      supervisorTimeoutMs: 195_000,
+    });
+    expect(packageSource).toContain('RELAY_PROBATION_DURATION_MS');
+    expect(packageSource).toContain('RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS');
+    expect(mainSource).toContain('recoveryTiming.probationDurationMs');
+    expect(mainSource).toContain('recoveryTiming.startupDeadlineMs');
   });
 
   it('accepts only bounded path-safe build identifiers', () => {
@@ -168,13 +246,47 @@ describe('Windows package contract', () => {
       renderBuildDefines({
         buildId: 'r1-abc',
         launcherFile: 'RelayLauncher.exe',
+        version: '1.7.0',
+        targetCommitish: '1'.repeat(40),
+        packagedAt: '2026-08-24T15:00:00.000Z',
       }),
-    ).toBe('!define RELAY_BUILD_ID "r1-abc"\n!define RELAY_LAUNCHER_FILE "RelayLauncher.exe"\n');
+    ).toBe(
+      [
+        '!define RELAY_BUILD_ID "r1-abc"',
+        '!define RELAY_LAUNCHER_FILE "RelayLauncher.exe"',
+        '!define RELAY_BUILD_VERSION "1.7.0"',
+        `!define RELAY_TARGET_COMMITISH "${'1'.repeat(40)}"`,
+        '!define RELAY_PACKAGED_AT "2026-08-24T15:00:00.000Z"',
+        '!define RELAY_RECOVERY_PROTOCOL "2"',
+        '!define RELAY_SERVER_DATA_EPOCH "1"',
+        '!define RELAY_CLIENT_DATA_EPOCH "1"',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('rejects build metadata that cannot safely enter launcher receipts', () => {
+    const valid = {
+      buildId: 'r1-abc',
+      launcherFile: 'RelayLauncher.exe',
+      version: '1.7.0',
+      targetCommitish: '1'.repeat(40),
+      packagedAt: '2026-08-24T15:00:00.000Z',
+    };
+
+    expect(() => renderBuildDefines({ ...valid, version: '1.7.0-beta.1' })).toThrow(/version/i);
+    expect(() => renderBuildDefines({ ...valid, targetCommitish: 'main' })).toThrow(/commit/i);
   });
 
   it('rejects unsafe launcher filenames in generated NSIS input', () => {
     expect(() =>
-      renderBuildDefines({ buildId: 'r1-abc', launcherFile: '../RelayLauncher.exe' }),
+      renderBuildDefines({
+        buildId: 'r1-abc',
+        launcherFile: '../RelayLauncher.exe',
+        version: '1.7.0',
+        targetCommitish: '1'.repeat(40),
+        packagedAt: '2026-08-24T15:00:00.000Z',
+      }),
     ).toThrow(/launcher filename/i);
   });
 
@@ -219,6 +331,9 @@ describe('Windows package contract', () => {
       renderBuildDefines({
         buildId: 'h1-abc',
         launcherFile: 'RelayLauncher.exe',
+        version: '1.7.0',
+        targetCommitish: '1'.repeat(40),
+        packagedAt: '2026-08-24T15:00:00.000Z',
         harnessRoot: String.raw`C:\runner temp\relay-boundary`,
       }),
     ).toContain('!define RELAY_BOOTSTRAP_HARNESS_ROOT "C:\\runner temp\\relay-boundary"');

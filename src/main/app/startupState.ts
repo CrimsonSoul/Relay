@@ -28,12 +28,15 @@ function normalizeMessage(phase: StartupPhase, message?: string): string {
   return value.slice(0, MAX_MESSAGE_LENGTH);
 }
 
-export function createStartupStateController(): StartupStateController {
+export function createStartupStateController(
+  metadata: Readonly<Pick<StartupSnapshot, 'recoveryMode' | 'launchIntent'>> = {},
+): StartupStateController {
   let snapshot: StartupSnapshot = {
     generation: 0,
     sequence: 0,
     phase: 'launching',
     message: DEFAULT_MESSAGES.launching,
+    ...metadata,
   };
   const listeners = new Set<(value: StartupSnapshot) => void>();
 
@@ -51,6 +54,7 @@ export function createStartupStateController(): StartupStateController {
         sequence: snapshot.sequence + 1,
         phase: 'launching',
         message: DEFAULT_MESSAGES.launching,
+        ...metadata,
       });
       return generation;
     },
@@ -63,6 +67,7 @@ export function createStartupStateController(): StartupStateController {
         sequence: snapshot.sequence + 1,
         phase,
         message: normalizeMessage(phase, message),
+        ...metadata,
       });
       return true;
     },

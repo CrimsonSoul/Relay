@@ -1,11 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 
-const knowledgeCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
-  'utf8',
-);
+const knowledgeCss = readCssBundle('features/knowledge/knowledge.css');
 const workspaceCss = readFileSync(
   resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledgeWorkspace.css'),
   'utf8',

@@ -1,20 +1,27 @@
 /* Global Styles Manifest */
 
-@import './styles/theme.css';
-@import './styles/animations.css';
+@layer relay.foundation, relay.shared, relay.settings, relay.settings-overrides, relay.features,
+  relay.overrides;
+@layer relay.foundation.theme, relay.foundation.animations;
+@layer relay.shared.controls, relay.shared.layout, relay.shared.overlays, relay.shared.chrome,
+  relay.shared.tab-chrome;
+@layer relay.features.alerts, relay.features.cloud-status, relay.features.knowledge,
+  relay.features.oncall, relay.features.assembler, relay.features.directory, relay.features.sidebar;
+@layer relay.overrides.modals, relay.overrides.utilities, relay.overrides.responsive,
+  relay.overrides.toast, relay.overrides.setup;
+
+@import './styles/theme.css' layer(relay.foundation.theme);
+@import './styles/animations.css' layer(relay.foundation.animations);
 @import './styles/components.css';
-@import './components/settings/settings.css';
-@import './styles/components-after-settings.css';
-@import './styles/tab-chrome.css';
-@import './tabs/alerts.css';
-@import './tabs/cloud-status.css';
-@import './features/knowledge/knowledge.css';
-@import './components/oncall/oncall.css';
-@import './tabs/assembler/assembler.css';
-@import './components/directory/directory.css';
-@import './components/sidebar/sidebar.css';
-@import './styles/modals.css';
-@import './styles/utilities.css';
-@import './styles/responsive.css';
-@import './styles/toast.css';
-@import './styles/setup.css';
+@import './styles/components-after-settings.css' layer(relay.settings-overrides);
+@import './styles/tab-chrome.css' layer(relay.shared.tab-chrome);
+@import './tabs/cloud-status.css' layer(relay.features.cloud-status);
+@import './components/oncall/oncall.css' layer(relay.features.oncall);
+@import './tabs/assembler/assembler.css' layer(relay.features.assembler);
+@import './components/directory/directory.css' layer(relay.features.directory);
+@import './components/sidebar/sidebar.css' layer(relay.features.sidebar);
+@import './styles/modals.css' layer(relay.overrides.modals);
+@import './styles/utilities.css' layer(relay.overrides.utilities);
+@import './styles/responsive.css' layer(relay.overrides.responsive);
+@import './styles/toast.css' layer(relay.overrides.toast);
+@import './styles/setup.css' layer(relay.overrides.setup);

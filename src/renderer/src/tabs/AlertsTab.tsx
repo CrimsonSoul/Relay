@@ -5,7 +5,6 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
-import { useAlertReminders } from '../hooks/useAlertReminders';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
@@ -20,112 +19,22 @@ import { AlertCard } from './AlertCard';
 import { AlertActionsMenu } from './alerts/AlertActionsMenu';
 import { isAlertMessageComplete } from './alertUtils';
 import type { Severity } from './alertUtils';
-import { buildAlertOutlookEml, sanitizeAlertClickUrl } from './alertLinks';
 import { localToIso } from './alertTimeUtils';
 import {
   AlertDraftProvider,
   initialAlertDraftState,
   useAlertDraft,
 } from './alerts/AlertDraftContext';
-import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
-import {
-  getReminderAlarmLabel,
-  hasCustomReminderAlarmSource,
-  resetReminderAlarmSource,
-  saveReminderAlarmSource,
-} from '../services/reminderAlarmSoundService';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
-import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
+import type { AlertHistoryEntry } from '@shared/ipc';
 import { getRelayRuntime, hasRelayCapability } from '../runtime/relayRuntime';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
+import { ALERT_EXPORT_WIDTH_PX, useAlertExport } from './alerts/useAlertExport';
+import { useAlertBranding } from './alerts/useAlertBranding';
+import { useAlertReminderWorkflow } from './alerts/useAlertReminderWorkflow';
+import './alerts.css';
 
-const ALERT_EXPORT_WIDTH_PX = 640;
-const ALERT_CAPTURE_SCALE = 2;
-const ALERT_OUTLOOK_CAPTURE_SCALE = 2;
-const ALERT_OUTLOOK_FALLBACK_SCALE = 1;
 const ALERT_SEVERITIES = new Set<Severity>(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']);
-
-function readCssValue(element: HTMLElement, property: string): string {
-  return (
-    element.style.getPropertyValue(property).trim() ||
-    getComputedStyle(element).getPropertyValue(property).trim()
-  );
-}
-
-function applySolidColor(element: HTMLElement | null, color: string): void {
-  if (!element || !color) return;
-  element.style.background = color;
-  element.style.backgroundColor = color;
-}
-
-function preserveIconOverlapBackground(wrapper: HTMLElement | null): void {
-  if (!wrapper) return;
-  wrapper.style.background = 'transparent';
-  wrapper.style.backgroundColor = '';
-  const fill = document.createElement('div');
-  fill.className = 'alerts-email-icon-wrapper-fill';
-  fill.style.position = 'absolute';
-  fill.style.left = '0';
-  fill.style.right = '0';
-  fill.style.top = '26px';
-  fill.style.bottom = '0';
-  fill.style.background = '#ffffff';
-  fill.style.backgroundColor = '#ffffff';
-  fill.style.pointerEvents = 'none';
-  fill.style.zIndex = '0';
-  wrapper.prepend(fill);
-}
-
-function addWhiteIconFill(icon: HTMLElement): void {
-  const fill = document.createElement('div');
-  fill.className = 'alerts-email-icon-fill';
-  fill.style.position = 'absolute';
-  fill.style.inset = '0';
-  fill.style.borderRadius = '50%';
-  fill.style.background = '#ffffff';
-  fill.style.backgroundColor = '#ffffff';
-  fill.style.pointerEvents = 'none';
-  fill.style.zIndex = '0';
-  icon.prepend(fill);
-
-  icon.querySelectorAll<HTMLElement>('svg').forEach((svg) => {
-    svg.style.position = 'relative';
-    svg.style.zIndex = '1';
-  });
-}
-
-function prepareAlertCaptureClone(clone: HTMLDivElement, source: HTMLDivElement): void {
-  clone.style.position = 'fixed';
-  clone.style.left = '-9999px';
-  clone.style.top = '0';
-  clone.style.width = `${ALERT_EXPORT_WIDTH_PX}px`;
-  clone.style.minWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
-  clone.style.maxWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
-  clone.style.zIndex = '-1';
-  clone.style.backgroundColor = '#ffffff';
-
-  const bannerColor = readCssValue(source, '--email-banner');
-  if (!bannerColor) return;
-
-  clone.style.setProperty('--email-banner', bannerColor);
-  clone.style.borderColor = bannerColor;
-
-  applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-severity-header'), bannerColor);
-  preserveIconOverlapBackground(clone.querySelector<HTMLElement>('.alerts-email-icon-wrapper'));
-  applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-header'), '#ffffff');
-  applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-body'), '#ffffff');
-  applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-meta'), '#fafafa');
-  applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-footer'), '#fafafa');
-  const icon = clone.querySelector<HTMLElement>('.alerts-email-icon');
-  if (icon) {
-    icon.style.position = 'relative';
-    icon.style.zIndex = '1';
-    icon.style.background = '#ffffff';
-    icon.style.backgroundColor = '#ffffff';
-    icon.style.borderColor = bannerColor;
-    addWhiteIconFill(icon);
-  }
-}
 
 type AlertsTabProps = {
   loadedReminderAlert?: ReminderAlertLoadDetail | null;
@@ -144,6 +53,14 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   const canCustomizeReminderSound = hasRelayCapability('customReminderSound');
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
+  const {
+    logoDataUrl,
+    footerLogoDataUrl,
+    setLogo: handleSetLogo,
+    removeLogo: handleRemoveLogo,
+    setFooterLogo: handleSetFooterLogo,
+    removeFooterLogo: handleRemoveFooterLogo,
+  } = useAlertBranding(showToast);
 
   const { state: form, load, reset } = useAlertDraft();
   const {
@@ -160,43 +77,49 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   } = form;
   const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
 
-  const [isCapturing, setIsCapturing] = useState(false);
   const optionalAttentionSequenceRef = useRef(0);
   const [optionalAttentionRequest, setOptionalAttentionRequest] =
     useState<AlertOptionalAttentionRequest | null>(null);
-  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
-  const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
-  const reminderModal = useModalState();
-  const reminderManagerModal = useModalState();
-  const [editingReminder, setEditingReminder] = useState<AlertReminderRecord | null>(null);
-  const [reminderAlarmLabel, setReminderAlarmLabel] = useState(getReminderAlarmLabel);
-  const [hasCustomReminderAlarm, setHasCustomReminderAlarm] = useState(
-    hasCustomReminderAlarmSource,
-  );
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
   const { history, addHistory, deleteHistory, clearHistory, pinHistory, updateLabel } =
     useAlertHistory();
+  const reminderDraft = useMemo(
+    () => ({ severity, subject, bodyHtml, sender }),
+    [severity, subject, bodyHtml, sender],
+  );
   const {
     pendingReminders,
     completedReminders,
     loading: remindersLoading,
     error: remindersError,
     refetch: refetchReminders,
-    scheduleReminder,
-    updateReminder,
     markDone,
     dismissReminder,
-  } = useAlertReminders();
+    reminderModal,
+    reminderManagerModal,
+    editingReminder,
+    nextReminder,
+    additionalReminderCount,
+    reminderAlarmLabel,
+    hasCustomReminderAlarm,
+    openNewReminder: openNewReminderModal,
+    closeReminder: handleReminderModalClose,
+    submitReminder: handleReminderSubmit,
+    scheduleFromManager: handleScheduleFromManager,
+    editReminder: handleEditReminder,
+    chooseAlarmSound: handleChooseReminderAlarmSound,
+    resetAlarmSound: handleResetReminderAlarmSound,
+  } = useAlertReminderWorkflow({ draft: reminderDraft, showToast });
 
   const displaySender = sender.trim() || 'IT';
   const displayRecipient = recipient.trim() || 'All Employees';
-  const alertClickHref = useMemo(
-    () => sanitizeAlertClickUrl(clickThroughUrl) ?? undefined,
-    [clickThroughUrl],
-  );
+  const displaySubject = useMemo(() => {
+    const base = subject.trim() || 'Alert Subject';
+    return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
+  }, [subject, updateNumber]);
   const requestOptionalFieldAttention = useCallback((field: AlertOptionalField) => {
     optionalAttentionSequenceRef.current += 1;
     setOptionalAttentionRequest({
@@ -204,8 +127,24 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
       field,
     });
   }, []);
-  const nextReminder = pendingReminders[0];
-  const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
+  const alertHistoryDraft = useMemo(
+    () => ({ severity, subject, bodyHtml, sender, recipient }),
+    [bodyHtml, recipient, sender, severity, subject],
+  );
+  const {
+    isCapturing,
+    saveImage: handleSaveImage,
+    openOutlookDraft: handleOpenOutlookDraft,
+  } = useAlertExport({
+    cardRef,
+    clickThroughUrl,
+    displaySubject,
+    isWebRuntime,
+    historyDraft: alertHistoryDraft,
+    addHistory,
+    requestOptionalFieldAttention,
+    showToast,
+  });
 
   // History is only written on Save Image / Open in Outlook / Pin Template, so anything
   // still being composed exists nowhere else. Both destructive paths — RESET and loading
@@ -261,28 +200,6 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     onLoadedReminderAlertConsumed?.();
   }, [applyReminderAlert, loadedReminderAlert, onLoadedReminderAlertConsumed]);
 
-  // Load persisted logo on mount
-  useEffect(() => {
-    void globalThis.api
-      ?.getCompanyLogo()
-      .then((url) => {
-        if (url) setLogoDataUrl(url);
-      })
-      .catch(() => {
-        // Logo load is best-effort; a missing logo is not an error the user needs to see
-      });
-  }, []);
-
-  // Load persisted footer logo on mount
-  useEffect(() => {
-    void globalThis.api
-      ?.getFooterLogo()
-      .then((url) => {
-        if (url) setFooterLogoDataUrl(url);
-      })
-      .catch(() => {});
-  }, []);
-
   const eventTimeStartIso = useMemo(
     () => localToIso(eventTimeStart, eventTimeSourceTz),
     [eventTimeStart, eventTimeSourceTz],
@@ -290,92 +207,6 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
   const eventTimeEndIso = useMemo(
     () => localToIso(eventTimeEnd, eventTimeSourceTz),
     [eventTimeEnd, eventTimeSourceTz],
-  );
-
-  const captureCard = useCallback(
-    async (scale = ALERT_CAPTURE_SCALE): Promise<HTMLCanvasElement> => {
-      if (!cardRef.current) throw new Error('Card ref not available');
-      // Clone the card off-screen so the visible preview never jumps
-      const el = cardRef.current;
-      const clone = el.cloneNode(true) as HTMLDivElement;
-      prepareAlertCaptureClone(clone, el);
-      document.body.appendChild(clone);
-      try {
-        const { default: html2canvas } = await import('html2canvas');
-        return await html2canvas(clone, {
-          scale,
-          useCORS: true,
-          backgroundColor: null,
-          logging: false,
-        });
-      } finally {
-        clone.remove();
-      }
-    },
-    [],
-  );
-
-  const withCapture = useCallback(
-    async <T,>(
-      action: (dataUrl: string) => Promise<T>,
-      scale = ALERT_CAPTURE_SCALE,
-    ): Promise<T | null> => {
-      setIsCapturing(true);
-      try {
-        const canvas = await captureCard(scale);
-        return await action(canvas.toDataURL('image/png'));
-      } catch {
-        showToast('Capture failed', 'error');
-        return null;
-      } finally {
-        setIsCapturing(false);
-      }
-    },
-    [captureCard, showToast],
-  );
-
-  const prepareOutlookDraftImage = useCallback(async () => {
-    let canvas = await captureCard(ALERT_OUTLOOK_CAPTURE_SCALE);
-    let dataUrl = canvas.toDataURL('image/png');
-
-    // Inline body images can push a 2x PNG past IPC limits. Preserve the draft
-    // path by falling back to a native-size image.
-    if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
-      canvas = await captureCard(ALERT_OUTLOOK_FALLBACK_SCALE);
-      dataUrl = canvas.toDataURL('image/png');
-    }
-
-    const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
-    return {
-      dataUrl: optimized?.success && optimized.data ? optimized.data : dataUrl,
-      width: canvas.width,
-      height: canvas.height,
-    };
-  }, [captureCard]);
-
-  const openNewReminderModal = useCallback(() => {
-    setEditingReminder(null);
-    reminderModal.open();
-  }, [reminderModal]);
-
-  const handleSaveImage = useCallback(
-    () =>
-      withCapture(async (dataUrl) => {
-        const slug =
-          subject
-            .trim()
-            .replaceAll(/[^a-z0-9]/gi, '_')
-            .toLowerCase()
-            .slice(0, 40) || 'alert';
-        const result = await globalThis.api?.saveAlertImage(dataUrl, `alert_${slug}.png`);
-        if (result?.success) {
-          showToast('Saved!', 'success');
-          void addHistory({ severity, subject, bodyHtml, sender, recipient });
-        } else if (result?.error !== 'Cancelled') {
-          showToast(result?.error || 'Save failed', 'error');
-        }
-      }),
-    [withCapture, showToast, subject, addHistory, severity, bodyHtml, sender, recipient],
   );
 
   const handleLoadFromHistory = useCallback(
@@ -412,52 +243,6 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     setPendingReminderAlert(null);
   }, [applyReminderAlert, pendingReminderAlert]);
 
-  const handleSetLogo = useCallback(async () => {
-    const result = await globalThis.api?.saveCompanyLogo();
-    if (result?.success && result.data) {
-      setLogoDataUrl(result.data);
-      showToast('Logo saved', 'success');
-    } else if (result?.error && result.error !== 'Cancelled') {
-      showToast(result.error, 'error');
-    }
-  }, [showToast]);
-
-  const handleRemoveLogo = useCallback(async () => {
-    try {
-      const result = await globalThis.api?.removeCompanyLogo();
-      if (result?.success === false) {
-        showToast(result.error || 'Failed to remove logo', 'error');
-        return;
-      }
-      setLogoDataUrl(null);
-    } catch {
-      showToast('Failed to remove logo', 'error');
-    }
-  }, [showToast]);
-
-  const handleSetFooterLogo = useCallback(async () => {
-    const result = await globalThis.api?.saveFooterLogo();
-    if (result?.success && result.data) {
-      setFooterLogoDataUrl(result.data);
-      showToast('Footer logo saved', 'success');
-    } else if (result?.error && result.error !== 'Cancelled') {
-      showToast(result.error, 'error');
-    }
-  }, [showToast]);
-
-  const handleRemoveFooterLogo = useCallback(async () => {
-    try {
-      const result = await globalThis.api?.removeFooterLogo();
-      if (result?.success === false) {
-        showToast(result.error || 'Failed to remove footer logo', 'error');
-        return;
-      }
-      setFooterLogoDataUrl(null);
-    } catch {
-      showToast('Failed to remove footer logo', 'error');
-    }
-  }, [showToast]);
-
   const handlePinTemplate = useCallback(() => {
     setPinPromptLabel(subject.trim() || 'Untitled Template');
     pinPromptModal.open();
@@ -492,129 +277,6 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     showToast,
     pinPromptModal,
   ]);
-
-  const displaySubject = useMemo(() => {
-    const base = subject.trim() || 'Alert Subject';
-    return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
-  }, [subject, updateNumber]);
-
-  const handleOpenOutlookDraft = useCallback(async () => {
-    if (clickThroughUrl.trim() && !alertClickHref) {
-      requestOptionalFieldAttention('clickThroughUrl');
-      showToast('Enter a valid HTTP or HTTPS click-through URL', 'error');
-      return false;
-    }
-
-    setIsCapturing(true);
-    try {
-      const image = await prepareOutlookDraftImage();
-      const content = buildAlertOutlookEml({
-        subject: displaySubject,
-        imageDataUrl: image.dataUrl,
-        imageHref: alertClickHref,
-        width: image.width,
-        height: image.height,
-      });
-      const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
-      if (success) {
-        showToast(isWebRuntime ? 'Alert draft downloaded' : 'Outlook draft opened', 'success');
-        void addHistory({ severity, subject, bodyHtml, sender, recipient });
-        return true;
-      }
-      showToast(
-        isWebRuntime ? 'Failed to download alert draft' : 'Failed to open Outlook draft',
-        'error',
-      );
-      return false;
-    } catch {
-      showToast('Failed to prepare Outlook draft', 'error');
-      return false;
-    } finally {
-      setIsCapturing(false);
-    }
-  }, [
-    clickThroughUrl,
-    alertClickHref,
-    showToast,
-    prepareOutlookDraftImage,
-    displaySubject,
-    addHistory,
-    severity,
-    subject,
-    bodyHtml,
-    sender,
-    recipient,
-    isWebRuntime,
-    requestOptionalFieldAttention,
-  ]);
-
-  const reminderDraft = useMemo(
-    () => ({
-      severity,
-      subject,
-      bodyHtml,
-      sender,
-    }),
-    [severity, subject, bodyHtml, sender],
-  );
-
-  const handleReminderModalClose = useCallback(() => {
-    reminderModal.close();
-    setEditingReminder(null);
-  }, [reminderModal]);
-
-  const handleReminderSubmit = useCallback(
-    async (input: AlertReminderInput): Promise<boolean> => {
-      if (editingReminder) {
-        return await updateReminder(editingReminder.id, {
-          title: input.title,
-          note: input.note,
-          dueAt: input.dueAt,
-        });
-      }
-      return await scheduleReminder(input);
-    },
-    [editingReminder, scheduleReminder, updateReminder],
-  );
-
-  const handleScheduleFromManager = useCallback(() => {
-    reminderManagerModal.close();
-    openNewReminderModal();
-  }, [openNewReminderModal, reminderManagerModal]);
-
-  const handleEditReminder = useCallback(
-    (reminder: AlertReminderRecord) => {
-      reminderManagerModal.close();
-      setEditingReminder(reminder);
-      reminderModal.open();
-    },
-    [reminderManagerModal, reminderModal],
-  );
-
-  const refreshReminderAlarmState = useCallback(() => {
-    setReminderAlarmLabel(getReminderAlarmLabel());
-    setHasCustomReminderAlarm(hasCustomReminderAlarmSource());
-  }, []);
-
-  const handleChooseReminderAlarmSound = useCallback(async () => {
-    const result = await globalThis.api?.selectReminderSound?.();
-    if (result?.success && result.data) {
-      if (saveReminderAlarmSource(result.data)) {
-        refreshReminderAlarmState();
-        showToast('Alarm sound saved', 'success');
-      } else {
-        showToast('Select an MP3 file', 'error');
-      }
-    } else if (result?.error && result.error !== 'Cancelled') {
-      showToast(result.error, 'error');
-    }
-  }, [refreshReminderAlarmState, showToast]);
-
-  const handleResetReminderAlarmSound = useCallback(() => {
-    resetReminderAlarmSource();
-    refreshReminderAlarmState();
-    showToast('Alarm sound reset', 'success');
-  }, [refreshReminderAlarmState, showToast]);
 
   return (
     <div className="alerts-tab">

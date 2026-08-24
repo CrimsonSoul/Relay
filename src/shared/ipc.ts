@@ -24,7 +24,13 @@ import type {
 import type { KnowledgeSearchRequest, KnowledgeSearchResponse } from './knowledgeSearch';
 import type { OfflineWritableCollection } from './offlineCollections';
 import type { RelayRuntimeDescriptor } from './runtime';
-import type { RelayUpdateCheck, RelayUpdateSnapshot } from './releases';
+import type { RelayReleaseNotes, RelayUpdateCheck, RelayUpdateSnapshot } from './releases';
+import type {
+  RelayRecoveryRepairInput,
+  RelayRecoveryRollbackInput,
+  RelayRecoveryState,
+} from './recovery';
+import type { WorkstationAwakeState } from './workstationAwake';
 
 export {
   OFFLINE_WRITABLE_COLLECTIONS,
@@ -595,6 +601,8 @@ export type StartupSnapshot = {
   sequence: number;
   phase: StartupPhase;
   message: string;
+  recoveryMode?: 'probation';
+  launchIntent?: 'recovery';
 };
 
 export type BridgeAPI = {
@@ -607,13 +615,18 @@ export type BridgeAPI = {
   /** Desktop-only packaged application version and GitHub release discovery. */
   getAppVersion?: () => Promise<string | null>;
   checkForUpdates?: () => Promise<IpcResult<RelayUpdateCheck>>;
+  getCachedReleaseNotes?: () => Promise<RelayReleaseNotes[]>;
+  refreshReleaseNotes?: () => Promise<IpcResult<RelayReleaseNotes[]>>;
   getUpdateState?: () => Promise<RelayUpdateSnapshot | null>;
   downloadUpdate?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
   cancelUpdateDownload?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
   installUpdate?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
   restartToUpdate?: () => Promise<IpcResult<boolean>>;
+  getRecoveryState?: () => Promise<RelayRecoveryState>;
+  rollbackToRecoveryBuild?: (input: RelayRecoveryRollbackInput) => Promise<IpcResult<boolean>>;
+  repairRecoveryBuild?: (input: RelayRecoveryRepairInput) => Promise<IpcResult<boolean>>;
   onUpdateStateChanged?: (callback: (snapshot: RelayUpdateSnapshot) => void) => () => void;
-  openReleasesPage?: () => Promise<boolean>;
+  openReleasesPage?: (version?: string) => Promise<boolean>;
   /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
   openExternal: (url: string) => Promise<boolean>;
   /** Opens an operator-selected HTTPS ticket link through the narrower Service Desk capability. */
@@ -704,6 +717,9 @@ export type BridgeAPI = {
     callback: (notification: { title: string; message: string }) => void,
   ) => () => void;
   onPbCrashed: (callback: (info: { error: string }) => void) => () => void;
+  /** Windows desktop-only local workstation inactivity protection. */
+  getWorkstationAwakeState?: () => Promise<WorkstationAwakeState>;
+  setWorkstationAwakeEnabled?: (enabled: boolean) => Promise<IpcResult<WorkstationAwakeState>>;
   logToMain: (entry: LogEntry) => void;
   // Drag and Drop Sync
   notifyDragStart: () => void;
@@ -830,11 +846,16 @@ export const IPC_CHANNELS = {
   STARTUP_RENDERER_MOUNTED: 'startup:rendererMounted',
   APP_GET_VERSION: 'app:getVersion',
   APP_CHECK_FOR_UPDATES: 'app:checkForUpdates',
+  APP_RELEASE_NOTES_GET_CACHED: 'app:releaseNotesGetCached',
+  APP_RELEASE_NOTES_REFRESH: 'app:releaseNotesRefresh',
   APP_UPDATE_GET_STATE: 'app:updateGetState',
   APP_UPDATE_DOWNLOAD: 'app:updateDownload',
   APP_UPDATE_CANCEL_DOWNLOAD: 'app:updateCancelDownload',
   APP_UPDATE_INSTALL: 'app:updateInstall',
   APP_UPDATE_RESTART: 'app:updateRestart',
+  APP_RECOVERY_GET_STATE: 'app:recoveryGetState',
+  APP_RECOVERY_ROLLBACK: 'app:recoveryRollback',
+  APP_RECOVERY_REPAIR: 'app:recoveryRepair',
   APP_UPDATE_STATE_CHANGED: 'app:updateStateChanged',
   APP_OPEN_RELEASES: 'app:openReleases',
   WINDOW_MINIMIZE: 'window:minimize',
@@ -954,6 +975,8 @@ export const IPC_CHANNELS = {
   PB_CRASHED: 'pb:crashed',
   APP_ERROR_NOTIFICATION: 'app:error-notification',
   APP_RELAUNCH: 'app:relaunch',
+  WORKSTATION_AWAKE_GET_STATE: 'workstationAwake:getState',
+  WORKSTATION_AWAKE_SET_ENABLED: 'workstationAwake:setEnabled',
   // Backups
   BACKUP_LIST: 'backup:list',
   BACKUP_CREATE: 'backup:create',

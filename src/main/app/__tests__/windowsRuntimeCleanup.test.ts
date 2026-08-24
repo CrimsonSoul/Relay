@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupWindowsRuntimes, scheduleWindowsRuntimeCleanup } from '../windowsRuntimeCleanup';
+import { serializeRecoveryCatalog, type RecoveryBuildRecord } from '../../releases/RecoveryCatalog';
 
 const tempRoots: string[] = [];
 
@@ -24,6 +25,50 @@ async function makeCompleteRuntime(runtimeRoot: string, buildId: string): Promis
   return directory;
 }
 
+async function makeRecoveryRuntime(runtimeRoot: string, buildId: string): Promise<string> {
+  const directory = join(runtimeRoot, buildId);
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, '.relay-runtime-ready'),
+    `[Relay]\nprotocol=2\nbuildId=${buildId}\n`,
+  );
+  await writeFile(join(directory, 'Relay.exe'), 'fixture');
+  return directory;
+}
+
+function recoveryBuild(
+  buildId: string,
+  version: string,
+  commit: string,
+  snapshotId: string | null,
+): RecoveryBuildRecord {
+  return {
+    buildId,
+    version,
+    releaseTag: `v${version}`,
+    targetCommitish: commit,
+    runtimeSha512: 'a'.repeat(128),
+    installerSha256: 'b'.repeat(64),
+    recoveryProtocol: 2,
+    serverDataEpoch: 1,
+    clientDataEpoch: 1,
+    installedAt: '2026-08-24T15:00:00.000Z',
+    health: 'healthy',
+    rollbackSnapshotId: snapshotId,
+  };
+}
+
+async function makeSnapshot(userDataRoot: string, snapshotId: string): Promise<string> {
+  const directory = join(userDataRoot, 'RecoverySnapshots', snapshotId);
+  await mkdir(join(directory, 'data'), { recursive: true });
+  await writeFile(join(directory, 'data', 'data.db'), 'fixture');
+  await writeFile(
+    join(directory, 'snapshot.ini'),
+    `[Snapshot]\nprotocol=1\nsnapshotId=${snapshotId}\ncomplete=1\n`,
+  );
+  return directory;
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -33,13 +78,12 @@ describe('Windows runtime cleanup', () => {
   it('is scheduled after workspace readiness and cancelled during app cleanup', () => {
     const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8');
 
-    expect(source).toContain(
-      "import { scheduleWindowsRuntimeCleanup } from './app/windowsRuntimeCleanup';",
-    );
+    expect(source).toContain("await import('./app/windowsRuntimeCleanup')");
     expect(source).toContain('cancelWindowsRuntimeCleanup?.();');
     expect(source.indexOf("startupTimeline.mark('workspace-ready')")).toBeLessThan(
-      source.indexOf('cancelWindowsRuntimeCleanup = scheduleWindowsRuntimeCleanup('),
+      source.indexOf('const postWorkspace = await completePostWorkspaceRuntime('),
     );
+    expect(source).toContain('const cancelWindowsRuntimeCleanup = scheduleWindowsRuntimeCleanup(');
   });
 
   it('removes only unreferenced complete runtimes and stale staging directories', async () => {
@@ -106,6 +150,184 @@ describe('Windows runtime cleanup', () => {
     expect(existsSync(freshStage)).toBe(true);
     expect(existsSync(oldQuarantine)).toBe(false);
     expect(existsSync(freshQuarantine)).toBe(true);
+  });
+
+  it('preserves the current, candidate, and all three protocol-2 retained runtimes', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const currentDir = await makeRecoveryRuntime(runtimeRoot, 'r2-current');
+    const candidateDir = await makeRecoveryRuntime(runtimeRoot, 'r2-candidate');
+    const previous0Dir = await makeRecoveryRuntime(runtimeRoot, 'r2-previous0');
+    const previous1Dir = await makeRecoveryRuntime(runtimeRoot, 'r2-previous1');
+    const previous2Dir = await makeRecoveryRuntime(runtimeRoot, 'r2-previous2');
+    const orphanDir = await makeRecoveryRuntime(runtimeRoot, 'r2-orphan');
+    const current = recoveryBuild('r2-current', '1.5.0', '1'.repeat(40), null);
+    const candidate = {
+      ...recoveryBuild('r2-candidate', '1.6.0', '2'.repeat(40), null),
+      health: 'candidate' as const,
+    };
+    const previous0 = recoveryBuild('r2-previous0', '1.4.0', '3'.repeat(40), null);
+    const previous1 = recoveryBuild('r2-previous1', '1.3.0', '4'.repeat(40), null);
+    const previous2 = recoveryBuild('r2-previous2', '1.2.0', '5'.repeat(40), null);
+    await writeFile(
+      join(root, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 5,
+        currentBuildId: current.buildId,
+        candidateBuildId: candidate.buildId,
+        previousBuildIds: [previous0.buildId, previous1.buildId, previous2.buildId],
+        builds: [current, candidate, previous0, previous1, previous2],
+        transaction: {
+          id: '11111111-2222-4333-8444-555555555555',
+          kind: 'update',
+          phase: 'probation',
+          sourceBuildId: current.buildId,
+          targetBuildId: candidate.buildId,
+          mode: 'client',
+          snapshotId: null,
+          attempts: 1,
+          requestedAt: '2026-08-24T15:05:00.000Z',
+        },
+        failedReleaseFingerprints: [],
+      }),
+    );
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+    });
+
+    expect(result.removed).toEqual([]);
+    expect(result.skipped).toEqual(
+      expect.arrayContaining([
+        'r2-candidate',
+        'r2-current',
+        'r2-previous0',
+        'r2-previous1',
+        'r2-previous2',
+        'r2-orphan',
+      ]),
+    );
+    expect(existsSync(candidateDir)).toBe(true);
+    expect(existsSync(previous0Dir)).toBe(true);
+    expect(existsSync(previous1Dir)).toBe(true);
+    expect(existsSync(previous2Dir)).toBe(true);
+    expect(existsSync(orphanDir)).toBe(true);
+  });
+
+  it('preserves every complete runtime while a prepared update receipt is pending ingestion', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const current = recoveryBuild('r2-current', '1.5.0', '1'.repeat(40), null);
+    const currentDir = await makeRecoveryRuntime(runtimeRoot, current.buildId);
+    const preparedDir = await makeRecoveryRuntime(runtimeRoot, 'r2-prepared');
+    await makeRecoveryRuntime(runtimeRoot, 'r2-orphan');
+    await writeFile(
+      join(root, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 5,
+        currentBuildId: current.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [current],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+    await mkdir(join(root, 'Recovery'));
+    await writeFile(join(root, 'Recovery', 'prepared.ini'), '[Prepared]\nbuildId=r2-prepared\n');
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+    });
+
+    expect(result.removed).toEqual([]);
+    expect(result.skipped).toEqual(
+      expect.arrayContaining(['r2-current', 'r2-prepared', 'r2-orphan']),
+    );
+    expect(existsSync(preparedDir)).toBe(true);
+  });
+
+  it('removes only complete unreferenced server snapshots after the catalog settles', async () => {
+    const root = await makeRoot();
+    const userDataRoot = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const current = recoveryBuild('r2-current', '1.6.0', '1'.repeat(40), null);
+    const previous = recoveryBuild(
+      'r2-previous',
+      '1.5.0',
+      '2'.repeat(40),
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    );
+    const currentDir = await makeRecoveryRuntime(runtimeRoot, current.buildId);
+    await makeRecoveryRuntime(runtimeRoot, previous.buildId);
+    await writeFile(
+      join(root, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 4,
+        currentBuildId: current.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [previous.buildId],
+        builds: [current, previous],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+    const retainedSnapshot = await makeSnapshot(userDataRoot, previous.rollbackSnapshotId!);
+    const orphanId = '11111111-2222-4333-8444-555555555555';
+    const orphanSnapshot = await makeSnapshot(userDataRoot, orphanId);
+    await mkdir(join(userDataRoot, 'RecoverySnapshots', 'unknown-snapshot'));
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+      userDataRoot,
+    });
+
+    expect(result.removed).toContain(`snapshot:${orphanId}`);
+    expect(result.skipped).toContain(`snapshot:${previous.rollbackSnapshotId}`);
+    expect(result.skipped).toContain('snapshot:unknown-snapshot');
+    expect(existsSync(retainedSnapshot)).toBe(true);
+    expect(existsSync(orphanSnapshot)).toBe(false);
+  });
+
+  it('preserves every snapshot while a recovery request is pending', async () => {
+    const root = await makeRoot();
+    const userDataRoot = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const current = recoveryBuild('r2-current', '1.6.0', '1'.repeat(40), null);
+    const currentDir = await makeRecoveryRuntime(runtimeRoot, current.buildId);
+    await writeFile(
+      join(root, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 4,
+        currentBuildId: current.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [current],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+    const orphanId = '11111111-2222-4333-8444-555555555555';
+    const orphanSnapshot = await makeSnapshot(userDataRoot, orphanId);
+    await mkdir(join(root, 'Recovery'));
+    await writeFile(join(root, 'Recovery', 'rollback-request.ini'), 'pending');
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+      userDataRoot,
+    });
+
+    expect(result.removed).not.toContain(`snapshot:${orphanId}`);
+    expect(result.skipped).toContain(`snapshot:${orphanId}`);
+    expect(existsSync(orphanSnapshot)).toBe(true);
   });
 
   it('does not run while the bootstrap holds the runtime lock', async () => {
@@ -296,6 +518,7 @@ describe('Windows runtime cleanup', () => {
       isPackaged: true,
       localAppData: 'C:\\Users\\relay\\AppData\\Local',
       execPath: 'C:\\Users\\relay\\AppData\\Local\\Relay\\Runtime\\r1-current\\Relay.exe',
+      userDataRoot: 'C:\\Users\\relay\\AppData\\Roaming\\Relay',
       delayMs: 300_000,
       cleanup,
       setTimer,
@@ -306,6 +529,9 @@ describe('Windows runtime cleanup', () => {
     expect(unref).toHaveBeenCalledOnce();
     scheduledCallback?.();
     await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+    expect(cleanup).toHaveBeenCalledWith(
+      expect.objectContaining({ userDataRoot: 'C:\\Users\\relay\\AppData\\Roaming\\Relay' }),
+    );
     cancel();
     expect(clearTimer).toHaveBeenCalledWith(timer);
   });

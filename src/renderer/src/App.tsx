@@ -161,9 +161,11 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
 export function MainApp({
   onReconfigure,
   relayConfig = null,
+  launchIntent,
 }: {
   readonly onReconfigure?: () => void;
   readonly relayConfig?: PublicRelayConfig | null;
+  readonly launchIntent?: 'recovery';
 } = {}) {
   const { showToast } = useToast();
   useErrorNotifications(showToast);
@@ -232,6 +234,9 @@ export function MainApp({
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenRadar = useCallback(() => setActiveTab('Radar'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
+  useEffect(() => {
+    if (launchIntent === 'recovery') setActiveTab('Settings');
+  }, [launchIntent, setActiveTab]);
   const handleTabRequest = useCallback(
     (requestedTab: string) => {
       const normalized = normalizeLegacyTabRequest(requestedTab);
@@ -561,6 +566,7 @@ export function MainApp({
                       onReconfigure={onReconfigure}
                       dynatrace={dynatrace}
                       presentation="page"
+                      initialSection={launchIntent === 'recovery' ? 'about' : undefined}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -627,9 +633,11 @@ type AppPhase =
 function AppWithSetup({
   onWebSessionRequired,
   onWebReauthenticate,
+  launchIntent,
 }: {
   readonly onWebSessionRequired?: () => void;
   readonly onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
+  readonly launchIntent?: 'recovery';
 }) {
   const [phase, setPhase] = useState<AppPhase>({ stage: 'checking' });
 
@@ -811,6 +819,7 @@ function AppWithSetup({
         <MainApp
           onReconfigure={() => setPhase({ stage: 'setup' })}
           relayConfig={phase.relayConfig}
+          launchIntent={launchIntent}
         />
       </PrivilegedAccessProvider>
     </ConnectionManager>
@@ -820,9 +829,11 @@ function AppWithSetup({
 export default function App({
   onWebSessionRequired,
   onWebReauthenticate,
+  launchIntent,
 }: Readonly<{
   onWebSessionRequired?: () => void;
   onWebReauthenticate?: (passphrase: string) => Promise<boolean>;
+  launchIntent?: 'recovery';
 }> = {}) {
   const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
@@ -843,6 +854,7 @@ export default function App({
             <AppWithSetup
               onWebSessionRequired={onWebSessionRequired}
               onWebReauthenticate={onWebReauthenticate}
+              launchIntent={launchIntent}
             />
           </NotesProvider>
         </UnsupportedViewport>

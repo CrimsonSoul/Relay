@@ -1,0 +1,309 @@
+/* ============================================================================
+   List Toolbar (Search + Sort bar)
+   ============================================================================ */
+
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+.list-toolbar--sort-only {
+  justify-content: flex-end;
+}
+
+/* When ListToolbar is inside CollapsibleHeader, render inline */
+.collapsible-header .list-toolbar {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+.list-toolbar-sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.list-toolbar-sort-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 800;
+}
+
+.list-toolbar-sort-select {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 6px 28px 6px 12px;
+  height: 40px;
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.list-toolbar-sort-select:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.list-toolbar-sort-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.list-toolbar-sort-select:disabled:hover {
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.list-toolbar-sort-select:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-dim);
+}
+
+.list-toolbar-sort-select option {
+  background: var(--color-bg-chrome);
+  color: var(--color-text-primary);
+}
+
+.list-toolbar-sort-dir {
+  flex-shrink: 0;
+}
+
+.list-toolbar-sort-dir.tactile-button {
+  height: 40px;
+  width: 40px;
+  padding: 0;
+}
+
+/* --- List Filters Bar --- */
+.list-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.list-filters .tactile-button--sm {
+  height: 38px;
+  padding: 0 16px;
+}
+
+.list-filters-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--color-focus-ring);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.collapsible-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.collapsible-header-right:first-child .collapsible-header-actions {
+  width: 100%;
+}
+
+.collapsible-header-actions > .tooltip-trigger,
+.collapsible-header-actions > .tactile-button {
+  flex: 0 0 auto;
+}
+
+.collapsible-header-actions--expanded {
+  gap: 10px;
+}
+
+.collapsible-header-actions--collapsed {
+  gap: 8px;
+}
+
+/* ============================================================================
+   Tactile Button Internal Elements
+   ============================================================================ */
+
+.tactile-button-spinner {
+  display: inline-block;
+}
+
+.tactile-button-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-base);
+}
+
+.tactile-button-label {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* command-palette-search-icon removed — replaced by header search bar */
+
+/* ============================================================================
+   ContactCard Tooltip Spans
+   ============================================================================ */
+
+.contact-card-tooltip-span {
+  display: block;
+  max-width: 100%;
+}
+
+/* ============================================================================
+   Header Search Bar
+   ============================================================================ */
+
+.header-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--color-border-strong);
+  border-radius: 0;
+  padding: 0 4px;
+  height: 36px;
+  width: 100%;
+  max-width: 400px;
+  cursor: text;
+  transition: border-color 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.header-search-bar:focus-within {
+  border-bottom-color: var(--accent);
+  box-shadow: none;
+}
+
+.header-search-bar-icon {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.header-search-bar:focus-within .header-search-bar-icon {
+  color: var(--color-accent);
+}
+
+.header-search-bar-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  padding: 0;
+}
+
+.header-search-bar-input:focus,
+.header-search-bar-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.header-search-bar-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.header-search-bar-clear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease,
+    color 0.1s ease;
+}
+
+.header-search-bar-clear:hover {
+  background: var(--color-hover-overlay);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.header-search-bar-clear:focus-visible {
+  border-color: var(--accent-bright);
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 1px;
+}
+
+.header-search-bar-shortcut {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-chrome);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  padding: 2px 6px;
+  pointer-events: none;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.header-search-bar:focus-within .header-search-bar-shortcut {
+  display: none;
+}
+
+.contact-card-tooltip-span--faded {
+  display: block;
+  max-width: 100%;
+  opacity: 0.8;
+}
+
+/* ============================================================================
+   ContextMenu Item Label
+   ============================================================================ */
+
+.context-menu-item-label {
+  flex: 1;
+}

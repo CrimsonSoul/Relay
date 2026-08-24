@@ -599,6 +599,12 @@ test.describe('Redesign screenshot harness', () => {
       await expectSettingsBottomGutter(window);
       await shoot(window, 'settings-appearance.png');
 
+      await window.getByRole('tab', { name: 'Workstation' }).click();
+      await expect(
+        window.getByRole('switch', { name: 'Keep this PC awake while Relay is running' }),
+      ).toBeVisible();
+      await shoot(window, 'settings-workstation.png');
+
       await window.getByRole('tab', { name: 'Relay data' }).click();
       await expect(window.getByText('Relay connection')).toBeVisible();
       await shoot(window, 'settings-relay-data.png');

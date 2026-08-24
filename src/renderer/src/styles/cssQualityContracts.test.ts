@@ -1,25 +1,21 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import postcss, { type AtRule, type Declaration, type Root, type Rule } from 'postcss';
 import { describe, expect, it } from 'vitest';
-
-const cssPath = (relativePath: string) => resolve(process.cwd(), 'src/renderer/src', relativePath);
-const readCss = (relativePath: string) => readFileSync(cssPath(relativePath), 'utf8');
+import { readCssBundle } from './readCssBundle.test-util';
 
 const cssSources = {
-  alerts: readCss('tabs/alerts.css'),
-  assembler: readCss('tabs/assembler/assembler.css'),
-  cloudStatus: readCss('tabs/cloud-status.css'),
-  components: readCss('styles/components.css'),
-  componentsAfterSettings: readCss('styles/components-after-settings.css'),
-  directory: readCss('components/directory/directory.css'),
-  dynatraceProblems: readCss('tabs/dynatrace-problems.css'),
-  knowledge: readCss('features/knowledge/knowledge.css'),
-  modals: readCss('styles/modals.css'),
-  oncall: readCss('components/oncall/oncall.css'),
-  settings: readCss('components/settings/settings.css'),
-  toast: readCss('styles/toast.css'),
-  utilities: readCss('styles/utilities.css'),
+  alerts: readCssBundle('tabs/alerts.css'),
+  assembler: readCssBundle('tabs/assembler/assembler.css'),
+  cloudStatus: readCssBundle('tabs/cloud-status.css'),
+  components: readCssBundle('styles/components.css'),
+  componentsAfterSettings: readCssBundle('styles/components-after-settings.css'),
+  directory: readCssBundle('components/directory/directory.css'),
+  dynatraceProblems: readCssBundle('tabs/dynatrace-problems.css'),
+  knowledge: readCssBundle('features/knowledge/knowledge.css'),
+  modals: readCssBundle('styles/modals.css'),
+  oncall: readCssBundle('components/oncall/oncall.css'),
+  settings: readCssBundle('components/settings/settings.css'),
+  toast: readCssBundle('styles/toast.css'),
+  utilities: readCssBundle('styles/utilities.css'),
 };
 
 function parseCss(source: string): Root {

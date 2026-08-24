@@ -1,7 +1,7 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 import { AlertCard, type AlertCardProps } from '../AlertCard';
 
 // Mock the EventTimeBanner dependency
@@ -93,7 +93,7 @@ describe('AlertCard', () => {
     render(<AlertCard {...makeProps()} />);
 
     const body = document.querySelector('.alerts-email-body');
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
 
     expect(body?.className).toBe('alerts-email-body');
     expect(css).not.toContain('.alerts-email-body--font-normal');
@@ -101,7 +101,7 @@ describe('AlertCard', () => {
   });
 
   it('keeps the export-size preview card scrollable in its responsive pane', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const layoutRule = /\.alerts-layout\s*\{[^}]*\}/m.exec(css)?.[0];
     const scrollRule = /\.alerts-preview-scroll\s*\{[^}]*\}/m.exec(css)?.[0];
     const cardRule = /\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
@@ -115,7 +115,7 @@ describe('AlertCard', () => {
   });
 
   it('defines a taller minimum body height for alerts', () => {
-    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const css = readCssBundle('tabs/alerts.css');
     const bodyRule = /\.alerts-email-body\s*\{[^}]*\}/m.exec(css)?.[0];
 
     expect(bodyRule).toContain('min-height: 350px');

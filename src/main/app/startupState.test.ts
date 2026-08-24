@@ -74,4 +74,28 @@ describe('startup state controller', () => {
     controller.beginGeneration();
     expect(listener).not.toHaveBeenCalled();
   });
+
+  it('preserves an immutable probation marker through every startup transition', () => {
+    const controller = createStartupStateController({ recoveryMode: 'probation' });
+    const generation = controller.beginGeneration();
+    controller.transition(generation, 'preparing-data');
+    controller.transition(generation, 'ready');
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'ready',
+      recoveryMode: 'probation',
+    });
+  });
+
+  it('preserves a native recovery-center launch intent through startup', () => {
+    const controller = createStartupStateController({ launchIntent: 'recovery' });
+    const generation = controller.beginGeneration();
+    controller.transition(generation, 'preparing-data');
+    controller.transition(generation, 'ready');
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'ready',
+      launchIntent: 'recovery',
+    });
+  });
 });

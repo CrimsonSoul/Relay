@@ -74,6 +74,7 @@
     "bonjour-service": "1.4.3",
     "eventsource": "4.1.0",
     "html2canvas": "^1.4.1",
+    "koffi": "3.1.6",
     "papaparse": "5.5.4",
     "pdfjs-dist": "6.2.108",
     "pocketbase": "0.27.0",

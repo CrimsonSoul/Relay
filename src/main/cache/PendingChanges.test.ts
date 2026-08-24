@@ -218,6 +218,12 @@ describe('PendingChanges', () => {
     expect(existsSync(dbPath)).toBe(true);
   });
 
+  it('checkpoints queued mutations before a recovery handoff', () => {
+    pending.enqueue('contacts', 'update', { id: 'contact-1', name: 'Queued' });
+
+    expect(pending.checkpoint()).toBe(true);
+  });
+
   it('each record has a numeric autoincrement id', () => {
     pending.enqueue('contacts', 'create', { id: '1' });
     pending.enqueue('contacts', 'create', { id: '2' });

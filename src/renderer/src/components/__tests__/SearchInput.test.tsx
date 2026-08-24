@@ -1,14 +1,10 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import { readCssBundle } from '../../styles/readCssBundle.test-util';
 import { SearchInput } from '../SearchInput';
 
-const componentStyles = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
-  'utf8',
-);
+const componentStyles = readCssBundle('styles/components.css');
 
 describe('SearchInput', () => {
   it('renders with a search icon', () => {

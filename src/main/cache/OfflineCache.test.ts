@@ -345,6 +345,12 @@ describe('OfflineCache', () => {
     expect(existsSync(dbPath)).toBe(true);
   });
 
+  it('checkpoints the WAL before a recovery handoff', () => {
+    cache.writeCollection('contacts', [{ id: 'contact-1', name: 'Checkpoint me' }]);
+
+    expect(cache.checkpoint()).toBe(true);
+  });
+
   it('rethrows non-corruption constructor errors', () => {
     // Pointing dbPath at a directory that exists throws SQLITE_CANTOPEN, not a corruption error
     const dirPath = join(tempDir, 'not-a-file');

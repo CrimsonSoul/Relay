@@ -165,6 +165,91 @@ describe('PocketBaseProcess', () => {
     );
   });
 
+  it('assigns packaged Windows PocketBase to a kill-on-close job', async () => {
+    const child = makeMockChild(2468);
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    const job = { assign: vi.fn(() => true), close: vi.fn() };
+    const managed = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      useWindowsJobObject: true,
+      createWindowsJob: () => job,
+    });
+
+    await managed.start();
+    expect(job.assign).toHaveBeenCalledWith(2468);
+
+    child._emit('exit', 0, null);
+    expect(job.close).toHaveBeenCalledOnce();
+  });
+
+  it('kills the spawned child when Windows job assignment fails', async () => {
+    const child = makeMockChild(2468);
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    const job = { assign: vi.fn(() => false), close: vi.fn() };
+    const managed = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      useWindowsJobObject: true,
+      createWindowsJob: () => job,
+    });
+
+    await expect(managed.start()).rejects.toThrow('Job Object');
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(job.close).toHaveBeenCalledOnce();
+  });
+
+  it('kills the spawned child when Windows job creation fails', async () => {
+    const child = makeMockChild(2468);
+    mockSpawn.mockReturnValue(child);
+    const managed = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      useWindowsJobObject: true,
+      createWindowsJob: () => {
+        throw new Error('job unavailable');
+      },
+    });
+
+    await expect(managed.start()).rejects.toThrow('job unavailable');
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('observes spawn errors while Windows job creation is still pending', async () => {
+    const child = makeMockChild(2468);
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    const job = { assign: vi.fn(() => true), close: vi.fn() };
+    let resolveJob!: (value: typeof job) => void;
+    const jobPromise = new Promise<typeof job>((resolvePromise) => {
+      resolveJob = resolvePromise;
+    });
+    const managed = new PocketBaseProcess({
+      binaryPath: '/missing/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      useWindowsJobObject: true,
+      createWindowsJob: () => jobPromise,
+    });
+
+    const startup = managed.start();
+    await Promise.resolve();
+    child._emit('error', new Error('spawn ENOENT'));
+    resolveJob(job);
+
+    await expect(startup).rejects.toThrow('spawn ENOENT');
+    expect(job.assign).not.toHaveBeenCalled();
+  });
+
   it('start() clears stale Windows PocketBase processes listening on the configured port', async () => {
     pbProcess = new PocketBaseProcess({
       binaryPath: '/fake/pocketbase.exe',
@@ -609,6 +694,30 @@ describe('PocketBaseProcess', () => {
     expect(mockSpawn).toHaveBeenCalledTimes(2);
 
     vi.useRealTimers();
+  });
+
+  it('reports the first crash without restarting during supervised probation', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    const supervised = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      restartOnCrash: false,
+    });
+    const crashCallback = vi.fn();
+    supervised.onCrash(crashCallback);
+
+    vi.useFakeTimers();
+    await supervised.start();
+    child._emit('exit', 1, null);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(crashCallback).toHaveBeenCalledOnce();
+    expect(crashCallback).toHaveBeenCalledWith(expect.stringContaining('exited with code 1'));
   });
 
   it('waits for the backoff delay before restarting after a crash', async () => {

@@ -156,4 +156,46 @@ describe('DesktopStartupGate', () => {
     await waitFor(() => expect(order).toHaveLength(2));
     expect(order).toEqual(['renderer-mounted', 'app-passive-effect']);
   });
+
+  it('mounts the full app inert beneath a finishing-update probation layer', async () => {
+    const { bridge } = makeBridge({
+      ...preparing,
+      sequence: 3,
+      phase: 'ready',
+      message: 'Relay is ready.',
+      recoveryMode: 'probation',
+    });
+    const App = () => <button type="button">Operational action</button>;
+
+    const { container } = render(
+      <DesktopStartupGate bridge={bridge} loadApp={async () => ({ default: App })} />,
+    );
+
+    expect(await screen.findByText('Operational action')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Finishing the update');
+    expect(screen.getByRole('status')).toHaveTextContent('checking this version for 60 seconds');
+    expect(container.querySelector('.recovery-probation__app')).toHaveAttribute('inert');
+    expect(container.querySelector('.recovery-probation__app')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+    expect(bridge.markStartupRendererMounted).toHaveBeenCalledOnce();
+  });
+
+  it('passes the native recovery-center launch intent into App', async () => {
+    const { bridge } = makeBridge({
+      ...preparing,
+      sequence: 3,
+      phase: 'ready',
+      message: 'Relay is ready.',
+      launchIntent: 'recovery',
+    });
+    const App = ({ launchIntent }: { launchIntent?: 'recovery' }) => (
+      <main>{launchIntent === 'recovery' ? 'Recovery center' : 'Operational workspace'}</main>
+    );
+
+    render(<DesktopStartupGate bridge={bridge} loadApp={async () => ({ default: App })} />);
+
+    expect(await screen.findByText('Recovery center')).toBeInTheDocument();
+  });
 });

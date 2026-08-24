@@ -212,9 +212,17 @@ describe.runIf(process.platform === 'win32')('Windows private directory integrat
       await updates.noteCheck({
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: '0123456789abcdef0123456789abcdef01234567',
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
+        releaseNotes: {
+          version: '1.1.0',
+          title: 'Relay v1.1.0',
+          body: 'Generated release notes.',
+          publishedAt: '2026-08-12T12:44:01Z',
+          immutable: true,
+        },
       });
       await expect(updates.download()).resolves.toMatchObject({ phase: 'downloaded' });
 

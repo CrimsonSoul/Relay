@@ -1,15 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 
-const css = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/features/knowledge/knowledge.css'),
-  'utf8',
-);
-const componentCss = readFileSync(
-  resolve(process.cwd(), 'src/renderer/src/styles/components.css'),
-  'utf8',
-);
+const css = readCssBundle('features/knowledge/knowledge.css');
+const componentCss = readCssBundle('styles/components.css');
 
 function ruleBody(source: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

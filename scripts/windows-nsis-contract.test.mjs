@@ -19,12 +19,113 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).not.toMatch(/ReadINIStr[^\n]+state\.ini[^\n]+(?:path|executable)/i);
   });
 
-  it('tries current before previous and forwards the untouched parameter string', () => {
+  it('tries current before retained predecessors and forwards the untouched parameter string', () => {
     const source = read('build/windows/relay-launcher.nsi');
 
-    expect(source.indexOf('"Relay" "current"')).toBeLessThan(source.indexOf('"Relay" "previous"'));
+    expect(source.indexOf('"Relay" "current"')).toBeLessThan(source.indexOf('"Relay" "previous0"'));
+    expect(source.indexOf('"Relay" "previous0"')).toBeLessThan(
+      source.indexOf('"Relay" "previous1"'),
+    );
+    expect(source.indexOf('"Relay" "previous1"')).toBeLessThan(
+      source.indexOf('"Relay" "previous2"'),
+    );
     expect(source).toContain('${GetParameters} $RelayArgs');
     expect(source).toContain('Exec \'"$RelayExecutable" $RelayArgs\'');
+  });
+
+  it('opens a retained recovery runtime when protocol-2 current cannot launch', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const protocol2 = source.slice(source.indexOf('ReadINIStr $RelayPrevious0'));
+    const currentLaunch = protocol2.indexOf('!insertmacro RelayTryRuntime "$RelayBuildId"');
+    const fallbackLaunch = protocol2.indexOf(
+      '!insertmacro RelayTryRecoveryRuntime "$RelayPrevious0"',
+      currentLaunch,
+    );
+
+    expect(currentLaunch).toBeGreaterThan(-1);
+    expect(fallbackLaunch).toBeGreaterThan(currentLaunch);
+    expect(
+      protocol2.indexOf('!insertmacro RelayTryRecoveryRuntime "$RelayPrevious0"'),
+    ).toBeLessThan(protocol2.indexOf('!insertmacro RelayTryRecoveryRuntime "$RelayCurrent"'));
+  });
+
+  it('supervises a protocol-2 candidate twice and promotes it only after a matching health receipt', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+    const timing = JSON.parse(read('build/windows/recovery-timing.json'));
+
+    expect(source).toContain('$RelayRoot\\Recovery\\prepared.ini');
+    expect(source).toContain('$RelayRoot\\Recovery\\probation-result.ini');
+    expect(source).toContain('"Relay" "candidate"');
+    expect(source).toContain('"Transaction" "attempts"');
+    expect(contract).toContain('--relay-recovery-probation=');
+    expect(source).toContain('Function RelayRunProbation');
+    expect(source).toContain('CreateProcessW');
+    expect(source).toContain('WaitForSingleObject');
+    expect(source).toContain('${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS}');
+    expect(source).not.toContain('130000');
+    expect(timing.supervisorTimeoutMs).toBeGreaterThanOrEqual(
+      timing.startupDeadlineMs + timing.probationDurationMs + timing.shutdownOverheadMs,
+    );
+    expect(source).toContain('TerminateProcess');
+    expect(source).toContain('$RelayProbationAttempts >= 2');
+    expect(source).toContain('PromoteCandidate:');
+    expect(source).toContain('RollbackCandidate:');
+    expect(source).toContain(
+      'ReadINIStr $RelayPreparedCommit "$RelayState" "Build.$RelayCandidate" "targetCommitish"',
+    );
+    expect(source).toContain(
+      'StrCpy $RelayFailedFingerprint "$RelayPreparedReleaseTag@$RelayPreparedCommit"',
+    );
+    expect(source).toContain('MoveFileExW');
+  });
+
+  it('serializes launcher supervision and exposes a native recovery entry point', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+
+    expect(source).toContain('launcher.lock');
+    expect(source).toContain('ERROR_SHARING_VIOLATION');
+    expect(contract).toContain('/relay-recovery');
+    expect(contract).toContain('--relay-recovery-center');
+    expect(contract).toContain('https://github.com/CrimsonSoul/Relay/releases');
+  });
+
+  it('restores a validated stopped server snapshot through an idempotent data journal', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain('Function RelayRestoreServerSnapshot');
+    expect(source).toContain('$APPDATA\\Relay\\recovery-rollback.ini');
+    expect(source).toContain('$APPDATA\\Relay\\RecoverySnapshots\\$RelayTransactionSnapshot');
+    expect(source).toContain('"Snapshot" "complete"');
+    expect(source).toContain('"Snapshot" "transactionId"');
+    expect(source).toContain('Rename "$RelayLiveData" "$RelayFailedData"');
+    expect(source).toContain('Rename "$RelaySnapshotRoot\\data" "$RelayLiveData"');
+    expect(source).toContain('Rename "$RelayFailedData" "$RelayLiveData"');
+    expect(source.indexOf('Call RelayRestoreServerSnapshot')).toBeLessThan(
+      source.indexOf(
+        'DeleteINISec "$RelayStateNew" "Transaction"',
+        source.indexOf('RollbackCandidate:'),
+      ),
+    );
+  });
+
+  it('accepts a manual rollback only to one compatible retained build', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain('$RelayRoot\\Recovery\\rollback-request.ini');
+    expect(source).toContain('HandleManualRollback:');
+    expect(source).toContain('"RollbackRequest" "targetBuildId"');
+    expect(source).toContain('$RelayManualTarget == "$RelayPrevious0"');
+    expect(source).toContain('$RelayManualTarget == "$RelayPrevious1"');
+    expect(source).toContain('$RelayManualTarget == "$RelayPrevious2"');
+    expect(source).toContain('"Build.$RelayManualTarget" "health"');
+    expect(source).toContain('"Build.$RelayManualTarget" "serverDataEpoch"');
+    expect(source).toContain('"Build.$RelayManualTarget" "clientDataEpoch"');
+    expect(source).toContain('StrCpy $RelayExpectedSnapshotTransaction $RelaySnapshotTransaction');
+    expect(source).toContain('$RelaySnapshotTransaction != "$RelayExpectedSnapshotTransaction"');
+    expect(source).toContain('WriteINIStr "$RelayStateNew" "Relay" "current" "$RelayManualTarget"');
+    expect(source.match(/\$\{If\} \$\{FileExists\} "\$RelayRollbackRequest"/g)).toHaveLength(1);
   });
 
   it('validates build IDs before constructing fixed runtime candidates', () => {
@@ -32,7 +133,8 @@ describe('Windows NSIS launcher contract', () => {
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
     expect(source).toContain('!insertmacro RelayValidateBuildId');
-    expect(source).toContain('$RelayRoot\\Runtime\\$RelayBuildId\\${RELAY_INNER_EXECUTABLE}');
+    expect(source).toContain('$RelayRoot\\Runtime\\${BUILD_ID}');
+    expect(source).toContain('$RelayRuntimeDir\\${RELAY_INNER_EXECUTABLE}');
     expect(contract).toContain('abcdefghijklmnopqrstuvwxyz0123456789._-');
     expect(contract).toContain('abcdefghijklmnopqrstuvwxyz0123456789"');
     expect(contract).toContain('StrCpy $RelayContractFirst "${VALUE}" 1');
@@ -45,6 +147,143 @@ describe('Windows NSIS launcher contract', () => {
     expect(contract).toContain('${If} $RelayContractLength > 64');
   });
 
+  it('binds every protocol-2 runtime marker to its catalog identity before launch', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+
+    expect(source).toContain(
+      'ReadINIStr $RelayCatalogRuntimeHash "$RelayState" "Build.${BUILD_ID}" "runtimeSha512"',
+    );
+    expect(source).toContain('$RelayMarkerHash == $RelayCatalogRuntimeHash');
+    expect(source).toContain('$RelayMarkerVersion == $RelayCatalogVersion');
+    expect(source).toContain('$RelayMarkerCommit == $RelayCatalogCommit');
+    expect(source).toContain('$RelayMarkerServerEpoch == $RelayCatalogServerEpoch');
+    expect(source).toContain('$RelayMarkerClientEpoch == $RelayCatalogClientEpoch');
+    expect(source).toContain('$RelayCatalogHealth == "healthy"');
+    expect(source).toContain('$RelayCatalogHealth == "candidate"');
+    expect(source).toContain('$RelayPreparedBuild == "${BUILD_ID}"');
+    expect(source).toContain('$RelayMarkerHash == $RelayPreparedRuntimeHash');
+    expect(source).toContain('!insertmacro RelayVerifyRuntimeContent');
+    expect(contract).toContain('resources\\app.asar');
+    expect(contract).toContain('resources\\pocketbase\\win32-x64\\pocketbase.exe');
+    expect(contract).toContain('resources\\pocketbase\\hooks\\relay_privileged_reauth.pb.js');
+    expect(contract).toContain('better-sqlite3\\build\\Release\\better_sqlite3.node');
+    expect(contract).toContain('@koromix\\koffi-win32-x64\\win32_x64\\koffi.node');
+    for (const runtimeDll of [
+      'd3dcompiler_47.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
+      'ffmpeg.dll',
+      'libEGL.dll',
+      'libGLESv2.dll',
+      'vk_swiftshader.dll',
+      'vulkan-1.dll',
+    ]) {
+      expect(contract).toContain(runtimeDll);
+    }
+    expect(contract.match(/StdUtils\.HashFile/g)?.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reconciles transaction-bound update requests interrupted after either catalog commit', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const reconcileFunction = source.slice(
+      source.indexOf('Function RelayReconcileSettledUpdateRequest'),
+      source.indexOf('FunctionEnd', source.indexOf('Function RelayReconcileSettledUpdateRequest')),
+    );
+    const startupPaths = source.indexOf(
+      'StrCpy $RelaySettlement "$RelayRoot\\Recovery\\settled-update.ini"',
+    );
+    const startupReconcile = source.indexOf(
+      'Call RelayReconcileSettledUpdateRequest',
+      startupPaths,
+    );
+    const startupDataCleanup = source.indexOf(
+      'Call RelayCleanupCompletedServerRestore',
+      startupPaths,
+    );
+    const promotion = source.slice(
+      source.indexOf('PromoteCandidate:'),
+      source.indexOf('RollbackCandidate:'),
+    );
+    const rollback = source.slice(
+      source.indexOf('RollbackCandidate:'),
+      source.indexOf('RejectPreparedCandidate:'),
+    );
+    const promotionCommit = promotion.indexOf('MoveFileExW');
+    const promotionIntent = promotion.indexOf('Call RelayWriteSettlementIntent');
+    const promotionReconcile = promotion.indexOf('Call RelayReconcileSettledUpdateRequest');
+    const rollbackCommit = rollback.indexOf('MoveFileExW');
+    const rollbackIntent = rollback.indexOf('Call RelayWriteSettlementIntent');
+    const rollbackReconcile = rollback.indexOf('Call RelayReconcileSettledUpdateRequest');
+
+    expect(reconcileFunction).toContain('$RelaySettlementTransaction != $RelayRequestTransaction');
+    expect(reconcileFunction).toContain('$RelaySettlementSource != $RelaySourceBuild');
+    expect(reconcileFunction).toContain('$RelayCatalogCurrent == $RelaySettlementTarget');
+    expect(reconcileFunction).toContain('$RelayCatalogCurrent == $RelaySettlementSource');
+    expect(reconcileFunction).toContain('$RelayCatalogCandidate != ""');
+    expect(reconcileFunction).toContain('$RelayCatalogTransaction != ""');
+    expect(reconcileFunction).toContain('$RelaySettlementOutcome == "promoted"');
+    expect(reconcileFunction).toContain('$RelaySettlementOutcome == "rolled-back"');
+    expect(reconcileFunction).toContain('Delete "$RelayRequest"');
+    expect(reconcileFunction).toContain('Delete "$RelaySettlement"');
+    expect(startupReconcile).toBeGreaterThan(startupPaths);
+    expect(startupReconcile).toBeLessThan(startupDataCleanup);
+    expect(promotionIntent).toBeGreaterThan(-1);
+    expect(promotionIntent).toBeLessThan(promotionCommit);
+    expect(promotionReconcile).toBeGreaterThan(promotionCommit);
+    expect(rollbackIntent).toBeGreaterThan(-1);
+    expect(rollbackIntent).toBeLessThan(rollbackCommit);
+    expect(rollbackReconcile).toBeGreaterThan(rollbackCommit);
+    expect(rollbackReconcile).toBeLessThan(rollback.indexOf('Call RelayFinalizeServerRestore'));
+  });
+
+  it('retains a bounded deduplicated history of failed immutable releases', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain(
+      'ReadINIStr $RelayFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"',
+    );
+    expect(source).toContain('$RelayFailedFingerprintCount < 16');
+    expect(source).toContain('$RelayExistingFingerprint != $RelayFailedFingerprint');
+    expect(source).toContain(
+      'WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"',
+    );
+  });
+
+  it('removes displaced server data only after catalog activation and retries one journaled cleanup', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const manualCommit = source.indexOf(
+      'System::Call \'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0\'',
+      source.indexOf('HandleManualRollback:'),
+    );
+    const manualFinalize = source.indexOf('Call RelayFinalizeServerRestore', manualCommit);
+
+    expect(source).toContain('Function RelayFinalizeServerRestore');
+    expect(source).toContain('Function RelayCleanupCompletedServerRestore');
+    expect(source).toContain('RMDir /r "$RelayFailedData"');
+    expect(source).toContain('$RelayRestoreJournalTransaction');
+    expect(source).toContain(
+      'WriteINIStr "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"',
+    );
+    expect(source).toContain('$RelayRestoreJournalExpectedCurrent != $RelayCatalogCurrent');
+    expect(source).toContain('$RelayRestoreJournalPhase != "restored"');
+    expect(manualFinalize).toBeGreaterThan(manualCommit);
+    const startupCleanup = source.indexOf('Call RelayCleanupCompletedServerRestore');
+    expect(startupCleanup).toBeLessThan(
+      source.indexOf('ReadINIStr $RelayProtocol "$RelayState" "Relay" "protocol"', startupCleanup),
+    );
+  });
+
+  it('uses the shared probation timing contract in the native supervisor', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain('!ifndef RELAY_PROBATION_DURATION_MS');
+    expect(source).toContain('$RelayResultDuration < ${RELAY_PROBATION_DURATION_MS}');
+    expect(source).toContain(
+      'WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS})',
+    );
+  });
+
   it('requires a protocol-1 completion marker for the selected build', () => {
     const source = read('build/windows/relay-launcher.nsi');
 
@@ -53,7 +292,8 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain(
       'ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"',
     );
-    expect(source).toContain('$RelayMarkerProtocol == "${RELAY_STATE_PROTOCOL}"');
+    expect(source).toContain('$RelayMarkerProtocol == "${RELAY_LEGACY_STATE_PROTOCOL}"');
+    expect(source).toContain('$RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"');
     expect(source).toContain('$RelayMarkerBuildId == "${BUILD_ID}"');
     expect(source).toContain('$RelayMarkerExecutable == "${RELAY_INNER_EXECUTABLE}"');
   });
@@ -64,7 +304,7 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain('RequestExecutionLevel user');
     expect(source).toContain('SilentInstall silent');
     expect(source).not.toMatch(/File \/r|nsisunz|Nsis7z|WriteReg|WriteUninstaller/);
-    expect(source).not.toContain('ExecWait');
+    expect(source).toContain('CreateProcessW');
   });
 });
 
@@ -85,7 +325,52 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('WriteINIStr "$RelayMarker" "Relay" "executable"');
     expect(source).toContain('ReadINIStr $RelayMarkerProtocol "$RelayMarker" "Relay" "protocol"');
     expect(source).toContain('CreateDirectoryW');
-    expect(source).not.toContain('RMDir /r');
+    expect(source).not.toContain('RMDir /r "$RelayStaging"');
+    expect(source).not.toContain('RMDir /r "$RelayFinalRuntime"');
+  });
+
+  it('binds an in-app preparation to matching recovery metadata without promoting it', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+
+    expect(contract).toContain('RELAY_LEGACY_STATE_PROTOCOL "1"');
+    expect(contract).toContain('RELAY_RECOVERY_STATE_PROTOCOL "2"');
+    expect(source).toContain('${GetOptions} "$RelayArgs" "/relay-transaction="');
+    expect(source).toContain('!insertmacro RelayValidateTransactionId');
+    expect(source).toContain('$RelayRecoveryRoot\\update-request.ini');
+    expect(source).toContain('$RelayRecoveryRoot\\prepared.ini.new');
+    expect(source).toContain('targetCommitish');
+    expect(source).toContain('${RELAY_TARGET_COMMITISH}');
+    expect(source).toContain('${RELAY_SERVER_DATA_EPOCH}');
+    expect(source).toContain('${RELAY_CLIENT_DATA_EPOCH}');
+    expect(source).toContain('WritePreparedReceipt:');
+    expect(source).toContain('MoveFileExW');
+  });
+
+  it('repairs only an exact retained build without changing the active catalog', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+
+    expect(contract).toContain('RELAY_REPAIR_ONLY_ARGUMENT "/relay-repair-only"');
+    expect(source).toContain('$RelayRecoveryRoot\\repair-request.ini');
+    expect(source).toContain('$RelayRecoveryRoot\\repair-result.ini.new');
+    expect(source).toContain('"RepairRequest" "targetBuildId"');
+    expect(source).toContain('$RelayRepairTarget == "$RelayPrevious"');
+    expect(source).toContain('$RelayRepairTarget == "$RelayPrevious1"');
+    expect(source).toContain('$RelayRepairTarget == "$RelayPrevious2"');
+    expect(source).toContain('"Build.$RelayRepairTarget" "targetCommitish"');
+    expect(source).toContain('$RelayRepairCatalogRuntimeHash != $RelayMarkerHash');
+    expect(source).toContain('$RelayRepairInstallerHash != "$RelaySelfHash"');
+    expect(source).toContain('WriteRepairReceipt:');
+    expect(source).toContain('"RepairResult" "runtimeSha512" "$RelayMarkerHash"');
+    expect(source.indexOf('Goto WriteRepairReceipt')).toBeLessThan(
+      source.indexOf('Relay could not prepare its stable launcher.'),
+    );
+    const receipt = source.slice(
+      source.indexOf('WriteRepairReceipt:'),
+      source.indexOf('ShortcutsReady:'),
+    );
+    expect(receipt).not.toContain('WriteINIStr "$RelayStateNew"');
   });
 
   it('quarantines an incomplete build ID and restores it if activation fails', () => {
@@ -140,6 +425,39 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source.match(/GetBinaryTypeW/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('records and revalidates content hashes for every critical runtime component', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+    const smoke = read('scripts/windows-bootstrap-smoke.ps1');
+
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "executableSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "appAsarSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "pocketbaseSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "pocketbaseHookSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "betterSqlite3Sha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "koffiSha512"');
+    for (const hashKey of [
+      'd3dCompilerSha512',
+      'dxCompilerSha512',
+      'dxilSha512',
+      'ffmpegSha512',
+      'libEglSha512',
+      'libGlesV2Sha512',
+      'vkSwiftshaderSha512',
+      'vulkanSha512',
+    ]) {
+      expect(source).toContain(`WriteINIStr "$RelayMarker" "Integrity" "${hashKey}"`);
+    }
+    expect(source).toContain('${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"');
+    expect(source).toContain('"runtimeSha512" "$RelayMarkerHash"');
+    expect(source).toContain('!insertmacro RelayVerifyRuntimeContent');
+    expect(contract).toContain('!macro RelayVerifyRuntimeContent');
+    expect(smoke).toContain("'ffmpeg.dll'");
+    expect(smoke).toContain("'resources\\pocketbase\\hooks\\relay_privileged_reauth.pb.js'");
+    expect(smoke).toContain('DllCorruptionRepaired = $true');
+    expect(smoke).toContain('PocketBaseHookCorruptionRepaired = $true');
+  });
+
   it('keeps the last usable fallback when the recorded current runtime is damaged', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
     const currentCheck = source.indexOf(
@@ -173,6 +491,8 @@ describe('Windows NSIS bootstrap contract', () => {
 
     expect(source).toContain('$DESKTOP\\Relay.lnk');
     expect(source).toContain('$SMPROGRAMS\\Relay\\Relay.lnk');
+    expect(source).toContain('$SMPROGRAMS\\Relay\\Relay Recovery.lnk');
+    expect(source).toContain('${RELAY_RECOVERY_ARGUMENT}');
     expect(source.match(/CreateShortCut "\$DESKTOP\\Relay\.lnk"/g)).toHaveLength(1);
     expect(source).not.toContain('$COMMONDESKTOP');
     expect(source).toContain('!define RELAY_ROOT "$LOCALAPPDATA\\Relay"');
@@ -205,7 +525,7 @@ describe('Windows NSIS bootstrap contract', () => {
 
     expect(contentionStart).toBeGreaterThan(-1);
     expect(contentionEnd).toBeGreaterThan(contentionStart);
-    expect(contention).toContain('${If} $RelayArgs == "/relay-prepare-only"');
+    expect(contention).toContain('${If} $RelayPrepareOnly == "/relay-prepare-only"');
     expect(contention).toContain('SetErrorLevel 1');
     expect(contention.indexOf('SetErrorLevel 1')).toBeLessThan(
       contention.indexOf('SetErrorLevel 0'),
@@ -244,7 +564,7 @@ describe('Windows NSIS bootstrap contract', () => {
     const bootstrap = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain("-ArgumentList '/relay-prepare-only'");
-    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(7);
+    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(10);
     expect(source).toContain('LastWriteTimeUtc.Ticks');
     expect(source).toContain("GetFolderPath('Desktop')");
     expect(source).toContain("GetFolderPath('StartMenu')");
@@ -273,6 +593,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('Wait-ProcessWithTimeout');
     expect(source).toContain('relay-build-id.txt');
     expect(source).toContain('BrokenCurrentPreservedPrevious');
+    expect(source).toContain('ContentCorruptionRepaired');
+    expect(source).toContain('resources\\app.asar');
     expect(source).toContain('actualCurrent=');
     expect(source).toContain('actualPrevious=');
     expect(bootstrap).toContain('$RelayRoot\\bootstrap-error.ini');

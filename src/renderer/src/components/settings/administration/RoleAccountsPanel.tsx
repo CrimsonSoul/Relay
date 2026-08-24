@@ -1,26 +1,27 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   getRoleDisplayNameError,
   getRoleUsernameError,
   normalizeRoleDisplayName,
   normalizeRoleUsername,
-  type EffectivePrivilegedRole,
 } from '@shared/roleAccounts';
 import type { RelayRoleAccountAdminView } from '@shared/privilegedAccess';
-import type { PrivilegedApprovalRequestView } from '@shared/ipc';
 import type { PrivilegedCommandError, PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { useRetainedValue } from '../../../hooks/useRetainedValue';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
 import type { AdministrationPanelProps } from './types';
+import { RoleAccountCredentialManager } from './RoleAccountCredentialManager';
+import {
+  RoleAccountReauthenticationDialog,
+  type RoleAccountReauthenticationAction,
+} from './RoleAccountReauthenticationDialog';
+import { RoleAccountList } from './RoleAccountList';
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
 type Props = AdministrationPanelProps & { relayMode: 'server' | 'client' | null };
 type CreateRole = 'administrator' | 'publisher';
-type ReauthenticationAction =
-  | { kind: 'ownership'; account: RelayRoleAccountAdminView }
-  | { kind: 'publisher'; accountId: string | null };
 
 // Typed against the full error union on purpose: a missing arm used to fall out
 // of the lookup as `undefined` and the dialog rendered a blank failure notice.
@@ -51,122 +52,13 @@ function commandFailureMessage(result: Extract<PrivilegedCommandResult, { ok: fa
     : result.message;
 }
 
-const ROLE_LABELS: Record<EffectivePrivilegedRole, string> = {
-  owner: 'OWNER',
-  admin: 'ADMIN',
-  publisher: 'PUBLISHER',
-};
-
-function accountRoleLabel(account: RelayRoleAccountAdminView): string {
-  if (account.effectiveRole) return ROLE_LABELS[account.effectiveRole];
-  return account.storedRole === 'publisher' ? 'UNASSIGNED' : 'ADMIN';
-}
-
-function ReauthenticationDialog({
-  action,
-  busy,
-  error,
-  currentAccountName,
-  onConfirm,
-  onClose,
-}: Readonly<{
-  action: ReauthenticationAction | null;
-  busy: boolean;
-  error: string | null;
-  currentAccountName: string;
-  onConfirm: (password: string) => Promise<void>;
-  onClose: () => void;
-}>) {
-  const [password, setPassword] = useState('');
-  const formId = useId();
-  const retainedAction = useRetainedValue(action);
-
-  useEffect(() => () => setPassword(''), []);
-
-  const close = () => {
-    setPassword('');
-    onClose();
-  };
-
-  const submit = async (event: FormSubmitEvent) => {
-    event.preventDefault();
-    const submittedPassword = password;
-    setPassword('');
-    await onConfirm(submittedPassword);
-  };
-
-  const publisherChange = retainedAction?.kind === 'publisher';
-  const title = publisherChange ? 'Confirm Publisher change' : 'Confirm ownership transfer';
-
-  return (
-    <Modal
-      isOpen={action !== null}
-      onClose={close}
-      title={title}
-      subtitle="Protected role change"
-      variant="standard"
-      dismissible={!busy}
-      footer={
-        <>
-          <TactileButton type="button" variant="secondary" onClick={close} disabled={busy}>
-            Cancel
-          </TactileButton>
-          <TactileButton type="submit" form={formId} variant="primary" loading={busy}>
-            {publisherChange ? 'Confirm Publisher change' : 'Transfer ownership'}
-          </TactileButton>
-        </>
-      }
-    >
-      {retainedAction ? (
-        <form
-          id={formId}
-          className="administration-dialog-form"
-          onSubmit={(event) => void submit(event)}
-        >
-          <p>
-            {publisherChange
-              ? 'Publisher sessions and paired devices may be revoked when this assignment changes.'
-              : `Ownership will move from ${currentAccountName} to ${retainedAction.account.displayName}. Sessions for the current and incoming Owner accounts will lock.`}
-          </p>
-          <label className="administration-field">
-            <span>Password</span>
-            <input
-              type="password"
-              className="tactile-input"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              minLength={12}
-              maxLength={128}
-              required
-            />
-          </label>
-          {error ? (
-            <div className="administration-feedback administration-feedback--error" role="alert">
-              {error}
-            </div>
-          ) : null}
-        </form>
-      ) : null}
-    </Modal>
-  );
-}
-
 export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Props>) {
   const { session, reauthenticate, busy, error: accessError, clearError } = usePrivilegedAccess();
   const [createRole, setCreateRole] = useState<CreateRole | null>(null);
   const [newUsername, setNewUsername] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
-  const [editDisplayName, setEditDisplayName] = useState('');
   const [publisherAccountId, setPublisherAccountId] = useState(snapshot.publisherAccountId ?? '');
-  const [credentialAccountId, setCredentialAccountId] = useState<string | null>(null);
-  const [credentialPassword, setCredentialPassword] = useState('');
-  const [credentialConfirm, setCredentialConfirm] = useState('');
-  const [credentialApprovalRequest, setCredentialApprovalRequest] =
-    useState<PrivilegedApprovalRequestView | null>(null);
-  const [credentialApprovalCode, setCredentialApprovalCode] = useState('');
-  const [reauthAction, setReauthAction] = useState<ReauthenticationAction | null>(null);
+  const [reauthAction, setReauthAction] = useState<RoleAccountReauthenticationAction | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -177,20 +69,10 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   const sessionRole = session.state === 'active' ? session.role : null;
   const isOwner = sessionRole === 'owner';
   const canManagePublisher = isOwner || sessionRole === 'admin';
-  const credentialAccount = snapshot.accounts.find(
-    ({ accountId }) => accountId === credentialAccountId,
-  );
   const deactivationBusy =
     retainedDeactivation !== null && savingId === retainedDeactivation.accountId;
 
   useEffect(() => setPublisherAccountId(publisherPointer ?? ''), [publisherPointer]);
-  useEffect(
-    () => () => {
-      setCredentialPassword('');
-      setCredentialConfirm('');
-    },
-    [],
-  );
 
   if (!canManagePublisher) return null;
 
@@ -233,11 +115,11 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
     }
   };
 
-  const renameAccount = async (account: RelayRoleAccountAdminView) => {
-    const validation = getRoleDisplayNameError(editDisplayName);
+  const renameAccount = async (account: RelayRoleAccountAdminView, displayName: string) => {
+    const validation = getRoleDisplayNameError(displayName);
     if (validation) {
       setFailure(validation);
-      return;
+      return false;
     }
     setFailure(null);
     setSavingId(account.accountId);
@@ -245,18 +127,18 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
       command: 'account.display-name.update',
       payload: {
         accountId: account.accountId,
-        displayName: normalizeRoleDisplayName(editDisplayName),
+        displayName: normalizeRoleDisplayName(displayName),
         expectedRevision: account.revision,
       },
       expectedRevision: null,
     });
     setSavingId(null);
     if (result.ok) {
-      setEditingAccountId(null);
-      setEditDisplayName('');
       setFeedback('Account display name updated.');
+      return true;
     } else {
       setFailure(commandFailureMessage(result));
+      return false;
     }
   };
 
@@ -331,7 +213,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
     }
   };
 
-  const openReauthentication = (action: ReauthenticationAction) => {
+  const openReauthentication = (action: RoleAccountReauthenticationAction) => {
     clearError();
     setDialogError(null);
     setReauthAction(action);
@@ -341,52 +223,6 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
     clearError();
     setDialogError(null);
     setReauthAction(null);
-  };
-
-  const closeCredential = () => {
-    setCredentialPassword('');
-    setCredentialConfirm('');
-    setCredentialApprovalRequest(null);
-    setCredentialApprovalCode('');
-    setCredentialAccountId(null);
-  };
-
-  const saveCredential = async (event: FormSubmitEvent) => {
-    event.preventDefault();
-    if (!credentialAccountId) return;
-    if (credentialPassword !== credentialConfirm) {
-      setFeedback('Passwords must match.');
-      return;
-    }
-    const password = credentialPassword;
-    setSavingId(`credential:${credentialAccountId}`);
-    const result = await globalThis.api?.setupPrivilegedCredential({
-      accountId: credentialAccountId,
-      password,
-      passwordConfirm: credentialConfirm,
-      ...(credentialApprovalRequest
-        ? {
-            approvalRequestId: credentialApprovalRequest.requestId,
-            approvalCode: credentialApprovalCode.trim(),
-          }
-        : {}),
-    });
-    setCredentialApprovalCode('');
-    setCredentialPassword('');
-    setCredentialConfirm('');
-    setSavingId(null);
-    if (result?.ok) {
-      setCredentialApprovalRequest(null);
-      setCredentialAccountId(null);
-      setFeedback('Credential updated. Existing paired sessions for this account were revoked.');
-    } else if (result?.error === 'approval-required' && result.approvalRequest) {
-      setCredentialApprovalRequest(result.approvalRequest);
-      setFeedback(
-        'Approve this credential recovery on the Relay server PC, then re-enter the password and approval code.',
-      );
-    } else {
-      setFeedback('Credential setup could not be completed.');
-    }
   };
 
   const publisherAccounts = snapshot.accounts.filter(
@@ -474,100 +310,14 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         </form>
       )}
 
-      <div className="administration-list">
-        {snapshot.accounts.map((account) => {
-          const manageable = canManageAccount(account);
-          const owner = account.effectiveRole === 'owner';
-          return (
-            <div className="administration-row" key={account.accountId}>
-              <div className="administration-row__identity">
-                {editingAccountId === account.accountId ? (
-                  <label>
-                    <span className="sr-only">Rename {account.displayName}</span>
-                    <input
-                      autoFocus
-                      className="tactile-input"
-                      value={editDisplayName}
-                      onChange={(event) => setEditDisplayName(event.target.value)}
-                      maxLength={120}
-                    />
-                  </label>
-                ) : (
-                  <strong>{account.displayName}</strong>
-                )}
-                <span>
-                  @{account.username} · {account.active ? 'Active' : 'Inactive'}
-                </span>
-                {account.effectiveRole === null && (
-                  <span>Assign the Publisher role to use this account.</span>
-                )}
-              </div>
-              <div className="administration-row__badges">
-                <span
-                  className={`administration-chip administration-chip--${account.effectiveRole ?? 'pending'}`}
-                >
-                  {accountRoleLabel(account)}
-                </span>
-                <span
-                  className={`administration-chip administration-chip--${account.credentialState === 'configured' ? 'ok' : 'pending'}`}
-                >
-                  {account.credentialState === 'configured' ? 'CONFIGURED' : 'SETUP NEEDED'}
-                </span>
-              </div>
-              {manageable && (
-                <div className="administration-row__actions">
-                  {editingAccountId === account.accountId ? (
-                    <>
-                      <TactileButton
-                        size="sm"
-                        variant="primary"
-                        loading={savingId === account.accountId}
-                        onClick={() => void renameAccount(account)}
-                      >
-                        Save
-                      </TactileButton>
-                      <TactileButton size="sm" onClick={() => setEditingAccountId(null)}>
-                        Cancel
-                      </TactileButton>
-                    </>
-                  ) : (
-                    <>
-                      <TactileButton
-                        size="sm"
-                        onClick={() => {
-                          setEditingAccountId(account.accountId);
-                          setEditDisplayName(account.displayName);
-                        }}
-                      >
-                        Rename
-                      </TactileButton>
-                      {!owner && account.effectiveRole !== null && (
-                        <TactileButton
-                          size="sm"
-                          loading={savingId === account.accountId}
-                          onClick={() => requestActiveChange(account)}
-                          aria-label={`${account.active ? 'Deactivate' : 'Reactivate'} ${account.displayName}`}
-                        >
-                          {account.active ? 'Deactivate' : 'Reactivate'}
-                        </TactileButton>
-                      )}
-                      {isOwner && account.effectiveRole === 'admin' && account.active && (
-                        <TactileButton
-                          size="sm"
-                          onClick={() => openReauthentication({ kind: 'ownership', account })}
-                          aria-label={`Transfer ownership to ${account.displayName}`}
-                        >
-                          Transfer ownership
-                        </TactileButton>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <RoleAccountList
+        accounts={snapshot.accounts}
+        isOwner={isOwner}
+        savingId={savingId}
+        onRename={renameAccount}
+        onRequestActiveChange={requestActiveChange}
+        onTransferOwnership={(account) => openReauthentication({ kind: 'ownership', account })}
+      />
 
       <div className="administration-callout role-accounts__publisher">
         <div>
@@ -601,110 +351,12 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         </TactileButton>
       </div>
 
-      {relayMode === 'server' ? (
-        <div className="administration-credential">
-          <div className="administration-callout">
-            <strong>
-              {globalThis.api?.runtime?.kind === 'web'
-                ? 'Credential recovery requires server desktop approval'
-                : 'Credential setup and resets stay on this Relay server PC'}
-            </strong>
-            <span>Replacing a password revokes every paired session for that account.</span>
-          </div>
-          {!credentialAccountId ? (
-            <div className="administration-actions role-accounts__credential-actions">
-              {credentialTargets.map((account) => (
-                <TactileButton
-                  key={account.accountId}
-                  size="sm"
-                  onClick={() => setCredentialAccountId(account.accountId)}
-                  aria-label={`Set credential for ${account.displayName}`}
-                >
-                  Set {account.displayName}
-                </TactileButton>
-              ))}
-              {unassignedAccounts.length > 0 && (
-                <span>
-                  Assign the Publisher role before setting a password for{' '}
-                  {unassignedAccounts.map(({ displayName }) => displayName).join(', ')}.
-                </span>
-              )}
-            </div>
-          ) : (
-            <form
-              className="administration-field-grid"
-              onSubmit={(event) => void saveCredential(event)}
-            >
-              {credentialAccount && (
-                <div
-                  className="administration-callout role-accounts__credential-target"
-                  role="group"
-                  aria-label="Credential target"
-                >
-                  <strong>{credentialAccount.displayName}</strong>
-                  <span>@{credentialAccount.username}</span>
-                </div>
-              )}
-              <label className="administration-field">
-                <span>New password</span>
-                <input
-                  type="password"
-                  className="tactile-input"
-                  value={credentialPassword}
-                  onChange={(event) => setCredentialPassword(event.target.value)}
-                  minLength={12}
-                  maxLength={128}
-                  required
-                />
-              </label>
-              {credentialApprovalRequest && (
-                <label className="administration-field">
-                  <span>Desktop approval code</span>
-                  <input
-                    className="tactile-input"
-                    value={credentialApprovalCode}
-                    onChange={(event) => setCredentialApprovalCode(event.target.value)}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
-                    required
-                  />
-                </label>
-              )}
-              <label className="administration-field">
-                <span>Confirm password</span>
-                <input
-                  type="password"
-                  className="tactile-input"
-                  value={credentialConfirm}
-                  onChange={(event) => setCredentialConfirm(event.target.value)}
-                  minLength={12}
-                  maxLength={128}
-                  required
-                />
-              </label>
-              <div className="administration-actions">
-                <TactileButton
-                  type="submit"
-                  variant="primary"
-                  loading={savingId === `credential:${credentialAccountId}`}
-                >
-                  Set credential
-                </TactileButton>
-                <TactileButton type="button" onClick={closeCredential}>
-                  Cancel
-                </TactileButton>
-              </div>
-            </form>
-          )}
-        </div>
-      ) : (
-        <div className="administration-callout">
-          <strong>Credential setup is server-local</strong>
-          <span>Use the Relay server PC to set or reset a protected account password.</span>
-        </div>
-      )}
+      <RoleAccountCredentialManager
+        relayMode={relayMode}
+        credentialTargets={credentialTargets}
+        unassignedAccounts={unassignedAccounts}
+        onFeedback={setFeedback}
+      />
 
       {feedback && (
         <div className="administration-feedback" role="status">
@@ -757,7 +409,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         )}
       </Modal>
 
-      <ReauthenticationDialog
+      <RoleAccountReauthenticationDialog
         action={reauthAction}
         busy={busy === 'reauthenticate'}
         error={dialogError ?? accessError}

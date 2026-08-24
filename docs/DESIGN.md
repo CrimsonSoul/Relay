@@ -346,9 +346,14 @@ fixed GitHub Releases page. The control remains visible on every tab until the i
 current; a transient refresh failure or repeated same-version check does not erase a previously
 confirmed update or manual progress.
 
-The dialog uses the standard modal shell and a single three-stage line for Download, Install, and
-Restart. It names the current stage, shows bounded byte progress during download, explains the
+The dialog uses a 680 px standard modal shell and a single three-stage line for Download, Install,
+and Restart. It names the current stage, shows bounded byte progress during download, explains the
 immutable-GitHub and SHA-256 trust model, and discloses that publisher signing is not included.
+Between current status and integrity details, it presents **What's new in vX.Y.Z** with the release
+date and a bounded reader for headings, paragraphs, lists, emphasis, and inline code. The notes use
+the main content hierarchy rather than a nested card; long bodies scroll inside the reader while the
+update actions remain reachable. Release text becomes a limited set of React nodes rather than raw
+HTML; Markdown link labels remain readable text without activating release-authored destinations.
 Buttons name the exact next action. Download, install, and restart are never combined; cancellation
 is offered only while downloading, and installation temporarily prevents dismissal while the
 Windows bootstrap prepares the runtime. **View on GitHub** remains a secondary action throughout
@@ -364,6 +369,42 @@ At 520 px and below, modal footer actions stack at full width while the three-st
 single readable row. The one-time toast announces each newly discovered version with **Review
 update**; the persistent control itself is not a repeatedly announced live region. Relay Web and
 pop-out windows do not render it.
+
+### Release history (`.settings-release-history`)
+
+**Settings > About** keeps the installed-version summary at the top and follows it with a readable
+history of the ten most recent stable releases. The list is a sharp, divided timeline rather than a
+grid of cards. Each row leads with the monospaced version, then the release title and date, followed
+by compact **Latest** and **Installed** labels when applicable. The newest release is expanded by
+default; only the selected row reveals its structured notes and version-specific GitHub action.
+
+Rows are native buttons with visible focus, `aria-expanded`, and controlled panels. Accent color is
+reserved for versions, the current disclosure state, and list markers. Cached content appears
+immediately, a quiet status reports background refresh, and offline refresh failure leaves saved
+notes in place with a **Try again** action. At narrow widths, labels wrap beneath the release title
+and expanded content returns to the shared page inset without introducing horizontal scrolling.
+
+### Retained-build recovery (`.settings-recovery`)
+
+**Settings > About > Recovery** sits between the installed-version summary and release history as a
+divided inline section, not a competing card or modal. Its heading explains the current-plus-three
+Windows retention rule and labels either the catalog current version or the retained recovery
+runtime currently running. When fallback is active, plain status copy explicitly distinguishes the
+running version from the catalog current version and directs the Owner to make the fallback current
+through rollback.
+
+Each retained version is a compact row with a monospaced version and a text health label: **Ready**,
+**Runtime needs repair**, **Server snapshot unavailable**, or **Data format incompatible**. The
+label, not color alone, carries the state. An authenticated Owner sees only valid next actions:
+**Roll back to vX.Y.Z** for a complete compatible target or **Repair vX.Y.Z from GitHub** for a
+missing runtime. Other roles see sign-in guidance. A fixed, version-specific GitHub action remains
+available when automated repair cannot be offered.
+
+Repair and rollback open an inline confirmation below the list. The copy distinguishes runtime-only
+repair, server data restoration, and client cache preservation. Both require the Owner password
+again; disabled and busy labels describe the active operation. Feedback is announced as status or
+alert text. At 700 px and below, headings, build rows, status/retry areas, action groups, and
+confirmation controls stack at full width without changing DOM or keyboard order.
 
 ---
 
