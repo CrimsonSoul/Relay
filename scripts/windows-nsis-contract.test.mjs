@@ -279,9 +279,15 @@ describe('Windows NSIS launcher contract', () => {
 
     expect(source).toContain('!ifndef RELAY_PROBATION_DURATION_MS');
     expect(source).toContain('$RelayResultDuration < ${RELAY_PROBATION_DURATION_MS}');
+    expect(source).toContain('StrCpy $0 "$RelayArgs"');
+    expect(source).toContain('StrCpy $1 "$RelayProbationStartupInfo"');
+    expect(source).toContain('StrCpy $2 "$RelayProbationProcessInfo"');
     expect(source).toContain(
-      'CreateProcessW(w "$RelayExecutable", w "$RelayArgs", p 0, p 0, i 0, i 0x04000000',
+      'CreateProcessW(i 0, t r0, i 0, i 0, i 0, i 0x04000000, i 0, i 0, i r1, i r2)',
     );
+    expect(source).not.toContain('CreateProcessW(w "$RelayExecutable"');
+    expect(source).toContain("System::Call '*(i,i,i,i)i.r0'");
+    expect(source).toContain("System::Call '*$RelayProbationProcessInfo(i.r1,i.r2,i.r3,i.r4)'");
     expect(source).toContain('System::Alloc 68');
     expect(source).toContain('Pop $RelayProbationStartupInfo');
     expect(source).toContain("System::Call '*$RelayProbationStartupInfo(i 68)'");

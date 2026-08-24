@@ -193,7 +193,7 @@ Function RelayRunProbation
   !ifdef RELAY_LAUNCHER_HARNESS
     WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "allocating"
   !endif
-  System::Call '*(p,p,i,i)p.r0'
+  System::Call '*(i,i,i,i)i.r0'
   StrCpy $RelayProbationProcessInfo $0
   System::Alloc 68
   Pop $RelayProbationStartupInfo
@@ -209,11 +209,14 @@ Function RelayRunProbation
   ${EndIf}
   System::Call '*$RelayProbationStartupInfo(i 68)'
   StrCpy $RelayArgs '"$RelayExecutable" ${RELAY_RECOVERY_PROBATION_PREFIX}$RelayTransactionId'
+  StrCpy $0 "$RelayArgs"
+  StrCpy $1 "$RelayProbationStartupInfo"
+  StrCpy $2 "$RelayProbationProcessInfo"
   StrCpy $RelayProbationWaitResult "create-failed"
   !ifdef RELAY_LAUNCHER_HARNESS
     WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "creating"
   !endif
-  System::Call 'kernel32::CreateProcessW(w "$RelayExecutable", w "$RelayArgs", p 0, p 0, i 0, i 0x04000000, p 0, w "$RelayRuntimeDir", p $RelayProbationStartupInfo, p $RelayProbationProcessInfo) i.r0'
+  System::Call 'kernel32::CreateProcessW(i 0, t r0, i 0, i 0, i 0, i 0x04000000, i 0, i 0, i r1, i r2) i.r0'
   ${If} $0 == 0
     System::Free $RelayProbationStartupInfo
     System::Free $RelayProbationProcessInfo
@@ -222,7 +225,7 @@ Function RelayRunProbation
   !ifdef RELAY_LAUNCHER_HARNESS
     WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "created"
   !endif
-  System::Call '*$RelayProbationProcessInfo(p.r1,p.r2,i.r3,i.r4)'
+  System::Call '*$RelayProbationProcessInfo(i.r1,i.r2,i.r3,i.r4)'
   StrCpy $RelayProbationProcessHandle $1
   StrCpy $RelayProbationThreadHandle $2
   System::Call 'kernel32::WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS}) i.r0'
