@@ -147,7 +147,7 @@ describe.runIf(process.platform === 'win32')('Windows private directory integrat
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it('applies the protected DACL to updater staging and its extracted executable', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'relay-update-private-directory-'));

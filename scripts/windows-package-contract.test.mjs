@@ -11,6 +11,7 @@ import {
   resolveElectronBuilderArgs,
   resolveHostNativeDependencyRestore,
   resolveMakensisCommand,
+  resolveNpmInvocation,
   resolvePackageMode,
   resolveWindowsNativeDependencyInstall,
 } from './package-windows.mjs';
@@ -80,6 +81,23 @@ describe('Windows package contract', () => {
     );
   });
 
+  it('runs the bundled npm CLI when a direct Windows invocation has no npm_execpath', () => {
+    const nodePath = String.raw`C:\hostedtoolcache\windows\node\22.23.0\x64\node.exe`;
+
+    expect(
+      resolveNpmInvocation({
+        nodePath,
+        npmExecPath: undefined,
+        platform: 'win32',
+      }),
+    ).toEqual({
+      argsPrefix: [
+        String.raw`C:\hostedtoolcache\windows\node\22.23.0\x64\node_modules\npm\bin\npm-cli.js`,
+      ],
+      command: nodePath,
+    });
+  });
+
   it('restores host native dependencies after Windows packaging', () => {
     expect(resolveHostNativeDependencyRestore()).toEqual([
       'rebuild',
@@ -121,6 +139,32 @@ describe('Windows package contract', () => {
     expect(fixture).toContain('RELAY_BENCHMARK_RUN_ID');
     expect(fixture).toContain('Relay\\startup-benchmark');
     expect(fixture).toContain('.complete');
+    expect(source).toContain('`-DRELAY_FIXTURE_BUILD_ID=${buildId}`');
+    expect(source).toContain('`-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`');
+    expect(source).toContain('`-DRELAY_FIXTURE_ROOT=${harness.root}`');
+    expect(source).toContain("'-DRELAY_LAUNCHER_HARNESS=1'");
+    expect(fixture).toContain('RELAY_FIXTURE_BUILD_ID');
+    expect(fixture).toContain('RELAY_FIXTURE_PROBATION_DURATION_MS');
+    expect(fixture).toContain('RELAY_FIXTURE_ROOT');
+    expect(fixture).toContain('--relay-recovery-probation=');
+    expect(fixture).toContain('probation-result.ini');
+    const probationReceiptIndex = fixture.indexOf('"durationMs"');
+    const probationExitIndex = fixture.indexOf('SetErrorLevel 0', probationReceiptIndex);
+    const benchmarkIndex = fixture.indexOf('RELAY_BENCHMARK_RUN_ID');
+    expect(probationReceiptIndex).toBeGreaterThan(-1);
+    expect(probationExitIndex).toBeGreaterThan(probationReceiptIndex);
+    expect(probationExitIndex).toBeLessThan(benchmarkIndex);
+    expect(fixture.slice(probationExitIndex, benchmarkIndex)).toContain('Quit');
+  });
+
+  it('preserves the complete hyphenated probation transaction in the fixture receipt', () => {
+    const fixture = readFileSync('build/windows/relay-ci-fixture.nsi', 'utf8');
+
+    expect(fixture).toContain('StrCpy $RelayFixtureOption $RelayFixtureArgs 27');
+    expect(fixture).toContain('StrCpy $RelayFixtureTransaction $RelayFixtureArgs "" 27');
+    expect(fixture).not.toContain(
+      '${GetOptions} "$RelayFixtureArgs" "--relay-recovery-probation="',
+    );
   });
 
   it('keeps fixture payloads in parity with every non-executable runtime integrity file', () => {

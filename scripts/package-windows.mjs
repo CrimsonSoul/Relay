@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, win32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   renderBuildDefines,
@@ -160,14 +160,26 @@ export function resolveHostNativeDependencyRestore() {
   return ['rebuild', 'better-sqlite3', '--build-from-source'];
 }
 
-async function runNpm(args) {
-  const npmExecPath = process.env.npm_execpath;
-  if (npmExecPath) {
-    await run(process.execPath, [npmExecPath, ...args]);
-    return;
+export function resolveNpmInvocation({
+  nodePath = process.execPath,
+  npmExecPath,
+  platform = process.platform,
+} = {}) {
+  if (npmExecPath) return { argsPrefix: [npmExecPath], command: nodePath };
+  if (platform === 'win32') {
+    return {
+      argsPrefix: [win32.join(win32.dirname(nodePath), 'node_modules', 'npm', 'bin', 'npm-cli.js')],
+      command: nodePath,
+    };
   }
+  return { argsPrefix: [], command: 'npm' };
+}
 
-  await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', args);
+async function runNpm(args) {
+  const { argsPrefix, command } = resolveNpmInvocation({
+    npmExecPath: process.env.npm_execpath,
+  });
+  await run(command, [...argsPrefix, ...args]);
 }
 
 async function stageWindowsNativeDependencies() {
@@ -209,32 +221,35 @@ async function compileLauncher(harness) {
     `-DRELAY_PROBATION_DURATION_MS=${recoveryTiming.probationDurationMs}`,
     `-DRELAY_PROBATION_SUPERVISOR_TIMEOUT_MS=${recoveryTiming.supervisorTimeoutMs}`,
   ];
-  if (harness) defines.push(`-DRELAY_RUNTIME_ROOT=${harness.root}`);
+  if (harness) {
+    defines.push(`-DRELAY_RUNTIME_ROOT=${harness.root}`, '-DRELAY_LAUNCHER_HARNESS=1');
+  }
   defines.push(join(projectDir, 'build', 'windows', 'relay-launcher.nsi'));
   await run(makensis.path, defines, {
     cwd: join(projectDir, 'build', 'windows'),
     env: { ...process.env, ...makensis.env },
   });
+  return recoveryTiming;
 }
 
-async function compileFixtureRuntime(buildId) {
+async function compileFixtureRuntime(buildId, probationDurationMs, harness) {
   await rm(fixtureAppDir, { recursive: true, force: true });
   await mkdir(dirname(fixtureIdentityPath), { recursive: true });
   const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
-  await run(
-    makensis.path,
-    [
-      '-WX',
-      '-INPUTCHARSET',
-      'UTF8',
-      `-DRELAY_FIXTURE_OUT=${fixtureExecutablePath}`,
-      join(projectDir, 'build', 'windows', 'relay-ci-fixture.nsi'),
-    ],
-    {
-      cwd: join(projectDir, 'build', 'windows'),
-      env: { ...process.env, ...makensis.env },
-    },
-  );
+  const defines = [
+    '-WX',
+    '-INPUTCHARSET',
+    'UTF8',
+    `-DRELAY_FIXTURE_OUT=${fixtureExecutablePath}`,
+    `-DRELAY_FIXTURE_BUILD_ID=${buildId}`,
+    `-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`,
+  ];
+  if (harness) defines.push(`-DRELAY_FIXTURE_ROOT=${harness.root}`);
+  defines.push(join(projectDir, 'build', 'windows', 'relay-ci-fixture.nsi'));
+  await run(makensis.path, defines, {
+    cwd: join(projectDir, 'build', 'windows'),
+    env: { ...process.env, ...makensis.env },
+  });
   await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');
   for (const [relativePath, contents] of FIXTURE_RUNTIME_INTEGRITY_FILES) {
     const path = join(fixtureAppDir, relativePath);
@@ -273,12 +288,12 @@ export async function packageWindows(args = process.argv.slice(2)) {
 
   const harness = resolveHarnessConfig(process.env);
   const { compileOnly, fixture } = resolvePackageMode(args);
-  await compileLauncher(harness);
+  const recoveryTiming = await compileLauncher(harness);
   if (compileOnly) return;
 
   const buildId = await writeBuildDefines(harness);
   if (fixture) {
-    await compileFixtureRuntime(buildId);
+    await compileFixtureRuntime(buildId, recoveryTiming.probationDurationMs, harness);
   } else {
     await stageWindowsNativeDependencies();
   }

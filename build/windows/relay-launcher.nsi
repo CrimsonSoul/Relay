@@ -189,7 +189,11 @@ Var RelayProbationWaitResult
 
 Function RelayRunProbation
   StrCpy $RelayExitCode "1"
-  System::Call '*(p,p,i,i)p.r0'
+  StrCpy $RelayProbationWaitResult "allocation-failed"
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "allocating"
+  !endif
+  System::Call '*(i,i,i,i)i.r0'
   StrCpy $RelayProbationProcessInfo $0
   System::Alloc 68
   Pop $RelayProbationStartupInfo
@@ -205,22 +209,30 @@ Function RelayRunProbation
   ${EndIf}
   System::Call '*$RelayProbationStartupInfo(i 68)'
   StrCpy $RelayArgs '"$RelayExecutable" ${RELAY_RECOVERY_PROBATION_PREFIX}$RelayTransactionId'
-  System::Call 'kernel32::CreateProcessW(p 0, w "$RelayArgs", p 0, p 0, i 0, i 0x00000004, p 0, w "$RelayRuntimeDir", p $RelayProbationStartupInfo, p $RelayProbationProcessInfo) i.r0'
+  StrCpy $0 "$RelayArgs"
+  StrCpy $1 "$RelayProbationStartupInfo"
+  StrCpy $2 "$RelayProbationProcessInfo"
+  StrCpy $RelayProbationWaitResult "create-failed"
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "creating"
+  !endif
+  System::Call 'kernel32::CreateProcessW(i 0, t r0, i 0, i 0, i 0, i 0x04000000, i 0, i 0, i r1, i r2) i.r0'
   ${If} $0 == 0
     System::Free $RelayProbationStartupInfo
     System::Free $RelayProbationProcessInfo
     Return
   ${EndIf}
-  System::Call '*$RelayProbationProcessInfo(p.r1,p.r2,i.r3,i.r4)'
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "created"
+  !endif
+  System::Call '*$RelayProbationProcessInfo(i.r1,i.r2,i.r3,i.r4)'
   StrCpy $RelayProbationProcessHandle $1
   StrCpy $RelayProbationThreadHandle $2
-  System::Call 'kernel32::ResumeThread(p $RelayProbationThreadHandle) i.r0'
-  ${If} $0 == -1
-    System::Call 'kernel32::TerminateProcess(p $RelayProbationProcessHandle, i 1) i.r0'
-    Goto RelayRunProbationCleanup
-  ${EndIf}
   System::Call 'kernel32::WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS}) i.r0'
   StrCpy $RelayProbationWaitResult $0
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "nativeStage" "waited"
+  !endif
   ${If} $RelayProbationWaitResult == 258
     ; A wedged candidate cannot hold the stable launcher indefinitely.
     System::Call 'kernel32::TerminateProcess(p $RelayProbationProcessHandle, i 1) i.r0'
@@ -232,7 +244,6 @@ Function RelayRunProbation
     ${EndIf}
   ${EndIf}
 
-RelayRunProbationCleanup:
   System::Call 'kernel32::CloseHandle(p $RelayProbationThreadHandle) i.r0'
   System::Call 'kernel32::CloseHandle(p $RelayProbationProcessHandle) i.r0'
   System::Free $RelayProbationStartupInfo
@@ -1008,6 +1019,14 @@ ProbationLoop:
   ${EndIf}
   SetOutPath "$RelayRuntimeDir"
   Call RelayRunProbation
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "attempt" "$RelayProbationAttempts"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "transactionId" "$RelayTransactionId"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "executable" "$RelayExecutable"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "commandLine" "$RelayArgs"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "waitResult" "$RelayProbationWaitResult"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Launch" "exitCode" "$RelayExitCode"
+  !endif
   ${If} $RelayExitCode != 0
     Goto ProbationLoop
   ${EndIf}
@@ -1016,6 +1035,13 @@ ProbationLoop:
   ReadINIStr $RelayResultBuild "$RelayProbationResult" "Probation" "buildId"
   ReadINIStr $RelayResultStatus "$RelayProbationResult" "Probation" "status"
   ReadINIStr $RelayResultDuration "$RelayProbationResult" "Probation" "durationMs"
+  !ifdef RELAY_LAUNCHER_HARNESS
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Receipt" "protocol" "$RelayResultProtocol"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Receipt" "transactionId" "$RelayResultTransaction"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Receipt" "buildId" "$RelayResultBuild"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Receipt" "status" "$RelayResultStatus"
+    WriteINIStr "$RelayRoot\probation-diagnostic.ini" "Receipt" "durationMs" "$RelayResultDuration"
+  !endif
   ${If} $RelayResultProtocol != "${RELAY_RECOVERY_STATE_PROTOCOL}"
   ${OrIf} $RelayResultTransaction != "$RelayTransactionId"
   ${OrIf} $RelayResultBuild != "$RelayCandidate"
