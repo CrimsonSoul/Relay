@@ -230,26 +230,24 @@ async function compileLauncher(harness) {
   return recoveryTiming;
 }
 
-async function compileFixtureRuntime(buildId, probationDurationMs) {
+async function compileFixtureRuntime(buildId, probationDurationMs, harness) {
   await rm(fixtureAppDir, { recursive: true, force: true });
   await mkdir(dirname(fixtureIdentityPath), { recursive: true });
   const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
-  await run(
-    makensis.path,
-    [
-      '-WX',
-      '-INPUTCHARSET',
-      'UTF8',
-      `-DRELAY_FIXTURE_OUT=${fixtureExecutablePath}`,
-      `-DRELAY_FIXTURE_BUILD_ID=${buildId}`,
-      `-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`,
-      join(projectDir, 'build', 'windows', 'relay-ci-fixture.nsi'),
-    ],
-    {
-      cwd: join(projectDir, 'build', 'windows'),
-      env: { ...process.env, ...makensis.env },
-    },
-  );
+  const defines = [
+    '-WX',
+    '-INPUTCHARSET',
+    'UTF8',
+    `-DRELAY_FIXTURE_OUT=${fixtureExecutablePath}`,
+    `-DRELAY_FIXTURE_BUILD_ID=${buildId}`,
+    `-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`,
+  ];
+  if (harness) defines.push(`-DRELAY_FIXTURE_ROOT=${harness.root}`);
+  defines.push(join(projectDir, 'build', 'windows', 'relay-ci-fixture.nsi'));
+  await run(makensis.path, defines, {
+    cwd: join(projectDir, 'build', 'windows'),
+    env: { ...process.env, ...makensis.env },
+  });
   await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');
   for (const [relativePath, contents] of FIXTURE_RUNTIME_INTEGRITY_FILES) {
     const path = join(fixtureAppDir, relativePath);
@@ -293,7 +291,7 @@ export async function packageWindows(args = process.argv.slice(2)) {
 
   const buildId = await writeBuildDefines(harness);
   if (fixture) {
-    await compileFixtureRuntime(buildId, recoveryTiming.probationDurationMs);
+    await compileFixtureRuntime(buildId, recoveryTiming.probationDurationMs, harness);
   } else {
     await stageWindowsNativeDependencies();
   }

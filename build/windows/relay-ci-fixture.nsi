@@ -18,6 +18,7 @@ ShowInstDetails nevershow
 !endif
 
 Var RelayFixtureArgs
+Var RelayFixtureRecoveryRoot
 Var RelayFixtureTransaction
 
 Name "Relay CI Fixture"
@@ -28,13 +29,18 @@ Section
   StrCpy $RelayFixtureTransaction ""
   ${GetOptions} "$RelayFixtureArgs" "--relay-recovery-probation=" $RelayFixtureTransaction
   ${If} $RelayFixtureTransaction != ""
-    CreateDirectory "$EXEDIR\..\..\Recovery"
+    !ifdef RELAY_FIXTURE_ROOT
+      StrCpy $RelayFixtureRecoveryRoot "${RELAY_FIXTURE_ROOT}\Recovery"
+    !else
+      StrCpy $RelayFixtureRecoveryRoot "$EXEDIR\..\..\Recovery"
+    !endif
+    CreateDirectory "$RelayFixtureRecoveryRoot"
     ClearErrors
-    WriteINIStr "$EXEDIR\..\..\Recovery\probation-result.ini" "Probation" "protocol" "2"
-    WriteINIStr "$EXEDIR\..\..\Recovery\probation-result.ini" "Probation" "transactionId" "$RelayFixtureTransaction"
-    WriteINIStr "$EXEDIR\..\..\Recovery\probation-result.ini" "Probation" "buildId" "${RELAY_FIXTURE_BUILD_ID}"
-    WriteINIStr "$EXEDIR\..\..\Recovery\probation-result.ini" "Probation" "status" "healthy"
-    WriteINIStr "$EXEDIR\..\..\Recovery\probation-result.ini" "Probation" "durationMs" "${RELAY_FIXTURE_PROBATION_DURATION_MS}"
+    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "protocol" "2"
+    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "transactionId" "$RelayFixtureTransaction"
+    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "buildId" "${RELAY_FIXTURE_BUILD_ID}"
+    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "status" "healthy"
+    WriteINIStr "$RelayFixtureRecoveryRoot\probation-result.ini" "Probation" "durationMs" "${RELAY_FIXTURE_PROBATION_DURATION_MS}"
     ${If} ${Errors}
       SetErrorLevel 1
       Quit

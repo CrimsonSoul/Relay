@@ -626,6 +626,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('/relay-transaction=');
     expect(harness).toContain("'checkpoint=complete'");
     expect(harness).toContain('$process.ExitCode -ne 197');
+    expect(harness).toContain('context=$Context');
+    expect(harness).toContain('state=$stateSummary');
     expect(harness).toContain('Wait-ProcessWithTimeout');
     expect(harness).toContain('Wait-RelayRuntimeQuiescence');
     expect(harness).toContain('[StringComparison]::OrdinalIgnoreCase');

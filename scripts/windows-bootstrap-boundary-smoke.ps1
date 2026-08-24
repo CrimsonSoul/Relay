@@ -280,7 +280,10 @@ function Assert-PreviousActive {
 }
 
 function Invoke-StableFallback {
-  param([Parameter(Mandatory = $true)][string]$ExpectedActiveBuildId)
+  param(
+    [Parameter(Mandatory = $true)][string]$ExpectedActiveBuildId,
+    [Parameter(Mandatory = $true)][string]$Context
+  )
 
   $runId = [Guid]::NewGuid().ToString()
   $exitMarker = Join-Path (Join-Path $env:TEMP 'Relay\startup-benchmark') "$runId.complete"
@@ -310,9 +313,17 @@ function Invoke-StableFallback {
       Join-Path $runtimeVersionsRoot $ExpectedActiveBuildId
     ) 'Relay.exe'
     Wait-RelayRuntimeQuiescence -ExecutablePath $runtimeExecutable
-    if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedActiveBuildId) {
-      throw 'Stable launcher test observed an unexpected active build.'
+    $actualActiveBuildId = Get-IniValue -Path $statePath -Key 'current'
+    if ($actualActiveBuildId -ne $ExpectedActiveBuildId) {
+      $recoveryFiles = if (Test-Path -LiteralPath $recoveryRoot) {
+        (Get-ChildItem -LiteralPath $recoveryRoot -Force | Select-Object -ExpandProperty Name) -join ','
+      } else {
+        '<missing>'
+      }
+      $stateSummary = (Get-Content -LiteralPath $statePath) -join '; '
+      throw "Stable launcher test observed an unexpected active build: context=$Context; expected=$ExpectedActiveBuildId; actual=$actualActiveBuildId; recoveryFiles=$recoveryFiles; state=$stateSummary"
     }
+    Write-Host "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId"
   }
   finally {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = $priorExitAfterRender
@@ -345,7 +356,7 @@ try {
 
   Invoke-Preparation -Path $previousArtifactPath
   Assert-PreviousActive
-  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId
+  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId -Context 'initial-previous'
 
   foreach ($failurePoint in $failurePoints) {
     Remove-FailedBuildResidue
@@ -377,7 +388,7 @@ try {
         throw 'Abrupt post-quarantine termination lost the damaged runtime directory.'
       }
     }
-    Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId
+    Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId -Context "fallback-after-$failurePoint"
   }
 
   Remove-FailedBuildResidue
@@ -385,7 +396,7 @@ try {
   Invoke-Preparation -Path $artifactPath -TransactionId $transactionId
   Complete-RecoveryUpdateRequest
   Assert-PreviousActive
-  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId
+  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId -Context 'final-promotion'
   if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
       (Get-IniValue -Path $statePath -Key 'previous0') -ne $ExpectedPreviousBuildId) {
     throw 'Harness could not activate the current build after injected failures.'
