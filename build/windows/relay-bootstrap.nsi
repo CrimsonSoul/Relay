@@ -723,6 +723,7 @@ WritePreparedReceipt:
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not write its prepared recovery receipt."
     Goto BootstrapFailed
+  !insertmacro RelayHarnessFail ".fail-before-prepared-activation" "Relay harness stopped before prepared receipt activation."
   System::Call 'kernel32::MoveFileExW(w "$RelayPreparedNew", w "$RelayPrepared", i 9) i.r0'
   ${If} $0 == 0
     StrCpy $RelayFailureMessage "Relay could not activate its prepared recovery receipt."

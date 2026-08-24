@@ -139,6 +139,19 @@ describe('Windows package contract', () => {
     expect(fixture).toContain('RELAY_BENCHMARK_RUN_ID');
     expect(fixture).toContain('Relay\\startup-benchmark');
     expect(fixture).toContain('.complete');
+    expect(source).toContain('`-DRELAY_FIXTURE_BUILD_ID=${buildId}`');
+    expect(source).toContain('`-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`');
+    expect(fixture).toContain('RELAY_FIXTURE_BUILD_ID');
+    expect(fixture).toContain('RELAY_FIXTURE_PROBATION_DURATION_MS');
+    expect(fixture).toContain('--relay-recovery-probation=');
+    expect(fixture).toContain('probation-result.ini');
+    const probationReceiptIndex = fixture.indexOf('"durationMs"');
+    const probationExitIndex = fixture.indexOf('SetErrorLevel 0', probationReceiptIndex);
+    const benchmarkIndex = fixture.indexOf('RELAY_BENCHMARK_RUN_ID');
+    expect(probationReceiptIndex).toBeGreaterThan(-1);
+    expect(probationExitIndex).toBeGreaterThan(probationReceiptIndex);
+    expect(probationExitIndex).toBeLessThan(benchmarkIndex);
+    expect(fixture.slice(probationExitIndex, benchmarkIndex)).toContain('Quit');
   });
 
   it('keeps fixture payloads in parity with every non-executable runtime integrity file', () => {

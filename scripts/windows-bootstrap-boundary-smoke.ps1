@@ -36,6 +36,12 @@ if (Test-Path -LiteralPath $rootPath) {
 $runtimeVersionsRoot = Join-Path $rootPath 'Runtime'
 $launcherPath = Join-Path $rootPath 'Relay.exe'
 $statePath = Join-Path $rootPath 'state.ini'
+$recoveryRoot = Join-Path $rootPath 'Recovery'
+$updateRequestPath = Join-Path $recoveryRoot 'update-request.ini'
+$preparedPath = Join-Path $recoveryRoot 'prepared.ini'
+$preparedNewPath = Join-Path $recoveryRoot 'prepared.ini.new'
+$probationResultPath = Join-Path $recoveryRoot 'probation-result.ini'
+$settlementPath = Join-Path $recoveryRoot 'settled-update.ini'
 $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Relay.lnk'
 $startMenuShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Relay\Relay.lnk'
 $relayAppDataRoot = Join-Path $env:APPDATA 'Relay'
@@ -48,7 +54,7 @@ $failurePoints = @(
   '.fail-before-runtime-rename',
   '.fail-after-quarantine',
   '.fail-before-launcher-activation',
-  '.fail-before-state-activation'
+  '.fail-before-prepared-activation'
 )
 
 function Stop-ProcessTree {
@@ -143,15 +149,111 @@ function Get-IniValue {
   return $match.Matches[0].Groups[1].Value
 }
 
+function Get-IniSectionValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Section,
+    [Parameter(Mandatory = $true)][string]$Key
+  )
+
+  $currentSection = ''
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    if ($line -match '^\[([^]]+)\]$') {
+      $currentSection = $Matches[1]
+      continue
+    }
+    if ($currentSection -eq $Section -and
+        $line -match "^$([Regex]::Escape($Key))=(.*)$") {
+      return $Matches[1]
+    }
+  }
+  throw "Missing $Section.$Key in $Path"
+}
+
+function New-RecoveryUpdateRequest {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $transactionId = [Guid]::NewGuid().ToString().ToLowerInvariant()
+  $sourceBuildId = Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'current'
+  $sourceSection = "Build.$sourceBuildId"
+  $sourceVersion = Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'version'
+  $sourceCommit = Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'targetCommitish'
+  $installerHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+  $requestedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+  New-Item -ItemType Directory -Path $recoveryRoot -Force | Out-Null
+  $contents = @(
+    '[RecoveryRequest]'
+    'protocol=2'
+    "transactionId=$transactionId"
+    "targetVersion=$sourceVersion"
+    "targetCommitish=$sourceCommit"
+    "targetInstallerSha256=$installerHash"
+    'mode=unconfigured'
+    'checkpoint=pending'
+    'snapshotId='
+    "requestedAt=$requestedAt"
+    ''
+    '[Source]'
+    "buildId=$sourceBuildId"
+    "version=$sourceVersion"
+    "releaseTag=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'releaseTag')"
+    "targetCommitish=$sourceCommit"
+    "runtimeSha512=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'runtimeSha512')"
+    "installerSha256=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'installerSha256')"
+    "recoveryProtocol=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'recoveryProtocol')"
+    "serverDataEpoch=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'serverDataEpoch')"
+    "clientDataEpoch=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'clientDataEpoch')"
+    "installedAt=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'installedAt')"
+    "health=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'health')"
+    "rollbackSnapshotId=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'rollbackSnapshotId')"
+  )
+  [IO.File]::WriteAllText(
+    $updateRequestPath,
+    ($contents -join "`r`n") + "`r`n",
+    [Text.UTF8Encoding]::new($false)
+  )
+  return $transactionId
+}
+
+function Complete-RecoveryUpdateRequest {
+  $contents = [IO.File]::ReadAllText($updateRequestPath)
+  $completed = $contents -replace '(?m)^checkpoint=pending\r?$', 'checkpoint=complete'
+  if ($completed -eq $contents) {
+    throw 'Boundary recovery request did not contain a pending checkpoint.'
+  }
+  [IO.File]::WriteAllText(
+    $updateRequestPath,
+    $completed,
+    [Text.UTF8Encoding]::new($false)
+  )
+}
+
+function Remove-RecoveryMetadata {
+  foreach ($path in @(
+      $updateRequestPath,
+      $preparedPath,
+      $preparedNewPath,
+      $probationResultPath,
+      $settlementPath
+    )) {
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Invoke-Preparation {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
+    [string]$TransactionId = '',
     [switch]$ExpectFailure
   )
-  $process = Start-Process -FilePath $Path -ArgumentList '/relay-prepare-only' -PassThru
+  $arguments = @('/relay-prepare-only')
+  if ($TransactionId) {
+    $arguments += "/relay-transaction=$TransactionId"
+  }
+  $process = Start-Process -FilePath $Path -ArgumentList $arguments -PassThru
   Wait-ProcessWithTimeout -Process $process -Context "Boundary preparation: $Path"
-  if ($ExpectFailure -and $process.ExitCode -eq 0) {
-    throw "Boundary harness unexpectedly succeeded: $Path"
+  if ($ExpectFailure -and $process.ExitCode -ne 197) {
+    throw "Boundary harness exited with unexpected code $($process.ExitCode); expected 197: $Path"
   }
   if (-not $ExpectFailure -and $process.ExitCode -ne 0) {
     $bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'
@@ -233,6 +335,7 @@ function Remove-FailedBuildResidue {
   }
   Remove-Item -LiteralPath (Join-Path $rootPath 'state.ini.new') -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath (Join-Path $rootPath 'Relay.exe.new') -Force -ErrorAction SilentlyContinue
+  Remove-RecoveryMetadata
 }
 
 try {
@@ -246,6 +349,7 @@ try {
 
   foreach ($failurePoint in $failurePoints) {
     Remove-FailedBuildResidue
+    $transactionId = New-RecoveryUpdateRequest -Path $artifactPath
     $repairRestoreSentinel = $null
     if ($failurePoint -eq '.fail-after-quarantine') {
       $damagedRuntime = Join-Path $runtimeVersionsRoot $ExpectedBuildId
@@ -256,11 +360,12 @@ try {
     $failureSentinel = Join-Path $rootPath $failurePoint
     [IO.File]::WriteAllText($failureSentinel, $failurePoint)
     try {
-      Invoke-Preparation -Path $artifactPath -ExpectFailure
+      Invoke-Preparation -Path $artifactPath -TransactionId $transactionId -ExpectFailure
     }
     finally {
       Remove-Item -LiteralPath $failureSentinel -Force -ErrorAction SilentlyContinue
     }
+    Remove-RecoveryMetadata
     Assert-PreviousActive
     if ($null -ne $repairRestoreSentinel) {
       $quarantinedSentinel = Get-ChildItem -LiteralPath $runtimeVersionsRoot -Directory |
@@ -276,12 +381,15 @@ try {
   }
 
   Remove-FailedBuildResidue
-  Invoke-Preparation -Path $artifactPath
+  $transactionId = New-RecoveryUpdateRequest -Path $artifactPath
+  Invoke-Preparation -Path $artifactPath -TransactionId $transactionId
+  Complete-RecoveryUpdateRequest
+  Assert-PreviousActive
+  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId
   if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
       (Get-IniValue -Path $statePath -Key 'previous0') -ne $ExpectedPreviousBuildId) {
     throw 'Harness could not activate the current build after injected failures.'
   }
-  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId
 
   $sentinelHashAfter = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash
   if ($sentinelHashAfter -ne $sentinelHashBefore) {

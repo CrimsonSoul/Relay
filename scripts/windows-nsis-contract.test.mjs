@@ -613,6 +613,7 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(bootstrap).toContain('.fail-after-quarantine');
     expect(bootstrap).toContain('.fail-before-launcher-activation');
     expect(bootstrap).toContain('.fail-before-state-activation');
+    expect(bootstrap).toContain('.fail-before-prepared-activation');
     expect(bootstrap).toContain('TerminateProcess');
     expect(launcher).toContain('RELAY_RUNTIME_ROOT');
     expect(harness).toContain('BoundaryFailuresPreservedFallback');
@@ -620,6 +621,11 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('RELAY_BOOTSTRAP_BOUNDARY_CONFIRM');
     expect(harness).toContain("RELAY_DISABLE_CRASH_WATCHDOG = '1'");
     expect(harness).toContain('repair-restore-sentinel.txt');
+    expect(harness).toContain('.fail-before-prepared-activation');
+    expect(harness).toContain('New-RecoveryUpdateRequest');
+    expect(harness).toContain('/relay-transaction=');
+    expect(harness).toContain("'checkpoint=complete'");
+    expect(harness).toContain('$process.ExitCode -ne 197');
     expect(harness).toContain('Wait-ProcessWithTimeout');
     expect(harness).toContain('Wait-RelayRuntimeQuiescence');
     expect(harness).toContain('[StringComparison]::OrdinalIgnoreCase');
