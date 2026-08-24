@@ -42,6 +42,7 @@ $preparedPath = Join-Path $recoveryRoot 'prepared.ini'
 $preparedNewPath = Join-Path $recoveryRoot 'prepared.ini.new'
 $probationResultPath = Join-Path $recoveryRoot 'probation-result.ini'
 $settlementPath = Join-Path $recoveryRoot 'settled-update.ini'
+$probationDiagnosticPath = Join-Path $rootPath 'probation-diagnostic.ini'
 $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Relay.lnk'
 $startMenuShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Relay\Relay.lnk'
 $relayAppDataRoot = Join-Path $env:APPDATA 'Relay'
@@ -228,6 +229,39 @@ function Complete-RecoveryUpdateRequest {
   )
 }
 
+function Test-FixtureProbationReceipt {
+  param([Parameter(Mandatory = $true)][string]$TransactionId)
+
+  $candidateExecutable = Join-Path (
+    Join-Path $runtimeVersionsRoot $ExpectedBuildId
+  ) 'Relay.exe'
+  Remove-Item -LiteralPath $probationResultPath -Force -ErrorAction SilentlyContinue
+  $process = Start-Process `
+    -FilePath $candidateExecutable `
+    -ArgumentList "--relay-recovery-probation=$TransactionId" `
+    -PassThru
+  Wait-ProcessWithTimeout -Process $process -Context 'Direct fixture probation receipt'
+  if ($process.ExitCode -ne 0) {
+    throw "Direct fixture probation exited with code $($process.ExitCode)."
+  }
+  if (-not (Test-Path -LiteralPath $probationResultPath)) {
+    throw 'Direct fixture probation did not write its receipt.'
+  }
+
+  $receiptSummary = (Get-Content -LiteralPath $probationResultPath) -join '; '
+  try {
+    if ((Get-IniSectionValue -Path $probationResultPath -Section 'Probation' -Key 'protocol') -ne '2' -or
+        (Get-IniSectionValue -Path $probationResultPath -Section 'Probation' -Key 'transactionId') -ne $TransactionId -or
+        (Get-IniSectionValue -Path $probationResultPath -Section 'Probation' -Key 'buildId') -ne $ExpectedBuildId -or
+        (Get-IniSectionValue -Path $probationResultPath -Section 'Probation' -Key 'status') -ne 'healthy') {
+      throw "Direct fixture probation wrote an invalid receipt: $receiptSummary"
+    }
+  }
+  finally {
+    Remove-Item -LiteralPath $probationResultPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Remove-RecoveryMetadata {
   foreach ($path in @(
       $updateRequestPath,
@@ -321,9 +355,14 @@ function Invoke-StableFallback {
         '<missing>'
       }
       $stateSummary = (Get-Content -LiteralPath $statePath) -join '; '
-      throw "Stable launcher test observed an unexpected active build: context=$Context; expected=$ExpectedActiveBuildId; actual=$actualActiveBuildId; recoveryFiles=$recoveryFiles; state=$stateSummary"
+      $probationDiagnostic = if (Test-Path -LiteralPath $probationDiagnosticPath) {
+        (Get-Content -LiteralPath $probationDiagnosticPath) -join '; '
+      } else {
+        '<missing>'
+      }
+      throw "Stable launcher test observed an unexpected active build: context=$Context; expected=$ExpectedActiveBuildId; actual=$actualActiveBuildId; recoveryFiles=$recoveryFiles; probationDiagnostic=$probationDiagnostic; state=$stateSummary"
     }
-    Write-Host "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId"
+    Write-Information "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId" -InformationAction Continue
   }
   finally {
     $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = $priorExitAfterRender
@@ -346,6 +385,7 @@ function Remove-FailedBuildResidue {
   }
   Remove-Item -LiteralPath (Join-Path $rootPath 'state.ini.new') -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath (Join-Path $rootPath 'Relay.exe.new') -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $probationDiagnosticPath -Force -ErrorAction SilentlyContinue
   Remove-RecoveryMetadata
 }
 
@@ -394,6 +434,7 @@ try {
   Remove-FailedBuildResidue
   $transactionId = New-RecoveryUpdateRequest -Path $artifactPath
   Invoke-Preparation -Path $artifactPath -TransactionId $transactionId
+  Test-FixtureProbationReceipt -TransactionId $transactionId
   Complete-RecoveryUpdateRequest
   Assert-PreviousActive
   Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId -Context 'final-promotion'

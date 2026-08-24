@@ -142,6 +142,7 @@ describe('Windows package contract', () => {
     expect(source).toContain('`-DRELAY_FIXTURE_BUILD_ID=${buildId}`');
     expect(source).toContain('`-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`');
     expect(source).toContain('`-DRELAY_FIXTURE_ROOT=${harness.root}`');
+    expect(source).toContain("'-DRELAY_LAUNCHER_HARNESS=1'");
     expect(fixture).toContain('RELAY_FIXTURE_BUILD_ID');
     expect(fixture).toContain('RELAY_FIXTURE_PROBATION_DURATION_MS');
     expect(fixture).toContain('RELAY_FIXTURE_ROOT');

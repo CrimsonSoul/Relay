@@ -280,6 +280,12 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain('!ifndef RELAY_PROBATION_DURATION_MS');
     expect(source).toContain('$RelayResultDuration < ${RELAY_PROBATION_DURATION_MS}');
     expect(source).toContain(
+      'CreateProcessW(w "$RelayExecutable", w "$RelayArgs", p 0, p 0, i 0, i 0x04000000',
+    );
+    expect(source).toContain("System::Call '*(i 68, p 0, p 0, p 0");
+    expect(source).not.toContain('ResumeThread');
+    expect(source).not.toContain('i 0x00000004');
+    expect(source).toContain(
       'WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS})',
     );
   });
@@ -623,17 +629,28 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('repair-restore-sentinel.txt');
     expect(harness).toContain('.fail-before-prepared-activation');
     expect(harness).toContain('New-RecoveryUpdateRequest');
+    expect(harness).toContain('Test-FixtureProbationReceipt');
     expect(harness).toContain('/relay-transaction=');
     expect(harness).toContain("'checkpoint=complete'");
     expect(harness).toContain('$process.ExitCode -ne 197');
     expect(harness).toContain('context=$Context');
     expect(harness).toContain('state=$stateSummary');
+    expect(harness).not.toContain(
+      'Write-Host "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId"',
+    );
+    expect(harness).not.toContain(
+      'Write-Output "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId"',
+    );
+    expect(harness).toContain(
+      'Write-Information "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId" -InformationAction Continue',
+    );
     expect(harness).toContain('Wait-ProcessWithTimeout');
     expect(harness).toContain('Wait-RelayRuntimeQuiescence');
     expect(harness).toContain('[StringComparison]::OrdinalIgnoreCase');
     expect(harness).toContain('Get-CimInstance Win32_Process');
     expect(harness).toContain("$bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'");
     expect(harness).toContain('Boundary bootstrap failure:');
+    expect(harness).toContain('probation-diagnostic.ini');
     expect(harness).toContain("Get-IniValue -Path $statePath -Key 'previous0'");
     expect(harness).not.toContain("Get-IniValue -Path $statePath -Key 'previous')");
     expect(bootstrap).not.toMatch(/bootstrap-root|install-dir/i);
