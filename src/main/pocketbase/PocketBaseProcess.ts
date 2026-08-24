@@ -20,7 +20,7 @@ export interface PocketBaseConfig {
   platform?: NodeJS.Platform;
   restartOnCrash?: boolean;
   useWindowsJobObject?: boolean;
-  createWindowsJob?: () => WindowsProcessJob;
+  createWindowsJob?: () => WindowsProcessJob | Promise<WindowsProcessJob>;
 }
 
 async function createConfiguredWindowsJob(config: PocketBaseConfig): Promise<WindowsProcessJob> {
@@ -87,22 +87,6 @@ export class PocketBaseProcess {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    if (this.config.useWindowsJobObject) {
-      let job: WindowsProcessJob | null = null;
-      try {
-        job = await createConfiguredWindowsJob(this.config);
-        if (!this.child.pid || !job.assign(this.child.pid)) {
-          throw new Error('Windows could not assign PocketBase to its Job Object');
-        }
-        this.windowsJob = job;
-      } catch (error) {
-        this.child.kill('SIGKILL');
-        job?.close();
-        this.child = null;
-        throw error;
-      }
-    }
-
     this.child.stdout?.on('data', (data: Buffer) => {
       logger.debug('PocketBase stdout', { output: data.toString().trim() });
     });
@@ -154,8 +138,27 @@ export class PocketBaseProcess {
       }
     });
 
+    const initialize = async () => {
+      if (this.config.useWindowsJobObject) {
+        let job: WindowsProcessJob | null = null;
+        try {
+          job = await createConfiguredWindowsJob(this.config);
+          if (!this.child?.pid || !job.assign(this.child.pid)) {
+            throw new Error('Windows could not assign PocketBase to its Job Object');
+          }
+          this.windowsJob = job;
+        } catch (error) {
+          this.child?.kill('SIGKILL');
+          job?.close();
+          this.child = null;
+          throw error;
+        }
+      }
+      await this.waitForHealthy();
+    };
+
     try {
-      await Promise.race([this.waitForHealthy(), startupError]);
+      await Promise.race([initialize(), startupError]);
     } catch (error) {
       startupSettled = true;
       rejectStartupError = null;

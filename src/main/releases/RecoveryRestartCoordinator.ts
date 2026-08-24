@@ -11,9 +11,12 @@ type PrepareRecoveryRestartOptions = {
   completeRequest: (transactionId: string, snapshotId: string | null) => Promise<unknown>;
 };
 
+export type PrepareRecoveryRestartResult = 'ready' | 'unchanged' | 'restart-current';
+
 export async function prepareRecoveryRestart(
   options: PrepareRecoveryRestartOptions,
-): Promise<boolean> {
+): Promise<PrepareRecoveryRestartResult> {
+  let teardownStarted = false;
   try {
     const request = await options.getRequest();
     const currentMode = options.getCurrentMode();
@@ -23,19 +26,21 @@ export async function prepareRecoveryRestart(
       request.checkpoint !== 'pending' ||
       request.mode !== currentMode
     ) {
-      return false;
+      return 'unchanged';
     }
 
     if (currentMode === 'server') {
+      teardownStarted = true;
       await options.stopServer();
       const snapshot = await options.createServerSnapshot();
       await options.completeRequest(options.transactionId, snapshot.snapshotId);
-      return true;
+      return 'ready';
     }
-    if (currentMode === 'client' && !(await options.checkpointClient())) return false;
+    teardownStarted = true;
+    if (currentMode === 'client' && !(await options.checkpointClient())) return 'restart-current';
     await options.completeRequest(options.transactionId, null);
-    return true;
+    return 'ready';
   } catch {
-    return false;
+    return teardownStarted ? 'restart-current' : 'unchanged';
   }
 }

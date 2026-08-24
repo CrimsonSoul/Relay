@@ -25,7 +25,10 @@ import { stopPrivilegedRuntime } from '../app/privilegedRuntimeLifecycle';
 import { stopKnowledgeSearchRuntime } from '../knowledge/knowledgeSearchRuntime';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 import { createWindowsPrivateDirectory } from '../pocketbase/WindowsPrivateDirectory';
-import { prepareRecoveryRestart } from './RecoveryRestartCoordinator';
+import {
+  prepareRecoveryRestart,
+  type PrepareRecoveryRestartResult,
+} from './RecoveryRestartCoordinator';
 import { createRecoveryServerSnapshot } from './RecoverySnapshot';
 import { completeRecoveryUpdateRequest, readRecoveryUpdateRequest } from './RecoveryUpdateRequest';
 
@@ -111,9 +114,11 @@ async function checkpointClientForRecovery(): Promise<boolean> {
   return true;
 }
 
-export async function prepareProductionRecoveryRestart(transactionId: string): Promise<boolean> {
+export async function prepareProductionRecoveryRestart(
+  transactionId: string,
+): Promise<PrepareRecoveryRestartResult> {
   const localAppData = process.env.LOCALAPPDATA;
-  if (process.platform !== 'win32' || !app.isPackaged || !localAppData) return false;
+  if (process.platform !== 'win32' || !app.isPackaged || !localAppData) return 'unchanged';
   const relayRoot = join(localAppData, 'Relay');
   const userDataRoot = app.getPath('userData');
   const request = await readRecoveryUpdateRequest(relayRoot);

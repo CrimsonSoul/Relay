@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -22,6 +22,7 @@ const buildIdentityPath = join(generatedDir, 'relay-build-id.txt');
 const fixtureAppDir = join(generatedDir, 'relay-fixture-app');
 const fixtureExecutablePath = join(fixtureAppDir, 'Relay.exe');
 const fixtureIdentityPath = join(fixtureAppDir, 'resources', 'relay-build-id.txt');
+const recoveryTimingPath = join(projectDir, 'build', 'windows', 'recovery-timing.json');
 const packageJson = require(join(projectDir, 'package.json'));
 
 function printUsage() {
@@ -156,13 +157,32 @@ async function restoreHostNativeDependencies() {
 
 async function compileLauncher(harness) {
   await mkdir(generatedDir, { recursive: true });
+  const recoveryTiming = JSON.parse(await readFile(recoveryTimingPath, 'utf8'));
+  const requiredTimingValues = [
+    recoveryTiming.startupDeadlineMs,
+    recoveryTiming.probationDurationMs,
+    recoveryTiming.shutdownOverheadMs,
+    recoveryTiming.supervisorTimeoutMs,
+  ];
+  if (
+    requiredTimingValues.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+    recoveryTiming.supervisorTimeoutMs <
+      recoveryTiming.startupDeadlineMs +
+        recoveryTiming.probationDurationMs +
+        recoveryTiming.shutdownOverheadMs
+  ) {
+    throw new Error('Windows recovery timing contract was invalid');
+  }
   const makensis = resolveMakensisCommand(await getMakeNsisPath('1.2.1'));
   const defines = [
     '-WX',
     '-INPUTCHARSET',
     'UTF8',
+    `-X!addincludedir "${join(projectDir, 'node_modules', 'app-builder-lib', 'templates', 'nsis', 'include')}"`,
     `-DRELAY_LAUNCHER_OUT=${launcherPath}`,
     `-DRELAY_LAUNCHER_ICON=${join(projectDir, 'build', 'icon.ico')}`,
+    `-DRELAY_PROBATION_DURATION_MS=${recoveryTiming.probationDurationMs}`,
+    `-DRELAY_PROBATION_SUPERVISOR_TIMEOUT_MS=${recoveryTiming.supervisorTimeoutMs}`,
   ];
   if (harness) defines.push(`-DRELAY_RUNTIME_ROOT=${harness.root}`);
   defines.push(join(projectDir, 'build', 'windows', 'relay-launcher.nsi'));
@@ -191,6 +211,23 @@ async function compileFixtureRuntime(buildId) {
     },
   );
   await writeFile(fixtureIdentityPath, `${buildId}\n`, 'utf8');
+  const fixtureFiles = [
+    ['resources/app.asar', 'relay fixture app archive'],
+    ['resources/pocketbase/win32-x64/pocketbase.exe', 'relay fixture pocketbase'],
+    [
+      'resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+      'relay fixture better-sqlite3',
+    ],
+    [
+      'resources/app.asar.unpacked/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node',
+      'relay fixture koffi',
+    ],
+  ];
+  for (const [relativePath, contents] of fixtureFiles) {
+    const path = join(fixtureAppDir, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, contents, 'utf8');
+  }
 }
 
 async function writeBuildDefines(harness) {

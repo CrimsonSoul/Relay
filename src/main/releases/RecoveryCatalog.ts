@@ -6,6 +6,7 @@ const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_CATALOG_BYTES = 128 * 1_024;
 const MAX_RETAINED_BUILDS = 3;
+const MAX_FAILED_RELEASE_FINGERPRINTS = 16;
 const RESERVED_WINDOWS_NAMES = new Set([
   'con',
   'prn',
@@ -330,10 +331,13 @@ function hasValidCatalogTransaction(catalog: RecoveryCatalog): boolean {
 }
 
 function hasValidFailedReleaseFingerprints(catalog: RecoveryCatalog): boolean {
-  return catalog.failedReleaseFingerprints.every(
-    (value, index, all) =>
-      /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)@[0-9a-f]{40}$/u.test(value) &&
-      all.indexOf(value) === index,
+  return (
+    catalog.failedReleaseFingerprints.length <= MAX_FAILED_RELEASE_FINGERPRINTS &&
+    catalog.failedReleaseFingerprints.every(
+      (value, index, all) =>
+        /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)@[0-9a-f]{40}$/u.test(value) &&
+        all.indexOf(value) === index,
+    )
   );
 }
 

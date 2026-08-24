@@ -14,6 +14,7 @@ import { getAppConfig } from '../app/appState';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { RelayInstallableRelease } from '../releases/ReleaseUpdateService';
+import type { PrepareRecoveryRestartResult } from '../releases/RecoveryRestartCoordinator';
 import type { ReleaseNotesProvider } from './releaseNotesHandlers';
 
 type ReleaseUpdateChecker = ReleaseNotesProvider & {
@@ -52,17 +53,22 @@ function authoritativeCheck(
   snapshot: RelayUpdateSnapshot,
 ): RelayUpdateCheck {
   if (snapshot.phase === 'idle' || !snapshot.latestVersion) return fallback;
+  const targetCommitish =
+    snapshot.latestVersion === fallback.latestVersion ? fallback.targetCommitish : null;
   return {
     currentVersion: snapshot.currentVersion,
     latestVersion: snapshot.latestVersion,
+    targetCommitish,
     updateAvailable: true,
-    installable: snapshot.installable,
+    installable: snapshot.installable && targetCommitish !== null,
     assetSizeBytes: snapshot.totalBytes,
     releaseNotes: fallback.releaseNotes,
   };
 }
 
-async function prepareProductionRecoveryRestart(transactionId: string): Promise<boolean> {
+async function prepareProductionRecoveryRestart(
+  transactionId: string,
+): Promise<PrepareRecoveryRestartResult> {
   const recovery = await import('../releases/productionRecoveryRestart');
   return recovery.prepareProductionRecoveryRestart(transactionId);
 }

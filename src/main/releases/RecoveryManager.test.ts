@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,16 +25,16 @@ let previous: RecoveryBuildRecord;
 function build(
   buildId: string,
   version: string,
-  runtimeSha512: string,
+  _runtimeSha512: string,
   targetCommitish: string,
   rollbackSnapshotId: string | null,
 ): RecoveryBuildRecord {
-  return {
+  const record: RecoveryBuildRecord = {
     buildId,
     version,
     releaseTag: `v${version}`,
     targetCommitish,
-    runtimeSha512,
+    runtimeSha512: '',
     installerSha256: 'f'.repeat(64),
     recoveryProtocol: 2,
     serverDataEpoch: 1,
@@ -42,28 +43,79 @@ function build(
     health: 'healthy',
     rollbackSnapshotId,
   };
+  record.runtimeSha512 = createHash('sha512').update(runtimeMarker(record)).digest('hex');
+  return record;
+}
+
+const runtimeContents = new Map<string, Buffer>([
+  ['Relay.exe', Buffer.from([0x4d, 0x5a, 0x00])],
+  [join('resources', 'app.asar'), Buffer.from('fixture app archive')],
+  [
+    join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe'),
+    Buffer.from('fixture pocketbase'),
+  ],
+  [
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      'better-sqlite3',
+      'build',
+      'Release',
+      'better_sqlite3.node',
+    ),
+    Buffer.from('fixture better-sqlite3'),
+  ],
+  [
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      '@koromix',
+      'koffi-win32-x64',
+      'win32_x64',
+      'koffi.node',
+    ),
+    Buffer.from('fixture koffi'),
+  ],
+]);
+
+function runtimeFileHash(relativePath: string): string {
+  return createHash('sha512').update(runtimeContents.get(relativePath)!).digest('hex');
+}
+
+function runtimeMarker(record: RecoveryBuildRecord): string {
+  return `${[
+    '[Relay]',
+    'protocol=2',
+    `buildId=${record.buildId}`,
+    'executable=Relay.exe',
+    `payloadHash=${'c'.repeat(128)}`,
+    `version=${record.version}`,
+    `releaseTag=${record.releaseTag}`,
+    `targetCommitish=${record.targetCommitish}`,
+    `serverDataEpoch=${record.serverDataEpoch}`,
+    `clientDataEpoch=${record.clientDataEpoch}`,
+    `installedAt=${record.installedAt}`,
+    '',
+    '[Integrity]',
+    `executableSha512=${runtimeFileHash('Relay.exe')}`,
+    `appAsarSha512=${runtimeFileHash(join('resources', 'app.asar'))}`,
+    `pocketbaseSha512=${runtimeFileHash(join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe'))}`,
+    `betterSqlite3Sha512=${runtimeFileHash(join('resources', 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'))}`,
+    `koffiSha512=${runtimeFileHash(join('resources', 'app.asar.unpacked', 'node_modules', '@koromix', 'koffi-win32-x64', 'win32_x64', 'koffi.node'))}`,
+  ].join('\n')}\n`;
 }
 
 async function makeRuntime(record: RecoveryBuildRecord): Promise<string> {
   const directory = join(relayRoot, 'Runtime', record.buildId);
   await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, 'Relay.exe'), Buffer.from([0x4d, 0x5a, 0x00]));
-  await writeFile(
-    join(directory, '.relay-runtime-ready'),
-    `${[
-      '[Relay]',
-      'protocol=2',
-      `buildId=${record.buildId}`,
-      'executable=Relay.exe',
-      `payloadHash=${record.runtimeSha512}`,
-      `version=${record.version}`,
-      `releaseTag=${record.releaseTag}`,
-      `targetCommitish=${record.targetCommitish}`,
-      `serverDataEpoch=${record.serverDataEpoch}`,
-      `clientDataEpoch=${record.clientDataEpoch}`,
-      `installedAt=${record.installedAt}`,
-    ].join('\n')}\n`,
-  );
+  for (const [relativePath, contents] of runtimeContents) {
+    const path = join(directory, relativePath);
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, contents);
+  }
+  await writeFile(join(directory, '.relay-runtime-ready'), runtimeMarker(record));
   return join(directory, 'Relay.exe');
 }
 
@@ -190,6 +242,22 @@ describe('RecoveryManager', () => {
       rollbackAvailable: false,
       repairAvailable: true,
       githubFallbackAvailable: true,
+    });
+  });
+
+  it('reports a retained runtime with corrupted app resources as unavailable', async () => {
+    const execPath = await makeRuntime(current);
+    await makeRuntime(previous);
+    await writeCatalog();
+    await writeFile(
+      join(relayRoot, 'Runtime', previous.buildId, 'resources', 'app.asar'),
+      'corrupted app archive',
+    );
+
+    expect((await createManager('client', execPath).getState()).retainedBuilds[0]).toMatchObject({
+      status: 'runtime-missing',
+      rollbackAvailable: false,
+      repairAvailable: true,
     });
   });
 

@@ -161,18 +161,36 @@ describe('Windows runtime cleanup', () => {
     const previous1Dir = await makeRecoveryRuntime(runtimeRoot, 'r2-previous1');
     const previous2Dir = await makeRecoveryRuntime(runtimeRoot, 'r2-previous2');
     const orphanDir = await makeRecoveryRuntime(runtimeRoot, 'r2-orphan');
+    const current = recoveryBuild('r2-current', '1.5.0', '1'.repeat(40), null);
+    const candidate = {
+      ...recoveryBuild('r2-candidate', '1.6.0', '2'.repeat(40), null),
+      health: 'candidate' as const,
+    };
+    const previous0 = recoveryBuild('r2-previous0', '1.4.0', '3'.repeat(40), null);
+    const previous1 = recoveryBuild('r2-previous1', '1.3.0', '4'.repeat(40), null);
+    const previous2 = recoveryBuild('r2-previous2', '1.2.0', '5'.repeat(40), null);
     await writeFile(
       join(root, 'state.ini'),
-      [
-        '[Relay]',
-        'protocol=2',
-        'current=r2-current',
-        'candidate=r2-candidate',
-        'previous0=r2-previous0',
-        'previous1=r2-previous1',
-        'previous2=r2-previous2',
-        '',
-      ].join('\n'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 5,
+        currentBuildId: current.buildId,
+        candidateBuildId: candidate.buildId,
+        previousBuildIds: [previous0.buildId, previous1.buildId, previous2.buildId],
+        builds: [current, candidate, previous0, previous1, previous2],
+        transaction: {
+          id: '11111111-2222-4333-8444-555555555555',
+          kind: 'update',
+          phase: 'probation',
+          sourceBuildId: current.buildId,
+          targetBuildId: candidate.buildId,
+          mode: 'client',
+          snapshotId: null,
+          attempts: 1,
+          requestedAt: '2026-08-24T15:05:00.000Z',
+        },
+        failedReleaseFingerprints: [],
+      }),
     );
 
     const result = await cleanupWindowsRuntimes({
@@ -180,7 +198,7 @@ describe('Windows runtime cleanup', () => {
       execPath: join(currentDir, 'Relay.exe'),
     });
 
-    expect(result.removed).toEqual(['r2-orphan']);
+    expect(result.removed).toEqual([]);
     expect(result.skipped).toEqual(
       expect.arrayContaining([
         'r2-candidate',
@@ -188,13 +206,49 @@ describe('Windows runtime cleanup', () => {
         'r2-previous0',
         'r2-previous1',
         'r2-previous2',
+        'r2-orphan',
       ]),
     );
     expect(existsSync(candidateDir)).toBe(true);
     expect(existsSync(previous0Dir)).toBe(true);
     expect(existsSync(previous1Dir)).toBe(true);
     expect(existsSync(previous2Dir)).toBe(true);
-    expect(existsSync(orphanDir)).toBe(false);
+    expect(existsSync(orphanDir)).toBe(true);
+  });
+
+  it('preserves every complete runtime while a prepared update receipt is pending ingestion', async () => {
+    const root = await makeRoot();
+    const runtimeRoot = join(root, 'Runtime');
+    const current = recoveryBuild('r2-current', '1.5.0', '1'.repeat(40), null);
+    const currentDir = await makeRecoveryRuntime(runtimeRoot, current.buildId);
+    const preparedDir = await makeRecoveryRuntime(runtimeRoot, 'r2-prepared');
+    await makeRecoveryRuntime(runtimeRoot, 'r2-orphan');
+    await writeFile(
+      join(root, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 5,
+        currentBuildId: current.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [current],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+    await mkdir(join(root, 'Recovery'));
+    await writeFile(join(root, 'Recovery', 'prepared.ini'), '[Prepared]\nbuildId=r2-prepared\n');
+
+    const result = await cleanupWindowsRuntimes({
+      root,
+      execPath: join(currentDir, 'Relay.exe'),
+    });
+
+    expect(result.removed).toEqual([]);
+    expect(result.skipped).toEqual(
+      expect.arrayContaining(['r2-current', 'r2-prepared', 'r2-orphan']),
+    );
+    expect(existsSync(preparedDir)).toBe(true);
   });
 
   it('removes only complete unreferenced server snapshots after the catalog settles', async () => {

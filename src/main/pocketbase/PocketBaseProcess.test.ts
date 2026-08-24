@@ -223,6 +223,33 @@ describe('PocketBaseProcess', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
+  it('observes spawn errors while Windows job creation is still pending', async () => {
+    const child = makeMockChild(2468);
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    const job = { assign: vi.fn(() => true), close: vi.fn() };
+    let resolveJob!: (value: typeof job) => void;
+    const jobPromise = new Promise<typeof job>((resolvePromise) => {
+      resolveJob = resolvePromise;
+    });
+    const managed = new PocketBaseProcess({
+      binaryPath: '/missing/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      useWindowsJobObject: true,
+      createWindowsJob: () => jobPromise,
+    });
+
+    const startup = managed.start();
+    await Promise.resolve();
+    child._emit('error', new Error('spawn ENOENT'));
+    resolveJob(job);
+
+    await expect(startup).rejects.toThrow('spawn ENOENT');
+    expect(job.assign).not.toHaveBeenCalled();
+  });
+
   it('start() clears stale Windows PocketBase processes listening on the configured port', async () => {
     pbProcess = new PocketBaseProcess({
       binaryPath: '/fake/pocketbase.exe',

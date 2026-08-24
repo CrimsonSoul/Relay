@@ -1,0 +1,6 @@
+{
+  "startupDeadlineMs": 120000,
+  "probationDurationMs": 60000,
+  "shutdownOverheadMs": 15000,
+  "supervisorTimeoutMs": 195000
+}

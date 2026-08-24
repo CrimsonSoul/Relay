@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -149,6 +149,7 @@ describe('ReleaseUpdateService', () => {
     await expect(service.check()).resolves.toEqual({
       currentVersion: '1.0.0',
       latestVersion: '1.1.0',
+      targetCommitish: COMMIT_SHA,
       updateAvailable: true,
       installable: true,
       assetSizeBytes: 140_000_000,
@@ -160,6 +161,38 @@ describe('ReleaseUpdateService', () => {
         immutable: true,
       },
     });
+  });
+
+  it('keeps the persisted release-note cache within its own read bound', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'relay-release-notes-'));
+    const cacheFilePath = join(directory, 'release-notes.json');
+    try {
+      for (let patch = 1; patch <= 10; patch += 1) {
+        const version = `1.0.${patch}`;
+        const service = new ReleaseUpdateService({
+          fetch: async () =>
+            jsonResponse(githubRelease(`v${version}`, { body: 'x'.repeat(52 * 1_024) })),
+          getCurrentVersion: () => '0.0.0',
+          cacheFilePath,
+        });
+        await service.check();
+      }
+
+      expect((await stat(cacheFilePath)).size).toBeLessThanOrEqual(512 * 1_024);
+      const offlineService = new ReleaseUpdateService({
+        fetch: async () => {
+          throw new Error('offline');
+        },
+        getCurrentVersion: () => '0.0.0',
+        cacheFilePath,
+      });
+      const cached = await offlineService.getCachedReleaseNotes();
+      expect(cached.length).toBeGreaterThan(0);
+      expect(cached.length).toBeLessThan(10);
+      expect(cached[0]?.version).toBe('1.0.10');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('persists stable release notes and serves them from a new service instance', async () => {
@@ -342,6 +375,7 @@ describe('ReleaseUpdateService', () => {
     await expect(service.check()).resolves.toEqual({
       currentVersion: '1.2.3',
       latestVersion,
+      targetCommitish: null,
       updateAvailable: false,
       installable: false,
       assetSizeBytes: null,
@@ -364,6 +398,7 @@ describe('ReleaseUpdateService', () => {
     await expect(service.check()).resolves.toEqual({
       currentVersion: '1.0.0',
       latestVersion: '1.1.0',
+      targetCommitish: null,
       updateAvailable: true,
       installable: false,
       assetSizeBytes: null,
@@ -618,6 +653,7 @@ describe('ReleaseUpdateService', () => {
       {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: COMMIT_SHA,
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
@@ -632,6 +668,7 @@ describe('ReleaseUpdateService', () => {
       {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: COMMIT_SHA,
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,

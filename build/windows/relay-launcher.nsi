@@ -6,6 +6,7 @@ WindowIcon off
 
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
+!include "StdUtils.nsh"
 !include "Win\WinError.nsh"
 !include "include\relay-runtime-contract.nsh"
 
@@ -14,6 +15,12 @@ WindowIcon off
 !endif
 !ifndef RELAY_LAUNCHER_ICON
   !error "RELAY_LAUNCHER_ICON is required"
+!endif
+!ifndef RELAY_PROBATION_DURATION_MS
+  !error "RELAY_PROBATION_DURATION_MS is required"
+!endif
+!ifndef RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS
+  !error "RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS is required"
 !endif
 !ifndef RELAY_RUNTIME_ROOT
   !define RELAY_RUNTIME_ROOT "$LOCALAPPDATA\Relay"
@@ -46,6 +53,8 @@ Var RelayMarkerProtocol
 Var RelayMarkerBuildId
 Var RelayMarkerExecutable
 Var RelayMarkerPayloadHash
+Var RelayMarkerHash
+Var RelayContentIntegrity
 Var RelayMarkerVersion
 Var RelayMarkerReleaseTag
 Var RelayMarkerCommit
@@ -121,6 +130,11 @@ Var RelayPreparedClientEpoch
 Var RelayPreparedAt
 Var RelayPreparedHealth
 Var RelayFailedFingerprint
+Var RelayFailedFingerprints
+Var RelayNewFailedFingerprints
+Var RelayExistingFingerprint
+Var RelayFailedFingerprintIndex
+Var RelayFailedFingerprintCount
 Var RelayRestoreResult
 Var RelaySnapshotRoot
 Var RelaySnapshotMarker
@@ -133,6 +147,12 @@ Var RelaySnapshotComplete
 Var RelayLiveData
 Var RelayFailedData
 Var RelayRestoreJournal
+Var RelayRestoreJournalTransaction
+Var RelayRestoreJournalPhase
+Var RelayRestoreJournalExpectedCurrent
+Var RelayCatalogCurrent
+Var RelayCatalogCandidate
+Var RelayCatalogTransaction
 Var RelayManualProtocol
 Var RelayManualTransaction
 Var RelayManualSource
@@ -187,7 +207,7 @@ Function RelayRunProbation
     System::Call 'kernel32::TerminateProcess(p $RelayProbationProcessHandle, i 1) i.r0'
     Goto RelayRunProbationCleanup
   ${EndIf}
-  System::Call 'kernel32::WaitForSingleObject(p $RelayProbationProcessHandle, i 130000) i.r0'
+  System::Call 'kernel32::WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS}) i.r0'
   StrCpy $RelayProbationWaitResult $0
   ${If} $RelayProbationWaitResult == 258
     ; A wedged candidate cannot hold the stable launcher indefinitely.
@@ -223,6 +243,12 @@ FunctionEnd
     ReadINIStr $RelayMarkerCommit "$RelayMarker" "Relay" "targetCommitish"
     ReadINIStr $RelayMarkerServerEpoch "$RelayMarker" "Relay" "serverDataEpoch"
     ReadINIStr $RelayMarkerClientEpoch "$RelayMarker" "Relay" "clientDataEpoch"
+    StrCpy $RelayMarkerHash ""
+    StrCpy $RelayContentIntegrity "0"
+    ${If} $RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
+      ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+      !insertmacro RelayVerifyRuntimeContent "$RelayRuntimeDir" "$RelayMarker" $RelayContentIntegrity
+    ${EndIf}
     StrLen $RelayPayloadHashLength $RelayMarkerPayloadHash
     ${StrFilter} "$RelayMarkerPayloadHash" "" "0123456789abcdefABCDEF" "" $RelayPayloadHashFiltered
     StrCpy $RelayBinaryResult "0"
@@ -251,7 +277,8 @@ FunctionEnd
         ${AndIf} $RelayMarkerExecutable == "${RELAY_INNER_EXECUTABLE}"
         ${AndIf} $RelayPayloadHashLength == 128
         ${AndIf} $RelayPayloadHashFiltered == $RelayMarkerPayloadHash
-        ${AndIf} $RelayMarkerPayloadHash == $RelayCatalogRuntimeHash
+        ${AndIf} $RelayMarkerHash == $RelayCatalogRuntimeHash
+        ${AndIf} $RelayContentIntegrity == "1"
         ${AndIf} $RelayMarkerVersion == $RelayCatalogVersion
         ${AndIf} $RelayMarkerReleaseTag == $RelayCatalogReleaseTag
         ${AndIf} $RelayMarkerCommit == $RelayCatalogCommit
@@ -270,7 +297,8 @@ FunctionEnd
         ${AndIf} $RelayMarkerExecutable == "${RELAY_INNER_EXECUTABLE}"
         ${AndIf} $RelayPayloadHashLength == 128
         ${AndIf} $RelayPayloadHashFiltered == $RelayMarkerPayloadHash
-        ${AndIf} $RelayMarkerPayloadHash == $RelayPreparedRuntimeHash
+        ${AndIf} $RelayMarkerHash == $RelayPreparedRuntimeHash
+        ${AndIf} $RelayContentIntegrity == "1"
         ${AndIf} $RelayMarkerVersion == $RelayPreparedVersion
         ${AndIf} $RelayMarkerReleaseTag == $RelayPreparedReleaseTag
         ${AndIf} $RelayMarkerCommit == $RelayPreparedCommit
@@ -323,6 +351,7 @@ Function RelayRestoreServerSnapshot
   StrCpy $RelayRestoreJournal "$APPDATA\Relay\recovery-rollback.ini"
   WriteINIStr "$RelayRestoreJournal" "Restore" "transactionId" "$RelayTransactionId"
   WriteINIStr "$RelayRestoreJournal" "Restore" "snapshotId" "$RelayTransactionSnapshot"
+  WriteINIStr "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"
   WriteINIStr "$RelayRestoreJournal" "Restore" "phase" "prepared"
 
   ${If} ${FileExists} "$RelaySnapshotRoot\data"
@@ -354,6 +383,82 @@ Function RelayRestoreServerSnapshot
   ${EndIf}
   WriteINIStr "$RelayRestoreJournal" "Restore" "phase" "restored"
   StrCpy $RelayRestoreResult "1"
+FunctionEnd
+
+Function RelayFinalizeServerRestore
+  ${IfNot} ${FileExists} "$RelayRestoreJournal"
+    Return
+  ${EndIf}
+  ReadINIStr $RelayRestoreJournalTransaction "$RelayRestoreJournal" "Restore" "transactionId"
+  ReadINIStr $RelayRestoreJournalPhase "$RelayRestoreJournal" "Restore" "phase"
+  ReadINIStr $RelayRestoreJournalExpectedCurrent "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId"
+  ReadINIStr $RelayProtocol "$RelayState" "Relay" "protocol"
+  ReadINIStr $RelayCatalogCurrent "$RelayState" "Relay" "current"
+  ReadINIStr $RelayCatalogCandidate "$RelayState" "Relay" "candidate"
+  ReadINIStr $RelayCatalogTransaction "$RelayState" "Transaction" "id"
+  !insertmacro RelayValidateTransactionId "$RelayRestoreJournalTransaction" $RelayTransactionIsValid
+  !insertmacro RelayValidateBuildId "$RelayRestoreJournalExpectedCurrent" $RelayBuildIsValid
+  ${If} $RelayTransactionIsValid != "1"
+  ${OrIf} $RelayBuildIsValid != "1"
+  ${OrIf} $RelayRestoreJournalTransaction != $RelayTransactionId
+  ${OrIf} $RelayRestoreJournalPhase != "restored"
+  ${OrIf} $RelayProtocol != "${RELAY_RECOVERY_STATE_PROTOCOL}"
+  ${OrIf} $RelayRestoreJournalExpectedCurrent != $RelayCatalogCurrent
+  ${OrIf} $RelayCatalogCandidate != ""
+  ${OrIf} $RelayCatalogTransaction != ""
+    Return
+  ${EndIf}
+  StrCpy $RelayFailedData "$APPDATA\Relay\.rollback-$RelayRestoreJournalTransaction.failed"
+  StrCpy $RelayLiveData "$APPDATA\Relay\data"
+  ${IfNot} ${FileExists} "$RelayLiveData"
+    Return
+  ${EndIf}
+  RMDir /r "$RelayFailedData"
+  ${IfNot} ${FileExists} "$RelayFailedData"
+    Delete "$RelayRestoreJournal"
+  ${EndIf}
+FunctionEnd
+
+Function RelayCleanupCompletedServerRestore
+  ${IfNot} ${FileExists} "$RelayRestoreJournal"
+    Return
+  ${EndIf}
+  ReadINIStr $RelayRestoreJournalTransaction "$RelayRestoreJournal" "Restore" "transactionId"
+  ReadINIStr $RelayRestoreJournalPhase "$RelayRestoreJournal" "Restore" "phase"
+  ReadINIStr $RelayCatalogTransaction "$RelayState" "Transaction" "id"
+  !insertmacro RelayValidateTransactionId "$RelayRestoreJournalTransaction" $RelayTransactionIsValid
+  ${If} $RelayTransactionIsValid != "1"
+  ${OrIf} $RelayRestoreJournalPhase != "restored"
+  ${OrIf} $RelayCatalogTransaction != ""
+    Return
+  ${EndIf}
+  StrCpy $RelayTransactionId $RelayRestoreJournalTransaction
+  Call RelayFinalizeServerRestore
+FunctionEnd
+
+Function RelayBuildFailedFingerprintHistory
+  ReadINIStr $RelayFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"
+  StrCpy $RelayNewFailedFingerprints "$RelayFailedFingerprint"
+  StrCpy $RelayFailedFingerprintIndex 1
+  StrCpy $RelayFailedFingerprintCount 1
+
+RelayFailedFingerprintLoop:
+  ${If} $RelayFailedFingerprintCount < 16
+  ${AndIf} $RelayFailedFingerprintIndex <= 16
+    ${WordFind} "$RelayFailedFingerprints," "," "+$RelayFailedFingerprintIndex" $RelayExistingFingerprint
+    ${If} $RelayExistingFingerprint == ""
+    ${OrIf} $RelayExistingFingerprint == "1"
+      Goto RelayFailedFingerprintDone
+    ${EndIf}
+    ${If} $RelayExistingFingerprint != $RelayFailedFingerprint
+      StrCpy $RelayNewFailedFingerprints "$RelayNewFailedFingerprints,$RelayExistingFingerprint"
+      IntOp $RelayFailedFingerprintCount $RelayFailedFingerprintCount + 1
+    ${EndIf}
+    IntOp $RelayFailedFingerprintIndex $RelayFailedFingerprintIndex + 1
+    Goto RelayFailedFingerprintLoop
+  ${EndIf}
+
+RelayFailedFingerprintDone:
 FunctionEnd
 
 !macro RelayTryRuntime BUILD_ID
@@ -411,11 +516,13 @@ Section
   StrCpy $RelayPrepared "$RelayRoot\Recovery\prepared.ini"
   StrCpy $RelayProbationResult "$RelayRoot\Recovery\probation-result.ini"
   StrCpy $RelayRollbackRequest "$RelayRoot\Recovery\rollback-request.ini"
+  StrCpy $RelayRestoreJournal "$APPDATA\Relay\recovery-rollback.ini"
   StrCpy $RelayRecoveryRequested "0"
   ${If} $RelayArgs == "${RELAY_RECOVERY_ARGUMENT}"
     StrCpy $RelayRecoveryRequested "1"
   ${EndIf}
 
+  Call RelayCleanupCompletedServerRestore
   ReadINIStr $RelayProtocol "$RelayState" "Relay" "protocol"
   ${If} $RelayProtocol == "${RELAY_LEGACY_STATE_PROTOCOL}"
     ReadINIStr $RelayCurrent "$RelayState" "Relay" "current"
@@ -584,7 +691,7 @@ HandleManualRollback:
     MessageBox MB_OK|MB_ICONSTOP "Relay restored the selected data but could not commit the recovery catalog. Restart Relay to resume recovery safely."
     Goto OpenPublishedReleases
   ${EndIf}
-  Delete "$RelayRestoreJournal"
+  Call RelayFinalizeServerRestore
   Delete "$RelayRollbackRequest"
   Delete "$RelayRequest"
   Delete "$RelayPrepared"
@@ -771,7 +878,7 @@ ProbationLoop:
   ${OrIf} $RelayResultTransaction != "$RelayTransactionId"
   ${OrIf} $RelayResultBuild != "$RelayCandidate"
   ${OrIf} $RelayResultStatus != "healthy"
-  ${OrIf} $RelayResultDuration < 60000
+  ${OrIf} $RelayResultDuration < ${RELAY_PROBATION_DURATION_MS}
     Goto ProbationLoop
   ${EndIf}
   Goto PromoteCandidate
@@ -821,20 +928,21 @@ RollbackCandidate:
   ReadINIStr $RelayPreparedReleaseTag "$RelayState" "Build.$RelayCandidate" "releaseTag"
   ReadINIStr $RelayPreparedCommit "$RelayState" "Build.$RelayCandidate" "targetCommitish"
   StrCpy $RelayFailedFingerprint "$RelayPreparedReleaseTag@$RelayPreparedCommit"
+  Call RelayBuildFailedFingerprintHistory
   ReadINIStr $RelayGeneration "$RelayState" "Relay" "generation"
   IntOp $RelayGeneration $RelayGeneration + 1
   Delete "$RelayStateNew"
   CopyFiles /SILENT "$RelayState" "$RelayStateNew"
   WriteINIStr "$RelayStateNew" "Relay" "generation" "$RelayGeneration"
   WriteINIStr "$RelayStateNew" "Relay" "candidate" ""
-  WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayFailedFingerprint"
+  WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"
   DeleteINISec "$RelayStateNew" "Build.$RelayCandidate"
   DeleteINISec "$RelayStateNew" "Transaction"
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
     Goto NoUsableRuntime
   ${EndIf}
-  Delete "$RelayRestoreJournal"
+  Call RelayFinalizeServerRestore
   Delete "$RelayRequest"
   Delete "$RelayPrepared"
   Delete "$RelayProbationResult"

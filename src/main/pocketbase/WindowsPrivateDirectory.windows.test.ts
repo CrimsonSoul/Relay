@@ -212,6 +212,7 @@ describe.runIf(process.platform === 'win32')('Windows private directory integrat
       await updates.noteCheck({
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: '0123456789abcdef0123456789abcdef01234567',
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,

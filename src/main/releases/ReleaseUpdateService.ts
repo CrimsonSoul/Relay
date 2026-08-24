@@ -143,25 +143,42 @@ class ReleaseNotesCache {
     }
   }
 
-  async write(releases: RelayReleaseNotes[], etag: string | null = null): Promise<void> {
-    const next = releases.slice(0, MAX_RELEASE_NOTES);
-    this.memory = { releases: next, etag };
-    if (!this.filePath) return;
-
+  async write(
+    releases: RelayReleaseNotes[],
+    etag: string | null = null,
+  ): Promise<RelayReleaseNotes[]> {
+    const next: RelayReleaseNotes[] = [];
+    let contents = '';
+    for (const release of releases.slice(0, MAX_RELEASE_NOTES)) {
+      const candidate: StoredReleaseNotes = {
+        schemaVersion: RELEASE_NOTES_CACHE_SCHEMA_VERSION,
+        releases: [...next, release],
+        etag,
+      };
+      const serialized = JSON.stringify(candidate);
+      if (Buffer.byteLength(serialized, 'utf8') > MAX_RELEASE_HISTORY_RESPONSE_BYTES) continue;
+      next.push(release);
+      contents = serialized;
+    }
     const stored: StoredReleaseNotes = {
       schemaVersion: RELEASE_NOTES_CACHE_SCHEMA_VERSION,
       releases: next,
       etag,
     };
+    contents ||= JSON.stringify(stored);
+    this.memory = { releases: next, etag };
+    if (!this.filePath) return next;
+
     const temporaryPath = `${this.filePath}.${randomUUID()}.tmp`;
     await mkdir(dirname(this.filePath), { recursive: true });
     try {
-      await writeFile(temporaryPath, JSON.stringify(stored), {
+      await writeFile(temporaryPath, contents, {
         encoding: 'utf8',
         mode: 0o600,
         flag: 'wx',
       });
       await rename(temporaryPath, this.filePath);
+      return next;
     } catch (error) {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
       throw error;
@@ -190,8 +207,7 @@ class ReleaseNotesCache {
     merged.push(...state.releases.filter((release) => !refreshedVersions.has(release.version)));
     merged.sort((left, right) => compareRelayVersions(right.version, left.version) ?? 0);
     const next = merged.slice(0, MAX_RELEASE_NOTES);
-    await this.write(next, etag);
-    return next;
+    return this.write(next, etag);
   }
 }
 
@@ -459,6 +475,7 @@ export class ReleaseUpdateService {
     return {
       currentVersion,
       latestVersion: release.version,
+      targetCommitish: installable?.targetCommitish ?? null,
       updateAvailable,
       installable: Boolean(installable),
       assetSizeBytes: installable?.archive.size ?? null,

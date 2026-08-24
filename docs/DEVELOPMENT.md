@@ -90,15 +90,26 @@ The update dialog also renders the validated latest-release notes. **Settings > 
 ten stable releases from the persistent desktop cache immediately, then refreshes the fixed GitHub
 history endpoint in the background. Conditional ETag requests avoid downloading an unchanged
 history; immutable cached notes are never replaced. Cached notes remain available offline, while a
-first-load failure offers an explicit retry and does not affect updater actions.
+first-load failure offers an explicit retry and does not affect updater actions. The serialized
+cache is capped at 512 KiB; refresh keeps the newest entries that fit so a successful write always
+remains readable by the same bounded loader.
 
 Packaged Windows x64 updates also participate in retained-build recovery. The stable launcher keeps
 the current runtime plus the three most recently promoted runtimes. Before restart, server mode
 stops PocketBase and takes a complete data snapshot; client mode checkpoints its local cache and
 pending-change databases. The candidate must complete a 60-second supervised health probation
-before promotion. A failed candidate is removed, the server snapshot is restored when applicable,
-the prior runtime resumes, and that exact immutable release fingerprint is quarantined from another
-in-app install attempt.
+within the shared 195-second launcher deadline before promotion. Every protocol-2 runtime marker
+contains SHA-512 hashes for the executable, application archive, PocketBase, `better-sqlite3`, and
+Koffi; the catalog binds the marker hash, and both native and TypeScript recovery paths verify the
+marker plus those files. A failed candidate is removed, the server snapshot is restored when
+applicable, the prior runtime resumes, and that exact immutable `tag@commit` fingerprint is retained
+in a bounded quarantine history rather than blocking a different commit at the same version.
+
+If restart preparation fails after server or client teardown begins, Relay restarts through the
+stable supervisor so the current runtime and its services return without accepting an incomplete
+candidate. Server restoration keeps the displaced live-data tree until the journal is complete and
+the activated catalog proves the intended build is current; interrupted cleanup is retried on the
+next launcher start.
 
 **Settings > About > Recovery** is the normal operator surface. Only a freshly reauthenticated Owner
 can roll back or repair. A server rollback snapshots the version being left before restoring the

@@ -150,10 +150,11 @@ The same validated response retains the release title, Markdown body, publicatio
 and immutable state for the in-app release-notes reader. Settings reads a schema-validated,
 atomically written `release-notes.json` cache from the Electron user-data directory before starting
 a background refresh of GitHub's fixed release-history endpoint. The cache holds at most ten stable
-releases, bounds every field and the complete response, preserves immutable entries by version, and
-persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again.
-An offline or malformed refresh leaves the last valid cache readable and cannot affect update
-discovery or installation.
+releases, bounds every field and the complete response, and keeps its serialized file at or below
+512 KiB by retaining the newest entries that fit. It preserves immutable entries by version and
+persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again. An
+offline or malformed refresh leaves the last valid cache readable and cannot affect update discovery
+or installation.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **Review
@@ -197,9 +198,11 @@ Packaged Windows x64 installations use the stable `%LOCALAPPDATA%\Relay\Relay.ex
 native recovery supervisor. Recovery protocol 2 stores one current runtime, one temporary update
 candidate, and the three most recently healthy runtimes under `%LOCALAPPDATA%\Relay\Runtime`.
 `state.ini` binds every retained build to its version, immutable release tag and commit, runtime
-SHA-512, installer SHA-256 when known, data-compatibility epochs, install time, health, and server
-snapshot. The launcher starts a runtime only when its marker matches that catalog identity and the
-path remains inside the managed runtime root.
+marker SHA-512, installer SHA-256 when known, data-compatibility epochs, install time, health, and
+server snapshot. A protocol-2 marker independently binds SHA-512 hashes for `Relay.exe`, `app.asar`,
+PocketBase, `better-sqlite3`, and Koffi. The launcher starts a runtime only when the marker hash,
+every launch-critical file, and the catalog identity agree and the path remains inside the managed
+runtime root.
 
 An update becomes a recovery transaction before Relay restarts. Server mode first stops
 PocketBase and server-owned services, then copies the stopped `data` directory into a complete,
@@ -207,14 +210,18 @@ privately permissioned snapshot under the Electron user-data `RecoverySnapshots`
 mode checkpoints both local SQLite stores so the cache and pending mutation queue remain intact.
 The launcher then starts the candidate in a restricted probation run: Relay must finish local
 startup, mount the renderer, keep the relevant local data plane healthy for at least 60 seconds,
-and write a transaction-bound receipt. PocketBase is placed in a Windows kill-on-close Job Object
-and automatic app/process recovery is disabled during probation so a crash reaches the supervisor.
+and write a transaction-bound receipt. The application and native launcher share a 120-second
+startup deadline, 60-second probation duration, and 195-second supervisor timeout. PocketBase is
+placed in a Windows kill-on-close Job Object and automatic app/process recovery is disabled during
+probation so a crash reaches the supervisor.
 
 A healthy candidate is promoted atomically and the former current build becomes the newest retained
 rollback target. A failed, exited, or wedged candidate gets at most two probation attempts. The
 launcher restores the stopped pre-update server snapshot when applicable, removes the candidate
 from the catalog, resumes the prior current runtime, and quarantines that exact `tag@commit`
-fingerprint from in-app installation until a different release is published. Old runtime and
+fingerprint in a bounded history so a different commit remains eligible. A restored server's
+displaced data is removed only after the journal is complete and the activated catalog proves the
+intended build is current; an interrupted cleanup is retried at launcher startup. Old runtime and
 snapshot directories are removed only when they are not referenced by the strict catalog and no
 update or recovery request is active.
 

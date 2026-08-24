@@ -288,6 +288,25 @@ try {
     throw 'Relay bootstrap did not repair a runtime with a missing executable.'
   }
 
+  $currentAppAsar = Join-Path (Join-Path $runtimeVersionsRoot $ExpectedBuildId) 'resources\app.asar'
+  $expectedAppAsarHash = (Get-FileHash -LiteralPath $currentAppAsar -Algorithm SHA512).Hash
+  $corruptStream = [IO.File]::Open(
+    $currentAppAsar,
+    [IO.FileMode]::Append,
+    [IO.FileAccess]::Write,
+    [IO.FileShare]::None
+  )
+  try {
+    $corruptStream.WriteByte(0)
+  }
+  finally {
+    $corruptStream.Dispose()
+  }
+  $contentRepairPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+  if ((Get-FileHash -LiteralPath $currentAppAsar -Algorithm SHA512).Hash -ne $expectedAppAsarHash) {
+    throw 'Relay bootstrap did not repair content corruption beyond the PE header.'
+  }
+
   $brokenCurrentBuildId = 'smoke-broken-current'
   $brokenCurrentRuntime = Join-Path $runtimeVersionsRoot $brokenCurrentBuildId
   New-Item -ItemType Directory -Path $brokenCurrentRuntime -Force | Out-Null
@@ -335,6 +354,7 @@ try {
     BuildId = $ExpectedBuildId
     PreviousBuildId = $ExpectedPreviousBuildId
     CorruptRuntimeRepaired = $true
+    ContentCorruptionRepaired = $true
     MissingExecutableRepaired = $true
     BrokenCurrentPreservedPrevious = $true
     ConcurrentPreparation = $true
@@ -347,6 +367,7 @@ try {
     CurrentReusePreparationMs = $currentReusePreparationMs
     CurrentRepairPreparationMs = $currentRepairPreparationMs
     ExecutableRepairPreparationMs = $executableRepairPreparationMs
+    ContentRepairPreparationMs = $contentRepairPreparationMs
     Launcher = $launcherPath
     DataUnchanged = $true
   } | ConvertTo-Json

@@ -111,6 +111,7 @@ describe('release update handlers', () => {
     check.mockResolvedValue({
       currentVersion: '1.0.0',
       latestVersion: '1.1.0',
+      targetCommitish: '0123456789abcdef0123456789abcdef01234567',
       updateAvailable: true,
       installable: true,
       assetSizeBytes: 140_000_000,
@@ -151,6 +152,7 @@ describe('release update handlers', () => {
       data: {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: '0123456789abcdef0123456789abcdef01234567',
         updateAvailable: true,
         installable: true,
         assetSizeBytes: 140_000_000,
@@ -177,6 +179,7 @@ describe('release update handlers', () => {
       data: {
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
+        targetCommitish: '0123456789abcdef0123456789abcdef01234567',
         updateAvailable: true,
         installable: false,
         assetSizeBytes: 140_000_000,

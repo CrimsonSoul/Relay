@@ -27,6 +27,8 @@ import {
   type RecoveryBuildRecord,
 } from './RecoveryCatalog';
 import { writeRecoveryUpdateRequest, type RecoveryUpdateRequest } from './RecoveryUpdateRequest';
+import type { PrepareRecoveryRestartResult } from './RecoveryRestartCoordinator';
+import { readRecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
@@ -70,7 +72,7 @@ export type ReleaseUpdateManagerOptions = {
     request: RecoveryUpdateRequest,
     createPrivateDirectory: (path: string) => unknown | Promise<unknown>,
   ) => Promise<string>;
-  prepareRecoveryRestart?: (transactionId: string) => Promise<boolean>;
+  prepareRecoveryRestart?: (transactionId: string) => Promise<PrepareRecoveryRestartResult>;
   now?: () => Date;
   relaunch?: (options: { execPath: string }) => void;
   quit?: () => void;
@@ -215,26 +217,6 @@ async function resolveManagedRoot(
   }
 }
 
-function readMarkerValues(text: string): Map<string, string> {
-  const values = new Map<string, string>();
-  let inRelaySection = false;
-  for (const rawLine of text.split(/\r?\n/u)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line.startsWith('[') && line.endsWith(']')) {
-      inRelaySection = line === '[Relay]';
-      continue;
-    }
-    if (!inRelaySection) continue;
-    const separator = line.indexOf('=');
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    if (!values.has(key)) values.set(key, value);
-  }
-  return values;
-}
-
 async function readCurrentRecoveryBuild(
   execPath: string,
   currentVersion: string,
@@ -242,9 +224,9 @@ async function readCurrentRecoveryBuild(
 ): Promise<RecoveryBuildRecord> {
   const runtimeDirectory = dirname(execPath);
   const buildId = runtimeDirectory.slice(runtimeDirectory.lastIndexOf(sep) + 1);
-  const marker = readMarkerValues(
-    await readFile(join(runtimeDirectory, '.relay-runtime-ready'), 'utf8'),
-  );
+  const verifiedMarker = await readRecoveryRuntimeMarker(runtimeDirectory);
+  if (!verifiedMarker) throw new Error('Current Relay runtime marker was invalid');
+  const marker = verifiedMarker.relay;
   const recoveryProtocol = Number(marker.get('protocol'));
   const serverDataEpoch = Number(marker.get('serverDataEpoch') ?? '1');
   const clientDataEpoch = Number(marker.get('clientDataEpoch') ?? '1');
@@ -254,7 +236,7 @@ async function readCurrentRecoveryBuild(
     version: currentVersion,
     releaseTag: `v${currentVersion}`,
     targetCommitish: marker.get('targetCommitish') ?? inferredCommit,
-    runtimeSha512: marker.get('payloadHash') ?? '',
+    runtimeSha512: verifiedMarker.runtimeSha512,
     installerSha256: marker.get('installerSha256') || null,
     recoveryProtocol,
     serverDataEpoch,
@@ -266,6 +248,7 @@ async function readCurrentRecoveryBuild(
   if (
     marker.get('buildId') !== buildId ||
     marker.get('executable') !== INSTALLER_NAME ||
+    (recoveryProtocol === 2 && !verifiedMarker.contentVerified) ||
     !isRecoveryBuildRecord(record)
   ) {
     throw new Error('Current Relay runtime did not have verified recovery metadata');
@@ -386,7 +369,7 @@ export class ReleaseUpdateManager {
       createPrivateDirectory: options.createPrivateDirectory ?? createWindowsPrivateDirectory,
       getInstallationMode: options.getInstallationMode ?? (() => 'unconfigured'),
       writeRecoveryRequest: options.writeRecoveryRequest ?? writeRecoveryUpdateRequest,
-      prepareRecoveryRestart: options.prepareRecoveryRestart ?? (async () => true),
+      prepareRecoveryRestart: options.prepareRecoveryRestart ?? (async () => 'ready'),
       now: options.now ?? (() => new Date()),
       relaunch: options.relaunch ?? (() => undefined),
       quit: options.quit ?? (() => undefined),
@@ -436,9 +419,10 @@ export class ReleaseUpdateManager {
 
     const managedRoot = await this.supportedManagedRoot();
     const supportsInstallation = Boolean(managedRoot);
-    const releaseQuarantined = managedRoot
-      ? await this.isReleaseQuarantined(managedRoot, check.latestVersion)
-      : false;
+    const releaseQuarantined =
+      managedRoot && check.targetCommitish
+        ? await this.isReleaseQuarantined(managedRoot, check.latestVersion, check.targetCommitish)
+        : false;
 
     this.publish({
       phase: 'available',
@@ -590,12 +574,20 @@ export class ReleaseUpdateManager {
       this.fail('restart-unavailable');
       return false;
     }
-    if (
-      !this.recoveryTransactionId ||
-      !(await this.options.prepareRecoveryRestart(this.recoveryTransactionId))
-    ) {
+    if (!this.recoveryTransactionId) {
       this.fail('restart-unavailable');
       return false;
+    }
+
+    const preparation = await this.options.prepareRecoveryRestart(this.recoveryTransactionId);
+    if (preparation === 'unchanged') {
+      this.fail('restart-unavailable');
+      return false;
+    }
+    if (preparation === 'restart-current') {
+      this.options.relaunch({ execPath: managedRoot.stableLauncher });
+      this.options.quit();
+      return true;
     }
 
     this.options.relaunch({ execPath: managedRoot.stableLauncher });
@@ -761,7 +753,11 @@ export class ReleaseUpdateManager {
     return resolveManagedRoot(this.options.localAppData, this.options.execPath);
   }
 
-  private async isReleaseQuarantined(managedRoot: ManagedRoot, version: string): Promise<boolean> {
+  private async isReleaseQuarantined(
+    managedRoot: ManagedRoot,
+    version: string,
+    targetCommitish: string,
+  ): Promise<boolean> {
     const statePath = join(managedRoot.realRoot, 'state.ini');
     try {
       const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
@@ -774,11 +770,7 @@ export class ReleaseUpdateManager {
         return false;
       }
       const catalog = parseRecoveryCatalog(await readFile(resolvedStatePath, 'utf8'));
-      return (
-        catalog?.failedReleaseFingerprints.some((fingerprint) =>
-          fingerprint.startsWith(`v${version}@`),
-        ) ?? false
-      );
+      return catalog?.failedReleaseFingerprints.includes(`v${version}@${targetCommitish}`) ?? false;
     } catch {
       return false;
     }

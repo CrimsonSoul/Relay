@@ -16,6 +16,10 @@
 !define RELAY_RELEASES_URL "https://github.com/CrimsonSoul/Relay/releases"
 !define RELAY_INNER_EXECUTABLE "Relay.exe"
 !define RELAY_RUNTIME_MARKER ".relay-runtime-ready"
+!define RELAY_APP_ASAR "resources\app.asar"
+!define RELAY_POCKETBASE_EXECUTABLE "resources\pocketbase\win32-x64\pocketbase.exe"
+!define RELAY_BETTER_SQLITE3_NATIVE "resources\app.asar.unpacked\node_modules\better-sqlite3\build\Release\better_sqlite3.node"
+!define RELAY_KOFFI_NATIVE "resources\app.asar.unpacked\node_modules\@koromix\koffi-win32-x64\win32_x64\koffi.node"
 !define RELAY_BUILD_ID_FIRST_CHARSET "abcdefghijklmnopqrstuvwxyz0123456789"
 !define RELAY_BUILD_ID_CHARSET "abcdefghijklmnopqrstuvwxyz0123456789._-"
 
@@ -29,6 +33,50 @@ Var RelayContractBaseLength
 Var RelayContractDevicePrefix
 Var RelayContractDeviceSuffix
 Var RelayContractUuidCharacter
+Var RelayContractIntegrityExpected
+Var RelayContractIntegrityActual
+Var RelayContractIntegrityLength
+Var RelayContractIntegrityFiltered
+Var RelayContractIntegrityFileResult
+
+!macro RelayVerifyRuntimeFile ROOT MARKER KEY RELATIVE_PATH RESULT
+  StrCpy ${RESULT} "0"
+  ReadINIStr $RelayContractIntegrityExpected "${MARKER}" "Integrity" "${KEY}"
+  StrLen $RelayContractIntegrityLength $RelayContractIntegrityExpected
+  ${StrFilter} "$RelayContractIntegrityExpected" "" "0123456789abcdef" "" $RelayContractIntegrityFiltered
+  ${If} $RelayContractIntegrityLength == 128
+  ${AndIf} $RelayContractIntegrityFiltered == $RelayContractIntegrityExpected
+  ${AndIf} ${FileExists} "${ROOT}\${RELATIVE_PATH}"
+    ${StdUtils.HashFile} $RelayContractIntegrityActual "SHA2-512" "${ROOT}\${RELATIVE_PATH}"
+    ${If} $RelayContractIntegrityActual == $RelayContractIntegrityExpected
+      StrCpy ${RESULT} "1"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro RelayVerifyRuntimeContent ROOT MARKER RESULT
+  StrCpy ${RESULT} "1"
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "executableSha512" "${RELAY_INNER_EXECUTABLE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "appAsarSha512" "${RELAY_APP_ASAR}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "pocketbaseSha512" "${RELAY_POCKETBASE_EXECUTABLE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "betterSqlite3Sha512" "${RELAY_BETTER_SQLITE3_NATIVE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+  !insertmacro RelayVerifyRuntimeFile "${ROOT}" "${MARKER}" "koffiSha512" "${RELAY_KOFFI_NATIVE}" $RelayContractIntegrityFileResult
+  ${If} $RelayContractIntegrityFileResult != "1"
+    StrCpy ${RESULT} "0"
+  ${EndIf}
+!macroend
 
 !macro RelayValidateBuildId VALUE RESULT
   StrCpy ${RESULT} "0"

@@ -83,6 +83,16 @@ describe('RecoveryCatalog', () => {
     expect(() => serializeRecoveryCatalog(malformed)).toThrow(TypeError);
   });
 
+  it('bounds retained failed-release fingerprints', () => {
+    const oversized = catalog();
+    oversized.failedReleaseFingerprints = Array.from(
+      { length: 17 },
+      (_, index) => `v1.0.${index}@${index.toString(16).padStart(40, '0')}`,
+    );
+
+    expect(() => serializeRecoveryCatalog(oversized)).toThrow(TypeError);
+  });
+
   it.each([
     ['a path-like build ID', 'current=..\\outside'],
     ['an unknown retained build', 'previous2=r1-9999999999999999'],

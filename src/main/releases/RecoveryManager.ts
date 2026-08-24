@@ -18,6 +18,7 @@ import {
   writeRecoveryRollbackRequest,
   type RecoveryRollbackRequest,
 } from './RecoveryRollbackRequest';
+import { readRecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
 
 const MAX_CATALOG_BYTES = 128 * 1_024;
 const MAX_MARKER_BYTES = 32 * 1_024;
@@ -162,13 +163,15 @@ async function isVerifiedRuntime(
     ) {
       return false;
     }
-    const marker = parseIniSection(await readFile(markerPath, 'utf8'), 'Relay');
+    const verifiedMarker = await readRecoveryRuntimeMarker(requestedDirectory);
+    const marker = verifiedMarker?.relay;
     return Boolean(
       marker &&
+      verifiedMarker?.contentVerified &&
       marker.get('protocol') === '2' &&
       marker.get('buildId') === record.buildId &&
       marker.get('executable') === 'Relay.exe' &&
-      marker.get('payloadHash') === record.runtimeSha512 &&
+      verifiedMarker.runtimeSha512 === record.runtimeSha512 &&
       marker.get('version') === record.version &&
       marker.get('releaseTag') === record.releaseTag &&
       marker.get('targetCommitish') === record.targetCommitish &&

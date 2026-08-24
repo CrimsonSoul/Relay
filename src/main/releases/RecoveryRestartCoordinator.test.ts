@@ -48,7 +48,7 @@ describe('RecoveryRestartCoordinator', () => {
         },
         completeRequest,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe('ready');
 
     expect(order).toEqual(['stop', 'snapshot']);
     expect(completeRequest).toHaveBeenCalledWith(
@@ -77,7 +77,7 @@ describe('RecoveryRestartCoordinator', () => {
         },
         completeRequest,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe('ready');
 
     expect(checkpointClient).toHaveBeenCalledOnce();
     expect(completeRequest).toHaveBeenCalledWith(request.transactionId, null);
@@ -98,7 +98,56 @@ describe('RecoveryRestartCoordinator', () => {
         }),
         completeRequest: async () => request,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe('unchanged');
     expect(stopServer).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      'snapshot creation',
+      { createServerSnapshot: async () => Promise.reject(new Error('copy failed')) },
+    ],
+    ['request commit', { completeRequest: async () => Promise.reject(new Error('write failed')) }],
+  ])(
+    'requests a current-runtime relaunch after server %s fails post-stop',
+    async (_label, override) => {
+      await expect(
+        prepareRecoveryRestart({
+          transactionId: request.transactionId,
+          getRequest: async () => request,
+          getCurrentMode: () => 'server',
+          stopServer: async () => undefined,
+          checkpointClient: () => true,
+          createServerSnapshot: async () => ({
+            snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          }),
+          completeRequest: async () => request,
+          ...override,
+        }),
+      ).resolves.toBe('restart-current');
+    },
+  );
+
+  it.each([
+    ['checkpoint', { checkpointClient: async () => false }],
+    ['request commit', { completeRequest: async () => Promise.reject(new Error('write failed')) }],
+  ])(
+    'requests a current-runtime relaunch after client %s fails post-teardown',
+    async (_label, override) => {
+      await expect(
+        prepareRecoveryRestart({
+          transactionId: request.transactionId,
+          getRequest: async () => ({ ...request, mode: 'client' }),
+          getCurrentMode: () => 'client',
+          stopServer: async () => undefined,
+          checkpointClient: async () => true,
+          createServerSnapshot: async () => ({
+            snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          }),
+          completeRequest: async () => request,
+          ...override,
+        }),
+      ).resolves.toBe('restart-current');
+    },
+  );
 });

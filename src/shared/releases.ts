@@ -12,6 +12,7 @@ export const RELAY_RELEASES_URL = 'https://github.com/CrimsonSoul/Relay/releases
 export type RelayUpdateCheck = {
   currentVersion: string;
   latestVersion: string;
+  targetCommitish: string | null;
   updateAvailable: boolean;
   installable: boolean;
   assetSizeBytes: number | null;

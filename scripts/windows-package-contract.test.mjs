@@ -144,6 +144,23 @@ describe('Windows package contract', () => {
     ).toEqual({ path: '/cache/nsis/makensis', env: { NSISDIR: '/cache/nsis' } });
   });
 
+  it('derives launcher supervision and application probation from one timing contract', () => {
+    const timing = JSON.parse(readFileSync('build/windows/recovery-timing.json', 'utf8'));
+    const packageSource = readFileSync('scripts/package-windows.mjs', 'utf8');
+    const mainSource = readFileSync('src/main/index.ts', 'utf8');
+
+    expect(timing).toEqual({
+      startupDeadlineMs: 120_000,
+      probationDurationMs: 60_000,
+      shutdownOverheadMs: 15_000,
+      supervisorTimeoutMs: 195_000,
+    });
+    expect(packageSource).toContain('RELAY_PROBATION_DURATION_MS');
+    expect(packageSource).toContain('RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS');
+    expect(mainSource).toContain('recoveryTiming.probationDurationMs');
+    expect(mainSource).toContain('recoveryTiming.startupDeadlineMs');
+  });
+
   it('accepts only bounded path-safe build identifiers', () => {
     expect(validateBuildId('r1-7e97e422')).toBe('r1-7e97e422');
 

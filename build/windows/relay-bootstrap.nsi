@@ -35,6 +35,14 @@ Var RelayMarkerProtocol
 Var RelayMarkerBuildId
 Var RelayMarkerExecutable
 Var RelayMarkerPayloadHash
+Var RelayMarkerHash
+Var RelayExecutableHash
+Var RelayAppAsarHash
+Var RelayPocketBaseHash
+Var RelayBetterSqlite3Hash
+Var RelayKoffiHash
+Var RelayContentIntegrity
+Var RelayCatalogRuntimeHash
 Var RelayBannerVisible
 Var RelayFailureMessage
 Var RelayLockHandle
@@ -106,6 +114,13 @@ Var RelayRepairCatalogHealth
     ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
     ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
     ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
+    StrCpy $RelayMarkerHash ""
+    StrCpy $RelayContentIntegrity "0"
+    ${If} $RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
+      ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+      !insertmacro RelayVerifyRuntimeContent "$RelayRuntimeRoot\${BUILD_ID}" "$RelayMarker" $RelayContentIntegrity
+      ReadINIStr $RelayCatalogRuntimeHash "$RelayState" "Build.${BUILD_ID}" "runtimeSha512"
+    ${EndIf}
     StrLen $RelayPayloadHashLength $RelayMarkerPayloadHash
     ${StrFilter} "$RelayMarkerPayloadHash" "" "0123456789abcdefABCDEF" "" $RelayPayloadHashFiltered
     StrCpy $RelayResult "0"
@@ -114,13 +129,24 @@ Var RelayRepairCatalogHealth
       StrCpy $RelayResult $1
     ${EndIf}
     ${If} $RelayMarkerProtocol == "${RELAY_LEGACY_STATE_PROTOCOL}"
-    ${OrIf} $RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
       ${If} $RelayMarkerBuildId == "${BUILD_ID}"
       ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
       ${AndIf} $RelayPayloadHashLength == 128
       ${AndIf} $RelayPayloadHashFiltered == $RelayMarkerPayloadHash
       ${AndIf} $RelayResult != "0"
         StrCpy ${RESULT} "1"
+      ${EndIf}
+    ${ElseIf} $RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
+      ${If} $RelayMarkerBuildId == "${BUILD_ID}"
+      ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
+      ${AndIf} $RelayPayloadHashLength == 128
+      ${AndIf} $RelayPayloadHashFiltered == $RelayMarkerPayloadHash
+      ${AndIf} $RelayContentIntegrity == "1"
+      ${AndIf} $RelayResult != "0"
+        ${If} $RelayCatalogRuntimeHash == ""
+        ${OrIf} $RelayCatalogRuntimeHash == $RelayMarkerHash
+          StrCpy ${RESULT} "1"
+        ${EndIf}
       ${EndIf}
     ${EndIf}
   ${EndIf}
@@ -346,7 +372,6 @@ Section
       ${OrIf} $RelayRepairCatalogVersion != "${RELAY_BUILD_VERSION}"
       ${OrIf} $RelayRepairCatalogReleaseTag != "v${RELAY_BUILD_VERSION}"
       ${OrIf} $RelayRepairCatalogCommit != "${RELAY_TARGET_COMMITISH}"
-      ${OrIf} $RelayRepairCatalogRuntimeHash != "${APP_64_HASH}"
       ${OrIf} $RelayRepairCatalogProtocol != "${RELAY_RECOVERY_PROTOCOL}"
       ${OrIf} $RelayRepairCatalogServerEpoch != "${RELAY_SERVER_DATA_EPOCH}"
       ${OrIf} $RelayRepairCatalogClientEpoch != "${RELAY_CLIENT_DATA_EPOCH}"
@@ -390,6 +415,8 @@ Section
   ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
   ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
   ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
+  ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+  !insertmacro RelayVerifyRuntimeContent "$RelayFinalRuntime" "$RelayMarker" $RelayContentIntegrity
   StrCpy $RelayResult "0"
   ${If} ${FileExists} "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}"
     System::Call 'kernel32::GetBinaryTypeW(w "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}", *i .r0) i.r1'
@@ -399,8 +426,12 @@ Section
   ${AndIf} $RelayMarkerBuildId == "${RELAY_BUILD_ID}"
   ${AndIf} $RelayMarkerExecutable == "${APP_EXECUTABLE_FILENAME}"
   ${AndIf} $RelayMarkerPayloadHash == "${APP_64_HASH}"
+  ${AndIf} $RelayContentIntegrity == "1"
   ${AndIf} $RelayResult != "0"
-    Goto RuntimeReady
+    ${If} $RelayRepairOnly != "${RELAY_REPAIR_ONLY_ARGUMENT}"
+    ${OrIf} $RelayRepairCatalogRuntimeHash == $RelayMarkerHash
+      Goto RuntimeReady
+    ${EndIf}
   ${EndIf}
 
   Banner::show /NOUNLOAD "Preparing Relay..."
@@ -447,6 +478,11 @@ Section
   ${EndIf}
 
   StrCpy $RelayMarker "$RelayStaging\${RELAY_RUNTIME_MARKER}"
+  ${StdUtils.HashFile} $RelayExecutableHash "SHA2-512" "$RelayStaging\${APP_EXECUTABLE_FILENAME}"
+  ${StdUtils.HashFile} $RelayAppAsarHash "SHA2-512" "$RelayStaging\${RELAY_APP_ASAR}"
+  ${StdUtils.HashFile} $RelayPocketBaseHash "SHA2-512" "$RelayStaging\${RELAY_POCKETBASE_EXECUTABLE}"
+  ${StdUtils.HashFile} $RelayBetterSqlite3Hash "SHA2-512" "$RelayStaging\${RELAY_BETTER_SQLITE3_NATIVE}"
+  ${StdUtils.HashFile} $RelayKoffiHash "SHA2-512" "$RelayStaging\${RELAY_KOFFI_NATIVE}"
   ClearErrors
   WriteINIStr "$RelayMarker" "Relay" "protocol" "${RELAY_RECOVERY_STATE_PROTOCOL}"
   WriteINIStr "$RelayMarker" "Relay" "buildId" "${RELAY_BUILD_ID}"
@@ -458,9 +494,25 @@ Section
   WriteINIStr "$RelayMarker" "Relay" "serverDataEpoch" "${RELAY_SERVER_DATA_EPOCH}"
   WriteINIStr "$RelayMarker" "Relay" "clientDataEpoch" "${RELAY_CLIENT_DATA_EPOCH}"
   WriteINIStr "$RelayMarker" "Relay" "installedAt" "${RELAY_PACKAGED_AT}"
+  WriteINIStr "$RelayMarker" "Integrity" "executableSha512" "$RelayExecutableHash"
+  WriteINIStr "$RelayMarker" "Integrity" "appAsarSha512" "$RelayAppAsarHash"
+  WriteINIStr "$RelayMarker" "Integrity" "pocketbaseSha512" "$RelayPocketBaseHash"
+  WriteINIStr "$RelayMarker" "Integrity" "betterSqlite3Sha512" "$RelayBetterSqlite3Hash"
+  WriteINIStr "$RelayMarker" "Integrity" "koffiSha512" "$RelayKoffiHash"
   IfErrors 0 +3
     StrCpy $RelayFailureMessage "Relay could not finalize the new runtime."
     Goto BootstrapFailed
+  !insertmacro RelayVerifyRuntimeContent "$RelayStaging" "$RelayMarker" $RelayContentIntegrity
+  ${If} $RelayContentIntegrity != "1"
+    StrCpy $RelayFailureMessage "Relay could not verify the extracted runtime contents."
+    Goto BootstrapFailed
+  ${EndIf}
+  ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+  ${If} $RelayRepairOnly == "${RELAY_REPAIR_ONLY_ARGUMENT}"
+  ${AndIf} $RelayRepairCatalogRuntimeHash != $RelayMarkerHash
+    StrCpy $RelayFailureMessage "Relay rejected changed retained-build runtime contents."
+    Goto BootstrapFailed
+  ${EndIf}
   !insertmacro RelayHarnessFail ".fail-after-marker" "Relay harness stopped after marker creation."
 
   System::Call 'kernel32::GetFileAttributesW(w "$RelayStaging") i.r0'
@@ -602,7 +654,7 @@ ActivateFreshRecoveryState:
   WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "version" "${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "releaseTag" "v${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "targetCommitish" "${RELAY_TARGET_COMMITISH}"
-  WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "runtimeSha512" "${APP_64_HASH}"
+  WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "runtimeSha512" "$RelayMarkerHash"
   WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "installerSha256" ""
   WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "recoveryProtocol" "${RELAY_RECOVERY_PROTOCOL}"
   WriteINIStr "$RelayStateNew" "Build.${RELAY_BUILD_ID}" "serverDataEpoch" "${RELAY_SERVER_DATA_EPOCH}"
@@ -634,7 +686,7 @@ WritePreparedReceipt:
   WriteINIStr "$RelayPreparedNew" "Prepared" "version" "${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayPreparedNew" "Prepared" "releaseTag" "v${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayPreparedNew" "Prepared" "targetCommitish" "${RELAY_TARGET_COMMITISH}"
-  WriteINIStr "$RelayPreparedNew" "Prepared" "runtimeSha512" "${APP_64_HASH}"
+  WriteINIStr "$RelayPreparedNew" "Prepared" "runtimeSha512" "$RelayMarkerHash"
   WriteINIStr "$RelayPreparedNew" "Prepared" "installerSha256" "$RelayRequestInstallerHash"
   WriteINIStr "$RelayPreparedNew" "Prepared" "recoveryProtocol" "${RELAY_RECOVERY_PROTOCOL}"
   WriteINIStr "$RelayPreparedNew" "Prepared" "serverDataEpoch" "${RELAY_SERVER_DATA_EPOCH}"
@@ -659,7 +711,7 @@ WriteRepairReceipt:
   WriteINIStr "$RelayRepairResultNew" "RepairResult" "buildId" "${RELAY_BUILD_ID}"
   WriteINIStr "$RelayRepairResultNew" "RepairResult" "version" "${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayRepairResultNew" "RepairResult" "targetCommitish" "${RELAY_TARGET_COMMITISH}"
-  WriteINIStr "$RelayRepairResultNew" "RepairResult" "runtimeSha512" "${APP_64_HASH}"
+  WriteINIStr "$RelayRepairResultNew" "RepairResult" "runtimeSha512" "$RelayMarkerHash"
   WriteINIStr "$RelayRepairResultNew" "RepairResult" "installerSha256" "$RelayRepairInstallerHash"
   WriteINIStr "$RelayRepairResultNew" "RepairResult" "completedAt" "$RelayRepairRequestedAt"
   IfErrors 0 +3

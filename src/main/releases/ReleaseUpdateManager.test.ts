@@ -57,6 +57,7 @@ function updateCheck(overrides: Partial<RelayUpdateCheck> = {}): RelayUpdateChec
   return {
     currentVersion: CURRENT_VERSION,
     latestVersion: '1.1.0',
+    targetCommitish: release().targetCommitish,
     updateAvailable: true,
     installable: true,
     assetSizeBytes: 140_000_000,
@@ -198,6 +199,44 @@ describe('ReleaseUpdateManager', () => {
       failureCode: 'release-quarantined',
     });
     expect(resolveLatestInstallable).not.toHaveBeenCalled();
+  });
+
+  it('does not quarantine a different commit published under the same version', async () => {
+    const currentBuild: RecoveryBuildRecord = {
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512: 'c'.repeat(128),
+      installerSha256: null,
+      recoveryProtocol: 1,
+      serverDataEpoch: 1,
+      clientDataEpoch: 1,
+      installedAt: '2026-08-24T15:00:00.000Z',
+      health: 'healthy',
+      rollbackSnapshotId: null,
+    };
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 3,
+        currentBuildId: currentBuild.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [currentBuild],
+        transaction: null,
+        failedReleaseFingerprints: [`v1.1.0@${'f'.repeat(40)}`],
+      }),
+    );
+    const updates = manager();
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'available',
+      latestVersion: '1.1.0',
+      installable: true,
+      failureCode: null,
+    });
   });
 
   it('requires separate download, install, and restart actions', async () => {
@@ -453,7 +492,7 @@ describe('ReleaseUpdateManager', () => {
   });
 
   it('finishes the recovery checkpoint before handing control to the stable launcher', async () => {
-    const prepareRecoveryRestart = vi.fn(async () => true);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
     const updates = manager({ prepareRecoveryRestart });
     await updates.noteCheck(updateCheck());
     await updates.download();
@@ -468,7 +507,7 @@ describe('ReleaseUpdateManager', () => {
   });
 
   it('keeps Relay open when the recovery checkpoint cannot be completed', async () => {
-    const updates = manager({ prepareRecoveryRestart: async () => false });
+    const updates = manager({ prepareRecoveryRestart: async () => 'unchanged' });
     await updates.noteCheck(updateCheck());
     await updates.download();
     await updates.install();
@@ -481,6 +520,18 @@ describe('ReleaseUpdateManager', () => {
       phase: 'error',
       failureCode: 'restart-unavailable',
     });
+  });
+
+  it('relaunches through the stable supervisor when restart preparation fails after teardown', async () => {
+    const updates = manager({ prepareRecoveryRestart: async () => 'restart-current' });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+
+    expect(relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
+    expect(quit).toHaveBeenCalledOnce();
   });
 
   it('discards a staged older release when discovery advances', async () => {

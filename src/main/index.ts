@@ -9,6 +9,7 @@ import {
   powerSaveBlocker,
 } from 'electron';
 import { dirname, join } from 'node:path';
+import recoveryTiming from '../../build/windows/recovery-timing.json';
 import { loggers } from './logger';
 import { AppConfig, type RelayConfig, type ServerConfig } from './config/AppConfig';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -239,8 +240,8 @@ async function initializeRecoveryProbation(
   });
   let mode: RelayConfig['mode'] | 'unconfigured' = 'unconfigured';
   const controller = createRecoveryProbationController({
-    durationMs: 60_000,
-    startupDeadlineMs: 120_000,
+    durationMs: recoveryTiming.probationDurationMs,
+    startupDeadlineMs: recoveryTiming.startupDeadlineMs,
     isHealthy: () => isRecoveryProbationHealthy(mode),
     writeHealthyReceipt: (durationMs) => writeRecoveryProbationReceipt(context, durationMs),
     complete: (healthy) => {

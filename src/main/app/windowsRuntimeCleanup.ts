@@ -198,16 +198,20 @@ async function readPreservedBuilds(
 ): Promise<Set<string> | null> {
   const preserved = new Set([executingBuild]);
   try {
-    const state = readRelayIni(await readFile(join(root, 'state.ini'), 'utf8'));
+    const stateText = await readFile(join(root, 'state.ini'), 'utf8');
+    const state = readRelayIni(stateText);
     if ((state.protocol !== '1' && state.protocol !== '2') || !isBuildId(state.current)) {
       return null;
     }
+    if (await hasPendingRecoveryRequest(root)) return null;
+    if (state.protocol === '2') {
+      const catalog = parseRecoveryCatalog(stateText);
+      if (!catalog || catalog.transaction) return null;
+      for (const build of catalog.builds) preserved.add(build.buildId);
+      return preserved;
+    }
     preserved.add(state.current);
-    const referencedBuilds =
-      state.protocol === '1'
-        ? [state.previous]
-        : [state.candidate, state.previous0, state.previous1, state.previous2];
-    for (const buildId of referencedBuilds) {
+    for (const buildId of [state.previous]) {
       if (!buildId) continue;
       if (!isBuildId(buildId)) return null;
       preserved.add(buildId);
@@ -325,7 +329,12 @@ async function hasPendingRecoveryRequest(root: string): Promise<boolean> {
     ) {
       return true;
     }
-    for (const name of ['update-request.ini', 'rollback-request.ini', 'repair-request.ini']) {
+    for (const name of [
+      'update-request.ini',
+      'rollback-request.ini',
+      'repair-request.ini',
+      'prepared.ini',
+    ]) {
       try {
         await lstat(join(realRecoveryRoot, name));
         return true;

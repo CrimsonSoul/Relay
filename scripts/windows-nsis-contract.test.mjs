@@ -52,6 +52,7 @@ describe('Windows NSIS launcher contract', () => {
   it('supervises a protocol-2 candidate twice and promotes it only after a matching health receipt', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
+    const timing = JSON.parse(read('build/windows/recovery-timing.json'));
 
     expect(source).toContain('$RelayRoot\\Recovery\\prepared.ini');
     expect(source).toContain('$RelayRoot\\Recovery\\probation-result.ini');
@@ -61,7 +62,11 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain('Function RelayRunProbation');
     expect(source).toContain('CreateProcessW');
     expect(source).toContain('WaitForSingleObject');
-    expect(source).toContain('130000');
+    expect(source).toContain('${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS}');
+    expect(source).not.toContain('130000');
+    expect(timing.supervisorTimeoutMs).toBeGreaterThanOrEqual(
+      timing.startupDeadlineMs + timing.probationDurationMs + timing.shutdownOverheadMs,
+    );
     expect(source).toContain('TerminateProcess');
     expect(source).toContain('$RelayProbationAttempts >= 2');
     expect(source).toContain('PromoteCandidate:');
@@ -144,11 +149,12 @@ describe('Windows NSIS launcher contract', () => {
 
   it('binds every protocol-2 runtime marker to its catalog identity before launch', () => {
     const source = read('build/windows/relay-launcher.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
     expect(source).toContain(
       'ReadINIStr $RelayCatalogRuntimeHash "$RelayState" "Build.${BUILD_ID}" "runtimeSha512"',
     );
-    expect(source).toContain('$RelayMarkerPayloadHash == $RelayCatalogRuntimeHash');
+    expect(source).toContain('$RelayMarkerHash == $RelayCatalogRuntimeHash');
     expect(source).toContain('$RelayMarkerVersion == $RelayCatalogVersion');
     expect(source).toContain('$RelayMarkerCommit == $RelayCatalogCommit');
     expect(source).toContain('$RelayMarkerServerEpoch == $RelayCatalogServerEpoch');
@@ -156,7 +162,60 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain('$RelayCatalogHealth == "healthy"');
     expect(source).toContain('$RelayCatalogHealth == "candidate"');
     expect(source).toContain('$RelayPreparedBuild == "${BUILD_ID}"');
-    expect(source).toContain('$RelayMarkerPayloadHash == $RelayPreparedRuntimeHash');
+    expect(source).toContain('$RelayMarkerHash == $RelayPreparedRuntimeHash');
+    expect(source).toContain('!insertmacro RelayVerifyRuntimeContent');
+    expect(contract).toContain('resources\\app.asar');
+    expect(contract).toContain('resources\\pocketbase\\win32-x64\\pocketbase.exe');
+    expect(contract).toContain('better-sqlite3\\build\\Release\\better_sqlite3.node');
+    expect(contract).toContain('@koromix\\koffi-win32-x64\\win32_x64\\koffi.node');
+    expect(contract.match(/StdUtils\.HashFile/g)?.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('retains a bounded deduplicated history of failed immutable releases', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain(
+      'ReadINIStr $RelayFailedFingerprints "$RelayState" "Relay" "failedReleaseFingerprints"',
+    );
+    expect(source).toContain('$RelayFailedFingerprintCount < 16');
+    expect(source).toContain('$RelayExistingFingerprint != $RelayFailedFingerprint');
+    expect(source).toContain(
+      'WriteINIStr "$RelayStateNew" "Relay" "failedReleaseFingerprints" "$RelayNewFailedFingerprints"',
+    );
+  });
+
+  it('removes displaced server data only after catalog activation and retries one journaled cleanup', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const manualCommit = source.indexOf(
+      'System::Call \'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0\'',
+      source.indexOf('HandleManualRollback:'),
+    );
+    const manualFinalize = source.indexOf('Call RelayFinalizeServerRestore', manualCommit);
+
+    expect(source).toContain('Function RelayFinalizeServerRestore');
+    expect(source).toContain('Function RelayCleanupCompletedServerRestore');
+    expect(source).toContain('RMDir /r "$RelayFailedData"');
+    expect(source).toContain('$RelayRestoreJournalTransaction');
+    expect(source).toContain(
+      'WriteINIStr "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"',
+    );
+    expect(source).toContain('$RelayRestoreJournalExpectedCurrent != $RelayCatalogCurrent');
+    expect(source).toContain('$RelayRestoreJournalPhase != "restored"');
+    expect(manualFinalize).toBeGreaterThan(manualCommit);
+    const startupCleanup = source.indexOf('Call RelayCleanupCompletedServerRestore');
+    expect(startupCleanup).toBeLessThan(
+      source.indexOf('ReadINIStr $RelayProtocol "$RelayState" "Relay" "protocol"', startupCleanup),
+    );
+  });
+
+  it('uses the shared probation timing contract in the native supervisor', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain('!ifndef RELAY_PROBATION_DURATION_MS');
+    expect(source).toContain('$RelayResultDuration < ${RELAY_PROBATION_DURATION_MS}');
+    expect(source).toContain(
+      'WaitForSingleObject(p $RelayProbationProcessHandle, i ${RELAY_PROBATION_SUPERVISOR_TIMEOUT_MS})',
+    );
   });
 
   it('requires a protocol-1 completion marker for the selected build', () => {
@@ -200,7 +259,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('WriteINIStr "$RelayMarker" "Relay" "executable"');
     expect(source).toContain('ReadINIStr $RelayMarkerProtocol "$RelayMarker" "Relay" "protocol"');
     expect(source).toContain('CreateDirectoryW');
-    expect(source).not.toContain('RMDir /r');
+    expect(source).not.toContain('RMDir /r "$RelayStaging"');
+    expect(source).not.toContain('RMDir /r "$RelayFinalRuntime"');
   });
 
   it('binds an in-app preparation to matching recovery metadata without promoting it', () => {
@@ -233,10 +293,10 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('$RelayRepairTarget == "$RelayPrevious1"');
     expect(source).toContain('$RelayRepairTarget == "$RelayPrevious2"');
     expect(source).toContain('"Build.$RelayRepairTarget" "targetCommitish"');
-    expect(source).toContain('$RelayRepairCatalogRuntimeHash != "${APP_64_HASH}"');
+    expect(source).toContain('$RelayRepairCatalogRuntimeHash != $RelayMarkerHash');
     expect(source).toContain('$RelayRepairInstallerHash != "$RelaySelfHash"');
     expect(source).toContain('WriteRepairReceipt:');
-    expect(source).toContain('"RepairResult" "runtimeSha512" "${APP_64_HASH}"');
+    expect(source).toContain('"RepairResult" "runtimeSha512" "$RelayMarkerHash"');
     expect(source.indexOf('Goto WriteRepairReceipt')).toBeLessThan(
       source.indexOf('Relay could not prepare its stable launcher.'),
     );
@@ -297,6 +357,21 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(binaryCheck).toBeLessThan(markerWrite);
     expect(source).toContain('The prepared Relay executable is not a valid Windows binary.');
     expect(source.match(/GetBinaryTypeW/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('records and revalidates content hashes for every critical runtime component', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const contract = read('build/windows/include/relay-runtime-contract.nsh');
+
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "executableSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "appAsarSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "pocketbaseSha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "betterSqlite3Sha512"');
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "koffiSha512"');
+    expect(source).toContain('${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"');
+    expect(source).toContain('"runtimeSha512" "$RelayMarkerHash"');
+    expect(source).toContain('!insertmacro RelayVerifyRuntimeContent');
+    expect(contract).toContain('!macro RelayVerifyRuntimeContent');
   });
 
   it('keeps the last usable fallback when the recorded current runtime is damaged', () => {
@@ -405,7 +480,7 @@ describe('Windows NSIS bootstrap contract', () => {
     const bootstrap = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain("-ArgumentList '/relay-prepare-only'");
-    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(7);
+    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(8);
     expect(source).toContain('LastWriteTimeUtc.Ticks');
     expect(source).toContain("GetFolderPath('Desktop')");
     expect(source).toContain("GetFolderPath('StartMenu')");
@@ -434,6 +509,8 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('Wait-ProcessWithTimeout');
     expect(source).toContain('relay-build-id.txt');
     expect(source).toContain('BrokenCurrentPreservedPrevious');
+    expect(source).toContain('ContentCorruptionRepaired');
+    expect(source).toContain('resources\\app.asar');
     expect(source).toContain('actualCurrent=');
     expect(source).toContain('actualPrevious=');
     expect(bootstrap).toContain('$RelayRoot\\bootstrap-error.ini');

@@ -182,29 +182,33 @@ unreferenced build records invalidate recovery rather than widening the trusted 
 
 Runtime roots, recovery metadata, repair staging, and server snapshots are re-resolved beneath their
 fixed app-owned parents. Relay rejects symbolic links, reparse points, non-direct children, changed
-executables, and incomplete markers. A runtime marker must agree with the catalog on build ID,
-SHA-512, version, tag, full commit, recovery protocol, and server/client data epochs. Catalog and
-request updates use private directories plus write-then-rename activation; the native launcher
-serializes mutation with a no-sharing lock. Cleanup fails closed when the catalog, roots, marker, or
-transaction state cannot be proved and never deletes a referenced runtime or snapshot.
+executables, and incomplete markers. A protocol-2 runtime marker records SHA-512 hashes for the
+executable, application archive, PocketBase, `better-sqlite3`, and Koffi; its own SHA-512 must agree
+with the catalog along with build ID, version, tag, full commit, recovery protocol, and server/client
+data epochs. Catalog and request updates use private directories plus write-then-rename activation;
+the native launcher serializes mutation with a no-sharing lock. Cleanup fails closed when the
+catalog, roots, marker, or transaction state cannot be proved and never deletes a referenced runtime
+or snapshot.
 
 Server snapshots are taken only after PocketBase and server-owned services stop. Relay rejects
 redirected or unsupported entries, scans the source and copy, requires free space for twice the data
 size plus a 512 MiB margin, writes the completion marker last, and atomically activates the snapshot
 directory. Native restoration validates the transaction and source identity, journals the swap, and
-keeps the displaced live directory until the authoritative snapshot has become live. Client mode
-does not rewind shared server state; it closes successfully checkpointed local cache and pending
-mutation databases before the runtime transition. A rollback is blocked when either data epoch
-differs.
+keeps the displaced live directory until the authoritative snapshot has become live and the
+activated catalog proves the intended runtime is current. Only then may the launcher remove the
+displaced tree; a retained journal retries that cleanup after interruption. Client mode does not
+rewind shared server state; it closes successfully checkpointed local cache and pending mutation
+databases before the runtime transition. A rollback is blocked when either data epoch differs.
 
 Candidate health is established by the stable launcher, not by the candidate declaring itself
 current. The candidate receipt is accepted only for the active transaction after renderer mount,
 local startup completion, and 60 seconds of relevant data-plane health. The native supervisor uses
-a bounded process wait and at most two attempts. During probation Relay disables its normal crash
-watchdog, window reload, and process auto-relaunch behavior; packaged Windows PocketBase runs in a
-kill-on-close Job Object so a failed candidate cannot leave the embedded server behind. A failed
-candidate's exact immutable `tag@commit` fingerprint is suppressed by future update checks rather
-than suppressing an unrelated later release with the same version comparison context.
+a shared 195-second process deadline and at most two attempts. During probation Relay disables its
+normal crash watchdog, window reload, and process auto-relaunch behavior; packaged Windows
+PocketBase runs in a kill-on-close Job Object so a failed candidate cannot leave the embedded server
+behind. A failed candidate's exact immutable `tag@commit` fingerprint is retained in a bounded
+history and suppressed by future update checks rather than suppressing an unrelated later commit at
+the same semantic version.
 
 Reading recovery state still requires trusted-sender IPC. Repair and rollback additionally require
 an active Owner session, fresh password reauthentication, bounded validated input, and the shared
