@@ -154,7 +154,16 @@ function Invoke-Preparation {
     throw "Boundary harness unexpectedly succeeded: $Path"
   }
   if (-not $ExpectFailure -and $process.ExitCode -ne 0) {
-    throw "Boundary harness exited with code $($process.ExitCode): $Path"
+    $bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'
+    $failureMessage = 'No bootstrap failure record was written.'
+    if (Test-Path -LiteralPath $bootstrapErrorPath) {
+      $match = Select-String -LiteralPath $bootstrapErrorPath -Pattern '^message=(.+)$' |
+        Select-Object -First 1
+      if ($null -ne $match) {
+        $failureMessage = $match.Matches[0].Groups[1].Value
+      }
+    }
+    throw "Boundary bootstrap failure: $failureMessage (exit code $($process.ExitCode); artifact $Path)"
   }
 }
 
@@ -269,7 +278,7 @@ try {
   Remove-FailedBuildResidue
   Invoke-Preparation -Path $artifactPath
   if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
-      (Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
+      (Get-IniValue -Path $statePath -Key 'previous0') -ne $ExpectedPreviousBuildId) {
     throw 'Harness could not activate the current build after injected failures.'
   }
   Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId

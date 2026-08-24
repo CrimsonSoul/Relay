@@ -624,6 +624,10 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('Wait-RelayRuntimeQuiescence');
     expect(harness).toContain('[StringComparison]::OrdinalIgnoreCase');
     expect(harness).toContain('Get-CimInstance Win32_Process');
+    expect(harness).toContain("$bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'");
+    expect(harness).toContain('Boundary bootstrap failure:');
+    expect(harness).toContain("Get-IniValue -Path $statePath -Key 'previous0'");
+    expect(harness).not.toContain("Get-IniValue -Path $statePath -Key 'previous')");
     expect(bootstrap).not.toMatch(/bootstrap-root|install-dir/i);
   });
 });
