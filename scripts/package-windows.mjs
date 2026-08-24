@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, win32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   renderBuildDefines,
@@ -160,14 +160,26 @@ export function resolveHostNativeDependencyRestore() {
   return ['rebuild', 'better-sqlite3', '--build-from-source'];
 }
 
-async function runNpm(args) {
-  const npmExecPath = process.env.npm_execpath;
-  if (npmExecPath) {
-    await run(process.execPath, [npmExecPath, ...args]);
-    return;
+export function resolveNpmInvocation({
+  nodePath = process.execPath,
+  npmExecPath,
+  platform = process.platform,
+} = {}) {
+  if (npmExecPath) return { argsPrefix: [npmExecPath], command: nodePath };
+  if (platform === 'win32') {
+    return {
+      argsPrefix: [win32.join(win32.dirname(nodePath), 'node_modules', 'npm', 'bin', 'npm-cli.js')],
+      command: nodePath,
+    };
   }
+  return { argsPrefix: [], command: 'npm' };
+}
 
-  await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', args);
+async function runNpm(args) {
+  const { argsPrefix, command } = resolveNpmInvocation({
+    npmExecPath: process.env.npm_execpath,
+  });
+  await run(command, [...argsPrefix, ...args]);
 }
 
 async function stageWindowsNativeDependencies() {

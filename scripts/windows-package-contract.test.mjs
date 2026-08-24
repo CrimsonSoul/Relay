@@ -11,6 +11,7 @@ import {
   resolveElectronBuilderArgs,
   resolveHostNativeDependencyRestore,
   resolveMakensisCommand,
+  resolveNpmInvocation,
   resolvePackageMode,
   resolveWindowsNativeDependencyInstall,
 } from './package-windows.mjs';
@@ -78,6 +79,23 @@ describe('Windows package contract', () => {
     expect(() => resolveWindowsNativeDependencyInstall('latest', 'darwin')).toThrow(
       /Koffi version/i,
     );
+  });
+
+  it('runs the bundled npm CLI when a direct Windows invocation has no npm_execpath', () => {
+    const nodePath = String.raw`C:\hostedtoolcache\windows\node\22.23.0\x64\node.exe`;
+
+    expect(
+      resolveNpmInvocation({
+        nodePath,
+        npmExecPath: undefined,
+        platform: 'win32',
+      }),
+    ).toEqual({
+      argsPrefix: [
+        String.raw`C:\hostedtoolcache\windows\node\22.23.0\x64\node_modules\npm\bin\npm-cli.js`,
+      ],
+      command: nodePath,
+    });
   });
 
   it('restores host native dependencies after Windows packaging', () => {
