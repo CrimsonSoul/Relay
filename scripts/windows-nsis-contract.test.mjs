@@ -660,6 +660,10 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain("$bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'");
     expect(harness).toContain('Boundary bootstrap failure:');
     expect(harness).toContain('probation-diagnostic.ini');
+    expect(harness).toContain('function Get-DirectoryEntrySummary');
+    expect(harness).toContain('function Get-FileContentSummary');
+    expect(harness).toContain('Get-DirectoryEntrySummary -Path $recoveryRoot');
+    expect(harness).toContain('Get-FileContentSummary -Path $probationDiagnosticPath');
     expect(harness).toContain('Stable launcher exited with code $($launcher.ExitCode):');
     expect(harness).toContain('probationDiagnostic=$probationDiagnostic');
     expect(harness).toContain("Get-IniValue -Path $statePath -Key 'previous0'");

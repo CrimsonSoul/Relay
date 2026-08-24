@@ -313,6 +313,24 @@ function Assert-PreviousActive {
   }
 }
 
+function Get-DirectoryEntrySummary {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return '<missing>'
+  }
+  return (Get-ChildItem -LiteralPath $Path -Force | Select-Object -ExpandProperty Name) -join ','
+}
+
+function Get-FileContentSummary {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return '<missing>'
+  }
+  return (Get-Content -LiteralPath $Path) -join '; '
+}
+
 function Invoke-StableFallback {
   param(
     [Parameter(Mandatory = $true)][string]$ExpectedActiveBuildId,
@@ -334,21 +352,9 @@ function Invoke-StableFallback {
     $launcher = Start-Process -FilePath $launcherPath -PassThru
     Wait-ProcessWithTimeout -Process $launcher -Context 'Stable fallback launch' -TimeoutSeconds 60
     if ($launcher.ExitCode -ne 0) {
-      $recoveryFiles = if (Test-Path -LiteralPath $recoveryRoot) {
-        (Get-ChildItem -LiteralPath $recoveryRoot -Force | Select-Object -ExpandProperty Name) -join ','
-      } else {
-        '<missing>'
-      }
-      $stateSummary = if (Test-Path -LiteralPath $statePath) {
-        (Get-Content -LiteralPath $statePath) -join '; '
-      } else {
-        '<missing>'
-      }
-      $probationDiagnostic = if (Test-Path -LiteralPath $probationDiagnosticPath) {
-        (Get-Content -LiteralPath $probationDiagnosticPath) -join '; '
-      } else {
-        '<missing>'
-      }
+      $recoveryFiles = Get-DirectoryEntrySummary -Path $recoveryRoot
+      $stateSummary = Get-FileContentSummary -Path $statePath
+      $probationDiagnostic = Get-FileContentSummary -Path $probationDiagnosticPath
       throw "Stable launcher exited with code $($launcher.ExitCode): context=$Context; recoveryFiles=$recoveryFiles; probationDiagnostic=$probationDiagnostic; state=$stateSummary"
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
@@ -364,17 +370,9 @@ function Invoke-StableFallback {
     Wait-RelayRuntimeQuiescence -ExecutablePath $runtimeExecutable
     $actualActiveBuildId = Get-IniValue -Path $statePath -Key 'current'
     if ($actualActiveBuildId -ne $ExpectedActiveBuildId) {
-      $recoveryFiles = if (Test-Path -LiteralPath $recoveryRoot) {
-        (Get-ChildItem -LiteralPath $recoveryRoot -Force | Select-Object -ExpandProperty Name) -join ','
-      } else {
-        '<missing>'
-      }
-      $stateSummary = (Get-Content -LiteralPath $statePath) -join '; '
-      $probationDiagnostic = if (Test-Path -LiteralPath $probationDiagnosticPath) {
-        (Get-Content -LiteralPath $probationDiagnosticPath) -join '; '
-      } else {
-        '<missing>'
-      }
+      $recoveryFiles = Get-DirectoryEntrySummary -Path $recoveryRoot
+      $stateSummary = Get-FileContentSummary -Path $statePath
+      $probationDiagnostic = Get-FileContentSummary -Path $probationDiagnosticPath
       throw "Stable launcher test observed an unexpected active build: context=$Context; expected=$ExpectedActiveBuildId; actual=$actualActiveBuildId; recoveryFiles=$recoveryFiles; probationDiagnostic=$probationDiagnostic; state=$stateSummary"
     }
     Write-Information "Boundary stable launch verified: context=$Context; active=$actualActiveBuildId" -InformationAction Continue
