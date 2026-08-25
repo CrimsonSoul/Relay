@@ -69,7 +69,7 @@ Section
       ClearErrors
       FileOpen $2 "$1\Relay\startup-benchmark\$0.complete" w
       ${IfNot} ${Errors}
-        FileWrite $2 "complete"
+        FileWrite $2 "${RELAY_FIXTURE_BUILD_ID}"
         FileClose $2
       ${EndIf}
     ${EndIf}
