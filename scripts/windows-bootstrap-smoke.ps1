@@ -8,7 +8,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ExpectedPreviousBuildId,
   [Parameter(Mandatory = $true)]
-  [string]$ExpectedTargetCommitish
+  [string]$ExpectedTargetCommitish,
+  [Parameter(Mandatory = $true)]
+  [int]$ExpectedLauncherProtocolExitCode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +25,9 @@ if ($ExpectedBuildId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or
 }
 if ($ExpectedTargetCommitish -notmatch '^[0-9a-f]{40}$') {
   throw 'ExpectedTargetCommitish must be a full lowercase Git commit ID.'
+}
+if ($ExpectedLauncherProtocolExitCode -lt 1 -or $ExpectedLauncherProtocolExitCode -gt 255) {
+  throw 'ExpectedLauncherProtocolExitCode must be a process exit code from 1 through 255.'
 }
 
 $artifactPath = (Resolve-Path -LiteralPath $Artifact).Path
@@ -76,6 +81,14 @@ function Wait-ProcessWithTimeout {
     throw "$Context timed out after $TimeoutSeconds seconds."
   }
   $Process.WaitForExit()
+}
+
+function Get-LauncherProtocolExitCode {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $process = Start-Process -FilePath $Path -ArgumentList '--relay-launcher-probe' -PassThru
+  Wait-ProcessWithTimeout -Process $process -Context "Relay launcher probe: $Path" -TimeoutSeconds 15
+  return $process.ExitCode
 }
 
 function Wait-BootstrapLockHeld {
@@ -328,6 +341,7 @@ try {
     throw 'Previous bootstrap did not activate the expected build.'
   }
   Assert-EmbeddedBuildIdentity -BuildId $ExpectedPreviousBuildId
+  $previousLauncherProtocolExitCode = Get-LauncherProtocolExitCode -Path $launcherPath
 
   $previousMarkerPath = Get-RuntimeMarkerPath -BuildId $ExpectedPreviousBuildId
   if (-not (Test-Path -LiteralPath $previousMarkerPath)) {
@@ -357,6 +371,10 @@ try {
     }
     else {
       $currentFirstPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+    }
+    $launcherProtocolExitCode = Get-LauncherProtocolExitCode -Path $launcherPath
+    if ($launcherProtocolExitCode -ne $ExpectedLauncherProtocolExitCode) {
+      throw "Current bootstrap retained launcher protocol exit code $launcherProtocolExitCode; expected $ExpectedLauncherProtocolExitCode."
     }
   }
   finally {
@@ -525,6 +543,9 @@ try {
     DifferentBuildContentionRejected = $true
     UpdateWhilePreviousLocked = $true
     ProtectedRecoveryPreparation = $protectedRecoveryPreparation
+    PreviousLauncherProtocolExitCode = $previousLauncherProtocolExitCode
+    LauncherProtocolExitCode = $launcherProtocolExitCode
+    LauncherGenerationUpgraded = $previousLauncherProtocolExitCode -ne $launcherProtocolExitCode
     PreviousFirstPreparationMs = $previousFirstPreparationMs
     PreviousReusePreparationMs = $previousReusePreparationMs
     ConcurrentPreparationMs = $concurrentPreparationMs

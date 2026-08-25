@@ -211,6 +211,7 @@ jobs:
         env:
           RELAY_EXPECTED_BUILD_ID: r1-${{ inputs.source-sha }}
           RELAY_EXPECTED_TARGET_COMMITISH: ${{ inputs.source-sha }}
+          RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE: 103
           RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
         run: >-
           ./scripts/windows-bootstrap-smoke.ps1
@@ -219,6 +220,7 @@ jobs:
           -ExpectedBuildId "$env:RELAY_EXPECTED_BUILD_ID"
           -ExpectedPreviousBuildId "${{ steps.previous.outputs.build_id }}"
           -ExpectedTargetCommitish "$env:RELAY_EXPECTED_TARGET_COMMITISH"
+          -ExpectedLauncherProtocolExitCode "$env:RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE"
 
       - name: Benchmark packaged startup paths
         shell: pwsh

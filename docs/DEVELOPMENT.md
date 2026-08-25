@@ -119,6 +119,12 @@ next launcher start. Promotion and automatic rollback write a transaction-bound 
 before activating `state.ini`. On startup the launcher proves that intent against the terminal
 catalog state and clears an interrupted update request before retrying displaced-data cleanup.
 
+The stable launcher has its own compatibility generation, separate from the recovery-state protocol.
+Any launcher behavior change must advance both the launcher generation and its probe exit code so a
+new bootstrap cannot mistake an older executable for the required supervisor. The packaged Windows
+smoke test installs the previous artifact first, then requires the current installer to expose the
+expected launcher probe before accepting the prepared update.
+
 **Settings > About > Recovery** is the normal operator surface. Only a freshly reauthenticated Owner
 can roll back or repair. A server rollback snapshots the version being left before restoring the
 selected version's snapshot, while client rollback preserves the cache and pending queue. Data epoch
@@ -133,11 +139,12 @@ update, using the executing recovery-capable runtime as the only initial predece
 runtime without complete recovery identity is never guessed into the catalog. Therefore rollback
 choices appear only after at least one recovery-aware update has passed probation.
 
-The first release containing this updater must still be downloaded and installed manually by users
-running an older build. Subsequent compatible releases can use the in-app flow. Relay Web does not
-receive the desktop updater bridge. A failed or malformed GitHub response remains silent so update
-discovery cannot interrupt normal operations or erase a previously confirmed update; failures after
-an explicit updater action are shown with a recovery path.
+Builds that predate the desktop updater must still be upgraded manually. Once a build has the manual
+update flow, a newer installer replaces any incompatible stable launcher before staging its runtime,
+so the in-app update can cross launcher generations safely. Relay Web does not receive the desktop
+updater bridge. A failed or malformed GitHub response remains silent so update discovery cannot
+interrupt normal operations or erase a previously confirmed update; failures after an explicit
+updater action are shown with a recovery path.
 
 Focused renderer coverage for this flow must verify the dynamic release label, later-version
 replacement, persistence after a failed refresh, one notification per version, the recoverable
