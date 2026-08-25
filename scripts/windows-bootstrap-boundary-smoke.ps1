@@ -364,6 +364,10 @@ function Invoke-StableFallback {
     if (-not (Test-Path -LiteralPath $exitMarker)) {
       throw 'Stable launcher did not start and cleanly exit Relay.'
     }
+    $launchedBuildId = [IO.File]::ReadAllText($exitMarker).Trim()
+    if ($launchedBuildId -ne $ExpectedActiveBuildId) {
+      throw "Stable launcher started build $launchedBuildId instead of $ExpectedActiveBuildId."
+    }
     $runtimeExecutable = Join-Path (
       Join-Path $runtimeVersionsRoot $ExpectedActiveBuildId
     ) 'Relay.exe'
@@ -410,6 +414,27 @@ try {
   Invoke-Preparation -Path $previousArtifactPath
   Assert-PreviousActive
   Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId -Context 'initial-previous'
+
+  [IO.File]::WriteAllText(
+    $statePath,
+    (@(
+      '[Relay]'
+      'protocol=1'
+      "current=$ExpectedPreviousBuildId"
+      ''
+    ) -join "`r`n"),
+    [Text.UTF8Encoding]::new($false)
+  )
+  Invoke-Preparation -Path $artifactPath
+  if ((Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'current') -ne $ExpectedBuildId -or
+      (Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'previous') -ne $ExpectedPreviousBuildId) {
+    throw 'Legacy preparation did not retain the former current build.'
+  }
+  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId -Context 'legacy-protocol-1-upgrade'
+
+  Remove-Item -LiteralPath $rootPath -Recurse -Force
+  Invoke-Preparation -Path $previousArtifactPath
+  Assert-PreviousActive
 
   foreach ($failurePoint in $failurePoints) {
     Remove-FailedBuildResidue
@@ -465,6 +490,7 @@ try {
     BuildId = $ExpectedBuildId
     PreviousBuildId = $ExpectedPreviousBuildId
     BoundaryFailuresPreservedFallback = $failurePoints.Count
+    LegacyProtocolUpgradeLaunch = $true
     StableFallbackExecuted = $true
     FinalActivationSucceeded = $true
     DataUnchanged = $true
