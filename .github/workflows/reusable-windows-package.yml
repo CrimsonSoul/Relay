@@ -210,6 +210,7 @@ jobs:
         shell: pwsh
         env:
           RELAY_EXPECTED_BUILD_ID: r1-${{ inputs.source-sha }}
+          RELAY_EXPECTED_TARGET_COMMITISH: ${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
         run: >-
           ./scripts/windows-bootstrap-smoke.ps1
@@ -217,6 +218,7 @@ jobs:
           -PreviousArtifact "$env:RUNNER_TEMP\RelayPrevious.exe"
           -ExpectedBuildId "$env:RELAY_EXPECTED_BUILD_ID"
           -ExpectedPreviousBuildId "${{ steps.previous.outputs.build_id }}"
+          -ExpectedTargetCommitish "$env:RELAY_EXPECTED_TARGET_COMMITISH"
 
       - name: Benchmark packaged startup paths
         shell: pwsh
