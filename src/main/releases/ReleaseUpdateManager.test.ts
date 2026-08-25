@@ -499,6 +499,16 @@ describe('ReleaseUpdateManager', () => {
     );
   });
 
+  it('keeps the restart handoff safe when no runtime callback is configured', async () => {
+    const updates = manager({ restartApp: undefined });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).not.toHaveBeenCalled();
+  });
+
   it('keeps Relay open when the recovery checkpoint cannot be completed', async () => {
     const updates = manager({ prepareRecoveryRestart: async () => 'unchanged' });
     await updates.noteCheck(updateCheck());
