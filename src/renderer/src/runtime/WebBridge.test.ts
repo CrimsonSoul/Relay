@@ -117,6 +117,7 @@ describe('WebBridge', () => {
       'createBackup',
       'createPrivilegedPairingChallenge',
       'discoverServers',
+      'downloadKnowledgePdf',
       'generateWebApprovalCode',
       'getClientHostname',
       'getCloudStatus',
@@ -447,6 +448,39 @@ describe('WebBridge', () => {
     );
     const pdf = await bridge.getKnowledgePdf({ documentId: 'doc-1', checksum: 'a'.repeat(64) });
     expect(pdf.ok && new TextDecoder().decode(pdf.data)).toBe('%PDF-first!!');
+  });
+
+  it('downloads a checksum-verified Knowledge PDF with a safe version of its authored filename', async () => {
+    const actions = createBrowserActions();
+    const downloadBytes = vi.spyOn(actions, 'downloadBytes').mockReturnValue(true);
+    const checksum = 'a'.repeat(64);
+    const fetcher = vi.fn(
+      async () =>
+        new Response('%PDF-download!!', {
+          status: 200,
+          headers: { 'x-relay-checksum': checksum, 'x-relay-source': 'server' },
+        }),
+    );
+    const { request } = stubWebRequest(() => EMPTY_STATUS);
+    const bridge = createWebBridge(SESSION, { actions, request, fetcher });
+
+    await expect(
+      bridge.downloadKnowledgePdf({
+        documentId: 'doc-1',
+        checksum,
+        fileName: 'Ops: East*Recovery.pdf',
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      `/relay-api/v1/knowledge/pdf?documentId=doc-1&checksum=${checksum}`,
+      expect.objectContaining({ method: 'GET', credentials: 'same-origin' }),
+    );
+    expect(downloadBytes).toHaveBeenCalledWith(
+      expect.any(ArrayBuffer),
+      'Ops_ East_Recovery.pdf',
+      'application/pdf',
+    );
   });
 
   it('binds a single browser PDF upload to its replacement document', async () => {

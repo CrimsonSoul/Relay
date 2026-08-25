@@ -122,6 +122,10 @@
   flex-direction: column;
 }
 
+.cloud-status__providers-panel {
+  overflow-y: auto;
+}
+
 .cloud-status__section-heading > span:last-child {
   color: var(--color-text-tertiary);
   font-family: var(--font-family-mono);
@@ -139,7 +143,16 @@
   min-height: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  overflow-y: auto;
+  overflow: visible;
+}
+
+.cloud-status__portal-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cloud-status__provider-portals {
+  border-top: 1px solid var(--color-border-strong);
 }
 
 .cloud-status__workspace--overview .cloud-status-provider:nth-child(odd) {
@@ -163,6 +176,19 @@
 
 .cloud-status-provider--degraded {
   background: color-mix(in srgb, var(--color-warning-subtle) 62%, transparent);
+}
+
+.cloud-status-provider--portal {
+  background: var(--color-bg-surface-2);
+}
+
+.cloud-status-provider__signal--portal {
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+}
+
+.cloud-status-provider__state--portal {
+  color: var(--color-text-tertiary);
 }
 
 .cloud-status-provider__open {
@@ -613,6 +639,10 @@
   }
 
   .cloud-status__workspace--overview .cloud-status__provider-list {
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-status__portal-list {
     grid-template-columns: 1fr;
   }
 

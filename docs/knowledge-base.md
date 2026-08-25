@@ -30,6 +30,14 @@ Owner, Administrator, and Publisher accounts can open **Manage Wiki**, then **Ca
 
 Relay requires every active Wiki document to have a unique authored filename. Publication is rejected when another active document already uses that filename. Display titles do not need to be unique.
 
+## Download a document
+
+Every authenticated Wiki reader can download the open PDF from the reader toolbar. Relay downloads one document at a time only after an operator selects **Download**; it does not start automatic or bulk downloads.
+
+Relay Desktop opens a **Save As** dialog using the document's authored filename. The saved bytes pass through the same signature, size, and checksum checks as the reader, and an already verified desktop cache can supply the file while offline. Cancelling the dialog does not fetch or write a file.
+
+Relay Web uses the browser's normal download flow with the authored filename. The browser fetch stays on Relay's authenticated, same-origin PDF route and therefore requires an active online session.
+
 ## Upload queue and retention
 
 Relay resumes acknowledged upload work after temporary network or server failures instead of restarting the batch. **Pause all** preserves progress until **Resume all** is selected. **Discard upload** and **Cancel batch** remove incomplete server data once Relay can reconnect.

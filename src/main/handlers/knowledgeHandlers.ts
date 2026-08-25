@@ -64,6 +64,10 @@ export function setupKnowledgeHandlers(
     },
   );
 
+  ipcMain.handle(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF, async (event, request: unknown) =>
+    (await import('./knowledgeDownloadHandler')).downloadKnowledgePdf(event, request, getService),
+  );
+
   ipcMain.handle(
     IPC_CHANNELS.KNOWLEDGE_SEARCH,
     async (event, request: unknown): Promise<KnowledgeSearchResponse> => {

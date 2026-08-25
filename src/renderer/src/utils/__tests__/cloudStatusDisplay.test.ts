@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import {
+  DISPLAY_CLOUD_STATUS_PORTALS,
+  DISPLAY_CLOUD_STATUS_PORTAL_ORDER,
   DISPLAY_CLOUD_STATUS_PROVIDER_ORDER,
   aggregateCloudStatusForDisplay,
 } from '../cloudStatusDisplay';
@@ -33,6 +35,20 @@ function data(overrides: Partial<CloudStatusData> = {}): CloudStatusData {
 }
 
 describe('cloud status display aggregation', () => {
+  it('keeps sign-in portals separate from monitored provider data', () => {
+    const display = aggregateCloudStatusForDisplay(data());
+
+    expect(DISPLAY_CLOUD_STATUS_PORTAL_ORDER).toEqual(['equinix']);
+    expect(DISPLAY_CLOUD_STATUS_PORTALS.equinix).toEqual({
+      label: 'Equinix',
+      statusUrl: 'https://status.equinix.com/',
+      accessLabel: 'Sign-in required',
+    });
+    expect(DISPLAY_CLOUD_STATUS_PROVIDER_ORDER).not.toContain('equinix');
+    expect(display.providers).not.toHaveProperty('equinix');
+    expect(display.errors).not.toContainEqual(expect.objectContaining({ provider: 'equinix' }));
+  });
+
   it('deduplicates a Mist incident and unions affected regions in stable order', () => {
     const providers = emptyCloudStatusProviders();
     providers.mist_emea = [

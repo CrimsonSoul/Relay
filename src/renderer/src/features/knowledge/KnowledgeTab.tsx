@@ -317,7 +317,6 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
           <div className="knowledge-drawer__heading">
             <div className="knowledge-drawer__title">
               <span>{selectedDocument.category}</span>
-              <h1>{selectedDocument.displayTitle}</h1>
             </div>
             <div className="knowledge-drawer__actions">
               {canManage && (

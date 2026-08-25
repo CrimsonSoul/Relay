@@ -7,6 +7,11 @@ import {
   type CloudStatusProvider,
   type MistCloudStatusProvider,
 } from '@shared/ipc';
+export {
+  CLOUD_STATUS_PORTALS as DISPLAY_CLOUD_STATUS_PORTALS,
+  CLOUD_STATUS_PORTAL_ORDER as DISPLAY_CLOUD_STATUS_PORTAL_ORDER,
+  type CloudStatusPortalProvider as DisplayCloudStatusPortalProvider,
+} from '@shared/cloudStatusPortals';
 
 export const DISPLAY_CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',

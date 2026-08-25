@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
@@ -107,12 +107,11 @@ describe('CloudStatusTab', () => {
   });
 
   it('renders Dropbox and Proofpoint rows and keeps the combined Mist and Dynatrace rows', () => {
-    const { container } = render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    const monitored = screen.getByRole('region', { name: 'Provider overview' });
 
     expect(
-      Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
+      Array.from(monitored.querySelectorAll('.cloud-status-provider__name')).map(
         (node) => node.textContent,
       ),
     ).toEqual([
@@ -143,6 +142,26 @@ describe('CloudStatusTab', () => {
     expect(
       screen.getByRole('button', { name: 'View Dynatrace status details' }),
     ).toBeInTheDocument();
+  });
+
+  it('shows Equinix as a separate sign-in portal without changing monitored health', () => {
+    const refetch = vi.fn();
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={refetch} />);
+
+    const portals = screen.getByRole('region', { name: 'Provider portals' });
+    const equinix = within(portals).getByRole('button', {
+      name: 'Open Equinix status portal (sign-in required)',
+    });
+    expect(equinix).toHaveAccessibleDescription('Sign-in required Portal');
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(15);
+    expect(screen.getByText('across 15 monitored providers')).toBeInTheDocument();
+    expect(screen.getByTestId('status-bar')).toHaveTextContent('15 providers monitored');
+    expect(screen.queryByText(/16 providers monitored/i)).not.toBeInTheDocument();
+
+    fireEvent.click(equinix);
+
+    expect(openExternal).toHaveBeenCalledWith('https://status.equinix.com/');
+    expect(refetch).not.toHaveBeenCalled();
   });
 
   it('offers only the official status action for Juniper Mist', () => {

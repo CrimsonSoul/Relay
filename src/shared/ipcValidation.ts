@@ -27,6 +27,7 @@ import {
   normalizeKnowledgeSearchQuery,
   type KnowledgeSearchRequest,
 } from './knowledgeSearch';
+import { isKnowledgePdfDownloadFileName } from './knowledge';
 
 // ==================== Size Limits ====================
 const MAX_NAME = 500;
@@ -55,6 +56,10 @@ export const KnowledgePdfRequestSchema = z
     checksum: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .strict();
+
+export const KnowledgePdfDownloadRequestSchema = KnowledgePdfRequestSchema.extend({
+  fileName: z.string().refine(isKnowledgePdfDownloadFileName),
+}).strict();
 
 export const KnowledgeCoverRequestSchema = KnowledgePdfRequestSchema;
 

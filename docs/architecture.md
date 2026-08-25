@@ -294,6 +294,8 @@ Status presents fifteen rows: the original ten providers, Juniper Mist, Dynatrac
 CrowdStrike, and Dropbox. Mist details expose All, Global, EMEA, APAC, and Federal filters while
 preserving the single overview row and deduplicated All view.
 
+Equinix appears separately under **Provider portals** because its current status site requires sign-in. The fixed `https://status.equinix.com/` link is an operator-launched portal, not a sixteenth monitored provider. It does not enter snapshots, polling, refresh work, posture, feed errors, caching, counts, or cloud notifications. The desktop external-link handler allowlists only the exact portal hostname.
+
 Dropbox uses its credential-free official Atlassian Statuspage summary endpoint for the primary
 Dropbox service, not the separate Dropbox Sign page. Unresolved incidents follow the shared impact
 mapping, while a non-operational aggregate with no incident remains visible as a degradation rather
@@ -428,6 +430,7 @@ selected local PDF
   -> checksum validation and bounded extraction
   -> protected managed document
   -> metadata realtime + on-demand verified PDF/cover reads
+  -> explicit single-document download through the same verified bytes
 ```
 
 Upload coordination lives under `src/main/knowledge/`, with
@@ -439,8 +442,11 @@ and serves bounded passages from managed PDFs. Search failure disables search wi
 the authoritative library or document reader.
 
 Desktop PDF and cover caches are checksum-addressed, bounded, and disposable. They improve offline
-reading but never become a second document authority. Operator procedures and current limits live
-in `docs/knowledge-base.md`; file and trust controls live in `docs/SECURITY.md`.
+reading and can supply an explicit offline Desktop download, but they never become a second document
+authority. Desktop download requests cross a validated IPC channel and write only after a native
+**Save As** choice. Relay Web reuses the authenticated PDF route, verifies its checksum header, and
+creates a browser download without exposing storage URLs or credentials. Operator procedures and
+current limits live in `docs/knowledge-base.md`; file and trust controls live in `docs/SECURITY.md`.
 
 ## Relay Web Boundary
 
