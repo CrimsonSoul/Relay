@@ -29,8 +29,7 @@ type ResolveLatestInstallable = () => Promise<RelayInstallableRelease>;
 type DownloadAsset = NonNullable<ReleaseUpdateManagerOptions['downloadAsset']>;
 type ExtractInstaller = NonNullable<ReleaseUpdateManagerOptions['extractInstaller']>;
 type SpawnInstaller = NonNullable<ReleaseUpdateManagerOptions['spawnInstaller']>;
-type Relaunch = NonNullable<ReleaseUpdateManagerOptions['relaunch']>;
-type Quit = NonNullable<ReleaseUpdateManagerOptions['quit']>;
+type RestartApp = NonNullable<ReleaseUpdateManagerOptions['restartApp']>;
 type ManagerOverrides = Partial<Omit<ReleaseUpdateManagerOptions, 'service' | 'getCurrentVersion'>>;
 
 function asset(id: number, name: string, size: number, sha256: string): RelayInstallableAsset {
@@ -83,8 +82,7 @@ describe('ReleaseUpdateManager', () => {
   let downloadAsset: Mock<DownloadAsset>;
   let extractInstaller: Mock<ExtractInstaller>;
   let spawnInstaller: Mock<SpawnInstaller>;
-  let relaunch: Mock<Relaunch>;
-  let quit: Mock<Quit>;
+  let restartApp: Mock<RestartApp>;
 
   beforeEach(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'relay-update-manager-'));
@@ -118,8 +116,7 @@ describe('ReleaseUpdateManager', () => {
       return { bytes: INSTALLER.byteLength, sha256: INSTALLER_SHA256 };
     });
     spawnInstaller = vi.fn<SpawnInstaller>(async () => 0);
-    relaunch = vi.fn<Relaunch>();
-    quit = vi.fn<Quit>();
+    restartApp = vi.fn<RestartApp>();
   });
 
   afterEach(async () => {
@@ -138,8 +135,7 @@ describe('ReleaseUpdateManager', () => {
       downloadAsset,
       extractInstaller,
       spawnInstaller,
-      relaunch,
-      quit,
+      restartApp,
       createPrivateDirectory: (path: string) => mkdir(path, { recursive: false, mode: 0o700 }),
       ...overrides,
     });
@@ -156,7 +152,7 @@ describe('ReleaseUpdateManager', () => {
     expect(resolveLatestInstallable).not.toHaveBeenCalled();
     expect(downloadAsset).not.toHaveBeenCalled();
     expect(spawnInstaller).not.toHaveBeenCalled();
-    expect(relaunch).not.toHaveBeenCalled();
+    expect(restartApp).not.toHaveBeenCalled();
   });
 
   it('suppresses the exact immutable release after probation quarantines it', async () => {
@@ -277,12 +273,10 @@ describe('ReleaseUpdateManager', () => {
       targetInstallerSha256: INSTALLER_SHA256,
       mode: 'unconfigured',
     });
-    expect(relaunch).not.toHaveBeenCalled();
-    expect(quit).not.toHaveBeenCalled();
+    expect(restartApp).not.toHaveBeenCalled();
 
     await expect(updates.restart()).resolves.toBe(true);
-    expect(relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
-    expect(quit).toHaveBeenCalledOnce();
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
     expect(snapshots).toEqual(
       expect.arrayContaining([
         'available',
@@ -401,7 +395,7 @@ describe('ReleaseUpdateManager', () => {
       failureCode: 'install-failed',
     });
     expect(spawnInstaller).toHaveBeenCalledTimes(2);
-    expect(relaunch).not.toHaveBeenCalled();
+    expect(restartApp).not.toHaveBeenCalled();
   });
 
   it('removes a recovery request when the bootstrap cannot be started', async () => {
@@ -487,8 +481,7 @@ describe('ReleaseUpdateManager', () => {
     const duplicateRestart = updates.restart();
     expect(duplicateRestart).toBe(firstRestart);
     await expect(firstRestart).resolves.toBe(true);
-    expect(relaunch).toHaveBeenCalledOnce();
-    expect(quit).toHaveBeenCalledOnce();
+    expect(restartApp).toHaveBeenCalledOnce();
   });
 
   it('finishes the recovery checkpoint before handing control to the stable launcher', async () => {
@@ -502,8 +495,18 @@ describe('ReleaseUpdateManager', () => {
 
     expect(prepareRecoveryRestart).toHaveBeenCalledWith(expect.stringMatching(/^[0-9a-f-]{36}$/u));
     expect(prepareRecoveryRestart.mock.invocationCallOrder[0]).toBeLessThan(
-      relaunch.mock.invocationCallOrder[0]!,
+      restartApp.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it('keeps the restart handoff safe when no runtime callback is configured', async () => {
+    const updates = manager({ restartApp: undefined });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).not.toHaveBeenCalled();
   });
 
   it('keeps Relay open when the recovery checkpoint cannot be completed', async () => {
@@ -514,8 +517,7 @@ describe('ReleaseUpdateManager', () => {
 
     await expect(updates.restart()).resolves.toBe(false);
 
-    expect(relaunch).not.toHaveBeenCalled();
-    expect(quit).not.toHaveBeenCalled();
+    expect(restartApp).not.toHaveBeenCalled();
     expect(updates.snapshot()).toMatchObject({
       phase: 'error',
       failureCode: 'restart-unavailable',
@@ -530,8 +532,7 @@ describe('ReleaseUpdateManager', () => {
 
     await expect(updates.restart()).resolves.toBe(true);
 
-    expect(relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
-    expect(quit).toHaveBeenCalledOnce();
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
   });
 
   it('discards a staged older release when discovery advances', async () => {
@@ -688,8 +689,7 @@ describe('ReleaseUpdateManager', () => {
     await symlink(execPath, stableLauncher);
 
     await expect(updates.restart()).resolves.toBe(false);
-    expect(relaunch).not.toHaveBeenCalled();
-    expect(quit).not.toHaveBeenCalled();
+    expect(restartApp).not.toHaveBeenCalled();
     expect(updates.snapshot()).toMatchObject({
       phase: 'error',
       failureCode: 'restart-unavailable',
@@ -698,8 +698,7 @@ describe('ReleaseUpdateManager', () => {
     await rm(stableLauncher);
     await writeFile(stableLauncher, 'MZstable launcher restored');
     await expect(updates.restart()).resolves.toBe(true);
-    expect(relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
-    expect(quit).toHaveBeenCalledOnce();
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
   });
 
   it('removes only updater staging directories that have been abandoned for over 24 hours', async () => {

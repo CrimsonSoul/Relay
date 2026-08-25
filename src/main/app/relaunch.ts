@@ -17,6 +17,7 @@ export type AppQuitReason = string & Record<never, never>;
 type AppRelaunchOptions = {
   exitCode?: number;
   exitDelayMs?: number;
+  execPath?: string;
 };
 
 let relaunchInProgress = false;
@@ -142,9 +143,18 @@ export function requestAppRelaunch(
   const exitCode = options.exitCode ?? 0;
   const exitDelayMs = options.exitDelayMs ?? DEFAULT_EXIT_DELAY_MS;
 
-  loggers.main.error('Relaunching Relay', { reason, exitCode, exitDelayMs });
+  loggers.main.error('Relaunching Relay', {
+    reason,
+    exitCode,
+    exitDelayMs,
+    execPath: options.execPath,
+  });
   recordRelaunch(reason, exitCode);
-  app.relaunch();
+  if (options.execPath) {
+    app.relaunch({ execPath: options.execPath });
+  } else {
+    app.relaunch();
+  }
   app.quit();
 
   if (exitDelayMs <= 0) {

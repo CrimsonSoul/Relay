@@ -74,8 +74,7 @@ export type ReleaseUpdateManagerOptions = {
   ) => Promise<string>;
   prepareRecoveryRestart?: (transactionId: string) => Promise<PrepareRecoveryRestartResult>;
   now?: () => Date;
-  relaunch?: (options: { execPath: string }) => void;
-  quit?: () => void;
+  restartApp?: (execPath: string) => void;
 };
 
 type StagedUpdate = {
@@ -371,8 +370,7 @@ export class ReleaseUpdateManager {
       writeRecoveryRequest: options.writeRecoveryRequest ?? writeRecoveryUpdateRequest,
       prepareRecoveryRestart: options.prepareRecoveryRestart ?? (async () => 'ready'),
       now: options.now ?? (() => new Date()),
-      relaunch: options.relaunch ?? (() => undefined),
-      quit: options.quit ?? (() => undefined),
+      restartApp: options.restartApp ?? (() => undefined),
     };
     this.state = initialSnapshot(this.options.getCurrentVersion());
   }
@@ -584,14 +582,7 @@ export class ReleaseUpdateManager {
       this.fail('restart-unavailable');
       return false;
     }
-    if (preparation === 'restart-current') {
-      this.options.relaunch({ execPath: managedRoot.stableLauncher });
-      this.options.quit();
-      return true;
-    }
-
-    this.options.relaunch({ execPath: managedRoot.stableLauncher });
-    this.options.quit();
+    this.options.restartApp(managedRoot.stableLauncher);
     return true;
   }
 

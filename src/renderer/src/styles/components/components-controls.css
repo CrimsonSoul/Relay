@@ -136,6 +136,10 @@
   gap: var(--space-5);
 }
 
+.release-update-modal .modal-footer-generic {
+  flex-wrap: wrap;
+}
+
 .release-update-modal__steps {
   position: relative;
   display: grid;

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   fsTryConsume: vi.fn(() => ({ allowed: true })),
   suppressDesktopSideEffects: vi.fn(() => false),
   broadcastToAllWindows: vi.fn(),
+  requestAppRelaunch: vi.fn(),
+  releaseUpdateManager: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -41,6 +43,14 @@ vi.mock('../rateLimiter', () => ({
 
 vi.mock('../app/e2eSafety', () => ({
   shouldSuppressDesktopSideEffects: mocks.suppressDesktopSideEffects,
+}));
+
+vi.mock('../app/relaunch', () => ({
+  requestAppRelaunch: mocks.requestAppRelaunch,
+}));
+
+vi.mock('../releases/ReleaseUpdateManager', () => ({
+  ReleaseUpdateManager: mocks.releaseUpdateManager,
 }));
 
 vi.mock('../utils/broadcastToAllWindows', () => ({
@@ -223,6 +233,42 @@ describe('release update handlers', () => {
     expect(cancelDownload).toHaveBeenCalledOnce();
     expect(install).toHaveBeenCalledOnce();
     expect(restart).toHaveBeenCalledOnce();
+  });
+
+  it('routes the production restart handoff through the lifecycle helper', async () => {
+    const stableLauncher = 'C:\\Users\\Ryan\\AppData\\Local\\Relay\\Relay.exe';
+    mocks.releaseUpdateManager.mockImplementation(function releaseUpdateManager(options: {
+      restartApp: (execPath: string) => void;
+    }) {
+      return {
+        snapshot,
+        subscribe,
+        noteCheck,
+        download,
+        cancelDownload,
+        install,
+        restart: async () => {
+          options.restartApp(stableLauncher);
+          return true;
+        },
+      };
+    });
+    const installableService = {
+      check,
+      getCachedReleaseNotes,
+      refreshReleaseNotes,
+      resolveLatestInstallable: vi.fn(),
+    };
+    setupReleaseUpdateHandlers({ service: installableService });
+
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_RESTART)).resolves.toEqual({
+      success: true,
+      data: true,
+    });
+
+    expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('release-update', {
+      execPath: stableLauncher,
+    });
   });
 
   it('broadcasts bounded updater snapshots without renderer-provided paths or URLs', async () => {

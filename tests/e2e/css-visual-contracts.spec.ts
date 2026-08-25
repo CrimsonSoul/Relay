@@ -279,6 +279,55 @@ test('collapsed Wiki reader keeps the PDF viewer full-width at the medium deskto
   }
 });
 
+test('release update actions stay inside the dialog when restart adds a third button', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setViewportSize({ width: 640, height: 480 });
+    await window.setContent(`
+      <style>${emittedGlobalCss}</style>
+      <section class="release-update-modal" style="width: 320px;">
+        <footer class="modal-footer-generic">
+          <button class="tactile-button" type="button">
+            <span class="tactile-button-label">View on GitHub</span>
+          </button>
+          <button class="tactile-button" type="button">
+            <span class="tactile-button-label">Later</span>
+          </button>
+          <button class="tactile-button tactile-button--primary" type="button">
+            <span class="tactile-button-label">Restart Relay</span>
+          </button>
+        </footer>
+      </section>
+    `);
+
+    const footer = window.locator('.modal-footer-generic');
+    const geometry = await footer.evaluate((element) => {
+      const footerRect = element.getBoundingClientRect();
+      return {
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        footerLeft: footerRect.left,
+        footerRight: footerRect.right,
+        buttons: Array.from(element.querySelectorAll('button'), (button) => {
+          const rect = button.getBoundingClientRect();
+          return { left: rect.left, right: rect.right };
+        }),
+      };
+    });
+
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+    expect(geometry.buttons).toHaveLength(3);
+    for (const button of geometry.buttons) {
+      expect(button.left).toBeGreaterThanOrEqual(geometry.footerLeft);
+      expect(button.right).toBeLessThanOrEqual(geometry.footerRight);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
 test('flagged chips retain WCAG text contrast across every Relay accent and opaque background', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();
