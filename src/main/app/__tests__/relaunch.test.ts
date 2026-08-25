@@ -80,6 +80,30 @@ describe('requestAppRelaunch', () => {
     expect(mocks.app.exit).toHaveBeenCalledWith(1);
   });
 
+  it('relaunches through the stable updater executable and still forces a stalled exit', async () => {
+    const { requestAppRelaunch } = await import('../relaunch');
+    const stableLauncher = 'C:\\Users\\test\\AppData\\Local\\Relay\\Relay.exe';
+
+    requestAppRelaunch('release-update', {
+      execPath: stableLauncher,
+      exitCode: 0,
+      exitDelayMs: 250,
+    });
+
+    expect(mocks.app.relaunch).toHaveBeenCalledWith({ execPath: stableLauncher });
+    expect(mocks.app.quit).toHaveBeenCalledOnce();
+    expect(mocks.app.exit).not.toHaveBeenCalled();
+    expect(mocks.writeFileSync).toHaveBeenCalledWith(
+      '/Users/test/RelayData/last-exit.json',
+      expect.stringContaining('"reason":"relaunch:release-update"'),
+      'utf8',
+    );
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(mocks.app.exit).toHaveBeenCalledWith(0);
+  });
+
   it('ignores duplicate relaunch requests once recovery is already in progress', async () => {
     const { requestAppRelaunch } = await import('../relaunch');
 

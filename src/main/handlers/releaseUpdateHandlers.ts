@@ -11,6 +11,7 @@ import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
 import { shouldSuppressDesktopSideEffects } from '../app/e2eSafety';
 import { getAppConfig } from '../app/appState';
+import { requestAppRelaunch } from '../app/relaunch';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { RelayInstallableRelease } from '../releases/ReleaseUpdateService';
@@ -115,8 +116,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
           execPath: process.execPath,
           getInstallationMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
           prepareRecoveryRestart: prepareProductionRecoveryRestart,
-          relaunch: (relaunchOptions) => app.relaunch(relaunchOptions),
-          quit: () => app.quit(),
+          restartApp: (execPath) => requestAppRelaunch('release-update', { execPath }),
         });
       },
     );
