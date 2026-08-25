@@ -223,6 +223,8 @@ const api: BridgeAPI = {
   },
   // Knowledge Base
   getKnowledgePdf: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_PDF, request),
+  downloadKnowledgePdf: (request) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF, request),
   getKnowledgeCover: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_COVER, request),
   getKnowledgeIndexStatus: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS),
   searchKnowledge: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SEARCH, request),

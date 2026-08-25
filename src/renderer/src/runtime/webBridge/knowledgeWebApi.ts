@@ -3,9 +3,12 @@ import {
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
   KNOWLEDGE_UPLOAD_MAX_FILES,
+  isKnowledgePdfDownloadFileName,
+  sanitizeKnowledgePdfDownloadFileName,
   normalizeKnowledgeUploadQueueView,
   normalizeKnowledgeUploadSelectionResult,
   type KnowledgeCoverResult,
+  type KnowledgePdfDownloadResult,
   type KnowledgePdfResult,
   type KnowledgeUploadQueueView,
   type KnowledgeUploadSelectionResult,
@@ -21,6 +24,7 @@ import { validatedRequest, type WebBridgeContext, type WebBridgeRequest } from '
 export type KnowledgeWebApi = Pick<
   BridgeAPI,
   | 'getKnowledgePdf'
+  | 'downloadKnowledgePdf'
   | 'getKnowledgeCover'
   | 'getKnowledgeIndexStatus'
   | 'searchKnowledge'
@@ -279,6 +283,20 @@ export function createKnowledgeWebApi({
     getKnowledgePdf: async (input) => {
       const result = await knowledgeBinary('pdf', input, fetcher);
       return result as KnowledgePdfResult;
+    },
+    downloadKnowledgePdf: async (input): Promise<KnowledgePdfDownloadResult> => {
+      if (!isKnowledgePdfDownloadFileName(input.fileName)) {
+        return { ok: false, error: 'invalid-document' };
+      }
+      const result = (await knowledgeBinary('pdf', input, fetcher)) as KnowledgePdfResult;
+      if (!result.ok) return result;
+      return actions.downloadBytes(
+        result.data,
+        sanitizeKnowledgePdfDownloadFileName(input.fileName),
+        'application/pdf',
+      )
+        ? { ok: true }
+        : { ok: false, error: 'save-failed' };
     },
     getKnowledgeCover: async (input) => {
       const result = await knowledgeBinary('cover', input, fetcher);

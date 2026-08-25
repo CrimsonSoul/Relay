@@ -16,6 +16,8 @@ import type {
   KnowledgeCoverRequest,
   KnowledgeCoverResult,
   KnowledgeOpenWebLinkResult,
+  KnowledgePdfDownloadRequest,
+  KnowledgePdfDownloadResult,
   KnowledgePdfRequest,
   KnowledgePdfResult,
   KnowledgeUploadQueueView,
@@ -780,6 +782,9 @@ export type BridgeAPI = {
   onPendingSyncStatusChanged: (callback: (status: PendingSyncStatus) => void) => () => void;
   // Knowledge Base — metadata flows through PocketBase; PDF bytes stay behind this narrow bridge.
   getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
+  downloadKnowledgePdf: (
+    request: KnowledgePdfDownloadRequest,
+  ) => Promise<KnowledgePdfDownloadResult>;
   getKnowledgeCover: (request: KnowledgeCoverRequest) => Promise<KnowledgeCoverResult>;
   getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
   searchKnowledge: (request: KnowledgeSearchRequest) => Promise<KnowledgeSearchResponse>;
@@ -953,6 +958,7 @@ export const IPC_CHANNELS = {
   OFFLINE_PENDING_STATUS_CHANGED: 'offline:pendingStatusChanged',
   // Knowledge Base
   KNOWLEDGE_GET_PDF: 'knowledge:getPdf',
+  KNOWLEDGE_DOWNLOAD_PDF: 'knowledge:downloadPdf',
   KNOWLEDGE_GET_COVER: 'knowledge:getCover',
   KNOWLEDGE_GET_INDEX_STATUS: 'knowledge:getIndexStatus',
   KNOWLEDGE_SEARCH: 'knowledge:search',

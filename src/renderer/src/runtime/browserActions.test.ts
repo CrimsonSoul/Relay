@@ -60,6 +60,67 @@ describe('browser actions', () => {
     expect(click).toHaveBeenCalledOnce();
   });
 
+  it('downloads verified bytes while preserving a safe authored filename', () => {
+    vi.useFakeTimers();
+    try {
+      const click = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined);
+      const createObjectUrl = vi.fn((_blob: Blob) => 'blob:relay-knowledge-pdf');
+      const revokeObjectUrl = vi.fn();
+      const actions = createBrowserActions({ createObjectUrl, revokeObjectUrl });
+      const data = new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer;
+
+      expect(actions.downloadBytes(data, 'Authored Operator Guide.pdf', 'application/pdf')).toBe(
+        true,
+      );
+
+      const anchor = document.querySelector<HTMLAnchorElement>('a[download]');
+      expect(anchor?.download).toBe('Authored Operator Guide.pdf');
+      expect(anchor?.href).toBe('blob:relay-knowledge-pdf');
+      expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+      const blob = createObjectUrl.mock.calls[0]?.[0];
+      expect(blob).toMatchObject({ size: 4, type: 'application/pdf' });
+      expect(click).toHaveBeenCalledOnce();
+
+      vi.runAllTimers();
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:relay-knowledge-pdf');
+      expect(document.querySelector('a[download]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cleans up a verified-byte download when the browser click throws', () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+      throw new Error('download blocked');
+    });
+    const createObjectUrl = vi.fn((_blob: Blob) => 'blob:relay-failed-pdf');
+    const revokeObjectUrl = vi.fn();
+    const actions = createBrowserActions({ createObjectUrl, revokeObjectUrl });
+
+    expect(actions.downloadBytes(new ArrayBuffer(4), 'Guide.pdf', 'application/pdf')).toBe(false);
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:relay-failed-pdf');
+    expect(document.querySelector('a[download]')).toBeNull();
+  });
+
+  it('keeps an accepted leading-dot PDF name and its extension', () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      const actions = createBrowserActions({
+        createObjectUrl: () => 'blob:relay-leading-dot-pdf',
+        revokeObjectUrl: vi.fn(),
+      });
+
+      expect(actions.downloadBytes(new ArrayBuffer(4), '....pdf', 'application/pdf')).toBe(true);
+      expect(document.querySelector<HTMLAnchorElement>('a[download]')?.download).toBe('....pdf');
+      vi.runAllTimers();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sanitizes controls without splitting a non-BMP character at the download-name limit', () => {
     const maximumCodePointName = `${'a'.repeat(119)}😀`;
 

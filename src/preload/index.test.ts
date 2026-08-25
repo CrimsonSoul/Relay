@@ -212,6 +212,18 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:getCover', request);
   });
 
+  it('downloads a Knowledge PDF through its dedicated save channel', async () => {
+    const request = {
+      documentId: 'document1',
+      checksum: 'a'.repeat(64),
+      fileName: 'Authored Guide.pdf',
+    };
+
+    await api.downloadKnowledgePdf(request);
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:downloadPdf', request);
+  });
+
   it('exposes only validated-request search and identifier-only cancellation methods', async () => {
     const request = {
       requestId: 'search-request-1',

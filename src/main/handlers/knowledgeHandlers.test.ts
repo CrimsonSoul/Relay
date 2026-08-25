@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ipcMain, shell } from 'electron';
+import { dialog, ipcMain, shell } from 'electron';
+import { open, rename, rm } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
@@ -9,7 +11,9 @@ const trusted = vi.fn((..._args: unknown[]) => true);
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   shell: { openExternal: vi.fn() },
+  dialog: { showSaveDialog: vi.fn() },
 }));
+vi.mock('node:fs/promises', () => ({ open: vi.fn(), rename: vi.fn(), rm: vi.fn() }));
 vi.mock('../logger', () => ({
   loggers: {
     ipc: { warn: vi.fn() },
@@ -39,6 +43,9 @@ describe('knowledgeHandlers', () => {
     return listener;
   };
   const getPdf = vi.fn();
+  const writePdfBytes = vi.fn();
+  const syncPdfBytes = vi.fn();
+  const closePdfFile = vi.fn();
   const service = { getPdf };
   const getCover = vi.fn();
   const coverService = { getCover };
@@ -85,6 +92,20 @@ describe('knowledgeHandlers', () => {
     trusted.mockReturnValue(true);
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
     vi.mocked(shell.openExternal).mockResolvedValue(undefined);
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+      canceled: true,
+      filePath: undefined,
+    } as never);
+    writePdfBytes.mockResolvedValue(undefined);
+    syncPdfBytes.mockResolvedValue(undefined);
+    closePdfFile.mockResolvedValue(undefined);
+    vi.mocked(open).mockResolvedValue({
+      writeFile: writePdfBytes,
+      sync: syncPdfBytes,
+      close: closePdfFile,
+    } as never);
+    vi.mocked(rename).mockResolvedValue(undefined);
+    vi.mocked(rm).mockResolvedValue(undefined);
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = handler as (...args: unknown[]) => unknown;
       return ipcMain;
@@ -203,6 +224,209 @@ describe('knowledgeHandlers', () => {
       source: 'cache',
     });
     expect(getPdf).toHaveBeenCalledWith(request);
+  });
+
+  it('atomically publishes verified PDF bytes under a safe authored filename', async () => {
+    const request = {
+      documentId: 'document123',
+      checksum: 'a'.repeat(64),
+      fileName: 'Ops: East*Recovery.pdf',
+    };
+    const data = new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer;
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+      canceled: false,
+      filePath: '/managed/user-selected/Ops_ East_Recovery.pdf',
+    } as never);
+    getPdf.mockResolvedValue({ ok: true, data, checksum: request.checksum, source: 'cache' });
+
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith({
+      defaultPath: 'Ops_ East_Recovery.pdf',
+      filters: [{ name: 'PDF document', extensions: ['pdf'] }],
+    });
+    expect(getPdf).toHaveBeenCalledWith({
+      documentId: request.documentId,
+      checksum: request.checksum,
+    });
+    const temporaryPath = vi.mocked(open).mock.calls[0]?.[0];
+    expect(temporaryPath).toEqual(
+      expect.stringMatching(/^\/managed\/user-selected\/\.relay-download-[0-9a-f-]+\.tmp$/u),
+    );
+    expect(open).toHaveBeenCalledWith(temporaryPath, 'wx', 0o600);
+    expect(writePdfBytes).toHaveBeenCalledWith(expect.any(Uint8Array));
+    expect(syncPdfBytes).toHaveBeenCalledOnce();
+    expect(closePdfFile).toHaveBeenCalledOnce();
+    expect(rename).toHaveBeenCalledWith(
+      temporaryPath,
+      '/managed/user-selected/Ops_ East_Recovery.pdf',
+    );
+    expect(rm).toHaveBeenCalledWith(temporaryPath, { force: true });
+    expect(syncPdfBytes.mock.invocationCallOrder[0]).toBeLessThan(
+      closePdfFile.mock.invocationCallOrder[0]!,
+    );
+    expect(closePdfFile.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(rename).mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('keeps the atomic temporary component short for a maximum-length destination name', async () => {
+    const fileName = `${'a'.repeat(236)}.pdf`;
+    const filePath = `/managed/user-selected/${fileName}`;
+    const request = { documentId: 'document123', checksum: 'a'.repeat(64), fileName };
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath } as never);
+    getPdf.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer,
+      checksum: request.checksum,
+      source: 'cache',
+    });
+
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: true,
+    });
+
+    const temporaryPath = String(vi.mocked(open).mock.calls[0]?.[0]);
+    expect(basename(temporaryPath)).toMatch(/^\.relay-download-[0-9a-f-]+\.tmp$/u);
+    expect([...basename(temporaryPath)]).toHaveLength(56);
+    expect(rename).toHaveBeenCalledWith(temporaryPath, filePath);
+  });
+
+  it('does not fetch or write PDF bytes when the save dialog is cancelled', async () => {
+    const request = {
+      documentId: 'document123',
+      checksum: 'a'.repeat(64),
+      fileName: 'Guide.pdf',
+    };
+
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'cancelled',
+    });
+
+    expect(getPdf).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('rejects untrusted and renderer-path download requests before any file dialog', async () => {
+    const request = {
+      documentId: 'document123',
+      checksum: 'a'.repeat(64),
+      fileName: 'Guide.pdf',
+    };
+    trusted.mockReturnValueOnce(false);
+
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'invalid-document',
+    });
+    await expect(
+      getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)(
+        {},
+        {
+          ...request,
+          fileName: '../outside.pdf',
+        },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'invalid-document' });
+
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(getPdf).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('rejects rate-limited, unavailable, and E2E-suppressed saves before the dialog', async () => {
+    const request = {
+      documentId: 'document123',
+      checksum: 'a'.repeat(64),
+      fileName: 'Guide.pdf',
+    };
+    vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValueOnce({ allowed: false });
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'rate-limited',
+    });
+
+    setupKnowledgeHandlers(
+      () => null,
+      () => indexStatusService as never,
+      () => uploadService as never,
+      () => coverService as never,
+      () => searchService as never,
+    );
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'not-found',
+    });
+
+    process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS = '1';
+    setupKnowledgeHandlers(
+      () => service as never,
+      () => indexStatusService as never,
+      () => uploadService as never,
+      () => coverService as never,
+      () => searchService as never,
+    );
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'cancelled',
+    });
+
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(getPdf).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('does not create a destination when verified PDF retrieval fails', async () => {
+    const request = {
+      documentId: 'document123',
+      checksum: 'a'.repeat(64),
+      fileName: 'Guide.pdf',
+    };
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+      canceled: false,
+      filePath: '/managed/user-selected/Guide.pdf',
+    } as never);
+    getPdf.mockResolvedValue({ ok: false, error: 'download-failed' });
+
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'download-failed',
+    });
+    expect(open).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it('removes a failed temporary write without replacing the selected destination', async () => {
+    const request = {
+      documentId: 'document123',
+      checksum: 'a'.repeat(64),
+      fileName: 'Guide.pdf',
+    };
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+      canceled: false,
+      filePath: '/managed/user-selected/Existing Guide.pdf',
+    } as never);
+    getPdf.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer,
+      checksum: request.checksum,
+      source: 'cache',
+    });
+    writePdfBytes.mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(getHandler(IPC_CHANNELS.KNOWLEDGE_DOWNLOAD_PDF)({}, request)).resolves.toEqual({
+      ok: false,
+      error: 'save-failed',
+    });
+
+    const temporaryPath = vi.mocked(open).mock.calls[0]?.[0];
+    expect(temporaryPath).not.toBe('/managed/user-selected/Existing Guide.pdf');
+    expect(rename).not.toHaveBeenCalled();
+    expect(closePdfFile).toHaveBeenCalledOnce();
+    expect(rm).toHaveBeenCalledWith(temporaryPath, { force: true });
   });
 
   it('validates and forwards a trusted cover request', async () => {

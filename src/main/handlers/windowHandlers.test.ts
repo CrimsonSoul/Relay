@@ -262,6 +262,11 @@ describe('windowHandlers', () => {
         'https://status.dropbox.com/incidents/example',
         'https://status.dropbox.com.evil.example/incidents/example',
       ],
+      [
+        'Equinix sign-in portal',
+        'https://status.equinix.com/',
+        'https://status.equinix.com.evil.example/',
+      ],
     ])(
       'opens exact-host %s URLs and blocks lookalike hosts',
       async (_label, trusted, lookalike) => {

@@ -455,7 +455,6 @@ describe('KnowledgeTab', () => {
     render(<KnowledgeTab active relayMode="server" />);
     openGuideFromCatalog('Operator guide');
 
-    expect(screen.getByRole('heading', { name: 'Operator guide' })).toBeInTheDocument();
     expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
     expect(screen.getByText(/2 documents across 2 categories/i)).toBeInTheDocument();
@@ -491,7 +490,9 @@ describe('KnowledgeTab', () => {
     openGuideFromCatalog('Operator guide');
 
     const drawer = screen.getByRole('complementary', { name: 'Wiki reader sidebar' });
-    expect(within(drawer).getByRole('heading', { name: 'Operator guide' })).toBeInTheDocument();
+    expect(within(drawer).getByText('General')).toBeInTheDocument();
+    expect(within(drawer).queryByText('Operator guide')).not.toBeInTheDocument();
+    expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
     expect(within(drawer).getByRole('tab', { name: 'Contents' })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -524,7 +525,7 @@ describe('KnowledgeTab', () => {
     expect(contentsTab).toHaveAttribute('aria-selected', 'true');
     expect(libraryTab).toHaveAttribute('aria-selected', 'false');
     expect(within(sidebar).getByText('General')).toBeInTheDocument();
-    expect(within(sidebar).getByRole('heading', { name: 'Operator guide' })).toBeInTheDocument();
+    expect(within(sidebar).queryByText('Operator guide')).not.toBeInTheDocument();
     expect(
       within(sidebar).getByRole('button', { name: 'Restart the lane service, page 2' }),
     ).toBeInTheDocument();
@@ -544,7 +545,7 @@ describe('KnowledgeTab', () => {
     expect(screen.getByText(/Viewer: Lane recovery/)).toBeInTheDocument();
     expect(contentsTab).toHaveAttribute('aria-selected', 'true');
     expect(within(sidebar).queryByRole('searchbox', { name: 'Filter library' })).toBeNull();
-    expect(within(sidebar).getByRole('heading', { name: 'Lane recovery' })).toBeInTheDocument();
+    expect(within(sidebar).queryByText('Lane recovery')).not.toBeInTheDocument();
     expect(within(sidebar).getByText('Store systems')).toBeInTheDocument();
   });
 

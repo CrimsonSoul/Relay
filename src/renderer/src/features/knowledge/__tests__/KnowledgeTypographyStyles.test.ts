@@ -76,7 +76,6 @@ describe('Knowledge and directory semantic typography', () => {
     const mapping = [
       ['.knowledge-library-toggle', '2xs'],
       ['.knowledge-drawer__title > span', '2xs'],
-      ['.knowledge-drawer__title h1', 'lg'],
       ['.knowledge-drawer__manage.tactile-button', 'sm'],
       ['.knowledge-drawer__modes > button', 'sm'],
       ['.knowledge-contents__heading', '2xs'],
@@ -88,7 +87,7 @@ describe('Knowledge and directory semantic typography', () => {
       ['.knowledge-outline__button', 'xs'],
       ['.knowledge-drawer__footer', '2xs'],
       ['.knowledge-reader-back', 'xs'],
-      ['.knowledge-viewer__identity h2', 'base'],
+      ['.knowledge-viewer__identity h1', 'base'],
       ['.knowledge-viewer__section', 'xs'],
       ['.knowledge-viewer__page-status,\n.knowledge-viewer__zoom', 'xs'],
       ['.knowledge-viewer__controls .knowledge-viewer__view-trigger', 'xs'],
@@ -122,6 +121,9 @@ describe('Knowledge and directory semantic typography', () => {
 
     const panel = ruleBody(knowledgeCss, '.knowledge-viewer__view-panel');
     expect(panel).toContain('width: 232px;');
+    expect(panel).toContain('left: auto;');
+    expect(panel).toContain('bottom: auto;');
+    expect(panel).toContain('max-width: calc(100vw - 24px);');
     expect(panel).toContain('padding: 0;');
 
     const activeOption = ruleBody(
@@ -147,7 +149,7 @@ describe('Knowledge and directory semantic typography', () => {
       /@container knowledge-pdf-viewer \(max-width: 900px\)[\s\S]*?\.knowledge-reader-back__label,[\s\S]*?\.knowledge-library-toggle > span\s*\{[\s\S]*?display:\s*none;/,
     );
     expect(knowledgeCss).toMatch(
-      /@container knowledge-pdf-viewer \(max-width: 640px\)[\s\S]*?\.knowledge-viewer__controls\s*\{[\s\S]*?justify-content:\s*safe flex-end;[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;/,
+      /@container knowledge-pdf-viewer \(max-width: 640px\)[\s\S]*?\.knowledge-viewer__controls\s*\{[\s\S]*?justify-content:\s*safe flex-end;[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?overflow:\s*visible;/,
     );
     expect(knowledgeCss).toMatch(
       /@container knowledge-pdf-viewer \(max-width: 480px\)[\s\S]*?\.knowledge-viewer__page-status\s*\{[^}]*min-width:\s*60px;/,
@@ -169,11 +171,7 @@ describe('Knowledge and directory semantic typography', () => {
     const drawerTitle = ruleBody(knowledgeCss, '.knowledge-drawer__title');
     expect(drawerTitle).toContain('flex: 1;');
     expect(drawerTitle).toContain('min-width: 0;');
-    const drawerHeading = ruleBody(knowledgeCss, '.knowledge-drawer__title h1');
-    expect(drawerHeading).toContain('max-width: 100%;');
-    expect(drawerHeading).toContain('-webkit-line-clamp: 2;');
-    expect(drawerHeading).toContain('white-space: normal;');
-    expect(drawerHeading).not.toContain('white-space: nowrap;');
+    expect(knowledgeCss).not.toContain('.knowledge-drawer__title h1');
   });
 
   it('uses one focus indicator on each interactive shell', () => {

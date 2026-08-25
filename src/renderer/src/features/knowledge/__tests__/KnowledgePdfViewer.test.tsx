@@ -177,6 +177,7 @@ function searchRequest(
 
 describe('KnowledgePdfViewer', () => {
   const getKnowledgePdf = vi.fn();
+  const downloadKnowledgePdf = vi.fn();
   const renderTask = { promise: Promise.resolve(), cancel: vi.fn() };
   const annotationMocks = new Map<number, ReturnType<typeof vi.fn>>();
   const operatorListMocks = new Map<number, ReturnType<typeof vi.fn>>();
@@ -305,7 +306,8 @@ describe('KnowledgePdfViewer', () => {
       checksum: 'a'.repeat(64),
       source: 'server',
     });
-    globalThis.api = { getKnowledgePdf } as never;
+    downloadKnowledgePdf.mockResolvedValue({ ok: true });
+    globalThis.api = { getKnowledgePdf, downloadKnowledgePdf } as never;
     getDocumentMock.mockReturnValue({
       promise: Promise.resolve(pdf()),
       destroy: loadingDestroy,
@@ -349,6 +351,91 @@ describe('KnowledgePdfViewer', () => {
       expect(onDestinationChange).not.toHaveBeenCalled();
     },
   );
+
+  it('lets an ordinary reader download the authored PDF and exposes progress and success', async () => {
+    const pending = deferred<{ ok: true }>();
+    downloadKnowledgePdf.mockReturnValueOnce(pending.promise);
+    renderComponent();
+    await screen.findByText('Page 1 of 3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
+    expect(downloadKnowledgePdf).toHaveBeenCalledWith({
+      documentId: 'doc-1',
+      checksum: 'a'.repeat(64),
+      fileName: 'Guide.pdf',
+    });
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+    expect(screen.getByText('Downloading…')).toBeInTheDocument();
+
+    await act(async () => pending.resolve({ ok: true }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Guide.pdf downloaded');
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+  });
+
+  it('uses the mutable display title as the reader heading and accessible viewer label', async () => {
+    renderComponent({
+      document: record({ title: 'Original publication title', displayTitle: 'Renamed runbook' }),
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Renamed runbook' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Renamed runbook PDF viewer' })).toBeInTheDocument();
+    expect(screen.queryByText('Original publication title')).not.toBeInTheDocument();
+  });
+
+  it('ignores out-of-order download completions from a previously opened document', async () => {
+    const firstDownload = deferred<{ ok: true }>();
+    const secondDownload = deferred<{ ok: true }>();
+    downloadKnowledgePdf
+      .mockReturnValueOnce(firstDownload.promise)
+      .mockReturnValueOnce(secondDownload.promise);
+    const view = renderComponent();
+    await screen.findByText('Page 1 of 3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
+    view.rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: record({
+            id: 'doc-2',
+            checksum: 'b'.repeat(64),
+            fileName: 'Current.pdf',
+            displayTitle: 'Current guide',
+          }),
+        })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Download PDF' }));
+
+    await act(async () => firstDownload.resolve({ ok: true }));
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeDisabled();
+    expect(screen.queryByText('Guide.pdf downloaded.')).not.toBeInTheDocument();
+
+    await act(async () => secondDownload.resolve({ ok: true }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Current.pdf downloaded');
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeEnabled();
+  });
+
+  it('treats cancellation as a non-error and makes a failed download retryable', async () => {
+    downloadKnowledgePdf
+      .mockResolvedValueOnce({ ok: false, error: 'cancelled' })
+      .mockResolvedValueOnce({ ok: false, error: 'save-failed' });
+    renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const download = screen.getByRole('button', { name: 'Download PDF' });
+
+    fireEvent.click(download);
+    expect(await screen.findByRole('status')).toHaveTextContent('Download cancelled');
+    expect(download).toBeEnabled();
+
+    fireEvent.click(download);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Unable to download Guide.pdf. Try again.',
+    );
+    expect(download).toBeEnabled();
+  });
 
   it('ignores a stale exact-highlight callback after a newer search request wins', async () => {
     const staleResult = searchResult({ pageIndex: 1, id: '1:12:0' });
@@ -1301,11 +1388,12 @@ describe('KnowledgePdfViewer', () => {
     getAnnotations(1).mockResolvedValue([
       { subtype: 'Link', id: 'destination', rect: [10, 20, 30, 40], dest: 'late-destination' },
     ]);
-    const sourceDocument = record({ title: 'Source guide' });
+    const sourceDocument = record({ title: 'Source guide', displayTitle: 'Source guide' });
     const selectedDocument = record({
       id: 'doc-2',
       checksum: 'b'.repeat(64),
       title: 'Selected guide',
+      displayTitle: 'Selected guide',
       sourceKey: 'General/Selected.pdf',
       fileName: 'Selected.pdf',
       pdf: 'Selected.pdf',
@@ -1440,6 +1528,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-2',
       checksum: 'b'.repeat(64),
       title: 'Second guide',
+      displayTitle: 'Second guide',
       sourceKey: 'General/Second.pdf',
       fileName: 'Second.pdf',
       pdf: 'Second.pdf',
@@ -1655,6 +1744,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-2',
       checksum: 'b'.repeat(64),
       title: 'Second guide',
+      displayTitle: 'Second guide',
       sourceKey: 'General/Second.pdf',
       fileName: 'Second.pdf',
       pdf: 'Second.pdf',
@@ -1762,6 +1852,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-2',
       checksum: 'b'.repeat(64),
       title: 'Second guide',
+      displayTitle: 'Second guide',
       sourceKey: 'General/Second.pdf',
       fileName: 'Second.pdf',
       pdf: 'Second.pdf',
@@ -1818,6 +1909,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-2',
       checksum: 'b'.repeat(64),
       title: 'Requested guide',
+      displayTitle: 'Requested guide',
       sourceKey: 'General/Requested.pdf',
       fileName: 'Requested.pdf',
       pdf: 'Requested.pdf',
@@ -1839,6 +1931,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-3',
       checksum: 'c'.repeat(64),
       title: 'Unrelated guide',
+      displayTitle: 'Unrelated guide',
       sourceKey: 'General/Unrelated.pdf',
       fileName: 'Unrelated.pdf',
       pdf: 'Unrelated.pdf',
@@ -1875,6 +1968,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-2',
       checksum: 'b'.repeat(64),
       title: 'Requested guide',
+      displayTitle: 'Requested guide',
       sourceKey: 'General/Requested.pdf',
       fileName: 'Requested.pdf',
       pdf: 'Requested.pdf',
@@ -1909,6 +2003,7 @@ describe('KnowledgePdfViewer', () => {
       id: 'doc-3',
       checksum: 'c'.repeat(64),
       title: 'Unrelated guide',
+      displayTitle: 'Unrelated guide',
       sourceKey: 'General/Unrelated.pdf',
       fileName: 'Unrelated.pdf',
       pdf: 'Unrelated.pdf',
@@ -1959,12 +2054,12 @@ describe('KnowledgePdfViewer', () => {
     expect(onPageChange).not.toHaveBeenCalled();
   });
 
-  it('shows a useful offline state without exposing download or print controls', async () => {
+  it('keeps the download action available in offline mode without exposing print controls', async () => {
     getKnowledgePdf.mockResolvedValue({ ok: false, error: 'not-available-offline' });
     renderComponent();
 
     expect(await screen.findByText(/not cached on this laptop/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /print/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry document' })).toBeInTheDocument();
   });

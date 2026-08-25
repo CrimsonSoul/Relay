@@ -4,6 +4,7 @@ import {
   LogEntrySchema,
   AlertHistoryEntrySchema,
   KnowledgeUploadControlIdSchema,
+  KnowledgePdfDownloadRequestSchema,
   KnowledgePdfRequestSchema,
   KnowledgeCoverRequestSchema,
   KnowledgeSearchRequestSchema,
@@ -161,6 +162,38 @@ describe('KnowledgePdfRequestSchema', () => {
     expect(
       KnowledgePdfRequestSchema.safeParse({ ...valid, path: 'outside-source-root' }).success,
     ).toBe(false);
+  });
+});
+
+describe('KnowledgePdfDownloadRequestSchema', () => {
+  const valid = {
+    documentId: 'abc123DEF456',
+    checksum: 'a'.repeat(64),
+    fileName: 'Authored Operator Guide.pdf',
+  };
+
+  it('accepts the authored PDF filename alongside the verified document identity', () => {
+    expect(KnowledgePdfDownloadRequestSchema.parse(valid)).toEqual(valid);
+  });
+
+  it.each(['Ops: East.pdf', 'Shift*Recovery.pdf', '.Hidden guide.pdf', '....pdf'])(
+    'accepts an existing upload-compatible authored filename: %s',
+    (fileName) => {
+      expect(KnowledgePdfDownloadRequestSchema.safeParse({ ...valid, fileName }).success).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each([
+    { ...valid, fileName: '../secret.pdf' },
+    { ...valid, fileName: 'C:\\secret.pdf' },
+    { ...valid, fileName: 'Guide.txt' },
+    { ...valid, fileName: `Guide\u0000.pdf` },
+    { ...valid, fileName: `${'a'.repeat(241)}.pdf` },
+    { ...valid, path: '/renderer/controlled/path.pdf' },
+  ])('rejects unsafe or non-PDF download requests: %o', (request) => {
+    expect(KnowledgePdfDownloadRequestSchema.safeParse(request).success).toBe(false);
   });
 });
 

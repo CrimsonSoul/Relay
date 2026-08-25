@@ -287,6 +287,11 @@ is fetched once per poll before notices are routed to Global, EMEA, APAC, and Fe
 Primary Dropbox availability uses the official credential-free Statuspage summary endpoint at
 `status.dropbox.com`; Dropbox Sign remains outside this provider row.
 
+Authenticated status sites belong in the renderer's separate provider-portal list rather than a
+snapshot partition. Equinix is a fixed link to `https://status.equinix.com/`: it must remain outside
+polling, feed-error, posture, refresh, cache, count, and notification paths. Any desktop portal URL
+also needs an exact-host external-link allowlist test plus a lookalike-host denial test.
+
 Provider-family additions must preserve existing renderer/server contracts. When older clients do
 not recognize a new provider union, keep the existing snapshot exact and add a separate
 server-owned compatibility singleton. Updated clients can merge the partitions; do not append new

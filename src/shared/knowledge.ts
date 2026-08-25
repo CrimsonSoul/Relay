@@ -320,6 +320,46 @@ export type KnowledgePdfRequest = {
   checksum: string;
 };
 
+export const KNOWLEDGE_PDF_FILE_NAME_MAX_LENGTH = 240;
+
+export function isKnowledgePdfDownloadFileName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const characters = [...value];
+  return (
+    characters.length > 4 &&
+    characters.length <= KNOWLEDGE_PDF_FILE_NAME_MAX_LENGTH &&
+    /\.pdf$/iu.test(value) &&
+    !value.includes('/') &&
+    !value.includes('\\') &&
+    characters.every((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 32 && codePoint !== 127;
+    })
+  );
+}
+
+const WINDOWS_RESERVED_FILE_STEM = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+
+export function sanitizeKnowledgePdfDownloadFileName(value: string): string {
+  const suffixless = /\.pdf$/iu.test(value) ? value.slice(0, -4) : value;
+  let stem = [...suffixless]
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint < 32 || codePoint === 127 || /[<>:"/\\|?*]/u.test(character)
+        ? '_'
+        : character;
+    })
+    .join('');
+  if (!stem) stem = 'relay-document';
+  if (WINDOWS_RESERVED_FILE_STEM.test(stem)) stem = `_${stem}`;
+  stem = [...stem].slice(0, KNOWLEDGE_PDF_FILE_NAME_MAX_LENGTH - 4).join('');
+  return `${stem || 'relay-document'}.pdf`;
+}
+
+export type KnowledgePdfDownloadRequest = KnowledgePdfRequest & {
+  fileName: string;
+};
+
 export type KnowledgeCoverRequest = {
   documentId: string;
   checksum: string;
@@ -357,6 +397,12 @@ export type KnowledgePdfResult =
       source: 'server' | 'cache' | 'download';
     }
   | { ok: false; error: KnowledgePdfErrorCode };
+
+export type KnowledgePdfDownloadErrorCode =
+  KnowledgePdfErrorCode | 'cancelled' | 'rate-limited' | 'save-failed';
+
+export type KnowledgePdfDownloadResult =
+  { ok: true } | { ok: false; error: KnowledgePdfDownloadErrorCode };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

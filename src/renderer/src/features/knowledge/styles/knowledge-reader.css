@@ -108,8 +108,11 @@
 }
 
 .knowledge-drawer__title {
+  display: flex;
   flex: 1;
   min-width: 0;
+  align-items: center;
+  align-self: center;
 }
 
 .knowledge-drawer__collapse,
@@ -163,21 +166,6 @@
   font-weight: var(--weight-bold);
   letter-spacing: 0.11em;
   text-transform: uppercase;
-}
-
-.knowledge-drawer__title h1 {
-  display: -webkit-box;
-  overflow: hidden;
-  max-width: 100%;
-  margin: 5px 0 0;
-  color: var(--color-text-primary);
-  font-size: var(--text-lg);
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .knowledge-drawer__manage.tactile-button {
@@ -635,7 +623,11 @@
   min-width: 0;
 }
 
-.knowledge-viewer__identity h2 {
+.knowledge-viewer__toolbar > .knowledge-viewer__identity {
+  grid-area: heading;
+}
+
+.knowledge-viewer__identity h1 {
   overflow: hidden;
   margin: 0;
   font-size: var(--text-base);
@@ -770,6 +762,34 @@
   flex: none;
 }
 
+.knowledge-viewer__controls .knowledge-viewer__download {
+  display: inline-flex;
+  width: auto;
+  min-width: 96px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.knowledge-viewer__download svg {
+  fill: none;
+  flex: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.knowledge-viewer__controls .knowledge-viewer__download[data-state='success'] {
+  color: var(--ok);
+}
+
+.knowledge-viewer__controls .knowledge-viewer__download[data-state='error'] {
+  color: var(--alarm-bright);
+}
+
 .knowledge-viewer__controls .knowledge-viewer__view-trigger {
   display: inline-flex;
   width: auto;
@@ -794,8 +814,12 @@
   z-index: 4;
   top: calc(100% + 8px);
   right: 0;
+  bottom: auto;
+  left: auto;
   display: grid;
   width: 232px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
   overflow: hidden;
   margin: 0;
   padding: 0;
@@ -803,6 +827,26 @@
   border-radius: 2px;
   background: var(--color-bg-surface-elevated);
   box-shadow: var(--shadow-lg);
+}
+
+.knowledge-viewer__download-feedback {
+  position: relative;
+  z-index: 2;
+  min-height: 28px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-surface-2);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+}
+
+.knowledge-viewer__download-feedback[data-state='success'] {
+  color: var(--ok);
+}
+
+.knowledge-viewer__download-feedback[data-state='error'] {
+  color: var(--alarm-bright);
 }
 
 .knowledge-viewer__view-heading {

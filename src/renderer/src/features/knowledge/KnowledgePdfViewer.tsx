@@ -123,6 +123,10 @@ export function KnowledgePdfViewer({
   const { pageIndex, navigationTarget, singleTopRequest } = navigationState;
   const [scale, setScale] = useState(1);
   const [viewMode, setViewMode] = useState(loadKnowledgePdfViewMode);
+  const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'success' | 'error'>(
+    'idle',
+  );
+  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement>(null);
   const continuousPdfRef = useRef<KnowledgeContinuousPdfHandle>(null);
@@ -132,6 +136,7 @@ export function KnowledgePdfViewer({
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
   const settledScrollTimerRef = useRef<number | null>(null);
+  const downloadRequestTokenRef = useRef(0);
   const destinationRequestTokenRef = useRef(0);
   const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
   const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
@@ -356,6 +361,19 @@ export function KnowledgePdfViewer({
   useEffect(() => {
     destinationRequestTokenRef.current += 1;
   }, [active, activePdf, documentChecksum, documentId, retryKey, target]);
+
+  useEffect(() => {
+    downloadRequestTokenRef.current += 1;
+    setDownloadState('idle');
+    setDownloadMessage(null);
+  }, [documentChecksum, documentId]);
+
+  useEffect(
+    () => () => {
+      downloadRequestTokenRef.current += 1;
+    },
+    [],
+  );
 
   useEffect(() => {
     const request = focusRequestRef.current;
@@ -684,6 +702,50 @@ export function KnowledgePdfViewer({
     setViewMode(nextMode);
   };
 
+  const downloadPdf = useCallback(async () => {
+    if (!knowledgeDocument || downloadState === 'downloading') return;
+    const requestToken = ++downloadRequestTokenRef.current;
+    const requestedDocument = {
+      id: knowledgeDocument.id,
+      checksum: knowledgeDocument.checksum,
+      fileName: knowledgeDocument.fileName,
+    };
+    const requestIsCurrent = () => {
+      const currentDocument = activeDocumentRef.current;
+      return (
+        downloadRequestTokenRef.current === requestToken &&
+        currentDocument.documentId === requestedDocument.id &&
+        currentDocument.checksum === requestedDocument.checksum
+      );
+    };
+    setDownloadState('downloading');
+    setDownloadMessage(`Downloading ${requestedDocument.fileName}…`);
+    try {
+      const result = await globalThis.api?.downloadKnowledgePdf?.({
+        documentId: requestedDocument.id,
+        checksum: requestedDocument.checksum,
+        fileName: requestedDocument.fileName,
+      });
+      if (!requestIsCurrent()) return;
+      if (result?.ok) {
+        setDownloadState('success');
+        setDownloadMessage(`${requestedDocument.fileName} downloaded.`);
+        return;
+      }
+      if (result?.error === 'cancelled') {
+        setDownloadState('idle');
+        setDownloadMessage('Download cancelled.');
+        return;
+      }
+      setDownloadState('error');
+      setDownloadMessage(`Unable to download ${requestedDocument.fileName}. Try again.`);
+    } catch {
+      if (!requestIsCurrent()) return;
+      setDownloadState('error');
+      setDownloadMessage(`Unable to download ${requestedDocument.fileName}. Try again.`);
+    }
+  }, [downloadState, knowledgeDocument]);
+
   if (!knowledgeDocument) {
     return (
       <div className="knowledge-viewer-state">
@@ -698,25 +760,37 @@ export function KnowledgePdfViewer({
     <section
       ref={viewerRef}
       className="knowledge-viewer"
-      aria-label={`${knowledgeDocument.title} PDF viewer`}
+      aria-label={`${knowledgeDocument.displayTitle} PDF viewer`}
     >
       <KnowledgePdfToolbar
         identityKey={documentId}
         category={knowledgeDocument.category}
-        title={knowledgeDocument.title}
+        title={knowledgeDocument.displayTitle}
         currentSection={currentSection}
         toolbarLeading={toolbarLeading}
         pageIndex={pageIndex}
         pageCount={activePdf?.numPages ?? null}
         scale={scale}
         viewMode={viewMode}
+        downloadState={downloadState}
         onPreviousPage={() => moveToPage(pageIndex - 1)}
         onNextPage={() => moveToPage(pageIndex + 1)}
         onZoomOut={() => setScale((current) => Math.max(MIN_SCALE, current - SCALE_STEP))}
         onZoomIn={() => setScale((current) => Math.min(MAX_SCALE, current + SCALE_STEP))}
         onFitWidth={() => void fitWidth()}
         onSelectViewMode={selectViewMode}
+        onDownload={() => void downloadPdf()}
       />
+      {downloadMessage && (
+        <div
+          className="knowledge-viewer__download-feedback"
+          data-state={downloadState}
+          role="status"
+          aria-live="polite"
+        >
+          {downloadMessage}
+        </div>
+      )}
       {!activePdf && (loading || error) && (
         <div className="knowledge-viewer__viewport" ref={viewportRef} tabIndex={-1}>
           {loading && <div className="knowledge-viewer__loading">Preparing document…</div>}

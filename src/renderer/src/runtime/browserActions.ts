@@ -1,3 +1,5 @@
+import { sanitizeKnowledgePdfDownloadFileName } from '@shared/knowledge';
+
 const BUILT_IN_ALERT_SOUND = '/audio/reminder-alarm.mp3';
 const MAX_DOWNLOAD_NAME_LENGTH = 120;
 
@@ -7,7 +9,25 @@ type BrowserActionsOptions = {
   AudioConstructor?: typeof Audio;
   pickImage?: (maxBytes: number) => Promise<string | null>;
   pickPdfFiles?: (single: boolean) => Promise<File[]>;
+  createObjectUrl?: (blob: Blob) => string;
+  revokeObjectUrl?: (url: string) => void;
 };
+
+const MAX_BINARY_DOWNLOAD_NAME_LENGTH = 240;
+
+function sanitizeBinaryDownloadName(value: string): string {
+  const reserved = new Set(['\\', '/', ':', '*', '?', '"', '<', '>', '|']);
+  let normalized = [...value.normalize('NFKC')]
+    .map((character) =>
+      (character.codePointAt(0) ?? 0) < 32 || reserved.has(character) ? '_' : character,
+    )
+    .join('')
+    .trim();
+  normalized = [...normalized].slice(0, MAX_BINARY_DOWNLOAD_NAME_LENGTH).join('');
+  while (normalized.startsWith('.')) normalized = normalized.slice(1);
+  while (normalized.endsWith('.') || normalized.endsWith(' ')) normalized = normalized.slice(0, -1);
+  return normalized || 'relay-download';
+}
 
 function normalizedExternalUrl(value: string): string | null {
   try {
@@ -173,6 +193,40 @@ export function createBrowserActions(options: BrowserActionsOptions = {}) {
       anchor.click();
       setTimeout(() => anchor.remove(), 0);
       return true;
+    },
+
+    downloadBytes(data: ArrayBuffer, suggestedName: string, mimeType: string): boolean {
+      let anchor: HTMLAnchorElement | null = null;
+      let objectUrl: string | null = null;
+      const revokeObjectUrl = options.revokeObjectUrl ?? URL.revokeObjectURL.bind(URL);
+      const cleanup = () => {
+        anchor?.remove();
+        if (objectUrl) {
+          try {
+            revokeObjectUrl(objectUrl);
+          } catch {
+            // Browser cleanup is best effort after the download has already settled.
+          }
+        }
+      };
+      try {
+        const createObjectUrl = options.createObjectUrl ?? URL.createObjectURL.bind(URL);
+        objectUrl = createObjectUrl(new Blob([data], { type: mimeType }));
+        anchor = document.createElement('a');
+        anchor.download =
+          mimeType === 'application/pdf'
+            ? sanitizeKnowledgePdfDownloadFileName(suggestedName)
+            : sanitizeBinaryDownloadName(suggestedName);
+        anchor.href = objectUrl;
+        anchor.hidden = true;
+        document.body.append(anchor);
+        anchor.click();
+        setTimeout(cleanup, 0);
+        return true;
+      } catch {
+        cleanup();
+        return false;
+      }
     },
 
     async playBuiltInAlert(): Promise<boolean> {

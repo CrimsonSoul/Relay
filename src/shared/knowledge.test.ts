@@ -18,6 +18,7 @@ import {
   KNOWLEDGE_MAX_PDF_BYTES,
   compareKnowledgeCategories,
   compareKnowledgeDocuments,
+  isKnowledgePdfDownloadFileName,
   normalizeKnowledgeUploadBatchView,
   normalizeKnowledgeUploadManifestView,
   normalizeKnowledgeUploadQueueView,
@@ -26,6 +27,7 @@ import {
   normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeManagementUploadView,
+  sanitizeKnowledgePdfDownloadFileName,
 } from './knowledge';
 import { normalizeKnowledgeSearchText } from './knowledgeSearch';
 import { IPC_CHANNELS } from './ipc';
@@ -73,6 +75,22 @@ function category(name: string, sortOrder: number) {
 }
 
 describe('knowledge contracts', () => {
+  it('accepts authored PDF names and normalizes only destination-illegal characters', () => {
+    expect(isKnowledgePdfDownloadFileName('Ops: East*Recovery.pdf')).toBe(true);
+    expect(isKnowledgePdfDownloadFileName('.Hidden guide.pdf')).toBe(true);
+    expect(isKnowledgePdfDownloadFileName('....pdf')).toBe(true);
+    expect(isKnowledgePdfDownloadFileName('../escape.pdf')).toBe(false);
+    expect(isKnowledgePdfDownloadFileName('Guide\u0000.pdf')).toBe(false);
+
+    expect(sanitizeKnowledgePdfDownloadFileName('Ops: East*Recovery.pdf')).toBe(
+      'Ops_ East_Recovery.pdf',
+    );
+    expect(sanitizeKnowledgePdfDownloadFileName('.Hidden guide.pdf')).toBe('.Hidden guide.pdf');
+    expect(sanitizeKnowledgePdfDownloadFileName('....pdf')).toBe('....pdf');
+    expect(sanitizeKnowledgePdfDownloadFileName('CON.pdf')).toBe('_CON.pdf');
+    expect(sanitizeKnowledgePdfDownloadFileName(`${'a'.repeat(236)}.pdf`)).toHaveLength(240);
+  });
+
   it('publishes the approved collection and safety limits', () => {
     expect(KNOWLEDGE_CATEGORIES_COLLECTION).toBe('knowledge_categories');
     expect(KNOWLEDGE_CATEGORY_MIGRATION_VERSION).toBe(1);

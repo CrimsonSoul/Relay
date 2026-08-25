@@ -330,6 +330,16 @@
   .knowledge-viewer__controls button {
     min-width: 34px;
   }
+
+  .knowledge-viewer__controls .knowledge-viewer__download {
+    width: 38px;
+    min-width: 38px;
+    padding: 0;
+  }
+
+  .knowledge-viewer__download > span {
+    display: none;
+  }
 }
 
 @container knowledge-pdf-viewer (max-width: 640px) {
@@ -346,13 +356,8 @@
   .knowledge-viewer__controls {
     width: auto;
     justify-content: safe flex-end;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .knowledge-viewer__controls::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
   .knowledge-viewer__section {
