@@ -6,7 +6,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ExpectedBuildId,
   [Parameter(Mandatory = $true)]
-  [string]$ExpectedPreviousBuildId
+  [string]$ExpectedPreviousBuildId,
+  [Parameter(Mandatory = $true)]
+  [string]$ExpectedTargetCommitish
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +20,9 @@ if ($ExpectedBuildId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or
     $ExpectedPreviousBuildId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or
     $ExpectedBuildId -eq $ExpectedPreviousBuildId) {
   throw 'Smoke build IDs must be distinct path-safe identifiers.'
+}
+if ($ExpectedTargetCommitish -notmatch '^[0-9a-f]{40}$') {
+  throw 'ExpectedTargetCommitish must be a full lowercase Git commit ID.'
 }
 
 $artifactPath = (Resolve-Path -LiteralPath $Artifact).Path
@@ -31,6 +36,9 @@ $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Rela
 $startMenuShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Relay\Relay.lnk'
 $launcherPath = Join-Path $runtimeRoot 'Relay.exe'
 $statePath = Join-Path $runtimeRoot 'state.ini'
+$recoveryRoot = Join-Path $runtimeRoot 'Recovery'
+$updateRequestPath = Join-Path $recoveryRoot 'update-request.ini'
+$preparedPath = Join-Path $recoveryRoot 'prepared.ini'
 $bootstrapLockPath = Join-Path $runtimeRoot 'bootstrap.lock'
 $oldRuntimeHandle = $null
 
@@ -111,11 +119,16 @@ function Invoke-RelayPreparation {
   param(
     [Parameter(Mandatory = $true)]
     [string]$Path,
+    [string]$TransactionId = '',
     [switch]$ExpectFailure
   )
 
+  $arguments = @('/relay-prepare-only')
+  if ($TransactionId) {
+    $arguments += "/relay-transaction=$TransactionId"
+  }
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-  $process = Start-Process -FilePath $Path -ArgumentList '/relay-prepare-only' -PassThru
+  $process = Start-Process -FilePath $Path -ArgumentList $arguments -PassThru
   Wait-ProcessWithTimeout -Process $process -Context "Relay preparation: $Path"
   $stopwatch.Stop()
   if ($ExpectFailure) {
@@ -151,6 +164,99 @@ function Get-IniValue {
     throw "Missing $Key in $Path"
   }
   return $match.Matches[0].Groups[1].Value
+}
+
+function Get-IniSectionValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Section,
+    [Parameter(Mandatory = $true)][string]$Key
+  )
+
+  $currentSection = ''
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    if ($line -match '^\[([^]]+)\]$') {
+      $currentSection = $Matches[1]
+      continue
+    }
+    if ($currentSection -eq $Section -and
+        $line -match "^$([Regex]::Escape($Key))=(.*)$") {
+      return $Matches[1]
+    }
+  }
+  throw "Missing $Section.$Key in $Path"
+}
+
+function New-RecoveryUpdateRequest {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $transactionId = [Guid]::NewGuid().ToString().ToLowerInvariant()
+  $sourceBuildId = Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'current'
+  $sourceSection = "Build.$sourceBuildId"
+  $versionInfo = (Get-Item -LiteralPath $Path).VersionInfo
+  $targetVersion = "$($versionInfo.FileMajorPart).$($versionInfo.FileMinorPart).$($versionInfo.FileBuildPart)"
+  $installerHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+  $requestedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+  New-Item -ItemType Directory -Path $recoveryRoot -Force | Out-Null
+  $contents = @(
+    '[RecoveryRequest]'
+    'protocol=2'
+    "transactionId=$transactionId"
+    "targetVersion=$targetVersion"
+    "targetCommitish=$ExpectedTargetCommitish"
+    "targetInstallerSha256=$installerHash"
+    'mode=unconfigured'
+    'checkpoint=pending'
+    'snapshotId='
+    "requestedAt=$requestedAt"
+    ''
+    '[Source]'
+    "buildId=$sourceBuildId"
+    "version=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'version')"
+    "releaseTag=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'releaseTag')"
+    "targetCommitish=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'targetCommitish')"
+    "runtimeSha512=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'runtimeSha512')"
+    "installerSha256=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'installerSha256')"
+    "recoveryProtocol=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'recoveryProtocol')"
+    "serverDataEpoch=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'serverDataEpoch')"
+    "clientDataEpoch=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'clientDataEpoch')"
+    "installedAt=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'installedAt')"
+    "health=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'health')"
+    "rollbackSnapshotId=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'rollbackSnapshotId')"
+  )
+  [IO.File]::WriteAllText(
+    $updateRequestPath,
+    ($contents -join "`r`n") + "`r`n",
+    [Text.UTF8Encoding]::new($false)
+  )
+  return $transactionId
+}
+
+function Assert-ProtectedUpdatePrepared {
+  param([Parameter(Mandatory = $true)][string]$TransactionId)
+
+  if ((Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'current') -ne $ExpectedPreviousBuildId) {
+    throw 'Protected update preparation changed the active build before promotion.'
+  }
+  if (-not (Test-Path -LiteralPath $preparedPath)) {
+    throw 'Protected update preparation did not write its candidate receipt.'
+  }
+  $expectedInstallerHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ((Get-IniSectionValue -Path $preparedPath -Section 'Prepared' -Key 'protocol') -ne '2' -or
+      (Get-IniSectionValue -Path $preparedPath -Section 'Prepared' -Key 'transactionId') -ne $TransactionId -or
+      (Get-IniSectionValue -Path $preparedPath -Section 'Prepared' -Key 'buildId') -ne $ExpectedBuildId -or
+      (Get-IniSectionValue -Path $preparedPath -Section 'Prepared' -Key 'targetCommitish') -ne $ExpectedTargetCommitish -or
+      (Get-IniSectionValue -Path $preparedPath -Section 'Prepared' -Key 'installerSha256') -ne $expectedInstallerHash -or
+      (Get-IniSectionValue -Path $preparedPath -Section 'Prepared' -Key 'health') -ne 'candidate') {
+    throw 'Protected update preparation wrote an invalid candidate receipt.'
+  }
+  Assert-EmbeddedBuildIdentity -BuildId $ExpectedBuildId
+}
+
+function Remove-ProtectedUpdateMetadata {
+  foreach ($path in @($updateRequestPath, $preparedPath, "$preparedPath.new")) {
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Get-RuntimeMarkerPath {
@@ -234,6 +340,9 @@ try {
   }
 
   $previousExecutable = Join-Path (Join-Path $runtimeVersionsRoot $ExpectedPreviousBuildId) 'Relay.exe'
+  $previousStateProtocol = Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'protocol'
+  $protectedRecoveryPreparation = $previousStateProtocol -eq '2'
+  $currentFreshActivationMs = $null
   $oldRuntimeHandle = [IO.File]::Open(
     $previousExecutable,
     [IO.FileMode]::Open,
@@ -241,17 +350,31 @@ try {
     [IO.FileShare]::Read
   )
   try {
-    $currentFirstPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+    if ($protectedRecoveryPreparation) {
+      $transactionId = New-RecoveryUpdateRequest -Path $artifactPath
+      $currentFirstPreparationMs = Invoke-RelayPreparation -Path $artifactPath -TransactionId $transactionId
+      Assert-ProtectedUpdatePrepared -TransactionId $transactionId
+    }
+    else {
+      $currentFirstPreparationMs = Invoke-RelayPreparation -Path $artifactPath
+    }
   }
   finally {
     $oldRuntimeHandle.Dispose()
     $oldRuntimeHandle = $null
   }
 
+  if ($protectedRecoveryPreparation) {
+    Remove-ProtectedUpdateMetadata
+    Remove-Item -LiteralPath $statePath -Force
+    $currentFreshActivationMs = Invoke-RelayPreparation -Path $artifactPath
+  }
+
   if ((Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId) {
     throw 'Current bootstrap did not activate the expected build.'
   }
-  if ((Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
+  if (-not $protectedRecoveryPreparation -and
+      (Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
     throw 'Current bootstrap did not retain the former current build as previous.'
   }
   Assert-EmbeddedBuildIdentity -BuildId $ExpectedBuildId
@@ -401,10 +524,12 @@ try {
     ConcurrentPreparation = $true
     DifferentBuildContentionRejected = $true
     UpdateWhilePreviousLocked = $true
+    ProtectedRecoveryPreparation = $protectedRecoveryPreparation
     PreviousFirstPreparationMs = $previousFirstPreparationMs
     PreviousReusePreparationMs = $previousReusePreparationMs
     ConcurrentPreparationMs = $concurrentPreparationMs
     CurrentFirstPreparationMs = $currentFirstPreparationMs
+    CurrentFreshActivationMs = $currentFreshActivationMs
     CurrentReusePreparationMs = $currentReusePreparationMs
     CurrentRepairPreparationMs = $currentRepairPreparationMs
     ExecutableRepairPreparationMs = $executableRepairPreparationMs

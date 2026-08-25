@@ -123,6 +123,9 @@ describe('CI workflow contracts', () => {
     expect(versionStep.env.RELAY_RELEASE_VERSION).toBe('${{ inputs.release-version }}');
     expect(versionStep.run).toContain("(Get-Item -LiteralPath './release/Relay.exe').VersionInfo");
     expect(versionStep.run).toContain('$actualCore -ne $env:RELAY_RELEASE_VERSION');
+    const smokeStep = findStep(packageJob, 'Smoke test persistent bootstrap');
+    expect(smokeStep.env.RELAY_EXPECTED_TARGET_COMMITISH).toBe('${{ inputs.source-sha }}');
+    expect(smokeStep.run).toContain('-ExpectedTargetCommitish');
     const benchmarkStep = findStep(packageJob, 'Benchmark packaged startup paths');
     expect(benchmarkStep.env.COMPRESSION).toBe('${{ inputs.compression }}');
     expect(benchmarkStep.run).not.toContain('${{ inputs.compression }}');
