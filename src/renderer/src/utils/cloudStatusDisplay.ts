@@ -7,15 +7,11 @@ import {
   type CloudStatusProvider,
   type MistCloudStatusProvider,
 } from '@shared/ipc';
-import {
-  CLOUD_STATUS_PORTALS,
-  CLOUD_STATUS_PORTAL_ORDER,
-  type CloudStatusPortalProvider,
+export {
+  CLOUD_STATUS_PORTALS as DISPLAY_CLOUD_STATUS_PORTALS,
+  CLOUD_STATUS_PORTAL_ORDER as DISPLAY_CLOUD_STATUS_PORTAL_ORDER,
+  type CloudStatusPortalProvider as DisplayCloudStatusPortalProvider,
 } from '@shared/cloudStatusPortals';
-
-export const DISPLAY_CLOUD_STATUS_PORTAL_ORDER = CLOUD_STATUS_PORTAL_ORDER;
-export const DISPLAY_CLOUD_STATUS_PORTALS = CLOUD_STATUS_PORTALS;
-export type DisplayCloudStatusPortalProvider = CloudStatusPortalProvider;
 
 export const DISPLAY_CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
