@@ -59,6 +59,11 @@ since the highest reachable `vX.Y.Z` tag:
   release.
 - When no release tag exists, the first release is `v1.0.0`.
 
+Because protected `main` uses squash merges, a release-intended pull request title must itself use
+the applicable conventional prefix; branch commit subjects alone do not guarantee release
+classification. Preserve a title such as `feat(release): describe the capability` for a minor
+release or `fix(release): describe the correction` for a patch release through merge.
+
 The calculated version is injected into Electron package metadata without changing the source
 commit. The reusable Windows job must still pass its native dependency build, Windows updater and
 private-DACL integration tests, persistent bootstrap smoke test, packaged startup benchmark, and
