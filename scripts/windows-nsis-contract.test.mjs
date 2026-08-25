@@ -23,8 +23,8 @@ describe('Windows NSIS launcher contract', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
-    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "3"');
-    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 103');
+    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "4"');
+    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 104');
     expect(source).toContain('VIProductVersion "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"FileVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"ProductVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
@@ -721,7 +721,7 @@ describe('Windows packaging integration contract', () => {
 
     expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(smoke.env.RELAY_EXPECTED_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
-    expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(103);
+    expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(104);
     expect(smoke.run).toContain('steps.previous.outputs.build_id');
     expect(smoke.run).toContain('scripts/windows-bootstrap-smoke.ps1');
     expect(smoke.run).toContain('-PreviousArtifact');

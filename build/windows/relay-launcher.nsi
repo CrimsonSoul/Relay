@@ -313,6 +313,25 @@ FunctionEnd
             StrCpy ${RESULT} "1"
           ${EndIf}
         ${EndIf}
+      ${ElseIf} $RelayProtocol == "${RELAY_LEGACY_STATE_PROTOCOL}"
+      ${AndIf} $RelayCurrent == "${BUILD_ID}"
+        ; A legacy updater activates a recovery-capable runtime before that
+        ; runtime can establish the protocol-2 catalog on its next update.
+        ; Accept only the recorded current build and still verify every
+        ; launch-critical file against its protocol-2 marker.
+        ${If} $RelayMarkerBuildId == "${BUILD_ID}"
+        ${AndIf} $RelayMarkerExecutable == "${RELAY_INNER_EXECUTABLE}"
+        ${AndIf} $RelayPayloadHashLength == 128
+        ${AndIf} $RelayPayloadHashFiltered == $RelayMarkerPayloadHash
+        ${AndIf} $RelayContentIntegrity == "1"
+        ${AndIf} $RelayMarkerVersion != ""
+        ${AndIf} $RelayMarkerReleaseTag == "v$RelayMarkerVersion"
+        ${AndIf} $RelayMarkerCommit != ""
+        ${AndIf} $RelayMarkerServerEpoch != ""
+        ${AndIf} $RelayMarkerClientEpoch != ""
+        ${AndIf} $RelayBinaryResult != "0"
+          StrCpy ${RESULT} "1"
+        ${EndIf}
       ${ElseIf} $RelayPreparedBuild == "${BUILD_ID}"
         ; Before candidate ingestion, bind the new runtime to the independently
         ; validated prepared receipt because it is not in state.ini yet.
