@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -11,7 +12,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
@@ -69,6 +70,76 @@ function updateCheck(overrides: Partial<RelayUpdateCheck> = {}): RelayUpdateChec
     },
     ...overrides,
   };
+}
+
+const RECOVERY_INTEGRITY_FILES = [
+  ['executableSha512', 'Relay.exe'],
+  ['d3dCompilerSha512', 'd3dcompiler_47.dll'],
+  ['dxCompilerSha512', 'dxcompiler.dll'],
+  ['dxilSha512', 'dxil.dll'],
+  ['ffmpegSha512', 'ffmpeg.dll'],
+  ['libEglSha512', 'libEGL.dll'],
+  ['libGlesV2Sha512', 'libGLESv2.dll'],
+  ['vkSwiftshaderSha512', 'vk_swiftshader.dll'],
+  ['vulkanSha512', 'vulkan-1.dll'],
+  ['appAsarSha512', join('resources', 'app.asar')],
+  ['pocketbaseSha512', join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe')],
+  [
+    'pocketbaseHookSha512',
+    join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'),
+  ],
+  [
+    'betterSqlite3Sha512',
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      'better-sqlite3',
+      'build',
+      'Release',
+      'better_sqlite3.node',
+    ),
+  ],
+  [
+    'koffiSha512',
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      '@koromix',
+      'koffi-win32-x64',
+      'win32_x64',
+      'koffi.node',
+    ),
+  ],
+] as const;
+
+async function writeProtocol2RuntimeMarker(runtimeDirectory: string): Promise<string> {
+  const integrity: string[] = [];
+  for (const [key, relativePath] of RECOVERY_INTEGRITY_FILES) {
+    const path = join(runtimeDirectory, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    const contents = relativePath === 'Relay.exe' ? 'MZcurrent runtime' : `fixture:${relativePath}`;
+    await writeFile(path, contents);
+    integrity.push(`${key}=${createHash('sha512').update(contents).digest('hex')}`);
+  }
+  const marker = `${[
+    '[Relay]',
+    'protocol=2',
+    `buildId=r1-${'1'.repeat(40)}`,
+    'executable=Relay.exe',
+    `payloadHash=${'c'.repeat(128)}`,
+    `version=${CURRENT_VERSION}`,
+    `releaseTag=v${CURRENT_VERSION}`,
+    `targetCommitish=${'1'.repeat(40)}`,
+    'serverDataEpoch=1',
+    'clientDataEpoch=1',
+    'installedAt=2026-08-24T15:00:00.000Z',
+    '[Integrity]',
+    ...integrity,
+  ].join('\r\n')}\r\n`;
+  await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), marker);
+  return createHash('sha512').update(marker).digest('hex');
 }
 
 describe('ReleaseUpdateManager', () => {
@@ -288,6 +359,27 @@ describe('ReleaseUpdateManager', () => {
     );
   });
 
+  it('prepares an update from a verified protocol-2 runtime marker', async () => {
+    const runtimeSha512 = await writeProtocol2RuntimeMarker(runtimeDirectory);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    const request = parseRecoveryUpdateRequest(
+      await readFile(join(relayRoot, 'Recovery', 'update-request.ini'), 'utf8'),
+    );
+    expect(request?.source).toMatchObject({
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512,
+      recoveryProtocol: 2,
+      health: 'healthy',
+    });
+  });
+
   it('does not offer download for a mutable notification-only release', async () => {
     const updates = manager();
     await updates.noteCheck(updateCheck({ installable: false, assetSizeBytes: null }));
@@ -396,6 +488,184 @@ describe('ReleaseUpdateManager', () => {
     });
     expect(spawnInstaller).toHaveBeenCalledTimes(2);
     expect(restartApp).not.toHaveBeenCalled();
+  });
+
+  it('falls back to direct activation when protected preparation fails on legacy state', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      failureCode: null,
+    });
+    expect(spawnInstaller).toHaveBeenNthCalledWith(1, expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(/^\/relay-transaction=/u),
+    ]);
+    expect(spawnInstaller).toHaveBeenNthCalledWith(2, expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+    ]);
+    await expect(stat(join(relayRoot, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).not.toHaveBeenCalled();
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
+  it('uses direct legacy activation to repair an unverifiable running marker', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), '[Relay]\nprotocol=2\n');
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+    ]);
+  });
+
+  it.each([
+    ['protected state', `[Relay]\nprotocol=2\ncurrent=r1-${'1'.repeat(40)}\n`],
+    ['a different legacy current build', '[Relay]\nprotocol=1\ncurrent=r1-other\n'],
+  ])('never bypasses recovery preparation for %s', async (_label, state) => {
+    await writeFile(join(relayRoot, 'state.ini'), state);
+    spawnInstaller.mockResolvedValue(1);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(/^\/relay-transaction=/u),
+    ]);
+  });
+
+  it('rechecks legacy state after the protected attempt before direct activation', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(
+        join(relayRoot, 'state.ini'),
+        `[Relay]\nprotocol=2\ncurrent=r1-${'1'.repeat(40)}\n`,
+      );
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed legacy state written during the protected attempt', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(join(relayRoot, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=../redirected\n');
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('rejects legacy state redirected during the protected attempt', async () => {
+    const statePath = join(relayRoot, 'state.ini');
+    const redirectedStatePath = join(tempRoot, 'redirected-state.ini');
+    await writeFile(statePath, `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`);
+    await writeFile(
+      redirectedStatePath,
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await rm(statePath);
+      await symlink(redirectedStatePath, statePath, 'file');
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('binds legacy fallback eligibility to the canonical executing build', async () => {
+    const canonicalRuntime = join(relayRoot, 'Runtime', 'r1-canonical');
+    await rename(runtimeDirectory, canonicalRuntime);
+    await symlink(canonicalRuntime, runtimeDirectory, 'dir');
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).not.toHaveBeenCalled();
+  });
+
+  it('re-hashes the staged installer before legacy direct activation', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async (path) => {
+      const tamperedInstaller = Buffer.from(INSTALLER);
+      tamperedInstaller.fill(0x78, 2);
+      expect(tamperedInstaller).toHaveLength(INSTALLER.byteLength);
+      await writeFile(path, tamperedInstaller);
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'verification-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
   });
 
   it('removes a recovery request when the bootstrap cannot be started', async () => {

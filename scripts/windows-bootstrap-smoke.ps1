@@ -133,6 +133,7 @@ function Invoke-RelayPreparation {
     [Parameter(Mandatory = $true)]
     [string]$Path,
     [string]$TransactionId = '',
+    [switch]$HideWindow,
     [switch]$ExpectFailure
   )
 
@@ -141,7 +142,20 @@ function Invoke-RelayPreparation {
     $arguments += "/relay-transaction=$TransactionId"
   }
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-  $process = Start-Process -FilePath $Path -ArgumentList $arguments -PassThru
+  if ($HideWindow) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Path
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    foreach ($argument in $arguments) {
+      $null = $startInfo.ArgumentList.Add($argument)
+    }
+    $process = [Diagnostics.Process]::Start($startInfo)
+  }
+  else {
+    $process = Start-Process -FilePath $Path -ArgumentList $arguments -PassThru
+  }
   Wait-ProcessWithTimeout -Process $process -Context "Relay preparation: $Path"
   $stopwatch.Stop()
   if ($ExpectFailure) {
@@ -200,16 +214,52 @@ function Get-IniSectionValue {
   throw "Missing $Section.$Key in $Path"
 }
 
+function Get-IniSectionValueOrDefault {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Section,
+    [Parameter(Mandatory = $true)][string]$Key,
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Default
+  )
+
+  try {
+    return Get-IniSectionValue -Path $Path -Section $Section -Key $Key
+  }
+  catch {
+    return $Default
+  }
+}
+
 function New-RecoveryUpdateRequest {
   param([Parameter(Mandatory = $true)][string]$Path)
 
   $transactionId = [Guid]::NewGuid().ToString().ToLowerInvariant()
   $sourceBuildId = Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'current'
-  $sourceSection = "Build.$sourceBuildId"
+  $sourceMarkerPath = Get-RuntimeMarkerPath -BuildId $sourceBuildId
+  $sourceExecutablePath = Join-Path (Join-Path $runtimeVersionsRoot $sourceBuildId) 'Relay.exe'
+  if (-not (Test-Path -LiteralPath $sourceMarkerPath)) {
+    throw "Recovery source marker was missing: $sourceMarkerPath"
+  }
+  $sourceProtocol = Get-IniSectionValue -Path $sourceMarkerPath -Section 'Relay' -Key 'protocol'
+  $sourcePayloadHash = Get-IniSectionValue -Path $sourceMarkerPath -Section 'Relay' -Key 'payloadHash'
+  $sourceRuntimeHash = if ($sourceProtocol -eq '2') {
+    (Get-FileHash -LiteralPath $sourceMarkerPath -Algorithm SHA512).Hash.ToLowerInvariant()
+  }
+  else {
+    $sourcePayloadHash.ToLowerInvariant()
+  }
   $versionInfo = (Get-Item -LiteralPath $Path).VersionInfo
   $targetVersion = "$($versionInfo.FileMajorPart).$($versionInfo.FileMinorPart).$($versionInfo.FileBuildPart)"
   $installerHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
   $requestedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+  $sourceVersionInfo = (Get-Item -LiteralPath $sourceExecutablePath).VersionInfo
+  $sourceVersionDefault = "$($sourceVersionInfo.FileMajorPart).$($sourceVersionInfo.FileMinorPart).$($sourceVersionInfo.FileBuildPart)"
+  $sourceVersion = Get-IniSectionValueOrDefault -Path $sourceMarkerPath -Section 'Relay' -Key 'version' -Default $sourceVersionDefault
+  $sourceReleaseTag = Get-IniSectionValueOrDefault -Path $sourceMarkerPath -Section 'Relay' -Key 'releaseTag' -Default "v$sourceVersion"
+  $sourceCommit = Get-IniSectionValueOrDefault -Path $sourceMarkerPath -Section 'Relay' -Key 'targetCommitish' -Default ($sourceBuildId -replace '^r\d+-', '')
+  $sourceServerEpoch = Get-IniSectionValueOrDefault -Path $sourceMarkerPath -Section 'Relay' -Key 'serverDataEpoch' -Default '1'
+  $sourceClientEpoch = Get-IniSectionValueOrDefault -Path $sourceMarkerPath -Section 'Relay' -Key 'clientDataEpoch' -Default '1'
+  $sourceInstalledAt = Get-IniSectionValueOrDefault -Path $sourceMarkerPath -Section 'Relay' -Key 'installedAt' -Default $requestedAt
   New-Item -ItemType Directory -Path $recoveryRoot -Force | Out-Null
   $contents = @(
     '[RecoveryRequest]'
@@ -225,17 +275,17 @@ function New-RecoveryUpdateRequest {
     ''
     '[Source]'
     "buildId=$sourceBuildId"
-    "version=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'version')"
-    "releaseTag=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'releaseTag')"
-    "targetCommitish=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'targetCommitish')"
-    "runtimeSha512=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'runtimeSha512')"
-    "installerSha256=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'installerSha256')"
-    "recoveryProtocol=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'recoveryProtocol')"
-    "serverDataEpoch=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'serverDataEpoch')"
-    "clientDataEpoch=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'clientDataEpoch')"
-    "installedAt=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'installedAt')"
-    "health=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'health')"
-    "rollbackSnapshotId=$(Get-IniSectionValue -Path $statePath -Section $sourceSection -Key 'rollbackSnapshotId')"
+    "version=$sourceVersion"
+    "releaseTag=$sourceReleaseTag"
+    "targetCommitish=$sourceCommit"
+    "runtimeSha512=$sourceRuntimeHash"
+    'installerSha256='
+    "recoveryProtocol=$sourceProtocol"
+    "serverDataEpoch=$sourceServerEpoch"
+    "clientDataEpoch=$sourceClientEpoch"
+    "installedAt=$sourceInstalledAt"
+    'health=healthy'
+    'rollbackSnapshotId='
   )
   [IO.File]::WriteAllText(
     $updateRequestPath,
@@ -356,6 +406,10 @@ try {
   $previousExecutable = Join-Path (Join-Path $runtimeVersionsRoot $ExpectedPreviousBuildId) 'Relay.exe'
   $previousStateProtocol = Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'protocol'
   $protectedRecoveryPreparation = $previousStateProtocol -eq '2'
+  $legacyStateProtectedRecoveryPreparation = $false
+  $legacyDirectActivationFallback = $false
+  $legacyStatePreparationMs = $null
+  $legacyDirectActivationMs = $null
   $currentFreshActivationMs = $null
   $oldRuntimeHandle = [IO.File]::Open(
     $previousExecutable,
@@ -365,6 +419,52 @@ try {
   )
   try {
     if ($protectedRecoveryPreparation) {
+      $protectedState = [IO.File]::ReadAllBytes($statePath)
+      try {
+        [IO.File]::WriteAllText(
+          $statePath,
+          "[Relay]`r`nprotocol=1`r`ncurrent=$ExpectedPreviousBuildId`r`nprevious=`r`n",
+          [Text.UTF8Encoding]::new($false)
+        )
+        $legacyTransactionId = New-RecoveryUpdateRequest -Path $artifactPath
+        $legacyStatePreparationMs = Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId -HideWindow
+        Assert-ProtectedUpdatePrepared -TransactionId $legacyTransactionId
+        $legacyStateProtectedRecoveryPreparation = $true
+
+        Remove-ProtectedUpdateMetadata
+        Remove-Item -LiteralPath (Join-Path $runtimeVersionsRoot $ExpectedBuildId) -Recurse -Force
+        $rejectedTransactionId = New-RecoveryUpdateRequest -Path $artifactPath
+        $mismatchedRequest = [IO.File]::ReadAllText($updateRequestPath).Replace(
+          "targetCommitish=$ExpectedTargetCommitish",
+          "targetCommitish=$('0' * 40)"
+        )
+        [IO.File]::WriteAllText(
+          $updateRequestPath,
+          $mismatchedRequest,
+          [Text.UTF8Encoding]::new($false)
+        )
+        $null = Invoke-RelayPreparation -Path $artifactPath -TransactionId $rejectedTransactionId -HideWindow -ExpectFailure
+        Remove-Item -LiteralPath $updateRequestPath -Force
+        $legacyDirectActivationMs = Invoke-RelayPreparation -Path $artifactPath -HideWindow
+        if ((Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'protocol') -ne '1' -or
+            (Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
+            (Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
+          throw 'Legacy direct activation did not retain the running build in protocol-1 state after a rejected protected attempt.'
+        }
+        if ((Test-Path -LiteralPath $updateRequestPath -PathType Leaf) -or
+            (Test-Path -LiteralPath $preparedPath -PathType Leaf) -or
+            (Test-Path -LiteralPath "$preparedPath.new" -PathType Leaf)) {
+          throw 'Legacy direct activation left protected transaction metadata behind.'
+        }
+        Assert-EmbeddedBuildIdentity -BuildId $ExpectedBuildId
+        $legacyDirectActivationFallback = $true
+      }
+      finally {
+        Remove-ProtectedUpdateMetadata
+        [IO.File]::WriteAllBytes($statePath, $protectedState)
+        Remove-Item -LiteralPath (Join-Path $runtimeVersionsRoot $ExpectedBuildId) -Recurse -Force -ErrorAction SilentlyContinue
+      }
+
       $transactionId = New-RecoveryUpdateRequest -Path $artifactPath
       $currentFirstPreparationMs = Invoke-RelayPreparation -Path $artifactPath -TransactionId $transactionId
       Assert-ProtectedUpdatePrepared -TransactionId $transactionId
@@ -543,12 +643,16 @@ try {
     DifferentBuildContentionRejected = $true
     UpdateWhilePreviousLocked = $true
     ProtectedRecoveryPreparation = $protectedRecoveryPreparation
+    LegacyStateProtectedRecoveryPreparation = $legacyStateProtectedRecoveryPreparation
+    LegacyDirectActivationFallback = $legacyDirectActivationFallback
     PreviousLauncherProtocolExitCode = $previousLauncherProtocolExitCode
     LauncherProtocolExitCode = $launcherProtocolExitCode
     LauncherGenerationUpgraded = $previousLauncherProtocolExitCode -ne $launcherProtocolExitCode
     PreviousFirstPreparationMs = $previousFirstPreparationMs
     PreviousReusePreparationMs = $previousReusePreparationMs
     ConcurrentPreparationMs = $concurrentPreparationMs
+    LegacyStatePreparationMs = $legacyStatePreparationMs
+    LegacyDirectActivationMs = $legacyDirectActivationMs
     CurrentFirstPreparationMs = $currentFirstPreparationMs
     CurrentFreshActivationMs = $currentFreshActivationMs
     CurrentReusePreparationMs = $currentReusePreparationMs

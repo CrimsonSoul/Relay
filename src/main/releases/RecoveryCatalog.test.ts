@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRecoveryBaseline,
+  parseLegacyRecoveryState,
   parseRecoveryCatalog,
   promoteRecoveryCandidate,
   serializeRecoveryCatalog,
@@ -187,6 +188,23 @@ describe('RecoveryCatalog', () => {
       transaction: null,
       failedReleaseFingerprints: [],
     });
+  });
+
+  it('parses only a path-safe protocol-1 launcher state', () => {
+    expect(
+      parseLegacyRecoveryState(
+        '[Relay]\r\nprotocol=1\r\ncurrent=r1-current\r\nprevious=r1-previous\r\n',
+      ),
+    ).toEqual({ currentBuildId: 'r1-current', previousBuildId: 'r1-previous' });
+
+    expect(
+      parseLegacyRecoveryState(
+        '[Relay]\nprotocol=1\ncurrent=r1-current\nprevious=..\\redirected\n',
+      ),
+    ).toBeNull();
+    expect(
+      parseLegacyRecoveryState('[Relay]\nprotocol=2\ncurrent=r1-current\nprevious=\n'),
+    ).toBeNull();
   });
 
   it('refuses a baseline when protocol-1 state references a build without verified metadata', () => {

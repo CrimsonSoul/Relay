@@ -143,12 +143,19 @@ file. The ZIP must contain exactly one regular, non-encrypted top-level `Relay.e
 links, directories, case variants, extra members, unsupported compression, size expansion, CRC
 failure, and a missing Windows executable marker fail closed and remove the staging directory.
 
-Before execution, Relay resolves and revalidates the staging directory and installer, rejects
-symbolic links, confirms the exact size and Windows marker, and re-hashes the executable. The only
-spawned argument is `/relay-prepare-only`, which delegates runtime preparation to Relay's existing
-bootstrap. Restart is another explicit action and is allowed only through the validated stable
-`%LOCALAPPDATA%\Relay\Relay.exe` launcher. Cancellation, verification failure, and successful
-preparation remove staged files; a failed bootstrap keeps only the already verified installer for a
+Before every execution, Relay resolves and revalidates the staging directory and installer, rejects
+symbolic links, confirms the exact size and Windows marker, and re-hashes the executable. Normal
+installation passes `/relay-prepare-only` plus a generated protocol-2 transaction ID to Relay's
+existing bootstrap. If that protected preparation fails, Relay removes its request before
+considering one compatibility retry with only `/relay-prepare-only`. The retry is allowed only when
+a newly resolved, bounded, non-redirected `state.ini` has exactly one strict protocol-1 Relay
+section and names the canonical build that is actually executing. Relay revalidates the staged
+installer again immediately before this decision. Protocol-2, missing, malformed, redirected, or
+mismatched state cannot use the compatibility path. A successful direct preparation restarts
+through the validated stable `%LOCALAPPDATA%\Relay\Relay.exe` launcher without claiming a
+protocol-2 checkpoint, because the legacy bootstrap has already activated protocol-1 state.
+Restart remains another explicit action. Cancellation, verification failure, and successful
+preparation remove staged files; a failed bootstrap keeps only the still-verified installer for a
 manual retry. Startup cleanup removes only recognized updater directories older than 24 hours.
 
 The automated release workflow uploads the ZIP and checksum to a clean draft release without
@@ -179,6 +186,11 @@ The protocol-2 catalog is strict and bounded: it accepts only the current build,
 healthy predecessors, and one transaction-bound candidate. Unknown sections, duplicate keys,
 invalid IDs, malformed hashes or timestamps, inconsistent health, incompatible data epochs, and
 unreferenced build records invalidate recovery rather than widening the trusted set.
+
+The legacy direct-activation compatibility path above is available only before a protocol-2 catalog
+exists. It cannot activate from a retained runtime, bypass a changed catalog, create a recovery
+checkpoint, or manufacture rollback history. Its native bootstrap activation retains the previous
+runtime, and a later protected update establishes the protocol-2 recovery baseline.
 
 Runtime roots, recovery metadata, repair staging, and server snapshots are re-resolved beneath their
 fixed app-owned parents. Relay rejects symbolic links, reparse points, non-direct children, changed
