@@ -49,6 +49,7 @@ vi.mock('./dynatraceStatusProvider', () => ({
 }));
 
 import { fetchCloudStatusData } from './fetchCloudStatus';
+import { STATUSPAGE_FEEDS } from './statuspageProvider';
 
 function item<P extends CloudStatusProvider>(provider: P, id: string): CloudStatusItem<P> {
   return {
@@ -169,6 +170,24 @@ describe('fetchCloudStatusData', () => {
       provider: 'equinix',
       message: 'Equinix unavailable',
     });
+  });
+
+  it('retains Equinix status and reports an error when its feed is not configured', async () => {
+    const previous = item('equinix', 'previous-equinix');
+    const configuredFeed = STATUSPAGE_FEEDS.equinix;
+    delete STATUSPAGE_FEEDS.equinix;
+
+    try {
+      const result = await fetchCloudStatusData(previousStatus([previous]));
+
+      expect(result.providers.equinix).toEqual([previous]);
+      expect(result.errors).toContainEqual({
+        provider: 'equinix',
+        message: 'Equinix status feed is not configured',
+      });
+    } finally {
+      STATUSPAGE_FEEDS.equinix = configuredFeed;
+    }
   });
 
   it('fetches Proofpoint current incidents into its dedicated provider bucket', async () => {
