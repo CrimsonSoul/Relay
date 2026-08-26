@@ -207,7 +207,7 @@ function currentIncidents(responseText: string): unknown[] {
     throw new Error('Invalid Proofpoint current-incidents response');
   }
 
-  const noIncidentsDisplay = flowResponse.fields.find(
+  const hasNoIncidentsDisplay = flowResponse.fields.some(
     (field) =>
       isRecord(field) &&
       field.name === 'DisplayText' &&
@@ -216,7 +216,7 @@ function currentIncidents(responseText: string): unknown[] {
       isBoundedString(field.label, 20_000) &&
       PROOFPOINT_NO_INCIDENTS_MESSAGES.has(htmlToText(field.label)),
   );
-  if (noIncidentsDisplay) return [];
+  if (hasNoIncidentsDisplay) return [];
 
   const inputs = flowResponse.fields.flatMap((field) =>
     isRecord(field) && Array.isArray(field.inputs) ? field.inputs : [],
