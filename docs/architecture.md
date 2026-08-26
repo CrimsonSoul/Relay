@@ -184,11 +184,12 @@ without closing the current process. A successful preparation changes the state 
 only the final explicit action validates and relaunches through `%LOCALAPPDATA%\Relay\Relay.exe`.
 The normal path binds preparation to a protocol-2 recovery transaction. If that protected
 preparation fails while `state.ini` is still protocol 1 and its path-safe current build is the
-runtime actually executing, the manager removes its request and retries the same verified installer
-once with direct prepare-only activation. This is the in-app equivalent of the supported legacy
-manual upgrade: the native bootstrap validates and retains the prior runtime, and Restart still
-uses the stable launcher. A protocol-2 catalog, a mismatched running build, redirected state, or a
-second bootstrap failure cannot use this compatibility path.
+runtime actually executing, the manager removes its request, revalidates the staged installer,
+re-resolves the legacy state, and retries once with direct prepare-only activation. This is the
+in-app equivalent of the supported legacy manual upgrade: the native bootstrap validates and
+retains the prior runtime, and Restart still uses the stable launcher. A protocol-2 catalog, a
+mismatched running build, redirected state, changed installer, or a second bootstrap failure cannot
+use this compatibility path.
 Cancellation and failures remove untrusted partial data, while a bootstrap failure retains the
 verified installer for a deliberate retry. Startup cleanup removes only recognized updater staging
 directories older than 24 hours, leaving recent or unrelated paths untouched.

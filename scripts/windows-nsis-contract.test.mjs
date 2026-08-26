@@ -590,7 +590,7 @@ describe('Windows NSIS bootstrap contract', () => {
     const bootstrap = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain("-ArgumentList '/relay-prepare-only'");
-    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(13);
+    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(15);
     expect(source).toContain('LastWriteTimeUtc.Ticks');
     expect(source).toContain("GetFolderPath('Desktop')");
     expect(source).toContain("GetFolderPath('StartMenu')");
@@ -610,6 +610,7 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('/relay-transaction=');
     expect(source).toContain('ProtectedRecoveryPreparation');
     expect(source).toContain('LegacyStateProtectedRecoveryPreparation');
+    expect(source).toContain('LegacyDirectActivationFallback');
     expect(source).toContain(
       '"[Relay]`r`nprotocol=1`r`ncurrent=$ExpectedPreviousBuildId`r`nprevious=`r`n"',
     );
@@ -618,6 +619,15 @@ describe('Windows NSIS bootstrap contract', () => {
     );
     expect(source).toContain('$startInfo.CreateNoWindow = $true');
     expect(source).toContain('$startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden');
+    expect(source).toContain('-HideWindow -ExpectFailure');
+    expect(source).toContain(
+      '$legacyDirectActivationMs = Invoke-RelayPreparation -Path $artifactPath -HideWindow',
+    );
+    expect(source).toContain('Remove-Item -LiteralPath $updateRequestPath -Force');
+    expect(source).toContain("-Section 'Relay' -Key 'protocol') -ne '1'");
+    expect(source).toContain(
+      'Legacy direct activation left protected transaction metadata behind.',
+    );
     expect(source).toContain('Remove-ProtectedUpdateMetadata');
     expect(source).toContain(
       'Invoke-RelayPreparation -Path $artifactPath -TransactionId $transactionId',

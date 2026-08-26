@@ -407,7 +407,9 @@ try {
   $previousStateProtocol = Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'protocol'
   $protectedRecoveryPreparation = $previousStateProtocol -eq '2'
   $legacyStateProtectedRecoveryPreparation = $false
+  $legacyDirectActivationFallback = $false
   $legacyStatePreparationMs = $null
+  $legacyDirectActivationMs = $null
   $currentFreshActivationMs = $null
   $oldRuntimeHandle = [IO.File]::Open(
     $previousExecutable,
@@ -428,6 +430,34 @@ try {
         $legacyStatePreparationMs = Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId -HideWindow
         Assert-ProtectedUpdatePrepared -TransactionId $legacyTransactionId
         $legacyStateProtectedRecoveryPreparation = $true
+
+        Remove-ProtectedUpdateMetadata
+        Remove-Item -LiteralPath (Join-Path $runtimeVersionsRoot $ExpectedBuildId) -Recurse -Force
+        $rejectedTransactionId = New-RecoveryUpdateRequest -Path $artifactPath
+        $mismatchedRequest = [IO.File]::ReadAllText($updateRequestPath).Replace(
+          "targetCommitish=$ExpectedTargetCommitish",
+          "targetCommitish=$('0' * 40)"
+        )
+        [IO.File]::WriteAllText(
+          $updateRequestPath,
+          $mismatchedRequest,
+          [Text.UTF8Encoding]::new($false)
+        )
+        $null = Invoke-RelayPreparation -Path $artifactPath -TransactionId $rejectedTransactionId -HideWindow -ExpectFailure
+        Remove-Item -LiteralPath $updateRequestPath -Force
+        $legacyDirectActivationMs = Invoke-RelayPreparation -Path $artifactPath -HideWindow
+        if ((Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'protocol') -ne '1' -or
+            (Get-IniValue -Path $statePath -Key 'current') -ne $ExpectedBuildId -or
+            (Get-IniValue -Path $statePath -Key 'previous') -ne $ExpectedPreviousBuildId) {
+          throw 'Legacy direct activation did not retain the running build in protocol-1 state after a rejected protected attempt.'
+        }
+        if ((Test-Path -LiteralPath $updateRequestPath -PathType Leaf) -or
+            (Test-Path -LiteralPath $preparedPath -PathType Leaf) -or
+            (Test-Path -LiteralPath "$preparedPath.new" -PathType Leaf)) {
+          throw 'Legacy direct activation left protected transaction metadata behind.'
+        }
+        Assert-EmbeddedBuildIdentity -BuildId $ExpectedBuildId
+        $legacyDirectActivationFallback = $true
       }
       finally {
         Remove-ProtectedUpdateMetadata
@@ -614,6 +644,7 @@ try {
     UpdateWhilePreviousLocked = $true
     ProtectedRecoveryPreparation = $protectedRecoveryPreparation
     LegacyStateProtectedRecoveryPreparation = $legacyStateProtectedRecoveryPreparation
+    LegacyDirectActivationFallback = $legacyDirectActivationFallback
     PreviousLauncherProtocolExitCode = $previousLauncherProtocolExitCode
     LauncherProtocolExitCode = $launcherProtocolExitCode
     LauncherGenerationUpgraded = $previousLauncherProtocolExitCode -ne $launcherProtocolExitCode
@@ -621,6 +652,7 @@ try {
     PreviousReusePreparationMs = $previousReusePreparationMs
     ConcurrentPreparationMs = $concurrentPreparationMs
     LegacyStatePreparationMs = $legacyStatePreparationMs
+    LegacyDirectActivationMs = $legacyDirectActivationMs
     CurrentFirstPreparationMs = $currentFirstPreparationMs
     CurrentFreshActivationMs = $currentFreshActivationMs
     CurrentReusePreparationMs = $currentReusePreparationMs

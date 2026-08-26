@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -556,6 +557,115 @@ describe('ReleaseUpdateManager', () => {
       '/relay-prepare-only',
       expect.stringMatching(/^\/relay-transaction=/u),
     ]);
+  });
+
+  it('rechecks legacy state after the protected attempt before direct activation', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(
+        join(relayRoot, 'state.ini'),
+        `[Relay]\nprotocol=2\ncurrent=r1-${'1'.repeat(40)}\n`,
+      );
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed legacy state written during the protected attempt', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(join(relayRoot, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=../redirected\n');
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('rejects legacy state redirected during the protected attempt', async () => {
+    const statePath = join(relayRoot, 'state.ini');
+    const redirectedStatePath = join(tempRoot, 'redirected-state.ini');
+    await writeFile(statePath, `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`);
+    await writeFile(
+      redirectedStatePath,
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await rm(statePath);
+      await symlink(redirectedStatePath, statePath, 'file');
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('binds legacy fallback eligibility to the canonical executing build', async () => {
+    const canonicalRuntime = join(relayRoot, 'Runtime', 'r1-canonical');
+    await rename(runtimeDirectory, canonicalRuntime);
+    await symlink(canonicalRuntime, runtimeDirectory, 'dir');
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).not.toHaveBeenCalled();
+  });
+
+  it('re-hashes the staged installer before legacy direct activation', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async (path) => {
+      const tamperedInstaller = Buffer.from(INSTALLER);
+      tamperedInstaller.fill(0x78, 2);
+      expect(tamperedInstaller).toHaveLength(INSTALLER.byteLength);
+      await writeFile(path, tamperedInstaller);
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'verification-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
   });
 
   it('removes a recovery request when the bootstrap cannot be started', async () => {

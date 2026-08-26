@@ -92,6 +92,7 @@ type ManagedRoot = {
   root: string;
   realRoot: string;
   runtimeRoot: string;
+  executingBuildId: string;
   updatesRoot: string;
   stableLauncher: string;
 };
@@ -210,6 +211,7 @@ async function resolveManagedRoot(
       root: requestedRoot,
       realRoot,
       runtimeRoot,
+      executingBuildId: parts[0]!,
       updatesRoot: join(requestedRoot, 'Updates'),
       stableLauncher: join(requestedRoot, INSTALLER_NAME),
     };
@@ -257,10 +259,7 @@ async function readCurrentRecoveryBuild(
   return record;
 }
 
-async function supportsLegacyDirectActivation(
-  managedRoot: ManagedRoot,
-  execPath: string,
-): Promise<boolean> {
+async function supportsLegacyDirectActivation(managedRoot: ManagedRoot): Promise<boolean> {
   const statePath = join(managedRoot.realRoot, 'state.ini');
   try {
     const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
@@ -273,9 +272,7 @@ async function supportsLegacyDirectActivation(
       return false;
     }
     const state = parseLegacyRecoveryState(await readFile(resolvedStatePath, 'utf8'));
-    const runtimeDirectory = dirname(execPath);
-    const runningBuildId = runtimeDirectory.slice(runtimeDirectory.lastIndexOf(sep) + 1);
-    return state?.currentBuildId === runningBuildId;
+    return state?.currentBuildId === managedRoot.executingBuildId;
   } catch {
     return false;
   }
@@ -531,10 +528,6 @@ export class ReleaseUpdateManager {
 
     const managedRoot = await this.supportedManagedRoot();
     if (!managedRoot) return this.fail('unsupported');
-    const legacyDirectActivationAvailable = await supportsLegacyDirectActivation(
-      managedRoot,
-      this.options.execPath,
-    );
 
     try {
       const transactionId = randomUUID();
@@ -564,20 +557,33 @@ export class ReleaseUpdateManager {
         PREPARE_ONLY_ARGUMENT,
         `${RECOVERY_TRANSACTION_ARGUMENT}${transactionId}`,
       ]);
-      if (exitCode !== 0) {
-        await rm(requestPath, { force: true }).catch(() => undefined);
-      } else {
+      if (exitCode === 0) {
         this.recoveryTransactionId = transactionId;
         await this.clearStagedUpdate();
         this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
         return this.snapshot();
       }
     } catch {
-      if (requestPath) await rm(requestPath, { force: true }).catch(() => undefined);
       this.recoveryTransactionId = null;
     }
 
-    if (!legacyDirectActivationAvailable) return this.fail('install-failed');
+    if (requestPath) {
+      try {
+        await rm(requestPath, { force: true });
+        requestPath = null;
+      } catch {
+        return this.fail('install-failed');
+      }
+    }
+    try {
+      await this.validateStagedInstaller(staged);
+    } catch {
+      await this.clearStagedUpdate();
+      return this.fail('verification-failed');
+    }
+    if (!(await supportsLegacyDirectActivation(managedRoot))) {
+      return this.fail('install-failed');
+    }
     try {
       const exitCode = await this.options.spawnInstaller(staged.installerPath, [
         PREPARE_ONLY_ARGUMENT,
