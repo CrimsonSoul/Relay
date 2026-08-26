@@ -133,6 +133,7 @@ function Invoke-RelayPreparation {
     [Parameter(Mandatory = $true)]
     [string]$Path,
     [string]$TransactionId = '',
+    [switch]$HideWindow,
     [switch]$ExpectFailure
   )
 
@@ -141,7 +142,20 @@ function Invoke-RelayPreparation {
     $arguments += "/relay-transaction=$TransactionId"
   }
   $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-  $process = Start-Process -FilePath $Path -ArgumentList $arguments -PassThru
+  if ($HideWindow) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Path
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    foreach ($argument in $arguments) {
+      $null = $startInfo.ArgumentList.Add($argument)
+    }
+    $process = [Diagnostics.Process]::Start($startInfo)
+  }
+  else {
+    $process = Start-Process -FilePath $Path -ArgumentList $arguments -PassThru
+  }
   Wait-ProcessWithTimeout -Process $process -Context "Relay preparation: $Path"
   $stopwatch.Stop()
   if ($ExpectFailure) {
@@ -411,7 +425,7 @@ try {
           [Text.UTF8Encoding]::new($false)
         )
         $legacyTransactionId = New-RecoveryUpdateRequest -Path $artifactPath
-        $legacyStatePreparationMs = Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId
+        $legacyStatePreparationMs = Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId -HideWindow
         Assert-ProtectedUpdatePrepared -TransactionId $legacyTransactionId
         $legacyStateProtectedRecoveryPreparation = $true
       }

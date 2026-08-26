@@ -11,7 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
@@ -69,6 +69,76 @@ function updateCheck(overrides: Partial<RelayUpdateCheck> = {}): RelayUpdateChec
     },
     ...overrides,
   };
+}
+
+const RECOVERY_INTEGRITY_FILES = [
+  ['executableSha512', 'Relay.exe'],
+  ['d3dCompilerSha512', 'd3dcompiler_47.dll'],
+  ['dxCompilerSha512', 'dxcompiler.dll'],
+  ['dxilSha512', 'dxil.dll'],
+  ['ffmpegSha512', 'ffmpeg.dll'],
+  ['libEglSha512', 'libEGL.dll'],
+  ['libGlesV2Sha512', 'libGLESv2.dll'],
+  ['vkSwiftshaderSha512', 'vk_swiftshader.dll'],
+  ['vulkanSha512', 'vulkan-1.dll'],
+  ['appAsarSha512', join('resources', 'app.asar')],
+  ['pocketbaseSha512', join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe')],
+  [
+    'pocketbaseHookSha512',
+    join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'),
+  ],
+  [
+    'betterSqlite3Sha512',
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      'better-sqlite3',
+      'build',
+      'Release',
+      'better_sqlite3.node',
+    ),
+  ],
+  [
+    'koffiSha512',
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      '@koromix',
+      'koffi-win32-x64',
+      'win32_x64',
+      'koffi.node',
+    ),
+  ],
+] as const;
+
+async function writeProtocol2RuntimeMarker(runtimeDirectory: string): Promise<string> {
+  const integrity: string[] = [];
+  for (const [key, relativePath] of RECOVERY_INTEGRITY_FILES) {
+    const path = join(runtimeDirectory, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    const contents = relativePath === 'Relay.exe' ? 'MZcurrent runtime' : `fixture:${relativePath}`;
+    await writeFile(path, contents);
+    integrity.push(`${key}=${createHash('sha512').update(contents).digest('hex')}`);
+  }
+  const marker = `${[
+    '[Relay]',
+    'protocol=2',
+    `buildId=r1-${'1'.repeat(40)}`,
+    'executable=Relay.exe',
+    `payloadHash=${'c'.repeat(128)}`,
+    `version=${CURRENT_VERSION}`,
+    `releaseTag=v${CURRENT_VERSION}`,
+    `targetCommitish=${'1'.repeat(40)}`,
+    'serverDataEpoch=1',
+    'clientDataEpoch=1',
+    'installedAt=2026-08-24T15:00:00.000Z',
+    '[Integrity]',
+    ...integrity,
+  ].join('\r\n')}\r\n`;
+  await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), marker);
+  return createHash('sha512').update(marker).digest('hex');
 }
 
 describe('ReleaseUpdateManager', () => {
@@ -286,6 +356,27 @@ describe('ReleaseUpdateManager', () => {
         'ready-to-restart',
       ]),
     );
+  });
+
+  it('prepares an update from a verified protocol-2 runtime marker', async () => {
+    const runtimeSha512 = await writeProtocol2RuntimeMarker(runtimeDirectory);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    const request = parseRecoveryUpdateRequest(
+      await readFile(join(relayRoot, 'Recovery', 'update-request.ini'), 'utf8'),
+    );
+    expect(request?.source).toMatchObject({
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512,
+      recoveryProtocol: 2,
+      health: 'healthy',
+    });
   });
 
   it('does not offer download for a mutable notification-only release', async () => {

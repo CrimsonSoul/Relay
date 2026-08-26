@@ -614,8 +614,10 @@ describe('Windows NSIS bootstrap contract', () => {
       '"[Relay]`r`nprotocol=1`r`ncurrent=$ExpectedPreviousBuildId`r`nprevious=`r`n"',
     );
     expect(source).toContain(
-      'Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId',
+      'Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId -HideWindow',
     );
+    expect(source).toContain('$startInfo.CreateNoWindow = $true');
+    expect(source).toContain('$startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden');
     expect(source).toContain('Remove-ProtectedUpdateMetadata');
     expect(source).toContain(
       'Invoke-RelayPreparation -Path $artifactPath -TransactionId $transactionId',
