@@ -536,7 +536,7 @@ export function parseLegacyRecoveryState(value: string): LegacyRecoveryState | n
   const ini = parseIni(value);
   const relay = ini?.get('Relay');
   const allowed = new Set(['protocol', 'current', 'previous']);
-  if (!ini || ini.size !== 1 || !relay || !hasOnlyKeys(relay, allowed)) return null;
+  if (ini?.size !== 1 || !relay || !hasOnlyKeys(relay, allowed)) return null;
   const currentBuildId = relay.get('current') ?? '';
   const previousBuildId = nullable(relay.get('previous'));
   if (
