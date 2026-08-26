@@ -590,7 +590,7 @@ describe('Windows NSIS bootstrap contract', () => {
     const bootstrap = read('build/windows/relay-bootstrap.nsi');
 
     expect(source).toContain("-ArgumentList '/relay-prepare-only'");
-    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(12);
+    expect(source.match(/Invoke-RelayPreparation/g)).toHaveLength(13);
     expect(source).toContain('LastWriteTimeUtc.Ticks');
     expect(source).toContain("GetFolderPath('Desktop')");
     expect(source).toContain("GetFolderPath('StartMenu')");
@@ -609,6 +609,13 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('Get-IniSectionValue');
     expect(source).toContain('/relay-transaction=');
     expect(source).toContain('ProtectedRecoveryPreparation');
+    expect(source).toContain('LegacyStateProtectedRecoveryPreparation');
+    expect(source).toContain(
+      '"[Relay]`r`nprotocol=1`r`ncurrent=$ExpectedPreviousBuildId`r`nprevious=`r`n"',
+    );
+    expect(source).toContain(
+      'Invoke-RelayPreparation -Path $artifactPath -TransactionId $legacyTransactionId',
+    );
     expect(source).toContain('Remove-ProtectedUpdateMetadata');
     expect(source).toContain(
       'Invoke-RelayPreparation -Path $artifactPath -TransactionId $transactionId',
