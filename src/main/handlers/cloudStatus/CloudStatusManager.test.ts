@@ -205,10 +205,10 @@ describe('CloudStatusManager', () => {
     ]);
   });
 
-  it('publishes Dynatrace only in the extension singleton', async () => {
+  it('publishes monitored extension providers only in the extension singleton', async () => {
     const manager = new CloudStatusManager(
       () => pb,
-      vi.fn().mockResolvedValue(data([issue('error', 'dynatrace')])),
+      vi.fn().mockResolvedValue(data([issue('error', 'dynatrace'), issue('error', 'equinix')])),
     );
 
     await manager.refresh();
@@ -217,12 +217,15 @@ describe('CloudStatusManager', () => {
     const mistPayload = mistCreate.mock.calls[0]?.[0] as { providers: object };
     const extensionPayload = extensionCreate.mock.calls[0]?.[0] as { providers: object };
     expect(legacyPayload.providers).not.toHaveProperty('dynatrace');
+    expect(legacyPayload.providers).not.toHaveProperty('equinix');
     expect(mistPayload.providers).not.toHaveProperty('dynatrace');
+    expect(mistPayload.providers).not.toHaveProperty('equinix');
     expect(extensionPayload.providers).toEqual({
       dynatrace: [expect.objectContaining({ provider: 'dynatrace' })],
       proofpoint: [],
       crowdstrike: [],
       dropbox: [],
+      equinix: [expect.objectContaining({ provider: 'equinix' })],
     });
   });
 

@@ -8,13 +8,10 @@ import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab
 import { CURRENT_CLOUD_OUTAGE_WINDOW_MS, isCurrentCloudIssue } from '../utils/cloudStatus';
 import {
   aggregateCloudStatusForDisplay,
-  DISPLAY_CLOUD_STATUS_PORTALS,
-  DISPLAY_CLOUD_STATUS_PORTAL_ORDER,
   DISPLAY_CLOUD_STATUS_PROVIDER_ORDER,
   DISPLAY_CLOUD_STATUS_PROVIDERS,
   DISPLAY_MIST_REGION_OPTIONS,
   type DisplayCloudStatusItem,
-  type DisplayCloudStatusPortalProvider,
   type DisplayCloudStatusProvider,
 } from '../utils/cloudStatusDisplay';
 
@@ -41,10 +38,6 @@ function lastUpdatedLabel(timestamp: number): string {
 
 function providerLabel(provider: DisplayCloudStatusProvider): string {
   return DISPLAY_CLOUD_STATUS_PROVIDERS[provider].label;
-}
-
-function providerPortalLabel(provider: DisplayCloudStatusPortalProvider): string {
-  return DISPLAY_CLOUD_STATUS_PORTALS[provider].label;
 }
 
 function formatLocalTime(dateStr: string): string {
@@ -241,48 +234,6 @@ const ProviderRow: React.FC<{
   );
 };
 
-const ProviderPortalRow: React.FC<{ provider: DisplayCloudStatusPortalProvider }> = ({
-  provider,
-}) => {
-  const portal = DISPLAY_CLOUD_STATUS_PORTALS[provider];
-  const stateId = `cloud-status-${provider}-portal-state`;
-  const accessId = `cloud-status-${provider}-portal-access`;
-  return (
-    <article className="cloud-status-provider cloud-status-provider--portal">
-      <button
-        type="button"
-        className="cloud-status-provider__open"
-        onClick={() => void globalThis.api?.openExternal(portal.statusUrl)}
-        aria-label={`Open ${providerPortalLabel(provider)} public status page`}
-        aria-describedby={`${accessId} ${stateId}`}
-      >
-        <span
-          className="cloud-status-provider__signal cloud-status-provider__signal--portal"
-          aria-hidden="true"
-        />
-        <span className="cloud-status-provider__identity">
-          <span className="cloud-status-provider__name">
-            <ProviderIcon provider={provider} size={16} />
-            {providerPortalLabel(provider)}
-          </span>
-          <span id={accessId} className="cloud-status-provider__count">
-            {portal.accessLabel}
-          </span>
-        </span>
-        <span
-          id={stateId}
-          className="cloud-status-provider__state cloud-status-provider__state--portal"
-        >
-          Portal
-        </span>
-        <span className="cloud-status-provider__chevron" aria-hidden="true">
-          ↗
-        </span>
-      </button>
-    </article>
-  );
-};
-
 const OutageRow: React.FC<{ item: DisplayCloudStatusItem }> = ({ item }) => {
   const description = useMemo(() => stripHtml(item.description), [item.description]);
   const degraded = item.severity === 'warning';
@@ -447,17 +398,6 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
               onSelect={onSelectProvider}
               buttonRef={(node) => onProviderButtonRef(provider, node)}
             />
-          ))}
-        </div>
-      </section>
-      <section className="cloud-status__provider-portals" aria-label="Provider portals">
-        <div className="cloud-status__section-heading">
-          <span>Provider portals</span>
-          <span>{DISPLAY_CLOUD_STATUS_PORTAL_ORDER.length} public status page</span>
-        </div>
-        <div className="cloud-status__portal-list">
-          {DISPLAY_CLOUD_STATUS_PORTAL_ORDER.map((provider) => (
-            <ProviderPortalRow key={provider} provider={provider} />
           ))}
         </div>
       </section>

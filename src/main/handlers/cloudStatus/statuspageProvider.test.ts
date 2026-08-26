@@ -119,4 +119,43 @@ describe('Statuspage providers', () => {
       expect.objectContaining({ redirect: 'follow' }),
     );
   });
+
+  it('maps the official Equinix aggregate status into an outage provider item', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          page: {
+            id: 'equinix',
+            name: 'Equinix Product Status',
+            url: 'https://equinixproductstatus.statuspage.io/',
+            updated_at: '2026-08-25T19:45:00.000Z',
+          },
+          status: { indicator: 'major', description: 'Partial System Outage' },
+          components: [
+            { name: 'Equinix Fabric', status: 'partial_outage' },
+            { name: 'Equinix Metal', status: 'operational' },
+          ],
+          incidents: [],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchStatuspageProvider(STATUSPAGE_FEEDS.equinix!, 'equinix')).resolves.toEqual([
+      {
+        id: 'equinix-status-2026-08-25T19:45:00.000Z',
+        provider: 'equinix',
+        title: 'Partial System Outage',
+        description: 'Equinix Fabric: partial outage',
+        pubDate: '2026-08-25T19:45:00.000Z',
+        link: 'https://equinixproductstatus.statuspage.io',
+        severity: 'error',
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://equinixproductstatus.statuspage.io/api/v2/summary.json',
+      expect.objectContaining({ redirect: 'follow' }),
+    );
+  });
 });

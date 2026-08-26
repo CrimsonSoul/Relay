@@ -29,6 +29,7 @@ vi.mock('./rssProvider', () => ({
 vi.mock('./statuspageProvider', () => ({
   STATUSPAGE_FEEDS: {
     dropbox: 'status:dropbox',
+    equinix: 'status:equinix',
     jira: 'status:jira',
     github: 'status:github',
     cloudflare: 'status:cloudflare',
@@ -48,6 +49,7 @@ vi.mock('./dynatraceStatusProvider', () => ({
 }));
 
 import { fetchCloudStatusData } from './fetchCloudStatus';
+import { STATUSPAGE_FEEDS } from './statuspageProvider';
 
 function item<P extends CloudStatusProvider>(provider: P, id: string): CloudStatusItem<P> {
   return {
@@ -136,6 +138,56 @@ describe('fetchCloudStatusData', () => {
       provider: 'dropbox',
       message: 'Dropbox unavailable',
     });
+  });
+
+  it('fetches Equinix status into its extension bucket', async () => {
+    const equinix = item('equinix', 'equinix-incident-1');
+    providerMocks.statuspage.mockImplementation(
+      async (_url: string, provider: CloudStatusProvider) =>
+        provider === 'equinix' ? [equinix] : [],
+    );
+
+    const result = await fetchCloudStatusData();
+
+    expect(providerMocks.statuspage).toHaveBeenCalledWith('status:equinix', 'equinix');
+    expect(result.providers.equinix).toEqual([equinix]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('retains the last Equinix status when its official feed is unavailable', async () => {
+    const previous = item('equinix', 'previous-equinix');
+    providerMocks.statuspage.mockImplementation(
+      async (_url: string, provider: CloudStatusProvider) => {
+        if (provider === 'equinix') throw new Error('Equinix unavailable');
+        return [];
+      },
+    );
+
+    const result = await fetchCloudStatusData(previousStatus([previous]));
+
+    expect(result.providers.equinix).toEqual([previous]);
+    expect(result.errors).toContainEqual({
+      provider: 'equinix',
+      message: 'Equinix unavailable',
+    });
+  });
+
+  it('retains Equinix status and reports an error when its feed is not configured', async () => {
+    const previous = item('equinix', 'previous-equinix');
+    const configuredFeed = STATUSPAGE_FEEDS.equinix;
+    delete STATUSPAGE_FEEDS.equinix;
+
+    try {
+      const result = await fetchCloudStatusData(previousStatus([previous]));
+
+      expect(result.providers.equinix).toEqual([previous]);
+      expect(result.errors).toContainEqual({
+        provider: 'equinix',
+        message: 'Equinix status feed is not configured',
+      });
+    } finally {
+      STATUSPAGE_FEEDS.equinix = configuredFeed;
+    }
   });
 
   it('fetches Proofpoint current incidents into its dedicated provider bucket', async () => {

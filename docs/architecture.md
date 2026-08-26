@@ -270,7 +270,7 @@ Persistence remains split for compatibility:
 - `cloud_status_snapshot` keeps the original ten-provider contract.
 - `cloud_status_mist_snapshot` contains four Juniper Mist region rows.
 - `cloud_status_extension_snapshot` contains post-compatibility providers: Dynatrace, Proofpoint,
-  CrowdStrike, and Dropbox.
+  CrowdStrike, Dropbox, and Equinix.
 
 Updated clients merge all three records. Older clients retain the original or original-plus-Mist
 shapes, and updated clients connected to an older server keep missing Mist or extension providers
@@ -290,15 +290,17 @@ display provider; its dedicated Status.io adapter maps affected cloud and region
 same bounded affected-scope metadata. Proofpoint is also one display provider. Its dedicated adapter
 uses Proofpoint's public enterprise current-incidents flow, validates the Salesforce response and
 official article URLs, and maps products marked `Currently Impacted` into affected scopes. Service
-Status presents fifteen rows: the original ten providers, Juniper Mist, Dynatrace, Proofpoint,
-CrowdStrike, and Dropbox. Mist details expose All, Global, EMEA, APAC, and Federal filters while
-preserving the single overview row and deduplicated All view.
+Status presents sixteen rows: the original ten providers, Juniper Mist, Dynatrace, Proofpoint,
+CrowdStrike, Dropbox, and Equinix. Mist details expose All, Global, EMEA, APAC, and Federal filters
+while preserving the single overview row and deduplicated All view.
 
-Equinix appears separately under **Provider portals** because it is a public operator-launched page,
-not a sixteenth monitored provider. The fixed
-`https://equinixproductstatus.statuspage.io/` link does not enter snapshots, polling, refresh work,
-posture, feed errors, caching, counts, or cloud notifications. The desktop external-link handler
-allowlists only the exact portal hostname.
+Equinix uses its credential-free official Atlassian Statuspage summary endpoint. Unresolved
+incidents follow the shared impact mapping, while a non-operational aggregate with no incident is
+kept as a synthetic current issue so a provider-wide partial or major outage remains visible.
+Equinix is polled and persisted in the extension snapshot, participates in refresh cadence, provider
+posture, feed errors, counts, and cloud notifications, and retains its last-known bucket if the feed
+temporarily fails. The desktop external-link handler derives the exact public status hostname from
+the monitored-provider registry.
 
 Dropbox uses its credential-free official Atlassian Statuspage summary endpoint for the primary
 Dropbox service, not the separate Dropbox Sign page. Unresolved incidents follow the shared impact

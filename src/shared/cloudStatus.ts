@@ -60,7 +60,7 @@ export function emptyMistCloudStatusProviders(): MistCloudStatusData['providers'
 }
 
 export function emptyExtensionCloudStatusProviders(): ExtensionCloudStatusData['providers'] {
-  return { dynatrace: [], proofpoint: [], crowdstrike: [], dropbox: [] };
+  return { dynatrace: [], proofpoint: [], crowdstrike: [], dropbox: [], equinix: [] };
 }
 
 function emptyExtensionCloudStatusData(): ExtensionCloudStatusData {
@@ -82,6 +82,7 @@ export function emptyCloudStatusProviders(): CloudStatusData['providers'] {
     jira: [],
     github: [],
     cloudflare: [],
+    equinix: [],
     mist_global: [],
     mist_emea: [],
     mist_apac: [],
@@ -115,6 +116,7 @@ export function splitCloudStatusData(data: CloudStatusData): {
       case 'proofpoint':
       case 'crowdstrike':
       case 'dropbox':
+      case 'equinix':
         extensionErrors.push({ provider: error.provider, message: error.message });
         break;
       case 'aws':
@@ -165,6 +167,7 @@ export function splitCloudStatusData(data: CloudStatusData): {
         proofpoint: matchingProviderItems(data, 'proofpoint'),
         crowdstrike: matchingProviderItems(data, 'crowdstrike'),
         dropbox: matchingProviderItems(data, 'dropbox'),
+        equinix: matchingProviderItems(data, 'equinix'),
       },
       errors: extensionErrors,
       lastUpdated: data.lastUpdated,
@@ -189,6 +192,7 @@ export function mergeCloudStatusData(
       jira: legacy.providers.jira,
       github: legacy.providers.github,
       cloudflare: legacy.providers.cloudflare,
+      equinix: normalizedExtension.providers.equinix,
       mist_global: mist.providers.mist_global,
       mist_emea: mist.providers.mist_emea,
       mist_apac: mist.providers.mist_apac,
