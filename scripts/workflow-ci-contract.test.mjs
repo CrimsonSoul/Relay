@@ -13,6 +13,26 @@ const expression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('CI workflow contracts', () => {
+  it('validates the pull request squash title before exact-tree reuse can pass', async () => {
+    const workflow = await readWorkflow('build.yml');
+    const step = findStep(
+      workflow.jobs.provenance,
+      'Require release-compatible pull request title',
+    );
+
+    expect(step).toMatchObject({
+      env: {
+        RELAY_PULL_REQUEST_TITLE: '${{ github.event.pull_request.title }}',
+      },
+      if: "github.event_name == 'pull_request'",
+      run: 'node scripts/validate-release-title.mjs',
+    });
+    expect(workflow.on.pull_request).toEqual({
+      branches: ['main'],
+      types: ['opened', 'reopened', 'synchronize', 'edited'],
+    });
+  });
+
   it('normalizes workflow enumeration before order-sensitive collection', async () => {
     const names = await readWorkflowNames(async () => [
       'windows-startup-comparison.yml',

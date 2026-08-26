@@ -8,6 +8,11 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
 
 permissions:
   contents: read
@@ -38,6 +43,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Require release-compatible pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          RELAY_PULL_REQUEST_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/validate-release-title.mjs
 
       - name: Resolve exact-tree reuse metadata
         id: metadata
