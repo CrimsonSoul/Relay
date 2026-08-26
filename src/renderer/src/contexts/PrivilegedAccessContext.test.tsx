@@ -153,36 +153,39 @@ describe('PrivilegedAccessProvider', () => {
           resolvers.push(resolve);
         }),
     );
-    const { result } = renderHook(() => usePrivilegedCommands(), { wrapper });
-    await waitFor(() => expect(resolvers).toHaveLength(0));
+    const { result } = renderHook(
+      () => ({ access: usePrivilegedAccess(), commands: usePrivilegedCommands() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.access.loading).toBe(false));
 
-    let first!: ReturnType<typeof result.current.submitCommand>;
-    let second!: ReturnType<typeof result.current.submitCommand>;
+    let first!: ReturnType<typeof result.current.commands.submitCommand>;
+    let second!: ReturnType<typeof result.current.commands.submitCommand>;
     act(() => {
-      first = result.current.submitCommand({
+      first = result.current.commands.submitCommand({
         command: 'administration.snapshot.read',
         payload: {},
         expectedRevision: null,
       });
-      second = result.current.submitCommand({
+      second = result.current.commands.submitCommand({
         command: 'administration.snapshot.read',
         payload: {},
         expectedRevision: null,
       });
     });
-    expect(result.current.busy).toBe(true);
+    expect(result.current.commands.busy).toBe(true);
 
     await act(async () => {
       resolvers[0]?.({ ok: true, requestId: 'command-1', value: null });
       await first;
     });
-    expect(result.current.busy).toBe(true);
+    expect(result.current.commands.busy).toBe(true);
 
     await act(async () => {
       resolvers[1]?.({ ok: true, requestId: 'command-2', value: null });
       await second;
     });
-    expect(result.current.busy).toBe(false);
+    expect(result.current.commands.busy).toBe(false);
   });
 
   it('clears command progress when the privileged session changes', async () => {
