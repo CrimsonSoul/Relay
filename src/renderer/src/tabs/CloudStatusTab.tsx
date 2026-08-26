@@ -253,7 +253,7 @@ const ProviderPortalRow: React.FC<{ provider: DisplayCloudStatusPortalProvider }
         type="button"
         className="cloud-status-provider__open"
         onClick={() => void globalThis.api?.openExternal(portal.statusUrl)}
-        aria-label={`Open ${providerPortalLabel(provider)} status portal (sign-in required)`}
+        aria-label={`Open ${providerPortalLabel(provider)} public status page`}
         aria-describedby={`${accessId} ${stateId}`}
       >
         <span
@@ -453,7 +453,7 @@ const ProviderOverviewWorkspace: React.FC<ProviderOverviewWorkspaceProps> = ({
       <section className="cloud-status__provider-portals" aria-label="Provider portals">
         <div className="cloud-status__section-heading">
           <span>Provider portals</span>
-          <span>{DISPLAY_CLOUD_STATUS_PORTAL_ORDER.length} sign-in portal</span>
+          <span>{DISPLAY_CLOUD_STATUS_PORTAL_ORDER.length} public status page</span>
         </div>
         <div className="cloud-status__portal-list">
           {DISPLAY_CLOUD_STATUS_PORTAL_ORDER.map((provider) => (

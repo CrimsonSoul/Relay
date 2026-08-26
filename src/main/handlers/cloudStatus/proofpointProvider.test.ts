@@ -51,6 +51,32 @@ function auraResponse(tableData: unknown): Record<string, unknown> {
   };
 }
 
+function displayTextResponse(label: string): Record<string, unknown> {
+  return {
+    actions: [
+      {
+        state: 'SUCCESS',
+        returnValue: {
+          response: {
+            fields: [
+              {
+                name: 'DisplayText',
+                fieldType: 'DISPLAY_TEXT',
+                dataType: 'STRING',
+                label,
+                value: null,
+                inputs: null,
+                fields: [],
+              },
+            ],
+          },
+          error: null,
+        },
+      },
+    ],
+  };
+}
+
 function mockProofpointResponses(tableData: unknown): ReturnType<typeof vi.fn> {
   const fetchMock = vi
     .fn()
@@ -94,6 +120,41 @@ describe('Proofpoint current incidents provider', () => {
     mockProofpointResponses([]);
 
     await expect(fetchProofpointProvider()).resolves.toEqual([]);
+  });
+
+  it('treats Proofpoint’s current no-incidents display as operational', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(COMMUNITY_PAGE, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify(
+            displayTextResponse(
+              '<p style="text-align: center;"><strong>No current identified incidents</strong></p><p>If you are seeing a service disruption, please open a support case</p>',
+            ),
+          ),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchProofpointProvider()).resolves.toEqual([]);
+  });
+
+  it('rejects an unrecognized Proofpoint display instead of assuming operational', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(COMMUNITY_PAGE, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(displayTextResponse('<p>Service state unavailable</p>')), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchProofpointProvider()).rejects.toThrow(
+      'Invalid Proofpoint current-incidents response',
+    );
   });
 
   it('does not surface a current-incidents row after every product is recovered', async () => {
