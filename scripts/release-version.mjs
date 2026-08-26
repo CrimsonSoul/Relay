@@ -68,6 +68,10 @@ function classifyConventionalSubject(subject, body = '') {
   return PATCH_TYPES.has(type) ? 'patch' : 'none';
 }
 
+export function isConventionalSubject(subject) {
+  return typeof subject === 'string' && CONVENTIONAL_SUBJECT_PATTERN.test(subject);
+}
+
 export function classifyConventionalCommit({ subject, body = '' }) {
   let highest = classifyConventionalSubject(subject, body);
   if (!SQUASHED_PULL_REQUEST_SUBJECT_PATTERN.test(subject ?? '')) return highest;
