@@ -13,7 +13,6 @@ import {
   extractLatestStartupTimeline,
   median,
   parseStartupBenchmarkArgs,
-  sliceAppendedLogText,
   waitForProcessQuiescence,
 } from './startup-benchmark-utils.mjs';
 
@@ -280,46 +279,39 @@ async function runDevelopmentBenchmark() {
   }
 }
 
-function readLogBaseline(logPath) {
+function readPackagedTimelineMarker(markerPath) {
   try {
-    const stats = fs.statSync(logPath);
-    return {
-      exists: true,
-      size: stats.size,
-      identity: `${stats.dev}:${stats.ino}:${stats.birthtimeMs}`,
-    };
+    const timeline = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    const valid =
+      timeline &&
+      typeof timeline === 'object' &&
+      !Array.isArray(timeline) &&
+      Number.isFinite(timeline['renderer-mounted']) &&
+      timeline['renderer-mounted'] >= 0 &&
+      Object.values(timeline).every((value) => Number.isFinite(value) && value >= 0);
+    if (!valid) throw new Error(`Relay wrote an invalid startup timeline marker: ${markerPath}`);
+    return timeline;
   } catch (error) {
-    if (error?.code === 'ENOENT') return { exists: false, size: 0, identity: null };
+    if (error?.code === 'ENOENT' || error instanceof SyntaxError) return null;
     throw error;
   }
 }
 
-async function waitForPackagedTimeline(logPath, baseline, startedAt, signal) {
+async function waitForPackagedTimelineMarker(markerPath, startedAt, signal) {
   const deadline = Date.now() + launchTimeoutMs;
   while (Date.now() < deadline) {
     if (signal.aborted) throw signal.reason;
-    try {
-      const stats = fs.statSync(logPath);
-      const identity = `${stats.dev}:${stats.ino}:${stats.birthtimeMs}`;
-      const logBuffer = fs.readFileSync(logPath);
-      const appendedText =
-        baseline.exists && identity === baseline.identity && logBuffer.length >= baseline.size
-          ? sliceAppendedLogText(logBuffer, baseline.size)
-          : logBuffer.toString('utf8');
-      const timeline = extractLatestStartupTimeline(appendedText);
-      if (timeline?.['renderer-mounted'] !== undefined) {
-        return {
-          timeline,
-          rendererMountedWallMs: Math.round(performance.now() - startedAt),
-        };
-      }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
+    const timeline = readPackagedTimelineMarker(markerPath);
+    if (timeline) {
+      return {
+        timeline,
+        rendererMountedWallMs: Math.round(performance.now() - startedAt),
+      };
     }
     await delay(25);
   }
   const error = new Error(
-    `Relay did not write a new renderer startup milestone within ${launchTimeoutMs}ms.`,
+    `Relay did not write a renderer startup marker within ${launchTimeoutMs}ms.`,
   );
   error.code = startupMilestoneTimeoutCode;
   throw error;
@@ -568,14 +560,12 @@ async function runPackagedBenchmark(options) {
   }
 
   const localAppData = process.env.LOCALAPPDATA;
-  const appData = process.env.APPDATA;
-  if (!localAppData || !appData) {
-    throw new Error('LOCALAPPDATA and APPDATA are required for a packaged Windows benchmark.');
+  if (!localAppData) {
+    throw new Error('LOCALAPPDATA is required for a packaged Windows benchmark.');
   }
 
   const runtimeRoot = path.join(localAppData, 'Relay', 'Runtime');
   const statePath = path.join(localAppData, 'Relay', 'state.ini');
-  const logPath = path.join(appData, 'Relay', 'logs', 'relay.log');
   const stableLauncher = path.join(localAppData, 'Relay', 'Relay.exe');
   const resolvedOptions = {
     ...options,
@@ -595,7 +585,6 @@ async function runPackagedBenchmark(options) {
   }
 
   const completeBefore = listCompleteRuntimeBuilds(runtimeRoot);
-  const baseline = readLogBaseline(logPath);
   const benchmarkRunId = crypto.randomUUID();
   const benchmarkIdentityArg = `--relay-benchmark-run-id=${benchmarkRunId}`;
   const exitMarkerPath = path.join(
@@ -610,8 +599,15 @@ async function runPackagedBenchmark(options) {
     'startup-benchmark',
     `${benchmarkRunId}.pid`,
   );
+  const timelineMarkerPath = path.join(
+    os.tmpdir(),
+    'Relay',
+    'startup-benchmark',
+    `${benchmarkRunId}.timeline.json`,
+  );
   fs.rmSync(exitMarkerPath, { force: true });
   fs.rmSync(pidMarkerPath, { force: true });
+  fs.rmSync(timelineMarkerPath, { force: true });
   const startedAt = performance.now();
   const launchEnv = {
     ...process.env,
@@ -633,7 +629,7 @@ async function runPackagedBenchmark(options) {
         startedAt,
         controller.signal,
       ),
-      waitForPackagedTimeline(logPath, baseline, startedAt, controller.signal),
+      waitForPackagedTimelineMarker(timelineMarkerPath, startedAt, controller.signal),
       waitForProcessExitMarker(exitMarkerPath, startedAt, controller.signal),
       waitForBenchmarkPid(pidMarkerPath, controller.signal),
     ]);
@@ -698,6 +694,7 @@ async function runPackagedBenchmark(options) {
   } finally {
     fs.rmSync(exitMarkerPath, { force: true });
     fs.rmSync(pidMarkerPath, { force: true });
+    fs.rmSync(timelineMarkerPath, { force: true });
   }
 }
 

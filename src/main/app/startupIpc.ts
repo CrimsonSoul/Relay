@@ -14,7 +14,9 @@ export function shouldExitAfterStartupBenchmark(environment: NodeJS.ProcessEnv):
 export function setupStartupIpc(
   controller: StartupStateController,
   timeline: StartupTimeline,
-  options: { onRendererMounted?: () => void } = {},
+  options: {
+    onRendererMounted?: (timeline: ReturnType<StartupTimeline['toJSON']>) => void;
+  } = {},
 ): () => void {
   const getState = (event: Electron.IpcMainInvokeEvent) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.STARTUP_GET_STATE)) {
@@ -28,7 +30,7 @@ export function setupStartupIpc(
     const summary = timeline.takeSummary();
     if (summary) {
       loggers.main.info(summary);
-      options.onRendererMounted?.();
+      options.onRendererMounted?.(timeline.toJSON());
     }
   };
   const unsubscribe = controller.subscribe((snapshot) => {
