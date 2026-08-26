@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
@@ -72,7 +72,7 @@ describe('CloudStatusTab', () => {
 
     expect(screen.getAllByText('Coverage unavailable').length).toBeGreaterThan(0);
     expect(screen.getByText('Provider status data is unavailable.')).toBeInTheDocument();
-    expect(screen.getAllByText('Unknown')).toHaveLength(15);
+    expect(screen.getAllByText('Unknown')).toHaveLength(16);
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
     expect(screen.queryByText('No reported issues')).not.toBeInTheDocument();
@@ -99,14 +99,14 @@ describe('CloudStatusTab', () => {
     expect(container.querySelector('.tab-command-group--workflow')).toBeNull();
     expect(screen.getByRole('region', { name: 'Provider overview' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Active issues' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(15);
+    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(16);
     expect(
       screen.getByRole('button', { name: 'View AWS status details' }),
     ).toHaveAccessibleDescription('Operational No active issues');
     expect(screen.queryByText('All services normal')).not.toBeInTheDocument();
   });
 
-  it('renders Dropbox and Proofpoint rows and keeps the combined Mist and Dynatrace rows', () => {
+  it('renders Equinix, Dropbox, and Proofpoint rows with the combined Mist and Dynatrace rows', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     const monitored = screen.getByRole('region', { name: 'Provider overview' });
 
@@ -124,6 +124,7 @@ describe('CloudStatusTab', () => {
       'Jira',
       'GitHub',
       'Cloudflare',
+      'Equinix',
       'Juniper Mist',
       'Dynatrace',
       'Google Cloud',
@@ -131,7 +132,7 @@ describe('CloudStatusTab', () => {
       'ChatGPT',
       'Salesforce',
     ]);
-    expect(screen.getByText('across 15 monitored providers')).toBeInTheDocument();
+    expect(screen.getByText('across 16 monitored providers')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View Dropbox status details' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'View Proofpoint status details' }),
@@ -142,27 +143,38 @@ describe('CloudStatusTab', () => {
     expect(
       screen.getByRole('button', { name: 'View Dynatrace status details' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Equinix status details' })).toBeInTheDocument();
   });
 
-  it('opens Equinix’s public status page without changing monitored health', () => {
-    const refetch = vi.fn();
-    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={refetch} />);
+  it('shows Equinix as a monitored outage provider with official status details', () => {
+    const providers = emptyCloudStatusProviders();
+    providers.equinix = [
+      makeItem({
+        id: 'equinix-status-1',
+        provider: 'equinix',
+        title: 'Partial System Outage',
+        description: 'Equinix Fabric: partial outage',
+        link: 'https://equinixproductstatus.statuspage.io/',
+      }),
+    ];
+    render(
+      <CloudStatusTab
+        statusData={makeStatusData({ providers })}
+        loading={false}
+        refetch={vi.fn()}
+      />,
+    );
 
-    const portals = screen.getByRole('region', { name: 'Provider portals' });
-    expect(within(portals).getByText('1 public status page')).toBeInTheDocument();
-    const equinix = within(portals).getByRole('button', {
-      name: 'Open Equinix public status page',
-    });
-    expect(equinix).toHaveAccessibleDescription('Public status Portal');
-    expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(15);
-    expect(screen.getByText('across 15 monitored providers')).toBeInTheDocument();
-    expect(screen.getByTestId('status-bar')).toHaveTextContent('15 providers monitored');
-    expect(screen.queryByText(/16 providers monitored/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Provider portals' })).not.toBeInTheDocument();
+    const equinix = screen.getByRole('button', { name: 'View Equinix status details' });
+    expect(equinix).toHaveAccessibleDescription('Outage 1 active issue');
+    expect(screen.getByText('across 16 monitored providers')).toBeInTheDocument();
+    expect(screen.getByTestId('status-bar')).toHaveTextContent('16 providers monitored');
 
     fireEvent.click(equinix);
-
+    expect(screen.getByText('Partial System Outage')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Equinix official status page' }));
     expect(openExternal).toHaveBeenCalledWith('https://equinixproductstatus.statuspage.io/');
-    expect(refetch).not.toHaveBeenCalled();
   });
 
   it('offers only the official status action for Juniper Mist', () => {
@@ -749,7 +761,7 @@ describe('CloudStatusTab', () => {
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
     expect(screen.getByTestId('status-bar')).toHaveTextContent(
-      '15 providers monitored · 1 active outage · 1 degraded issue',
+      '16 providers monitored · 1 active outage · 1 degraded issue',
     );
   });
 });

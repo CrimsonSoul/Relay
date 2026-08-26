@@ -2335,9 +2335,10 @@ test.describe('Vital Critical Path', () => {
     ).toBeVisible();
     const providerSummary = window.getByRole('status').filter({ hasText: 'monitored providers' });
     await expect(providerSummary).toHaveCount(1);
-    await expect(providerSummary).toContainText('15 monitored providers');
+    await expect(providerSummary).toContainText('16 monitored providers');
     const overview = window.getByRole('region', { name: 'Provider overview', exact: true });
     await expect(overview).toBeVisible();
+    await expect(window.getByRole('region', { name: 'Provider portals' })).toHaveCount(0);
     await expect(
       overview.getByRole('button', {
         name: 'View Dropbox status details',
@@ -2353,6 +2354,12 @@ test.describe('Vital Critical Path', () => {
     await expect(
       overview.getByRole('button', {
         name: 'View CrowdStrike status details',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      overview.getByRole('button', {
+        name: 'View Equinix status details',
         exact: true,
       }),
     ).toBeVisible();

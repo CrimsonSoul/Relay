@@ -383,6 +383,11 @@ describe('useAppCloudStatus', () => {
       message: 'Dropbox status is unavailable from this Relay server.',
     });
     expect(result.current.statusData?.providers.dropbox).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'equinix',
+      message: 'Equinix status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.equinix).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -420,6 +425,11 @@ describe('useAppCloudStatus', () => {
       message: 'Dropbox status is unavailable from this Relay server.',
     });
     expect(result.current.statusData?.providers.dropbox).toEqual([]);
+    expect(result.current.statusData?.errors).toContainEqual({
+      provider: 'equinix',
+      message: 'Equinix status is unavailable from this Relay server.',
+    });
+    expect(result.current.statusData?.providers.equinix).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 
@@ -578,12 +588,13 @@ describe('useAppCloudStatus', () => {
 
     const { result } = renderHook(() => useAppCloudStatus(showToast));
 
-    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(8));
+    await waitFor(() => expect(result.current.statusData?.errors).toHaveLength(9));
     expect(result.current.statusData?.providers.mist_federal).toEqual([]);
     expect(result.current.statusData?.providers.dynatrace).toEqual([]);
     expect(result.current.statusData?.providers.proofpoint).toEqual([]);
     expect(result.current.statusData?.providers.crowdstrike).toEqual([]);
     expect(result.current.statusData?.providers.dropbox).toEqual([]);
+    expect(result.current.statusData?.providers.equinix).toEqual([]);
     expect(showToast).not.toHaveBeenCalled();
   });
 

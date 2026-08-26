@@ -39,6 +39,7 @@ describe('cloud status partitions', () => {
       'proofpoint',
       'crowdstrike',
       'dropbox',
+      'equinix',
     ]);
     expectTypeOf<CloudStatusItem & { provider: 'mist_global' }>().not.toExtend<
       LegacyCloudStatusData['providers']['aws'][number]
@@ -105,7 +106,7 @@ describe('cloud status partitions', () => {
     expect(mergeCloudStatusData(split.legacy, split.mist, split.extension)).toEqual(combined);
   });
 
-  it('keeps Dynatrace in a third partition without changing legacy or Mist records', () => {
+  it('keeps extension providers in a third partition without changing legacy or Mist records', () => {
     const dynatraceItem: CloudStatusItem<'dynatrace'> = {
       ...item('dynatrace', 'dynatrace-1'),
       affectedScopes: ['AWS · Americas'],
@@ -116,8 +117,12 @@ describe('cloud status partitions', () => {
         ...emptyLegacyCloudStatusProviders(),
         ...emptyMistCloudStatusProviders(),
         dynatrace: [dynatraceItem],
+        equinix: [item('equinix', 'equinix-1')],
       },
-      errors: [{ provider: 'dynatrace', message: 'Dynatrace unavailable' }],
+      errors: [
+        { provider: 'dynatrace', message: 'Dynatrace unavailable' },
+        { provider: 'equinix', message: 'Equinix unavailable' },
+      ],
       lastUpdated: 30,
     };
 
@@ -126,8 +131,17 @@ describe('cloud status partitions', () => {
     expect(Object.keys(split.legacy.providers)).toHaveLength(10);
     expect(Object.keys(split.mist.providers)).toHaveLength(4);
     expect(split.extension).toEqual({
-      providers: { dynatrace: [dynatraceItem], proofpoint: [], crowdstrike: [], dropbox: [] },
-      errors: [{ provider: 'dynatrace', message: 'Dynatrace unavailable' }],
+      providers: {
+        dynatrace: [dynatraceItem],
+        proofpoint: [],
+        crowdstrike: [],
+        dropbox: [],
+        equinix: [item('equinix', 'equinix-1')],
+      },
+      errors: [
+        { provider: 'dynatrace', message: 'Dynatrace unavailable' },
+        { provider: 'equinix', message: 'Equinix unavailable' },
+      ],
       lastUpdated: 30,
     });
     expect(mergeCloudStatusData(split.legacy, split.mist, split.extension)).toEqual(combined);
@@ -163,6 +177,7 @@ describe('cloud status partitions', () => {
     expect(merged.providers.proofpoint).toEqual([]);
     expect(merged.providers.crowdstrike).toEqual([]);
     expect(merged.providers.dropbox).toEqual([]);
+    expect(merged.providers.equinix).toEqual([]);
     expect(merged.errors).toContainEqual({
       provider: 'proofpoint',
       message: 'Proofpoint status is unavailable from this Relay server.',
@@ -174,6 +189,10 @@ describe('cloud status partitions', () => {
     expect(merged.errors).toContainEqual({
       provider: 'dropbox',
       message: 'Dropbox status is unavailable from this Relay server.',
+    });
+    expect(merged.errors).toContainEqual({
+      provider: 'equinix',
+      message: 'Equinix status is unavailable from this Relay server.',
     });
   });
 

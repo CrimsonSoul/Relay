@@ -1,15 +1,16 @@
 import { z } from 'zod';
-import type {
-  CloudStatusData,
-  CloudStatusProvider,
-  PbAuthSession,
-  PrivilegedApprovalRequestView,
-  PrivilegedCredentialSetupView,
-  PrivilegedIpcResult,
-  PrivilegedPairingCompletionView,
-  PrivilegedReauthenticationProof,
-  PublicRelayConfig,
-  RadarSnapshot,
+import {
+  CLOUD_STATUS_PROVIDER_ORDER,
+  type CloudStatusData,
+  type CloudStatusProvider,
+  type PbAuthSession,
+  type PrivilegedApprovalRequestView,
+  type PrivilegedCredentialSetupView,
+  type PrivilegedIpcResult,
+  type PrivilegedPairingCompletionView,
+  type PrivilegedReauthenticationProof,
+  type PublicRelayConfig,
+  type RadarSnapshot,
 } from './ipc';
 import type { PrivilegedCommandResult } from './privilegedCommands';
 import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
@@ -350,26 +351,7 @@ export const WebPrivilegedCommandResultSchema: z.ZodType<PrivilegedCommandResult
       .strict(),
   ]);
 
-const CloudStatusProviderSchema = z.enum([
-  'aws',
-  'azure',
-  'm365',
-  'dropbox',
-  'proofpoint',
-  'crowdstrike',
-  'jira',
-  'github',
-  'cloudflare',
-  'mist_global',
-  'mist_emea',
-  'mist_apac',
-  'mist_federal',
-  'dynatrace',
-  'google',
-  'anthropic',
-  'openai',
-  'salesforce',
-]);
+const CloudStatusProviderSchema = z.enum(CLOUD_STATUS_PROVIDER_ORDER);
 
 const RadarStatusColorSchema = z.enum(['green', 'yellow', 'red', 'magenta', 'unknown']);
 
@@ -435,27 +417,15 @@ function cloudStatusItemSchema<const P extends CloudStatusProvider>(provider: P)
 export const WebCloudStatusDataSchema: z.ZodType<CloudStatusData> = z
   .object({
     providers: z
-      .object({
-        aws: z.array(cloudStatusItemSchema('aws')),
-        azure: z.array(cloudStatusItemSchema('azure')),
-        m365: z.array(cloudStatusItemSchema('m365')),
-        dropbox: z.array(cloudStatusItemSchema('dropbox')),
-        proofpoint: z.array(cloudStatusItemSchema('proofpoint')),
-        crowdstrike: z.array(cloudStatusItemSchema('crowdstrike')),
-        jira: z.array(cloudStatusItemSchema('jira')),
-        github: z.array(cloudStatusItemSchema('github')),
-        cloudflare: z.array(cloudStatusItemSchema('cloudflare')),
-        mist_global: z.array(cloudStatusItemSchema('mist_global')),
-        mist_emea: z.array(cloudStatusItemSchema('mist_emea')),
-        mist_apac: z.array(cloudStatusItemSchema('mist_apac')),
-        mist_federal: z.array(cloudStatusItemSchema('mist_federal')),
-        dynatrace: z.array(cloudStatusItemSchema('dynatrace')),
-        google: z.array(cloudStatusItemSchema('google')),
-        anthropic: z.array(cloudStatusItemSchema('anthropic')),
-        openai: z.array(cloudStatusItemSchema('openai')),
-        salesforce: z.array(cloudStatusItemSchema('salesforce')),
-      })
-      .strict(),
+      .object(
+        Object.fromEntries(
+          CLOUD_STATUS_PROVIDER_ORDER.map((provider) => [
+            provider,
+            z.array(cloudStatusItemSchema(provider)),
+          ]),
+        ) as z.ZodRawShape,
+      )
+      .strict() as unknown as z.ZodType<CloudStatusData['providers']>,
     lastUpdated: z.number().nonnegative(),
     errors: z
       .array(

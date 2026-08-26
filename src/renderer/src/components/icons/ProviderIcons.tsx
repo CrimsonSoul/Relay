@@ -1,8 +1,5 @@
 import type { CloudStatusProvider } from '@shared/ipc';
-import type {
-  DisplayCloudStatusPortalProvider,
-  DisplayCloudStatusProvider,
-} from '../../utils/cloudStatusDisplay';
+import type { DisplayCloudStatusProvider } from '../../utils/cloudStatusDisplay';
 
 type IconProps = { size?: number };
 
@@ -112,7 +109,7 @@ export const SalesforceIcon = ({ size = 18 }: IconProps) => (
   </svg>
 );
 
-/** Equinix — data-center interconnection mark for the public provider status page. */
+/** Equinix — data-center interconnection mark. */
 export const EquinixIcon = ({ size = 18 }: IconProps) => (
   <svg
     width={size}
@@ -133,7 +130,7 @@ export const EquinixIcon = ({ size = 18 }: IconProps) => (
 
 /** Lookup map for rendering a provider's icon by key. */
 const PROVIDER_ICON_MAP: Record<
-  CloudStatusProvider | DisplayCloudStatusProvider | DisplayCloudStatusPortalProvider,
+  CloudStatusProvider | DisplayCloudStatusProvider,
   React.FC<IconProps>
 > = {
   aws: AWSIcon,
@@ -162,7 +159,7 @@ export function ProviderIcon({
   provider,
   size,
 }: Readonly<{
-  provider: CloudStatusProvider | DisplayCloudStatusProvider | DisplayCloudStatusPortalProvider;
+  provider: CloudStatusProvider | DisplayCloudStatusProvider;
   size?: number;
 }>) {
   const Icon = PROVIDER_ICON_MAP[provider];

@@ -7,11 +7,6 @@ import {
   type CloudStatusProvider,
   type MistCloudStatusProvider,
 } from '@shared/ipc';
-export {
-  CLOUD_STATUS_PORTALS as DISPLAY_CLOUD_STATUS_PORTALS,
-  CLOUD_STATUS_PORTAL_ORDER as DISPLAY_CLOUD_STATUS_PORTAL_ORDER,
-  type CloudStatusPortalProvider as DisplayCloudStatusPortalProvider,
-} from '@shared/cloudStatusPortals';
 
 export const DISPLAY_CLOUD_STATUS_PROVIDER_ORDER = [
   'aws',
@@ -23,6 +18,7 @@ export const DISPLAY_CLOUD_STATUS_PROVIDER_ORDER = [
   'jira',
   'github',
   'cloudflare',
+  'equinix',
   'mist',
   'dynatrace',
   'google',
@@ -53,6 +49,7 @@ export const DISPLAY_CLOUD_STATUS_PROVIDERS: Record<
   jira: CLOUD_STATUS_PROVIDERS.jira,
   github: CLOUD_STATUS_PROVIDERS.github,
   cloudflare: CLOUD_STATUS_PROVIDERS.cloudflare,
+  equinix: CLOUD_STATUS_PROVIDERS.equinix,
   mist: { label: 'Juniper Mist', statusUrl: 'https://status.mist.com/' },
   dynatrace: CLOUD_STATUS_PROVIDERS.dynatrace,
   google: CLOUD_STATUS_PROVIDERS.google,
@@ -82,6 +79,7 @@ const DIRECT_DISPLAY_PROVIDERS = [
   'jira',
   'github',
   'cloudflare',
+  'equinix',
   'dynatrace',
   'google',
   'anthropic',
@@ -100,6 +98,7 @@ function emptyDisplayProviders(): DisplayCloudStatusData['providers'] {
     jira: [],
     github: [],
     cloudflare: [],
+    equinix: [],
     mist: [],
     dynatrace: [],
     google: [],

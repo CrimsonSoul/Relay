@@ -8,6 +8,7 @@ import type { StatuspageIncident } from './types';
 
 export const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
   dropbox: 'https://status.dropbox.com/api/v2/summary.json',
+  equinix: 'https://equinixproductstatus.statuspage.io/api/v2/summary.json',
   jira: 'https://jira-software.status.atlassian.com/api/v2/summary.json',
   github: 'https://www.githubstatus.com/api/v2/summary.json',
   cloudflare: 'https://www.cloudflarestatus.com/api/v2/summary.json',

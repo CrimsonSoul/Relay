@@ -1,6 +1,5 @@
 import { ipcMain, shell } from 'electron';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
-import { EQUINIX_STATUS_HOST } from '@shared/cloudStatusPortals';
 import { isDynatraceHost } from '@shared/dynatrace';
 import { RADAR_URL } from '@shared/radar';
 import { describeUrlForLog, normalizeServiceDeskUrl } from '@shared/urlSecurity';
@@ -16,7 +15,6 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
       ? [new URL(provider.officialSupportUrl).hostname.toLowerCase()]
       : []),
   ]),
-  EQUINIX_STATUS_HOST,
   'stspg.io',
   'statuspage.io',
   'x.com',

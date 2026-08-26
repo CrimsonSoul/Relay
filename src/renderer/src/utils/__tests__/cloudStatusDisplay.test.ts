@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { emptyCloudStatusProviders } from '@shared/cloudStatus';
 import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 import {
-  DISPLAY_CLOUD_STATUS_PORTALS,
-  DISPLAY_CLOUD_STATUS_PORTAL_ORDER,
   DISPLAY_CLOUD_STATUS_PROVIDER_ORDER,
   aggregateCloudStatusForDisplay,
 } from '../cloudStatusDisplay';
@@ -35,18 +33,15 @@ function data(overrides: Partial<CloudStatusData> = {}): CloudStatusData {
 }
 
 describe('cloud status display aggregation', () => {
-  it('keeps public provider portals separate from monitored provider data', () => {
-    const display = aggregateCloudStatusForDisplay(data());
+  it('includes Equinix in monitored provider data', () => {
+    const providers = emptyCloudStatusProviders();
+    providers.equinix = [item('equinix', 'equinix-1', { severity: 'error' })];
+    const display = aggregateCloudStatusForDisplay(data({ providers }));
 
-    expect(DISPLAY_CLOUD_STATUS_PORTAL_ORDER).toEqual(['equinix']);
-    expect(DISPLAY_CLOUD_STATUS_PORTALS.equinix).toEqual({
-      label: 'Equinix',
-      statusUrl: 'https://equinixproductstatus.statuspage.io/',
-      accessLabel: 'Public status',
-    });
-    expect(DISPLAY_CLOUD_STATUS_PROVIDER_ORDER).not.toContain('equinix');
-    expect(display.providers).not.toHaveProperty('equinix');
-    expect(display.errors).not.toContainEqual(expect.objectContaining({ provider: 'equinix' }));
+    expect(DISPLAY_CLOUD_STATUS_PROVIDER_ORDER).toContain('equinix');
+    expect(display.providers.equinix).toEqual([
+      expect.objectContaining({ id: 'equinix-1', provider: 'equinix', severity: 'error' }),
+    ]);
   });
 
   it('deduplicates a Mist incident and unions affected regions in stable order', () => {
@@ -90,6 +85,7 @@ describe('cloud status display aggregation', () => {
       'jira',
       'github',
       'cloudflare',
+      'equinix',
       'mist',
       'dynatrace',
       'google',
@@ -107,6 +103,7 @@ describe('cloud status display aggregation', () => {
       item('proofpoint', 'proofpoint-1', { affectedScopes: ['Email Protection'] }),
     ];
     providers.crowdstrike = [item('crowdstrike', 'crowdstrike-1')];
+    providers.equinix = [item('equinix', 'equinix-1')];
     providers.dynatrace = [
       item('dynatrace', 'dynatrace-1', { affectedScopes: ['AWS · Americas'] }),
     ];
@@ -142,6 +139,9 @@ describe('cloud status display aggregation', () => {
         provider: 'crowdstrike',
         affectedScopes: [],
       }),
+    ]);
+    expect(display.providers.equinix).toEqual([
+      expect.objectContaining({ id: 'equinix-1', provider: 'equinix', affectedScopes: [] }),
     ]);
     expect(display.providers.dynatrace).toEqual([
       expect.objectContaining({

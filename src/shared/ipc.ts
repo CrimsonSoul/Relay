@@ -228,6 +228,7 @@ export const EXTENSION_CLOUD_STATUS_PROVIDER_ORDER = [
   'proofpoint',
   'crowdstrike',
   'dropbox',
+  'equinix',
 ] as const;
 
 export const CLOUD_STATUS_PROVIDER_ORDER = [
@@ -240,6 +241,7 @@ export const CLOUD_STATUS_PROVIDER_ORDER = [
   'jira',
   'github',
   'cloudflare',
+  'equinix',
   ...MIST_CLOUD_STATUS_PROVIDER_ORDER,
   'dynatrace',
   'google',
@@ -429,6 +431,10 @@ export const CLOUD_STATUS_PROVIDERS: Record<
     statusUrl: 'https://www.cloudflarestatus.com/',
     twitterHandle: 'CloudflareHelp',
     downdetectorSlug: 'cloudflare',
+  },
+  equinix: {
+    label: 'Equinix',
+    statusUrl: 'https://equinixproductstatus.statuspage.io/',
   },
   mist_global: {
     label: 'Juniper Mist Global',
