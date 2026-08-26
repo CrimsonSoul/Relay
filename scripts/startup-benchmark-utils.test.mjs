@@ -200,8 +200,10 @@ describe('startup benchmark utilities', () => {
     expect(source).toContain('outerProcessLifetimeMs');
     expect(source).toContain('Promise.all([');
     expect(source).toContain(
-      'waitForPackagedTimeline(logPath, baseline, startedAt, controller.signal)',
+      'waitForPackagedTimelineMarker(timelineMarkerPath, startedAt, controller.signal)',
     );
+    expect(source).toContain('`${benchmarkRunId}.timeline.json`');
+    expect(source).not.toContain('waitForPackagedTimeline(logPath');
     expect(source).toContain("scenario === 'prepare' && runtimeReused");
     expect(source).toContain('packagedMedian');
     expect(source).not.toContain('postUpdate');

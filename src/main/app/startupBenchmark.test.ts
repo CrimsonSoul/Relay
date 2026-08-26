@@ -2,7 +2,29 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-describe('installStartupBenchmarkExitMarker', () => {
+describe('startup benchmark markers', () => {
+  it('writes the renderer timeline to a synchronous benchmark marker', async () => {
+    const writeTimelineMarker = vi.fn();
+    const { recordStartupBenchmarkTimeline } = await import('./startupBenchmark');
+    const timeline = { entry: 0, 'renderer-mounted': 440 };
+
+    recordStartupBenchmarkTimeline({
+      environment: {
+        RELAY_BENCHMARK_EXIT_AFTER_RENDER: '1',
+        RELAY_BENCHMARK_RUN_ID: '5e50ac3a-1bf0-47f5-a653-09bf8a30b364',
+      },
+      tempPath: 'C:\\RelayBenchmarkTestRoot',
+      timeline,
+      writeTimelineMarker,
+    });
+
+    const markerPath = writeTimelineMarker.mock.calls[0]?.[0];
+    expect(markerPath).toMatch(
+      /Relay[\\/]startup-benchmark[\\/]5e50ac3a-1bf0-47f5-a653-09bf8a30b364\.timeline\.json$/,
+    );
+    expect(writeTimelineMarker).toHaveBeenCalledWith(markerPath, JSON.stringify(timeline));
+  });
+
   it('writes a fixed-root completion marker only when the benchmarked process exits', async () => {
     const onExit = vi.fn();
     const writeMarker = vi.fn();
@@ -56,9 +78,13 @@ describe('installStartupBenchmarkExitMarker', () => {
     const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8');
     const lockIndex = source.indexOf('if (gotLock) {');
     const markerIndex = source.indexOf('installStartupBenchmarkExitMarker({');
+    const timelineMarkerIndex = source.indexOf('recordStartupBenchmarkTimeline({');
+    const benchmarkQuitIndex = source.indexOf("requestAppQuit('startup-benchmark-complete')");
 
     expect(lockIndex).toBeGreaterThan(-1);
     expect(markerIndex).toBeGreaterThan(lockIndex);
+    expect(timelineMarkerIndex).toBeGreaterThan(markerIndex);
+    expect(benchmarkQuitIndex).toBeGreaterThan(timelineMarkerIndex);
   });
 
   it('ignores absent or unsafe benchmark IDs', async () => {

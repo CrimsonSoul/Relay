@@ -111,7 +111,10 @@ import { createStartupStateController } from './app/startupState';
 import { createStartupTimeline } from './app/startupTimeline';
 import { setupStartupIpc, shouldExitAfterStartupBenchmark } from './app/startupIpc';
 import { runStartupSequence } from './app/startupSequence';
-import { installStartupBenchmarkExitMarker } from './app/startupBenchmark';
+import {
+  installStartupBenchmarkExitMarker,
+  recordStartupBenchmarkTimeline,
+} from './app/startupBenchmark';
 import { configureWindowsApplicationIdentity } from './app/windowsTaskbarIdentity';
 import { configureE2EDesktopIsolation } from './app/e2eSafety';
 import { installMacOsTypeOfServiceGuard } from './app/typeOfServiceGuard';
@@ -574,9 +577,14 @@ if (gotLock) {
 
       setupPermissions(session.defaultSession);
       cleanupStartupIpc = setupStartupIpc(startupState, startupTimeline, {
-        onRendererMounted: () => {
+        onRendererMounted: (timeline) => {
           recoveryProbationRuntime?.controller.markRendererMounted();
           if (shouldExitAfterStartupBenchmark(process.env)) {
+            recordStartupBenchmarkTimeline({
+              environment: process.env,
+              tempPath: app.getPath('temp'),
+              timeline,
+            });
             requestAppQuit('startup-benchmark-complete');
             return;
           }
