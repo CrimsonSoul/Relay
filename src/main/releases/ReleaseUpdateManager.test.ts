@@ -489,6 +489,75 @@ describe('ReleaseUpdateManager', () => {
     expect(restartApp).not.toHaveBeenCalled();
   });
 
+  it('falls back to direct activation when protected preparation fails on legacy state', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      failureCode: null,
+    });
+    expect(spawnInstaller).toHaveBeenNthCalledWith(1, expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(/^\/relay-transaction=/u),
+    ]);
+    expect(spawnInstaller).toHaveBeenNthCalledWith(2, expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+    ]);
+    await expect(stat(join(relayRoot, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).not.toHaveBeenCalled();
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
+  it('uses direct legacy activation to repair an unverifiable running marker', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), '[Relay]\nprotocol=2\n');
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+    ]);
+  });
+
+  it.each([
+    ['protected state', `[Relay]\nprotocol=2\ncurrent=r1-${'1'.repeat(40)}\n`],
+    ['a different legacy current build', '[Relay]\nprotocol=1\ncurrent=r1-other\n'],
+  ])('never bypasses recovery preparation for %s', async (_label, state) => {
+    await writeFile(join(relayRoot, 'state.ini'), state);
+    spawnInstaller.mockResolvedValue(1);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(/^\/relay-transaction=/u),
+    ]);
+  });
+
   it('removes a recovery request when the bootstrap cannot be started', async () => {
     spawnInstaller.mockRejectedValueOnce(new Error('spawn failed'));
     const updates = manager();

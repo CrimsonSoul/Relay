@@ -139,6 +139,14 @@ update, using the executing recovery-capable runtime as the only initial predece
 runtime without complete recovery identity is never guessed into the catalog. Therefore rollback
 choices appear only after at least one recovery-aware update has passed probation.
 
+That first recovery-aware update attempts the protected transaction normally. If preparation fails,
+the updater may retry the already verified installer once through direct prepare-only activation,
+but only when a non-redirected protocol-1 `state.ini` names the exact running build. This preserves
+the manual-upgrade compatibility path without allowing protocol-2 state, a retained fallback
+runtime, or malformed legacy metadata to bypass recovery validation. The successful direct path
+restarts through the stable launcher and remains protocol 1 until a later protected update can
+establish the baseline.
+
 Builds that predate the desktop updater must still be upgraded manually. Once a build has the manual
 update flow, a newer installer replaces any incompatible stable launcher before staging its runtime,
 so the in-app update can cross launcher generations safely. Relay Web does not receive the desktop

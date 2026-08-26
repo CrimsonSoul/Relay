@@ -23,6 +23,7 @@ import type {
 } from './ReleaseUpdateService';
 import {
   isRecoveryBuildRecord,
+  parseLegacyRecoveryState,
   parseRecoveryCatalog,
   type RecoveryBuildRecord,
 } from './RecoveryCatalog';
@@ -37,6 +38,7 @@ const INSTALLER_NAME = 'Relay.exe';
 const PREPARE_ONLY_ARGUMENT = '/relay-prepare-only';
 const RECOVERY_TRANSACTION_ARGUMENT = '/relay-transaction=';
 const ABANDONED_STAGING_AGE_MS = 24 * 60 * 60 * 1_000;
+const MAX_LEGACY_STATE_BYTES = 128 * 1_024;
 const DOWNLOAD_RETRY_FAILURES = new Set<RelayUpdateFailureCode>([
   'download-failed',
   'verification-failed',
@@ -255,6 +257,30 @@ async function readCurrentRecoveryBuild(
   return record;
 }
 
+async function supportsLegacyDirectActivation(
+  managedRoot: ManagedRoot,
+  execPath: string,
+): Promise<boolean> {
+  const statePath = join(managedRoot.realRoot, 'state.ini');
+  try {
+    const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
+    if (
+      !stats.isFile() ||
+      stats.isSymbolicLink() ||
+      stats.size > MAX_LEGACY_STATE_BYTES ||
+      !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
+    ) {
+      return false;
+    }
+    const state = parseLegacyRecoveryState(await readFile(resolvedStatePath, 'utf8'));
+    const runtimeDirectory = dirname(execPath);
+    const runningBuildId = runtimeDirectory.slice(runtimeDirectory.lastIndexOf(sep) + 1);
+    return state?.currentBuildId === runningBuildId;
+  } catch {
+    return false;
+  }
+}
+
 function spawnInstallerAndWait(path: string, args: string[]): Promise<number | null> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(path, args, {
@@ -352,6 +378,7 @@ export class ReleaseUpdateManager {
   private noteCheckPromise: Promise<RelayUpdateSnapshot> | null = null;
   private initializationPromise: Promise<void> | null = null;
   private recoveryTransactionId: string | null = null;
+  private legacyDirectActivationReady = false;
 
   constructor(options: ReleaseUpdateManagerOptions) {
     this.options = {
@@ -491,6 +518,8 @@ export class ReleaseUpdateManager {
     }
 
     const staged = this.staged;
+    this.recoveryTransactionId = null;
+    this.legacyDirectActivationReady = false;
     this.publish({ ...this.state, phase: 'installing', failureCode: null });
     let requestPath: string | null = null;
     try {
@@ -500,9 +529,14 @@ export class ReleaseUpdateManager {
       return this.fail('verification-failed');
     }
 
+    const managedRoot = await this.supportedManagedRoot();
+    if (!managedRoot) return this.fail('unsupported');
+    const legacyDirectActivationAvailable = await supportsLegacyDirectActivation(
+      managedRoot,
+      this.options.execPath,
+    );
+
     try {
-      const managedRoot = await this.supportedManagedRoot();
-      if (!managedRoot) return this.fail('unsupported');
       const transactionId = randomUUID();
       const requestedAt = this.options.now().toISOString();
       const request: RecoveryUpdateRequest = {
@@ -532,15 +566,29 @@ export class ReleaseUpdateManager {
       ]);
       if (exitCode !== 0) {
         await rm(requestPath, { force: true }).catch(() => undefined);
-        return this.fail('install-failed');
+      } else {
+        this.recoveryTransactionId = transactionId;
+        await this.clearStagedUpdate();
+        this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
+        return this.snapshot();
       }
-      this.recoveryTransactionId = transactionId;
+    } catch {
+      if (requestPath) await rm(requestPath, { force: true }).catch(() => undefined);
+      this.recoveryTransactionId = null;
+    }
+
+    if (!legacyDirectActivationAvailable) return this.fail('install-failed');
+    try {
+      const exitCode = await this.options.spawnInstaller(staged.installerPath, [
+        PREPARE_ONLY_ARGUMENT,
+      ]);
+      if (exitCode !== 0) return this.fail('install-failed');
+      this.legacyDirectActivationReady = true;
       await this.clearStagedUpdate();
       this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
       return this.snapshot();
     } catch {
-      if (requestPath) await rm(requestPath, { force: true }).catch(() => undefined);
-      this.recoveryTransactionId = null;
+      this.legacyDirectActivationReady = false;
       return this.fail('install-failed');
     }
   }
@@ -571,6 +619,10 @@ export class ReleaseUpdateManager {
     if (!managedRoot || !(await this.isValidStableLauncher(managedRoot))) {
       this.fail('restart-unavailable');
       return false;
+    }
+    if (this.legacyDirectActivationReady) {
+      this.options.restartApp(managedRoot.stableLauncher);
+      return true;
     }
     if (!this.recoveryTransactionId) {
       this.fail('restart-unavailable');

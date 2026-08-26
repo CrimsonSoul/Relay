@@ -59,6 +59,11 @@ export type RecoveryCatalog = {
   failedReleaseFingerprints: string[];
 };
 
+export type LegacyRecoveryState = {
+  currentBuildId: string;
+  previousBuildId: string | null;
+};
+
 type Ini = Map<string, Map<string, string>>;
 type IniParseState = { current: Map<string, string> | null };
 
@@ -504,14 +509,9 @@ export function createRecoveryBaseline(
   legacyState: string,
   verifiedBuilds: RecoveryBuildRecord[],
 ): RecoveryCatalog | null {
-  const ini = parseIni(legacyState);
-  const relay = ini?.get('Relay');
-  if (relay?.get('protocol') !== '1') return null;
-  const currentBuildId = relay.get('current') ?? '';
-  const previousBuildId = nullable(relay.get('previous'));
-  if (!isBuildId(currentBuildId) || (previousBuildId !== null && !isBuildId(previousBuildId))) {
-    return null;
-  }
+  const legacy = parseLegacyRecoveryState(legacyState);
+  if (!legacy) return null;
+  const { currentBuildId, previousBuildId } = legacy;
   const buildMap = new Map(verifiedBuilds.map((build) => [build.buildId, build]));
   if (!buildMap.has(currentBuildId) || (previousBuildId && !buildMap.has(previousBuildId))) {
     return null;
@@ -530,4 +530,21 @@ export function createRecoveryBaseline(
     failedReleaseFingerprints: [],
   };
   return validateCatalog(catalog) ? catalog : null;
+}
+
+export function parseLegacyRecoveryState(value: string): LegacyRecoveryState | null {
+  const ini = parseIni(value);
+  const relay = ini?.get('Relay');
+  const allowed = new Set(['protocol', 'current', 'previous']);
+  if (!ini || ini.size !== 1 || !relay || !hasOnlyKeys(relay, allowed)) return null;
+  const currentBuildId = relay.get('current') ?? '';
+  const previousBuildId = nullable(relay.get('previous'));
+  if (
+    relay.get('protocol') !== '1' ||
+    !isBuildId(currentBuildId) ||
+    (previousBuildId !== null && !isBuildId(previousBuildId))
+  ) {
+    return null;
+  }
+  return { currentBuildId, previousBuildId };
 }
