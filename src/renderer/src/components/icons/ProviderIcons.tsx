@@ -112,7 +112,7 @@ export const SalesforceIcon = ({ size = 18 }: IconProps) => (
   </svg>
 );
 
-/** Equinix — data-center interconnection mark for the authenticated provider portal. */
+/** Equinix — data-center interconnection mark for the public provider status page. */
 export const EquinixIcon = ({ size = 18 }: IconProps) => (
   <svg
     width={size}

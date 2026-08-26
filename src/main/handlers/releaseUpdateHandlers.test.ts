@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   broadcastToAllWindows: vi.fn(),
   requestAppRelaunch: vi.fn(),
   releaseUpdateManager: vi.fn(),
+  mainInfo: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -59,7 +60,7 @@ vi.mock('../utils/broadcastToAllWindows', () => ({
 
 vi.mock('../logger', () => ({
   loggers: {
-    main: { warn: vi.fn() },
+    main: { info: mocks.mainInfo, warn: vi.fn() },
     security: { error: vi.fn() },
   },
 }));
@@ -233,6 +234,31 @@ describe('release update handlers', () => {
     expect(cancelDownload).toHaveBeenCalledOnce();
     expect(install).toHaveBeenCalledOnce();
     expect(restart).toHaveBeenCalledOnce();
+  });
+
+  it('records bounded lifecycle outcomes for field diagnosis', async () => {
+    await invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD);
+    await invoke(IPC_CHANNELS.APP_UPDATE_INSTALL);
+    await invoke(IPC_CHANNELS.APP_UPDATE_RESTART);
+
+    expect(mocks.mainInfo).toHaveBeenCalledWith('Relay update download completed', {
+      phase: 'downloaded',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      installable: true,
+      downloadedBytes: 0,
+      totalBytes: 140_000_000,
+      failureCode: null,
+    });
+    expect(mocks.mainInfo).toHaveBeenCalledWith('Relay update installation completed', {
+      phase: 'ready-to-restart',
+      currentVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      installable: true,
+      downloadedBytes: 0,
+      totalBytes: 140_000_000,
+      failureCode: null,
+    });
   });
 
   it('routes the production restart handoff through the lifecycle helper', async () => {

@@ -2,7 +2,7 @@ export const CLOUD_STATUS_PORTAL_ORDER = ['equinix'] as const;
 
 export type CloudStatusPortalProvider = (typeof CLOUD_STATUS_PORTAL_ORDER)[number];
 
-export const EQUINIX_STATUS_HOST = 'status.equinix.com';
+export const EQUINIX_STATUS_HOST = 'equinixproductstatus.statuspage.io';
 
 export const CLOUD_STATUS_PORTALS: Record<
   CloudStatusPortalProvider,
@@ -11,6 +11,6 @@ export const CLOUD_STATUS_PORTALS: Record<
   equinix: {
     label: 'Equinix',
     statusUrl: `https://${EQUINIX_STATUS_HOST}/`,
-    accessLabel: 'Sign-in required',
+    accessLabel: 'Public status',
   },
 };

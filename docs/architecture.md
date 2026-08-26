@@ -294,7 +294,11 @@ Status presents fifteen rows: the original ten providers, Juniper Mist, Dynatrac
 CrowdStrike, and Dropbox. Mist details expose All, Global, EMEA, APAC, and Federal filters while
 preserving the single overview row and deduplicated All view.
 
-Equinix appears separately under **Provider portals** because its current status site requires sign-in. The fixed `https://status.equinix.com/` link is an operator-launched portal, not a sixteenth monitored provider. It does not enter snapshots, polling, refresh work, posture, feed errors, caching, counts, or cloud notifications. The desktop external-link handler allowlists only the exact portal hostname.
+Equinix appears separately under **Provider portals** because it is a public operator-launched page,
+not a sixteenth monitored provider. The fixed
+`https://equinixproductstatus.statuspage.io/` link does not enter snapshots, polling, refresh work,
+posture, feed errors, caching, counts, or cloud notifications. The desktop external-link handler
+allowlists only the exact portal hostname.
 
 Dropbox uses its credential-free official Atlassian Statuspage summary endpoint for the primary
 Dropbox service, not the separate Dropbox Sign page. Unresolved incidents follow the shared impact
@@ -315,9 +319,9 @@ performance maps to degraded, while partial and full service
 disruptions map to outage. Planned maintenance, closed incidents, security-only notices, stale
 records, and operational monitoring updates do not enter the active issue list. A failed feed keeps
 the last good snapshot and marks only its display provider Unknown; a partial Mist component
-failure cannot manufacture an outage. An authoritative empty Proofpoint current-incidents table
-clears its prior outage state; malformed, oversized, or failed responses retain the last confirmed
-state and add a provider feed error.
+failure cannot manufacture an outage. An authoritative empty Proofpoint current-incidents table or
+its exact public no-incidents display clears the prior outage state; malformed, oversized, unknown,
+or failed responses retain the last confirmed state and add a provider feed error.
 
 AWS RSS entries older than seven days are discarded before persistence and cannot accelerate the
 polling cadence. Cloudflare requires an active incident before component-only aggregate status can

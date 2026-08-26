@@ -6,6 +6,10 @@ const PROOFPOINT_COMMUNITY_URL =
 const PROOFPOINT_AURA_URL =
   'https://proofpoint.my.site.com/community/s/sfsites/aura?r=1&aura.FlowRuntimeConnect.startFlow=1';
 const PROOFPOINT_HOST = 'proofpoint.my.site.com';
+const PROOFPOINT_NO_INCIDENTS_MESSAGES = new Set([
+  'No current identified incidents',
+  'No current identified incidents If you are seeing a service disruption, please open a support case',
+]);
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_INCIDENTS = 50;
 const MAX_AFFECTED_SCOPES = 100;
@@ -202,6 +206,17 @@ function currentIncidents(responseText: string): unknown[] {
   if (!isRecord(flowResponse) || !Array.isArray(flowResponse.fields)) {
     throw new Error('Invalid Proofpoint current-incidents response');
   }
+
+  const noIncidentsDisplay = flowResponse.fields.find(
+    (field) =>
+      isRecord(field) &&
+      field.name === 'DisplayText' &&
+      field.fieldType === 'DISPLAY_TEXT' &&
+      field.dataType === 'STRING' &&
+      isBoundedString(field.label, 20_000) &&
+      PROOFPOINT_NO_INCIDENTS_MESSAGES.has(htmlToText(field.label)),
+  );
+  if (noIncidentsDisplay) return [];
 
   const inputs = flowResponse.fields.flatMap((field) =>
     isRecord(field) && Array.isArray(field.inputs) ? field.inputs : [],

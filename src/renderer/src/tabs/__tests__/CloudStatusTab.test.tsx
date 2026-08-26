@@ -144,15 +144,16 @@ describe('CloudStatusTab', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows Equinix as a separate sign-in portal without changing monitored health', () => {
+  it('opens Equinix’s public status page without changing monitored health', () => {
     const refetch = vi.fn();
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={refetch} />);
 
     const portals = screen.getByRole('region', { name: 'Provider portals' });
+    expect(within(portals).getByText('1 public status page')).toBeInTheDocument();
     const equinix = within(portals).getByRole('button', {
-      name: 'Open Equinix status portal (sign-in required)',
+      name: 'Open Equinix public status page',
     });
-    expect(equinix).toHaveAccessibleDescription('Sign-in required Portal');
+    expect(equinix).toHaveAccessibleDescription('Public status Portal');
     expect(screen.getAllByRole('button', { name: /status details$/ })).toHaveLength(15);
     expect(screen.getByText('across 15 monitored providers')).toBeInTheDocument();
     expect(screen.getByTestId('status-bar')).toHaveTextContent('15 providers monitored');
@@ -160,7 +161,7 @@ describe('CloudStatusTab', () => {
 
     fireEvent.click(equinix);
 
-    expect(openExternal).toHaveBeenCalledWith('https://status.equinix.com/');
+    expect(openExternal).toHaveBeenCalledWith('https://equinixproductstatus.statuspage.io/');
     expect(refetch).not.toHaveBeenCalled();
   });
 

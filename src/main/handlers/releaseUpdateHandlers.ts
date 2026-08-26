@@ -187,7 +187,9 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         if (shouldSuppressDesktopSideEffects()) {
           return { success: true, data: manager.snapshot() };
         }
-        return { success: true, data: await manager.download() };
+        const snapshot = await manager.download();
+        loggers.main.info('Relay update download completed', snapshot);
+        return { success: true, data: snapshot };
       } catch (error) {
         loggers.main.warn('Relay update download unavailable', { error });
         return { success: false, error: 'unavailable' };
@@ -229,7 +231,9 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         if (shouldSuppressDesktopSideEffects()) {
           return { success: true, data: manager.snapshot() };
         }
-        return { success: true, data: await manager.install() };
+        const snapshot = await manager.install();
+        loggers.main.info('Relay update installation completed', snapshot);
+        return { success: true, data: snapshot };
       } catch (error) {
         loggers.main.warn('Relay update installation unavailable', { error });
         return { success: false, error: 'unavailable' };

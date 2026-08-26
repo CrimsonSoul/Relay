@@ -35,14 +35,14 @@ function data(overrides: Partial<CloudStatusData> = {}): CloudStatusData {
 }
 
 describe('cloud status display aggregation', () => {
-  it('keeps sign-in portals separate from monitored provider data', () => {
+  it('keeps public provider portals separate from monitored provider data', () => {
     const display = aggregateCloudStatusForDisplay(data());
 
     expect(DISPLAY_CLOUD_STATUS_PORTAL_ORDER).toEqual(['equinix']);
     expect(DISPLAY_CLOUD_STATUS_PORTALS.equinix).toEqual({
       label: 'Equinix',
-      statusUrl: 'https://status.equinix.com/',
-      accessLabel: 'Sign-in required',
+      statusUrl: 'https://equinixproductstatus.statuspage.io/',
+      accessLabel: 'Public status',
     });
     expect(DISPLAY_CLOUD_STATUS_PROVIDER_ORDER).not.toContain('equinix');
     expect(display.providers).not.toHaveProperty('equinix');
