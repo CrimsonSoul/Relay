@@ -280,11 +280,21 @@ jobs:
         shell: pwsh
         run: Move-Item -LiteralPath ./release/Relay.exe -Destination "$env:RUNNER_TEMP\RelayProduction.exe"
 
+      - name: Resolve updater fixture versions
+        id: updater-fixture-versions
+        shell: bash
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          TARGET_VERSION=$(node -p "const [major, minor, patch] = require('./package.json').version.split('.').map(Number); [major, minor, patch + 1].join('.')")
+          echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build previous isolated boundary fixture
         env:
           RELAY_BUILD_ID: h0-${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_HARNESS: 1
-          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
+          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}\Relay
+          RELAY_RELEASE_VERSION: ${{ steps.updater-fixture-versions.outputs.current }}
         run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
 
       - name: Preserve previous isolated boundary fixture
@@ -295,7 +305,8 @@ jobs:
         env:
           RELAY_BUILD_ID: h1-${{ inputs.source-sha }}
           RELAY_BOOTSTRAP_HARNESS: 1
-          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}
+          RELAY_BOOTSTRAP_HARNESS_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}\Relay
+          RELAY_RELEASE_VERSION: ${{ steps.updater-fixture-versions.outputs.target }}
         run: node scripts/package-windows.mjs --fixture --config.compression=store --config.npmRebuild=false
 
       - name: Exercise isolated activation boundaries and stable fallback
@@ -308,9 +319,37 @@ jobs:
           ./scripts/windows-bootstrap-boundary-smoke.ps1
           -Artifact ./release/Relay.exe
           -PreviousArtifact "$env:RUNNER_TEMP\RelayBoundaryPrevious.exe"
-          -Root "$env:RUNNER_TEMP\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}"
+          -Root "$env:RUNNER_TEMP\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}\Relay"
           -ExpectedBuildId "$env:RELAY_EXPECTED_BUILD_ID"
           -ExpectedPreviousBuildId "$env:RELAY_EXPECTED_PREVIOUS_BUILD_ID"
+          -ExpectedTargetVersion "${{ steps.updater-fixture-versions.outputs.target }}"
+
+      - name: Exercise updater manager through native install and restart
+        shell: pwsh
+        env:
+          RELAY_UPDATER_INTEGRATION_CONFIRM: 1
+          RELAY_UPDATER_INTEGRATION_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}\Relay
+          RELAY_UPDATER_INTEGRATION_CURRENT_ARTIFACT: ${{ runner.temp }}\RelayBoundaryPrevious.exe
+          RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT: ./release/Relay.exe
+          RELAY_UPDATER_INTEGRATION_ARCHIVE: ${{ runner.temp }}\relay-updater-assets\Relay-v${{ steps.updater-fixture-versions.outputs.target }}-windows-x64.zip
+          RELAY_UPDATER_INTEGRATION_CHECKSUM: ${{ runner.temp }}\relay-updater-assets\Relay-v${{ steps.updater-fixture-versions.outputs.target }}-windows-x64.zip.sha256
+          RELAY_UPDATER_INTEGRATION_CURRENT_BUILD_ID: h0-${{ inputs.source-sha }}
+          RELAY_UPDATER_INTEGRATION_TARGET_BUILD_ID: h1-${{ inputs.source-sha }}
+          RELAY_UPDATER_INTEGRATION_CURRENT_VERSION: ${{ steps.updater-fixture-versions.outputs.current }}
+          RELAY_UPDATER_INTEGRATION_TARGET_VERSION: ${{ steps.updater-fixture-versions.outputs.target }}
+          RELAY_UPDATER_INTEGRATION_TARGET_COMMITISH: ${{ inputs.source-sha }}
+        run: |
+          $assetRoot = Split-Path -Parent $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
+          New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
+          Compress-Archive -LiteralPath $env:RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT -DestinationPath $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
+          $archiveName = Split-Path -Leaf $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
+          $archiveHash = (Get-FileHash -LiteralPath $env:RELAY_UPDATER_INTEGRATION_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            $env:RELAY_UPDATER_INTEGRATION_CHECKSUM,
+            "$archiveHash  $archiveName`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          npx vitest run src/main/releases/ReleaseUpdateManager.windows.integration.test.ts
 
       - name: Restore production artifact
         shell: pwsh

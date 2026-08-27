@@ -68,7 +68,14 @@ quality gate rejects non-conventional pull request titles and reruns when a titl
 The calculated version is injected into Electron package metadata without changing the source
 commit. The reusable Windows job must still pass its native dependency build, Windows updater and
 private-DACL integration tests, persistent bootstrap smoke test, packaged startup benchmark, and
-isolated boundary harness. That job continues to pass
+isolated boundary harness. It also packages two synthetic consecutive versions and drives the real
+`ReleaseUpdateManager` through local download staging, the native target bootstrap, checkpoint,
+stable-launcher restart, candidate promotion, and predecessor retention in an isolated runner root.
+Harness builds compile both the managed runtime root and the launcher's recovery-data root beneath
+that disposable `RUNNER_TEMP` parent; production launchers keep the normal LocalAppData and AppData
+defaults. The integration restores any pre-existing Relay shortcuts and waits for the promoted
+runtime to become quiescent before deleting its owned parent.
+That job continues to pass
 `Relay.exe` internally so build and baseline workflows share the same verified executable. The
 release job packages that executable as `Relay-vX.Y.Z-windows-x64.zip`, with exactly one top-level
 member named `Relay.exe`, and creates a draft release containing only the ZIP plus
@@ -585,8 +592,9 @@ path also require `npm run build:win`. The local package script compiles both NS
 produces the Windows package for target-binary inspection, and restores the host `better-sqlite3`
 module afterward. The Windows CI package job additionally exercises the persistent-bootstrap
 boundary harness. Unit and source-contract tests are valuable on macOS, but only that Windows job
-and a packaged Windows smoke test exercise the actual native process supervisor, Job Object,
-shortcut, snapshot swap, and probation lifecycle together.
+and its packaged smoke and updater-manager integration tests exercise the actual native bootstrap,
+stable process supervisor, Job Object, shortcut, retained build, snapshot swap, restart, and
+probation lifecycle.
 
 `npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 

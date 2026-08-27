@@ -142,6 +142,7 @@ describe('Windows package contract', () => {
     expect(source).toContain('`-DRELAY_FIXTURE_BUILD_ID=${buildId}`');
     expect(source).toContain('`-DRELAY_FIXTURE_PROBATION_DURATION_MS=${probationDurationMs}`');
     expect(source).toContain('`-DRELAY_FIXTURE_ROOT=${harness.root}`');
+    expect(source).toContain('`-DRELAY_DATA_ROOT=${harness.dataRoot}`');
     expect(source).toContain("'-DRELAY_LAUNCHER_HARNESS=1'");
     expect(fixture).toContain('RELAY_FIXTURE_BUILD_ID');
     expect(fixture).toContain('RELAY_FIXTURE_PROBATION_DURATION_MS');
@@ -344,7 +345,10 @@ describe('Windows package contract', () => {
         RELAY_BOOTSTRAP_HARNESS: '1',
         RELAY_BOOTSTRAP_HARNESS_ROOT: String.raw`C:\runner temp\relay-test`,
       }),
-    ).toEqual({ root: String.raw`C:\runner temp\relay-test` });
+    ).toEqual({
+      root: String.raw`C:\runner temp\relay-test`,
+      dataRoot: String.raw`C:\runner temp\AppData\Relay`,
+    });
     expect(() =>
       resolveHarnessConfig({
         RELAY_BOOTSTRAP_HARNESS: '1',
@@ -353,6 +357,7 @@ describe('Windows package contract', () => {
     ).toThrow(/root/i);
     for (const root of [
       'C:\\',
+      String.raw`C:\relay-test`,
       'C:\\relay\\trailing\\',
       String.raw`C:\relay\path" !define PWNED`,
       String.raw`C:\relay\path$INSTDIR`,

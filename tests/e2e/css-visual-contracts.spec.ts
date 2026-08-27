@@ -328,6 +328,56 @@ test('release update actions stay inside the dialog when restart adds a third bu
   }
 });
 
+test('release installation progress uses a bounded sweep with a reduced-motion fallback', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>${emittedGlobalCss}</style>
+      <div class="release-update-modal__progress">
+        <progress
+          class="sr-only"
+          aria-label="Update installation progress"
+          data-mode="indeterminate"
+        ></progress>
+        <div
+          class="release-update-modal__progress-track"
+          aria-hidden="true"
+          data-mode="indeterminate"
+        >
+          <span class="release-update-modal__progress-fill"></span>
+        </div>
+      </div>
+    `);
+
+    const progress = window.getByRole('progressbar', { name: 'Update installation progress' });
+    const track = window.locator('.release-update-modal__progress-track');
+    const fill = window.locator('.release-update-modal__progress-fill');
+    const animated = await fill.evaluate((element) => {
+      const trackRect = element.parentElement?.getBoundingClientRect();
+      const fillRect = element.getBoundingClientRect();
+      const style = globalThis.getComputedStyle(element);
+      return {
+        animationName: style.animationName,
+        fillWidth: fillRect.width,
+        trackWidth: trackRect?.width ?? 0,
+      };
+    });
+
+    expect(animated.animationName).toBe('release-update-progress-sweep');
+    expect(animated.fillWidth).toBeGreaterThan(0);
+    expect(animated.fillWidth).toBeLessThan(animated.trackWidth);
+    await expect(progress).toHaveAttribute('data-mode', 'indeterminate');
+
+    await window.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(fill).toHaveCSS('animation-name', 'none');
+    await expect(track).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
 test('flagged chips retain WCAG text contrast across every Relay accent and opaque background', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();

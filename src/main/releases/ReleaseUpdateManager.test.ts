@@ -490,6 +490,84 @@ describe('ReleaseUpdateManager', () => {
     expect(restartApp).not.toHaveBeenCalled();
   });
 
+  it('reports the current native bootstrap failure without exposing paths or arguments', async () => {
+    const nativeReason = 'Relay could not activate the prepared build.';
+    const encodedReason = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from(`[Relay]\r\nmessage=${nativeReason}\r\n`, 'utf16le'),
+    ]);
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(join(relayRoot, 'bootstrap-error.ini'), encodedReason);
+      return 1;
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(onInstallDiagnostic).toHaveBeenCalledWith({
+      targetVersion: '1.1.0',
+      outcome: 'failed',
+      protectedAttempt: {
+        stage: 'protected-preparation',
+        exitCode: 1,
+        nativeReason,
+        spawnErrorCode: null,
+      },
+      legacyFallback: 'ineligible',
+      fallbackAttempt: null,
+    });
+  });
+
+  it("rejects native bootstrap text that is not one of Relay's fixed failure reasons", async () => {
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(
+        join(relayRoot, 'bootstrap-error.ini'),
+        '[Relay]\r\nmessage=C:\\Users\\operator\\private\\Relay.exe /relay-transaction=secret\r\n',
+      );
+      return 1;
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await updates.install();
+
+    expect(onInstallDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protectedAttempt: expect.objectContaining({ nativeReason: null }),
+      }),
+    );
+  });
+
+  it('removes a stale native bootstrap failure before starting a new attempt', async () => {
+    await writeFile(
+      join(relayRoot, 'bootstrap-error.ini'),
+      '[Relay]\r\nmessage=Stale failure from an earlier update.\r\n',
+    );
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockResolvedValueOnce(1);
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await updates.install();
+
+    expect(onInstallDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protectedAttempt: expect.objectContaining({ nativeReason: null }),
+      }),
+    );
+    await expect(stat(join(relayRoot, 'bootstrap-error.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('falls back to direct activation when protected preparation fails on legacy state', async () => {
     await writeFile(
       join(relayRoot, 'state.ini'),
@@ -519,6 +597,69 @@ describe('ReleaseUpdateManager', () => {
     await expect(updates.restart()).resolves.toBe(true);
     expect(prepareRecoveryRestart).not.toHaveBeenCalled();
     expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
+  it('reports when legacy direct activation recovers a protected preparation failure', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+
+    expect(onInstallDiagnostic).toHaveBeenCalledWith({
+      targetVersion: '1.1.0',
+      outcome: 'recovered',
+      protectedAttempt: {
+        stage: 'protected-preparation',
+        exitCode: 1,
+        nativeReason: null,
+        spawnErrorCode: null,
+      },
+      legacyFallback: 'succeeded',
+      fallbackAttempt: null,
+    });
+  });
+
+  it('does not let a diagnostic callback failure replace the protected update outcome', async () => {
+    spawnInstaller.mockResolvedValueOnce(1);
+    const onInstallDiagnostic = vi.fn(() => {
+      throw new Error('diagnostic sink unavailable');
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(onInstallDiagnostic).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a diagnostic callback failure replace legacy fallback recovery', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const onInstallDiagnostic = vi.fn(() => {
+      throw new Error('diagnostic sink unavailable');
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      failureCode: null,
+    });
+    expect(onInstallDiagnostic).toHaveBeenCalledOnce();
   });
 
   it('uses direct legacy activation to repair an unverifiable running marker', async () => {

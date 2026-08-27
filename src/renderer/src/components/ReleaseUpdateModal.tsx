@@ -55,6 +55,70 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${unit}`;
 }
 
+function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
+  const installing = update.phase === 'installing';
+  const showDownloadProgress =
+    (update.phase === 'downloading' || update.phase === 'downloaded') && update.totalBytes !== null;
+  if (!installing && !showDownloadProgress) return null;
+
+  if (installing) {
+    return (
+      <div className="release-update-modal__progress">
+        <progress
+          className="sr-only"
+          aria-label="Update installation progress"
+          data-mode="indeterminate"
+        />
+        <div
+          className="release-update-modal__progress-track"
+          aria-hidden="true"
+          data-mode="indeterminate"
+        >
+          <span className="release-update-modal__progress-fill" />
+        </div>
+      </div>
+    );
+  }
+
+  const totalBytes = update.totalBytes;
+  if (totalBytes === null) return null;
+  const downloadedBytes =
+    update.phase === 'downloaded'
+      ? totalBytes
+      : Math.max(0, Math.min(update.downloadedBytes, totalBytes));
+  const progress = totalBytes > 0 ? downloadedBytes / totalBytes : 0;
+
+  return (
+    <div className="release-update-modal__progress">
+      <progress
+        className="sr-only"
+        aria-label={
+          update.phase === 'downloaded' ? 'Update download complete' : 'Update download progress'
+        }
+        aria-valuetext={`${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}`}
+        data-mode="determinate"
+        max={totalBytes}
+        value={downloadedBytes}
+      />
+      <div
+        className="release-update-modal__progress-track"
+        aria-hidden="true"
+        data-mode="determinate"
+      >
+        <span
+          className="release-update-modal__progress-fill"
+          style={{ transform: `scaleX(${progress})` }}
+        />
+      </div>
+      <span>
+        {update.phase === 'downloaded'
+          ? `${formatBytes(totalBytes)} verified`
+          : `${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}`}
+      </span>
+    </div>
+  );
+}
+
 function currentStep(update: RelayUpdateSnapshot): UpdateStep {
   if (
     update.phase === 'ready-to-restart' ||
@@ -319,18 +383,7 @@ export function ReleaseUpdateModal({
           </output>
         )}
 
-        {update.phase === 'downloading' && update.totalBytes !== null && (
-          <div className="release-update-modal__progress">
-            <progress
-              aria-label="Update download progress"
-              value={Math.min(update.downloadedBytes, update.totalBytes)}
-              max={update.totalBytes}
-            />
-            <span>
-              {formatBytes(update.downloadedBytes)} of {formatBytes(update.totalBytes)}
-            </span>
-          </div>
-        )}
+        <UpdateProgress update={update} />
 
         {update.latestVersion && (
           <section

@@ -75,6 +75,7 @@ async function prepareProductionRecoveryRestart(
 }
 
 export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions = {}): void {
+  const warn = loggers.main.warn.bind(loggers.main);
   let servicePromise: Promise<ReleaseUpdateChecker> | null = options.service
     ? Promise.resolve(options.service)
     : null;
@@ -117,6 +118,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
           getInstallationMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
           prepareRecoveryRestart: prepareProductionRecoveryRestart,
           restartApp: (execPath) => requestAppRelaunch('release-update', { execPath }),
+          onInstallDiagnostic: (diagnostic) => warn('Update', diagnostic),
         });
       },
     );
@@ -145,7 +147,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         const snapshot = await manager.noteCheck(check);
         return { success: true, data: authoritativeCheck(check, snapshot) };
       } catch (error) {
-        loggers.main.warn('GitHub release check unavailable', { error });
+        warn('GitHub release check unavailable', { error });
         return { success: false, error: 'unavailable' };
       }
     },
@@ -166,7 +168,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
       try {
         return (await getManager()).snapshot();
       } catch (error) {
-        loggers.main.warn('Relay update state unavailable', { error });
+        warn('Relay update state unavailable', { error });
         return null;
       }
     },
@@ -191,7 +193,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         loggers.main.info('Relay update download completed', snapshot);
         return { success: true, data: snapshot };
       } catch (error) {
-        loggers.main.warn('Relay update download unavailable', { error });
+        warn('Relay update download unavailable', { error });
         return { success: false, error: 'unavailable' };
       }
     },
@@ -210,7 +212,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         }
         return { success: true, data: await manager.cancelDownload() };
       } catch (error) {
-        loggers.main.warn('Relay update cancellation unavailable', { error });
+        warn('Relay update cancellation unavailable', { error });
         return { success: false, error: 'unavailable' };
       }
     },
@@ -235,7 +237,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         loggers.main.info('Relay update installation completed', snapshot);
         return { success: true, data: snapshot };
       } catch (error) {
-        loggers.main.warn('Relay update installation unavailable', { error });
+        warn('Relay update installation unavailable', { error });
         return { success: false, error: 'unavailable' };
       }
     },
@@ -252,7 +254,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     try {
       return { success: true, data: await (await getManager()).restart() };
     } catch (error) {
-      loggers.main.warn('Relay update restart unavailable', { error });
+      warn('Relay update restart unavailable', { error });
       return { success: false, error: 'unavailable' };
     }
   });

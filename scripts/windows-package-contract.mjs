@@ -51,6 +51,7 @@ function validateHarnessRoot(value) {
     typeof value !== 'string' ||
     value.length > 240 ||
     !/^[A-Za-z]:\\/.test(value) ||
+    segments.length < 2 ||
     containsControlCharacter ||
     /[<>:"/|?*$!]/.test(value.slice(2)) ||
     value.endsWith('\\') ||
@@ -70,7 +71,12 @@ export function resolveHarnessConfig(env = {}) {
   if (enabled !== '1' || !root) {
     throw new Error('Windows bootstrap harness variables require RELAY_BOOTSTRAP_HARNESS=1');
   }
-  return { root: validateHarnessRoot(root) };
+  const validatedRoot = validateHarnessRoot(root);
+  const parent = validatedRoot.slice(0, validatedRoot.lastIndexOf('\\'));
+  return {
+    root: validatedRoot,
+    dataRoot: validateHarnessRoot(String.raw`${parent}\AppData\Relay`),
+  };
 }
 
 export function renderBuildDefines({

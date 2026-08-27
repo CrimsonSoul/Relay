@@ -7,12 +7,31 @@ const readWorkflow = (path) => parse(read(path));
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('Windows NSIS launcher contract', () => {
+  it("keeps updater diagnostics limited to the bootstrap's fixed failure messages", () => {
+    const bootstrap = read('build/windows/relay-bootstrap.nsi');
+    const manager = read('src/main/releases/ReleaseUpdateManager.ts');
+    const prefix = 'StrCpy $RelayFailureMessage "';
+    const reasons = bootstrap
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(prefix) && line.endsWith('"') && !line.includes('${'))
+      .map((line) => line.slice(prefix.length, -1));
+
+    expect(reasons.length).toBeGreaterThan(20);
+    for (const reason of reasons) expect(manager).toContain(reason);
+  });
+
   it('keeps launcher state path-based and protocol-versioned', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
     expect(source).toContain('!define RELAY_RUNTIME_ROOT "$LOCALAPPDATA\\Relay"');
+    expect(source).toContain('!define RELAY_DATA_ROOT "$APPDATA\\Relay"');
     expect(source).toContain('$RelayRoot\\state.ini');
+    expect(source).toContain('${RELAY_DATA_ROOT}\\RecoverySnapshots');
+    expect(source).toContain('${RELAY_DATA_ROOT}\\recovery-rollback.ini');
+    expect(source).not.toContain('$APPDATA\\Relay\\RecoverySnapshots');
+    expect(source).not.toContain('$APPDATA\\Relay\\recovery-rollback.ini');
     expect(source).toContain('"Relay" "protocol"');
     expect(contract).toContain('--relay-launcher-probe');
     expect(contract).toContain('.relay-runtime-ready');
@@ -106,8 +125,8 @@ describe('Windows NSIS launcher contract', () => {
     const source = read('build/windows/relay-launcher.nsi');
 
     expect(source).toContain('Function RelayRestoreServerSnapshot');
-    expect(source).toContain('$APPDATA\\Relay\\recovery-rollback.ini');
-    expect(source).toContain('$APPDATA\\Relay\\RecoverySnapshots\\$RelayTransactionSnapshot');
+    expect(source).toContain('${RELAY_DATA_ROOT}\\recovery-rollback.ini');
+    expect(source).toContain('${RELAY_DATA_ROOT}\\RecoverySnapshots\\$RelayTransactionSnapshot');
     expect(source).toContain('"Snapshot" "complete"');
     expect(source).toContain('"Snapshot" "transactionId"');
     expect(source).toContain('Rename "$RelayLiveData" "$RelayFailedData"');
@@ -678,6 +697,9 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('BoundaryFailuresPreservedFallback');
     expect(harness).toContain('Invoke-StableFallback');
     expect(harness).toContain('RELAY_BOOTSTRAP_BOUNDARY_CONFIRM');
+    expect(harness).toContain("Join-Path $harnessParent 'AppData\\Relay'");
+    expect(harness).toContain('Isolated harness parent already exists');
+    expect(harness).toContain('Remove-Item -LiteralPath $harnessParent -Recurse -Force');
     expect(harness).toContain("RELAY_DISABLE_CRASH_WATCHDOG = '1'");
     expect(harness).toContain('repair-restore-sentinel.txt');
     expect(harness).toContain('.fail-before-prepared-activation');
@@ -763,6 +785,32 @@ describe('Windows packaging integration contract', () => {
       );
       expect(caller.jobs['package-windows'].with['source-sha']).toBeTruthy();
     }
+  });
+
+  it('joins the updater manager to the real bootstrap and stable launcher in Windows CI', () => {
+    const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
+    const packageJob = reusable.jobs.package;
+    const integration = read('src/main/releases/ReleaseUpdateManager.windows.integration.test.ts');
+    const updater = findStep(
+      packageJob,
+      'Exercise updater manager through native install and restart',
+    );
+
+    expect(updater.env.RELAY_UPDATER_INTEGRATION_CONFIRM).toBe(1);
+    expect(updater.run).toContain(
+      'src/main/releases/ReleaseUpdateManager.windows.integration.test.ts',
+    );
+    expect(updater.run).toContain('Compress-Archive');
+    expect(updater.env.RELAY_UPDATER_INTEGRATION_ROOT).toContain('\\Relay');
+    expect(updater.env.RELAY_UPDATER_INTEGRATION_CURRENT_ARTIFACT).toContain(
+      'RelayBoundaryPrevious.exe',
+    );
+    expect(updater.env.RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT).toContain('release/Relay.exe');
+    expect(integration).toContain('terminateProcessTree');
+    expect(integration).toContain('waitForRelayRuntimeQuiescence');
+    expect(integration).toContain('snapshotShortcuts');
+    expect(integration).toContain('expect(stat(localAppData)).rejects');
+    expect(integration).toContain('[char]9');
   });
 
   it('packages one real app and uses prior artifacts plus lightweight boundary fixtures', () => {

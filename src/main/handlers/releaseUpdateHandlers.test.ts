@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   requestAppRelaunch: vi.fn(),
   releaseUpdateManager: vi.fn(),
   mainInfo: vi.fn(),
+  mainWarn: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -60,7 +61,7 @@ vi.mock('../utils/broadcastToAllWindows', () => ({
 
 vi.mock('../logger', () => ({
   loggers: {
-    main: { info: mocks.mainInfo, warn: vi.fn() },
+    main: { info: mocks.mainInfo, warn: mocks.mainWarn },
     security: { error: vi.fn() },
   },
 }));
@@ -295,6 +296,39 @@ describe('release update handlers', () => {
     expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('release-update', {
       execPath: stableLauncher,
     });
+  });
+
+  it('records native installer diagnostics emitted by the production updater', async () => {
+    const diagnostic = {
+      targetVersion: '1.1.0',
+      outcome: 'failed' as const,
+      protectedAttempt: {
+        stage: 'protected-preparation' as const,
+        exitCode: 1,
+        nativeReason: 'Relay could not activate the prepared build.',
+        spawnErrorCode: null,
+      },
+      legacyFallback: 'ineligible' as const,
+      fallbackAttempt: null,
+    };
+    mocks.releaseUpdateManager.mockImplementation(function releaseUpdateManager(options: {
+      onInstallDiagnostic?: (value: typeof diagnostic) => void;
+    }) {
+      expect(options.onInstallDiagnostic).toBeTypeOf('function');
+      options.onInstallDiagnostic?.(diagnostic);
+      return { snapshot, subscribe, noteCheck, download, cancelDownload, install, restart };
+    });
+    const installableService = {
+      check,
+      getCachedReleaseNotes,
+      refreshReleaseNotes,
+      resolveLatestInstallable: vi.fn(),
+    };
+    setupReleaseUpdateHandlers({ service: installableService });
+
+    await invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE);
+
+    expect(mocks.mainWarn).toHaveBeenCalledWith('Update', diagnostic);
   });
 
   it('broadcasts bounded updater snapshots without renderer-provided paths or URLs', async () => {
