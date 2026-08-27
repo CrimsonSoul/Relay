@@ -39,6 +39,43 @@ const PREPARE_ONLY_ARGUMENT = '/relay-prepare-only';
 const RECOVERY_TRANSACTION_ARGUMENT = '/relay-transaction=';
 const ABANDONED_STAGING_AGE_MS = 24 * 60 * 60 * 1_000;
 const MAX_LEGACY_STATE_BYTES = 128 * 1_024;
+const BOOTSTRAP_FAILURE_FILE = 'bootstrap-error.ini';
+const MAX_BOOTSTRAP_FAILURE_BYTES = 4 * 1_024;
+const SAFE_DIAGNOSTIC_CODE_PATTERN = /^[A-Z][A-Z0-9_-]{0,63}$/u;
+const KNOWN_BOOTSTRAP_FAILURE_REASONS = new Set([
+  `Relay could not create its local runtime folder.`,
+  `Relay could not inspect its local runtime folder.`,
+  `Relay cannot prepare inside a redirected runtime folder.`,
+  `Relay could not bind recovery to its current runtime.`,
+  `Relay could not find its private recovery request.`,
+  `Relay recovery metadata was redirected.`,
+  `Relay rejected mismatched retained-build repair metadata.`,
+  `Relay rejected a changed retained-build installer.`,
+  `Relay rejected mismatched recovery update metadata.`,
+  `Relay could not create a staging folder.`,
+  `Relay could not verify the embedded runtime archive.`,
+  `The prepared Relay runtime is incomplete.`,
+  `The prepared Relay executable is not a valid Windows binary.`,
+  `Relay could not finalize the new runtime.`,
+  `Relay could not verify the extracted runtime contents.`,
+  `Relay rejected changed retained-build runtime contents.`,
+  `Relay could not inspect the prepared runtime.`,
+  `Relay could not safely activate the prepared runtime.`,
+  `Relay could not reserve a safe repair location.`,
+  `Relay could not quarantine its damaged runtime.`,
+  `Relay could not mark its damaged runtime quarantine.`,
+  `Relay could not activate the prepared runtime folder.`,
+  `Relay could not prepare its stable launcher.`,
+  `Relay could not verify its stable launcher.`,
+  `Relay could not install its stable launcher.`,
+  `Use Relay's update or recovery screen to change a protected runtime.`,
+  `Relay could not prepare its runtime state.`,
+  `Relay could not activate the prepared build.`,
+  `Relay could not write its prepared recovery receipt.`,
+  `Relay could not activate its prepared recovery receipt.`,
+  `Relay could not write its retained-build repair receipt.`,
+  `Relay could not activate its retained-build repair receipt.`,
+]);
 const DOWNLOAD_RETRY_FAILURES = new Set<RelayUpdateFailureCode>([
   'download-failed',
   'verification-failed',
@@ -55,6 +92,26 @@ type ExtractInstaller = (
   archivePath: string,
   destinationPath: string,
 ) => Promise<{ bytes: number; sha256: string }>;
+
+export type ReleaseUpdateInstallerAttemptFailure = Readonly<{
+  stage: 'protected-preparation' | 'legacy-direct-preparation';
+  exitCode: number | null;
+  nativeReason: string | null;
+  spawnErrorCode: string | null;
+}>;
+
+export type ReleaseUpdateInstallDiagnostic = Readonly<{
+  targetVersion: string;
+  outcome: 'failed' | 'recovered';
+  protectedAttempt: ReleaseUpdateInstallerAttemptFailure;
+  legacyFallback:
+    | 'ineligible'
+    | 'succeeded'
+    | 'failed'
+    | 'blocked-by-request-cleanup'
+    | 'blocked-by-verification';
+  fallbackAttempt: ReleaseUpdateInstallerAttemptFailure | null;
+}>;
 
 export type ReleaseUpdateManagerOptions = {
   service: UpdateService;
@@ -77,6 +134,7 @@ export type ReleaseUpdateManagerOptions = {
   prepareRecoveryRestart?: (transactionId: string) => Promise<PrepareRecoveryRestartResult>;
   now?: () => Date;
   restartApp?: (execPath: string) => void;
+  onInstallDiagnostic?: (diagnostic: ReleaseUpdateInstallDiagnostic) => void;
 };
 
 type StagedUpdate = {
@@ -289,6 +347,135 @@ function spawnInstallerAndWait(path: string, args: string[]): Promise<number | n
   });
 }
 
+function decodeBootstrapFailure(bytes: Buffer): string | null {
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_BOOTSTRAP_FAILURE_BYTES) return null;
+  let encoding = 'utf-8';
+  let offset = 0;
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    encoding = 'utf-16le';
+    offset = 2;
+  } else if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return null;
+  } else if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    offset = 3;
+  }
+  const payload = bytes.subarray(offset);
+  if (payload.byteLength === 0 || (encoding === 'utf-16le' && payload.byteLength % 2 !== 0)) {
+    return null;
+  }
+  let text: string;
+  try {
+    text = new TextDecoder(encoding, { fatal: true }).decode(payload);
+  } catch {
+    return null;
+  }
+  const lines = text.split(/\r?\n/u);
+  while (lines.at(-1) === '') lines.pop();
+  if (lines.length !== 2 || lines[0] !== '[Relay]' || !lines[1]?.startsWith('message=')) {
+    return null;
+  }
+  const reason = lines[1].slice('message='.length);
+  return KNOWN_BOOTSTRAP_FAILURE_REASONS.has(reason) ? reason : null;
+}
+
+async function clearBootstrapFailure(managedRoot: ManagedRoot): Promise<boolean> {
+  try {
+    await rm(join(managedRoot.realRoot, BOOTSTRAP_FAILURE_FILE), { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readBootstrapFailure(managedRoot: ManagedRoot): Promise<string | null> {
+  const path = join(managedRoot.realRoot, BOOTSTRAP_FAILURE_FILE);
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    const [pathStats, resolvedPath] = await Promise.all([lstat(path), realpath(path)]);
+    if (
+      !pathStats.isFile() ||
+      pathStats.isSymbolicLink() ||
+      pathStats.size <= 0 ||
+      pathStats.size > MAX_BOOTSTRAP_FAILURE_BYTES ||
+      !isDirectChild(managedRoot.realRoot, resolvedPath, BOOTSTRAP_FAILURE_FILE)
+    ) {
+      return null;
+    }
+    handle = await open(resolvedPath, 'r');
+    const openedStats = await handle.stat();
+    if (
+      !openedStats.isFile() ||
+      openedStats.size <= 0 ||
+      openedStats.size > MAX_BOOTSTRAP_FAILURE_BYTES ||
+      openedStats.dev !== pathStats.dev ||
+      openedStats.ino !== pathStats.ino ||
+      openedStats.size !== pathStats.size
+    ) {
+      return null;
+    }
+    const bytes = Buffer.alloc(MAX_BOOTSTRAP_FAILURE_BYTES + 1);
+    const { bytesRead } = await handle.read(bytes, 0, bytes.byteLength, 0);
+    const finalStats = await handle.stat();
+    if (
+      bytesRead <= 0 ||
+      bytesRead > MAX_BOOTSTRAP_FAILURE_BYTES ||
+      bytesRead !== openedStats.size ||
+      finalStats.dev !== openedStats.dev ||
+      finalStats.ino !== openedStats.ino ||
+      finalStats.size !== openedStats.size ||
+      finalStats.mtimeMs !== openedStats.mtimeMs
+    ) {
+      return null;
+    }
+    return decodeBootstrapFailure(bytes.subarray(0, bytesRead));
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+function diagnosticErrorCode(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = String(error.code).toUpperCase();
+    if (SAFE_DIAGNOSTIC_CODE_PATTERN.test(code)) return code;
+  }
+  return fallback;
+}
+
+async function runInstallerAttempt(
+  managedRoot: ManagedRoot,
+  spawnInstaller: (path: string, args: string[]) => Promise<number | null>,
+  installerPath: string,
+  args: string[],
+  stage: ReleaseUpdateInstallerAttemptFailure['stage'],
+): Promise<{ success: true } | { success: false; failure: ReleaseUpdateInstallerAttemptFailure }> {
+  const clearedFailure = await clearBootstrapFailure(managedRoot);
+  try {
+    const exitCode = await spawnInstaller(installerPath, args);
+    if (exitCode === 0) return { success: true };
+    return {
+      success: false,
+      failure: {
+        stage,
+        exitCode,
+        nativeReason: clearedFailure ? await readBootstrapFailure(managedRoot) : null,
+        spawnErrorCode: null,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      failure: {
+        stage,
+        exitCode: null,
+        nativeReason: clearedFailure ? await readBootstrapFailure(managedRoot) : null,
+        spawnErrorCode: diagnosticErrorCode(error, 'SPAWN_ERROR'),
+      },
+    };
+  }
+}
+
 async function executableSha256(path: string, expectedBytes: number): Promise<string> {
   const stats = await lstat(path);
   if (
@@ -395,6 +582,7 @@ export class ReleaseUpdateManager {
       prepareRecoveryRestart: options.prepareRecoveryRestart ?? (async () => 'ready'),
       now: options.now ?? (() => new Date()),
       restartApp: options.restartApp ?? (() => undefined),
+      onInstallDiagnostic: options.onInstallDiagnostic ?? (() => undefined),
     };
     this.state = initialSnapshot(this.options.getCurrentVersion());
   }
@@ -529,6 +717,7 @@ export class ReleaseUpdateManager {
     const managedRoot = await this.supportedManagedRoot();
     if (!managedRoot) return this.fail('unsupported');
 
+    let protectedAttempt: ReleaseUpdateInstallerAttemptFailure;
     try {
       const transactionId = randomUUID();
       const requestedAt = this.options.now().toISOString();
@@ -553,18 +742,28 @@ export class ReleaseUpdateManager {
         request,
         this.options.createPrivateDirectory,
       );
-      const exitCode = await this.options.spawnInstaller(staged.installerPath, [
-        PREPARE_ONLY_ARGUMENT,
-        `${RECOVERY_TRANSACTION_ARGUMENT}${transactionId}`,
-      ]);
-      if (exitCode === 0) {
+      const attempt = await runInstallerAttempt(
+        managedRoot,
+        this.options.spawnInstaller,
+        staged.installerPath,
+        [PREPARE_ONLY_ARGUMENT, `${RECOVERY_TRANSACTION_ARGUMENT}${transactionId}`],
+        'protected-preparation',
+      );
+      if (attempt.success) {
         this.recoveryTransactionId = transactionId;
         await this.clearStagedUpdate();
         this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
         return this.snapshot();
       }
-    } catch {
+      protectedAttempt = attempt.failure;
+    } catch (error) {
       this.recoveryTransactionId = null;
+      protectedAttempt = {
+        stage: 'protected-preparation',
+        exitCode: null,
+        nativeReason: null,
+        spawnErrorCode: diagnosticErrorCode(error, 'PREPARATION_SETUP_FAILED'),
+      };
     }
 
     if (requestPath) {
@@ -572,6 +771,11 @@ export class ReleaseUpdateManager {
         await rm(requestPath, { force: true });
         requestPath = null;
       } catch {
+        this.reportInstallDiagnostic(
+          staged.version,
+          protectedAttempt,
+          'blocked-by-request-cleanup',
+        );
         return this.fail('install-failed');
       }
     }
@@ -579,23 +783,53 @@ export class ReleaseUpdateManager {
       await this.validateStagedInstaller(staged);
     } catch {
       await this.clearStagedUpdate();
+      this.reportInstallDiagnostic(staged.version, protectedAttempt, 'blocked-by-verification');
       return this.fail('verification-failed');
     }
     if (!(await supportsLegacyDirectActivation(managedRoot))) {
+      this.reportInstallDiagnostic(staged.version, protectedAttempt, 'ineligible');
       return this.fail('install-failed');
     }
-    try {
-      const exitCode = await this.options.spawnInstaller(staged.installerPath, [
-        PREPARE_ONLY_ARGUMENT,
-      ]);
-      if (exitCode !== 0) return this.fail('install-failed');
+    const fallbackAttempt = await runInstallerAttempt(
+      managedRoot,
+      this.options.spawnInstaller,
+      staged.installerPath,
+      [PREPARE_ONLY_ARGUMENT],
+      'legacy-direct-preparation',
+    );
+    if (fallbackAttempt.success) {
       this.legacyDirectActivationReady = true;
       await this.clearStagedUpdate();
+      this.reportInstallDiagnostic(staged.version, protectedAttempt, 'succeeded');
       this.publish({ ...this.state, phase: 'ready-to-restart', failureCode: null });
       return this.snapshot();
+    }
+    this.legacyDirectActivationReady = false;
+    this.reportInstallDiagnostic(
+      staged.version,
+      protectedAttempt,
+      'failed',
+      fallbackAttempt.failure,
+    );
+    return this.fail('install-failed');
+  }
+
+  private reportInstallDiagnostic(
+    targetVersion: string,
+    protectedAttempt: ReleaseUpdateInstallerAttemptFailure,
+    legacyFallback: ReleaseUpdateInstallDiagnostic['legacyFallback'],
+    fallbackAttempt: ReleaseUpdateInstallerAttemptFailure | null = null,
+  ): void {
+    try {
+      this.options.onInstallDiagnostic({
+        targetVersion,
+        outcome: legacyFallback === 'succeeded' ? 'recovered' : 'failed',
+        protectedAttempt,
+        legacyFallback,
+        fallbackAttempt,
+      });
     } catch {
-      this.legacyDirectActivationReady = false;
-      return this.fail('install-failed');
+      // Diagnostics must never alter the update outcome.
     }
   }
 

@@ -222,7 +222,11 @@ async function compileLauncher(harness) {
     `-DRELAY_PROBATION_SUPERVISOR_TIMEOUT_MS=${recoveryTiming.supervisorTimeoutMs}`,
   ];
   if (harness) {
-    defines.push(`-DRELAY_RUNTIME_ROOT=${harness.root}`, '-DRELAY_LAUNCHER_HARNESS=1');
+    defines.push(
+      `-DRELAY_RUNTIME_ROOT=${harness.root}`,
+      `-DRELAY_DATA_ROOT=${harness.dataRoot}`,
+      '-DRELAY_LAUNCHER_HARNESS=1',
+    );
   }
   defines.push(join(projectDir, 'build', 'windows', 'relay-launcher.nsi'));
   await run(makensis.path, defines, {

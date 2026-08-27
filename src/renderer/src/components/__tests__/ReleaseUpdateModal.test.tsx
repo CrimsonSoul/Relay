@@ -83,10 +83,10 @@ describe('ReleaseUpdateModal', () => {
   it('shows bounded byte progress and only a cancel action while downloading', () => {
     const actions = renderModal(snapshot({ phase: 'downloading', downloadedBytes: 70_000_000 }));
 
-    expect(screen.getByRole('progressbar', { name: 'Update download progress' })).toHaveAttribute(
-      'value',
-      '70000000',
-    );
+    const progress = screen.getByRole('progressbar', { name: 'Update download progress' });
+    expect(progress).toHaveAttribute('data-mode', 'determinate');
+    expect(progress).toHaveAttribute('aria-valuenow', '70000000');
+    expect(progress).toHaveAttribute('aria-valuemax', '140000000');
     expect(screen.getByText('66.8 MB of 133.5 MB')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Install update' })).toBeNull();
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
@@ -106,12 +106,40 @@ describe('ReleaseUpdateModal', () => {
     expect(actions.onRestart).not.toHaveBeenCalled();
   });
 
+  it('keeps completed download progress visible until installation begins', () => {
+    renderModal(
+      snapshot({
+        phase: 'downloaded',
+        downloadedBytes: 140_000_000,
+      }),
+    );
+
+    const progress = screen.getByRole('progressbar', { name: 'Update download complete' });
+    expect(progress).toHaveAttribute('data-mode', 'determinate');
+    expect(progress).toHaveAttribute('aria-valuenow', '140000000');
+    expect(progress).toHaveAttribute('aria-valuemax', '140000000');
+  });
+
   it('uses native output semantics for non-error live status updates', () => {
     renderModal(snapshot({ phase: 'installing' }));
 
     const statuses = screen.getAllByRole('status');
     expect(statuses).toHaveLength(2);
     for (const status of statuses) expect(status.tagName).toBe('OUTPUT');
+  });
+
+  it('keeps indeterminate progress feedback visible while installation is preparing', () => {
+    renderModal(
+      snapshot({
+        phase: 'installing',
+        downloadedBytes: 140_000_000,
+      }),
+    );
+
+    const progress = screen.getByRole('progressbar', { name: 'Update installation progress' });
+    expect(progress).toHaveAttribute('data-mode', 'indeterminate');
+    expect(progress).not.toHaveAttribute('aria-valuenow');
+    expect(screen.queryByText(/of 133\.5 MB/u)).toBeNull();
   });
 
   it('keeps focus contained when installation enters its non-dismissible busy state', async () => {

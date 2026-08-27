@@ -25,6 +25,9 @@ WindowIcon off
 !ifndef RELAY_RUNTIME_ROOT
   !define RELAY_RUNTIME_ROOT "$LOCALAPPDATA\Relay"
 !endif
+!ifndef RELAY_DATA_ROOT
+  !define RELAY_DATA_ROOT "$APPDATA\Relay"
+!endif
 
 Name "Relay"
 OutFile "${RELAY_LAUNCHER_OUT}"
@@ -365,7 +368,7 @@ Function RelayRestoreServerSnapshot
   ${If} $RelayTransactionIsValid != "1"
     Return
   ${EndIf}
-  StrCpy $RelaySnapshotRoot "$APPDATA\Relay\RecoverySnapshots\$RelayTransactionSnapshot"
+  StrCpy $RelaySnapshotRoot "${RELAY_DATA_ROOT}\RecoverySnapshots\$RelayTransactionSnapshot"
   StrCpy $RelaySnapshotMarker "$RelaySnapshotRoot\snapshot.ini"
   System::Call 'kernel32::GetFileAttributesW(w "$RelaySnapshotRoot") i.r0'
   ${If} $0 == -1
@@ -388,9 +391,9 @@ Function RelayRestoreServerSnapshot
     Return
   ${EndIf}
 
-  StrCpy $RelayLiveData "$APPDATA\Relay\data"
-  StrCpy $RelayFailedData "$APPDATA\Relay\.rollback-$RelayTransactionId.failed"
-  StrCpy $RelayRestoreJournal "$APPDATA\Relay\recovery-rollback.ini"
+  StrCpy $RelayLiveData "${RELAY_DATA_ROOT}\data"
+  StrCpy $RelayFailedData "${RELAY_DATA_ROOT}\.rollback-$RelayTransactionId.failed"
+  StrCpy $RelayRestoreJournal "${RELAY_DATA_ROOT}\recovery-rollback.ini"
   WriteINIStr "$RelayRestoreJournal" "Restore" "transactionId" "$RelayTransactionId"
   WriteINIStr "$RelayRestoreJournal" "Restore" "snapshotId" "$RelayTransactionSnapshot"
   WriteINIStr "$RelayRestoreJournal" "Restore" "expectedCurrentBuildId" "$RelayTransactionSource"
@@ -450,8 +453,8 @@ Function RelayFinalizeServerRestore
   ${OrIf} $RelayCatalogTransaction != ""
     Return
   ${EndIf}
-  StrCpy $RelayFailedData "$APPDATA\Relay\.rollback-$RelayRestoreJournalTransaction.failed"
-  StrCpy $RelayLiveData "$APPDATA\Relay\data"
+  StrCpy $RelayFailedData "${RELAY_DATA_ROOT}\.rollback-$RelayRestoreJournalTransaction.failed"
+  StrCpy $RelayLiveData "${RELAY_DATA_ROOT}\data"
   ${IfNot} ${FileExists} "$RelayLiveData"
     Return
   ${EndIf}
@@ -687,7 +690,7 @@ Section
   StrCpy $RelayRollbackRequest "$RelayRoot\Recovery\rollback-request.ini"
   StrCpy $RelaySettlement "$RelayRoot\Recovery\settled-update.ini"
   StrCpy $RelaySettlementNew "$RelayRoot\Recovery\settled-update.ini.new"
-  StrCpy $RelayRestoreJournal "$APPDATA\Relay\recovery-rollback.ini"
+  StrCpy $RelayRestoreJournal "${RELAY_DATA_ROOT}\recovery-rollback.ini"
   StrCpy $RelayRecoveryRequested "0"
   ${If} $RelayArgs == "${RELAY_RECOVERY_ARGUMENT}"
     StrCpy $RelayRecoveryRequested "1"
@@ -803,7 +806,7 @@ HandleManualRollback:
     ; marker is intentionally bound to the target rather than today's source.
     StrCpy $RelayTransactionId $RelayManualTransaction
     StrCpy $RelayTransactionSource $RelayManualTarget
-    StrCpy $RelaySnapshotRoot "$APPDATA\Relay\RecoverySnapshots\$RelayTransactionSnapshot"
+    StrCpy $RelaySnapshotRoot "${RELAY_DATA_ROOT}\RecoverySnapshots\$RelayTransactionSnapshot"
     StrCpy $RelaySnapshotMarker "$RelaySnapshotRoot\snapshot.ini"
     ReadINIStr $RelaySnapshotTransaction "$RelaySnapshotMarker" "Snapshot" "transactionId"
     !insertmacro RelayValidateTransactionId "$RelaySnapshotTransaction" $RelayTransactionIsValid

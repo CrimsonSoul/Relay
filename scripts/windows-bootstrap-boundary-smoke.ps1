@@ -8,7 +8,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ExpectedBuildId,
   [Parameter(Mandatory = $true)]
-  [string]$ExpectedPreviousBuildId
+  [string]$ExpectedPreviousBuildId,
+  [Parameter(Mandatory = $true)]
+  [string]$ExpectedTargetVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +23,9 @@ if ($ExpectedBuildId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' -or
     $ExpectedBuildId -eq $ExpectedPreviousBuildId) {
   throw 'Boundary build IDs must be distinct path-safe identifiers.'
 }
+if ($ExpectedTargetVersion -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+  throw 'Boundary target version must be a canonical normal semantic version.'
+}
 
 $artifactPath = (Resolve-Path -LiteralPath $Artifact).Path
 $previousArtifactPath = (Resolve-Path -LiteralPath $PreviousArtifact).Path
@@ -28,6 +33,17 @@ $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\')
 $runnerTempPath = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
 if (-not $rootPath.StartsWith("$runnerTempPath\", [StringComparison]::OrdinalIgnoreCase)) {
   throw "Harness root must be a child of RUNNER_TEMP: $runnerTempPath"
+}
+$harnessParent = [IO.Path]::GetDirectoryName($rootPath)
+if (-not [string]::Equals(
+    [IO.Path]::GetDirectoryName($harnessParent),
+    $runnerTempPath,
+    [StringComparison]::OrdinalIgnoreCase
+  )) {
+  throw 'Harness parent must be a direct child of RUNNER_TEMP.'
+}
+if (Test-Path -LiteralPath $harnessParent) {
+  throw "Isolated harness parent already exists: $harnessParent"
 }
 if (Test-Path -LiteralPath $rootPath) {
   throw "Isolated harness root already exists: $rootPath"
@@ -45,7 +61,7 @@ $settlementPath = Join-Path $recoveryRoot 'settled-update.ini'
 $probationDiagnosticPath = Join-Path $rootPath 'probation-diagnostic.ini'
 $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Relay.lnk'
 $startMenuShortcutPath = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Relay\Relay.lnk'
-$relayAppDataRoot = Join-Path $env:APPDATA 'Relay'
+$relayAppDataRoot = Join-Path $harnessParent 'AppData\Relay'
 $relayAppDataRootExisted = Test-Path -LiteralPath $relayAppDataRoot
 $dataRoot = Join-Path $relayAppDataRoot 'data'
 $sentinelPath = Join-Path $dataRoot 'bootstrap-boundary-sentinel.txt'
@@ -186,7 +202,7 @@ function New-RecoveryUpdateRequest {
     '[RecoveryRequest]'
     'protocol=2'
     "transactionId=$transactionId"
-    "targetVersion=$sourceVersion"
+    "targetVersion=$ExpectedTargetVersion"
     "targetCommitish=$sourceCommit"
     "targetInstallerSha256=$installerHash"
     'mode=unconfigured'
@@ -508,4 +524,7 @@ finally {
   }
   Remove-Item -LiteralPath $desktopShortcutPath -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $startMenuShortcutPath -Force -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $harnessParent) {
+    Remove-Item -LiteralPath $harnessParent -Recurse -Force
+  }
 }

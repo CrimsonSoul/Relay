@@ -190,6 +190,13 @@ in-app equivalent of the supported legacy manual upgrade: the native bootstrap v
 retains the prior runtime, and Restart still uses the stable launcher. A protocol-2 catalog, a
 mismatched running build, redirected state, changed installer, or a second bootstrap failure cannot
 use this compatibility path.
+Before each native preparation attempt the manager removes the fixed bootstrap failure record. A
+failed attempt may read back only a bounded, regular, non-redirected `bootstrap-error.ini` directly
+beneath the managed Relay root. The read is capped on the opened handle and rejects identity or
+metadata changes. Relay uses fatal UTF-8 or UTF-16LE decoding and accepts only its strict `[Relay]`
+message record with an exact, fixed bootstrap reason; stale, replaced, unknown, or malformed content
+is ignored. Relay logs the target version, preparation stage, exit or spawn code, native reason, and
+legacy-fallback outcome without logging the installer path, process arguments, or transaction ID.
 Cancellation and failures remove untrusted partial data, while a bootstrap failure retains the
 verified installer for a deliberate retry. Startup cleanup removes only recognized updater staging
 directories older than 24 hours, leaving recent or unrelated paths untouched.
