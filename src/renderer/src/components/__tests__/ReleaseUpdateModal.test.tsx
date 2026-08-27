@@ -84,9 +84,10 @@ describe('ReleaseUpdateModal', () => {
     const actions = renderModal(snapshot({ phase: 'downloading', downloadedBytes: 70_000_000 }));
 
     const progress = screen.getByRole('progressbar', { name: 'Update download progress' });
+    expect(progress.tagName).toBe('PROGRESS');
     expect(progress).toHaveAttribute('data-mode', 'determinate');
-    expect(progress).toHaveAttribute('aria-valuenow', '70000000');
-    expect(progress).toHaveAttribute('aria-valuemax', '140000000');
+    expect(progress).toHaveAttribute('value', '70000000');
+    expect(progress).toHaveAttribute('max', '140000000');
     expect(screen.getByText('66.8 MB of 133.5 MB')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Install update' })).toBeNull();
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
@@ -115,9 +116,10 @@ describe('ReleaseUpdateModal', () => {
     );
 
     const progress = screen.getByRole('progressbar', { name: 'Update download complete' });
+    expect(progress.tagName).toBe('PROGRESS');
     expect(progress).toHaveAttribute('data-mode', 'determinate');
-    expect(progress).toHaveAttribute('aria-valuenow', '140000000');
-    expect(progress).toHaveAttribute('aria-valuemax', '140000000');
+    expect(progress).toHaveAttribute('value', '140000000');
+    expect(progress).toHaveAttribute('max', '140000000');
   });
 
   it('uses native output semantics for non-error live status updates', () => {
@@ -137,8 +139,9 @@ describe('ReleaseUpdateModal', () => {
     );
 
     const progress = screen.getByRole('progressbar', { name: 'Update installation progress' });
+    expect(progress.tagName).toBe('PROGRESS');
     expect(progress).toHaveAttribute('data-mode', 'indeterminate');
-    expect(progress).not.toHaveAttribute('aria-valuenow');
+    expect(progress).not.toHaveAttribute('value');
     expect(screen.queryByText(/of 133\.5 MB/u)).toBeNull();
   });
 

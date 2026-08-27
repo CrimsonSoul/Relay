@@ -64,10 +64,14 @@ function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
   if (installing) {
     return (
       <div className="release-update-modal__progress">
+        <progress
+          className="sr-only"
+          aria-label="Update installation progress"
+          data-mode="indeterminate"
+        />
         <div
           className="release-update-modal__progress-track"
-          role="progressbar"
-          aria-label="Update installation progress"
+          aria-hidden="true"
           data-mode="indeterminate"
         >
           <span className="release-update-modal__progress-fill" />
@@ -86,16 +90,19 @@ function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
 
   return (
     <div className="release-update-modal__progress">
-      <div
-        className="release-update-modal__progress-track"
-        role="progressbar"
+      <progress
+        className="sr-only"
         aria-label={
           update.phase === 'downloaded' ? 'Update download complete' : 'Update download progress'
         }
-        aria-valuemin={0}
-        aria-valuemax={totalBytes}
-        aria-valuenow={downloadedBytes}
         aria-valuetext={`${formatBytes(downloadedBytes)} of ${formatBytes(totalBytes)}`}
+        data-mode="determinate"
+        max={totalBytes}
+        value={downloadedBytes}
+      />
+      <div
+        className="release-update-modal__progress-track"
+        aria-hidden="true"
         data-mode="determinate"
       >
         <span

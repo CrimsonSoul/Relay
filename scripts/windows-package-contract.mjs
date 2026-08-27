@@ -75,7 +75,7 @@ export function resolveHarnessConfig(env = {}) {
   const parent = validatedRoot.slice(0, validatedRoot.lastIndexOf('\\'));
   return {
     root: validatedRoot,
-    dataRoot: validateHarnessRoot(`${parent}\\AppData\\Relay`),
+    dataRoot: validateHarnessRoot(String.raw`${parent}\AppData\Relay`),
   };
 }
 

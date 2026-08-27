@@ -336,10 +336,14 @@ test('release installation progress uses a bounded sweep with a reduced-motion f
     await window.setContent(`
       <style>${emittedGlobalCss}</style>
       <div class="release-update-modal__progress">
+        <progress
+          class="sr-only"
+          aria-label="Update installation progress"
+          data-mode="indeterminate"
+        ></progress>
         <div
           class="release-update-modal__progress-track"
-          role="progressbar"
-          aria-label="Update installation progress"
+          aria-hidden="true"
           data-mode="indeterminate"
         >
           <span class="release-update-modal__progress-fill"></span>
@@ -347,7 +351,8 @@ test('release installation progress uses a bounded sweep with a reduced-motion f
       </div>
     `);
 
-    const track = window.getByRole('progressbar', { name: 'Update installation progress' });
+    const progress = window.getByRole('progressbar', { name: 'Update installation progress' });
+    const track = window.locator('.release-update-modal__progress-track');
     const fill = window.locator('.release-update-modal__progress-fill');
     const animated = await fill.evaluate((element) => {
       const trackRect = element.parentElement?.getBoundingClientRect();
@@ -363,6 +368,7 @@ test('release installation progress uses a bounded sweep with a reduced-motion f
     expect(animated.animationName).toBe('release-update-progress-sweep');
     expect(animated.fillWidth).toBeGreaterThan(0);
     expect(animated.fillWidth).toBeLessThan(animated.trackWidth);
+    await expect(progress).toHaveAttribute('data-mode', 'indeterminate');
 
     await window.emulateMedia({ reducedMotion: 'reduce' });
     await expect(fill).toHaveCSS('animation-name', 'none');
