@@ -155,6 +155,9 @@ releases, bounds every field and the complete response, and keeps its serialized
 persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again. An
 offline or malformed refresh leaves the last valid cache readable and cannot affect update discovery
 or installation.
+Updater notes are accepted only when their version matches the manager-authoritative active update.
+If discovery advances while an older update is installing or restart-ready, the renderer retains
+only the older version's matching notes rather than attaching the newer release body.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **Review

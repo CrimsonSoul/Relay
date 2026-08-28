@@ -203,6 +203,29 @@ describe('release update handlers', () => {
     });
   });
 
+  it('does not attach newer release notes to an older active update', async () => {
+    check.mockResolvedValueOnce({
+      currentVersion: '1.0.0',
+      latestVersion: '1.2.0',
+      targetCommitish: '2'.repeat(40),
+      updateAvailable: true,
+      installable: true,
+      assetSizeBytes: 150_000_000,
+      releaseNotes: { ...releaseNotes, version: '1.2.0', title: 'Relay v1.2.0' },
+    });
+    noteCheck.mockResolvedValueOnce({ ...updateSnapshot, phase: 'ready-to-restart' });
+
+    await expect(invoke(IPC_CHANNELS.APP_CHECK_FOR_UPDATES)).resolves.toMatchObject({
+      success: true,
+      data: {
+        latestVersion: '1.1.0',
+        targetCommitish: null,
+        installable: false,
+        releaseNotes: null,
+      },
+    });
+  });
+
   it('returns cached release notes immediately and refreshes them through a separate action', async () => {
     await expect(invoke(IPC_CHANNELS.APP_RELEASE_NOTES_GET_CACHED)).resolves.toEqual([
       releaseNotes,

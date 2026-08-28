@@ -55,8 +55,8 @@ function authoritativeCheck(
   snapshot: RelayUpdateSnapshot,
 ): RelayUpdateCheck {
   if (snapshot.phase === 'idle' || !snapshot.latestVersion) return fallback;
-  const targetCommitish =
-    snapshot.latestVersion === fallback.latestVersion ? fallback.targetCommitish : null;
+  const versionsMatch = snapshot.latestVersion === fallback.latestVersion;
+  const targetCommitish = versionsMatch ? fallback.targetCommitish : null;
   return {
     currentVersion: snapshot.currentVersion,
     latestVersion: snapshot.latestVersion,
@@ -64,7 +64,10 @@ function authoritativeCheck(
     updateAvailable: true,
     installable: snapshot.installable && targetCommitish !== null,
     assetSizeBytes: snapshot.totalBytes,
-    releaseNotes: fallback.releaseNotes,
+    releaseNotes:
+      versionsMatch && fallback.releaseNotes?.version === snapshot.latestVersion
+        ? fallback.releaseNotes
+        : null,
   };
 }
 

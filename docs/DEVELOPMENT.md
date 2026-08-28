@@ -109,6 +109,9 @@ history; immutable cached notes are never replaced. Cached notes remain availabl
 first-load failure offers an explicit retry and does not affect updater actions. The serialized
 cache is capped at 512 KiB; refresh keeps the newest entries that fit so a successful write always
 remains readable by the same bounded loader.
+The updater dialog version-binds those notes to its active manager snapshot. A newer discovery
+result cannot replace notes for an older update that is installing or waiting for restart; missing
+same-version notes render as unavailable instead of showing another release's body.
 
 Packaged Windows x64 updates also participate in retained-build recovery. The stable launcher keeps
 the current runtime plus the three most recently promoted runtimes. Before restart, server mode
