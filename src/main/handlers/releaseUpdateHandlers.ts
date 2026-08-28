@@ -28,6 +28,7 @@ type InstallableReleaseResolver = {
 
 type ReleaseUpdateController = {
   snapshot: () => RelayUpdateSnapshot;
+  readySnapshot: () => Promise<RelayUpdateSnapshot>;
   subscribe: (listener: (snapshot: RelayUpdateSnapshot) => void) => () => void;
   noteCheck: (check: RelayUpdateCheck) => Promise<RelayUpdateSnapshot>;
   download: () => Promise<RelayUpdateSnapshot>;
@@ -50,20 +51,20 @@ function isInstallableReleaseResolver(
 }
 
 function authoritativeCheck(
-  fallback: RelayUpdateCheck,
+  check: RelayUpdateCheck,
   snapshot: RelayUpdateSnapshot,
 ): RelayUpdateCheck {
-  if (snapshot.phase === 'idle' || !snapshot.latestVersion) return fallback;
-  const targetCommitish =
-    snapshot.latestVersion === fallback.latestVersion ? fallback.targetCommitish : null;
+  if (!snapshot.latestVersion) return check;
+  const versionsMatch = snapshot.latestVersion === check.latestVersion;
+  const targetCommitish = versionsMatch ? check.targetCommitish : null;
   return {
     currentVersion: snapshot.currentVersion,
     latestVersion: snapshot.latestVersion,
     targetCommitish,
     updateAvailable: true,
-    installable: snapshot.installable && targetCommitish !== null,
+    installable: snapshot.installable && versionsMatch,
     assetSizeBytes: snapshot.totalBytes,
-    releaseNotes: fallback.releaseNotes,
+    releaseNotes: versionsMatch ? check.releaseNotes : null,
   };
 }
 
@@ -166,7 +167,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     async (event): Promise<RelayUpdateSnapshot | null> => {
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_GET_STATE)) return null;
       try {
-        return (await getManager()).snapshot();
+        return (await getManager()).readySnapshot();
       } catch (error) {
         warn('Relay update state unavailable', { error });
         return null;

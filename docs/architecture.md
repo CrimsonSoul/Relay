@@ -155,6 +155,9 @@ releases, bounds every field and the complete response, and keeps its serialized
 persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again. An
 offline or malformed refresh leaves the last valid cache readable and cannot affect update discovery
 or installation.
+Updater notes are accepted only when their version matches the manager-authoritative active update.
+If discovery advances while an older update is installing or restart-ready, the renderer retains
+only the older version's matching notes rather than attaching the newer release body.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **Review
@@ -176,12 +179,23 @@ the verified file, and requires the byte count and GitHub digest to match. The c
 file must independently name the exact ZIP and declare that same digest. The ZIP reader accepts one
 regular, non-encrypted top-level member named `Relay.exe`, bounds expansion, validates CRC and the
 Windows executable marker, and rejects traversal, links, directories, and unsupported compression.
+The immutable-release re-fetch shares the operator download's abort signal, and its request deadline
+remains active until the bounded response body has been consumed and validated. Cancelling during
+that metadata step drains the single-flight operation, restores the available state, and permits an
+immediate retry; a deadline failure remains a retryable download failure.
 
 Immediately before execution, the manager revalidates the private staging path and re-hashes the
 extracted executable. Installation launches that exact file with the fixed `/relay-prepare-only`
 argument, which lets the existing persistent Windows bootstrap prepare and activate the new runtime
 without closing the current process. A successful preparation changes the state to restart-ready;
 only the final explicit action validates and relaunches through `%LOCALAPPDATA%\Relay\Relay.exe`.
+If Relay exits after successful preparation but before the explicit restart, the stable launcher
+validates the pending request and prepared runtime, preserves both recovery records, and starts the
+current runtime. The new main process independently revalidates the fixed recovery paths, source
+identity, request and receipt fields, catalog or legacy state, and complete target-runtime contents
+before restoring the restart-ready action. It never completes the checkpoint or activates the
+candidate without the operator's final **Restart Relay** action.
+
 The normal path binds preparation to a protocol-2 recovery transaction. If that protected
 preparation fails while `state.ini` is still protocol 1 and its path-safe current build is the
 runtime actually executing, the manager removes its request, revalidates the staged installer,

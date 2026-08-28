@@ -98,6 +98,9 @@ packaged Windows x64 build, an immutable release with the exact expected assets 
 separate manual actions: **Download update**, **Install update**, and **Restart Relay**. Relay never
 downloads, executes, or restarts from a release check alone. Mutable or malformed releases remain
 reviewable on the fixed GitHub Releases page but are not installable.
+The immutable-release re-fetch and response body remain inside the explicit download's abort and
+deadline scope. Cancelling while GitHub metadata is pending returns the dialog to the available
+state and allows another download attempt instead of leaving the action single-flighted.
 
 The update dialog also renders the validated latest-release notes. **Settings > About** reads up to
 ten stable releases from the persistent desktop cache immediately, then refreshes the fixed GitHub
@@ -106,6 +109,9 @@ history; immutable cached notes are never replaced. Cached notes remain availabl
 first-load failure offers an explicit retry and does not affect updater actions. The serialized
 cache is capped at 512 KiB; refresh keeps the newest entries that fit so a successful write always
 remains readable by the same bounded loader.
+The updater dialog version-binds those notes to its active manager snapshot. A newer discovery
+result cannot replace notes for an older update that is installing or waiting for restart; missing
+same-version notes render as unavailable instead of showing another release's body.
 
 Packaged Windows x64 updates also participate in retained-build recovery. The stable launcher keeps
 the current runtime plus the three most recently promoted runtimes. Before restart, server mode
@@ -126,6 +132,12 @@ the activated catalog proves the intended build is current; interrupted cleanup 
 next launcher start. Promotion and automatic rollback write a transaction-bound settlement intent
 before activating `state.ini`. On startup the launcher proves that intent against the terminal
 catalog state and clears an interrupted update request before retrying displaced-data cleanup.
+Successful protected preparation is resumable across a normal exit, crash, or Windows restart. A
+stable-launcher start with a valid pending checkpoint preserves `update-request.ini` and
+`prepared.ini`, launches the current runtime, and lets the new main process restore **Restart Relay**
+only after revalidating the source state and complete prepared runtime. It does not activate the
+candidate automatically. The Windows boundary harness exercises this pending launch before
+completing the checkpoint and promotion.
 
 The stable launcher has its own compatibility generation, separate from the recovery-state protocol.
 Any launcher behavior change must advance both the launcher generation and its probe exit code so a

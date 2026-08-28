@@ -488,6 +488,13 @@ try {
   Remove-FailedBuildResidue
   $transactionId = New-RecoveryUpdateRequest -Path $artifactPath
   Invoke-Preparation -Path $artifactPath -TransactionId $transactionId
+  Invoke-StableFallback -ExpectedActiveBuildId $ExpectedPreviousBuildId -Context 'pending-prepared-resume'
+  if (-not (Test-Path -LiteralPath $updateRequestPath)) {
+    throw 'Pending update request was deleted before Electron checkpointing.'
+  }
+  if (-not (Test-Path -LiteralPath $preparedPath)) {
+    throw 'Pending prepared receipt was deleted before Electron checkpointing.'
+  }
   Test-FixtureProbationReceipt -TransactionId $transactionId
   Complete-RecoveryUpdateRequest
   Assert-PreviousActive

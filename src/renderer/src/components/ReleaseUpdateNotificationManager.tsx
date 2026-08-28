@@ -137,7 +137,10 @@ export function ReleaseUpdateNotificationManager() {
         return;
       }
 
-      setReleaseNotes(next.releaseNotes);
+      setReleaseNotes((current) => {
+        if (next.releaseNotes?.version === next.latestVersion) return next.releaseNotes;
+        return current?.version === next.latestVersion ? current : null;
+      });
 
       const fallback = advisorySnapshot(next);
       setUpdate((current) => {

@@ -448,6 +448,60 @@ describe('ReleaseUpdateNotificationManager', () => {
     expect(reminder).toBeVisible();
   });
 
+  it('retains only release notes that match the active update version', async () => {
+    vi.useFakeTimers();
+    checkForUpdates
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          currentVersion: '1.0.0',
+          latestVersion: '1.1.0',
+          updateAvailable: true,
+          installable: true,
+          assetSizeBytes: 140_000_000,
+          releaseNotes: {
+            version: '1.1.0',
+            title: 'Relay v1.1.0',
+            body: 'Notes for Relay v1.1.0',
+            publishedAt: '2026-08-12T12:44:01Z',
+            immutable: true,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          currentVersion: '1.0.0',
+          latestVersion: '1.1.0',
+          updateAvailable: true,
+          installable: false,
+          assetSizeBytes: 140_000_000,
+          releaseNotes: {
+            version: '1.2.0',
+            title: 'Relay v1.2.0',
+            body: 'Notes for Relay v1.2.0',
+            publishedAt: '2026-08-27T12:44:01Z',
+            immutable: true,
+          },
+        },
+      });
+
+    render(<ReleaseUpdateNotificationManager />);
+    await act(async () => undefined);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Relay v1.1.0 is available. Review update' }),
+    );
+    expect(screen.getByText('Notes for Relay v1.1.0')).toBeVisible();
+
+    await act(async () => {
+      vi.advanceTimersByTime(CHECK_INTERVAL_MS);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('Notes for Relay v1.2.0')).toBeNull();
+    expect(screen.getByText('Notes for Relay v1.1.0')).toBeVisible();
+  });
+
   it('checks every 15 minutes and notifies for each newly discovered version', async () => {
     vi.useFakeTimers();
     checkForUpdates

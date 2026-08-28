@@ -360,50 +360,52 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
       const archive = asset(9101, archiveName, archiveStats.size, archiveDigest);
       const checksum = asset(9102, `${archiveName}.sha256`, checksumStats.size, checksumDigest);
       let launcherExit: Promise<number | null> | null = null;
-      const manager = new ReleaseUpdateManager({
-        service: {
-          resolveLatestInstallable: async () => ({
-            version: targetVersion,
-            targetCommitish,
-            archive,
-            checksum,
-          }),
-        },
-        getCurrentVersion: () => currentVersion,
-        platform: 'win32',
-        arch: 'x64',
-        isPackaged: true,
-        localAppData,
-        execPath,
-        getInstallationMode: () => 'unconfigured',
-        downloadAsset: async (releaseAsset, destination, options) => {
-          options.signal?.throwIfAborted();
-          const source = releaseAsset.name.endsWith('.sha256') ? checksumPath : archivePath;
-          await copyFile(source, destination);
-          options.signal?.throwIfAborted();
-          const copiedBytes = (await stat(destination)).size;
-          const copiedDigest = await sha256(destination);
-          options.onProgress?.(copiedBytes, releaseAsset.size);
-          return { bytes: copiedBytes, sha256: copiedDigest };
-        },
-        prepareRecoveryRestart: (transactionId) =>
-          prepareRecoveryRestart({
-            transactionId,
-            getRequest: () => readRecoveryUpdateRequest(root),
-            getCurrentMode: () => 'unconfigured',
-            stopServer: async () => undefined,
-            checkpointClient: () => true,
-            createServerSnapshot: async () => {
-              throw new Error('Unconfigured updater integration must not snapshot server data');
-            },
-            completeRequest: (matchingTransactionId, snapshotId) =>
-              completeRecoveryUpdateRequest(root, matchingTransactionId, snapshotId),
-          }),
-        restartApp: (launcherPath) => {
-          expect(resolve(launcherPath)).toBe(resolve(stableLauncher));
-          launcherExit = runProcess(launcherPath, []);
-        },
-      });
+      const createManager = () =>
+        new ReleaseUpdateManager({
+          service: {
+            resolveLatestInstallable: async () => ({
+              version: targetVersion,
+              targetCommitish,
+              archive,
+              checksum,
+            }),
+          },
+          getCurrentVersion: () => currentVersion,
+          platform: 'win32',
+          arch: 'x64',
+          isPackaged: true,
+          localAppData,
+          execPath,
+          getInstallationMode: () => 'unconfigured',
+          downloadAsset: async (releaseAsset, destination, options) => {
+            options.signal?.throwIfAborted();
+            const source = releaseAsset.name.endsWith('.sha256') ? checksumPath : archivePath;
+            await copyFile(source, destination);
+            options.signal?.throwIfAborted();
+            const copiedBytes = (await stat(destination)).size;
+            const copiedDigest = await sha256(destination);
+            options.onProgress?.(copiedBytes, releaseAsset.size);
+            return { bytes: copiedBytes, sha256: copiedDigest };
+          },
+          prepareRecoveryRestart: (transactionId) =>
+            prepareRecoveryRestart({
+              transactionId,
+              getRequest: () => readRecoveryUpdateRequest(root),
+              getCurrentMode: () => 'unconfigured',
+              stopServer: async () => undefined,
+              checkpointClient: () => true,
+              createServerSnapshot: async () => {
+                throw new Error('Unconfigured updater integration must not snapshot server data');
+              },
+              completeRequest: (matchingTransactionId, snapshotId) =>
+                completeRecoveryUpdateRequest(root, matchingTransactionId, snapshotId),
+            }),
+          restartApp: (launcherPath) => {
+            expect(resolve(launcherPath)).toBe(resolve(stableLauncher));
+            launcherExit = runProcess(launcherPath, []);
+          },
+        });
+      const manager = createManager();
       const updateCheck: RelayUpdateCheck = {
         currentVersion,
         latestVersion: targetVersion,
@@ -426,7 +428,12 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
       });
       await expect(manager.download()).resolves.toMatchObject({ phase: 'downloaded' });
       await expect(manager.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
-      await expect(manager.restart()).resolves.toBe(true);
+      const resumedManager = createManager();
+      await expect(resumedManager.noteCheck(updateCheck)).resolves.toMatchObject({
+        phase: 'ready-to-restart',
+        latestVersion: targetVersion,
+      });
+      await expect(resumedManager.restart()).resolves.toBe(true);
       if (!launcherExit) throw new Error('Updater did not start the stable launcher');
       await expect(launcherExit).resolves.toBe(0);
       await expect(waitForFile(exitMarker)).resolves.toBe(targetBuildId);

@@ -88,6 +88,7 @@ describe('release update handlers', () => {
     failureCode: null,
   };
   const snapshot = vi.fn(() => updateSnapshot);
+  const readySnapshot = vi.fn(async () => updateSnapshot);
   const subscribe = vi.fn();
   const noteCheck = vi.fn(async () => updateSnapshot);
   const download = vi.fn(async () => ({ ...updateSnapshot, phase: 'downloaded' as const }));
@@ -108,6 +109,7 @@ describe('release update handlers', () => {
     });
     stateListener = null;
     snapshot.mockReturnValue(updateSnapshot);
+    readySnapshot.mockResolvedValue(updateSnapshot);
     noteCheck.mockResolvedValue(updateSnapshot);
     download.mockResolvedValue({ ...updateSnapshot, phase: 'downloaded' });
     cancelDownload.mockResolvedValue(updateSnapshot);
@@ -133,6 +135,7 @@ describe('release update handlers', () => {
       service: { check, getCachedReleaseNotes, refreshReleaseNotes },
       manager: {
         snapshot,
+        readySnapshot,
         subscribe,
         noteCheck,
         download,
@@ -200,6 +203,29 @@ describe('release update handlers', () => {
     });
   });
 
+  it('does not attach newer release notes to an older active update', async () => {
+    check.mockResolvedValueOnce({
+      currentVersion: '1.0.0',
+      latestVersion: '1.2.0',
+      targetCommitish: '2'.repeat(40),
+      updateAvailable: true,
+      installable: true,
+      assetSizeBytes: 150_000_000,
+      releaseNotes: { ...releaseNotes, version: '1.2.0', title: 'Relay v1.2.0' },
+    });
+    noteCheck.mockResolvedValueOnce({ ...updateSnapshot, phase: 'ready-to-restart' });
+
+    await expect(invoke(IPC_CHANNELS.APP_CHECK_FOR_UPDATES)).resolves.toMatchObject({
+      success: true,
+      data: {
+        latestVersion: '1.1.0',
+        targetCommitish: null,
+        installable: false,
+        releaseNotes: null,
+      },
+    });
+  });
+
   it('returns cached release notes immediately and refreshes them through a separate action', async () => {
     await expect(invoke(IPC_CHANNELS.APP_RELEASE_NOTES_GET_CACHED)).resolves.toEqual([
       releaseNotes,
@@ -214,6 +240,7 @@ describe('release update handlers', () => {
 
   it('exposes only fixed updater state and manual lifecycle actions', async () => {
     await expect(invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE)).resolves.toEqual(updateSnapshot);
+    expect(readySnapshot).toHaveBeenCalledOnce();
     await expect(invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD)).resolves.toEqual({
       success: true,
       data: { ...updateSnapshot, phase: 'downloaded' },
