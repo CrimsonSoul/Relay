@@ -1,5 +1,6 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
+import { hasExactRecoveryKeys, parseRecoveryIni } from './RecoveryUpdateRequest';
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
@@ -26,9 +27,6 @@ export type RecoveryPreparedUpdate = Readonly<{
   health: 'candidate';
 }>;
 
-type Ini = Map<string, Map<string, string>>;
-type IniParseState = { current: Map<string, string> | null };
-
 function parsePositiveInteger(value: string | undefined): number | null {
   if (!value || !/^[1-9]\d*$/u.test(value)) return null;
   const parsed = Number(value);
@@ -40,40 +38,8 @@ function isCanonicalTimestamp(value: string): boolean {
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
-function acceptIniLine(rawLine: string, sections: Ini, state: IniParseState): boolean {
-  if (rawLine.length > 4_096) return false;
-  const line = rawLine.trim();
-  if (!line) return true;
-  if (line.startsWith('[') && line.endsWith(']')) {
-    const name = line.slice(1, -1);
-    if (!name || sections.has(name)) return false;
-    state.current = new Map();
-    sections.set(name, state.current);
-    return true;
-  }
-  if (!state.current) return false;
-  const separator = line.indexOf('=');
-  if (separator <= 0) return false;
-  const key = line.slice(0, separator).trim();
-  const value = line.slice(separator + 1).trim();
-  if (!key || state.current.has(key)) return false;
-  state.current.set(key, value);
-  return true;
-}
-
-function parseIni(text: string): Ini | null {
-  const bytes = Buffer.byteLength(text, 'utf8');
-  if (bytes === 0 || bytes > MAX_PREPARED_BYTES || text.includes('\0')) return null;
-  const sections: Ini = new Map();
-  const state: IniParseState = { current: null };
-  for (const rawLine of text.split(/\r?\n/u)) {
-    if (!acceptIniLine(rawLine, sections, state)) return null;
-  }
-  return sections;
-}
-
 export function parseRecoveryPreparedUpdate(text: string): RecoveryPreparedUpdate | null {
-  const sections = parseIni(text);
+  const sections = parseRecoveryIni(text, MAX_PREPARED_BYTES);
   const prepared = sections?.get('Prepared');
   const expectedKeys = [
     'protocol',
@@ -90,12 +56,7 @@ export function parseRecoveryPreparedUpdate(text: string): RecoveryPreparedUpdat
     'preparedAt',
     'health',
   ] as const;
-  if (
-    sections?.size !== 1 ||
-    !prepared ||
-    prepared.size !== expectedKeys.length ||
-    [...prepared.keys()].some((key) => !expectedKeys.includes(key as (typeof expectedKeys)[number]))
-  ) {
+  if (sections?.size !== 1 || !prepared || !hasExactRecoveryKeys(prepared, expectedKeys)) {
     return null;
   }
 
@@ -149,7 +110,6 @@ export async function readRecoveryPreparedUpdate(
   relayRoot: string,
 ): Promise<RecoveryPreparedUpdate | null> {
   const recoveryDirectory = join(relayRoot, 'Recovery');
-  let realRelayRoot: string;
   let realRecoveryDirectory: string;
   try {
     const [relayStats, recoveryStats, resolvedRelayRoot, resolvedRecoveryDirectory] =
@@ -168,7 +128,6 @@ export async function readRecoveryPreparedUpdate(
     ) {
       throw new Error('Relay recovery directory was redirected');
     }
-    realRelayRoot = resolvedRelayRoot;
     realRecoveryDirectory = resolvedRecoveryDirectory;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
@@ -187,9 +146,7 @@ export async function readRecoveryPreparedUpdate(
       preparedStats.isSymbolicLink() ||
       preparedStats.size <= 0 ||
       preparedStats.size > MAX_PREPARED_BYTES ||
-      isAbsolute(preparedRelativePath) ||
-      preparedRelativePath !== PREPARED_FILE ||
-      relative(realRelayRoot, resolvedPreparedPath) !== join('Recovery', PREPARED_FILE)
+      preparedRelativePath !== PREPARED_FILE
     ) {
       throw new Error('Relay prepared receipt was redirected or invalid');
     }

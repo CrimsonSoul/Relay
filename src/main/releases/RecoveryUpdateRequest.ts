@@ -27,7 +27,7 @@ export type RecoveryUpdateRequest = {
   requestedAt: string;
 };
 
-type Ini = Map<string, Map<string, string>>;
+export type RecoveryIni = Map<string, Map<string, string>>;
 type IniParseState = { current: Map<string, string> | null };
 
 function isCanonicalTimestamp(value: string): boolean {
@@ -41,7 +41,7 @@ function parseInteger(value: string | undefined): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function acceptIniLine(rawLine: string, sections: Ini, state: IniParseState): boolean {
+function acceptIniLine(rawLine: string, sections: RecoveryIni, state: IniParseState): boolean {
   if (rawLine.length > 4_096) return false;
   const line = rawLine.trim();
   if (!line) return true;
@@ -62,9 +62,9 @@ function acceptIniLine(rawLine: string, sections: Ini, state: IniParseState): bo
   return true;
 }
 
-function parseIni(text: string): Ini | null {
-  if (Buffer.byteLength(text, 'utf8') > MAX_REQUEST_BYTES || text.includes('\0')) return null;
-  const sections: Ini = new Map();
+export function parseRecoveryIni(text: string, maximumBytes: number): RecoveryIni | null {
+  if (Buffer.byteLength(text, 'utf8') > maximumBytes || text.includes('\0')) return null;
+  const sections: RecoveryIni = new Map();
   const state: IniParseState = { current: null };
   for (const rawLine of text.split(/\r?\n/u)) {
     if (!acceptIniLine(rawLine, sections, state)) return null;
@@ -72,7 +72,10 @@ function parseIni(text: string): Ini | null {
   return sections;
 }
 
-function hasExactKeys(section: Map<string, string>, expected: readonly string[]): boolean {
+export function hasExactRecoveryKeys(
+  section: Map<string, string>,
+  expected: readonly string[],
+): boolean {
   return (
     section.size === expected.length && [...section.keys()].every((key) => expected.includes(key))
   );
@@ -100,7 +103,7 @@ function isRecoveryUpdateRequest(value: RecoveryUpdateRequest): boolean {
 }
 
 export function parseRecoveryUpdateRequest(text: string): RecoveryUpdateRequest | null {
-  const ini = parseIni(text);
+  const ini = parseRecoveryIni(text, MAX_REQUEST_BYTES);
   const request = ini?.get('RecoveryRequest');
   const source = ini?.get('Source');
   const requestKeys = [
@@ -132,8 +135,8 @@ export function parseRecoveryUpdateRequest(text: string): RecoveryUpdateRequest 
     ini?.size !== 2 ||
     !request ||
     !source ||
-    !hasExactKeys(request, requestKeys) ||
-    !hasExactKeys(source, sourceKeys)
+    !hasExactRecoveryKeys(request, requestKeys) ||
+    !hasExactRecoveryKeys(source, sourceKeys)
   ) {
     return null;
   }
