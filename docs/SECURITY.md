@@ -142,6 +142,10 @@ downloaded ZIP digest to agree with both GitHub metadata and the separately down
 file. The ZIP must contain exactly one regular, non-encrypted top-level `Relay.exe`; traversal,
 links, directories, case variants, extra members, unsupported compression, size expansion, CRC
 failure, and a missing Windows executable marker fail closed and remove the staging directory.
+The immutable-release metadata re-fetch uses the same caller abort domain as the download. Its
+deadline remains armed through bounded body consumption, so a response that supplies headers and
+then stalls cannot hold the updater single-flight. Cancellation during this step restores the
+available state without leaving partial assets.
 
 Before every execution, Relay resolves and revalidates the staging directory and installer, rejects
 symbolic links, confirms the exact size and Windows marker, and re-hashes the executable. Normal
@@ -157,6 +161,13 @@ protocol-2 checkpoint, because the legacy bootstrap has already activated protoc
 Restart remains another explicit action. Cancellation, verification failure, and successful
 preparation remove staged files; a failed bootstrap keeps only the still-verified installer for a
 manual retry. Startup cleanup removes only recognized updater directories older than 24 hours.
+A valid protocol-2 request and prepared receipt with a pending checkpoint survive process loss
+without activating the candidate. The stable launcher validates both runtimes and launches the
+current build without deleting those records. On startup, Electron restores restart-ready state only
+after independently checking fixed non-redirected metadata paths, source and state identity, exact
+request/receipt agreement, and the target runtime marker plus all integrity-bound files. Invalid,
+mismatched, or changed state does not expose a restart action. Legacy direct activation remains
+non-resumable because it has no protected recovery transaction.
 
 Before starting either native preparation attempt, Relay removes the fixed
 `%LOCALAPPDATA%\Relay\bootstrap-error.ini` record so an older failure cannot be attributed to the

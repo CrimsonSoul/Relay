@@ -922,7 +922,6 @@ IngestPreparedCandidate:
   ${OrIf} $RelayTransactionIsValid != "1"
   ${OrIf} $RelayBuildIsValid != "1"
   ${OrIf} $RelaySourceBuild != "$RelayCurrent"
-  ${OrIf} $RelayRequestCheckpoint != "complete"
   ${OrIf} $RelayPreparedProtocol != "${RELAY_RECOVERY_STATE_PROTOCOL}"
   ${OrIf} $RelayPreparedTransaction != "$RelayRequestTransaction"
   ${OrIf} $RelayPreparedVersion != "$RelayRequestTargetVersion"
@@ -933,12 +932,20 @@ IngestPreparedCandidate:
   ${OrIf} $RelayPreparedClientEpoch != "$RelaySourceClientEpoch"
     Goto RejectPreparedCandidate
   ${EndIf}
-  ${If} $RelayRequestMode == "server"
-    !insertmacro RelayValidateTransactionId "$RelayRequestSnapshot" $RelayTransactionIsValid
-    ${If} $RelayTransactionIsValid != "1"
+  ${If} $RelayRequestCheckpoint == "pending"
+    ${If} $RelayRequestSnapshot != ""
       Goto RejectPreparedCandidate
     ${EndIf}
-  ${ElseIf} $RelayRequestSnapshot != ""
+  ${ElseIf} $RelayRequestCheckpoint == "complete"
+    ${If} $RelayRequestMode == "server"
+      !insertmacro RelayValidateTransactionId "$RelayRequestSnapshot" $RelayTransactionIsValid
+      ${If} $RelayTransactionIsValid != "1"
+        Goto RejectPreparedCandidate
+      ${EndIf}
+    ${ElseIf} $RelayRequestSnapshot != ""
+      Goto RejectPreparedCandidate
+    ${EndIf}
+  ${Else}
     Goto RejectPreparedCandidate
   ${EndIf}
   !insertmacro RelayRuntimeIsUsable "$RelaySourceBuild" $RelayRuntimeIsUsable
@@ -949,6 +956,18 @@ IngestPreparedCandidate:
   ${If} $RelayRuntimeIsUsable != "1"
     Goto RejectPreparedCandidate
   ${EndIf}
+  ${If} $RelayRequestCheckpoint == "pending"
+    Goto LaunchCurrentWithPendingPreparedUpdate
+  ${EndIf}
+  Goto IngestCompletedPreparedCandidate
+
+LaunchCurrentWithPendingPreparedUpdate:
+  StrCpy $RelayBuildId $RelayCurrent
+  StrCpy $RelayArgs ""
+  !insertmacro RelayTryRuntime "$RelayBuildId"
+  Goto NoUsableRuntime
+
+IngestCompletedPreparedCandidate:
 
   Delete "$RelayStateNew"
   ${If} $RelayProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"

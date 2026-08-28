@@ -28,6 +28,7 @@ type InstallableReleaseResolver = {
 
 type ReleaseUpdateController = {
   snapshot: () => RelayUpdateSnapshot;
+  readySnapshot: () => Promise<RelayUpdateSnapshot>;
   subscribe: (listener: (snapshot: RelayUpdateSnapshot) => void) => () => void;
   noteCheck: (check: RelayUpdateCheck) => Promise<RelayUpdateSnapshot>;
   download: () => Promise<RelayUpdateSnapshot>;
@@ -166,7 +167,7 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
     async (event): Promise<RelayUpdateSnapshot | null> => {
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_GET_STATE)) return null;
       try {
-        return (await getManager()).snapshot();
+        return await (await getManager()).readySnapshot();
       } catch (error) {
         warn('Relay update state unavailable', { error });
         return null;

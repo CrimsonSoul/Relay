@@ -26,10 +26,18 @@ import {
   parseLegacyRecoveryState,
   parseRecoveryCatalog,
   type RecoveryBuildRecord,
+  type LegacyRecoveryState,
+  type RecoveryCatalog,
+  type RecoveryInstallationMode,
 } from './RecoveryCatalog';
-import { writeRecoveryUpdateRequest, type RecoveryUpdateRequest } from './RecoveryUpdateRequest';
+import { readRecoveryPreparedUpdate, type RecoveryPreparedUpdate } from './RecoveryPreparedUpdate';
+import {
+  readRecoveryUpdateRequest,
+  writeRecoveryUpdateRequest,
+  type RecoveryUpdateRequest,
+} from './RecoveryUpdateRequest';
 import type { PrepareRecoveryRestartResult } from './RecoveryRestartCoordinator';
-import { readRecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
+import { readRecoveryRuntimeMarker, type RecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
 
 const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
@@ -551,6 +559,135 @@ function canStartInstall(state: RelayUpdateSnapshot): boolean {
   );
 }
 
+type ManagedRecoveryState = Readonly<{
+  currentBuildId: string;
+  catalog: RecoveryCatalog | null;
+}>;
+
+function recoveryBuildsMatch(first: RecoveryBuildRecord, second: RecoveryBuildRecord): boolean {
+  return (
+    first.buildId === second.buildId &&
+    first.version === second.version &&
+    first.releaseTag === second.releaseTag &&
+    first.targetCommitish === second.targetCommitish &&
+    first.runtimeSha512 === second.runtimeSha512 &&
+    first.installerSha256 === second.installerSha256 &&
+    first.recoveryProtocol === second.recoveryProtocol &&
+    first.serverDataEpoch === second.serverDataEpoch &&
+    first.clientDataEpoch === second.clientDataEpoch &&
+    first.installedAt === second.installedAt &&
+    first.health === second.health &&
+    first.rollbackSnapshotId === second.rollbackSnapshotId
+  );
+}
+
+function preparedUpdateMatches(
+  request: RecoveryUpdateRequest,
+  prepared: RecoveryPreparedUpdate,
+  state: ManagedRecoveryState,
+  currentBuild: RecoveryBuildRecord,
+  managedRoot: ManagedRoot,
+  currentVersion: string,
+  installationMode: RecoveryInstallationMode,
+): boolean {
+  const catalogCurrent = state.catalog?.builds.find(
+    ({ buildId }) => buildId === state.catalog?.currentBuildId,
+  );
+  const catalogMatches =
+    !state.catalog ||
+    (state.catalog.candidateBuildId === null &&
+      state.catalog.transaction === null &&
+      Boolean(catalogCurrent && recoveryBuildsMatch(catalogCurrent, request.source)));
+  return (
+    request.checkpoint === 'pending' &&
+    request.snapshotId === null &&
+    request.mode === installationMode &&
+    request.source.buildId === managedRoot.executingBuildId &&
+    request.source.version === currentVersion &&
+    state.currentBuildId === managedRoot.executingBuildId &&
+    recoveryBuildsMatch(currentBuild, request.source) &&
+    catalogMatches &&
+    prepared.transactionId === request.transactionId &&
+    prepared.buildId !== managedRoot.executingBuildId &&
+    prepared.version === request.targetVersion &&
+    compareRelayVersions(prepared.version, currentVersion) === 1 &&
+    prepared.targetCommitish === request.targetCommitish &&
+    prepared.installerSha256 === request.targetInstallerSha256 &&
+    prepared.recoveryProtocol === 2 &&
+    prepared.serverDataEpoch === request.source.serverDataEpoch &&
+    prepared.clientDataEpoch === request.source.clientDataEpoch
+  );
+}
+
+function markerMatchesPreparedUpdate(
+  marker: RecoveryRuntimeMarker,
+  prepared: RecoveryPreparedUpdate,
+): boolean {
+  const relay = marker.relay;
+  return (
+    marker.contentVerified &&
+    marker.runtimeSha512 === prepared.runtimeSha512 &&
+    relay.get('protocol') === '2' &&
+    relay.get('buildId') === prepared.buildId &&
+    relay.get('executable') === INSTALLER_NAME &&
+    relay.get('version') === prepared.version &&
+    relay.get('releaseTag') === prepared.releaseTag &&
+    relay.get('targetCommitish') === prepared.targetCommitish &&
+    relay.get('installerSha256') === prepared.installerSha256 &&
+    relay.get('serverDataEpoch') === String(prepared.serverDataEpoch) &&
+    relay.get('clientDataEpoch') === String(prepared.clientDataEpoch) &&
+    relay.get('installedAt') === prepared.preparedAt
+  );
+}
+
+async function readManagedRecoveryState(
+  managedRoot: ManagedRoot,
+): Promise<ManagedRecoveryState | null> {
+  const statePath = join(managedRoot.realRoot, 'state.ini');
+  try {
+    const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
+    if (
+      !stats.isFile() ||
+      stats.isSymbolicLink() ||
+      stats.size <= 0 ||
+      stats.size > 128 * 1_024 ||
+      !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
+    ) {
+      return null;
+    }
+    const contents = await readFile(resolvedStatePath, 'utf8');
+    const catalog = parseRecoveryCatalog(contents);
+    if (catalog) return { currentBuildId: catalog.currentBuildId, catalog };
+    const legacy: LegacyRecoveryState | null = parseLegacyRecoveryState(contents);
+    return legacy ? { currentBuildId: legacy.currentBuildId, catalog: null } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readPreparedRuntimeMarker(
+  managedRoot: ManagedRoot,
+  buildId: string,
+): Promise<RecoveryRuntimeMarker | null> {
+  const requestedDirectory = join(managedRoot.runtimeRoot, buildId);
+  try {
+    const [stats, resolvedDirectory] = await Promise.all([
+      lstat(requestedDirectory),
+      realpath(requestedDirectory),
+    ]);
+    if (
+      !stats.isDirectory() ||
+      stats.isSymbolicLink() ||
+      !isDirectChild(managedRoot.runtimeRoot, resolvedDirectory, buildId)
+    ) {
+      return null;
+    }
+    return readRecoveryRuntimeMarker(resolvedDirectory);
+  } catch {
+    return null;
+  }
+}
+
 export class ReleaseUpdateManager {
   private readonly options: Required<ReleaseUpdateManagerOptions>;
   private state: RelayUpdateSnapshot;
@@ -590,6 +727,11 @@ export class ReleaseUpdateManager {
 
   snapshot(): RelayUpdateSnapshot {
     return { ...this.state };
+  }
+
+  async readySnapshot(): Promise<RelayUpdateSnapshot> {
+    await this.initialize();
+    return this.snapshot();
   }
 
   subscribe(listener: (snapshot: RelayUpdateSnapshot) => void): () => void {
@@ -944,8 +1086,53 @@ export class ReleaseUpdateManager {
   }
 
   private initialize(): Promise<void> {
-    this.initializationPromise ??= this.cleanupAbandonedStaging().catch(() => undefined);
+    this.initializationPromise ??= Promise.all([
+      this.cleanupAbandonedStaging().catch(() => undefined),
+      this.restorePreparedUpdate().catch(() => undefined),
+    ]).then(() => undefined);
     return this.initializationPromise;
+  }
+
+  private async restorePreparedUpdate(): Promise<void> {
+    const managedRoot = await this.supportedManagedRoot();
+    if (!managedRoot) return;
+    const [request, prepared, state] = await Promise.all([
+      readRecoveryUpdateRequest(managedRoot.root),
+      readRecoveryPreparedUpdate(managedRoot.root),
+      readManagedRecoveryState(managedRoot),
+    ]);
+    if (!request || !prepared || !state) return;
+    const currentBuild = await readCurrentRecoveryBuild(
+      this.options.execPath,
+      this.options.getCurrentVersion(),
+      request.source.installedAt,
+    );
+    if (
+      !preparedUpdateMatches(
+        request,
+        prepared,
+        state,
+        currentBuild,
+        managedRoot,
+        this.options.getCurrentVersion(),
+        this.options.getInstallationMode(),
+      )
+    ) {
+      return;
+    }
+    const marker = await readPreparedRuntimeMarker(managedRoot, prepared.buildId);
+    if (!marker || !markerMatchesPreparedUpdate(marker, prepared)) return;
+
+    this.recoveryTransactionId = request.transactionId;
+    this.publish({
+      phase: 'ready-to-restart',
+      currentVersion: this.options.getCurrentVersion(),
+      latestVersion: request.targetVersion,
+      installable: true,
+      downloadedBytes: 0,
+      totalBytes: null,
+      failureCode: null,
+    });
   }
 
   private async resolveDownloadRelease(

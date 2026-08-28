@@ -88,6 +88,7 @@ describe('release update handlers', () => {
     failureCode: null,
   };
   const snapshot = vi.fn(() => updateSnapshot);
+  const readySnapshot = vi.fn(async () => updateSnapshot);
   const subscribe = vi.fn();
   const noteCheck = vi.fn(async () => updateSnapshot);
   const download = vi.fn(async () => ({ ...updateSnapshot, phase: 'downloaded' as const }));
@@ -108,6 +109,7 @@ describe('release update handlers', () => {
     });
     stateListener = null;
     snapshot.mockReturnValue(updateSnapshot);
+    readySnapshot.mockResolvedValue(updateSnapshot);
     noteCheck.mockResolvedValue(updateSnapshot);
     download.mockResolvedValue({ ...updateSnapshot, phase: 'downloaded' });
     cancelDownload.mockResolvedValue(updateSnapshot);
@@ -133,6 +135,7 @@ describe('release update handlers', () => {
       service: { check, getCachedReleaseNotes, refreshReleaseNotes },
       manager: {
         snapshot,
+        readySnapshot,
         subscribe,
         noteCheck,
         download,
@@ -214,6 +217,7 @@ describe('release update handlers', () => {
 
   it('exposes only fixed updater state and manual lifecycle actions', async () => {
     await expect(invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE)).resolves.toEqual(updateSnapshot);
+    expect(readySnapshot).toHaveBeenCalledOnce();
     await expect(invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD)).resolves.toEqual({
       success: true,
       data: { ...updateSnapshot, phase: 'downloaded' },

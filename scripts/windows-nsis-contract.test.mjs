@@ -42,8 +42,8 @@ describe('Windows NSIS launcher contract', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
-    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "4"');
-    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 104');
+    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "5"');
+    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 105');
     expect(source).toContain('VIProductVersion "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"FileVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"ProductVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
@@ -341,6 +341,20 @@ describe('Windows NSIS launcher contract', () => {
     expect(source).toContain('$RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"');
     expect(source).toContain('$RelayMarkerBuildId == "${BUILD_ID}"');
     expect(source).toContain('$RelayMarkerExecutable == "${RELAY_INNER_EXECUTABLE}"');
+  });
+
+  it('preserves a valid pending prepared transaction for Electron to resume', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+
+    expect(source).toContain('${If} $RelayRequestCheckpoint == "pending"');
+    expect(source).toContain('Goto LaunchCurrentWithPendingPreparedUpdate');
+    const pending = source.slice(
+      source.indexOf('LaunchCurrentWithPendingPreparedUpdate:'),
+      source.indexOf('IngestCompletedPreparedCandidate:'),
+    );
+    expect(pending).not.toContain('Delete "$RelayPrepared"');
+    expect(pending).not.toContain('Delete "$RelayRequest"');
+    expect(pending).toContain('!insertmacro RelayTryRuntime "$RelayBuildId"');
   });
 
   it('is a non-elevating native handoff rather than another extractor', () => {
@@ -707,6 +721,11 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('Test-FixtureProbationReceipt');
     expect(harness).toContain('/relay-transaction=');
     expect(harness).toContain("'checkpoint=complete'");
+    expect(harness).toContain("Context 'pending-prepared-resume'");
+    expect(harness).toContain('Pending update request was deleted before Electron checkpointing.');
+    expect(harness).toContain(
+      'Pending prepared receipt was deleted before Electron checkpointing.',
+    );
     expect(harness).toContain('$process.ExitCode -ne 197');
     expect(harness).toContain('context=$Context');
     expect(harness).toContain('state=$stateSummary');

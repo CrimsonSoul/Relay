@@ -17,7 +17,10 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
 import { ReleaseUpdateManager, type ReleaseUpdateManagerOptions } from './ReleaseUpdateManager';
-import { parseRecoveryUpdateRequest } from './RecoveryUpdateRequest';
+import {
+  parseRecoveryUpdateRequest,
+  serializeRecoveryUpdateRequest,
+} from './RecoveryUpdateRequest';
 import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
 
 const CURRENT_VERSION = '1.0.0';
@@ -114,7 +117,22 @@ const RECOVERY_INTEGRITY_FILES = [
   ],
 ] as const;
 
-async function writeProtocol2RuntimeMarker(runtimeDirectory: string): Promise<string> {
+type Protocol2RuntimeOptions = Readonly<{
+  buildId?: string;
+  version?: string;
+  targetCommitish?: string;
+  installerSha256?: string | null;
+  installedAt?: string;
+}>;
+
+async function writeProtocol2RuntimeMarker(
+  runtimeDirectory: string,
+  options: Protocol2RuntimeOptions = {},
+): Promise<string> {
+  const buildId = options.buildId ?? `r1-${'1'.repeat(40)}`;
+  const version = options.version ?? CURRENT_VERSION;
+  const targetCommitish = options.targetCommitish ?? '1'.repeat(40);
+  const installedAt = options.installedAt ?? '2026-08-24T15:00:00.000Z';
   const integrity: string[] = [];
   for (const [key, relativePath] of RECOVERY_INTEGRITY_FILES) {
     const path = join(runtimeDirectory, relativePath);
@@ -123,23 +141,123 @@ async function writeProtocol2RuntimeMarker(runtimeDirectory: string): Promise<st
     await writeFile(path, contents);
     integrity.push(`${key}=${createHash('sha512').update(contents).digest('hex')}`);
   }
+  const installerLine = options.installerSha256
+    ? [`installerSha256=${options.installerSha256}`]
+    : [];
   const marker = `${[
     '[Relay]',
     'protocol=2',
-    `buildId=r1-${'1'.repeat(40)}`,
+    `buildId=${buildId}`,
     'executable=Relay.exe',
     `payloadHash=${'c'.repeat(128)}`,
-    `version=${CURRENT_VERSION}`,
-    `releaseTag=v${CURRENT_VERSION}`,
-    `targetCommitish=${'1'.repeat(40)}`,
+    `version=${version}`,
+    `releaseTag=v${version}`,
+    `targetCommitish=${targetCommitish}`,
+    ...installerLine,
     'serverDataEpoch=1',
     'clientDataEpoch=1',
-    'installedAt=2026-08-24T15:00:00.000Z',
+    `installedAt=${installedAt}`,
     '[Integrity]',
     ...integrity,
   ].join('\r\n')}\r\n`;
   await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), marker);
   return createHash('sha512').update(marker).digest('hex');
+}
+async function writePendingPreparedFixture(
+  relayRoot: string,
+  currentRuntimeDirectory: string,
+  options: Readonly<{ sourceProtocol?: 1 | 2 }> = {},
+): Promise<{ transactionId: string; targetRuntimeDirectory: string }> {
+  const targetVersion = '1.1.0';
+  const targetCommitish = release().targetCommitish;
+  const transactionId = '12345678-1234-4123-8123-123456789abc';
+  const currentBuildId = `r1-${'1'.repeat(40)}`;
+  const targetBuildId = `r2-${'2'.repeat(40)}`;
+  const sourceProtocol = options.sourceProtocol ?? 2;
+  const currentRuntimeSha512 =
+    sourceProtocol === 2
+      ? await writeProtocol2RuntimeMarker(currentRuntimeDirectory)
+      : 'c'.repeat(128);
+  const currentBuild: RecoveryBuildRecord = {
+    buildId: currentBuildId,
+    version: CURRENT_VERSION,
+    releaseTag: `v${CURRENT_VERSION}`,
+    targetCommitish: '1'.repeat(40),
+    runtimeSha512: currentRuntimeSha512,
+    installerSha256: null,
+    recoveryProtocol: sourceProtocol,
+    serverDataEpoch: 1,
+    clientDataEpoch: 1,
+    installedAt: '2026-08-24T15:00:00.000Z',
+    health: 'healthy',
+    rollbackSnapshotId: null,
+  };
+  if (sourceProtocol === 2) {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 1,
+        currentBuildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [currentBuild],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+  } else {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=${currentBuildId}\nprevious=\n`,
+    );
+  }
+  const targetRuntimeDirectory = join(relayRoot, 'Runtime', targetBuildId);
+  await mkdir(targetRuntimeDirectory, { recursive: true });
+  const targetRuntimeSha512 = await writeProtocol2RuntimeMarker(targetRuntimeDirectory, {
+    buildId: targetBuildId,
+    installedAt: '2026-08-27T12:00:00.000Z',
+    version: targetVersion,
+    targetCommitish,
+    installerSha256: INSTALLER_SHA256,
+  });
+  const recoveryRoot = join(relayRoot, 'Recovery');
+  await mkdir(recoveryRoot);
+  await writeFile(
+    join(recoveryRoot, 'update-request.ini'),
+    serializeRecoveryUpdateRequest({
+      protocol: 2,
+      transactionId,
+      source: currentBuild,
+      targetVersion,
+      targetCommitish,
+      targetInstallerSha256: INSTALLER_SHA256,
+      mode: 'unconfigured',
+      checkpoint: 'pending',
+      snapshotId: null,
+      requestedAt: '2026-08-27T12:00:00.000Z',
+    }),
+  );
+  await writeFile(
+    join(recoveryRoot, 'prepared.ini'),
+    `${[
+      '[Prepared]',
+      'protocol=2',
+      `transactionId=${transactionId}`,
+      `buildId=${targetBuildId}`,
+      `version=${targetVersion}`,
+      `releaseTag=v${targetVersion}`,
+      `targetCommitish=${targetCommitish}`,
+      `runtimeSha512=${targetRuntimeSha512}`,
+      `installerSha256=${INSTALLER_SHA256}`,
+      'recoveryProtocol=2',
+      'serverDataEpoch=1',
+      'clientDataEpoch=1',
+      'preparedAt=2026-08-27T12:00:00.000Z',
+      'health=candidate',
+    ].join('\n')}\n`,
+  );
+  return { transactionId, targetRuntimeDirectory };
 }
 
 describe('ReleaseUpdateManager', () => {
@@ -378,6 +496,120 @@ describe('ReleaseUpdateManager', () => {
       recoveryProtocol: 2,
       health: 'healthy',
     });
+  });
+
+  it('rehydrates a valid prepared update and completes its manual restart', async () => {
+    const { transactionId } = await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      currentVersion: CURRENT_VERSION,
+      latestVersion: '1.1.0',
+      installable: true,
+      failureCode: null,
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(transactionId);
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
+  it('rehydrates restart-ready state without a network release check', async () => {
+    await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const updates = manager();
+
+    await expect(updates.readySnapshot()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+  });
+
+  it('rehydrates a protected update prepared from a protocol-1 source runtime', async () => {
+    const { transactionId } = await writePendingPreparedFixture(relayRoot, runtimeDirectory, {
+      sourceProtocol: 1,
+    });
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(transactionId);
+  });
+
+  it.each([
+    [
+      'version',
+      (contents: string) =>
+        contents
+          .replace('version=1.1.0', 'version=1.2.0')
+          .replace('releaseTag=v1.1.0', 'releaseTag=v1.2.0'),
+    ],
+    ['commit', (contents: string) => contents.replace(release().targetCommitish, '3'.repeat(40))],
+    ['installer digest', (contents: string) => contents.replace(INSTALLER_SHA256, 'd'.repeat(64))],
+    [
+      'runtime hash',
+      (contents: string) =>
+        contents.replace(/runtimeSha512=[0-9a-f]+/u, `runtimeSha512=${'e'.repeat(128)}`),
+    ],
+    [
+      'server epoch',
+      (contents: string) => contents.replace('serverDataEpoch=1', 'serverDataEpoch=2'),
+    ],
+    [
+      'client epoch',
+      (contents: string) => contents.replace('clientDataEpoch=1', 'clientDataEpoch=2'),
+    ],
+  ])('does not rehydrate when the prepared %s mismatches', async (_label, mutate) => {
+    await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const preparedPath = join(relayRoot, 'Recovery', 'prepared.ini');
+    await writeFile(preparedPath, mutate(await readFile(preparedPath, 'utf8')));
+    const updates = manager();
+
+    await updates.noteCheck(updateCheck());
+
+    expect(updates.snapshot().phase).not.toBe('ready-to-restart');
+    await expect(updates.restart()).resolves.toBe(false);
+  });
+
+  it('does not rehydrate when the request source is not the executing catalog build', async () => {
+    await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const requestPath = join(relayRoot, 'Recovery', 'update-request.ini');
+    const request = parseRecoveryUpdateRequest(await readFile(requestPath, 'utf8'));
+    expect(request).not.toBeNull();
+    await writeFile(
+      requestPath,
+      serializeRecoveryUpdateRequest({
+        ...request!,
+        source: { ...request!.source, buildId: `r9-${'9'.repeat(40)}` },
+      }),
+    );
+    const updates = manager();
+
+    await updates.noteCheck(updateCheck());
+
+    expect(updates.snapshot().phase).not.toBe('ready-to-restart');
+    await expect(updates.restart()).resolves.toBe(false);
+  });
+
+  it('does not rehydrate when the prepared runtime contents changed', async () => {
+    const { targetRuntimeDirectory } = await writePendingPreparedFixture(
+      relayRoot,
+      runtimeDirectory,
+    );
+    await writeFile(join(targetRuntimeDirectory, 'Relay.exe'), 'MZchanged runtime');
+    const updates = manager();
+
+    await updates.noteCheck(updateCheck());
+
+    expect(updates.snapshot().phase).not.toBe('ready-to-restart');
+    await expect(updates.restart()).resolves.toBe(false);
   });
 
   it('does not offer download for a mutable notification-only release', async () => {
