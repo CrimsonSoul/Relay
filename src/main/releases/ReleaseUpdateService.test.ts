@@ -611,6 +611,40 @@ describe('ReleaseUpdateService', () => {
     expect(enqueuedChunks).toBe(3);
   });
 
+  it('aborts a latest-release response whose body stalls past the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener(
+              'abort',
+              () => controller.error(init.signal?.reason ?? new Error('aborted')),
+              { once: true },
+            );
+            controller.enqueue(new TextEncoder().encode('{"tag_name":"v1.1.0"'));
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      const service = new ReleaseUpdateService({
+        fetch,
+        getCurrentVersion: () => '1.0.0',
+        requestTimeoutMs: 50,
+      });
+
+      const pending = service.check();
+      await vi.advanceTimersByTimeAsync(51);
+
+      await expect(pending).rejects.toThrow(/timed out|abort/iu);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects a non-release package version instead of guessing', async () => {
     const service = new ReleaseUpdateService({
       fetch: async () => jsonResponse(githubRelease('v1.1.0')),

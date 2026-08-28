@@ -507,6 +507,7 @@ function releaseResolutionFailure(error: unknown): RelayUpdateFailureCode {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
   if (message.includes('immutable')) return 'release-not-immutable';
   if (message.includes('changed')) return 'release-changed';
+  if (message.includes('timed out')) return 'download-failed';
   return 'verification-failed';
 }
 
@@ -892,7 +893,7 @@ export class ReleaseUpdateManager {
 
     let release: RelayInstallableRelease;
     try {
-      release = await this.resolveDownloadRelease(expectedVersion);
+      release = await this.resolveDownloadRelease(expectedVersion, controller.signal);
     } catch (error) {
       if (controller.signal.aborted) return this.restoreAvailableAfterCancellation();
       return this.fail(releaseResolutionFailure(error));
@@ -947,8 +948,11 @@ export class ReleaseUpdateManager {
     return this.initializationPromise;
   }
 
-  private async resolveDownloadRelease(expectedVersion: string): Promise<RelayInstallableRelease> {
-    const release = await this.options.service.resolveLatestInstallable();
+  private async resolveDownloadRelease(
+    expectedVersion: string,
+    signal: AbortSignal,
+  ): Promise<RelayInstallableRelease> {
+    const release = await this.options.service.resolveLatestInstallable(signal);
     if (
       release.version !== expectedVersion ||
       compareRelayVersions(release.version, this.options.getCurrentVersion()) !== 1

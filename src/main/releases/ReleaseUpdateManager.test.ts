@@ -26,7 +26,7 @@ const INSTALLER_SHA256 = createHash('sha256').update(INSTALLER).digest('hex');
 const ARCHIVE_SHA256 = 'a'.repeat(64);
 const CHECKSUM_SHA256 = 'b'.repeat(64);
 
-type ResolveLatestInstallable = () => Promise<RelayInstallableRelease>;
+type ResolveLatestInstallable = (signal?: AbortSignal) => Promise<RelayInstallableRelease>;
 type DownloadAsset = NonNullable<ReleaseUpdateManagerOptions['downloadAsset']>;
 type ExtractInstaller = NonNullable<ReleaseUpdateManagerOptions['extractInstaller']>;
 type SpawnInstaller = NonNullable<ReleaseUpdateManagerOptions['spawnInstaller']>;
@@ -422,6 +422,28 @@ describe('ReleaseUpdateManager', () => {
     await expect(readFile(downloadAsset.mock.calls[0]![1])).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+
+  it('cancels metadata resolution and releases the download single-flight', async () => {
+    resolveLatestInstallable.mockImplementationOnce(
+      (signal?: AbortSignal) =>
+        new Promise<RelayInstallableRelease>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('cancelled')), {
+            once: true,
+          });
+        }),
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+
+    const pending = updates.download();
+    await vi.waitFor(() => expect(resolveLatestInstallable).toHaveBeenCalledOnce());
+    const cancelled = updates.cancelDownload();
+
+    await expect(pending).resolves.toMatchObject({ phase: 'available', downloadedBytes: 0 });
+    await expect(cancelled).resolves.toMatchObject({ phase: 'available', downloadedBytes: 0 });
+    resolveLatestInstallable.mockResolvedValueOnce(release());
+    await expect(updates.download()).resolves.toMatchObject({ phase: 'downloaded' });
   });
 
   it('fails closed when the checksum and downloaded archive disagree', async () => {

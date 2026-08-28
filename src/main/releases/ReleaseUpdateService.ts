@@ -23,6 +23,11 @@ type ReleaseUpdateServiceOptions = {
   cacheFilePath?: string;
 };
 
+type FetchDeadlineOptions = Readonly<{
+  etag?: string | null;
+  signal?: AbortSignal;
+}>;
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 const MAX_RELEASE_RESPONSE_BYTES = 64 * 1_024;
 const MAX_RELEASE_HISTORY_RESPONSE_BYTES = 512 * 1_024;
@@ -388,20 +393,26 @@ export class ReleaseUpdateService {
   async refreshReleaseNotes(): Promise<RelayReleaseNotes[]> {
     const currentVersion = this.getCurrentVersion();
     const cached = await this.releaseNotesCache.readState();
-    const response = await this.fetchWithTimeout(
+    const fetched = await this.fetchWithDeadline(
       RELAY_RELEASE_HISTORY_API_URL,
       currentVersion,
-      cached.etag,
+      async (response) => {
+        if (response.status === 304) return null;
+        const releases = await readReleaseHistory(response);
+        const responseEtag = response.headers.get('etag');
+        return {
+          releases,
+          etag:
+            responseEtag && responseEtag.length <= 256 && !/[\r\n]/u.test(responseEtag)
+              ? responseEtag
+              : null,
+        };
+      },
+      { etag: cached.etag },
     );
-    if (response.status === 304) return cached.releases;
-    const releases = await readReleaseHistory(response);
-    const responseEtag = response.headers.get('etag');
-    return this.releaseNotesCache.mergeHistory(
-      releases,
-      responseEtag && responseEtag.length <= 256 && !/[\r\n]/u.test(responseEtag)
-        ? responseEtag
-        : null,
-    );
+    return fetched
+      ? this.releaseNotesCache.mergeHistory(fetched.releases, fetched.etag)
+      : cached.releases;
   }
 
   check(): Promise<RelayUpdateCheck> {
@@ -421,7 +432,7 @@ export class ReleaseUpdateService {
     return promise;
   }
 
-  async resolveLatestInstallable(): Promise<RelayInstallableRelease> {
+  async resolveLatestInstallable(signal?: AbortSignal): Promise<RelayInstallableRelease> {
     const currentVersion = this.getCurrentVersion();
     if (compareRelayVersions(currentVersion, currentVersion) === null) {
       throw new Error('Packaged Relay version is not a normal semantic version');
@@ -430,7 +441,12 @@ export class ReleaseUpdateService {
     const expectedVersion = this.lastCheckedInstallableVersion;
     if (!expectedVersion) throw new Error('No installable GitHub release was confirmed');
 
-    const release = await this.fetchRelease(currentVersion);
+    const release = await this.fetchWithDeadline(
+      RELAY_LATEST_RELEASE_API_URL,
+      currentVersion,
+      readLatestRelease,
+      { signal },
+    );
     if (compareRelayVersions(release.version, currentVersion) !== 1) {
       throw new Error('GitHub latest release is not newer than installed Relay');
     }
@@ -452,9 +468,7 @@ export class ReleaseUpdateService {
       throw new Error('Recovery release commit was invalid');
     }
 
-    const release = await readLatestRelease(
-      await this.fetchWithTimeout(url, this.getCurrentVersion()),
-    );
+    const release = await this.fetchWithDeadline(url, this.getCurrentVersion(), readLatestRelease);
     if (release.version !== version) throw new Error('Recovery release tag changed');
     if (!release.immutable) throw new Error('Recovery release is not immutable');
     if (!release.installable) throw new Error('Recovery release assets are not installable');
@@ -465,7 +479,11 @@ export class ReleaseUpdateService {
   }
 
   private async fetchUpdate(currentVersion: string): Promise<RelayUpdateCheck> {
-    const release = await this.fetchRelease(currentVersion);
+    const release = await this.fetchWithDeadline(
+      RELAY_LATEST_RELEASE_API_URL,
+      currentVersion,
+      readLatestRelease,
+    );
     if (release.releaseNotes) {
       await this.releaseNotesCache.merge(release.releaseNotes).catch(() => undefined);
     }
@@ -483,19 +501,20 @@ export class ReleaseUpdateService {
     };
   }
 
-  private async fetchRelease(currentVersion: string): Promise<ParsedRelease> {
-    return readLatestRelease(
-      await this.fetchWithTimeout(RELAY_LATEST_RELEASE_API_URL, currentVersion),
-    );
-  }
-
-  private async fetchWithTimeout(
+  private async fetchWithDeadline<T>(
     url: string,
     currentVersion: string,
-    etag: string | null = null,
-  ): Promise<Response> {
+    consume: (response: Response) => Promise<T>,
+    options: FetchDeadlineOptions = {},
+  ): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const relayAbort = () => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted) relayAbort();
+    else options.signal?.addEventListener('abort', relayAbort, { once: true });
+    const timeout = setTimeout(
+      () => controller.abort(new Error('GitHub release request timed out')),
+      this.requestTimeoutMs,
+    );
     const request: NoStoreFetchRequestInit = {
       cache: 'no-store',
       redirect: 'error',
@@ -504,14 +523,15 @@ export class ReleaseUpdateService {
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': `Relay/${currentVersion}`,
-        ...(etag ? { 'If-None-Match': etag } : {}),
+        ...(options.etag ? { 'If-None-Match': options.etag } : {}),
       },
     };
 
     try {
-      return await this.fetchImpl(url, request);
+      return await consume(await this.fetchImpl(url, request));
     } finally {
       clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', relayAbort);
     }
   }
 }
