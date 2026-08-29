@@ -211,7 +211,7 @@ jobs:
         env:
           RELAY_EXPECTED_BUILD_ID: r1-${{ inputs.source-sha }}
           RELAY_EXPECTED_TARGET_COMMITISH: ${{ inputs.source-sha }}
-          RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE: 104
+          RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE: 105
           RELAY_BOOTSTRAP_SMOKE_CONFIRM: 1
         run: >-
           ./scripts/windows-bootstrap-smoke.ps1

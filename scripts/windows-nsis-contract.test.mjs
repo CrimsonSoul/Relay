@@ -781,7 +781,7 @@ describe('Windows packaging integration contract', () => {
 
     expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(smoke.env.RELAY_EXPECTED_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
-    expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(104);
+    expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(105);
     expect(smoke.run).toContain('steps.previous.outputs.build_id');
     expect(smoke.run).toContain('scripts/windows-bootstrap-smoke.ps1');
     expect(smoke.run).toContain('-PreviousArtifact');
