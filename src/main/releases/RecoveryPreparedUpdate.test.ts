@@ -3,6 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  createDirectoryRedirect,
+  supportsUnprivilegedFileSymlinks,
+} from '../__tests__/filesystemTestUtils';
+import {
   parseRecoveryPreparedUpdate,
   readRecoveryPreparedUpdate,
   type RecoveryPreparedUpdate,
@@ -61,25 +65,32 @@ describe('RecoveryPreparedUpdate', () => {
     await expect(readRecoveryPreparedUpdate(relayRoot)).resolves.toEqual(PREPARED);
   });
 
-  it('rejects oversized and redirected prepared receipts', async () => {
+  it('rejects oversized prepared receipts', async () => {
     const recoveryRoot = join(relayRoot, 'Recovery');
     await mkdir(recoveryRoot);
     const preparedPath = join(recoveryRoot, 'prepared.ini');
     await writeFile(preparedPath, 'x'.repeat(32 * 1_024 + 1));
     await expect(readRecoveryPreparedUpdate(relayRoot)).rejects.toThrow(/prepared receipt/i);
-
-    await rm(preparedPath);
-    const outsideFile = join(relayRoot, 'outside.ini');
-    await writeFile(outsideFile, serializePrepared());
-    await symlink(outsideFile, preparedPath);
-    await expect(readRecoveryPreparedUpdate(relayRoot)).rejects.toThrow(/prepared receipt/i);
   });
+
+  it.skipIf(!supportsUnprivilegedFileSymlinks)(
+    'rejects a symbolic-link prepared receipt',
+    async () => {
+      const recoveryRoot = join(relayRoot, 'Recovery');
+      await mkdir(recoveryRoot);
+      const preparedPath = join(recoveryRoot, 'prepared.ini');
+      const outsideFile = join(relayRoot, 'outside.ini');
+      await writeFile(outsideFile, serializePrepared());
+      await symlink(outsideFile, preparedPath);
+      await expect(readRecoveryPreparedUpdate(relayRoot)).rejects.toThrow(/prepared receipt/i);
+    },
+  );
 
   it('rejects a redirected recovery directory', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'relay-prepared-outside-'));
     outsideDirectories.push(outside);
     await writeFile(join(outside, 'prepared.ini'), serializePrepared());
-    await symlink(outside, join(relayRoot, 'Recovery'));
+    await createDirectoryRedirect(outside, join(relayRoot, 'Recovery'));
 
     await expect(readRecoveryPreparedUpdate(relayRoot)).rejects.toThrow(/recovery directory/i);
   });

@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KNOWLEDGE_UPLOAD_MAX_FILES } from '@shared/knowledge';
+import { createWindowsPrivateDirectory } from '../../pocketbase/WindowsPrivateDirectory';
 import {
   KNOWLEDGE_UPLOAD_MAX_QUEUE_ENTRIES,
   KnowledgeUploadQueueStore,
@@ -58,8 +59,11 @@ function queue(): KnowledgeUploadQueueState {
 }
 
 describe('KnowledgeUploadQueueStore', () => {
-  it('atomically persists encrypted source paths with owner-only permissions', async () => {
-    const dataDir = await tempDirectory();
+  it('atomically persists encrypted source paths with host-private permissions', async () => {
+    const parent = await tempDirectory();
+    const dataDir = join(parent, 'private');
+    if (process.platform === 'win32') createWindowsPrivateDirectory(dataDir);
+    else await mkdir(dataDir, { mode: 0o700 });
     const safeStorage = {
       isEncryptionAvailable: vi.fn(() => true),
       encryptString: vi.fn((value: string) => Buffer.from(`encrypted:${value}`).reverse()),
@@ -80,7 +84,9 @@ describe('KnowledgeUploadQueueStore', () => {
     expect(persisted).not.toContain('/Users/publisher/Documents');
     expect(persisted).not.toContain('Runbook.pdf%PDF-');
     expect(persisted).toContain('encryptedSourcePath');
-    expect((await stat(store.path)).mode & 0o777).toBe(0o600);
+    const persistedStats = await stat(store.path);
+    expect(persistedStats.isFile()).toBe(true);
+    if (process.platform !== 'win32') expect(persistedStats.mode & 0o777).toBe(0o600);
   });
 
   it('keeps an in-memory queue and disables restart recovery when safe storage is unavailable', async () => {

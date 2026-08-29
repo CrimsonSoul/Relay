@@ -37,7 +37,11 @@ describe('composeNodeOptions', () => {
 
     const result = spawnSync(
       process.execPath,
-      ['--experimental-webstorage', '-e', 'globalThis.localStorage.setItem("relay", "ok");'],
+      [
+        '--experimental-webstorage',
+        '-e',
+        'globalThis.localStorage.setItem("relay", "ok"); process.stdout.write(process.env.NODE_OPTIONS);',
+      ],
       {
         cwd: workRoot,
         env: { ...process.env, NODE_OPTIONS: composeNodeOptions(undefined, target) },
@@ -46,8 +50,8 @@ describe('composeNodeOptions', () => {
     );
 
     expect(result.status).toBe(0);
+    expect(result.stdout).toBe(composeNodeOptions(undefined, target));
     expect(existsSync(target)).toBe(true);
-    // The truncated form would have created a sibling named after the first path segment.
     expect(readdirSync(workRoot)).toEqual(['relay checkout']);
   });
 });

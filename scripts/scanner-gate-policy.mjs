@@ -54,20 +54,6 @@ function appendBounded(buffer, chunk, maximum) {
 
 function signalProcessTree(child, signal) {
   if (!Number.isInteger(child?.pid)) return;
-  if (process.platform === 'win32') {
-    if (signal === 'SIGKILL') {
-      const terminator = spawn(
-        String.raw`C:\Windows\System32\taskkill.exe`,
-        ['/pid', String(child.pid), '/t', '/f'],
-        { shell: false, stdio: 'ignore', windowsHide: true },
-      );
-      terminator.on('error', () => child.kill());
-      return;
-    }
-    child.kill(signal);
-    return;
-  }
-
   try {
     process.kill(-child.pid, signal);
   } catch {
@@ -177,9 +163,14 @@ export async function runBoundedCommand({
     let deadline;
     let killTimer;
     let settleTimer;
+    let terminationTimer;
+    let terminationPending = false;
+    let pendingFinishCode = null;
     let child;
     let settled = false;
     let observedExitCode = null;
+    let exitObserved = false;
+    let exitCodeAtDeadline = null;
 
     const retain = (chunk) => {
       const addition = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
@@ -193,21 +184,68 @@ export async function runBoundedCommand({
     };
 
     const finish = (code) => {
+      if (terminationPending) {
+        if (Number.isInteger(code)) pendingFinishCode = code;
+        return;
+      }
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
       clearTimeout(killTimer);
       clearTimeout(settleTimer);
+      clearTimeout(terminationTimer);
       child?.stdout?.destroy();
       child?.stderr?.destroy();
+      const authoritativeCode = timedOut ? exitCodeAtDeadline : code;
       const output = sanitizeScannerText(retained.toString('utf8'), env);
       if (output) write(output.endsWith('\n') ? output : `${output}\n`);
       resolve({
-        code: Number.isInteger(code) ? code : null,
+        code: Number.isInteger(authoritativeCode) ? authoritativeCode : null,
         timedOut,
         output,
         sawTransientOutput,
       });
+    };
+    const completeWindowsTermination = (failure) => {
+      if (!terminationPending) return;
+      terminationPending = false;
+      clearTimeout(terminationTimer);
+      if (failure) {
+        retain(failure);
+        if (!exitObserved) child.kill('SIGKILL');
+      }
+      finish(Number.isInteger(pendingFinishCode) ? pendingFinishCode : observedExitCode);
+    };
+
+    const terminateWindowsProcessTree = () => {
+      terminationPending = true;
+      let terminator;
+      try {
+        terminator = spawn(
+          String.raw`C:\Windows\System32\taskkill.exe`,
+          ['/pid', String(child.pid), '/t', '/f'],
+          { shell: false, stdio: 'ignore', windowsHide: true },
+        );
+      } catch (error) {
+        completeWindowsTermination(
+          'Windows process-tree termination could not start: ' +
+            (error instanceof Error ? error.message : error),
+        );
+        return;
+      }
+
+      terminator.once('error', (error) =>
+        completeWindowsTermination('Windows process-tree termination failed: ' + error.message),
+      );
+      terminator.once('close', (code) =>
+        completeWindowsTermination(
+          code === 0 ? null : 'Windows process-tree termination exited with status ' + code + '.',
+        ),
+      );
+      terminationTimer = setTimeout(() => {
+        terminator.kill();
+        completeWindowsTermination('Windows process-tree termination did not complete in time.');
+      }, 750);
     };
 
     try {
@@ -229,12 +267,24 @@ export async function runBoundedCommand({
     child.stderr.on('data', retain);
     child.on('error', (error) => retain(error.message));
     child.once('exit', (code) => {
+      exitObserved = true;
       if (Number.isInteger(code)) observedExitCode = code;
     });
     child.once('close', (code) => finish(Number.isInteger(code) ? code : observedExitCode));
 
     deadline = setTimeout(() => {
+      exitCodeAtDeadline = observedExitCode;
       timedOut = true;
+      if (process.platform === 'win32') {
+        if (exitObserved) {
+          settleTimer = setTimeout(() => finish(observedExitCode), 1_000);
+          settleTimer.unref?.();
+        } else {
+          terminateWindowsProcessTree();
+        }
+        return;
+      }
+
       signalProcessTree(child, 'SIGTERM');
       killTimer = setTimeout(() => signalProcessTree(child, 'SIGKILL'), 250);
       killTimer.unref?.();

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dialog, ipcMain, shell } from 'electron';
 import { open, rename, rm } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
@@ -233,9 +233,10 @@ describe('knowledgeHandlers', () => {
       fileName: 'Ops: East*Recovery.pdf',
     };
     const data = new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer;
+    const destinationPath = resolve('managed', 'user-selected', 'Ops_ East_Recovery.pdf');
     vi.mocked(dialog.showSaveDialog).mockResolvedValue({
       canceled: false,
-      filePath: '/managed/user-selected/Ops_ East_Recovery.pdf',
+      filePath: destinationPath,
     } as never);
     getPdf.mockResolvedValue({ ok: true, data, checksum: request.checksum, source: 'cache' });
 
@@ -252,17 +253,13 @@ describe('knowledgeHandlers', () => {
       checksum: request.checksum,
     });
     const temporaryPath = vi.mocked(open).mock.calls[0]?.[0];
-    expect(temporaryPath).toEqual(
-      expect.stringMatching(/^\/managed\/user-selected\/\.relay-download-[0-9a-f-]+\.tmp$/u),
-    );
+    expect(dirname(String(temporaryPath))).toBe(dirname(destinationPath));
+    expect(basename(String(temporaryPath))).toMatch(/^\.relay-download-[0-9a-f-]+\.tmp$/u);
     expect(open).toHaveBeenCalledWith(temporaryPath, 'wx', 0o600);
     expect(writePdfBytes).toHaveBeenCalledWith(expect.any(Uint8Array));
     expect(syncPdfBytes).toHaveBeenCalledOnce();
     expect(closePdfFile).toHaveBeenCalledOnce();
-    expect(rename).toHaveBeenCalledWith(
-      temporaryPath,
-      '/managed/user-selected/Ops_ East_Recovery.pdf',
-    );
+    expect(rename).toHaveBeenCalledWith(temporaryPath, destinationPath);
     expect(rm).toHaveBeenCalledWith(temporaryPath, { force: true });
     expect(syncPdfBytes.mock.invocationCallOrder[0]).toBeLessThan(
       closePdfFile.mock.invocationCallOrder[0]!,

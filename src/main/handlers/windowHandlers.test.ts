@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain, BrowserWindow, clipboard, nativeImage, shell, dialog } from 'electron';
 import { execFile } from 'node:child_process';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { RADAR_URL } from '@shared/radar';
 import { setupWindowHandlers, setupWindowListeners } from './windowHandlers';
@@ -140,7 +142,7 @@ import { rateLimiters } from '../rateLimiter';
 import { readFile, stat, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { loggers } from '../logger';
 
-const PRIVATE_TEMP_DIR = '/mock-temp/relay-a1b2c3';
+const PRIVATE_TEMP_DIR = join('/mock-temp', 'relay-a1b2c3');
 
 // Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
 // exercised for real (positive + negative) in authHandlers.test.ts.
@@ -511,7 +513,7 @@ describe('windowHandlers', () => {
       );
 
       expect(result).toBe(true);
-      expect(mkdtemp).toHaveBeenCalledWith('/mock-temp/relay-');
+      expect(mkdtemp).toHaveBeenCalledWith(join('/mock-temp', 'relay-'));
       const [filePath, content, options] = vi.mocked(writeFile).mock.calls[0] as [
         string,
         string,
@@ -519,7 +521,7 @@ describe('windowHandlers', () => {
       ];
       // Never a guessable path in the shared temp dir: on Linux another local
       // user could read the invite there, or pre-plant the path as a symlink.
-      expect(filePath).toBe(`${PRIVATE_TEMP_DIR}/relay-bridge.ics`);
+      expect(filePath).toBe(join(PRIVATE_TEMP_DIR, 'relay-bridge.ics'));
       expect(content).toBe('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
       expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
       expect(shell.openPath).toHaveBeenCalledWith(filePath);
@@ -655,8 +657,8 @@ describe('windowHandlers', () => {
         string,
         { encoding: string; mode: number },
       ];
-      expect(mkdtemp).toHaveBeenCalledWith('/mock-temp/relay-');
-      expect(filePath).toBe(`${PRIVATE_TEMP_DIR}/relay-alert.eml`);
+      expect(mkdtemp).toHaveBeenCalledWith(join('/mock-temp', 'relay-'));
+      expect(filePath).toBe(join(PRIVATE_TEMP_DIR, 'relay-alert.eml'));
       expect(content).toBe(validEml);
       expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
       if (process.platform === 'darwin') {
@@ -770,9 +772,10 @@ describe('windowHandlers', () => {
 
   describe('ALERT_SELECT_REMINDER_SOUND', () => {
     it('returns a file URL for the selected mp3', async () => {
+      const selectedPath = resolve('mock-dir', 'loud-alarm.mp3');
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
-        filePaths: ['/mock-dir/loud-alarm.mp3'],
+        filePaths: [selectedPath],
       });
 
       const result = await getHandler(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND)();
@@ -782,7 +785,7 @@ describe('windowHandlers', () => {
         filters: [{ name: 'MP3 Audio', extensions: ['mp3'] }],
         properties: ['openFile'],
       });
-      expect(result).toEqual({ success: true, data: 'file:///mock-dir/loud-alarm.mp3' });
+      expect(result).toEqual({ success: true, data: pathToFileURL(selectedPath).href });
     });
 
     it('returns cancelled when no mp3 is selected', async () => {

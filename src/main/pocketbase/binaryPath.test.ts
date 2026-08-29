@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { join } from 'node:path';
 import { getPocketBaseBinaryPath } from './binaryPath';
 
 describe('getPocketBaseBinaryPath', () => {
@@ -11,7 +12,7 @@ describe('getPocketBaseBinaryPath', () => {
         platform: 'win32',
         arch: 'x64',
       }),
-    ).toBe('/resources/pocketbase/win32-x64/pocketbase.exe');
+    ).toBe(join('/resources', 'pocketbase', 'win32-x64', 'pocketbase.exe'));
   });
 
   it('uses an arch-specific resource path for packaged macOS builds', () => {
@@ -23,7 +24,7 @@ describe('getPocketBaseBinaryPath', () => {
         platform: 'darwin',
         arch: 'arm64',
       }),
-    ).toBe('/resources/pocketbase/darwin-arm64/pocketbase');
+    ).toBe(join('/resources', 'pocketbase', 'darwin-arm64', 'pocketbase'));
   });
 
   it('uses the dev resources path when not packaged', () => {
@@ -35,6 +36,6 @@ describe('getPocketBaseBinaryPath', () => {
         platform: 'darwin',
         arch: 'x64',
       }),
-    ).toBe('/repo/resources/pocketbase/darwin-x64/pocketbase');
+    ).toBe(join('/repo', 'resources', 'pocketbase', 'darwin-x64', 'pocketbase'));
   });
 });

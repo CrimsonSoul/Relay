@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, realpath, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createDirectoryRedirect } from '../../__tests__/filesystemTestUtils';
 import { cleanupWindowsRuntimes, scheduleWindowsRuntimeCleanup } from '../windowsRuntimeCleanup';
 import { serializeRecoveryCatalog, type RecoveryBuildRecord } from '../../releases/RecoveryCatalog';
 
@@ -386,7 +387,7 @@ describe('Windows runtime cleanup', () => {
     const release = vi.fn(async () => undefined);
     const acquireLock = vi.fn(async () => {
       await rename(runtimeRoot, originalRuntimeRoot);
-      await symlink(outsideRuntimeRoot, runtimeRoot, 'dir');
+      await createDirectoryRedirect(outsideRuntimeRoot, runtimeRoot);
       return release;
     });
 
@@ -412,7 +413,7 @@ describe('Windows runtime cleanup', () => {
     const reservedQuarantine = join(runtimeRoot, '.corrupt-con-123-456');
     const orphanDir = await makeCompleteRuntime(runtimeRoot, 'r1-orphan');
     await mkdir(outsideTarget, { recursive: true });
-    await symlink(outsideTarget, linkPath, 'dir');
+    await createDirectoryRedirect(outsideTarget, linkPath);
     await mkdir(unknownDir, { recursive: true });
     await mkdir(incompleteDir, { recursive: true });
     await mkdir(reservedQuarantine, { recursive: true });
@@ -466,7 +467,7 @@ describe('Windows runtime cleanup', () => {
     expect(existsSync(activeDir)).toBe(true);
   });
 
-  it('does nothing when the managed Relay root is a symlink', async () => {
+  it('does nothing when the managed Relay root is redirected', async () => {
     const parent = await makeRoot();
     const targetRoot = join(parent, 'target-root');
     const linkedRoot = join(parent, 'managed-root');
@@ -474,7 +475,7 @@ describe('Windows runtime cleanup', () => {
     const executingDir = await makeCompleteRuntime(runtimeRoot, 'r1-current');
     const orphanDir = await makeCompleteRuntime(runtimeRoot, 'r1-orphan');
     await writeFile(join(targetRoot, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=r1-current\n');
-    await symlink(targetRoot, linkedRoot, 'dir');
+    await createDirectoryRedirect(targetRoot, linkedRoot);
 
     const result = await cleanupWindowsRuntimes({
       root: linkedRoot,

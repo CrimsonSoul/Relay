@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, open, realpath, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, realpath, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { KNOWLEDGE_MAX_PDF_BYTES, KNOWLEDGE_UPLOAD_CHUNK_BYTES } from '@shared/knowledge';
+import {
+  createDirectoryRedirect,
+  supportsUnprivilegedFileSymlinks,
+} from '../../__tests__/filesystemTestUtils';
 import {
   KnowledgeSourceError,
   inspectKnowledgePdfCandidate,
@@ -94,16 +98,34 @@ describe('knowledgeChunking', () => {
     await expect(inspectKnowledgePdfCandidate(path)).rejects.toBeInstanceOf(KnowledgeSourceError);
   });
 
-  it('rejects symbolic links before following them', async () => {
-    const directory = await tempDirectory();
-    const target = join(directory, 'Target.pdf');
-    const link = join(directory, 'Link.pdf');
-    await writeFile(target, '%PDF-test');
-    await symlink(target, link);
+  it.skipIf(!supportsUnprivilegedFileSymlinks)(
+    'rejects symbolic links before following them',
+    async () => {
+      const directory = await tempDirectory();
+      const target = join(directory, 'Target.pdf');
+      const link = join(directory, 'Link.pdf');
+      await writeFile(target, '%PDF-test');
+      await symlink(target, link);
 
-    await expect(inspectKnowledgePdfCandidate(link)).rejects.toMatchObject({
-      code: 'invalid-file',
-    });
+      await expect(inspectKnowledgePdfCandidate(link)).rejects.toMatchObject({
+        code: 'invalid-file',
+      });
+    },
+  );
+
+  it('canonicalizes a redirected parent before retaining source identity', async () => {
+    const directory = await tempDirectory();
+    const outside = join(directory, 'outside');
+    const redirected = join(directory, 'redirected');
+    const target = join(outside, 'Target.pdf');
+    await mkdir(outside);
+    await writeFile(target, '%PDF-test');
+    await createDirectoryRedirect(outside, redirected);
+
+    const candidate = await inspectKnowledgePdfCandidate(join(redirected, 'Target.pdf'));
+
+    expect(candidate.canonicalPath).toBe(await realpath(target));
+    expect(candidate.fileName).toBe('Target.pdf');
   });
 
   it('detects changed or replaced sources before a resumed chunk read', async () => {

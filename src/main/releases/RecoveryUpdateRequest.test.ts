@@ -1,7 +1,8 @@
-import { mkdtemp, mkdir, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDirectoryRedirect } from '../__tests__/filesystemTestUtils';
 import type { RecoveryBuildRecord } from './RecoveryCatalog';
 import {
   completeRecoveryUpdateRequest,
@@ -108,7 +109,7 @@ describe('RecoveryUpdateRequest', () => {
 
   it('refuses to write through a redirected recovery directory', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'relay-recovery-outside-'));
-    await symlink(outside, join(directory, 'Recovery'));
+    await createDirectoryRedirect(outside, join(directory, 'Recovery'));
     try {
       await expect(
         writeRecoveryUpdateRequest(directory, request(), (path) => mkdir(path)),

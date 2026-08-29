@@ -217,7 +217,7 @@ export class PocketBaseProcess {
 
       // PocketBase is a headless Go binary — WM_CLOSE (taskkill without /F) won't work.
       // Use /F on Windows; SIGTERM on Unix gives PB a chance to flush WAL.
-      if (process.platform === 'win32') {
+      if (this.getPlatform() === 'win32') {
         // eslint-disable-next-line sonarjs/no-os-command-from-path
         const taskkill = spawn('taskkill', ['/F', '/PID', this.child!.pid!.toString()]);
         taskkill.on('error', (error) => {
@@ -240,7 +240,7 @@ export class PocketBaseProcess {
 
     try {
       this.closeWindowsJob();
-      if (process.platform === 'win32') {
+      if (this.getPlatform() === 'win32') {
         execFileSync('taskkill', ['/F', '/T', '/PID', pid.toString()], { timeout: 5000 }); // eslint-disable-line sonarjs/no-os-command-from-path
       } else {
         process.kill(pid, 'SIGKILL');

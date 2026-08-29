@@ -3,6 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  createDirectoryRedirect,
+  supportsUnprivilegedFileSymlinks,
+} from '../__tests__/filesystemTestUtils';
+import {
   parseRecoveryRepairReceipt,
   parseRecoveryRepairRequest,
   readRecoveryRepairReceipt,
@@ -76,20 +80,27 @@ describe('RecoveryRepairRequest', () => {
     await expect(readRecoveryRepairReceipt(relayRoot)).resolves.toEqual(RECEIPT);
   });
 
-  it('refuses a redirected Recovery directory or receipt', async () => {
+  it('refuses a redirected Recovery directory', async () => {
     const relayRoot = await mkdtemp(join(tmpdir(), 'relay-repair-request-linked-'));
     const outside = await mkdtemp(join(tmpdir(), 'relay-repair-request-outside-'));
     roots.push(relayRoot, outside);
-    await symlink(outside, join(relayRoot, 'Recovery'));
+    await createDirectoryRedirect(outside, join(relayRoot, 'Recovery'));
     await expect(
       writeRecoveryRepairRequest(relayRoot, REQUEST, (path) => mkdir(path)),
     ).rejects.toThrow(/redirected/i);
-
-    await rm(join(relayRoot, 'Recovery'));
-    await mkdir(join(relayRoot, 'Recovery'));
-    const outsideReceipt = join(outside, 'receipt.ini');
-    await writeFile(outsideReceipt, serializeRecoveryRepairReceipt(RECEIPT));
-    await symlink(outsideReceipt, join(relayRoot, 'Recovery', 'repair-result.ini'));
-    await expect(readRecoveryRepairReceipt(relayRoot)).rejects.toThrow(/redirected/i);
   });
+
+  it.skipIf(!supportsUnprivilegedFileSymlinks)(
+    'refuses a symbolic-link repair receipt',
+    async () => {
+      const relayRoot = await mkdtemp(join(tmpdir(), 'relay-repair-request-linked-receipt-'));
+      const outside = await mkdtemp(join(tmpdir(), 'relay-repair-request-outside-receipt-'));
+      roots.push(relayRoot, outside);
+      await mkdir(join(relayRoot, 'Recovery'));
+      const outsideReceipt = join(outside, 'receipt.ini');
+      await writeFile(outsideReceipt, serializeRecoveryRepairReceipt(RECEIPT));
+      await symlink(outsideReceipt, join(relayRoot, 'Recovery', 'repair-result.ini'));
+      await expect(readRecoveryRepairReceipt(relayRoot)).rejects.toThrow(/redirected/i);
+    },
+  );
 });

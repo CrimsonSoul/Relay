@@ -32,7 +32,14 @@ describe('DynatraceProblemsConfigStore', () => {
 
     const raw = readFileSync(join(dir, 'dynatrace-problems.json'), 'utf8');
     expect(raw).not.toContain('dt0s16.platform-read-only-token');
-    expect(statSync(join(dir, 'dynatrace-problems.json')).mode & 0o777).toBe(0o600);
+    const stored = JSON.parse(raw) as Record<string, unknown>;
+    expect(stored).not.toHaveProperty('apiToken');
+    expect(stored.encryptedApiToken).toBe(
+      secureStorage.encryptString('dt0s16.platform-read-only-token').toString('base64'),
+    );
+    if (process.platform !== 'win32') {
+      expect(statSync(join(dir, 'dynatrace-problems.json')).mode & 0o777).toBe(0o600);
+    }
     expect(store.load()).toEqual({
       environmentUrl: 'https://abc123.apps.dynatrace.com',
       apiToken: 'dt0s16.platform-read-only-token',

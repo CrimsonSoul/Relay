@@ -1,8 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+  unlinkSync,
+} from 'node:fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { AppConfig, __setElectronModuleForTests, type RelayConfig } from './AppConfig';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, unlinkSync: vi.fn(actual.unlinkSync) };
+});
 
 describe('AppConfig', () => {
   let tempDir: string;
@@ -457,22 +470,16 @@ describe('AppConfig', () => {
   it('clear returns false when unlinkSync throws non-ENOENT error', () => {
     const config = new AppConfig(tempDir);
     config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'sec' });
-
-    // Make the config file read-only to simulate a permission error
-    const fs = require('node:fs');
     const configPath = join(tempDir, 'config.json');
-    // Change permissions to read-only
-    fs.chmodSync(configPath, 0o444); // eslint-disable-line sonarjs/file-permissions
-    // Also make directory read-only so unlink fails
-    fs.chmodSync(tempDir, 0o555); // eslint-disable-line sonarjs/file-permissions
+    const error = Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+    vi.mocked(unlinkSync).mockImplementationOnce(() => {
+      throw error;
+    });
 
     const result = config.clear();
 
-    // Restore permissions before assertions so cleanup works
-    fs.chmodSync(tempDir, 0o755); // eslint-disable-line sonarjs/file-permissions
-    fs.chmodSync(configPath, 0o644); // eslint-disable-line sonarjs/file-permissions
-
     expect(result).toBe(false);
+    expect(existsSync(configPath)).toBe(true);
   });
 
   it('isConfigured returns true for valid config (with secret)', () => {
