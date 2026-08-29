@@ -14,6 +14,10 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+  createDirectoryRedirect,
+  supportsUnprivilegedFileSymlinks,
+} from '../__tests__/filesystemTestUtils';
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
 import { ReleaseUpdateManager, type ReleaseUpdateManagerOptions } from './ReleaseUpdateManager';
@@ -28,6 +32,7 @@ const INSTALLER = Buffer.from('MZverified staged installer');
 const INSTALLER_SHA256 = createHash('sha256').update(INSTALLER).digest('hex');
 const ARCHIVE_SHA256 = 'a'.repeat(64);
 const CHECKSUM_SHA256 = 'b'.repeat(64);
+const fileSymlinkIt = supportsUnprivilegedFileSymlinks ? it : it.skip;
 
 type ResolveLatestInstallable = (signal?: AbortSignal) => Promise<RelayInstallableRelease>;
 type DownloadAsset = NonNullable<ReleaseUpdateManagerOptions['downloadAsset']>;
@@ -997,13 +1002,16 @@ describe('ReleaseUpdateManager', () => {
     expect(spawnInstaller).toHaveBeenCalledOnce();
   });
 
-  it('rejects legacy state redirected during the protected attempt', async () => {
+  fileSymlinkIt('rejects legacy state redirected during the protected attempt', async () => {
     const statePath = join(relayRoot, 'state.ini');
     const redirectedStatePath = join(tempRoot, 'redirected-state.ini');
-    await writeFile(statePath, `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`);
+    await writeFile(
+      statePath,
+      '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111111111111111111111111111\nprevious=\n',
+    );
     await writeFile(
       redirectedStatePath,
-      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+      '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111111111111111111111111111\nprevious=\n',
     );
     spawnInstaller.mockImplementationOnce(async () => {
       await rm(statePath);
@@ -1021,10 +1029,33 @@ describe('ReleaseUpdateManager', () => {
     expect(spawnInstaller).toHaveBeenCalledOnce();
   });
 
+  it('rejects a redirected managed root during the protected attempt', async () => {
+    const statePath = join(relayRoot, 'state.ini');
+    const originalRelayRoot = join(localAppData, 'Relay.original');
+    await writeFile(
+      statePath,
+      '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111111111111111111111111111\nprevious=\n',
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await rename(relayRoot, originalRelayRoot);
+      await createDirectoryRedirect(originalRelayRoot, relayRoot);
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
   it('binds legacy fallback eligibility to the canonical executing build', async () => {
     const canonicalRuntime = join(relayRoot, 'Runtime', 'r1-canonical');
     await rename(runtimeDirectory, canonicalRuntime);
-    await symlink(canonicalRuntime, runtimeDirectory, 'dir');
+    await createDirectoryRedirect(canonicalRuntime, runtimeDirectory);
     await writeFile(
       join(relayRoot, 'state.ini'),
       `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
@@ -1345,7 +1376,7 @@ describe('ReleaseUpdateManager', () => {
     expect(resolveLatestInstallable).not.toHaveBeenCalled();
   });
 
-  it('refuses restart when the stable launcher becomes a symbolic link', async () => {
+  fileSymlinkIt('refuses restart when the stable launcher becomes a symbolic link', async () => {
     const updates = manager();
     await updates.noteCheck(updateCheck());
     await updates.download();
@@ -1366,6 +1397,23 @@ describe('ReleaseUpdateManager', () => {
     expect(restartApp).toHaveBeenCalledWith(stableLauncher);
   });
 
+  it('refuses restart when the managed root becomes redirected', async () => {
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+    const originalRelayRoot = join(localAppData, 'Relay.original');
+    await rename(relayRoot, originalRelayRoot);
+    await createDirectoryRedirect(originalRelayRoot, relayRoot);
+
+    await expect(updates.restart()).resolves.toBe(false);
+    expect(restartApp).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'restart-unavailable',
+    });
+  });
+
   it('removes only updater staging directories that have been abandoned for over 24 hours', async () => {
     const updatesRoot = join(relayRoot, 'Updates');
     const staleDirectory = join(updatesRoot, 'v1.0.1-12345678-1234-4123-8123-123456789abc');
@@ -1378,7 +1426,7 @@ describe('ReleaseUpdateManager', () => {
     const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1_000);
     await utimes(staleDirectory, staleTime, staleTime);
     await mkdir(unrelatedDirectory);
-    await symlink(unrelatedDirectory, linkedDirectory);
+    await createDirectoryRedirect(unrelatedDirectory, linkedDirectory);
 
     const updates = manager();
     await updates.noteCheck(updateCheck());

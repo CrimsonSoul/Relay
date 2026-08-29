@@ -238,7 +238,13 @@ Object.defineProperty(process, 'resourcesPath', {
   configurable: true,
   value: 'C:\\Relay\\resources',
 });
+const POCKETBASE_BINARY_PATH = 'C:\\Relay\\resources\\pocketbase\\pocketbase.exe';
 
+function pocketBaseCliCalls() {
+  return mocks.execFileSync.mock.calls
+    .map((call, index) => ({ call, index }))
+    .filter(({ call }) => call[0] === POCKETBASE_BINARY_PATH);
+}
 describe('pocketbaseBootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -292,8 +298,11 @@ describe('pocketbaseBootstrap', () => {
       ),
     ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
 
-    expect(mocks.execFileSync).toHaveBeenCalledOnce();
-    expect(callOrder(mocks.execFileSync, 0)).toBeLessThan(callOrder(mocks.pbProcess.start, 0));
+    const cliCalls = pocketBaseCliCalls();
+    expect(cliCalls).toHaveLength(1);
+    expect(callOrder(mocks.execFileSync, cliCalls[0]!.index)).toBeLessThan(
+      callOrder(mocks.pbProcess.start, 0),
+    );
   });
 
   it('authenticates a healthy existing superuser without invoking CLI repair', async () => {
@@ -560,7 +569,9 @@ describe('pocketbaseBootstrap', () => {
 
     expect(mocks.pbProcess.stop).toHaveBeenCalledTimes(2);
     expect(mocks.pbProcess.start).toHaveBeenCalledTimes(3);
-    const [repairBinary, repairArgs, repairOptions] = mocks.execFileSync.mock.calls[0] as [
+    const repairCalls = pocketBaseCliCalls();
+    expect(repairCalls).toHaveLength(1);
+    const [repairBinary, repairArgs, repairOptions] = repairCalls[0]!.call as [
       string,
       string[],
       {
@@ -585,14 +596,29 @@ describe('pocketbaseBootstrap', () => {
     });
     expect(repairOptions).not.toHaveProperty('env');
     expect(JSON.stringify(repairOptions)).not.toContain(secret);
-    expect(mocks.mkdirSync).toHaveBeenCalledWith(expect.stringMatching(REPAIR_DIRECTORY_PATTERN), {
-      recursive: false,
-      mode: 0o700,
-    });
-    expect(mocks.chmodSync).toHaveBeenCalledWith(
-      expect.stringMatching(REPAIR_DIRECTORY_PATTERN),
-      0o700,
-    );
+    if (process.platform === 'win32') {
+      const aclCallIndex = mocks.execFileSync.mock.calls.findIndex(
+        ([binary]) => binary !== POCKETBASE_BINARY_PATH,
+      );
+      expect(aclCallIndex).not.toBe(-1);
+      expect(callOrder(mocks.execFileSync, aclCallIndex)).toBeLessThan(
+        callOrder(mocks.writeFileSync, 0),
+      );
+      expect(mocks.mkdirSync).not.toHaveBeenCalled();
+      expect(mocks.chmodSync).not.toHaveBeenCalled();
+    } else {
+      expect(mocks.mkdirSync).toHaveBeenCalledWith(
+        expect.stringMatching(REPAIR_DIRECTORY_PATTERN),
+        {
+          recursive: false,
+          mode: 0o700,
+        },
+      );
+      expect(mocks.chmodSync).toHaveBeenCalledWith(
+        expect.stringMatching(REPAIR_DIRECTORY_PATTERN),
+        0o700,
+      );
+    }
     const [migrationPath, migrationSource, migrationWriteOptions] = mocks.writeFileSync.mock
       .calls[0] as [string, string, object];
     expect(migrationPath).toMatch(
@@ -727,7 +753,9 @@ describe('pocketbaseBootstrap', () => {
       windowsHide: true,
     });
     expect(callOrder(mocks.writeFileSync, 0)).toBeGreaterThan(callOrder(mocks.execFileSync, 0));
-    expect(mocks.execFileSync.mock.calls[1]?.[1]).toEqual([
+    const cliCalls = pocketBaseCliCalls();
+    expect(cliCalls).toHaveLength(1);
+    expect(cliCalls[0]!.call[1]).toEqual([
       'migrate',
       'up',
       expect.stringMatching(REPAIR_MIGRATIONS_ARGUMENT_PATTERN),
@@ -807,7 +835,8 @@ describe('pocketbaseBootstrap', () => {
       privilegedRuntimeReady: true,
     });
 
-    expect(mocks.execFileSync).toHaveBeenCalledTimes(2);
+    const repairCalls = pocketBaseCliCalls().map(({ call }) => call);
+    expect(repairCalls).toHaveLength(2);
     expect(mocks.writeFileSync).toHaveBeenCalledTimes(4);
     const migrationPaths = mocks.writeFileSync.mock.calls
       .map(([path]) => path as string)
@@ -970,7 +999,7 @@ describe('pocketbaseBootstrap', () => {
       reason: START_FAILURE.credentialRepair,
     });
 
-    expect(mocks.execFileSync).toHaveBeenCalledOnce();
+    expect(pocketBaseCliCalls()).toHaveLength(1);
     expect(mocks.pbProcess.start).toHaveBeenCalledOnce();
     expect(mocks.superuserAuth).toHaveBeenCalledOnce();
     expect(mocks.rmSync).toHaveBeenLastCalledWith(expect.stringMatching(REPAIR_DIRECTORY_PATTERN), {

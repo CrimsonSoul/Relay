@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 
+const USER_DATA_DIR = join('/Users', 'test', 'RelayData');
 const mocks = vi.hoisted(() => ({
   app: {
-    getPath: vi.fn(() => '/Users/test/RelayData'),
+    getPath: vi.fn(() => USER_DATA_DIR),
     isReady: vi.fn(() => true),
     quit: vi.fn(),
     relaunch: vi.fn(),
@@ -44,7 +46,7 @@ describe('requestAppRelaunch', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     vi.resetModules();
-    mocks.app.getPath.mockReturnValue('/Users/test/RelayData');
+    mocks.app.getPath.mockReturnValue(USER_DATA_DIR);
     mocks.app.isReady.mockReturnValue(true);
     mocks.existsSync.mockReturnValue(false);
     mocks.readFileSync.mockReturnValue('[]');
@@ -55,9 +57,9 @@ describe('requestAppRelaunch', () => {
 
     requestAppRelaunch('gpu-recovery', { exitCode: 0, exitDelayMs: 0 });
 
-    expect(mocks.mkdirSync).toHaveBeenCalledWith('/Users/test/RelayData', { recursive: true });
+    expect(mocks.mkdirSync).toHaveBeenCalledWith(USER_DATA_DIR, { recursive: true });
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/Users/test/RelayData/last-relaunch.json',
+      join(USER_DATA_DIR, 'last-relaunch.json'),
       expect.stringContaining('"reason":"gpu-recovery"'),
       'utf8',
     );
@@ -94,7 +96,7 @@ describe('requestAppRelaunch', () => {
     expect(mocks.app.quit).toHaveBeenCalledOnce();
     expect(mocks.app.exit).not.toHaveBeenCalled();
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/Users/test/RelayData/last-exit.json',
+      join(USER_DATA_DIR, 'last-exit.json'),
       expect.stringContaining('"reason":"relaunch:release-update"'),
       'utf8',
     );
@@ -123,7 +125,7 @@ describe('requestAppRelaunch', () => {
     requestAppQuit('startup-failed');
 
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/Users/test/RelayData/last-exit.json',
+      join(USER_DATA_DIR, 'last-exit.json'),
       expect.stringContaining('"reason":"startup-failed"'),
       'utf8',
     );
@@ -137,12 +139,12 @@ describe('requestAppRelaunch', () => {
     requestAppRelaunch('gpu-recovery', { exitCode: 0, exitDelayMs: 0 });
 
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/Users/test/RelayData/last-relaunch.json',
+      join(USER_DATA_DIR, 'last-relaunch.json'),
       expect.stringContaining('"reason":"gpu-recovery"'),
       'utf8',
     );
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/Users/test/RelayData/last-exit.json',
+      join(USER_DATA_DIR, 'last-exit.json'),
       expect.stringContaining('"reason":"relaunch:gpu-recovery"'),
       'utf8',
     );
@@ -164,7 +166,7 @@ describe('requestAppRelaunch', () => {
 
     expect(mocks.app.relaunch).not.toHaveBeenCalled();
     expect(mocks.writeFileSync).toHaveBeenCalledWith(
-      '/Users/test/RelayData/last-exit.json',
+      join(USER_DATA_DIR, 'last-exit.json'),
       expect.stringContaining('"reason":"relaunch-loop:fatal-main-process-error"'),
       'utf8',
     );

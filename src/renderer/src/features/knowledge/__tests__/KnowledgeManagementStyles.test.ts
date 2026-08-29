@@ -5,7 +5,10 @@ const css = readCssBundle('features/knowledge/knowledge.css');
 const componentCss = readCssBundle('styles/components.css');
 
 function ruleBody(source: string, selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = selector
+    .replace(/\r\n/g, '\n')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\n/g, '\\r?\\n');
   return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'm').exec(source)?.[1] ?? '';
 }
 

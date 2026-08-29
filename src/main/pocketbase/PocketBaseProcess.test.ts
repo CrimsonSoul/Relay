@@ -85,6 +85,7 @@ describe('PocketBaseProcess', () => {
       dataDir: '/fake/data/pb_data',
       host: '127.0.0.1',
       port: 8090,
+      platform: 'linux',
     });
   });
 
@@ -519,12 +520,34 @@ describe('PocketBaseProcess', () => {
       child._emit('exit', null, 'SIGTERM');
     });
 
-    // Only SIGTERM path is exercised on non-Windows; process.platform is 'darwin' in tests
+    // The injected platform keeps this branch host-independent.
     const stopPromise = pbProcess.stop();
     await stopPromise;
 
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(pbProcess.isRunning()).toBe(false);
+  });
+
+  it('stop() uses taskkill on Windows and resolves on child exit', async () => {
+    const child = makeMockChild();
+    const taskkill = makeMockChild(4321);
+    mockSpawn.mockReturnValueOnce(child).mockReturnValueOnce(taskkill);
+    mockFetch.mockResolvedValue({ ok: true });
+    const windowsProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'win32',
+    });
+
+    await windowsProcess.start();
+    const stopPromise = windowsProcess.stop();
+
+    expect(mockSpawn).toHaveBeenLastCalledWith('taskkill', ['/F', '/PID', child.pid!.toString()]);
+    child._emit('exit', 0, null);
+    await expect(stopPromise).resolves.toBeUndefined();
+    expect(windowsProcess.isRunning()).toBe(false);
   });
 
   // ── killSync() ───────────────────────────────────────────────────────────────
@@ -548,6 +571,31 @@ describe('PocketBaseProcess', () => {
     processKillSpy.mockRestore();
 
     expect(pbProcess.isRunning()).toBe(false);
+  });
+
+  it('killSync() uses taskkill on Windows', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    const windowsProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'win32',
+    });
+
+    await windowsProcess.start();
+    mockExecFileSync.mockClear();
+    windowsProcess.killSync();
+
+    expect(mockExecFileSync).toHaveBeenCalledOnce();
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'taskkill',
+      ['/F', '/T', '/PID', child.pid!.toString()],
+      { timeout: 5000 },
+    );
+    expect(windowsProcess.isRunning()).toBe(false);
   });
 
   // ── crash handling & restarts ────────────────────────────────────────────────
@@ -939,7 +987,7 @@ describe('PocketBaseProcess', () => {
     await expect(stop2).resolves.toBeUndefined();
   });
 
-  // ── killSync on Windows path (code coverage for execFileSync branch) ──────
+  // ── killSync platform path ───────────────────────────────────────────────
 
   it('killSync uses process.kill with SIGKILL on non-Windows', async () => {
     const child = makeMockChild();

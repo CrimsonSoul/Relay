@@ -1,7 +1,8 @@
-import { mkdtemp, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createDirectoryRedirect } from '../__tests__/filesystemTestUtils';
 import { serializeRecoveryCatalog, type RecoveryCatalog } from './RecoveryCatalog';
 import {
   createRecoveryProbationController,
@@ -134,7 +135,7 @@ describe('recovery probation', () => {
     roots.push(outside);
     const { rm } = await import('node:fs/promises');
     await rm(join(installation.relayRoot, 'Recovery'), { recursive: true });
-    await symlink(outside, join(installation.relayRoot, 'Recovery'));
+    await createDirectoryRedirect(outside, join(installation.relayRoot, 'Recovery'));
 
     await expect(
       resolveRecoveryProbationContext({

@@ -14,12 +14,18 @@ const directoryCss = readFileSync(
 );
 
 function ruleBody(source: string, selector: string): string {
-  const escaped = selector.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  const escaped = selector
+    .replace(/\r\n/g, '\n')
+    .replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')
+    .replace(/\n/g, '\\r?\\n');
   return new RegExp(escaped + '\\s*\\{([^}]*)\\}', 'm').exec(source)?.[1] ?? '';
 }
 
 function ruleBodies(source: string, selector: string): string {
-  const escaped = selector.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+  const escaped = selector
+    .replace(/\r\n/g, '\n')
+    .replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')
+    .replace(/\n/g, '\\r?\\n');
   return Array.from(source.matchAll(new RegExp(escaped + '\\s*\\{([^}]*)\\}', 'gm')))
     .map((match) => match[1])
     .join('\n');

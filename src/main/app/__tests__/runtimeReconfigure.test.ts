@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 
+const DATA_DIR = join('/Users', 'test', 'RelayData', 'data');
 const mocks = vi.hoisted(() => ({
   activeOldView: {
     state: 'active' as const,
@@ -265,7 +267,7 @@ describe('reconfigureRuntime', () => {
   it('switches to client mode without relaunching or closing the window', async () => {
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(mocks.clearRelayAppUserAuthCoordinator).toHaveBeenCalledOnce();
     expect(mocks.clearRelayAppUserAuthCoordinator.mock.invocationCallOrder[0]).toBeLessThan(
@@ -285,11 +287,11 @@ describe('reconfigureRuntime', () => {
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.setPbProcess).toHaveBeenCalledWith(null);
     expect(mocks.startPocketBase).not.toHaveBeenCalled();
-    expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
+    expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith(DATA_DIR);
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
     expect(mocks.createProductionPrivilegedRuntime).toHaveBeenCalledWith({
       config: expect.objectContaining({ mode: 'client' }),
-      dataDir: '/Users/test/RelayData/data',
+      dataDir: DATA_DIR,
       serverClient: null,
       dynatraceProblemsManager: mocks.dynatraceProblemsManager,
     });
@@ -300,7 +302,7 @@ describe('reconfigureRuntime', () => {
     mocks.knowledgeUploadService.handleSessionChanged(mocks.activeOldView);
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(
       mocks.knowledgeUploadService.handleSessionChanged.mock.calls.map(([view]) => view),
@@ -330,7 +332,7 @@ describe('reconfigureRuntime', () => {
     );
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    const reconfiguration = reconfigureRuntime('/Users/test/RelayData/data');
+    const reconfiguration = reconfigureRuntime(DATA_DIR);
     await vi.waitFor(() => expect(mocks.privilegedRuntime.dispose).toHaveBeenCalledOnce());
     expect(mocks.setPbClient).not.toHaveBeenCalled();
 
@@ -348,10 +350,10 @@ describe('reconfigureRuntime', () => {
     });
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(mocks.startPocketBase).toHaveBeenCalledOnce();
-    expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
+    expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith(DATA_DIR);
     expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createProductionPrivilegedHost.mock.invocationCallOrder[0] as number,
     );
@@ -368,7 +370,7 @@ describe('reconfigureRuntime', () => {
     mocks.appConfig.load.mockReturnValue(config);
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(mocks.relayWebServerManager.stop).toHaveBeenCalledOnce();
     expect(mocks.relayWebServerManager.applyConfig).toHaveBeenCalledWith(config);
@@ -391,7 +393,7 @@ describe('reconfigureRuntime', () => {
     });
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(mocks.dynatraceProblemsManager.start).toHaveBeenCalledOnce();
     expect(mocks.cloudStatusManager.start).toHaveBeenCalledOnce();
@@ -403,7 +405,7 @@ describe('reconfigureRuntime', () => {
   it('rebuilds client-mode offline infrastructure during runtime reconfigure', async () => {
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(mocks.PocketBase).toHaveBeenCalledWith('https://relay.example.com');
     expect(mocks.authWithPassword).toHaveBeenCalledWith(
@@ -411,8 +413,8 @@ describe('reconfigureRuntime', () => {
       'super-secret-passphrase',
       expect.objectContaining({ requestKey: null }),
     );
-    expect(mocks.OfflineCache).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
-    expect(mocks.PendingChanges).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
+    expect(mocks.OfflineCache).toHaveBeenCalledWith(join(DATA_DIR, 'cache.db'));
+    expect(mocks.PendingChanges).toHaveBeenCalledWith(join(DATA_DIR, 'cache.db'));
     expect(mocks.SyncManager).toHaveBeenCalledWith(mocks.syncPbClient, {
       relayAppUserServerUrl: 'https://relay.example.com',
     });
@@ -431,7 +433,7 @@ describe('reconfigureRuntime', () => {
     );
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await reconfigureRuntime('/Users/test/RelayData/data');
+    await reconfigureRuntime(DATA_DIR);
 
     expect(mocks.offlineCacheInstance.close).toHaveBeenCalledOnce();
     expect(mocks.setOfflineCache).not.toHaveBeenCalledWith(mocks.offlineCacheInstance);
@@ -444,7 +446,7 @@ describe('reconfigureRuntime', () => {
     mocks.restartKnowledgeSearchRuntime.mockReturnValueOnce(new Promise(() => undefined));
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
 
-    await expect(reconfigureRuntime('/Users/test/RelayData/data')).resolves.toBeUndefined();
+    await expect(reconfigureRuntime(DATA_DIR)).resolves.toBeUndefined();
 
     expect(mocks.restartKnowledgeSearchRuntime).toHaveBeenCalledOnce();
     expect(
@@ -457,7 +459,7 @@ describe('reconfigureRuntime', () => {
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
     const startupState = createStartupStateController();
 
-    await reconfigureRuntime('/Users/test/RelayData/data', { startupState });
+    await reconfigureRuntime(DATA_DIR, { startupState });
 
     expect(startupState.getSnapshot()).toMatchObject({
       generation: 1,
@@ -472,9 +474,9 @@ describe('reconfigureRuntime', () => {
     const { reconfigureRuntime } = await import('../runtimeReconfigure');
     const startupState = createStartupStateController();
 
-    await expect(
-      reconfigureRuntime('/Users/test/RelayData/data', { startupState }),
-    ).rejects.toThrow('web server stuck');
+    await expect(reconfigureRuntime(DATA_DIR, { startupState })).rejects.toThrow(
+      'web server stuck',
+    );
     expect(startupState.getSnapshot()).toMatchObject({
       generation: 1,
       phase: 'failed',

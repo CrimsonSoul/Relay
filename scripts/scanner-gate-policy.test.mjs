@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   SCANNER_OUTCOME,
   ScannerGateError,
@@ -157,32 +158,77 @@ test('kills a command at its internal deadline', async () => {
 
 test('bounds an npm command and its descendant process tree', async () => {
   const fixture = mkdtempSync(join(tmpdir(), 'relay-scanner-gate-'));
+  const readyPath = join(fixture, 'descendant.pid');
+  let descendantPid;
+  let descendantAliveAfterRun;
+  let elapsed;
+  let result;
   try {
+    writeFileSync(
+      join(fixture, 'hang.mjs'),
+      [
+        "import { writeFileSync } from 'node:fs';",
+        'writeFileSync(process.env.RELAY_SCANNER_READY_PATH, String(process.pid));',
+        'setInterval(() => {}, 1000);',
+      ].join('\n'),
+    );
     writeFileSync(
       join(fixture, 'package.json'),
       JSON.stringify({
         scripts: {
-          hang: `"${process.execPath}" -e "setInterval(() => {}, 1000)"`,
+          hang: 'node hang.mjs',
         },
       }),
     );
+    const npmArgs = ['run', 'hang'];
+    const npmExecPath =
+      process.env.npm_execpath ??
+      join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    const npmFile = process.platform === 'win32' ? process.execPath : 'npm';
+    const npmPrefix = process.platform === 'win32' ? [npmExecPath] : [];
+    const warmup = spawnSync(npmFile, [...npmPrefix, '--version'], { encoding: 'utf8' });
+    assert.equal(warmup.status, 0, warmup.stderr);
+
     const started = Date.now();
-    const result = await runBoundedCommand({
-      file: process.platform === 'win32' ? 'npm.cmd' : 'npm',
-      args: ['run', 'hang'],
+    result = await runBoundedCommand({
+      file: npmFile,
+      args: [...npmPrefix, ...npmArgs],
       cwd: fixture,
-      env: process.env,
-      timeoutMs: 100,
+      env: { ...process.env, RELAY_SCANNER_READY_PATH: readyPath },
+      timeoutMs: 1_000,
       maxOutputBytes: 4_096,
       write: () => {},
     });
-
-    assert.equal(result.timedOut, true);
-    assert.equal(result.code, null);
-    assert.ok(Date.now() - started < 2_000, 'npm descendant tree exceeded the bounded deadline');
+    elapsed = Date.now() - started;
   } finally {
-    rmSync(fixture, { recursive: true, force: true });
+    try {
+      descendantPid = Number(readFileSync(readyPath, 'utf8'));
+    } catch {
+      descendantPid = undefined;
+    }
+    if (Number.isSafeInteger(descendantPid) && descendantPid > 0) {
+      try {
+        process.kill(descendantPid, 0);
+        descendantAliveAfterRun = true;
+      } catch (error) {
+        descendantAliveAfterRun = error?.code !== 'ESRCH';
+      }
+      if (descendantAliveAfterRun) {
+        try {
+          process.kill(descendantPid, 'SIGKILL');
+        } catch {
+          // Best-effort cleanup protects later tests when the lifecycle assertion fails.
+        }
+      }
+    }
+    rmSync(fixture, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
+
+  assert.equal(result.timedOut, true);
+  assert.equal(result.code, null);
+  assert.ok(elapsed < 2_000, 'npm descendant tree exceeded the bounded deadline');
+  assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
+  assert.equal(descendantAliveAfterRun, false, 'npm descendant remained alive after return');
 });
 
 test('preserves a finding exit code when inherited pipes outlive the command', async () => {

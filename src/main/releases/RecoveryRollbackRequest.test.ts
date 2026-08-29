@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createDirectoryRedirect } from '../__tests__/filesystemTestUtils';
 import {
   completeRecoveryRollbackRequest,
   parseRecoveryRollbackRequest,
@@ -91,7 +92,7 @@ describe('RecoveryRollbackRequest', () => {
     roots.push(redirectedRoot);
     const outside = await mkdtemp(join(tmpdir(), 'relay-rollback-request-outside-'));
     roots.push(outside);
-    await symlink(outside, join(redirectedRoot, 'Recovery'));
+    await createDirectoryRedirect(outside, join(redirectedRoot, 'Recovery'));
     await expect(
       writeRecoveryRollbackRequest(
         redirectedRoot,

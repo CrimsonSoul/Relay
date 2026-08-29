@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { app } from 'electron';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   isTrustedIpcSender,
   assertTrustedIpcSender,
@@ -131,18 +133,16 @@ describe('assertTrustedIpcSender', () => {
 });
 
 describe('isAllowedRendererFileUrl', () => {
-  const rendererDir = '/app/dist/renderer';
+  const rendererDir = join('/app', 'dist', 'renderer');
 
   it('accepts files inside the renderer dir', () => {
-    expect(isAllowedRendererFileUrl('file:///app/dist/renderer/index.html', rendererDir)).toBe(
-      true,
-    );
+    const rendererIndex = pathToFileURL(join(rendererDir, 'index.html')).href;
+    expect(isAllowedRendererFileUrl(rendererIndex, rendererDir)).toBe(true);
   });
 
   it('rejects traversal outside the renderer dir', () => {
-    expect(
-      isAllowedRendererFileUrl('file:///app/dist/renderer/../main/index.js', rendererDir),
-    ).toBe(false);
+    const mainIndex = pathToFileURL(join(rendererDir, '..', 'main', 'index.js')).href;
+    expect(isAllowedRendererFileUrl(mainIndex, rendererDir)).toBe(false);
   });
 
   it('rejects non-file protocols', () => {

@@ -2,6 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createDirectoryRedirect,
+  supportsUnprivilegedFileSymlinks,
+} from '../__tests__/filesystemTestUtils';
 import { createRecoveryServerSnapshot } from './RecoverySnapshot';
 
 describe('RecoverySnapshot', () => {
@@ -69,17 +73,42 @@ describe('RecoverySnapshot', () => {
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('refuses a symbolic link anywhere in server data', async () => {
-    const outside = await mkdtemp(join(tmpdir(), 'relay-recovery-linked-'));
+  it.skipIf(!supportsUnprivilegedFileSymlinks)(
+    'refuses a symbolic link anywhere in server data',
+    async () => {
+      const outside = await mkdtemp(join(tmpdir(), 'relay-recovery-linked-'));
+      await writeFile(join(outside, 'secret'), 'outside');
+      await symlink(join(outside, 'secret'), join(dataDirectory, 'linked'));
+      try {
+        await expect(
+          createRecoveryServerSnapshot({
+            userDataRoot,
+            dataDirectory,
+            transactionId: '11111111-2222-4333-8444-555555555555',
+            sourceBuildId: 'r1-1111111111111111111111111111111111111111',
+            dataEpoch: 1,
+            createPrivateDirectory: (path) => mkdir(path, { mode: 0o700 }),
+            snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            statfs: async () => ({ bavail: 10_000_000, bsize: 4_096 }),
+          }),
+        ).rejects.toThrow(/symbolic link/i);
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('refuses a redirected directory anywhere in server data', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'relay-recovery-redirected-'));
     await writeFile(join(outside, 'secret'), 'outside');
-    await symlink(join(outside, 'secret'), join(dataDirectory, 'linked'));
+    await createDirectoryRedirect(outside, join(dataDirectory, 'redirected'));
     try {
       await expect(
         createRecoveryServerSnapshot({
           userDataRoot,
           dataDirectory,
           transactionId: '11111111-2222-4333-8444-555555555555',
-          sourceBuildId: `r1-${'1'.repeat(40)}`,
+          sourceBuildId: 'r1-1111111111111111111111111111111111111111',
           dataEpoch: 1,
           createPrivateDirectory: (path) => mkdir(path, { mode: 0o700 }),
           snapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { join } from 'path';
+import { basename, join } from 'path';
 import type { Stats } from 'fs';
 
 // Mock fs
@@ -133,7 +133,7 @@ describe('BackupManager', () => {
       mockReaddirSync.mockReturnValue(files);
       // Newer files have lower index (sorted descending by mtime — keep first 10, prune indices 10+)
       mockStatSync.mockImplementation((filePath) => {
-        const name = String(filePath).split('/').pop()!;
+        const name = basename(String(filePath));
         const idx = files.indexOf(name);
         return makeStatResult(new Date(2025 - idx, 0, 1));
       });
@@ -164,14 +164,14 @@ describe('BackupManager', () => {
       mockReaddirSync.mockReturnValue(files);
       // Lower index = newer (descending mtime within each group)
       mockStatSync.mockImplementation((filePath) => {
-        const name = String(filePath).split('/').pop()!;
+        const name = basename(String(filePath));
         const idx = files.indexOf(name);
         return makeStatResult(new Date(2025 - idx, 0, 1));
       });
 
       await manager.backup();
 
-      const removed = mockRmSync.mock.calls.map((call) => String(call[0]).split('/').pop());
+      const removed = mockRmSync.mock.calls.map((call) => basename(String(call[0])));
       expect(removed.toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual([
         'backup_10.zip',
         'backup_11.zip',
@@ -191,7 +191,7 @@ describe('BackupManager', () => {
         'pre_restore_2026-07-10_11-30-00.zip',
       ]);
       mockStatSync.mockImplementation((filePath) => {
-        const name = String(filePath).split('/').pop();
+        const name = basename(String(filePath));
         return makeStatResult(
           new Date(
             name?.startsWith('pre_restore') ? '2026-07-10T11:30:00Z' : '2026-07-10T11:00:00Z',
@@ -257,7 +257,7 @@ describe('BackupManager', () => {
         'backup-b.db': new Date('2025-01-03T00:00:00Z'),
       };
       mockStatSync.mockImplementation((filePath) => {
-        const name = String(filePath).split('/').pop()!;
+        const name = basename(String(filePath));
         return { mtime: dates[name], size: 2048 } as unknown as Stats;
       });
 
@@ -334,7 +334,7 @@ describe('BackupManager', () => {
       );
       mockReaddirSync.mockReturnValue(files);
       mockStatSync.mockImplementation((filePath) => {
-        const name = String(filePath).split('/').pop()!;
+        const name = basename(String(filePath));
         const idx = files.indexOf(name);
         return makeStatResult(new Date(2025 - idx, 0, 1));
       });
@@ -383,7 +383,7 @@ describe('BackupManager', () => {
       );
       mockReaddirSync.mockReturnValue(files);
       mockStatSync.mockImplementation((filePath) => {
-        const name = String(filePath).split('/').pop()!;
+        const name = basename(String(filePath));
         const idx = files.indexOf(name);
         return makeStatResult(new Date(2025 - idx, 0, 1));
       });

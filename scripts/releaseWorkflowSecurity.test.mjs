@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import yauzl from 'yauzl';
 import { classifyExistingRelease } from './releaseWorkflowContract.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -17,6 +19,46 @@ const readWorkflowText = () => readFile(workflowUrl, 'utf8');
 const readWorkflow = async () => parse(await readWorkflowText());
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 const expression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
+const findBash = async () => {
+  if (process.platform !== 'win32') return 'bash';
+  const { stdout } = await execFileAsync('git', ['--exec-path']);
+  return resolve(stdout.trim(), '..', '..', '..', 'bin', 'bash.exe');
+};
+const withNativeWindowsZip = (script) => {
+  if (process.platform !== 'win32') return script;
+  return [
+    'zip() {',
+    '  test "$1" = \'-j\'',
+    '  shift',
+    '  archive="$1"',
+    '  shift',
+    '  "$WINDOWS_TAR" -a -c -f "$archive" "$@"',
+    '}',
+    script,
+  ].join('\n');
+};
+const listZipMembers = (archivePath) =>
+  new Promise((resolveMembers, reject) => {
+    yauzl.open(archivePath, { lazyEntries: true }, (openError, zipFile) => {
+      if (openError) {
+        reject(openError);
+        return;
+      }
+
+      const members = [];
+      zipFile.on('entry', (entry) => {
+        members.push(entry.fileName);
+        zipFile.readEntry();
+      });
+      zipFile.on('error', reject);
+      zipFile.on('end', () => resolveMembers(members));
+      zipFile.readEntry();
+    });
+  });
+const sha256File = async (filePath) =>
+  createHash('sha256')
+    .update(await readFile(filePath))
+    .digest('hex');
 
 describe('release workflow authority boundary', () => {
   it('selects the reviewed immutable release action revision', async () => {
@@ -277,24 +319,30 @@ describe('release workflow authority boundary', () => {
     try {
       await mkdir(releaseDir);
       await writeFile(join(releaseDir, 'Relay.exe'), 'verified relay executable');
-      await execFileAsync('bash', ['-c', assetScript], {
+      await execFileAsync(await findBash(), ['-c', withNativeWindowsZip(assetScript)], {
         cwd: tempDir,
-        env: { ...process.env, GITHUB_OUTPUT: outputFile, TAG: tag },
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          TAG: tag,
+          WINDOWS_TAR: join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'),
+        },
       });
 
-      const { stdout: members } = await execFileAsync('unzip', [
-        '-Z1',
-        join(releaseDir, assetName),
-      ]);
-      expect(members.trim().split(/\r?\n/u)).toEqual(['Relay.exe']);
+      const archivePath = join(releaseDir, assetName);
+      expect(await listZipMembers(archivePath)).toEqual(['Relay.exe']);
 
-      await expect(
-        execFileAsync('sha256sum', ['--check', `${assetName}.sha256`], { cwd: releaseDir }),
-      ).resolves.toMatchObject({ stdout: `${assetName}: OK\n` });
+      const archiveSha256 = await sha256File(archivePath);
+      const checksumPath = `${archivePath}.sha256`;
+      const checksum = /^([0-9a-f]{64}) [ *](.+)$/u.exec(
+        (await readFile(checksumPath, 'utf8')).trim(),
+      );
+      expect(checksum?.slice(1)).toEqual([archiveSha256, assetName]);
+      const checksumSha256 = await sha256File(checksumPath);
       const outputs = await readFile(outputFile, 'utf8');
       expect(outputs).toContain(`asset_name=${assetName}\n`);
-      expect(outputs).toMatch(/archive_sha256=[0-9a-f]{64}\n/u);
-      expect(outputs).toMatch(/checksum_sha256=[0-9a-f]{64}\n/u);
+      expect(outputs).toContain(`archive_sha256=${archiveSha256}\n`);
+      expect(outputs).toContain(`checksum_sha256=${checksumSha256}\n`);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

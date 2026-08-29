@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BrowserWindowConstructorOptions, WebPreferences } from 'electron';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * `electron-vite/node` declares ELECTRON_RENDERER_URL as a readonly member of
@@ -353,17 +355,15 @@ describe('windowFactory', () => {
 
   describe('createWindow - will-navigate with allowed file paths', () => {
     it('allows file URLs that resolve inside the renderer directory', () => {
-      const rendererDir = '/app/dist/renderer';
-      expect(isAllowedRendererFileUrl('file:///app/dist/renderer/index.html', rendererDir)).toBe(
-        true,
-      );
+      const rendererDir = join('/app', 'dist', 'renderer');
+      const rendererIndex = pathToFileURL(join(rendererDir, 'index.html')).href;
+      expect(isAllowedRendererFileUrl(rendererIndex, rendererDir)).toBe(true);
     });
 
     it('blocks file URL traversal out of the renderer directory', () => {
-      const rendererDir = '/app/dist/renderer';
-      expect(
-        isAllowedRendererFileUrl('file:///app/dist/renderer/../main/index.js', rendererDir),
-      ).toBe(false);
+      const rendererDir = join('/app', 'dist', 'renderer');
+      const mainIndex = pathToFileURL(join(rendererDir, '..', 'main', 'index.js')).href;
+      expect(isAllowedRendererFileUrl(mainIndex, rendererDir)).toBe(false);
     });
 
     it('allows navigation to dev server URL in dev mode', async () => {

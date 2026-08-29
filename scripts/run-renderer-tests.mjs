@@ -10,14 +10,17 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 /**
  * NODE_OPTIONS is split on whitespace, so an unquoted path containing a space
  * silently truncates the option value: Node then writes the localStorage file
- * to the wrong location and the cleanup below removes nothing. Node's
- * NODE_OPTIONS parser understands double quotes, so quote the value.
+ * to the wrong location and the cleanup below removes nothing. On Windows,
+ * Node's parser also treats backslashes as escapes, so use forward
+ * separators there; preserve legal literal backslashes on POSIX.
  */
 export function composeNodeOptions(existingNodeOptions, localStorageFile) {
   if (localStorageFile.includes('"')) {
     throw new Error(`Renderer localStorage path must not contain a quote: ${localStorageFile}`);
   }
-  return [existingNodeOptions?.trim(), `--localstorage-file="${localStorageFile}"`]
+  const portableLocalStorageFile =
+    process.platform === 'win32' ? localStorageFile.replaceAll('\\', '/') : localStorageFile;
+  return [existingNodeOptions?.trim(), `--localstorage-file="${portableLocalStorageFile}"`]
     .filter(Boolean)
     .join(' ');
 }
