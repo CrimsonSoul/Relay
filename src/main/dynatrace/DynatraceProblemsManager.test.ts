@@ -330,7 +330,7 @@ describe('DynatraceProblemsManager', () => {
     );
   });
 
-  it('refreshes the alerting profile catalog hourly during ordinary incremental polls', async () => {
+  it('refreshes the alerting profile catalog daily during ordinary incremental polls', async () => {
     const baseTime = Date.parse('2026-08-19T12:00:00.000Z');
     const now = vi.spyOn(Date, 'now').mockReturnValue(baseTime);
     const lastReconciledAt = new Date(baseTime - 30 * 60_000).toISOString();
@@ -384,6 +384,16 @@ describe('DynatraceProblemsManager', () => {
       now.mockReturnValue(baseTime + 31 * 60_000);
       await manager.syncNow();
 
+      expect(manager.getAvailableAlertingProfileCatalog()).toEqual(['Existing Profile']);
+      expect(client.fetchAlertingProfiles).not.toHaveBeenCalled();
+
+      syncRecord = {
+        ...syncRecord,
+        lastSuccessAt: new Date(baseTime + 23 * 60 * 60_000 + 30 * 60_000).toISOString(),
+      };
+      now.mockReturnValue(baseTime + 23 * 60 * 60_000 + 31 * 60_000);
+      await manager.syncNow();
+
       expect(manager.getAvailableAlertingProfileCatalog()).toEqual([
         'Existing Profile',
         'New Profile',
@@ -394,14 +404,14 @@ describe('DynatraceProblemsManager', () => {
     }
   });
 
-  it('preserves and throttles the cached profile catalog after an incremental refresh failure', async () => {
+  it('preserves and throttles the cached profile catalog after an automatic refresh failure', async () => {
     const baseTime = Date.parse('2026-08-19T14:00:00.000Z');
     const now = vi.spyOn(Date, 'now').mockReturnValue(baseTime);
     let syncRecord = {
       id: 'sync-1',
       key: 'primary',
       lastSuccessAt: new Date(baseTime - 60_000).toISOString(),
-      lastReconciledAt: new Date(baseTime - 2 * 60 * 60_000).toISOString(),
+      lastReconciledAt: new Date(baseTime - 25 * 60 * 60_000).toISOString(),
       availableAlertingProfiles: ['Last Known Profile'],
     };
     const problemCollection = {
@@ -456,14 +466,14 @@ describe('DynatraceProblemsManager', () => {
     }
   });
 
-  it('throttles a successfully empty profile catalog until the next hourly refresh', async () => {
+  it('throttles a successfully empty profile catalog until the next daily refresh', async () => {
     const baseTime = Date.parse('2026-08-19T16:00:00.000Z');
     const now = vi.spyOn(Date, 'now').mockReturnValue(baseTime);
     let syncRecord = {
       id: 'sync-1',
       key: 'primary',
       lastSuccessAt: new Date(baseTime - 60_000).toISOString(),
-      lastReconciledAt: new Date(baseTime - 2 * 60 * 60_000).toISOString(),
+      lastReconciledAt: new Date(baseTime - 25 * 60 * 60_000).toISOString(),
       availableAlertingProfiles: [] as string[],
     };
     const problemCollection = {

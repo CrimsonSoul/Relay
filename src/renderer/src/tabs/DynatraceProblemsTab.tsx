@@ -334,11 +334,15 @@ function refreshControlCopy(
   canSyncDynatrace: boolean,
   refreshing: boolean,
 ): { label: string; tooltip: string } {
-  const label = canSyncDynatrace ? 'Sync Dynatrace problems now' : 'Reload Relay problem data';
+  const label = canSyncDynatrace
+    ? 'Sync Dynatrace problems and alerting profiles now'
+    : 'Reload Relay problem data';
   if (!refreshing) return { label, tooltip: label };
   return {
     label,
-    tooltip: canSyncDynatrace ? 'Syncing Dynatrace problems' : 'Reloading Relay problem data',
+    tooltip: canSyncDynatrace
+      ? 'Syncing Dynatrace problems and alerting profiles'
+      : 'Reloading Relay problem data',
   };
 }
 
