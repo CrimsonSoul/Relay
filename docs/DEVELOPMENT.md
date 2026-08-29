@@ -466,10 +466,10 @@ modes clears the inactive filter when the scope is saved. A legacy configuration
 contains both is treated as custom-DQL-only.
 
 Normal problem polling also checks the cached alerting-profile catalog. Relay fetches a fresh catalog
-at most once per hour and always refreshes it during a forced reconciliation, so newly created
-profiles become selectable without waiting for the daily full problem reconciliation. A temporary
-catalog failure preserves the last successful list and does not interrupt problem synchronization;
-ordinary retries remain hourly.
+at most once per day and always refreshes it during a forced reconciliation. Operators can trigger
+that reconciliation from the Dynatrace Problems refresh control, which synchronizes Problems and the
+profile catalog together. A temporary catalog failure preserves the last successful list; normal
+problem-sync retry behavior remains unchanged.
 
 Relay preserves the complete custom expression, including its internal `or` and `and` clauses. It
 polls `dt.davis.problems` directly for the latest display state, but determines custom-scope

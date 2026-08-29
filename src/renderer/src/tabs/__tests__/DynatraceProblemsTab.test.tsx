@@ -162,10 +162,12 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('syncs Dynatrace before refreshing Relay data on the desktop server', async () => {
+  it('syncs Dynatrace problems and alerting profiles before refreshing Relay data', async () => {
     render(<DynatraceProblemsTab relayMode="server" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sync Dynatrace problems now' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Sync Dynatrace problems and alerting profiles now' }),
+    );
 
     await waitFor(() => expect(globalThis.api?.syncDynatraceProblems).toHaveBeenCalledOnce());
     expect(mocks.refetch).toHaveBeenCalledOnce();
@@ -918,7 +920,7 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getAllByText('pos62term3.freedomroads.local')).not.toHaveLength(0);
     expect(screen.getByText('Impacted entities')).toBeVisible();
     expect(screen.queryByText('Management zones')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Alerting profiles/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Alerting profiles' })).not.toBeInTheDocument();
   });
 
   it('awaits an attributed drafted note before marking addressed', async () => {
