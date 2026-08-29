@@ -1153,6 +1153,47 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
   }
 });
 
+test('Windows shell dividers align in full and compact sidebars', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${sidebarCss}
+        ${responsiveCss}
+        html, body { margin: 0; }
+      </style>
+      <div class="app-container platform-win32">
+        <div class="sidebar-shell">
+          <aside class="sidebar">
+            <button class="sidebar-app-icon">
+              <span class="sidebar-app-icon-label">Relay</span>
+            </button>
+          </aside>
+        </div>
+        <main class="main-content">
+          <header class="app-header">Relay / Compose</header>
+        </main>
+      </div>
+    `);
+
+    const brand = window.locator('.sidebar-app-icon');
+    const header = window.locator('.app-header');
+
+    for (const width of [1400, 1000]) {
+      await window.setViewportSize({ width, height: 700 });
+      const [brandBox, headerBox] = await Promise.all([brand.boundingBox(), header.boundingBox()]);
+      expect(brandBox, `brand box at ${width}px`).not.toBeNull();
+      expect(headerBox, `header box at ${width}px`).not.toBeNull();
+      expect(brandBox?.y).toBe(headerBox?.y);
+      expect(brandBox?.height).toBe(headerBox?.height);
+    }
+  } finally {
+    await app.close();
+  }
+});
 test('Radar status keeps the standard sidebar footprint in full and compact shells', async () => {
   const app = await electron.launch({ args: [mainEntry] });
   const window = await app.firstWindow();

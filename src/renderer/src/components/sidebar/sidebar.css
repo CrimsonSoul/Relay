@@ -24,7 +24,9 @@
 }
 
 .platform-win32 .sidebar-app-icon {
-  padding-top: 12px;
+  height: var(--header-height);
+  justify-content: center;
+  padding-block: 0;
 }
 
 .sidebar-app-icon-label {
