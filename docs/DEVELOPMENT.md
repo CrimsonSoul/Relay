@@ -129,11 +129,14 @@ The in-app updater does not prepare or activate a runtime, create `update-reques
 when the operator manually runs the revealed `Relay.exe`. For a newer protocol-2 runtime, the native
 installer first requires Relay to be fully exited, writes a pending protected transaction, stages
 the verified target runtime, and invokes that target only as a headless checkpoint helper. The helper
+registers its work without blocking Electron entry-module evaluation, waits for application readiness,
 resolves the configured mode, creates the server rollback snapshot or checkpoints the client cache,
-and atomically completes the request. Rerunning the same immutable installer resumes its exact pending
-or completed transaction after an interruption; mismatched recovery metadata fails closed. Only then
-does the stable launcher ingest the prepared runtime, probation-test it, and either promote it or
-restore the prior runtime and server snapshot. The Windows
+and atomically completes the request. The existing recovery supervisor deadline bounds the complete
+helper lifecycle so a readiness or checkpoint failure cannot leave the native installer waiting
+indefinitely. Rerunning the same immutable installer resumes its exact pending or completed transaction
+after an interruption; mismatched recovery metadata fails closed. Only then does the stable launcher
+ingest the prepared runtime, probation-test it, and either promote it or restore the prior runtime and
+server snapshot. The Windows
 boundary harness exercises native activation, fallback, settlement, and recovery independently from
 the in-app download/reveal integration. The packaged updater integration separately proves that
 revealing a production installer leaves the current runtime, stable launcher, state file, and user

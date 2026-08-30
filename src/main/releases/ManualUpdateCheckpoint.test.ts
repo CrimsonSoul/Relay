@@ -4,6 +4,7 @@ import {
   runManualUpdateCheckpoint,
   type ManualUpdateCheckpointOptions,
 } from './ManualUpdateCheckpoint';
+import { startManualUpdateCheckpointProcess } from './ManualUpdateCheckpointProcess';
 import { parseManualUpdateCheckpointArgument } from './RecoveryLaunchIntent';
 import type { RecoveryUpdateRequest } from './RecoveryUpdateRequest';
 
@@ -54,6 +55,68 @@ function options(mode: 'server' | 'client' | 'unconfigured'): ManualUpdateCheckp
 }
 
 describe('ManualUpdateCheckpoint', () => {
+  it('starts the checkpoint after readiness without blocking entry evaluation', async () => {
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+    let checkpointRuns = 0;
+    const exitCodes: number[] = [];
+    let resolveExit!: () => void;
+    const exited = new Promise<void>((resolve) => {
+      resolveExit = resolve;
+    });
+
+    const result = startManualUpdateCheckpointProcess({
+      whenReady: () => ready,
+      runCheckpoint: async () => {
+        checkpointRuns += 1;
+      },
+      exit: (code) => {
+        exitCodes.push(code);
+        resolveExit();
+      },
+      reportFailure: () => undefined,
+      timeoutMs: 10_000,
+    });
+
+    expect(result).toBeUndefined();
+    expect(checkpointRuns).toBe(0);
+
+    resolveReady();
+    await exited;
+
+    expect(checkpointRuns).toBe(1);
+    expect(exitCodes).toEqual([0]);
+  });
+
+  it('exits with failure when readiness exceeds the checkpoint deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const failures: unknown[] = [];
+      const exitCodes: number[] = [];
+
+      startManualUpdateCheckpointProcess({
+        whenReady: () => new Promise(() => undefined),
+        runCheckpoint: async () => undefined,
+        exit: (code) => exitCodes.push(code),
+        reportFailure: (error) => failures.push(error),
+        timeoutMs: 195_000,
+      });
+
+      await vi.advanceTimersByTimeAsync(194_999);
+      expect(exitCodes).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(exitCodes).toEqual([1]);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toEqual(new Error('Manual update checkpoint timed out'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('accepts only an exact packaged Windows checkpoint transaction', () => {
     expect(
       parseManualUpdateCheckpointArgument(
