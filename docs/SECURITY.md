@@ -128,63 +128,51 @@ fixed asset API URLs, and valid GitHub SHA-256 digests. The renderer cannot prov
 repository, URL, version, path, asset, or process argument.
 
 Every privileged updater transition requires a separate trusted-sender-validated IPC action. A
-release check never starts a download; a download never starts installation; installation never
-restarts Relay. Electron test mode suppresses filesystem and process side effects. Relay Web does
-not receive discovery or updater capabilities.
+release check never starts a download, and a download never reveals or executes the installer.
+Electron test mode suppresses filesystem and application-exit side effects. Relay Web does not
+receive discovery or updater capabilities.
 
 Downloads stream to an exclusive `.part` file in an app-owned, randomized version directory under
 the current user's `%LOCALAPPDATA%\Relay\Updates` tree. Relay applies a protected Windows DACL that
 grants only the current user and LocalSystem full control, then atomically renames each verified
-download to its final asset name. The downloader permits only HTTPS redirects to
-the fixed GitHub and GitHub asset hosts, rejects credentials and custom ports, caps redirects and
-bytes, enforces the advertised length, and calculates SHA-256 while writing. Relay requires the
-downloaded ZIP digest to agree with both GitHub metadata and the separately downloaded checksum
-file. The ZIP must contain exactly one regular, non-encrypted top-level `Relay.exe`; traversal,
-links, directories, case variants, extra members, unsupported compression, size expansion, CRC
-failure, and a missing Windows executable marker fail closed and remove the staging directory.
-The immutable-release metadata re-fetch uses the same caller abort domain as the download. Its
-deadline remains armed through bounded body consumption, so a response that supplies headers and
-then stalls cannot hold the updater single-flight. Cancellation during this step restores the
-available state without leaving partial assets.
+download to its final asset name. The downloader permits only HTTPS redirects to the fixed GitHub and
+GitHub asset hosts, rejects credentials and custom ports, caps redirects and bytes, enforces the
+advertised length, and calculates SHA-256 while writing. Relay requires the downloaded ZIP digest to
+agree with both GitHub metadata and the separately downloaded checksum file. The ZIP must contain
+exactly one regular, non-encrypted top-level `Relay.exe`; traversal, links, directories, case
+variants, extra members, unsupported compression, size expansion, CRC failure, and a missing Windows
+executable marker fail closed and remove the staging directory. The immutable-release metadata
+re-fetch uses the same caller abort domain as the download. Its deadline remains armed through
+bounded body consumption, so a response that supplies headers and then stalls cannot hold the updater
+single-flight. Cancellation during this step restores the available state without leaving partial
+assets.
 
-Before every execution, Relay resolves and revalidates the staging directory and installer, rejects
-symbolic links, confirms the exact size and Windows marker, and re-hashes the executable. Normal
-installation passes `/relay-prepare-only` plus a generated protocol-2 transaction ID to Relay's
-existing bootstrap. If that protected preparation fails, Relay removes its request before
-considering one compatibility retry with only `/relay-prepare-only`. The retry is allowed only when
-a newly resolved, bounded, non-redirected `state.ini` has exactly one strict protocol-1 Relay
-section and names the canonical build that is actually executing. Relay revalidates the staged
-installer again immediately before this decision. Protocol-2, missing, malformed, redirected, or
-mismatched state cannot use the compatibility path. A successful direct preparation restarts
-through the validated stable `%LOCALAPPDATA%\Relay\Relay.exe` launcher without claiming a
-protocol-2 checkpoint, because the legacy bootstrap has already activated protocol-1 state.
-Restart remains another explicit action. Cancellation, verification failure, and successful
-preparation remove staged files; a failed bootstrap keeps only the still-verified installer for a
-manual retry. Startup cleanup removes only recognized updater directories older than 24 hours.
-A valid protocol-2 request and prepared receipt with a pending checkpoint survive process loss
-without activating the candidate. The stable launcher validates both runtimes and launches the
-current build without deleting those records. On startup, Electron restores restart-ready state only
-after independently checking fixed non-redirected metadata paths, source and state identity, exact
-request/receipt agreement, and the target runtime marker plus all integrity-bound files. Invalid,
-mismatched, or changed state does not expose a restart action. Legacy direct activation remains
-non-resumable because it has no protected recovery transaction.
+The renderer cannot supply an installer path, filename, URL, command, or argument. Before every
+folder reveal, the main process resolves the recorded staging directory and installer again, rejects
+symbolic links and non-regular files, confirms the exact size and Windows marker, and re-hashes the
+executable against the digest retained at extraction. A mismatch fails closed, removes the staging
+directory, and leaves Relay running. Electron's fixed `shell.showItemInFolder` call receives only
+that revalidated path. A synchronous reveal failure keeps the verified staging directory for an
+explicit retry and also leaves Relay running.
 
-Before starting either native preparation attempt, Relay removes the fixed
-`%LOCALAPPDATA%\Relay\bootstrap-error.ini` record so an older failure cannot be attributed to the
-current update. After a failed attempt it reads only a bounded regular file that resolves as that
-exact direct child, rechecks its device, inode, size, and modification time on the open handle, and
-reads at most 4 KiB plus one detection byte. Relay uses fatal UTF-8 or UTF-16LE decoding and accepts
-only a strict `[Relay]` message record whose reason exactly matches one of the bootstrap's fixed
-failure messages. Redirected, replaced, oversized, malformed, or unknown content is ignored.
-Main-process diagnostics record the target version, fixed preparation stage, exit or spawn code,
-and compatibility-fallback outcome; they do not record the staged executable path, process
-arguments, transaction ID, or renderer input.
+Only a downloaded snapshot returned after successful reveal may trigger `app.quit()`; an error
+snapshot is returned as a failed IPC result and cannot reach the quit branch. Application quit is
+owned by the main process rather than a renderer window-close action, so auxiliary windows cannot
+keep background services alive while the operator starts the installer. Relay never launches or
+passes arguments to the staged executable. Startup cleanup removes only recognized updater
+directories older than 24 hours.
 
-Windows boundary and updater integration fixtures compile alternate runtime and recovery-data roots
-only when the explicit harness contract is enabled. Both roots live beneath an initially absent,
-owned `RUNNER_TEMP` parent, while production launchers retain the normal LocalAppData and AppData
-paths. The integration snapshots and restores existing Relay shortcuts, terminates only fixture
-process trees, waits for runtime quiescence, and then removes its disposable parent.
+Running the revealed installer is an explicit user action after Relay exits. The native bootstrap,
+stable launcher, retained-runtime integrity, probation, settlement, and rollback controls apply from
+that point independently from the in-app updater. The updater itself cannot create or complete a
+recovery request, prepare or activate a runtime, invoke bootstrap diagnostics, or relaunch Relay.
+
+The Windows boundary harness compiles alternate runtime and recovery-data roots only when its
+explicit contract is enabled. Those roots live beneath an initially absent, owned `RUNNER_TEMP`
+parent, while production launchers retain the normal LocalAppData and AppData paths. The separate
+updater integration archives the real production executable, verifies and reveals it through the
+manager, and proves that the current runtime, stable launcher, state file, and user data remain
+unchanged. It snapshots and restores existing Relay shortcuts and removes only its disposable parent.
 
 The automated release workflow uploads the ZIP and checksum to a clean draft release without
 in-place asset overwrites, compares GitHub's target commit and asset digests with the verified source
@@ -355,11 +343,11 @@ and bounds the generated PNG before persistence or response construction.
 
 Currently enforced limits include:
 
-| Boundary                 | Enforced operations                                                                                                                                                                                                                                                                 |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, release-page opening, update installation/restart, and Wiki external-link opening (`fsOperations`); cloud-status refreshes, release checks, and update downloads (`network`); renderer log forwarding (`rendererLogging`) |
-| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                                                                                                  |
-| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                                                                                                         |
+| Boundary                 | Enforced operations                                                                                                                                                                                                                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global IPC buckets       | Native file/shell actions, Wiki source selection/staging, release-page opening, verified installer-folder reveal, and Wiki external-link opening (`fsOperations`); cloud-status refreshes, release checks, and update downloads (`network`); renderer log forwarding (`rendererLogging`) |
+| Keyed privileged buckets | Protected login, pairing-code verification, signed commands, and the separately budgeted Wiki upload command plane                                                                                                                                                                       |
+| Relay Web route buckets  | Per-address session login and per-session refresh, operational mutation, protected-command, Wiki file/search/upload, and browser-log routes                                                                                                                                              |
 
 `fileImport`, `dataMutation`, and `dataReload` are defined as reusable global buckets but have no current production call sites; do not rely on those definitions as enforced controls. Global and privileged denials are logged without the opaque caller key. Relay Web returns HTTP 429 with `Retry-After`.
 

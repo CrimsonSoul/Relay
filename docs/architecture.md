@@ -153,73 +153,57 @@ a background refresh of GitHub's fixed release-history endpoint. The cache holds
 releases, bounds every field and the complete response, and keeps its serialized file at or below
 512 KiB by retaining the newest entries that fit. It preserves immutable entries by version and
 persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again. An
-offline or malformed refresh leaves the last valid cache readable and cannot affect update discovery
-or installation.
-Updater notes are accepted only when their version matches the manager-authoritative active update.
-If discovery advances while an older update is installing or restart-ready, the renderer retains
-only the older version's matching notes rather than attaching the newer release body.
+offline or malformed refresh leaves the last valid cache readable and cannot affect update
+discovery or download. Updater notes are accepted only when their version matches the
+manager-authoritative active update. If discovery advances while an older update is downloaded, the
+renderer retains only the older version's matching notes rather than attaching the newer release body.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
-produces one advisory toast per version, persisted in local renderer storage, with a **Review
-update** action. The validated latest version also drives a non-dismissible header indicator that
-remains visible until the installed version is current and changes to Downloading, Install, or
-Restart as the operator progresses. A failed refresh does not clear a previously confirmed update,
-and a same-version check cannot overwrite a download or restart-ready state.
+produces one advisory toast per version, persisted in local renderer storage, with a **Review update**
+action. The validated latest version also drives a non-dismissible header indicator that remains
+visible until the installed version is current and changes to Downloading, Ready, or Update issue as
+the operator progresses. A failed refresh does not clear a previously confirmed update, and a
+same-version check cannot overwrite download progress or a verified staged installer.
 
 The **Update Relay** dialog is the only renderer workflow. Its fixed preload actions carry no URL,
 path, filename, or command argument from the renderer. Its release-review action may carry only a
 validated normal version, which the main process expands beneath Relay's fixed Releases URL.
-`ReleaseUpdateManager` owns the
-state machine and requires separate **Download update**, **Install update**, and **Restart Relay**
-requests. Unsupported or unpackaged desktop runtimes retain notification-only GitHub review and do
-not expose an enabled install action. The downloader re-fetches the release before use, follows at
-most three HTTPS redirects across the fixed GitHub asset host set, streams to an exclusive `.part`
-file in a protected per-version directory under `%LOCALAPPDATA%\Relay\Updates`, atomically renames
-the verified file, and requires the byte count and GitHub digest to match. The checksum
-file must independently name the exact ZIP and declare that same digest. The ZIP reader accepts one
-regular, non-encrypted top-level member named `Relay.exe`, bounds expansion, validates CRC and the
-Windows executable marker, and rejects traversal, links, directories, and unsupported compression.
-The immutable-release re-fetch shares the operator download's abort signal, and its request deadline
-remains active until the bounded response body has been consumed and validated. Cancelling during
-that metadata step drains the single-flight operation, restores the available state, and permits an
-immediate retry; a deadline failure remains a retryable download failure.
+`ReleaseUpdateManager` owns a two-stage **Download update** and **Install manually** state machine.
+Unsupported or unpackaged desktop runtimes retain notification-only GitHub review and do not expose an
+enabled download action. The downloader re-fetches the release before use, follows at most three HTTPS
+redirects across the fixed GitHub asset host set, streams to an exclusive `.part` file in a protected
+per-version directory under `%LOCALAPPDATA%\Relay\Updates`, atomically renames the verified file,
+and requires the byte count and GitHub digest to match. The checksum file must independently name the
+exact ZIP and declare that same digest. The ZIP reader accepts one regular, non-encrypted top-level
+member named `Relay.exe`, bounds expansion, validates CRC and the Windows executable marker, and
+rejects traversal, links, directories, and unsupported compression. The immutable-release re-fetch
+shares the operator download's abort signal, and its request deadline remains active until the bounded
+response body has been consumed and validated. Cancelling during that metadata step drains the
+single-flight operation, restores the available state, and permits an immediate retry; a deadline
+failure remains a retryable download failure.
 
-Immediately before execution, the manager revalidates the private staging path and re-hashes the
-extracted executable. Installation launches that exact file with the fixed `/relay-prepare-only`
-argument, which lets the existing persistent Windows bootstrap prepare and activate the new runtime
-without closing the current process. A successful preparation changes the state to restart-ready;
-only the final explicit action validates and relaunches through `%LOCALAPPDATA%\Relay\Relay.exe`.
-If Relay exits after successful preparation but before the explicit restart, the stable launcher
-validates the pending request and prepared runtime, preserves both recovery records, and starts the
-current runtime. The new main process independently revalidates the fixed recovery paths, source
-identity, request and receipt fields, catalog or legacy state, and complete target-runtime contents
-before restoring the restart-ready action. It never completes the checkpoint or activates the
-candidate without the operator's final **Restart Relay** action.
+After extraction, Relay retains the expected installer size and SHA-256 digest with the staged path.
+The **Exit Relay and open installer folder** action carries no renderer path. The manager resolves the
+exact private staging path again, rejects redirects or a non-regular file, rechecks the executable
+marker and byte count, and re-hashes the file immediately before asking Electron to reveal it in
+Explorer. Any mismatch removes the staging directory and leaves Relay open in an error state. A folder
+reveal failure preserves the verified staging directory for a deliberate retry. Only a successful
+reveal causes the main process to quit the complete application; Relay never launches the installer
+or changes the active runtime. The operator runs the revealed `Relay.exe` manually, after Relay has
+exited.
 
-The normal path binds preparation to a protocol-2 recovery transaction. If that protected
-preparation fails while `state.ini` is still protocol 1 and its path-safe current build is the
-runtime actually executing, the manager removes its request, revalidates the staged installer,
-re-resolves the legacy state, and retries once with direct prepare-only activation. This is the
-in-app equivalent of the supported legacy manual upgrade: the native bootstrap validates and
-retains the prior runtime, and Restart still uses the stable launcher. A protocol-2 catalog, a
-mismatched running build, redirected state, changed installer, or a second bootstrap failure cannot
-use this compatibility path.
-Before each native preparation attempt the manager removes the fixed bootstrap failure record. A
-failed attempt may read back only a bounded, regular, non-redirected `bootstrap-error.ini` directly
-beneath the managed Relay root. The read is capped on the opened handle and rejects identity or
-metadata changes. Relay uses fatal UTF-8 or UTF-16LE decoding and accepts only its strict `[Relay]`
-message record with an exact, fixed bootstrap reason; stale, replaced, unknown, or malformed content
-is ignored. Relay logs the target version, preparation stage, exit or spawn code, native reason, and
-legacy-fallback outcome without logging the installer path, process arguments, or transaction ID.
-Cancellation and failures remove untrusted partial data, while a bootstrap failure retains the
-verified installer for a deliberate retry. Startup cleanup removes only recognized updater staging
-directories older than 24 hours, leaving recent or unrelated paths untouched.
+Startup cleanup removes only recognized updater staging directories older than 24 hours, leaving
+recent or unrelated paths untouched. Recovery catalog access in the manager is read-only and used
+only to reject a quarantined immutable release fingerprint. The in-app updater does not create or
+complete recovery requests, prepare runtimes, stop services, invoke the bootstrap, or relaunch Relay.
+Native installer activation and retained-build rollback remain separate Windows installer/launcher
+responsibilities.
 
 Discovery failures remain silent and do not affect startup or normal Relay work. Explicit action
 failures appear inside the dialog or as a recovery toast. Relay Web has none of the release-check,
-download, install, restart, notification, or indicator capabilities. The GitHub immutable release
-and protected release workflow are the update trust root; the downloaded bootstrap does not have an
-independent publisher signature.
+download, reveal, notification, or indicator capabilities. The GitHub immutable release and protected
+release workflow are the update trust root; the downloaded bootstrap does not have an independent
+publisher signature.
 
 ### Windows retained-build recovery
 
