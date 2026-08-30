@@ -332,10 +332,10 @@ accessible names. Keyboard hints describe only actions available for the active 
 
 When packaged desktop Relay discovers a newer normal release, the global header action area shows a
 compact `TactileButton` before the world clock. Wide and full-screen layouts use a concise state
-label: `Update`, `Downloading`, `Install`, `Installing`, `Restart`, or `Update issue`, followed by
-`· vX.Y.Z`. At the existing 1200 px compact-shell breakpoint and below, the state label contracts to
-`vX.Y.Z`. The version always comes from the latest validated release response and changes when a
-later release is discovered. Its accessible name includes both the version and current action.
+label: `Update`, `Downloading`, `Ready`, or `Update issue`, followed by `· vX.Y.Z`. At the
+existing 1200 px compact-shell breakpoint and below, the state label contracts to `vX.Y.Z`. The
+version always comes from the latest validated release response and changes when a later release is
+discovered. Its accessible name includes both the version and current action.
 
 The indicator uses a static accent dot, accent-bright text, a restrained accent tint, the standard
 2 px control radius, and the shared focus treatment. It does not pulse, glow, use ambient
@@ -346,26 +346,31 @@ fixed GitHub Releases page. The control remains visible on every tab until the i
 current; a transient refresh failure or repeated same-version check does not erase a previously
 confirmed update or manual progress.
 
-The dialog uses a 680 px standard modal shell and a single three-stage line for Download, Install,
-and Restart. It names the current stage, shows bounded byte progress during download, explains the
-immutable-GitHub and SHA-256 trust model, and discloses that publisher signing is not included.
-Between current status and integrity details, it presents **What's new in vX.Y.Z** with the release
-date and a bounded reader for headings, paragraphs, lists, emphasis, and inline code. The notes use
-the main content hierarchy rather than a nested card; long bodies scroll inside the reader while the
-update actions remain reachable. Release text becomes a limited set of React nodes rather than raw
-HTML; Markdown link labels remain readable text without activating release-authored destinations.
-Buttons name the exact next action. Download, install, and restart are never combined; cancellation
-is offered only while downloading, and installation temporarily prevents dismissal while the
-Windows bootstrap prepares the runtime. **View on GitHub** remains a secondary action throughout
-the flow, including download, preparation, restart-ready, and error states. Mutable releases replace
-installation controls with that review action. Failures name what failed and present only a valid recovery such as **Retry download**,
-**Retry install**, **Check again**, or **Retry restart**.
+The dialog uses a 680 px standard modal shell and a two-stage line for Download and Install manually.
+It names the current stage, shows bounded byte progress during download, explains the immutable-GitHub
+and SHA-256 trust model, and discloses that publisher signing is not included. The determinate meter
+uses square ends and no width transition so partial progress never tapers or visually overshoots the
+reported byte ratio. Between current status and integrity details, the dialog presents **What's new in
+vX.Y.Z** with the release date and a bounded reader for headings, paragraphs, lists, emphasis, and
+inline code. The notes use the main content hierarchy rather than a nested card; long bodies scroll
+inside the reader while the update actions remain reachable. Release text becomes a limited set of
+React nodes rather than raw HTML; Markdown link labels remain readable text without activating
+release-authored destinations.
+
+Buttons name the exact next action. Relay downloads and verifies the immutable archive only after the
+explicit **Download update** action; cancellation is offered only while downloading. After extraction,
+**Exit Relay and open installer folder** asks the main process to revalidate the exact staged
+`Relay.exe`, reveal it in Explorer, and quit the complete application. Relay never executes the
+installer. Reveal or validation failure keeps Relay open and offers a retry. **View on GitHub** remains
+a secondary action throughout. Mutable releases replace download controls with that review action.
+Failures name what failed and present only a valid recovery such as **Retry download**, **Check again**,
+or **Try opening the installer folder again**.
 
 The compact label must remain visible when the sidebar rests at 64 px. It may not shrink, wrap,
 overlap the centered search control or platform window controls, or disappear with the world clock.
 At 720 px and below, the breadcrumb and search shortcut badge yield space while the search field
 remains shrinkable, preserving the indicator through Relay's 400 px desktop window minimum.
-At 520 px and below, modal footer actions stack at full width while the three-stage line remains a
+At 520 px and below, modal footer actions stack at full width while the two-stage line remains a
 single readable row. The one-time toast announces each newly discovered version with **Review
 update**; the persistent control itself is not a repeatedly announced live region. Relay Web and
 pop-out windows do not render it.

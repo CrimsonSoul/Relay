@@ -90,7 +90,7 @@ describe('compact Relay shell', () => {
     const narrowUpdateBlock = mediaBlock(responsiveCss, 'max-width: 520px') ?? '';
 
     expect(componentsCss).toMatch(
-      /\.release-update-modal__steps\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/u,
+      /\.release-update-modal__steps\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/u,
     );
     expect(narrowUpdateBlock).toMatch(
       /\.release-update-modal \.modal-footer-generic\s*\{[^}]*flex-direction:\s*column/u,

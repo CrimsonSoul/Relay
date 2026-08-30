@@ -324,13 +324,13 @@ jobs:
           -ExpectedPreviousBuildId "$env:RELAY_EXPECTED_PREVIOUS_BUILD_ID"
           -ExpectedTargetVersion "${{ steps.updater-fixture-versions.outputs.target }}"
 
-      - name: Exercise updater manager through native install and restart
+      - name: Exercise verified updater download and reveal
         shell: pwsh
         env:
           RELAY_UPDATER_INTEGRATION_CONFIRM: 1
           RELAY_UPDATER_INTEGRATION_ROOT: ${{ runner.temp }}\relay-boundary-${{ github.run_id }}-${{ github.run_attempt }}\Relay
           RELAY_UPDATER_INTEGRATION_CURRENT_ARTIFACT: ${{ runner.temp }}\RelayBoundaryPrevious.exe
-          RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT: ./release/Relay.exe
+          RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT: ${{ runner.temp }}\RelayProduction.exe
           RELAY_UPDATER_INTEGRATION_ARCHIVE: ${{ runner.temp }}\relay-updater-assets\Relay-v${{ steps.updater-fixture-versions.outputs.target }}-windows-x64.zip
           RELAY_UPDATER_INTEGRATION_CHECKSUM: ${{ runner.temp }}\relay-updater-assets\Relay-v${{ steps.updater-fixture-versions.outputs.target }}-windows-x64.zip.sha256
           RELAY_UPDATER_INTEGRATION_CURRENT_BUILD_ID: h0-${{ inputs.source-sha }}
@@ -341,7 +341,9 @@ jobs:
         run: |
           $assetRoot = Split-Path -Parent $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
           New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
-          Compress-Archive -LiteralPath $env:RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT -DestinationPath $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
+          $archiveSource = Join-Path $assetRoot 'Relay.exe'
+          Copy-Item -LiteralPath $env:RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT -Destination $archiveSource
+          Compress-Archive -LiteralPath $archiveSource -DestinationPath $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
           $archiveName = Split-Path -Leaf $env:RELAY_UPDATER_INTEGRATION_ARCHIVE
           $archiveHash = (Get-FileHash -LiteralPath $env:RELAY_UPDATER_INTEGRATION_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText(

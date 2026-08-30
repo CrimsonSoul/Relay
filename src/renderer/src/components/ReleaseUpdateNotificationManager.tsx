@@ -48,18 +48,8 @@ function indicatorPresentation(update: RelayUpdateSnapshot): {
       };
     case 'downloaded':
       return {
-        label: 'Install',
-        ariaLabel: `Relay v${version} is downloaded. Review update`,
-      };
-    case 'installing':
-      return {
-        label: 'Installing',
-        ariaLabel: `Relay v${version} is being prepared. Review update`,
-      };
-    case 'ready-to-restart':
-      return {
-        label: 'Restart',
-        ariaLabel: `Relay v${version} is ready to restart. Review update`,
+        label: 'Ready',
+        ariaLabel: `Relay v${version} is verified and ready. Review update`,
       };
     case 'error':
       return {
@@ -81,8 +71,7 @@ function supportsManualUpdateFlow(): boolean {
     api?.getUpdateState &&
     api.downloadUpdate &&
     api.cancelUpdateDownload &&
-    api.installUpdate &&
-    api.restartToUpdate,
+    api.revealUpdateInstaller,
   );
 }
 
@@ -245,29 +234,19 @@ export function ReleaseUpdateNotificationManager() {
     }
   }, [showToast]);
 
-  const handleInstall = useCallback(() => {
-    void runSnapshotAction(
-      globalThis.api?.installUpdate,
-      'Relay could not prepare the update. Try again.',
-    );
-  }, [runSnapshotAction]);
-
-  const handleRestart = useCallback(async () => {
+  const handleRevealInstaller = useCallback(async () => {
     if (actionRef.current) return;
     actionRef.current = true;
     try {
-      const result = await globalThis.api?.restartToUpdate?.();
-      if (!result?.success || result.data !== true) {
-        throw new Error('Update restart unavailable');
+      const result = await globalThis.api?.revealUpdateInstaller?.();
+      if (!result?.success || result.data?.phase !== 'downloaded') {
+        throw new Error('Verified installer folder unavailable');
       }
+      if (mountedRef.current) setUpdate(result.data);
     } catch {
-      showToast(
-        'Relay could not restart into the update. Keep Relay open and try again.',
-        'error',
-        {
-          title: 'Restart unavailable',
-        },
-      );
+      showToast('Relay could not open the verified installer folder. Try again.', 'error', {
+        title: 'Installer folder unavailable',
+      });
     } finally {
       actionRef.current = false;
     }
@@ -296,8 +275,7 @@ export function ReleaseUpdateNotificationManager() {
         onClose={() => setIsModalOpen(false)}
         onDownload={handleDownload}
         onCancelDownload={() => void handleCancelDownload()}
-        onInstall={handleInstall}
-        onRestart={() => void handleRestart()}
+        onRevealInstaller={() => void handleRevealInstaller()}
         onCheckAgain={() => void checkForRelease()}
         onOpenReleases={() => void handleOpenReleases(update.latestVersion ?? undefined)}
       />

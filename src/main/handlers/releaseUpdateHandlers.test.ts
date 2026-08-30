@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   fsTryConsume: vi.fn(() => ({ allowed: true })),
   suppressDesktopSideEffects: vi.fn(() => false),
   broadcastToAllWindows: vi.fn(),
-  requestAppRelaunch: vi.fn(),
   releaseUpdateManager: vi.fn(),
   mainInfo: vi.fn(),
   mainWarn: vi.fn(),
@@ -29,7 +28,10 @@ vi.mock('electron', () => ({
     quit: vi.fn(),
   },
   ipcMain: { handle: vi.fn() },
-  shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
+  shell: {
+    openExternal: vi.fn().mockResolvedValue(undefined),
+    showItemInFolder: vi.fn(),
+  },
 }));
 
 vi.mock('../utils/trustedSender', () => ({
@@ -45,10 +47,6 @@ vi.mock('../rateLimiter', () => ({
 
 vi.mock('../app/e2eSafety', () => ({
   shouldSuppressDesktopSideEffects: mocks.suppressDesktopSideEffects,
-}));
-
-vi.mock('../app/relaunch', () => ({
-  requestAppRelaunch: mocks.requestAppRelaunch,
 }));
 
 vi.mock('../releases/ReleaseUpdateManager', () => ({
@@ -93,8 +91,12 @@ describe('release update handlers', () => {
   const noteCheck = vi.fn(async () => updateSnapshot);
   const download = vi.fn(async () => ({ ...updateSnapshot, phase: 'downloaded' as const }));
   const cancelDownload = vi.fn(async () => updateSnapshot);
-  const install = vi.fn(async () => ({ ...updateSnapshot, phase: 'ready-to-restart' as const }));
-  const restart = vi.fn(async () => true);
+  const revealInstaller = vi.fn(
+    async (): Promise<{ revealed: boolean; snapshot: RelayUpdateSnapshot }> => ({
+      revealed: true,
+      snapshot: { ...updateSnapshot, phase: 'downloaded' },
+    }),
+  );
   let stateListener: ((value: RelayUpdateSnapshot) => void) | null = null;
 
   beforeEach(() => {
@@ -113,8 +115,10 @@ describe('release update handlers', () => {
     noteCheck.mockResolvedValue(updateSnapshot);
     download.mockResolvedValue({ ...updateSnapshot, phase: 'downloaded' });
     cancelDownload.mockResolvedValue(updateSnapshot);
-    install.mockResolvedValue({ ...updateSnapshot, phase: 'ready-to-restart' });
-    restart.mockResolvedValue(true);
+    revealInstaller.mockResolvedValue({
+      revealed: true,
+      snapshot: { ...updateSnapshot, phase: 'downloaded' },
+    });
     vi.mocked(app.getVersion).mockReturnValue('1.0.0');
     vi.mocked(shell.openExternal).mockResolvedValue(undefined);
     for (const channel of Object.keys(handlers)) delete handlers[channel];
@@ -140,8 +144,7 @@ describe('release update handlers', () => {
         noteCheck,
         download,
         cancelDownload,
-        install,
-        restart,
+        revealInstaller,
       },
     });
   });
@@ -213,7 +216,7 @@ describe('release update handlers', () => {
       assetSizeBytes: 150_000_000,
       releaseNotes: { ...releaseNotes, version: '1.2.0', title: 'Relay v1.2.0' },
     });
-    noteCheck.mockResolvedValueOnce({ ...updateSnapshot, phase: 'ready-to-restart' });
+    noteCheck.mockResolvedValueOnce({ ...updateSnapshot, phase: 'downloaded' });
 
     await expect(invoke(IPC_CHANNELS.APP_CHECK_FOR_UPDATES)).resolves.toMatchObject({
       success: true,
@@ -238,7 +241,7 @@ describe('release update handlers', () => {
     expect(refreshReleaseNotes).toHaveBeenCalledOnce();
   });
 
-  it('exposes only fixed updater state and manual lifecycle actions', async () => {
+  it('exposes fixed updater state, download, cancel, and verified-folder actions', async () => {
     await expect(invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE)).resolves.toEqual(updateSnapshot);
     expect(readySnapshot).toHaveBeenCalledOnce();
     await expect(invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD)).resolves.toEqual({
@@ -249,61 +252,75 @@ describe('release update handlers', () => {
       success: true,
       data: updateSnapshot,
     });
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_INSTALL)).resolves.toEqual({
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
       success: true,
-      data: { ...updateSnapshot, phase: 'ready-to-restart' },
-    });
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_RESTART)).resolves.toEqual({
-      success: true,
-      data: true,
+      data: { ...updateSnapshot, phase: 'downloaded' },
     });
 
     expect(download).toHaveBeenCalledOnce();
     expect(cancelDownload).toHaveBeenCalledOnce();
-    expect(install).toHaveBeenCalledOnce();
-    expect(restart).toHaveBeenCalledOnce();
+    expect(revealInstaller).toHaveBeenCalledOnce();
+    expect(app.quit).toHaveBeenCalledOnce();
   });
 
-  it('records bounded lifecycle outcomes for field diagnosis', async () => {
+  it('does not quit when verified-folder reveal returns an error snapshot', async () => {
+    revealInstaller.mockResolvedValueOnce({
+      revealed: false,
+      snapshot: { ...updateSnapshot, phase: 'error', failureCode: 'reveal-failed' },
+    });
+
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
+      success: false,
+      error: 'reveal-failed',
+    });
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('does not infer reveal success from a downloaded snapshot', async () => {
+    revealInstaller.mockResolvedValueOnce({
+      revealed: false,
+      snapshot: { ...updateSnapshot, phase: 'downloaded' },
+    });
+
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
+      success: false,
+      error: 'unavailable',
+    });
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('records bounded download and folder-reveal outcomes for field diagnosis', async () => {
     await invoke(IPC_CHANNELS.APP_UPDATE_DOWNLOAD);
-    await invoke(IPC_CHANNELS.APP_UPDATE_INSTALL);
-    await invoke(IPC_CHANNELS.APP_UPDATE_RESTART);
+    await invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER);
 
     expect(mocks.mainInfo).toHaveBeenCalledWith('Relay update download completed', {
+      ...updateSnapshot,
       phase: 'downloaded',
-      currentVersion: '1.0.0',
-      latestVersion: '1.1.0',
-      installable: true,
-      downloadedBytes: 0,
-      totalBytes: 140_000_000,
-      failureCode: null,
     });
-    expect(mocks.mainInfo).toHaveBeenCalledWith('Relay update installation completed', {
-      phase: 'ready-to-restart',
-      currentVersion: '1.0.0',
-      latestVersion: '1.1.0',
-      installable: true,
-      downloadedBytes: 0,
-      totalBytes: 140_000_000,
-      failureCode: null,
+    expect(mocks.mainInfo).toHaveBeenCalledWith('Relay verified installer folder opened', {
+      ...updateSnapshot,
+      phase: 'downloaded',
     });
   });
 
-  it('routes the production restart handoff through the lifecycle helper', async () => {
-    const stableLauncher = 'C:\\Users\\Ryan\\AppData\\Local\\Relay\\Relay.exe';
+  it('injects Electron folder reveal into the production update manager', async () => {
+    const stagedInstaller = 'C:/Users/Ryan/AppData/Local/Relay/Updates/v1.1.0-test/Relay.exe';
     mocks.releaseUpdateManager.mockImplementation(function releaseUpdateManager(options: {
-      restartApp: (execPath: string) => void;
+      revealInstaller: (path: string) => void;
     }) {
       return {
         snapshot,
+        readySnapshot,
         subscribe,
         noteCheck,
         download,
         cancelDownload,
-        install,
-        restart: async () => {
-          options.restartApp(stableLauncher);
-          return true;
+        revealInstaller: async () => {
+          options.revealInstaller(stagedInstaller);
+          return {
+            revealed: true,
+            snapshot: { ...updateSnapshot, phase: 'downloaded' as const },
+          };
         },
       };
     });
@@ -315,47 +332,11 @@ describe('release update handlers', () => {
     };
     setupReleaseUpdateHandlers({ service: installableService });
 
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_RESTART)).resolves.toEqual({
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
       success: true,
-      data: true,
+      data: { ...updateSnapshot, phase: 'downloaded' },
     });
-
-    expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('release-update', {
-      execPath: stableLauncher,
-    });
-  });
-
-  it('records native installer diagnostics emitted by the production updater', async () => {
-    const diagnostic = {
-      targetVersion: '1.1.0',
-      outcome: 'failed' as const,
-      protectedAttempt: {
-        stage: 'protected-preparation' as const,
-        exitCode: 1,
-        nativeReason: 'Relay could not activate the prepared build.',
-        spawnErrorCode: null,
-      },
-      legacyFallback: 'ineligible' as const,
-      fallbackAttempt: null,
-    };
-    mocks.releaseUpdateManager.mockImplementation(function releaseUpdateManager(options: {
-      onInstallDiagnostic?: (value: typeof diagnostic) => void;
-    }) {
-      expect(options.onInstallDiagnostic).toBeTypeOf('function');
-      options.onInstallDiagnostic?.(diagnostic);
-      return { snapshot, subscribe, noteCheck, download, cancelDownload, install, restart };
-    });
-    const installableService = {
-      check,
-      getCachedReleaseNotes,
-      refreshReleaseNotes,
-      resolveLatestInstallable: vi.fn(),
-    };
-    setupReleaseUpdateHandlers({ service: installableService });
-
-    await invoke(IPC_CHANNELS.APP_UPDATE_GET_STATE);
-
-    expect(mocks.mainWarn).toHaveBeenCalledWith('Update', diagnostic);
+    expect(shell.showItemInFolder).toHaveBeenCalledWith(stagedInstaller);
   });
 
   it('broadcasts bounded updater snapshots without renderer-provided paths or URLs', async () => {
@@ -387,18 +368,13 @@ describe('release update handlers', () => {
       success: false,
       error: 'untrusted-sender',
     });
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_INSTALL)).resolves.toEqual({
-      success: false,
-      error: 'untrusted-sender',
-    });
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_RESTART)).resolves.toEqual({
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
       success: false,
       error: 'untrusted-sender',
     });
     expect(check).not.toHaveBeenCalled();
     expect(download).not.toHaveBeenCalled();
-    expect(install).not.toHaveBeenCalled();
-    expect(restart).not.toHaveBeenCalled();
+    expect(revealInstaller).not.toHaveBeenCalled();
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 
@@ -418,15 +394,14 @@ describe('release update handlers', () => {
     expect(download).not.toHaveBeenCalled();
   });
 
-  it('returns a typed rate-limit result for restart requests', async () => {
+  it('rate-limits verified installer folder requests', async () => {
     mocks.fsTryConsume.mockReturnValue({ allowed: false });
 
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_RESTART)).resolves.toEqual({
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
       success: false,
       error: 'rate-limited',
-      rateLimited: true,
     });
-    expect(restart).not.toHaveBeenCalled();
+    expect(revealInstaller).not.toHaveBeenCalled();
   });
 
   it('suppresses updater filesystem and process side effects during isolated Electron tests', async () => {
@@ -436,18 +411,13 @@ describe('release update handlers', () => {
       success: true,
       data: updateSnapshot,
     });
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_INSTALL)).resolves.toEqual({
+    await expect(invoke(IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)).resolves.toEqual({
       success: true,
       data: updateSnapshot,
     });
-    await expect(invoke(IPC_CHANNELS.APP_UPDATE_RESTART)).resolves.toEqual({
-      success: true,
-      data: true,
-    });
 
     expect(download).not.toHaveBeenCalled();
-    expect(install).not.toHaveBeenCalled();
-    expect(restart).not.toHaveBeenCalled();
+    expect(revealInstaller).not.toHaveBeenCalled();
   });
 
   it('contains release-check failures behind a generic result', async () => {
