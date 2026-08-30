@@ -489,6 +489,42 @@ describe('Windows NSIS bootstrap contract', () => {
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
     const smoke = read('scripts/windows-bootstrap-smoke.ps1');
 
+    expect(source).toContain('WriteINIStr "$RelayMarker" "Relay" "installerSha256"');
+    expect(source).toContain(
+      'ReadINIStr $RelayMarkerInstallerHash "$RelayMarker" "Relay" "installerSha256"',
+    );
+    expect(source).toContain('$RelayMarkerInstallerHash == $RelayRequestInstallerHash');
+    expect(source).toContain(
+      'WriteINIStr "$RelayMarker" "Relay" "installerSha256" "$RelayRequestInstallerHash"',
+    );
+    expect(source).toContain(
+      'WriteINIStr "$RelayMarker" "Relay" "installerSha256" "$RelayRepairInstallerHash"',
+    );
+    const installedAtWrite = source.indexOf(
+      'WriteINIStr "$RelayMarker" "Relay" "installedAt" "${RELAY_PACKAGED_AT}"',
+    );
+    const requestInstallerWrite = source.indexOf(
+      'WriteINIStr "$RelayMarker" "Relay" "installerSha256" "$RelayRequestInstallerHash"',
+    );
+    const integrityStart = source.indexOf(
+      'WriteINIStr "$RelayMarker" "Integrity" "executableSha512"',
+    );
+    expect(requestInstallerWrite).toBeGreaterThan(installedAtWrite);
+    expect(requestInstallerWrite).toBeLessThan(integrityStart);
+    const integrityEnd = source.indexOf('WriteINIStr "$RelayMarker" "Integrity" "koffiSha512"');
+    const legacyMarkerHash = source.indexOf(
+      '${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"',
+      integrityEnd,
+    );
+    const repairInstallerWrite = source.indexOf(
+      'WriteINIStr "$RelayMarker" "Relay" "installerSha256" "$RelayRepairInstallerHash"',
+    );
+    const reboundMarkerHash = source.indexOf(
+      '${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"',
+      repairInstallerWrite,
+    );
+    expect(repairInstallerWrite).toBeGreaterThan(legacyMarkerHash);
+    expect(reboundMarkerHash).toBeGreaterThan(repairInstallerWrite);
     expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "executableSha512"');
     expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "appAsarSha512"');
     expect(source).toContain('WriteINIStr "$RelayMarker" "Integrity" "pocketbaseSha512"');

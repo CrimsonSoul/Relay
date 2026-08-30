@@ -35,6 +35,7 @@ Var RelayMarkerProtocol
 Var RelayMarkerBuildId
 Var RelayMarkerExecutable
 Var RelayMarkerPayloadHash
+Var RelayMarkerInstallerHash
 Var RelayMarkerHash
 Var RelayExecutableHash
 Var RelayD3dCompilerHash
@@ -424,6 +425,7 @@ Section
   ReadINIStr $RelayMarkerBuildId "$RelayMarker" "Relay" "buildId"
   ReadINIStr $RelayMarkerExecutable "$RelayMarker" "Relay" "executable"
   ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
+  ReadINIStr $RelayMarkerInstallerHash "$RelayMarker" "Relay" "installerSha256"
   ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
   !insertmacro RelayVerifyRuntimeContent "$RelayFinalRuntime" "$RelayMarker" $RelayContentIntegrity
   StrCpy $RelayResult "0"
@@ -437,8 +439,15 @@ Section
   ${AndIf} $RelayMarkerPayloadHash == "${APP_64_HASH}"
   ${AndIf} $RelayContentIntegrity == "1"
   ${AndIf} $RelayResult != "0"
-    ${If} $RelayRepairOnly != "${RELAY_REPAIR_ONLY_ARGUMENT}"
-    ${OrIf} $RelayRepairCatalogRuntimeHash == $RelayMarkerHash
+    ${If} $RelayRepairOnly == "${RELAY_REPAIR_ONLY_ARGUMENT}"
+      ${If} $RelayRepairCatalogRuntimeHash == $RelayMarkerHash
+        Goto RuntimeReady
+      ${EndIf}
+    ${ElseIf} $RelayTransactionId != ""
+      ${If} $RelayMarkerInstallerHash == $RelayRequestInstallerHash
+        Goto RuntimeReady
+      ${EndIf}
+    ${Else}
       Goto RuntimeReady
     ${EndIf}
   ${EndIf}
@@ -512,6 +521,10 @@ Section
   WriteINIStr "$RelayMarker" "Relay" "serverDataEpoch" "${RELAY_SERVER_DATA_EPOCH}"
   WriteINIStr "$RelayMarker" "Relay" "clientDataEpoch" "${RELAY_CLIENT_DATA_EPOCH}"
   WriteINIStr "$RelayMarker" "Relay" "installedAt" "${RELAY_PACKAGED_AT}"
+  ${If} $RelayRepairOnly != "${RELAY_REPAIR_ONLY_ARGUMENT}"
+  ${AndIf} $RelayTransactionId != ""
+    WriteINIStr "$RelayMarker" "Relay" "installerSha256" "$RelayRequestInstallerHash"
+  ${EndIf}
   WriteINIStr "$RelayMarker" "Integrity" "executableSha512" "$RelayExecutableHash"
   WriteINIStr "$RelayMarker" "Integrity" "d3dCompilerSha512" "$RelayD3dCompilerHash"
   WriteINIStr "$RelayMarker" "Integrity" "dxCompilerSha512" "$RelayDxCompilerHash"
@@ -536,9 +549,19 @@ Section
   ${EndIf}
   ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
   ${If} $RelayRepairOnly == "${RELAY_REPAIR_ONLY_ARGUMENT}"
-  ${AndIf} $RelayRepairCatalogRuntimeHash != $RelayMarkerHash
-    StrCpy $RelayFailureMessage "Relay rejected changed retained-build runtime contents."
-    Goto BootstrapFailed
+    ${If} $RelayRepairCatalogRuntimeHash != $RelayMarkerHash
+    ${AndIf} $RelayRepairCatalogInstallerHash != ""
+      ClearErrors
+      WriteINIStr "$RelayMarker" "Relay" "installerSha256" "$RelayRepairInstallerHash"
+      IfErrors 0 +3
+        StrCpy $RelayFailureMessage "Relay could not finalize the new runtime."
+        Goto BootstrapFailed
+      ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+    ${EndIf}
+    ${If} $RelayRepairCatalogRuntimeHash != $RelayMarkerHash
+      StrCpy $RelayFailureMessage "Relay rejected changed retained-build runtime contents."
+      Goto BootstrapFailed
+    ${EndIf}
   ${EndIf}
   !insertmacro RelayHarnessFail ".fail-after-marker" "Relay harness stopped after marker creation."
 

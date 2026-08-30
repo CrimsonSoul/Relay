@@ -51,7 +51,14 @@ describe('RecoveryRepairRequest', () => {
     expect(parseRecoveryRepairRequest(serializeRecoveryRepairRequest(REQUEST))).toEqual(REQUEST);
     expect(parseRecoveryRepairReceipt(serializeRecoveryRepairReceipt(RECEIPT))).toEqual(RECEIPT);
   });
+  it('canonicalizes the uppercase runtime digest written by the native bootstrap', () => {
+    const nativeReceipt = serializeRecoveryRepairReceipt(RECEIPT).replace(
+      RECEIPT.runtimeSha512,
+      RECEIPT.runtimeSha512.toUpperCase(),
+    );
 
+    expect(parseRecoveryRepairReceipt(nativeReceipt)).toEqual(RECEIPT);
+  });
   it.each([
     ['a path-like build id', 'targetBuildId=..'],
     ['a mutable commit identity', 'targetCommitish=main'],

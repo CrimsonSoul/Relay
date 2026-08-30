@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
 import { RecoveryManager } from './RecoveryManager';
 import { parseRecoveryRollbackRequest } from './RecoveryRollbackRequest';
+import { readRecoveryRuntimeMarker } from './RecoveryRuntimeIntegrity';
 
 const SHA512_A = 'a'.repeat(128);
 const SHA512_B = 'b'.repeat(128);
@@ -96,8 +97,8 @@ function runtimeFileHash(relativePath: string): string {
   return createHash('sha512').update(runtimeContents.get(relativePath)!).digest('hex');
 }
 
-function runtimeMarker(record: RecoveryBuildRecord): string {
-  return `${[
+function runtimeMarker(record: RecoveryBuildRecord, uppercaseIntegrity = false): string {
+  const marker = `${[
     '[Relay]',
     'protocol=2',
     `buildId=${record.buildId}`,
@@ -126,9 +127,18 @@ function runtimeMarker(record: RecoveryBuildRecord): string {
     `betterSqlite3Sha512=${runtimeFileHash(join('resources', 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'))}`,
     `koffiSha512=${runtimeFileHash(join('resources', 'app.asar.unpacked', 'node_modules', '@koromix', 'koffi-win32-x64', 'win32_x64', 'koffi.node'))}`,
   ].join('\n')}\n`;
+  return uppercaseIntegrity
+    ? marker.replace(
+        /Sha512=([0-9a-f]{128})/gu,
+        (_match, hash: string) => `Sha512=${hash.toUpperCase()}`,
+      )
+    : marker;
 }
 
-async function makeRuntime(record: RecoveryBuildRecord): Promise<string> {
+async function makeRuntime(
+  record: RecoveryBuildRecord,
+  uppercaseIntegrity = false,
+): Promise<string> {
   const directory = join(relayRoot, 'Runtime', record.buildId);
   await mkdir(directory, { recursive: true });
   for (const [relativePath, contents] of runtimeContents) {
@@ -136,7 +146,10 @@ async function makeRuntime(record: RecoveryBuildRecord): Promise<string> {
     await mkdir(join(path, '..'), { recursive: true });
     await writeFile(path, contents);
   }
-  await writeFile(join(directory, '.relay-runtime-ready'), runtimeMarker(record));
+  await writeFile(
+    join(directory, '.relay-runtime-ready'),
+    runtimeMarker(record, uppercaseIntegrity),
+  );
   return join(directory, 'Relay.exe');
 }
 
@@ -223,6 +236,14 @@ function createManager(
 }
 
 describe('RecoveryManager', () => {
+  it('accepts uppercase integrity hashes emitted by the native Windows marker', async () => {
+    const execPath = await makeRuntime(current, true);
+
+    await expect(readRecoveryRuntimeMarker(dirname(execPath))).resolves.toMatchObject({
+      contentVerified: true,
+    });
+  });
+
   it('lists only verified compatible builds and requires a server snapshot', async () => {
     const execPath = await makeRuntime(current);
     await makeRuntime(previous);

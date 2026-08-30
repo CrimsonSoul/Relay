@@ -99,14 +99,16 @@ async function verifyFile(
   relativePath: string,
   expectedHash: string | undefined,
 ): Promise<boolean> {
-  if (!expectedHash || !SHA512_PATTERN.test(expectedHash)) return false;
+  if (!expectedHash) return false;
+  const canonicalExpectedHash = expectedHash.toLowerCase();
+  if (!SHA512_PATTERN.test(canonicalExpectedHash)) return false;
   const path = join(runtimeDirectory, relativePath);
   try {
     const [stats, realPath] = await Promise.all([lstat(path), realpath(path)]);
     if (stats.isSymbolicLink() || !stats.isFile()) return false;
     const resolvedRelative = relative(realRuntimeDirectory, realPath);
     if (isAbsolute(resolvedRelative) || resolvedRelative !== relativePath) return false;
-    return (await sha512(realPath)) === expectedHash;
+    return (await sha512(realPath)) === canonicalExpectedHash;
   } catch {
     return false;
   }
@@ -139,7 +141,7 @@ export async function readRecoveryRuntimeMarker(
     const relay = sections?.get('Relay');
     if (!sections || !relay) return null;
     if (relay.get('protocol') === '1') {
-      const payloadHash = relay.get('payloadHash') ?? '';
+      const payloadHash = (relay.get('payloadHash') ?? '').toLowerCase();
       return SHA512_PATTERN.test(payloadHash)
         ? { relay, runtimeSha512: payloadHash, contentVerified: false }
         : null;

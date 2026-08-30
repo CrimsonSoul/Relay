@@ -74,6 +74,16 @@ describe('RecoveryCatalog', () => {
     expect(parseRecoveryCatalog(serializeRecoveryCatalog(original))).toEqual(original);
   });
 
+  it('canonicalizes uppercase runtime hashes emitted by the native catalog', () => {
+    const original = catalog();
+    const nativeCatalog = serializeRecoveryCatalog(original).replace(
+      `runtimeSha512=${SHA512_A}`,
+      `runtimeSha512=${SHA512_A.toUpperCase()}`,
+    );
+
+    expect(parseRecoveryCatalog(nativeCatalog)?.builds[0]?.runtimeSha512).toBe(SHA512_A);
+  });
+
   it('refuses to serialize malformed build metadata supplied by an in-memory caller', () => {
     const malformed = catalog();
     malformed.builds[0] = {

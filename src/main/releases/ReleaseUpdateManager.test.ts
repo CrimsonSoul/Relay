@@ -289,7 +289,7 @@ describe('ReleaseUpdateManager', () => {
     await writeFile(execPath, 'MZcurrent runtime');
     await writeFile(
       join(runtimeDirectory, '.relay-runtime-ready'),
-      `[Relay]\nprotocol=1\nbuildId=r1-${'1'.repeat(40)}\nexecutable=Relay.exe\npayloadHash=${'c'.repeat(128)}\n`,
+      `[Relay]\nprotocol=1\nbuildId=r1-${'1'.repeat(40)}\nexecutable=Relay.exe\npayloadHash=${'C'.repeat(128)}\n`,
     );
     await writeFile(stableLauncher, 'MZstable launcher');
 
