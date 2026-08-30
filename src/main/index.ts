@@ -123,9 +123,10 @@ import { WorkstationAwakePreferenceStore } from './power/WorkstationAwakePrefere
 import { WorkstationAwakeService } from './power/WorkstationAwakeService';
 import { createWindowsInputPulse } from './power/windowsInputPulse';
 import { parseRecoveryProbationArgument } from './releases/RecoveryProbationArgument';
-import { parseRecoveryLaunchIntent } from './releases/RecoveryLaunchIntent';
-import { parseManualUpdateCheckpointArgument } from './releases/ManualUpdateCheckpoint';
-import { runProductionManualUpdateCheckpoint } from './releases/productionManualUpdateCheckpoint';
+import {
+  parseManualUpdateCheckpointArgument,
+  parseRecoveryLaunchIntent,
+} from './releases/RecoveryLaunchIntent';
 
 installMacOsTypeOfServiceGuard();
 const manualUpdateCheckpointTransaction = parseManualUpdateCheckpointArgument(
@@ -427,6 +428,8 @@ if (manualUpdateCheckpointTransaction !== null) {
   const runCheckpoint = async (): Promise<void> => {
     try {
       await app.whenReady();
+      const { runProductionManualUpdateCheckpoint } =
+        await import('./releases/productionManualUpdateCheckpoint');
       await runProductionManualUpdateCheckpoint(manualUpdateCheckpointTransaction);
       app.exit(0);
     } catch (error) {
