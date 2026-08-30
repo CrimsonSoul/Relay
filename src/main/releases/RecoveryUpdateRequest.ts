@@ -28,7 +28,6 @@ export type RecoveryUpdateRequest = {
 };
 
 export type RecoveryIni = Map<string, Map<string, string>>;
-type IniParseState = { current: Map<string, string> | null };
 
 function isCanonicalTimestamp(value: string): boolean {
   const parsed = Date.parse(value);
@@ -41,33 +40,31 @@ function parseInteger(value: string | undefined): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function acceptIniLine(rawLine: string, sections: RecoveryIni, state: IniParseState): boolean {
-  if (rawLine.length > 4_096) return false;
-  const line = rawLine.trim();
-  if (!line) return true;
-  if (line.startsWith('[') && line.endsWith(']')) {
-    const name = line.slice(1, -1);
-    if (!name || sections.has(name)) return false;
-    state.current = new Map();
-    sections.set(name, state.current);
-    return true;
-  }
-  if (!state.current) return false;
-  const separator = line.indexOf('=');
-  if (separator <= 0) return false;
-  const key = line.slice(0, separator).trim();
-  const value = line.slice(separator + 1).trim();
-  if (!key || state.current.has(key)) return false;
-  state.current.set(key, value);
-  return true;
+function recoverySectionName(line: string): string | null {
+  return line.startsWith('[') && line.endsWith(']') ? line.slice(1, -1) : null;
 }
 
 export function parseRecoveryIni(text: string, maximumBytes: number): RecoveryIni | null {
   if (Buffer.byteLength(text, 'utf8') > maximumBytes || text.includes('\0')) return null;
   const sections: RecoveryIni = new Map();
-  const state: IniParseState = { current: null };
+  let currentSection: Map<string, string> | null = null;
   for (const rawLine of text.split(/\r?\n/u)) {
-    if (!acceptIniLine(rawLine, sections, state)) return null;
+    if (rawLine.length > 4_096) return null;
+    const line = rawLine.trim();
+    if (!line) continue;
+    const sectionName = recoverySectionName(line);
+    if (sectionName !== null) {
+      const name = sectionName;
+      if (!name || sections.has(name)) return null;
+      currentSection = new Map();
+      sections.set(name, currentSection);
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (!currentSection || separator <= 0) return null;
+    const key = line.slice(0, separator).trim();
+    if (!key || currentSection.has(key)) return null;
+    currentSection.set(key, line.slice(separator + 1).trim());
   }
   return sections;
 }
@@ -220,32 +217,30 @@ export function serializeRecoveryUpdateRequest(request: RecoveryUpdateRequest): 
   ].join('\r\n')}\r\n`;
 }
 
-function isDirectChild(parent: string, child: string, expectedName: string): boolean {
-  const childRelative = relative(parent, child);
-  return !isAbsolute(childRelative) && childRelative === expectedName;
-}
-
 async function resolveRecoveryDirectory(
   relayRoot: string,
   createPrivateDirectory?: (path: string) => unknown,
 ): Promise<string> {
   const recoveryDirectory = join(relayRoot, 'Recovery');
+  let recoveryStats;
   try {
-    await lstat(recoveryDirectory);
+    recoveryStats = await lstat(recoveryDirectory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !createPrivateDirectory) throw error;
     await createPrivateDirectory(recoveryDirectory);
+    recoveryStats = await lstat(recoveryDirectory);
   }
 
-  const [relayRealPath, recoveryStats, recoveryRealPath] = await Promise.all([
+  const [resolvedRelayRoot, resolvedRecoveryDirectory] = await Promise.all([
     realpath(relayRoot),
-    lstat(recoveryDirectory),
     realpath(recoveryDirectory),
   ]);
+  const recoveryRelativePath = relative(resolvedRelayRoot, resolvedRecoveryDirectory);
   if (
     !recoveryStats.isDirectory() ||
     recoveryStats.isSymbolicLink() ||
-    !isDirectChild(relayRealPath, recoveryRealPath, 'Recovery')
+    isAbsolute(recoveryRelativePath) ||
+    recoveryRelativePath !== 'Recovery'
   ) {
     throw new Error('Relay recovery directory was redirected');
   }
