@@ -239,7 +239,7 @@ export function ReleaseUpdateNotificationManager() {
     actionRef.current = true;
     try {
       const result = await globalThis.api?.revealUpdateInstaller?.();
-      if (!result?.success || !result.data || result.data.phase !== 'downloaded') {
+      if (!result?.success || result.data?.phase !== 'downloaded') {
         throw new Error('Verified installer folder unavailable');
       }
       if (mountedRef.current) setUpdate(result.data);
