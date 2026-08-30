@@ -406,6 +406,56 @@ function Invoke-StableFallback {
   }
 }
 
+function Invoke-StandaloneProtectedInstall {
+  $runId = [Guid]::NewGuid().ToString()
+  $exitMarker = Join-Path (Join-Path $env:TEMP 'Relay\startup-benchmark') "$runId.complete"
+  Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
+  $priorExitAfterRender = $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER
+  $priorRunId = $env:RELAY_BENCHMARK_RUN_ID
+  $priorGpuDiagnostics = $env:RELAY_DISABLE_GPU_DIAGNOSTICS
+  $priorCrashWatchdog = $env:RELAY_DISABLE_CRASH_WATCHDOG
+  try {
+    $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = '1'
+    $env:RELAY_BENCHMARK_RUN_ID = $runId
+    $env:RELAY_DISABLE_GPU_DIAGNOSTICS = '1'
+    $env:RELAY_DISABLE_CRASH_WATCHDOG = '1'
+    $installer = Start-Process -FilePath $artifactPath -PassThru
+    Wait-ProcessWithTimeout -Process $installer -Context 'Standalone protected installation'
+    if ($installer.ExitCode -ne 0) {
+      $bootstrapErrorPath = Join-Path $rootPath 'bootstrap-error.ini'
+      $failureMessage = Get-FileContentSummary -Path $bootstrapErrorPath
+      throw "Standalone protected installer failed with code $($installer.ExitCode): $failureMessage"
+    }
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    while (-not (Test-Path -LiteralPath $exitMarker) -and [DateTime]::UtcNow -lt $deadline) {
+      Start-Sleep -Milliseconds 100
+    }
+    if (-not (Test-Path -LiteralPath $exitMarker)) {
+      throw 'Standalone protected installer did not launch the promoted runtime.'
+    }
+    $launchedBuildId = [IO.File]::ReadAllText($exitMarker).Trim()
+    if ($launchedBuildId -ne $ExpectedBuildId) {
+      throw "Standalone protected installer launched $launchedBuildId instead of $ExpectedBuildId."
+    }
+    $runtimeExecutable = Join-Path (Join-Path $runtimeVersionsRoot $ExpectedBuildId) 'Relay.exe'
+    Wait-RelayRuntimeQuiescence -ExecutablePath $runtimeExecutable
+    if ((Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'current') -ne $ExpectedBuildId -or
+        (Get-IniSectionValue -Path $statePath -Section 'Relay' -Key 'previous0') -ne $ExpectedPreviousBuildId) {
+      throw 'Standalone protected installer did not promote the target over the previous runtime.'
+    }
+    if (Test-Path -LiteralPath $updateRequestPath) {
+      throw 'Standalone protected installer left its update request unsettled.'
+    }
+  }
+  finally {
+    $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER = $priorExitAfterRender
+    $env:RELAY_BENCHMARK_RUN_ID = $priorRunId
+    $env:RELAY_DISABLE_GPU_DIAGNOSTICS = $priorGpuDiagnostics
+    $env:RELAY_DISABLE_CRASH_WATCHDOG = $priorCrashWatchdog
+    Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Remove-FailedBuildResidue {
   if (Test-Path -LiteralPath $runtimeVersionsRoot) {
     Get-ChildItem -LiteralPath $runtimeVersionsRoot -Force |
@@ -447,6 +497,27 @@ try {
     throw 'Legacy preparation did not retain the former current build.'
   }
   Invoke-StableFallback -ExpectedActiveBuildId $ExpectedBuildId -Context 'legacy-protocol-1-upgrade'
+
+  Remove-Item -LiteralPath $rootPath -Recurse -Force
+  Invoke-Preparation -Path $previousArtifactPath
+  Assert-PreviousActive
+  $standaloneFailureSentinel = Join-Path $rootPath '.fail-after-standalone-request'
+  [IO.File]::WriteAllText($standaloneFailureSentinel, 'interrupt standalone request')
+  try {
+    $interruptedInstaller = Start-Process -FilePath $artifactPath -PassThru
+    Wait-ProcessWithTimeout -Process $interruptedInstaller -Context 'Interrupted standalone installation'
+    if ($interruptedInstaller.ExitCode -ne 197) {
+      throw "Interrupted standalone installer exited with $($interruptedInstaller.ExitCode); expected 197."
+    }
+  }
+  finally {
+    Remove-Item -LiteralPath $standaloneFailureSentinel -Force -ErrorAction SilentlyContinue
+  }
+  if (-not (Test-Path -LiteralPath $updateRequestPath)) {
+    throw 'Interrupted standalone installer did not preserve its resumable request.'
+  }
+  Assert-PreviousActive
+  Invoke-StandaloneProtectedInstall
 
   Remove-Item -LiteralPath $rootPath -Recurse -Force
   Invoke-Preparation -Path $previousArtifactPath
@@ -517,6 +588,8 @@ try {
     StableFallbackExecuted = $true
     FinalActivationSucceeded = $true
     DataUnchanged = $true
+    StandaloneProtectedUpdate = $true
+    InterruptedStandaloneRecovery = $true
   } | ConvertTo-Json
 }
 finally {

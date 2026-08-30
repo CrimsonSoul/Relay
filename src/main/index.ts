@@ -124,8 +124,15 @@ import { WorkstationAwakeService } from './power/WorkstationAwakeService';
 import { createWindowsInputPulse } from './power/windowsInputPulse';
 import { parseRecoveryProbationArgument } from './releases/RecoveryProbationArgument';
 import { parseRecoveryLaunchIntent } from './releases/RecoveryLaunchIntent';
+import { parseManualUpdateCheckpointArgument } from './releases/ManualUpdateCheckpoint';
+import { runProductionManualUpdateCheckpoint } from './releases/productionManualUpdateCheckpoint';
 
 installMacOsTypeOfServiceGuard();
+const manualUpdateCheckpointTransaction = parseManualUpdateCheckpointArgument(
+  process.argv,
+  process.platform,
+  app.isPackaged,
+);
 const recoveryProbationArgument = parseRecoveryProbationArgument();
 const recoveryProbationRequested = recoveryProbationArgument.requested;
 const recoveryLaunchIntent = recoveryProbationRequested
@@ -414,8 +421,21 @@ crashReporter.start({
   },
 });
 
-const gotLock = !isCrashWatchdog && app.requestSingleInstanceLock();
-if (gotLock) {
+const gotLock =
+  !isCrashWatchdog && manualUpdateCheckpointTransaction === null && app.requestSingleInstanceLock();
+if (manualUpdateCheckpointTransaction !== null) {
+  const runCheckpoint = async (): Promise<void> => {
+    try {
+      await app.whenReady();
+      await runProductionManualUpdateCheckpoint(manualUpdateCheckpointTransaction);
+      app.exit(0);
+    } catch (error) {
+      loggers.main.error('Manual update checkpoint failed', { error });
+      app.exit(1);
+    }
+  };
+  void runCheckpoint();
+} else if (gotLock) {
   installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
   startCrashWatchdog();
 

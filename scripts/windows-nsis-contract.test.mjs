@@ -379,7 +379,7 @@ describe('Windows NSIS bootstrap contract', () => {
       source.indexOf('WriteINIStr "$RelayMarker"'),
     );
     expect(source.indexOf('WriteINIStr "$RelayMarker"')).toBeLessThan(
-      source.indexOf('MoveFileExW'),
+      source.indexOf('Rename "$RelayStaging" "$RelayFinalRuntime"'),
     );
     expect(source).toContain('WriteINIStr "$RelayStateNew" "Relay" "current"');
     expect(source).toContain('WriteINIStr "$RelayStateNew" "Relay" "previous"');
@@ -406,6 +406,45 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(source).toContain('${RELAY_CLIENT_DATA_EPOCH}');
     expect(source).toContain('WritePreparedReceipt:');
     expect(source).toContain('MoveFileExW');
+  });
+
+  it('creates a complete rollback transaction for a standalone protected update', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+
+    expect(source).toContain('PrepareStandaloneRecoveryUpdate:');
+    expect(source).toContain('${VersionCompare} $RelaySourceVersion "${RELAY_BUILD_VERSION}"');
+    expect(source).toContain('$APPDATA\\Relay\\lockfile');
+    expect(source).toContain(
+      'WriteINIStr "$RelayRequestNew" "RecoveryRequest" "mode" "unconfigured"',
+    );
+    expect(source).toContain(
+      'WriteINIStr "$RelayRequestNew" "RecoveryRequest" "checkpoint" "pending"',
+    );
+    expect(source).toContain(
+      'System::Call \'kernel32::MoveFileExW(w "$RelayRequestNew", w "$RelayRequest", i 9) i.r0\'',
+    );
+    expect(source).toContain(
+      'ExecWait \'"$RelayFinalRuntime\\${APP_EXECUTABLE_FILENAME}" --relay-manual-update-checkpoint /relay-transaction=$RelayTransactionId\'',
+    );
+    expect(source).toContain(
+      'ReadINIStr $RelayRequestCheckpoint "$RelayRequest" "RecoveryRequest" "checkpoint"',
+    );
+    expect(source).toContain('$RelayRequestCheckpoint != "complete"');
+    expect(source.indexOf('CloseHandle(p $RelayAppLockHandle)')).toBeGreaterThan(
+      source.indexOf('--relay-manual-update-checkpoint /relay-transaction='),
+    );
+    expect(source).toContain('ResumeStandaloneRecoveryUpdate:');
+    expect(source).toContain('.fail-after-standalone-request');
+    expect(source).toContain('$RelayRequestCheckpoint == "complete"');
+    expect(source).toContain('i 4, i 0x80, p 0) p.r0');
+    expect(source).toContain(
+      'ReadINIStr $RelaySnapshotComplete "$RelaySnapshotMarker" "Snapshot" "complete"',
+    );
+    expect(source).toContain('$RelaySnapshotTransaction == "$RelayTransactionId"');
+    expect(source).toContain('$RelaySnapshotSource == "$RelayCurrent"');
+    expect(source).not.toContain(
+      "Use Relay's update or recovery screen to change a protected runtime.",
+    );
   });
 
   it('repairs only an exact retained build without changing the active catalog', () => {
@@ -793,6 +832,13 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(harness).toContain('/relay-transaction=');
     expect(harness).toContain("'checkpoint=complete'");
     expect(harness).toContain("Context 'pending-prepared-resume'");
+    const fixture = read('build/windows/relay-ci-fixture.nsi');
+    expect(fixture).toContain('--relay-manual-update-checkpoint /relay-transaction=');
+    expect(harness).toContain('.fail-after-standalone-request');
+    expect(harness).toContain('InterruptedStandaloneRecovery = $true');
+    expect(fixture).toContain('"RecoveryRequest" "checkpoint" "complete"');
+    expect(harness).toContain('Invoke-StandaloneProtectedInstall');
+    expect(harness).toContain('StandaloneProtectedUpdate = $true');
     expect(harness).toContain('Pending update request was deleted before Electron checkpointing.');
     expect(harness).toContain(
       'Pending prepared receipt was deleted before Electron checkpointing.',
