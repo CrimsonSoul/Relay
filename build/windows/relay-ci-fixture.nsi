@@ -21,6 +21,9 @@ Var RelayFixtureArgs
 Var RelayFixtureOption
 Var RelayFixtureRecoveryRoot
 Var RelayFixtureTransaction
+Var RelayFixtureRequestTransaction
+Var RelayFixtureRequestCheckpoint
+Var RelayFixtureRequestMode
 
 Name "Relay CI Fixture"
 OutFile "${RELAY_FIXTURE_OUT}"
@@ -34,6 +37,35 @@ Section
     ${If} $RelayFixtureOption == '$\"'
       StrCpy $RelayFixtureArgs $RelayFixtureArgs -1 1
     ${EndIf}
+  ${EndIf}
+  StrCpy $RelayFixtureOption $RelayFixtureArgs 52
+  ${If} $RelayFixtureOption == "--relay-manual-update-checkpoint /relay-transaction="
+    StrCpy $RelayFixtureTransaction $RelayFixtureArgs "" 52
+    !ifdef RELAY_FIXTURE_ROOT
+      StrCpy $RelayFixtureRecoveryRoot "${RELAY_FIXTURE_ROOT}\Recovery"
+    !else
+      StrCpy $RelayFixtureRecoveryRoot "$EXEDIR\..\..\Recovery"
+    !endif
+    ReadINIStr $RelayFixtureRequestTransaction "$RelayFixtureRecoveryRoot\update-request.ini" "RecoveryRequest" "transactionId"
+    ReadINIStr $RelayFixtureRequestCheckpoint "$RelayFixtureRecoveryRoot\update-request.ini" "RecoveryRequest" "checkpoint"
+    ReadINIStr $RelayFixtureRequestMode "$RelayFixtureRecoveryRoot\update-request.ini" "RecoveryRequest" "mode"
+    ${If} $RelayFixtureTransaction == ""
+    ${OrIf} $RelayFixtureRequestTransaction != $RelayFixtureTransaction
+    ${OrIf} $RelayFixtureRequestCheckpoint != "pending"
+    ${OrIf} $RelayFixtureRequestMode != "unconfigured"
+      SetErrorLevel 1
+      Quit
+    ${EndIf}
+    ClearErrors
+    WriteINIStr "$RelayFixtureRecoveryRoot\update-request.ini" "RecoveryRequest" "mode" "unconfigured"
+    WriteINIStr "$RelayFixtureRecoveryRoot\update-request.ini" "RecoveryRequest" "checkpoint" "complete"
+    WriteINIStr "$RelayFixtureRecoveryRoot\update-request.ini" "RecoveryRequest" "snapshotId" ""
+    ${If} ${Errors}
+      SetErrorLevel 1
+      Quit
+    ${EndIf}
+    SetErrorLevel 0
+    Quit
   ${EndIf}
   StrCpy $RelayFixtureOption $RelayFixtureArgs 27
   ${If} $RelayFixtureOption == "--relay-recovery-probation="

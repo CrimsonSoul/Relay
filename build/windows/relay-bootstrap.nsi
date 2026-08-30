@@ -63,6 +63,7 @@ Var RelayQuarantineActive
 Var RelayQuarantineMarkerHandle
 Var RelayArchiveHash
 Var RelayFallbackBuild
+Var RelayRollbackRequest
 Var RelayRuntimeIsUsable
 Var RelayPayloadHashLength
 Var RelayPayloadHashFiltered
@@ -106,6 +107,29 @@ Var RelayRepairCatalogServerEpoch
 Var RelayRepairCatalogClientEpoch
 Var RelayRepairCatalogHealth
 
+Var RelayRequestNew
+Var RelayStandaloneUpdate
+Var RelaySourceVersion
+Var RelaySourceReleaseTag
+Var RelaySourceCommit
+Var RelaySourceRuntimeHash
+Var RelaySourceInstallerHash
+Var RelaySourceRecoveryProtocol
+Var RelaySourceServerEpoch
+Var RelaySourceClientEpoch
+Var RelaySourceInstalledAt
+Var RelaySourceHealth
+Var RelaySourceSnapshotId
+Var RelayVersionCompare
+Var RelayAppLockHandle
+Var RelaySnapshotRoot
+Var RelaySnapshotMarker
+Var RelaySnapshotProtocol
+Var RelaySnapshotId
+Var RelaySnapshotTransaction
+Var RelaySnapshotSource
+Var RelaySnapshotEpoch
+Var RelaySnapshotComplete
 !macro RelayHarnessFail SENTINEL MESSAGE
   !ifdef RELAY_BOOTSTRAP_HARNESS
     ${If} ${FileExists} "$RelayRoot\${SENTINEL}"
@@ -115,6 +139,53 @@ Var RelayRepairCatalogHealth
       Goto BootstrapFailed
     ${EndIf}
   !endif
+!macroend
+
+!macro RelayCompletedServerSnapshotIsUsable RESULT
+  StrCpy ${RESULT} "0"
+  !insertmacro RelayValidateTransactionId "$RelayRequestSnapshotId" $RelayTransactionIsValid
+  ${If} $RelayTransactionIsValid == "1"
+    StrCpy $RelaySnapshotRoot "$APPDATA\Relay\RecoverySnapshots\$RelayRequestSnapshotId"
+    StrCpy $RelaySnapshotMarker "$RelaySnapshotRoot\snapshot.ini"
+    System::Call 'kernel32::GetFileAttributesW(w "$RelaySnapshotRoot") i.r0'
+    ${If} $0 != -1
+      IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+      IntOp $2 $0 & 0x10
+      ${If} $1 == 0
+      ${AndIf} $2 != 0
+        System::Call 'kernel32::GetFileAttributesW(w "$RelaySnapshotRoot\data") i.r0'
+        ${If} $0 != -1
+          IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+          IntOp $2 $0 & 0x10
+          ${If} $1 == 0
+          ${AndIf} $2 != 0
+            System::Call 'kernel32::GetFileAttributesW(w "$RelaySnapshotMarker") i.r0'
+            ${If} $0 != -1
+              IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+              IntOp $2 $0 & 0x10
+              ${If} $1 == 0
+              ${AndIf} $2 == 0
+                ReadINIStr $RelaySnapshotProtocol "$RelaySnapshotMarker" "Snapshot" "protocol"
+                ReadINIStr $RelaySnapshotId "$RelaySnapshotMarker" "Snapshot" "snapshotId"
+                ReadINIStr $RelaySnapshotTransaction "$RelaySnapshotMarker" "Snapshot" "transactionId"
+                ReadINIStr $RelaySnapshotSource "$RelaySnapshotMarker" "Snapshot" "sourceBuildId"
+                ReadINIStr $RelaySnapshotEpoch "$RelaySnapshotMarker" "Snapshot" "dataEpoch"
+                ReadINIStr $RelaySnapshotComplete "$RelaySnapshotMarker" "Snapshot" "complete"
+                ${If} $RelaySnapshotProtocol == "1"
+                ${AndIf} $RelaySnapshotId == "$RelayRequestSnapshotId"
+                ${AndIf} $RelaySnapshotTransaction == "$RelayTransactionId"
+                ${AndIf} $RelaySnapshotSource == "$RelayCurrent"
+                ${AndIf} $RelaySnapshotEpoch == "$RelaySourceServerEpoch"
+                ${AndIf} $RelaySnapshotComplete == "1"
+                  StrCpy ${RESULT} "1"
+                ${EndIf}
+              ${EndIf}
+            ${EndIf}
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
 !macroend
 
 !macro RelayRuntimeIsUsable BUILD_ID RESULT
@@ -255,7 +326,9 @@ Section
   StrCpy $RelayLauncherNew "$RelayRoot\Relay.exe.new"
   StrCpy $RelayRecoveryRoot "$RelayRoot\Recovery"
   StrCpy $RelayRequest "$RelayRecoveryRoot\update-request.ini"
+  StrCpy $RelayRequestNew "$RelayRecoveryRoot\update-request.ini.new"
   StrCpy $RelayPrepared "$RelayRecoveryRoot\prepared.ini"
+  StrCpy $RelayRollbackRequest "$RelayRecoveryRoot\rollback-request.ini"
   StrCpy $RelayPreparedNew "$RelayRecoveryRoot\prepared.ini.new"
   StrCpy $RelayRepairRequest "$RelayRecoveryRoot\repair-request.ini"
   StrCpy $RelayRepairResult "$RelayRecoveryRoot\repair-result.ini"
@@ -327,6 +400,154 @@ Section
     StrCpy $RelayPrevious1 ""
     StrCpy $RelayPrevious2 ""
   ${EndIf}
+
+  StrCpy $RelayStandaloneUpdate "0"
+  ${If} $RelayTransactionId == ""
+  ${AndIf} $RelayArgs == ""
+  ${AndIf} $RelayStateProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
+  ${AndIf} $RelayCurrent != ""
+  ${AndIf} $RelayCurrent != "${RELAY_BUILD_ID}"
+    Goto PrepareStandaloneRecoveryUpdate
+  ${EndIf}
+  Goto StandaloneRecoveryUpdateReady
+
+PrepareStandaloneRecoveryUpdate:
+  ReadINIStr $RelayResult "$RelayState" "Relay" "candidate"
+  ${If} $RelayResult != ""
+    StrCpy $RelayFailureMessage "Relay already has a protected recovery transaction in progress."
+    Goto BootstrapFailed
+  ${EndIf}
+  ${If} ${FileExists} "$RelayRollbackRequest"
+  ${OrIf} ${FileExists} "$RelayRepairRequest"
+    StrCpy $RelayFailureMessage "Relay already has protected recovery metadata in progress."
+    Goto BootstrapFailed
+  ${EndIf}
+
+  ReadINIStr $RelaySourceVersion "$RelayState" "Build.$RelayCurrent" "version"
+  ReadINIStr $RelaySourceReleaseTag "$RelayState" "Build.$RelayCurrent" "releaseTag"
+  ReadINIStr $RelaySourceCommit "$RelayState" "Build.$RelayCurrent" "targetCommitish"
+  ReadINIStr $RelaySourceRuntimeHash "$RelayState" "Build.$RelayCurrent" "runtimeSha512"
+  ReadINIStr $RelaySourceInstallerHash "$RelayState" "Build.$RelayCurrent" "installerSha256"
+  ReadINIStr $RelaySourceRecoveryProtocol "$RelayState" "Build.$RelayCurrent" "recoveryProtocol"
+  ReadINIStr $RelaySourceServerEpoch "$RelayState" "Build.$RelayCurrent" "serverDataEpoch"
+  ReadINIStr $RelaySourceClientEpoch "$RelayState" "Build.$RelayCurrent" "clientDataEpoch"
+  ReadINIStr $RelaySourceInstalledAt "$RelayState" "Build.$RelayCurrent" "installedAt"
+  ReadINIStr $RelaySourceHealth "$RelayState" "Build.$RelayCurrent" "health"
+  ReadINIStr $RelaySourceSnapshotId "$RelayState" "Build.$RelayCurrent" "rollbackSnapshotId"
+  ${VersionCompare} $RelaySourceVersion "${RELAY_BUILD_VERSION}" $RelayVersionCompare
+  ${If} $RelayVersionCompare != "2"
+    StrCpy $RelayFailureMessage "Relay accepts only a newer standalone release. Use Recovery to select an older build."
+    Goto BootstrapFailed
+  ${EndIf}
+  ${If} $RelaySourceHealth != "healthy"
+  ${OrIf} $RelaySourceSnapshotId != ""
+  ${OrIf} $RelaySourceRecoveryProtocol != "${RELAY_RECOVERY_PROTOCOL}"
+  ${OrIf} $RelaySourceServerEpoch != "${RELAY_SERVER_DATA_EPOCH}"
+  ${OrIf} $RelaySourceClientEpoch != "${RELAY_CLIENT_DATA_EPOCH}"
+    StrCpy $RelayFailureMessage "Relay cannot safely hand off this protected runtime to the selected release."
+    Goto BootstrapFailed
+  ${EndIf}
+
+  System::Call 'kernel32::CreateFileW(w "$APPDATA\Relay\lockfile", i 0xC0000000, i 0, p 0, i 4, i 0x80, p 0) p.r0'
+  StrCpy $RelayAppLockHandle $0
+  ${If} $RelayAppLockHandle == -1
+    StrCpy $RelayFailureMessage "Close Relay completely before running the installer."
+    Goto BootstrapFailed
+  ${EndIf}
+
+  ClearErrors
+  CreateDirectory "$RelayRecoveryRoot"
+  IfErrors 0 +3
+    StrCpy $RelayFailureMessage "Relay could not create its private recovery directory."
+    Goto BootstrapFailed
+  System::Call 'kernel32::GetFileAttributesW(w "$RelayRecoveryRoot") i.r0'
+  IntOp $1 $0 & ${FILE_ATTRIBUTE_REPARSE_POINT}
+  ${If} $0 == -1
+  ${OrIf} $1 != 0
+    StrCpy $RelayFailureMessage "Relay recovery metadata was redirected."
+    Goto BootstrapFailed
+  ${EndIf}
+  ${StdUtils.HashFile} $RelaySelfHash "SHA2-256" "$EXEPATH"
+  ${If} ${FileExists} "$RelayRequest"
+    ReadINIStr $RelayRequestProtocol "$RelayRequest" "RecoveryRequest" "protocol"
+    ReadINIStr $RelayRequestTransaction "$RelayRequest" "RecoveryRequest" "transactionId"
+    ReadINIStr $RelayRequestTargetVersion "$RelayRequest" "RecoveryRequest" "targetVersion"
+    ReadINIStr $RelayRequestTargetCommitish "$RelayRequest" "RecoveryRequest" "targetCommitish"
+    ReadINIStr $RelayRequestInstallerHash "$RelayRequest" "RecoveryRequest" "targetInstallerSha256"
+    ReadINIStr $RelayRequestSourceBuild "$RelayRequest" "Source" "buildId"
+    !insertmacro RelayValidateTransactionId "$RelayRequestTransaction" $RelayTransactionIsValid
+    ${If} $RelayRequestProtocol != "${RELAY_RECOVERY_PROTOCOL}"
+    ${OrIf} $RelayTransactionIsValid != "1"
+    ${OrIf} $RelayRequestTargetVersion != "${RELAY_BUILD_VERSION}"
+    ${OrIf} $RelayRequestTargetCommitish != "${RELAY_TARGET_COMMITISH}"
+    ${OrIf} $RelayRequestInstallerHash != "$RelaySelfHash"
+    ${OrIf} $RelayRequestSourceBuild != "$RelayCurrent"
+      StrCpy $RelayFailureMessage "Relay found protected update metadata for a different immutable release."
+      Goto BootstrapFailed
+    ${EndIf}
+    Goto ResumeStandaloneRecoveryUpdate
+  ${EndIf}
+  ${If} ${FileExists} "$RelayPrepared"
+    Delete "$RelayPrepared"
+  ${EndIf}
+  Goto CreateStandaloneRecoveryUpdate
+
+ResumeStandaloneRecoveryUpdate:
+  StrCpy $RelayTransactionId $RelayRequestTransaction
+  StrCpy $RelayStandaloneUpdate "1"
+  Goto StandaloneRecoveryUpdateReady
+
+CreateStandaloneRecoveryUpdate:
+
+  System::Call 'ole32::CoCreateGuid(g .r0) i.r1'
+  ${If} $1 != 0
+    StrCpy $RelayFailureMessage "Relay could not create a protected update identity."
+    Goto BootstrapFailed
+  ${EndIf}
+  StrCpy $RelayTransactionId $0 -1 1
+  ${StrCase} $RelayTransactionId $RelayTransactionId "L"
+  !insertmacro RelayValidateTransactionId "$RelayTransactionId" $RelayTransactionIsValid
+  ${If} $RelayTransactionIsValid != "1"
+    StrCpy $RelayFailureMessage "Relay created an invalid protected update identity."
+    Goto BootstrapFailed
+  ${EndIf}
+
+
+  Delete "$RelayRequestNew"
+  ClearErrors
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "protocol" "${RELAY_RECOVERY_PROTOCOL}"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "transactionId" "$RelayTransactionId"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "targetVersion" "${RELAY_BUILD_VERSION}"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "targetCommitish" "${RELAY_TARGET_COMMITISH}"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "targetInstallerSha256" "$RelaySelfHash"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "mode" "unconfigured"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "checkpoint" "pending"
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "snapshotId" ""
+  WriteINIStr "$RelayRequestNew" "RecoveryRequest" "requestedAt" "${RELAY_PACKAGED_AT}"
+  WriteINIStr "$RelayRequestNew" "Source" "buildId" "$RelayCurrent"
+  WriteINIStr "$RelayRequestNew" "Source" "version" "$RelaySourceVersion"
+  WriteINIStr "$RelayRequestNew" "Source" "releaseTag" "$RelaySourceReleaseTag"
+  WriteINIStr "$RelayRequestNew" "Source" "targetCommitish" "$RelaySourceCommit"
+  WriteINIStr "$RelayRequestNew" "Source" "runtimeSha512" "$RelaySourceRuntimeHash"
+  WriteINIStr "$RelayRequestNew" "Source" "installerSha256" "$RelaySourceInstallerHash"
+  WriteINIStr "$RelayRequestNew" "Source" "recoveryProtocol" "$RelaySourceRecoveryProtocol"
+  WriteINIStr "$RelayRequestNew" "Source" "serverDataEpoch" "$RelaySourceServerEpoch"
+  WriteINIStr "$RelayRequestNew" "Source" "clientDataEpoch" "$RelaySourceClientEpoch"
+  WriteINIStr "$RelayRequestNew" "Source" "installedAt" "$RelaySourceInstalledAt"
+  WriteINIStr "$RelayRequestNew" "Source" "health" "$RelaySourceHealth"
+  WriteINIStr "$RelayRequestNew" "Source" "rollbackSnapshotId" "$RelaySourceSnapshotId"
+  IfErrors 0 +3
+    StrCpy $RelayFailureMessage "Relay could not write its protected update request."
+    Goto BootstrapFailed
+  System::Call 'kernel32::MoveFileExW(w "$RelayRequestNew", w "$RelayRequest", i 9) i.r0'
+  ${If} $0 == 0
+    StrCpy $RelayFailureMessage "Relay could not activate its protected update request."
+    Goto BootstrapFailed
+  ${EndIf}
+  !insertmacro RelayHarnessFail ".fail-after-standalone-request" "Relay harness stopped after standalone request activation."
+  StrCpy $RelayStandaloneUpdate "1"
+
+StandaloneRecoveryUpdateReady:
 
   ${If} $RelayTransactionId != ""
     ${If} $RelayCurrent == ""
@@ -414,9 +635,40 @@ Section
       ${OrIf} $RelayRequestTargetVersion != "${RELAY_BUILD_VERSION}"
       ${OrIf} $RelayRequestTargetCommitish != "${RELAY_TARGET_COMMITISH}"
       ${OrIf} $RelayRequestInstallerHash != "$RelaySelfHash"
-      ${OrIf} $RelayRequestCheckpoint != "pending"
-      ${OrIf} $RelayRequestSnapshotId != ""
       ${OrIf} $RelayRequestSourceBuild != "$RelayCurrent"
+        StrCpy $RelayFailureMessage "Relay rejected mismatched recovery update metadata."
+        Goto BootstrapFailed
+      ${EndIf}
+      ${If} $RelayStandaloneUpdate == "1"
+        ${If} $RelayRequestCheckpoint == "pending"
+          ${If} $RelayRequestMode != "unconfigured"
+          ${OrIf} $RelayRequestSnapshotId != ""
+            StrCpy $RelayFailureMessage "Relay rejected an invalid pending standalone update."
+            Goto BootstrapFailed
+          ${EndIf}
+        ${ElseIf} $RelayRequestCheckpoint == "complete"
+          ${If} $RelayRequestMode == "server"
+            !insertmacro RelayCompletedServerSnapshotIsUsable $RelayResult
+            ${If} $RelayResult != "1"
+              StrCpy $RelayFailureMessage "Relay rejected a missing or mismatched completed server snapshot."
+              Goto BootstrapFailed
+            ${EndIf}
+          ${ElseIf} $RelayRequestMode == "client"
+          ${OrIf} $RelayRequestMode == "unconfigured"
+            ${If} $RelayRequestSnapshotId != ""
+              StrCpy $RelayFailureMessage "Relay rejected an invalid completed standalone update."
+              Goto BootstrapFailed
+            ${EndIf}
+          ${Else}
+            StrCpy $RelayFailureMessage "Relay rejected an invalid completed standalone update."
+            Goto BootstrapFailed
+          ${EndIf}
+        ${Else}
+          StrCpy $RelayFailureMessage "Relay rejected an invalid standalone checkpoint state."
+          Goto BootstrapFailed
+        ${EndIf}
+      ${ElseIf} $RelayRequestCheckpoint != "pending"
+      ${OrIf} $RelayRequestSnapshotId != ""
         StrCpy $RelayFailureMessage "Relay rejected mismatched recovery update metadata."
         Goto BootstrapFailed
       ${EndIf}
@@ -688,7 +940,7 @@ LauncherReady:
     Goto ShortcutsReady
   ${EndIf}
   ${If} $RelayStateProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
-    StrCpy $RelayFailureMessage "Use Relay's update or recovery screen to change a protected runtime."
+    StrCpy $RelayFailureMessage "Relay rejected an unbound protected runtime change."
     Goto BootstrapFailed
   ${EndIf}
 
@@ -774,6 +1026,59 @@ WritePreparedReceipt:
     StrCpy $RelayFailureMessage "Relay could not activate its prepared recovery receipt."
     Goto BootstrapFailed
   ${EndIf}
+  ${If} $RelayStandaloneUpdate == "1"
+    Goto CompleteStandaloneRecoveryUpdate
+  ${EndIf}
+  Goto ShortcutsReady
+
+CompleteStandaloneRecoveryUpdate:
+  ${If} $RelayBannerVisible == "1"
+    Banner::destroy
+    StrCpy $RelayBannerVisible "0"
+  ${EndIf}
+  ReadINIStr $RelayRequestCheckpoint "$RelayRequest" "RecoveryRequest" "checkpoint"
+  ${If} $RelayRequestCheckpoint == "pending"
+    ExecWait '"$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}" --relay-manual-update-checkpoint /relay-transaction=$RelayTransactionId' $RelayResult
+    ${If} $RelayResult != 0
+      StrCpy $RelayFailureMessage "Relay could not create its protected rollback checkpoint."
+      Goto BootstrapFailed
+    ${EndIf}
+  ${ElseIf} $RelayRequestCheckpoint != "complete"
+    StrCpy $RelayFailureMessage "Relay found an invalid protected rollback checkpoint state."
+    Goto BootstrapFailed
+  ${EndIf}
+  ReadINIStr $RelayRequestProtocol "$RelayRequest" "RecoveryRequest" "protocol"
+  ReadINIStr $RelayRequestTransaction "$RelayRequest" "RecoveryRequest" "transactionId"
+  ReadINIStr $RelayRequestMode "$RelayRequest" "RecoveryRequest" "mode"
+  ReadINIStr $RelayRequestCheckpoint "$RelayRequest" "RecoveryRequest" "checkpoint"
+  ReadINIStr $RelayRequestSnapshotId "$RelayRequest" "RecoveryRequest" "snapshotId"
+  ${If} $RelayRequestProtocol != "${RELAY_RECOVERY_PROTOCOL}"
+  ${OrIf} $RelayRequestTransaction != $RelayTransactionId
+  ${OrIf} $RelayRequestCheckpoint != "complete"
+    StrCpy $RelayFailureMessage "Relay could not verify its protected rollback checkpoint."
+    Goto BootstrapFailed
+  ${EndIf}
+  ${If} $RelayRequestMode == "server"
+    !insertmacro RelayValidateTransactionId "$RelayRequestSnapshotId" $RelayTransactionIsValid
+    ${If} $RelayTransactionIsValid != "1"
+      StrCpy $RelayFailureMessage "Relay received an invalid protected server snapshot."
+      Goto BootstrapFailed
+    ${EndIf}
+    !insertmacro RelayCompletedServerSnapshotIsUsable $RelayResult
+    ${If} $RelayResult != "1"
+      StrCpy $RelayFailureMessage "Relay could not verify its protected server snapshot."
+      Goto BootstrapFailed
+    ${EndIf}
+  ${ElseIf} $RelayRequestMode == "client"
+  ${OrIf} $RelayRequestMode == "unconfigured"
+    ${If} $RelayRequestSnapshotId != ""
+      StrCpy $RelayFailureMessage "Relay received an unexpected protected update snapshot."
+      Goto BootstrapFailed
+    ${EndIf}
+  ${Else}
+    StrCpy $RelayFailureMessage "Relay received an invalid protected update mode."
+    Goto BootstrapFailed
+  ${EndIf}
   Goto ShortcutsReady
 
 WriteRepairReceipt:
@@ -805,6 +1110,10 @@ WriteRepairReceipt:
 
 ShortcutsReady:
 
+  ${If} $RelayAppLockHandle != ""
+    System::Call 'kernel32::CloseHandle(p $RelayAppLockHandle)'
+    StrCpy $RelayAppLockHandle ""
+  ${EndIf}
   CreateDirectory "$SMPROGRAMS\Relay"
   ClearErrors
   CreateShortCut "$DESKTOP\Relay.lnk" "$RelayLauncher" "" "$RelayLauncher" 0 SW_SHOWNORMAL "" "Relay"
@@ -832,10 +1141,20 @@ BootstrapFailed:
     Banner::destroy
     StrCpy $RelayBannerVisible "0"
   ${EndIf}
+  ${If} $RelayAppLockHandle != ""
+  ${AndIf} $RelayAppLockHandle != -1
+    System::Call 'kernel32::CloseHandle(p $RelayAppLockHandle)'
+    StrCpy $RelayAppLockHandle ""
+  ${EndIf}
   Delete "$RelayLauncherNew"
   Delete "$RelayStateNew"
   Delete "$RelayPreparedNew"
   Delete "$RelayRepairResultNew"
+  Delete "$RelayRequestNew"
+  ${If} $RelayStandaloneUpdate == "1"
+    Delete "$RelayRequest"
+    Delete "$RelayPrepared"
+  ${EndIf}
   ${If} $RelayQuarantineActive == "1"
     System::Call 'kernel32::GetFileAttributesW(w "$RelayFinalRuntime") i.r0'
     ${If} $0 == -1
