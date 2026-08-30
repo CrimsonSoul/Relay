@@ -171,7 +171,7 @@ function parseBuild(sectionName: string, values: Map<string, string>): RecoveryB
   const version = values.get('version') ?? '';
   const releaseTag = values.get('releaseTag') ?? '';
   const targetCommitish = values.get('targetCommitish') ?? '';
-  const runtimeSha512 = (values.get('runtimeSha512') ?? '').toLowerCase();
+  const runtimeSha512 = values.get('runtimeSha512')!.toLowerCase();
   const installerSha256 = nullable(values.get('installerSha256'));
   const recoveryProtocol = parseInteger(values.get('recoveryProtocol'));
   const serverDataEpoch = parseInteger(values.get('serverDataEpoch'));

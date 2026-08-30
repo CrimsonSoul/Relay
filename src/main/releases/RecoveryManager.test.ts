@@ -243,7 +243,12 @@ describe('RecoveryManager', () => {
       contentVerified: true,
     });
   });
+  it('rejects a protocol-1 marker without its payload digest', async () => {
+    const execPath = await makeRuntime(current);
+    await writeFile(join(dirname(execPath), '.relay-runtime-ready'), '[Relay]\nprotocol=1\n');
 
+    await expect(readRecoveryRuntimeMarker(dirname(execPath))).resolves.toBeNull();
+  });
   it('lists only verified compatible builds and requires a server snapshot', async () => {
     const execPath = await makeRuntime(current);
     await makeRuntime(previous);

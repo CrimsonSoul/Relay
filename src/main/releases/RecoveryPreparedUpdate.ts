@@ -65,7 +65,7 @@ export function parseRecoveryPreparedUpdate(text: string): RecoveryPreparedUpdat
   const version = prepared.get('version') ?? '';
   const releaseTag = prepared.get('releaseTag') ?? '';
   const targetCommitish = prepared.get('targetCommitish') ?? '';
-  const runtimeSha512 = (prepared.get('runtimeSha512') ?? '').toLowerCase();
+  const runtimeSha512 = prepared.get('runtimeSha512')!.toLowerCase();
   const installerSha256 = prepared.get('installerSha256') ?? '';
   const recoveryProtocol = parsePositiveInteger(prepared.get('recoveryProtocol'));
   const serverDataEpoch = parsePositiveInteger(prepared.get('serverDataEpoch'));

@@ -199,7 +199,7 @@ export function parseRecoveryRepairReceipt(text: string): RecoveryRepairReceipt 
     buildId: values.get('buildId') ?? '',
     version: values.get('version') ?? '',
     targetCommitish: values.get('targetCommitish') ?? '',
-    runtimeSha512: (values.get('runtimeSha512') ?? '').toLowerCase(),
+    runtimeSha512: values.get('runtimeSha512')!.toLowerCase(),
     installerSha256: values.get('installerSha256') ?? '',
     completedAt: values.get('completedAt') ?? '',
   };
