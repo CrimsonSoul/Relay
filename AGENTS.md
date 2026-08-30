@@ -1,109 +1,134 @@
 # Relay repository instructions
 
-This file applies to the entire Relay repository. Use `~/.codex/AGENTS.md` as
-the sole cross-project skill and plugin routing policy; do not duplicate that
-routing here.
+This file applies to the entire Relay repository. `~/.codex/AGENTS.md` is the
+sole cross-project routing and engineering policy; nothing here duplicates or
+overrides it.
 
 ## Working tree
 
-- Inspect `git status --short --branch` before editing and before any commit or
-  push.
-- Preserve all pre-existing source, test, and documentation changes. Do not
+- Inspect `git status --short --branch` before editing and again before any
+  commit or push.
+- Preserve all pre-existing source, test, and documentation changes. Never
   discard, overwrite, reformat, stage, or publish unrelated work. If a mixed
   worktree makes the requested scope unclear, stop and confirm it.
-- Prefer `npm run format:check`. If formatting is needed in a mixed worktree,
-  format only touched files; `npm run format` writes across the repository.
+- `npm run format:check` is the default formatting command. Never run
+  `npm run format` in a mixed worktree; it rewrites the whole repository. When
+  formatting is needed, format only the touched files.
 
 ## Sources of truth
 
-- Use `package.json` for scripts and tool entry points and `.node-version` for
-  the Node version.
-- Use `docs/DEVELOPMENT.md` for contributor and data-access patterns,
-  `docs/architecture.md` for runtime and data flow, `docs/DESIGN.md` plus
-  `PRODUCT.md` for renderer conventions, and `docs/SECURITY.md` for trust,
-  network, secret, migration, and storage boundaries.
-- Use `docs/relay-web.md` and `docs/knowledge-base.md` for their feature
-  boundaries. Treat `README.md` as an overview, not architecture authority.
+- `package.json` defines scripts and tool entry points; `.node-version`
+  defines the Node version.
+- `docs/DEVELOPMENT.md` covers contributor and data-access patterns;
+  `docs/architecture.md` covers runtime and data flow; `docs/DESIGN.md` and
+  `PRODUCT.md` cover renderer conventions; `docs/SECURITY.md` covers trust,
+  network, secret, migration, and storage boundaries; `docs/relay-web.md` and
+  `docs/knowledge-base.md` cover their named features. `README.md` is an
+  overview, not architecture authority.
 - Resolve documentation conflicts against current implementation, config, and
-  tests. Update the applicable canonical document when behavior changes; do not
-  preserve stale architecture descriptions.
+  tests. When behavior changes, update the applicable canonical document in
+  the same change; never preserve a stale architecture description.
 
 ## Documentation lifecycle
 
-- Keep the tracked Markdown set limited to the ten canonical documents listed
-  in `docs/README.md`, and update the applicable document in place.
-- Do not add standalone plans, specifications, implementation notes, audit or
-  status reports, mockups, or historical summaries to the repository. Use pull
-  requests, issues, and Git history for temporary work and historical context.
-- Add another persistent Markdown document only with explicit user approval.
-  Update `docs/README.md` and `scripts/documentation-contract.test.mjs` in the
-  same change so the exception remains deliberate and visible.
+- The tracked Markdown set is exactly the canonical documents listed in
+  `docs/README.md`. Update the applicable document in place.
+- Never add standalone plans, specifications, implementation notes, audit or
+  status reports, mockups, or historical summaries to the repository. Pull
+  requests, issues, and Git history hold temporary work and historical
+  context.
+- Adding a persistent Markdown document requires explicit user approval, and
+  the same change must update `docs/README.md` and
+  `scripts/documentation-contract.test.mjs` so the exception stays deliberate
+  and visible.
 
 ## Client, server, and data safety
 
 - Prefer the smallest correct change and add focused regression coverage for
   changed behavior.
-- Treat `src/main`, `src/preload`, `src/shared`, renderer services and hooks,
-  PocketBase bootstrap/schema, realtime and offline behavior, and
-  `src/main/web` as compatibility-sensitive boundaries.
-- Preserve existing clients' ability to connect to a Relay server. Do not
-  change server/client mode, authentication, reconnect behavior, offline
-  cache/replay, backup/restore, or existing data semantics without explicit
-  requirements and focused verification.
-- Keep ordinary PocketBase CRUD in renderer service modules. Reserve IPC for
-  system-level or privileged work; define channels and payload validation in
-  shared code and preserve trusted-sender validation.
-- Keep Relay Web limited to an explicitly enabled trusted LAN or approved
-  private VPN. Do not introduce public exposure, permissive cross-origin
+- No new npm dependencies without explicit approval, including
+  devDependencies.
+- Do not introduce abstraction layers over PocketBase or over existing IPC
+  channels. New IPC channels require a reason a renderer service module
+  cannot do the work.
+- The following are compatibility-sensitive boundaries: `src/main`,
+  `src/preload`, `src/shared`, renderer services and hooks, PocketBase
+  bootstrap/schema, realtime and offline behavior, and `src/main/web`.
+  Changing observable behavior at any of them - including server/client mode,
+  authentication, reconnect behavior, offline cache/replay, backup/restore,
+  or existing data semantics - requires explicit requirements from the user
+  and focused verification of the changed behavior. Existing clients must
+  retain the ability to connect to a Relay server.
+- Ordinary PocketBase CRUD lives in renderer service modules. IPC is reserved
+  for system-level or privileged work; define channels and payload validation
+  in shared code and preserve trusted-sender validation.
+- Relay Web stays limited to an explicitly enabled trusted LAN or approved
+  private VPN. Never introduce public exposure, permissive cross-origin
   access, or browser access to desktop secrets and capabilities.
 - Never run development builds, migrations, or destructive tests against live
-  Relay app data. Use a disposable directory or consistent backup/copy.
+  Relay app data; use a disposable directory or a verified backup copy.
   Preserve existing IDs, relationships, and unknown PocketBase collections.
 
 ## Verification
 
-- Start with the narrowest tests that cover the changed behavior.
-- Before claiming a source, test, or configuration change complete, run:
+Base gate, required before claiming any source, test, or configuration change
+complete:
 
-  ```bash
-  npm run typecheck
-  npm run lint
-  npm run format:check
-  npm test
-  npm run build
-  git diff --check
-  ```
+```bash
+npm run typecheck
+npm run lint
+npm run format:check
+npm test
+npm run build
+git diff --check
+```
 
-- Before a readiness or push-to-test claim, also run
+Additions by scope:
+
+- Electron, preload, IPC, window, or desktop integration changes: add
+  `npm run test:electron`.
+- Relay Web, browser runtime, gateway, session, or network-boundary changes:
+  add `npm run test:web`.
+- Windows packaging or bootstrap changes: add `npm run build:win` when the
+  environment supports it; otherwise report it as skipped.
+- Readiness or push-to-test claims: add
   `npm audit --audit-level=high --omit=dev`.
-- Add `npm run test:electron` for Electron, preload, IPC, window, or desktop
-  integration changes; `npm run test:web` for Relay Web, browser runtime,
-  gateway, session, or network-boundary changes; and `npm run build:win` for
-  Windows packaging/bootstrap changes when the environment supports it.
-- Invoke Electron and web suites through their npm scripts so native-module ABI
-  restoration runs.
-- For instruction- or documentation-only edits, targeted Prettier checking of
-  the changed Markdown plus `git diff --check` is sufficient unless executable
+
+Rules:
+
+- Start with the narrowest tests covering the changed behavior; the gate runs
+  at the end, not instead of iteration.
+- Invoke the Electron and web suites only through their npm scripts so
+  native-module ABI restoration runs.
+- Instruction- or documentation-only edits need only targeted Prettier
+  checking of the changed Markdown plus `git diff --check`, unless executable
   examples or behavior also changed.
 - After a formatter or commit hook changes files, inspect the resulting diff
-  and rerun affected gates. Report skipped or unavailable checks plainly.
+  and rerun the affected gates.
+- A pre-existing failure not caused by the change: report it and continue;
+  never fix it unprompted and never fold its fix into the current change.
+- Report every skipped or unavailable check plainly. A gate that did not run
+  is not a gate that passed.
 
-## Publishing to `origin/main`
+## Publishing to origin/main
 
-- "Push the changes" authorizes the full verified tip to enter `main`
-  through a temporary `codex/` branch and pull request; it does not authorize a
-  direct push or a partial cherry-pick.
-- Fetch `origin/main`, prove there are no remote-only commits, push the exact
-  verified tip to the temporary branch, and open a pull request targeting
-  `main`.
-- Require `Build quality gate`, `SonarQube quality gate`, and
-  `Snyk security gate`. A queued, skipped, cancelled, neutral, or stale check is
-  not success.
-- The agent may enable automatic merge after the user says “push.” Merge
-  only when every required check is successful. Diagnose and repair in-scope
-  failures on the same pull request; stop for user direction if a repair
-  requires new authority or unrelated work.
-- After merge, fetch `main`, fast-forward the local `main` branch, and prove
-  local `HEAD` and `origin/main` match with final divergence `0 0`. Report the
-  pull request, merge commit, checks, and any post-merge packaging still
-  running.
+- "Push the changes" authorizes exactly this: the full verified tip enters
+  main through a temporary `codex/` branch and a pull request. It never
+  authorizes a direct push to main or a partial cherry-pick.
+- Before pushing: fetch origin/main and check for remote-only commits. If any
+  exist, rebase the work onto origin/main and rerun the applicable
+  verification gate. If the rebase conflicts with work outside the requested
+  scope, stop and ask for direction.
+- Push the exact verified tip to the temporary branch and open a pull request
+  targeting main.
+- Required checks: Build quality gate, SonarQube quality gate, Snyk security
+  gate. Only a successful conclusion counts; queued, skipped, cancelled,
+  neutral, or stale is failure for merge purposes.
+- Automatic merge may be enabled once the user has said "push," and the merge
+  happens only when every required check is successful. Diagnose and repair
+  in-scope failures on the same pull request; stop for user direction if a
+  repair needs new authority or touches unrelated work.
+- After merge: fetch, fast-forward local main, and confirm local HEAD matches
+  origin/main with zero divergence in both directions
+  (`git rev-list --left-right --count`). Report the pull request, merge
+  commit, check results, and any post-merge packaging still in flight.

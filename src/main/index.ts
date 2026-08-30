@@ -139,6 +139,18 @@ const recoveryProbationRequested = recoveryProbationArgument.requested;
 const recoveryLaunchIntent = recoveryProbationRequested
   ? null
   : parseRecoveryLaunchIntent(process.argv, process.platform, app.isPackaged);
+
+async function startProductionManualUpdateCheckpointProcess(transactionId: string): Promise<void> {
+  try {
+    const { startProductionManualUpdateCheckpointProcess: startCheckpoint } =
+      await import('./releases/productionManualUpdateCheckpointProcess');
+    startCheckpoint(transactionId);
+  } catch (error) {
+    loggers.main.error('Manual update checkpoint failed', { error });
+    app.exit(1);
+  }
+}
+
 let startupMetadata: Parameters<typeof createStartupStateController>[0] = {};
 if (recoveryProbationRequested) startupMetadata = { recoveryMode: 'probation' };
 else if (recoveryLaunchIntent) startupMetadata = { launchIntent: recoveryLaunchIntent };
@@ -425,16 +437,7 @@ crashReporter.start({
 const gotLock =
   !isCrashWatchdog && manualUpdateCheckpointTransaction === null && app.requestSingleInstanceLock();
 if (manualUpdateCheckpointTransaction !== null) {
-  try {
-    await app.whenReady();
-    const { runProductionManualUpdateCheckpoint } =
-      await import('./releases/productionManualUpdateCheckpoint');
-    await runProductionManualUpdateCheckpoint(manualUpdateCheckpointTransaction);
-    app.exit(0);
-  } catch (error) {
-    loggers.main.error('Manual update checkpoint failed', { error });
-    app.exit(1);
-  }
+  void startProductionManualUpdateCheckpointProcess(manualUpdateCheckpointTransaction); // NOSONAR - top-level await blocks Electron ESM entry evaluation before app readiness.
 } else if (gotLock) {
   installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
   startCrashWatchdog();

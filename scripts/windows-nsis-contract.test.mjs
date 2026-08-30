@@ -410,8 +410,20 @@ describe('Windows NSIS bootstrap contract', () => {
 
   it('creates a complete rollback transaction for a standalone protected update', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
+    const installerHashReads = [
+      ...source.matchAll(/\$\{StdUtils\.HashFile\} \$RelaySelfHash "SHA2-256" "\$EXEPATH"/g),
+    ];
 
     expect(source).toContain('PrepareStandaloneRecoveryUpdate:');
+    expect(installerHashReads).toHaveLength(3);
+    for (const installerHashRead of installerHashReads) {
+      expect(
+        source.slice(
+          installerHashRead.index,
+          installerHashRead.index + installerHashRead[0].length + 80,
+        ),
+      ).toContain('${StrCase} $RelaySelfHash $RelaySelfHash "L"');
+    }
     expect(source).toContain('${VersionCompare} $RelaySourceVersion "${RELAY_BUILD_VERSION}"');
     expect(source).toContain('$APPDATA\\Relay\\lockfile');
     expect(source).toContain(

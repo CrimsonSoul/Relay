@@ -468,6 +468,7 @@ PrepareStandaloneRecoveryUpdate:
     Goto BootstrapFailed
   ${EndIf}
   ${StdUtils.HashFile} $RelaySelfHash "SHA2-256" "$EXEPATH"
+  ${StrCase} $RelaySelfHash $RelaySelfHash "L"
   ${If} ${FileExists} "$RelayRequest"
     ReadINIStr $RelayRequestProtocol "$RelayRequest" "RecoveryRequest" "protocol"
     ReadINIStr $RelayRequestTransaction "$RelayRequest" "RecoveryRequest" "transactionId"
@@ -575,6 +576,7 @@ StandaloneRecoveryUpdateReady:
       ReadINIStr $RelayRepairCheckpoint "$RelayRepairRequest" "RepairRequest" "checkpoint"
       ReadINIStr $RelayRepairRequestedAt "$RelayRepairRequest" "RepairRequest" "requestedAt"
       ${StdUtils.HashFile} $RelaySelfHash "SHA2-256" "$EXEPATH"
+      ${StrCase} $RelaySelfHash $RelaySelfHash "L"
       !insertmacro RelayValidateBuildId "$RelayRepairTarget" $RelayBuildIsValid
       StrCpy $RelayResult "0"
       ${If} $RelayRepairTarget == "$RelayPrevious"
@@ -630,6 +632,7 @@ StandaloneRecoveryUpdateReady:
       ReadINIStr $RelayRequestRequestedAt "$RelayRequest" "RecoveryRequest" "requestedAt"
       ReadINIStr $RelayRequestSourceBuild "$RelayRequest" "Source" "buildId"
       ${StdUtils.HashFile} $RelaySelfHash "SHA2-256" "$EXEPATH"
+      ${StrCase} $RelaySelfHash $RelaySelfHash "L"
       ${If} $RelayRequestProtocol != "${RELAY_RECOVERY_PROTOCOL}"
       ${OrIf} $RelayRequestTransaction != "$RelayTransactionId"
       ${OrIf} $RelayRequestTargetVersion != "${RELAY_BUILD_VERSION}"
