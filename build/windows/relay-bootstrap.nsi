@@ -2,11 +2,12 @@
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
 !include "StdUtils.nsh"
+!include "StrFunc.nsh"
 !include "Win\WinError.nsh"
 !include "${PROJECT_DIR}\build\windows\include\relay-runtime-contract.nsh"
 !include "${PROJECT_DIR}\release\windows-bootstrap\relay-build.nsh"
-
 Unicode true
+${Using:StrFunc} StrCase
 RequestExecutionLevel user
 SilentInstall silent
 AutoCloseWindow true
@@ -35,6 +36,7 @@ Var RelayMarkerProtocol
 Var RelayMarkerBuildId
 Var RelayMarkerExecutable
 Var RelayMarkerPayloadHash
+Var RelayPayloadHash
 Var RelayMarkerInstallerHash
 Var RelayMarkerHash
 Var RelayExecutableHash
@@ -128,6 +130,7 @@ Var RelayRepairCatalogHealth
     StrCpy $RelayContentIntegrity "0"
     ${If} $RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
       ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+      ${StrCase} $RelayMarkerHash $RelayMarkerHash "L"
       !insertmacro RelayVerifyRuntimeContent "$RelayRuntimeRoot\${BUILD_ID}" "$RelayMarker" $RelayContentIntegrity
       ReadINIStr $RelayCatalogRuntimeHash "$RelayState" "Build.${BUILD_ID}" "runtimeSha512"
     ${EndIf}
@@ -427,6 +430,7 @@ Section
   ReadINIStr $RelayMarkerPayloadHash "$RelayMarker" "Relay" "payloadHash"
   ReadINIStr $RelayMarkerInstallerHash "$RelayMarker" "Relay" "installerSha256"
   ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+  ${StrCase} $RelayMarkerHash $RelayMarkerHash "L"
   !insertmacro RelayVerifyRuntimeContent "$RelayFinalRuntime" "$RelayMarker" $RelayContentIntegrity
   StrCpy $RelayResult "0"
   ${If} ${FileExists} "$RelayFinalRuntime\${APP_EXECUTABLE_FILENAME}"
@@ -497,24 +501,40 @@ Section
 
   StrCpy $RelayMarker "$RelayStaging\${RELAY_RUNTIME_MARKER}"
   ${StdUtils.HashFile} $RelayExecutableHash "SHA2-512" "$RelayStaging\${APP_EXECUTABLE_FILENAME}"
+  ${StrCase} $RelayExecutableHash $RelayExecutableHash "L"
   ${StdUtils.HashFile} $RelayD3dCompilerHash "SHA2-512" "$RelayStaging\${RELAY_D3D_COMPILER_DLL}"
+  ${StrCase} $RelayD3dCompilerHash $RelayD3dCompilerHash "L"
   ${StdUtils.HashFile} $RelayDxCompilerHash "SHA2-512" "$RelayStaging\${RELAY_DX_COMPILER_DLL}"
+  ${StrCase} $RelayDxCompilerHash $RelayDxCompilerHash "L"
   ${StdUtils.HashFile} $RelayDxilHash "SHA2-512" "$RelayStaging\${RELAY_DXIL_DLL}"
+  ${StrCase} $RelayDxilHash $RelayDxilHash "L"
   ${StdUtils.HashFile} $RelayFfmpegHash "SHA2-512" "$RelayStaging\${RELAY_FFMPEG_DLL}"
+  ${StrCase} $RelayFfmpegHash $RelayFfmpegHash "L"
   ${StdUtils.HashFile} $RelayLibEglHash "SHA2-512" "$RelayStaging\${RELAY_LIB_EGL_DLL}"
+  ${StrCase} $RelayLibEglHash $RelayLibEglHash "L"
   ${StdUtils.HashFile} $RelayLibGlesV2Hash "SHA2-512" "$RelayStaging\${RELAY_LIB_GLES_V2_DLL}"
+  ${StrCase} $RelayLibGlesV2Hash $RelayLibGlesV2Hash "L"
   ${StdUtils.HashFile} $RelayVkSwiftshaderHash "SHA2-512" "$RelayStaging\${RELAY_VK_SWIFTSHADER_DLL}"
+  ${StrCase} $RelayVkSwiftshaderHash $RelayVkSwiftshaderHash "L"
   ${StdUtils.HashFile} $RelayVulkanHash "SHA2-512" "$RelayStaging\${RELAY_VULKAN_DLL}"
+  ${StrCase} $RelayVulkanHash $RelayVulkanHash "L"
   ${StdUtils.HashFile} $RelayAppAsarHash "SHA2-512" "$RelayStaging\${RELAY_APP_ASAR}"
+  ${StrCase} $RelayAppAsarHash $RelayAppAsarHash "L"
   ${StdUtils.HashFile} $RelayPocketBaseHash "SHA2-512" "$RelayStaging\${RELAY_POCKETBASE_EXECUTABLE}"
+  ${StrCase} $RelayPocketBaseHash $RelayPocketBaseHash "L"
   ${StdUtils.HashFile} $RelayPocketBaseHookHash "SHA2-512" "$RelayStaging\${RELAY_POCKETBASE_HOOK}"
+  ${StrCase} $RelayPocketBaseHookHash $RelayPocketBaseHookHash "L"
   ${StdUtils.HashFile} $RelayBetterSqlite3Hash "SHA2-512" "$RelayStaging\${RELAY_BETTER_SQLITE3_NATIVE}"
+  ${StrCase} $RelayBetterSqlite3Hash $RelayBetterSqlite3Hash "L"
   ${StdUtils.HashFile} $RelayKoffiHash "SHA2-512" "$RelayStaging\${RELAY_KOFFI_NATIVE}"
+  ${StrCase} $RelayKoffiHash $RelayKoffiHash "L"
   ClearErrors
   WriteINIStr "$RelayMarker" "Relay" "protocol" "${RELAY_RECOVERY_STATE_PROTOCOL}"
   WriteINIStr "$RelayMarker" "Relay" "buildId" "${RELAY_BUILD_ID}"
   WriteINIStr "$RelayMarker" "Relay" "executable" "${APP_EXECUTABLE_FILENAME}"
-  WriteINIStr "$RelayMarker" "Relay" "payloadHash" "${APP_64_HASH}"
+  StrCpy $RelayPayloadHash "${APP_64_HASH}"
+  ${StrCase} $RelayPayloadHash $RelayPayloadHash "L"
+  WriteINIStr "$RelayMarker" "Relay" "payloadHash" "$RelayPayloadHash"
   WriteINIStr "$RelayMarker" "Relay" "version" "${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayMarker" "Relay" "releaseTag" "v${RELAY_BUILD_VERSION}"
   WriteINIStr "$RelayMarker" "Relay" "targetCommitish" "${RELAY_TARGET_COMMITISH}"
@@ -548,6 +568,7 @@ Section
     Goto BootstrapFailed
   ${EndIf}
   ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+  ${StrCase} $RelayMarkerHash $RelayMarkerHash "L"
   ${If} $RelayRepairOnly == "${RELAY_REPAIR_ONLY_ARGUMENT}"
     ${If} $RelayRepairCatalogRuntimeHash != $RelayMarkerHash
     ${AndIf} $RelayRepairCatalogInstallerHash != ""
@@ -557,6 +578,7 @@ Section
         StrCpy $RelayFailureMessage "Relay could not finalize the new runtime."
         Goto BootstrapFailed
       ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+      ${StrCase} $RelayMarkerHash $RelayMarkerHash "L"
     ${EndIf}
     ${If} $RelayRepairCatalogRuntimeHash != $RelayMarkerHash
       StrCpy $RelayFailureMessage "Relay rejected changed retained-build runtime contents."

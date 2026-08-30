@@ -449,11 +449,27 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
         previousBuildIds: [currentBuildId],
         transaction: null,
       });
-      expect(catalog?.builds.find(({ buildId }) => buildId === targetBuildId)).toMatchObject({
+      const targetBuild = catalog?.builds.find(({ buildId }) => buildId === targetBuildId);
+      expect(targetBuild).toMatchObject({
         version: targetVersion,
         health: 'healthy',
         installerSha256: targetInstallerDigest,
       });
+      if (!targetBuild) throw new Error('Updater did not promote the target build');
+      const targetMarker = await readFile(
+        join(root, 'Runtime', targetBuildId, '.relay-runtime-ready'),
+        'utf8',
+      );
+      const targetPersistedHashes = targetMarker
+        .split(/\r?\n/u)
+        .filter((line) => line.startsWith('payloadHash=') || line.includes('Sha512='))
+        .map((line) => line.slice(line.indexOf('=') + 1));
+      expect(targetPersistedHashes).toHaveLength(15);
+      expect(targetPersistedHashes.every((hash) => hash === hash.toLowerCase())).toBe(true);
+      expect(targetBuild.runtimeSha512).toBe(
+        createHash('sha512').update(targetMarker).digest('hex'),
+      );
+      expect(targetBuild.runtimeSha512).toBe(targetBuild.runtimeSha512.toLowerCase());
       expect(catalog?.builds.find(({ buildId }) => buildId === currentBuildId)).toMatchObject({
         version: currentVersion,
         health: 'healthy',

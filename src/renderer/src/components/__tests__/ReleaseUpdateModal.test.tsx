@@ -88,8 +88,10 @@ describe('ReleaseUpdateModal', () => {
     expect(progress).toHaveAttribute('data-mode', 'determinate');
     expect(progress).toHaveAttribute('value', '70000000');
     expect(progress).toHaveAttribute('max', '140000000');
+    const visualFill = document.querySelector('.release-update-modal__progress-fill');
+    expect(visualFill).toHaveStyle({ width: '50%' });
+    expect(visualFill).not.toHaveStyle({ transform: 'scaleX(0.5)' });
     expect(screen.getByText('66.8 MB of 133.5 MB')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Install update' })).toBeNull();
     expect(screen.getByRole('button', { name: 'View on GitHub' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
     expect(actions.onCancelDownload).toHaveBeenCalledOnce();

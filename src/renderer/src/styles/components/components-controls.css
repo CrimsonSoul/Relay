@@ -239,11 +239,12 @@
 
 .release-update-modal__progress-fill {
   position: absolute;
-  inset: 0;
+  inset-block: 0;
+  inset-inline-start: 0;
   border-radius: inherit;
   background: var(--accent);
   transform-origin: left center;
-  transition: transform 180ms var(--motion-ease-out);
+  transition: width 180ms var(--motion-ease-out);
 }
 
 .release-update-modal__progress-track[data-mode='indeterminate']

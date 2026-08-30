@@ -552,7 +552,40 @@ describe('Windows NSIS bootstrap contract', () => {
     expect(smoke).toContain('DllCorruptionRepaired = $true');
     expect(smoke).toContain('PocketBaseHookCorruptionRepaired = $true');
   });
+  it('writes canonical lowercase hashes for older updater readers', () => {
+    const source = read('build/windows/relay-bootstrap.nsi');
+    const persistedHashVariables = [
+      'RelayMarkerHash',
+      'RelayExecutableHash',
+      'RelayD3dCompilerHash',
+      'RelayDxCompilerHash',
+      'RelayDxilHash',
+      'RelayFfmpegHash',
+      'RelayLibEglHash',
+      'RelayLibGlesV2Hash',
+      'RelayVkSwiftshaderHash',
+      'RelayVulkanHash',
+      'RelayAppAsarHash',
+      'RelayPocketBaseHash',
+      'RelayPocketBaseHookHash',
+      'RelayBetterSqlite3Hash',
+      'RelayKoffiHash',
+    ];
 
+    expect(source).toContain('!include "StrFunc.nsh"');
+    for (const variable of persistedHashVariables) {
+      const hashCalls = source.split('${StdUtils.HashFile} $' + variable + ' ').length - 1;
+      const lowercaseCalls =
+        source.split('${StrCase} $' + variable + ' $' + variable + ' "L"').length - 1;
+      expect(hashCalls).toBeGreaterThan(0);
+      expect(lowercaseCalls).toBe(hashCalls);
+    }
+    expect(source).toContain('StrCpy $RelayPayloadHash "${APP_64_HASH}"');
+    expect(source).toContain('${StrCase} $RelayPayloadHash $RelayPayloadHash "L"');
+    expect(source).toContain(
+      'WriteINIStr "$RelayMarker" "Relay" "payloadHash" "$RelayPayloadHash"',
+    );
+  });
   it('keeps the last usable fallback when the recorded current runtime is damaged', () => {
     const source = read('build/windows/relay-bootstrap.nsi');
     const currentCheck = source.indexOf(
