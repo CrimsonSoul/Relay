@@ -57,6 +57,14 @@ describe('RecoveryPreparedUpdate', () => {
     expect(parseRecoveryPreparedUpdate(serializePrepared({ releaseTag: 'v1.2.0' }))).toBeNull();
   });
 
+  it('canonicalizes uppercase runtime hashes emitted by the native receipt', () => {
+    expect(
+      parseRecoveryPreparedUpdate(
+        serializePrepared({ runtimeSha512: PREPARED.runtimeSha512.toUpperCase() }),
+      ),
+    ).toEqual(PREPARED);
+  });
+
   it('reads a bounded regular receipt from the fixed recovery directory', async () => {
     const recoveryRoot = join(relayRoot, 'Recovery');
     await mkdir(recoveryRoot);

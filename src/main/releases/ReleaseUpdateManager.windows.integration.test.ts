@@ -16,7 +16,9 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import type { RelayUpdateCheck } from '@shared/releases';
-import { parseRecoveryCatalog } from './RecoveryCatalog';
+import { parseRecoveryCatalog, serializeRecoveryCatalog } from './RecoveryCatalog';
+import { writeRecoveryRepairRequest } from './RecoveryRepairRequest';
+import { repairRecoveryRuntime } from './RecoveryRuntimeRepair';
 import { prepareRecoveryRestart } from './RecoveryRestartCoordinator';
 import { completeRecoveryUpdateRequest, readRecoveryUpdateRequest } from './RecoveryUpdateRequest';
 import { ReleaseUpdateManager } from './ReleaseUpdateManager';
@@ -462,6 +464,118 @@ describe.runIf(INTEGRATION_ENABLED)('Windows updater native boundary integration
       await expect(stat(join(root, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
         code: 'ENOENT',
       });
+
+      if (!catalog) throw new Error('Updater did not promote a recovery catalog');
+      const previousBuild = catalog.builds.find(({ buildId }) => buildId === currentBuildId);
+      if (!previousBuild) throw new Error('Updater did not retain the previous build');
+      const previousMarkerPath = join(root, 'Runtime', currentBuildId, '.relay-runtime-ready');
+      await expect(readFile(previousMarkerPath, 'utf8')).resolves.not.toContain('installerSha256=');
+
+      const currentInstallerDigest = await sha256(currentArtifact);
+      previousBuild.installerSha256 = currentInstallerDigest;
+      await writeFile(join(root, 'state.ini'), serializeRecoveryCatalog(catalog));
+      const repairPreviousBuild = async (): Promise<string> => {
+        await Promise.all([
+          rm(join(root, 'Recovery', 'repair-request.ini'), { force: true }),
+          rm(join(root, 'Recovery', 'repair-result.ini'), { force: true }),
+          rm(currentRuntimePath, { force: true }),
+        ]);
+        const repairTransactionId = randomUUID();
+        await writeRecoveryRepairRequest(
+          root,
+          {
+            protocol: 2,
+            transactionId: repairTransactionId,
+            sourceBuildId: targetBuildId,
+            targetBuildId: currentBuildId,
+            targetVersion: currentVersion,
+            targetCommitish,
+            targetInstallerSha256: currentInstallerDigest,
+            checkpoint: 'pending',
+            requestedAt: new Date().toISOString(),
+          },
+          (path) => mkdir(path, { recursive: false, mode: 0o700 }),
+        );
+        await expect(
+          runProcess(currentArtifact, [
+            '/relay-repair-only',
+            '/relay-transaction=' + repairTransactionId,
+          ]),
+        ).resolves.toBe(0);
+        expect((await stat(currentRuntimePath)).isFile()).toBe(true);
+        return readFile(previousMarkerPath, 'utf8');
+      };
+
+      await expect(repairPreviousBuild()).resolves.not.toContain('installerSha256=');
+
+      const legacyMarker = await readFile(previousMarkerPath, 'utf8');
+      const lineEnding = legacyMarker.includes('\r\n') ? '\r\n' : '\n';
+      const protectedMarker = legacyMarker.replace(
+        /(^installedAt=.*(?:\r?\n))/mu,
+        '$1installerSha256=' + currentInstallerDigest + lineEnding,
+      );
+      expect(protectedMarker).not.toBe(legacyMarker);
+      previousBuild.runtimeSha512 = createHash('sha512').update(protectedMarker).digest('hex');
+      await writeFile(previousMarkerPath, protectedMarker);
+      await writeFile(join(root, 'state.ini'), serializeRecoveryCatalog(catalog));
+
+      const activeBuild = catalog.builds.find(({ buildId }) => buildId === targetBuildId);
+      if (!activeBuild) throw new Error('Updater did not retain the active build record');
+      const repairArchiveName = 'relay-win-x64.zip';
+      const repairArchive = Buffer.from('native updater repair integration archive');
+      const repairArchiveDigest = createHash('sha256').update(repairArchive).digest('hex');
+      const repairChecksum = Buffer.from(repairArchiveDigest + '  ' + repairArchiveName + '\n');
+      const repairChecksumDigest = createHash('sha256').update(repairChecksum).digest('hex');
+      const currentArtifactBytes = (await stat(currentArtifact)).size;
+      await rm(currentRuntimePath, { force: true });
+      await expect(
+        repairRecoveryRuntime(
+          { relayRoot: root, sourceBuild: activeBuild, targetBuild: previousBuild },
+          {
+            resolveInstallableByTag: async () => ({
+              version: previousBuild.version,
+              targetCommitish: previousBuild.targetCommitish,
+              archive: {
+                id: 1,
+                name: repairArchiveName,
+                apiUrl: 'https://api.github.com/repos/CrimsonSoul/Relay/releases/assets/1',
+                size: repairArchive.byteLength,
+                sha256: repairArchiveDigest,
+              },
+              checksum: {
+                id: 2,
+                name: repairArchiveName + '.sha256',
+                apiUrl: 'https://api.github.com/repos/CrimsonSoul/Relay/releases/assets/2',
+                size: repairChecksum.byteLength,
+                sha256: repairChecksumDigest,
+              },
+            }),
+            downloadAsset: async (asset, destination) => {
+              const contents = asset.name.endsWith('.sha256') ? repairChecksum : repairArchive;
+              await writeFile(destination, contents);
+              return {
+                bytes: contents.byteLength,
+                sha256: createHash('sha256').update(contents).digest('hex'),
+              };
+            },
+            extractInstaller: async (_archivePath, destination) => {
+              await copyFile(currentArtifact, destination);
+              return { bytes: currentArtifactBytes, sha256: currentInstallerDigest };
+            },
+            spawnInstaller: runProcess,
+            createPrivateDirectory: (path) => mkdir(path, { recursive: false, mode: 0o700 }),
+            now: () => new Date(),
+            randomUuid: randomUUID,
+          },
+        ),
+      ).resolves.toBe(true);
+      const repairedProtectedMarker = await readFile(previousMarkerPath, 'utf8');
+      expect(repairedProtectedMarker).toContain(
+        'installerSha256=' + currentInstallerDigest + lineEnding,
+      );
+      expect(createHash('sha512').update(repairedProtectedMarker).digest('hex')).toBe(
+        previousBuild.runtimeSha512,
+      );
     } finally {
       await Promise.all(
         [currentRuntimePath, targetRuntimePath].map((path) =>
