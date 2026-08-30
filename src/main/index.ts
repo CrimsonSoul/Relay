@@ -425,16 +425,17 @@ crashReporter.start({
 const gotLock =
   !isCrashWatchdog && manualUpdateCheckpointTransaction === null && app.requestSingleInstanceLock();
 if (manualUpdateCheckpointTransaction !== null) {
-  try {
-    await app.whenReady();
-    const { runProductionManualUpdateCheckpoint } =
-      await import('./releases/productionManualUpdateCheckpoint');
-    await runProductionManualUpdateCheckpoint(manualUpdateCheckpointTransaction);
-    app.exit(0);
-  } catch (error) {
-    loggers.main.error('Manual update checkpoint failed', { error });
-    app.exit(1);
-  }
+  // Electron emits ready only after the main module finishes evaluating; keep this chain detached.
+  void import('./releases/productionManualUpdateCheckpoint')
+    .then(async ({ runProductionManualUpdateCheckpoint }) => {
+      await app.whenReady();
+      await runProductionManualUpdateCheckpoint(manualUpdateCheckpointTransaction);
+    })
+    .then(() => app.exit(0))
+    .catch((error: unknown) => {
+      loggers.main.error('Manual update checkpoint failed', { error });
+      app.exit(1);
+    });
 } else if (gotLock) {
   installStartupBenchmarkExitMarker({ environment: process.env, tempPath: app.getPath('temp') });
   startCrashWatchdog();
