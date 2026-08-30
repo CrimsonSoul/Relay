@@ -107,7 +107,7 @@ function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
       >
         <span
           className="release-update-modal__progress-fill"
-          style={{ transform: `scaleX(${progress})` }}
+          style={{ width: progress * 100 + '%' }}
         />
       </div>
       <span>
