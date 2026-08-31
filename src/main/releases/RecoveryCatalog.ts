@@ -5,7 +5,8 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const SHA512_PATTERN = /^[0-9a-f]{128}$/u;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_CATALOG_BYTES = 128 * 1_024;
-const MAX_RETAINED_BUILDS = 3;
+const MAX_CATALOG_PREVIOUS_BUILDS = 3;
+const MAX_RETAINED_PREVIOUS_BUILDS = 2;
 const MAX_FAILED_RELEASE_FINGERPRINTS = 16;
 const RESERVED_WINDOWS_NAMES = new Set([
   'con',
@@ -277,7 +278,7 @@ function hasValidCatalogReferences(catalog: RecoveryCatalog): boolean {
     !isNonNegativeInteger(catalog.generation) ||
     !isBuildId(catalog.currentBuildId) ||
     (catalog.candidateBuildId !== null && !isBuildId(catalog.candidateBuildId)) ||
-    catalog.previousBuildIds.length > MAX_RETAINED_BUILDS ||
+    catalog.previousBuildIds.length > MAX_CATALOG_PREVIOUS_BUILDS ||
     catalog.previousBuildIds.some((buildId) => !isBuildId(buildId)) ||
     new Set(catalog.previousBuildIds).size !== catalog.previousBuildIds.length ||
     catalog.previousBuildIds.includes(catalog.currentBuildId) ||
@@ -481,7 +482,7 @@ export function promoteRecoveryCandidate(
 
   const previousBuildIds = [catalog.currentBuildId, ...catalog.previousBuildIds]
     .filter((buildId, index, all) => all.indexOf(buildId) === index)
-    .slice(0, MAX_RETAINED_BUILDS);
+    .slice(0, MAX_RETAINED_PREVIOUS_BUILDS);
   const retained = new Set([candidateBuildId, ...previousBuildIds]);
   const builds = catalog.builds
     .filter((build) => retained.has(build.buildId))

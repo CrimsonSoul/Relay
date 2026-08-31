@@ -341,4 +341,105 @@ describe('ReleaseUpdateManager', () => {
     await expect(stat(stale)).rejects.toThrow();
     await expect(stat(unrelated)).resolves.toBeDefined();
   });
+
+  it('removes completed staging for the healthy current version and older versions', async () => {
+    const currentBuild = recoveryBuild();
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 3,
+        currentBuildId: currentBuild.buildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [currentBuild],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+    const updatesRoot = join(relayRoot, 'Updates');
+    const current = join(updatesRoot, 'v1.0.0-11111111-1111-4111-8111-111111111111');
+    const older = join(updatesRoot, 'v0.9.0-22222222-2222-4222-8222-222222222222');
+    const newer = join(updatesRoot, 'v1.1.0-33333333-3333-4333-8333-333333333333');
+    const unrelated = join(updatesRoot, 'operator-files');
+    await Promise.all([
+      mkdir(current, { recursive: true }),
+      mkdir(older, { recursive: true }),
+      mkdir(newer, { recursive: true }),
+      mkdir(unrelated, { recursive: true }),
+    ]);
+
+    await manager().readySnapshot();
+
+    await expect(stat(current)).rejects.toThrow();
+    await expect(stat(older)).rejects.toThrow();
+    await expect(stat(newer)).resolves.toBeDefined();
+    await expect(stat(unrelated)).resolves.toBeDefined();
+  });
+
+  it('retries completed staging cleanup after candidate probation settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const candidate = { ...recoveryBuild(), health: 'candidate' as const };
+      const source: RecoveryBuildRecord = {
+        ...recoveryBuild(),
+        buildId: `r1-${'2'.repeat(40)}`,
+        version: '0.9.0',
+        releaseTag: 'v0.9.0',
+        targetCommitish: '2'.repeat(40),
+        runtimeSha512: 'd'.repeat(128),
+      };
+      await writeFile(
+        join(relayRoot, 'state.ini'),
+        serializeRecoveryCatalog({
+          protocol: 2,
+          generation: 2,
+          currentBuildId: source.buildId,
+          candidateBuildId: candidate.buildId,
+          previousBuildIds: [],
+          builds: [source, candidate],
+          transaction: {
+            id: '44444444-4444-4444-8444-444444444444',
+            kind: 'update',
+            phase: 'probation',
+            sourceBuildId: source.buildId,
+            targetBuildId: candidate.buildId,
+            mode: 'client',
+            snapshotId: null,
+            attempts: 1,
+            requestedAt: '2026-08-24T15:05:00.000Z',
+          },
+          failedReleaseFingerprints: [],
+        }),
+      );
+      const staging = join(relayRoot, 'Updates', 'v1.0.0-44444444-4444-4444-8444-444444444444');
+      await mkdir(staging, { recursive: true });
+      const updates = manager();
+
+      await updates.readySnapshot();
+      await expect(stat(staging)).resolves.toBeDefined();
+
+      await writeFile(
+        join(relayRoot, 'state.ini'),
+        serializeRecoveryCatalog({
+          protocol: 2,
+          generation: 3,
+          currentBuildId: candidate.buildId,
+          candidateBuildId: null,
+          previousBuildIds: [source.buildId],
+          builds: [source, { ...candidate, health: 'healthy' }],
+          transaction: null,
+          failedReleaseFingerprints: [],
+        }),
+      );
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+
+      await vi.waitFor(async () => {
+        await expect(stat(staging)).rejects.toThrow();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -116,7 +116,7 @@ cannot replace notes for an older downloaded update; missing same-version notes 
 instead of showing another release's body.
 
 The standalone Windows installer and stable launcher retain Relay's existing retained-build recovery
-contract. The stable launcher keeps the current runtime plus the three most recently promoted
+contract. The stable launcher keeps the current runtime plus the two most recently promoted
 runtimes. Every protocol-2 runtime marker contains SHA-512 hashes for the executable, every shipped
 Electron DLL, application archive, PocketBase executable and privileged hook, `better-sqlite3`, and
 Koffi; the catalog binds the marker hash, and native and TypeScript recovery paths verify the marker
@@ -177,7 +177,7 @@ download progress and cancellation, immutable-release refusal, verified-folder r
 and compact-shell label variants, structured release-note rendering, cached/offline history states,
 and 400 px minimum-width geometry with the Windows window-control reservation. Main-process coverage
 must prove that only a successfully revalidated folder reveal quits the application. Recovery
-coverage remains separate and must exercise current-plus-three rotation, stopped server snapshots,
+coverage remains separate and must exercise current-plus-two rotation, stopped server snapshots,
 client WAL checkpoints, probation success and failure, PocketBase Job Object containment, native
 promotion and rollback, strict runtime integrity, quarantine, settlement reconciliation, manual
 repair, fallback-runtime UI, and transaction-aware runtime/snapshot cleanup.
