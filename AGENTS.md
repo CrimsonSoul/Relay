@@ -90,7 +90,8 @@ Additions by scope:
 - Relay Web, browser runtime, gateway, session, or network-boundary changes:
   add `npm run test:web`.
 - Windows packaging or bootstrap changes: add `npm run build:win` when the
-  environment supports it; otherwise report it as skipped.
+  environment supports it; otherwise report it as skipped. This command must
+  finish its packaged Koffi and better-sqlite3 Windows x64 PE32+ verification.
 - Readiness or push-to-test claims: add
   `npm audit --audit-level=high --omit=dev`.
 

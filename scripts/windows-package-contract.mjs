@@ -2,6 +2,8 @@ const BUILD_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const LAUNCHER_FILE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,62}\.exe$/i;
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+const WINDOWS_X64_MACHINE = 0x8664;
+const PE32_PLUS_MAGIC = 0x20b;
 const RESERVED_WINDOWS_NAMES = new Set([
   'con',
   'prn',
@@ -37,6 +39,30 @@ export function resolveBuildId({ env = {}, gitSha, dirty = false, nonce } = {}) 
 
   const suffix = dirty ? `-dirty-${nonce ?? Date.now().toString(36)}` : '';
   return validateBuildId(`${buildId}${suffix}`);
+}
+
+export function inspectWindowsNativeModule(buffer, label = 'Windows native module') {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 0x40 || buffer.toString('ascii', 0, 2) !== 'MZ') {
+    throw new Error(`${label} is not a valid Windows portable executable`);
+  }
+
+  const peOffset = buffer.readUInt32LE(0x3c);
+  if (
+    peOffset < 0x40 ||
+    peOffset + 26 > buffer.length ||
+    buffer.toString('binary', peOffset, peOffset + 4) !== 'PE\0\0'
+  ) {
+    throw new Error(`${label} is not a valid Windows portable executable`);
+  }
+
+  if (buffer.readUInt16LE(peOffset + 4) !== WINDOWS_X64_MACHINE) {
+    throw new Error(`${label} must target Windows x86-64`);
+  }
+  if (buffer.readUInt16LE(peOffset + 24) !== PE32_PLUS_MAGIC) {
+    throw new Error(`${label} must use the PE32+ optional-header format`);
+  }
+
+  return { architecture: 'pe32+', machine: 'x86-64' };
 }
 
 function validateHarnessRoot(value) {
