@@ -16,11 +16,24 @@ import {
   resolveWindowsNativeDependencyInstall,
 } from './package-windows.mjs';
 
+function makePortableExecutable({ machine = 0x8664, optionalHeaderMagic = 0x20b } = {}) {
+  const buffer = Buffer.alloc(256);
+  const peOffset = 0x80;
+  buffer.write('MZ', 0, 'ascii');
+  buffer.writeUInt32LE(peOffset, 0x3c);
+  buffer.write('PE\0\0', peOffset, 'binary');
+  buffer.writeUInt16LE(machine, peOffset + 4);
+  buffer.writeUInt16LE(optionalHeaderMagic, peOffset + 24);
+  return buffer;
+}
+
 describe('Windows package contract', () => {
   it('forwards release publish flags through the nested Windows package script', () => {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 
-    expect(packageJson.scripts['build:win']).toMatch(/npm run package:win --$/);
+    expect(packageJson.scripts['build:win']).toMatch(
+      /npm run package:win -- && npm run verify:win:native$/u,
+    );
     expect(packageJson.scripts).not.toHaveProperty('release');
     expect(resolveElectronBuilderArgs([])).toEqual(['--publish', 'never']);
     expect(resolveElectronBuilderArgs(['--publish', 'always'])).toEqual(['--publish', 'always']);
@@ -79,6 +92,37 @@ describe('Windows package contract', () => {
     expect(() => resolveWindowsNativeDependencyInstall('latest', 'darwin')).toThrow(
       /Koffi version/i,
     );
+  });
+
+  it('accepts only Windows x64 PE32+ native module payloads', async () => {
+    const contract = await import('./windows-package-contract.mjs');
+
+    expect(typeof contract.inspectWindowsNativeModule).toBe('function');
+    expect(contract.inspectWindowsNativeModule(makePortableExecutable(), 'Koffi')).toEqual({
+      architecture: 'pe32+',
+      machine: 'x86-64',
+    });
+    expect(() =>
+      contract.inspectWindowsNativeModule(makePortableExecutable({ machine: 0xaa64 }), 'Koffi'),
+    ).toThrow(/x86-64/i);
+    expect(() =>
+      contract.inspectWindowsNativeModule(
+        makePortableExecutable({ optionalHeaderMagic: 0x10b }),
+        'Koffi',
+      ),
+    ).toThrow(/PE32\+/i);
+    expect(() => contract.inspectWindowsNativeModule(Buffer.from('not a PE'), 'Koffi')).toThrow(
+      /portable executable/i,
+    );
+  });
+
+  it('makes native module verification part of every Windows build', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
+
+    expect(packageJson.scripts['verify:win:native']).toBe(
+      'node scripts/verify-windows-native-modules.mjs',
+    );
+    expect(packageJson.scripts['build:win']).toMatch(/npm run verify:win:native$/u);
   });
 
   it('runs the bundled npm CLI when a direct Windows invocation has no npm_execpath', () => {

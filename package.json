@@ -11,8 +11,9 @@
   "scripts": {
     "dev": "ELECTRON_RUN_AS_NODE= electron-vite dev",
     "build": "electron-vite build",
-    "build:win": "node scripts/download-pocketbase.mjs --platform=win32 --arch=x64 && npm run package:win --",
+    "build:win": "node scripts/download-pocketbase.mjs --platform=win32 --arch=x64 && npm run package:win -- && npm run verify:win:native",
     "package:win": "npm run build && node scripts/package-windows.mjs",
+    "verify:win:native": "node scripts/verify-windows-native-modules.mjs",
     "preview": "electron-vite preview",
     "seed:dynatrace": "node scripts/seed.mjs --dynatrace-only",
     "seed:dynatrace:clear": "node scripts/seed.mjs --clear-dynatrace",
