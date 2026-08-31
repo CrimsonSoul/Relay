@@ -131,7 +131,7 @@ describe('RecoveryCatalog', () => {
     expect(parseRecoveryCatalog(damaged)).toBeNull();
   });
 
-  it('promotes one candidate and retains the displaced current plus two newest predecessors', () => {
+  it('promotes one candidate and retains the displaced current plus one predecessor', () => {
     const original = catalog();
     const candidate = build(
       'r1-5555555555555555',
@@ -165,7 +165,6 @@ describe('RecoveryCatalog', () => {
     expect(promoted.previousBuildIds).toEqual([
       original.currentBuildId,
       original.previousBuildIds[0],
-      original.previousBuildIds[1],
     ]);
     expect(promoted.builds.find((item) => item.buildId === original.currentBuildId)).toMatchObject({
       rollbackSnapshotId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -175,6 +174,7 @@ describe('RecoveryCatalog', () => {
       installedAt: '2026-08-24T15:07:00.000Z',
     });
     expect(promoted.builds.map((item) => item.buildId)).not.toContain(original.previousBuildIds[2]);
+    expect(promoted.builds.map((item) => item.buildId)).not.toContain(original.previousBuildIds[1]);
     expect(promoted.transaction).toBeNull();
     expect(promoted.generation).toBe(original.generation + 1);
   });

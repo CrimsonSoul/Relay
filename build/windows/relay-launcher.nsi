@@ -90,6 +90,7 @@ Var RelayPrevious0
 Var RelayPrevious1
 Var RelayPrevious2
 Var RelayDroppedBuild
+Var RelayDroppedBuild2
 Var RelayTransactionId
 Var RelayTransactionIsValid
 Var RelayTransactionSource
@@ -175,7 +176,6 @@ Var RelayManualCurrentClientEpoch
 Var RelayManualTargetServerEpoch
 Var RelayManualTargetClientEpoch
 Var RelayNewPrevious1
-Var RelayNewPrevious2
 Var RelaySettlementProtocol
 Var RelaySettlementTransaction
 Var RelaySettlementOutcome
@@ -829,24 +829,30 @@ HandleManualRollback:
   ${EndIf}
 
   ; Move the selected retained build to current, keep the build being left as
-  ; the newest predecessor, and preserve the other two predecessors in order.
+  ; the newest predecessor, and preserve one other predecessor in order.
   StrCpy $RelayNewPrevious1 ""
-  StrCpy $RelayNewPrevious2 ""
+  StrCpy $RelayDroppedBuild ""
+  StrCpy $RelayDroppedBuild2 ""
   ${If} $RelayPrevious0 != "$RelayManualTarget"
-    StrCpy $RelayNewPrevious1 $RelayPrevious0
+  ${AndIf} $RelayPrevious0 != ""
+    StrCpy $RelayNewPrevious1 "$RelayPrevious0"
   ${EndIf}
   ${If} $RelayPrevious1 != "$RelayManualTarget"
+  ${AndIf} $RelayPrevious1 != ""
     ${If} $RelayNewPrevious1 == ""
-      StrCpy $RelayNewPrevious1 $RelayPrevious1
+      StrCpy $RelayNewPrevious1 "$RelayPrevious1"
     ${Else}
-      StrCpy $RelayNewPrevious2 $RelayPrevious1
+      StrCpy $RelayDroppedBuild "$RelayPrevious1"
     ${EndIf}
   ${EndIf}
   ${If} $RelayPrevious2 != "$RelayManualTarget"
+  ${AndIf} $RelayPrevious2 != ""
     ${If} $RelayNewPrevious1 == ""
-      StrCpy $RelayNewPrevious1 $RelayPrevious2
-    ${ElseIf} $RelayNewPrevious2 == ""
-      StrCpy $RelayNewPrevious2 $RelayPrevious2
+      StrCpy $RelayNewPrevious1 "$RelayPrevious2"
+    ${ElseIf} $RelayDroppedBuild == ""
+      StrCpy $RelayDroppedBuild "$RelayPrevious2"
+    ${Else}
+      StrCpy $RelayDroppedBuild2 "$RelayPrevious2"
     ${EndIf}
   ${EndIf}
   ReadINIStr $RelayGeneration "$RelayState" "Relay" "generation"
@@ -857,10 +863,16 @@ HandleManualRollback:
   WriteINIStr "$RelayStateNew" "Relay" "current" "$RelayManualTarget"
   WriteINIStr "$RelayStateNew" "Relay" "previous0" "$RelayManualSource"
   WriteINIStr "$RelayStateNew" "Relay" "previous1" "$RelayNewPrevious1"
-  WriteINIStr "$RelayStateNew" "Relay" "previous2" "$RelayNewPrevious2"
+  WriteINIStr "$RelayStateNew" "Relay" "previous2" ""
   WriteINIStr "$RelayStateNew" "Build.$RelayManualTarget" "rollbackSnapshotId" ""
   WriteINIStr "$RelayStateNew" "Build.$RelayManualSource" "rollbackSnapshotId" "$RelayManualSourceSnapshot"
   DeleteINISec "$RelayStateNew" "Transaction"
+  ${If} $RelayDroppedBuild != ""
+    DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"
+  ${EndIf}
+  ${If} $RelayDroppedBuild2 != ""
+    DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"
+  ${EndIf}
   System::Call 'kernel32::MoveFileExW(w "$RelayStateNew", w "$RelayState", i 9) i.r0'
   ${If} $0 == 0
     MessageBox MB_OK|MB_ICONSTOP "Relay restored the selected data but could not commit the recovery catalog. Restart Relay to resume recovery safely."
@@ -1098,7 +1110,8 @@ PromoteCandidate:
   ReadINIStr $RelayPrevious2 "$RelayState" "Relay" "previous2"
   ReadINIStr $RelayGeneration "$RelayState" "Relay" "generation"
   IntOp $RelayGeneration $RelayGeneration + 1
-  StrCpy $RelayDroppedBuild $RelayPrevious2
+  StrCpy $RelayDroppedBuild $RelayPrevious1
+  StrCpy $RelayDroppedBuild2 $RelayPrevious2
   Delete "$RelayStateNew"
   CopyFiles /SILENT "$RelayState" "$RelayStateNew"
   WriteINIStr "$RelayStateNew" "Relay" "generation" "$RelayGeneration"
@@ -1106,12 +1119,15 @@ PromoteCandidate:
   WriteINIStr "$RelayStateNew" "Relay" "candidate" ""
   WriteINIStr "$RelayStateNew" "Relay" "previous0" "$RelayCurrent"
   WriteINIStr "$RelayStateNew" "Relay" "previous1" "$RelayPrevious0"
-  WriteINIStr "$RelayStateNew" "Relay" "previous2" "$RelayPrevious1"
+  WriteINIStr "$RelayStateNew" "Relay" "previous2" ""
   WriteINIStr "$RelayStateNew" "Build.$RelayCandidate" "health" "healthy"
   WriteINIStr "$RelayStateNew" "Build.$RelayCurrent" "rollbackSnapshotId" "$RelayTransactionSnapshot"
   DeleteINISec "$RelayStateNew" "Transaction"
   ${If} $RelayDroppedBuild != ""
     DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"
+  ${EndIf}
+  ${If} $RelayDroppedBuild2 != ""
+    DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"
   ${EndIf}
   StrCpy $RelaySettlementOutcome "promoted"
   Call RelayWriteSettlementIntent

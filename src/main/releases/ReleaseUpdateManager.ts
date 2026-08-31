@@ -27,6 +27,7 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const LOWER_HEX_PATTERN = /^[0-9a-f]+$/u;
 const INSTALLER_NAME = 'Relay.exe';
 const ABANDONED_STAGING_AGE_MS = 24 * 60 * 60 * 1_000;
+const POST_PROMOTION_CLEANUP_RETRY_MS = 90 * 1_000;
 const DOWNLOAD_RETRY_FAILURES = new Set<RelayUpdateFailureCode>([
   'download-failed',
   'verification-failed',
@@ -127,13 +128,14 @@ function isRandomUuid(value: string): boolean {
   );
 }
 
-function isUpdateStagingDirectory(value: string): boolean {
+function updateStagingVersion(value: string): string | null {
   const versionEnd = value.indexOf('-');
-  if (!value.startsWith('v') || versionEnd <= 1) return false;
+  if (!value.startsWith('v') || versionEnd <= 1) return null;
   const version = value.slice(1, versionEnd);
-  return (
-    compareRelayVersions(version, version) !== null && isRandomUuid(value.slice(versionEnd + 1))
-  );
+  return compareRelayVersions(version, version) !== null &&
+    isRandomUuid(value.slice(versionEnd + 1))
+    ? version
+    : null;
 }
 
 async function resolveManagedRoot(
@@ -479,8 +481,17 @@ export class ReleaseUpdateManager {
   }
 
   private initialize(): Promise<void> {
-    this.initializationPromise ??= this.cleanupAbandonedStaging().catch(() => undefined);
+    this.initializationPromise ??= this.initializeStagingCleanup();
     return this.initializationPromise;
+  }
+
+  private async initializeStagingCleanup(): Promise<void> {
+    await this.cleanupStaging().catch(() => undefined);
+    const retry = setTimeout(
+      () => this.cleanupStaging().catch(() => undefined),
+      POST_PROMOTION_CLEANUP_RETRY_MS,
+    );
+    retry.unref();
   }
 
   private async resolveDownloadRelease(
@@ -598,9 +609,40 @@ export class ReleaseUpdateManager {
     }
   }
 
-  private async cleanupAbandonedStaging(): Promise<void> {
+  private async completedCurrentVersion(managedRoot: ManagedRoot): Promise<string | null> {
+    const statePath = join(managedRoot.realRoot, 'state.ini');
+    try {
+      const [stats, resolvedStatePath] = await Promise.all([lstat(statePath), realpath(statePath)]);
+      if (
+        !stats.isFile() ||
+        stats.isSymbolicLink() ||
+        stats.size > 128 * 1_024 ||
+        !isDirectChild(managedRoot.realRoot, resolvedStatePath, 'state.ini')
+      ) {
+        return null;
+      }
+      const catalog = parseRecoveryCatalog(await readFile(resolvedStatePath, 'utf8'));
+      const current = catalog?.builds.find((build) => build.buildId === catalog.currentBuildId);
+      if (
+        catalog?.currentBuildId !== managedRoot.executingBuildId ||
+        catalog.candidateBuildId !== null ||
+        catalog.transaction !== null ||
+        current?.health !== 'healthy' ||
+        compareRelayVersions(current.version, this.options.getCurrentVersion()) !== 0
+      ) {
+        return null;
+      }
+      return current.version;
+    } catch {
+      return null;
+    }
+  }
+
+  private async cleanupStaging(): Promise<void> {
     const managedRoot = await this.supportedManagedRoot();
     if (!managedRoot) return;
+
+    const completedVersion = await this.completedCurrentVersion(managedRoot);
 
     let realUpdatesRoot: string;
     let entries: Dirent<string>[];
@@ -620,7 +662,8 @@ export class ReleaseUpdateManager {
     }
 
     for (const entry of entries) {
-      if (!isUpdateStagingDirectory(entry.name)) continue;
+      const stagingVersion = updateStagingVersion(entry.name);
+      if (!stagingVersion) continue;
       const path = join(managedRoot.updatesRoot, entry.name);
       try {
         const [currentRootStats, currentRealRoot, stats, resolvedPath] = await Promise.all([
@@ -637,7 +680,8 @@ export class ReleaseUpdateManager {
           entry.isSymbolicLink() ||
           !stats.isDirectory() ||
           stats.isSymbolicLink() ||
-          Date.now() - stats.mtimeMs < ABANDONED_STAGING_AGE_MS ||
+          (Date.now() - stats.mtimeMs < ABANDONED_STAGING_AGE_MS &&
+            (!completedVersion || compareRelayVersions(stagingVersion, completedVersion) === 1)) ||
           !isDirectChild(realUpdatesRoot, resolvedPath, entry.name)
         ) {
           continue;

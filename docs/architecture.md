@@ -192,12 +192,15 @@ reveal causes the main process to quit the complete application; Relay never lau
 or changes the active runtime. The operator runs the revealed `Relay.exe` manually, after Relay has
 exited.
 
-Startup cleanup removes only recognized updater staging directories older than 24 hours, leaving
-recent or unrelated paths untouched. Recovery catalog access in the manager is read-only and used
-only to reject a quarantined immutable release fingerprint. The in-app updater does not create or
-complete recovery requests, prepare runtimes, stop services, invoke the bootstrap, or relaunch Relay.
-Native installer activation and retained-build rollback remain separate Windows installer/launcher
-responsibilities.
+On a healthy current-runtime startup with no candidate or recovery transaction, updater cleanup
+removes recognized staging directories for the current version and older versions while preserving
+a newer download. It retries after 90 seconds so the first session promoted from probation can clean
+the installer after the native bootstrap releases it. The existing 24-hour startup rule remains a
+fallback for abandoned recognized staging; unrelated paths remain untouched. Recovery catalog access
+in the manager stays read-only and also rejects a quarantined immutable release fingerprint. The
+in-app updater does not create or complete recovery requests, prepare runtimes, stop services, invoke
+the bootstrap, or relaunch Relay. Native installer activation and retained-build rollback remain
+separate Windows installer/launcher responsibilities.
 
 Discovery failures remain silent and do not affect startup or normal Relay work. Explicit action
 failures appear inside the dialog or as a recovery toast. Relay Web has none of the release-check,
@@ -209,7 +212,9 @@ publisher signature.
 
 Packaged Windows x64 installations use the stable `%LOCALAPPDATA%\Relay\Relay.exe` launcher as a
 native recovery supervisor. Recovery protocol 2 stores one current runtime, one temporary update
-candidate, and the three most recently healthy runtimes under `%LOCALAPPDATA%\Relay\Runtime`.
+candidate, and the two most recently healthy runtimes under `%LOCALAPPDATA%\Relay\Runtime`. The
+catalog still accepts and serializes the legacy `previous2` slot for compatibility, but candidate
+promotion and manual rollback leave it empty and discard older unreferenced builds.
 `state.ini` binds every retained build to its version, immutable release tag and commit, runtime
 marker SHA-512, installer SHA-256 when known, data-compatibility epochs, install time, health, and
 server snapshot. A protocol-2 marker independently binds SHA-512 hashes for `Relay.exe`, `app.asar`,

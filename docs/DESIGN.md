@@ -392,7 +392,7 @@ and expanded content returns to the shared page inset without introducing horizo
 ### Retained-build recovery (`.settings-recovery`)
 
 **Settings > About > Recovery** sits between the installed-version summary and release history as a
-divided inline section, not a competing card or modal. Its heading explains the current-plus-three
+divided inline section, not a competing card or modal. Its heading explains the current-plus-two
 Windows retention rule and labels either the catalog current version or the retained recovery
 runtime currently running. When fallback is active, plain status copy explicitly distinguishes the
 running version from the catalog current version and directs the Owner to make the fallback current

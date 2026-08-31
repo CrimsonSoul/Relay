@@ -44,8 +44,8 @@ describe('Windows NSIS launcher contract', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
-    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "5"');
-    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 105');
+    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "6"');
+    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 106');
     expect(source).toContain('VIProductVersion "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"FileVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"ProductVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
@@ -63,6 +63,27 @@ describe('Windows NSIS launcher contract', () => {
     );
     expect(source).toContain('${GetParameters} $RelayArgs');
     expect(source).toContain('Exec \'"$RelayExecutable" $RelayArgs\'');
+  });
+
+  it('bounds candidate promotion and manual rollback to two retained predecessors', () => {
+    const source = read('build/windows/relay-launcher.nsi');
+    const promotion = source.slice(
+      source.indexOf('PromoteCandidate:'),
+      source.indexOf('RollbackCandidate:'),
+    );
+    const manualRollback = source.slice(
+      source.indexOf('; Move the selected retained build to current'),
+      source.indexOf('RejectManualRollback:'),
+    );
+
+    expect(promotion).toContain('WriteINIStr "$RelayStateNew" "Relay" "previous2" ""');
+    expect(promotion).toContain('StrCpy $RelayDroppedBuild $RelayPrevious1');
+    expect(promotion).toContain('StrCpy $RelayDroppedBuild2 $RelayPrevious2');
+    expect(promotion).toContain('DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"');
+    expect(promotion).toContain('DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"');
+    expect(manualRollback).toContain('WriteINIStr "$RelayStateNew" "Relay" "previous2" ""');
+    expect(manualRollback).toContain('DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild"');
+    expect(manualRollback).toContain('DeleteINISec "$RelayStateNew" "Build.$RelayDroppedBuild2"');
   });
 
   it('opens a retained recovery runtime when protocol-2 current cannot launch', () => {
