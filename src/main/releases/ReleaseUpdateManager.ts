@@ -624,8 +624,7 @@ export class ReleaseUpdateManager {
       const catalog = parseRecoveryCatalog(await readFile(resolvedStatePath, 'utf8'));
       const current = catalog?.builds.find((build) => build.buildId === catalog.currentBuildId);
       if (
-        !catalog ||
-        catalog.currentBuildId !== managedRoot.executingBuildId ||
+        catalog?.currentBuildId !== managedRoot.executingBuildId ||
         catalog.candidateBuildId !== null ||
         catalog.transaction !== null ||
         current?.health !== 'healthy' ||
