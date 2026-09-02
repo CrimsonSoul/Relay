@@ -15,7 +15,7 @@ tests remain authoritative when details change.
 | Build         | Vite 7.3.6 and electron-vite 5.0.0                      |
 | Data store    | PocketBase 0.39.9 with SQLite; PocketBase JS SDK 0.27.0 |
 | Validation    | Zod 4.4.3                                               |
-| Testing       | Vitest 4.1.10 and Playwright 1.62.0                     |
+| Testing       | Vitest 4.1.11 and Playwright 1.62.0                     |
 
 Dependency and runtime declarations live in `package.json`, `package-lock.json`, and
 `.node-version`. Release versions are derived from conventional commits on `main` and injected into
