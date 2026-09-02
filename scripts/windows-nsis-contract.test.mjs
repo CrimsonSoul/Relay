@@ -921,6 +921,10 @@ describe('Windows packaging integration contract', () => {
 
   it('gives every Windows CI artifact a commit build ID and real smoke test', () => {
     const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
+    const runtimeContract = read('build/windows/include/relay-runtime-contract.nsh');
+    const launcherProtocolExitCode = Number(
+      runtimeContract.match(/^!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE (\d+)$/m)?.[1],
+    );
     const packageJob = reusable.jobs.package;
     const smoke = findStep(packageJob, 'Smoke test persistent bootstrap');
     const benchmark = findStep(packageJob, 'Benchmark packaged startup paths');
@@ -931,7 +935,7 @@ describe('Windows packaging integration contract', () => {
 
     expect(packageJob.env.RELAY_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
     expect(smoke.env.RELAY_EXPECTED_BUILD_ID).toBe('r1-${{ inputs.source-sha }}');
-    expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(105);
+    expect(smoke.env.RELAY_EXPECTED_LAUNCHER_PROTOCOL_EXIT_CODE).toBe(launcherProtocolExitCode);
     expect(smoke.run).toContain('steps.previous.outputs.build_id');
     expect(smoke.run).toContain('scripts/windows-bootstrap-smoke.ps1');
     expect(smoke.run).toContain('-PreviousArtifact');
