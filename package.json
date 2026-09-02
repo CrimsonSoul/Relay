@@ -122,7 +122,7 @@
     "@typescript-eslint/eslint-plugin": "8.65.0",
     "@typescript-eslint/parser": "8.65.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "brace-expansion": "file:vendor/brace-expansion-compat",
     "electron": "42.4.0",
     "electron-builder": "26.15.3",
@@ -143,7 +143,7 @@
     "snyk": "1.1306.1",
     "typescript": "6.0.3",
     "vite": "^7.3.6",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "write-excel-file": "4.1.1",
     "yaml": "2.9.0"
   }
