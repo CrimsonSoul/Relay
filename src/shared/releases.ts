@@ -27,7 +27,8 @@ export type RelayReleaseNotes = {
   immutable: boolean;
 };
 
-export type RelayUpdatePhase = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error';
+export type RelayUpdatePhase =
+  'idle' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'ready-to-restart' | 'error';
 
 export type RelayUpdateFailureCode =
   | 'unsupported'
@@ -37,7 +38,8 @@ export type RelayUpdateFailureCode =
   | 'download-failed'
   | 'verification-failed'
   | 'cancelled'
-  | 'reveal-failed';
+  | 'install-failed'
+  | 'restart-unavailable';
 
 export type RelayUpdateSnapshot = {
   phase: RelayUpdatePhase;

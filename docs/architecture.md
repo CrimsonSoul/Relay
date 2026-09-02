@@ -135,7 +135,7 @@ Desktop clients and Relay Web sessions write bounded heartbeat records. Server m
 active client records and presents their sanitized host/browser labels; the server itself is not
 counted. Presence is operational status, not an authorization mechanism.
 
-### Release discovery and manual updates
+### Release discovery and updates
 
 The packaged Electron version is the installed version shown in Settings and the comparison source
 for update discovery. The main process owns a bounded, credential-free request to GitHub's fixed
@@ -153,22 +153,23 @@ a background refresh of GitHub's fixed release-history endpoint. The cache holds
 releases, bounds every field and the complete response, and keeps its serialized file at or below
 512 KiB by retaining the newest entries that fit. It preserves immutable entries by version and
 persists GitHub's ETag so an unchanged history returns `304` without downloading the notes again. An
-offline or malformed refresh leaves the last valid cache readable and cannot affect update
-discovery or download. Updater notes are accepted only when their version matches the
-manager-authoritative active update. If discovery advances while an older update is downloaded, the
+offline or malformed refresh leaves the last valid cache readable and cannot affect update discovery
+or installation. Updater notes are accepted only when their version matches the manager-authoritative
+active update. If discovery advances while an older update is installing or restart-ready, the
 renderer retains only the older version's matching notes rather than attaching the newer release body.
 
 The desktop renderer checks on startup and every 15 minutes while running. A newer normal release
 produces one advisory toast per version, persisted in local renderer storage, with a **Review update**
 action. The validated latest version also drives a non-dismissible header indicator that remains
-visible until the installed version is current and changes to Downloading, Ready, or Update issue as
-the operator progresses. A failed refresh does not clear a previously confirmed update, and a
-same-version check cannot overwrite download progress or a verified staged installer.
+visible until the installed version is current and changes to Downloading, Install, or Restart as the
+operator progresses. A failed refresh does not clear a previously confirmed update, and a same-version
+check cannot overwrite download or restart-ready state.
 
 The **Update Relay** dialog is the only renderer workflow. Its fixed preload actions carry no URL,
 path, filename, or command argument from the renderer. Its release-review action may carry only a
 validated normal version, which the main process expands beneath Relay's fixed Releases URL.
-`ReleaseUpdateManager` owns a two-stage **Download update** and **Install manually** state machine.
+`ReleaseUpdateManager` owns a three-stage **Download update**, **Install update**, and **Restart Relay**
+state machine.
 Unsupported or unpackaged desktop runtimes retain notification-only GitHub review and do not expose an
 enabled download action. The downloader re-fetches the release before use, follows at most three HTTPS
 redirects across the fixed GitHub asset host set, streams to an exclusive `.part` file in a protected
@@ -182,25 +183,28 @@ response body has been consumed and validated. Cancelling during that metadata s
 single-flight operation, restores the available state, and permits an immediate retry; a deadline
 failure remains a retryable download failure.
 
-After extraction, Relay retains the expected installer size and SHA-256 digest with the staged path.
-The **Exit Relay and open installer folder** action carries no renderer path. The manager resolves the
-exact private staging path again, rejects redirects or a non-regular file, rechecks the executable
-marker and byte count, and re-hashes the file immediately before asking Electron to reveal it in
-Explorer. Any mismatch removes the staging directory and leaves Relay open in an error state. A folder
-reveal failure preserves the verified staging directory for a deliberate retry. Only a successful
-reveal causes the main process to quit the complete application; Relay never launches the installer
-or changes the active runtime. The operator runs the revealed `Relay.exe` manually, after Relay has
-exited.
+Immediately before execution, the manager revalidates the private staging path and re-hashes the
+extracted executable. Installation launches that exact file with `/relay-prepare-only` and a generated,
+fixed-format recovery transaction ID. The native bootstrap prepares the new runtime while the current
+Relay process stays open. A successful preparation changes the state to restart-ready; only the final
+explicit action checkpoints the current mode, validates the stable launcher, and relaunches through
+`%LOCALAPPDATA%\Relay\Relay.exe`. If Relay exits between preparation and restart, a later launch
+revalidates the request, receipt, catalog, and prepared runtime before restoring **Restart Relay**.
+
+The normal path binds preparation to a protocol-2 recovery transaction. If protected preparation fails
+on a verified protocol-1 runtime, the manager removes its request, revalidates the installer and legacy
+state, and retries once with direct prepare-only activation. Protocol-2, malformed, redirected, changed,
+or mismatched state cannot use this compatibility path. Fixed, bounded bootstrap diagnostics record the
+preparation stage and error code without exposing the installer path, arguments, or transaction ID.
 
 On a healthy current-runtime startup with no candidate or recovery transaction, updater cleanup
 removes recognized staging directories for the current version and older versions while preserving
 a newer download. It retries after 90 seconds so the first session promoted from probation can clean
 the installer after the native bootstrap releases it. The existing 24-hour startup rule remains a
-fallback for abandoned recognized staging; unrelated paths remain untouched. Recovery catalog access
-in the manager stays read-only and also rejects a quarantined immutable release fingerprint. The
-in-app updater does not create or complete recovery requests, prepare runtimes, stop services, invoke
-the bootstrap, or relaunch Relay. Native installer activation and retained-build rollback remain
-separate Windows installer/launcher responsibilities.
+fallback for abandoned recognized staging; unrelated paths remain untouched. Successful preparation
+also removes its staging directory immediately. Recovery catalog access rejects a quarantined immutable
+release fingerprint, while retained-build rollback remains a separate operator-controlled recovery
+action.
 
 Discovery failures remain silent and do not affect startup or normal Relay work. Explicit action
 failures appear inside the dialog or as a recovery toast. Relay Web has none of the release-check,

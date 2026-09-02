@@ -19,7 +19,8 @@ describe('ReleaseUpdateNotificationManager', () => {
   const getUpdateState = vi.fn();
   const downloadUpdate = vi.fn();
   const cancelUpdateDownload = vi.fn();
-  const revealUpdateInstaller = vi.fn();
+  const installUpdate = vi.fn();
+  const restartToUpdate = vi.fn();
   const onUpdateStateChanged = vi.fn();
   const openReleasesPage = vi.fn().mockResolvedValue(true);
   let stateListener: ((snapshot: unknown) => void) | null = null;
@@ -42,7 +43,8 @@ describe('ReleaseUpdateNotificationManager', () => {
         failureCode: null,
       },
     });
-    revealUpdateInstaller.mockResolvedValue({ success: false, error: 'not-started' });
+    installUpdate.mockResolvedValue({ success: false, error: 'not-started' });
+    restartToUpdate.mockResolvedValue({ success: true, data: true });
     onUpdateStateChanged.mockImplementation((listener: (snapshot: unknown) => void) => {
       stateListener = listener;
       return vi.fn();
@@ -70,7 +72,8 @@ describe('ReleaseUpdateNotificationManager', () => {
       getUpdateState,
       downloadUpdate,
       cancelUpdateDownload,
-      revealUpdateInstaller,
+      installUpdate,
+      restartToUpdate,
       onUpdateStateChanged,
       openReleasesPage,
     });
@@ -177,18 +180,31 @@ describe('ReleaseUpdateNotificationManager', () => {
     expect(reminder).toBeVisible();
   });
 
-  it('requests a verified folder reveal after download', async () => {
-    const downloaded = {
-      phase: 'downloaded' as const,
-      currentVersion: '1.0.0',
-      latestVersion: '1.1.0',
-      installable: true,
-      downloadedBytes: 140_000_000,
-      totalBytes: 140_000_000,
-      failureCode: null,
-    };
-    downloadUpdate.mockResolvedValueOnce({ success: true, data: downloaded });
-    revealUpdateInstaller.mockResolvedValueOnce({ success: true, data: downloaded });
+  it('requires separate download, install, and restart clicks in the renderer flow', async () => {
+    downloadUpdate.mockResolvedValueOnce({
+      success: true,
+      data: {
+        phase: 'downloaded',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 140_000_000,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      },
+    });
+    installUpdate.mockResolvedValueOnce({
+      success: true,
+      data: {
+        phase: 'ready-to-restart',
+        currentVersion: '1.0.0',
+        latestVersion: '1.1.0',
+        installable: true,
+        downloadedBytes: 140_000_000,
+        totalBytes: 140_000_000,
+        failureCode: null,
+      },
+    });
     render(<ReleaseUpdateNotificationManager />);
 
     fireEvent.click(
@@ -198,48 +214,15 @@ describe('ReleaseUpdateNotificationManager', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
     await waitFor(() => expect(downloadUpdate).toHaveBeenCalledOnce());
-    expect(revealUpdateInstaller).not.toHaveBeenCalled();
+    expect(installUpdate).not.toHaveBeenCalled();
+    expect(restartToUpdate).not.toHaveBeenCalled();
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Exit Relay and open installer folder' }),
-    );
-    await waitFor(() => expect(revealUpdateInstaller).toHaveBeenCalledOnce());
-    expect(screen.queryByRole('button', { name: 'Install update' })).toBeNull();
-  });
+    fireEvent.click(await screen.findByRole('button', { name: 'Install update' }));
+    await waitFor(() => expect(installUpdate).toHaveBeenCalledOnce());
+    expect(restartToUpdate).not.toHaveBeenCalled();
 
-  it('reports a resolved reveal error snapshot instead of treating it as success', async () => {
-    const downloaded = {
-      phase: 'downloaded' as const,
-      currentVersion: '1.0.0',
-      latestVersion: '1.1.0',
-      installable: true,
-      downloadedBytes: 140_000_000,
-      totalBytes: 140_000_000,
-      failureCode: null,
-    };
-    getUpdateState.mockResolvedValueOnce(downloaded);
-    revealUpdateInstaller.mockResolvedValueOnce({
-      success: true,
-      data: { ...downloaded, phase: 'error' as const, failureCode: 'reveal-failed' as const },
-    });
-    render(<ReleaseUpdateNotificationManager />);
-
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Relay v1.1.0 is verified and ready. Review update',
-      }),
-    );
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Exit Relay and open installer folder' }),
-    );
-
-    await waitFor(() =>
-      expect(mocks.showToast).toHaveBeenCalledWith(
-        'Relay could not open the verified installer folder. Try again.',
-        'error',
-        { title: 'Installer folder unavailable' },
-      ),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Restart Relay' }));
+    await waitFor(() => expect(restartToUpdate).toHaveBeenCalledOnce());
   });
 
   it('allows an in-flight download to be cancelled while its action promise is pending', async () => {
@@ -292,7 +275,7 @@ describe('ReleaseUpdateNotificationManager', () => {
     });
   });
 
-  it('keeps a verified download noticeable after the update dialog closes', async () => {
+  it('keeps restart-ready state noticeable after the update dialog closes', async () => {
     render(<ReleaseUpdateNotificationManager />);
     await screen.findByRole('button', {
       name: 'Relay v1.1.0 is available. Review update',
@@ -300,7 +283,7 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     act(() => {
       stateListener?.({
-        phase: 'downloaded',
+        phase: 'ready-to-restart',
         currentVersion: '1.0.0',
         latestVersion: '1.1.0',
         installable: true,
@@ -312,9 +295,9 @@ describe('ReleaseUpdateNotificationManager', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Relay v1.1.0 is verified and ready. Review update',
+        name: 'Relay v1.1.0 is ready to restart. Review update',
       }),
-    ).toHaveTextContent('Ready · v1.1.0');
+    ).toHaveTextContent('Restart · v1.1.0');
   });
 
   it('does not notify when the installed release is current', async () => {

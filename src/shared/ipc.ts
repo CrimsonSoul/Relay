@@ -628,7 +628,8 @@ export type BridgeAPI = {
   getUpdateState?: () => Promise<RelayUpdateSnapshot | null>;
   downloadUpdate?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
   cancelUpdateDownload?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
-  revealUpdateInstaller?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
+  installUpdate?: () => Promise<IpcResult<RelayUpdateSnapshot>>;
+  restartToUpdate?: () => Promise<IpcResult<boolean>>;
   getRecoveryState?: () => Promise<RelayRecoveryState>;
   rollbackToRecoveryBuild?: (input: RelayRecoveryRollbackInput) => Promise<IpcResult<boolean>>;
   repairRecoveryBuild?: (input: RelayRecoveryRepairInput) => Promise<IpcResult<boolean>>;
@@ -861,7 +862,8 @@ export const IPC_CHANNELS = {
   APP_UPDATE_GET_STATE: 'app:updateGetState',
   APP_UPDATE_DOWNLOAD: 'app:updateDownload',
   APP_UPDATE_CANCEL_DOWNLOAD: 'app:updateCancelDownload',
-  APP_UPDATE_REVEAL_INSTALLER: 'app:updateRevealInstaller',
+  APP_UPDATE_INSTALL: 'app:updateInstall',
+  APP_UPDATE_RESTART: 'app:updateRestart',
   APP_RECOVERY_GET_STATE: 'app:recoveryGetState',
   APP_RECOVERY_ROLLBACK: 'app:recoveryRollback',
   APP_RECOVERY_REPAIR: 'app:recoveryRepair',
