@@ -27,10 +27,11 @@ const electronViteCli = path.join(
 //      when it is loaded.
 // A 148KB saving is not worth an upload path that silently fails to resume, so the
 // privileged runtime stays statically linked. The server-wide Dynatrace scope flow added
-// ~3.05KB of measured main-process coordination to a 524.66KB baseline. Its shared runtime
-// stays with the existing Dynatrace client chunk to avoid a circular edge; 535KB leaves
-// ~1.4% headroom. Raising this again should mean re-examining what grew.
-const applicationChunkLimitBytes = 535_000;
+// ~3.05KB of measured main-process coordination to a 524.66KB baseline. Restoring the two
+// explicit update install/restart IPC actions added another measured 364 bytes; the update
+// manager remains a separate chunk. A 537KB ceiling leaves about 0.3% headroom. Raising this
+// again should mean re-examining what grew.
+const applicationChunkLimitBytes = 537_000;
 const buildTimeoutMs = 60_000;
 const testTimeoutMs = buildTimeoutMs + 5_000;
 

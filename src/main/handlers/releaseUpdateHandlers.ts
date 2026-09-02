@@ -10,9 +10,12 @@ import {
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
 import { shouldSuppressDesktopSideEffects } from '../app/e2eSafety';
+import { getAppConfig } from '../app/appState';
+import { requestAppRelaunch } from '../app/relaunch';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 import type { RelayInstallableRelease } from '../releases/ReleaseUpdateService';
+import type { PrepareRecoveryRestartResult } from '../releases/RecoveryRestartCoordinator';
 import type { ReleaseNotesProvider } from './releaseNotesHandlers';
 
 type ReleaseUpdateChecker = ReleaseNotesProvider & {
@@ -30,7 +33,8 @@ type ReleaseUpdateController = {
   noteCheck: (check: RelayUpdateCheck) => Promise<RelayUpdateSnapshot>;
   download: () => Promise<RelayUpdateSnapshot>;
   cancelDownload: () => Promise<RelayUpdateSnapshot>;
-  revealInstaller: () => Promise<{ revealed: boolean; snapshot: RelayUpdateSnapshot }>;
+  install: () => Promise<RelayUpdateSnapshot>;
+  restart: () => Promise<boolean>;
 };
 
 type ReleaseUpdateHandlerOptions = {
@@ -62,6 +66,13 @@ function authoritativeCheck(
     assetSizeBytes: snapshot.totalBytes,
     releaseNotes: versionsMatch ? check.releaseNotes : null,
   };
+}
+
+async function prepareProductionRecoveryRestart(
+  transactionId: string,
+): Promise<PrepareRecoveryRestartResult> {
+  const recovery = await import('../releases/productionRecoveryRestart');
+  return recovery.prepareProductionRecoveryRestart(transactionId);
 }
 
 export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions = {}): void {
@@ -105,7 +116,10 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
           isPackaged: app.isPackaged,
           localAppData: process.env.LOCALAPPDATA ?? '',
           execPath: process.execPath,
-          revealInstaller: (path) => shell.showItemInFolder(path),
+          getInstallationMode: () => getAppConfig()?.load()?.mode ?? 'unconfigured',
+          prepareRecoveryRestart: prepareProductionRecoveryRestart,
+          restartApp: (execPath) => requestAppRelaunch('release-update', { execPath }),
+          onInstallDiagnostic: (diagnostic) => warn('Update', diagnostic),
         });
       },
     );
@@ -206,9 +220,9 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
   );
 
   ipcMain.handle(
-    IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER,
+    IPC_CHANNELS.APP_UPDATE_INSTALL,
     async (event): Promise<IpcResult<RelayUpdateSnapshot>> => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_REVEAL_INSTALLER)) {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_INSTALL)) {
         return { success: false, error: 'untrusted-sender' };
       }
       if (!rateLimiters.fsOperations.tryConsume().allowed) {
@@ -220,20 +234,31 @@ export function setupReleaseUpdateHandlers(options: ReleaseUpdateHandlerOptions 
         if (shouldSuppressDesktopSideEffects()) {
           return { success: true, data: manager.snapshot() };
         }
-        const result = await manager.revealInstaller();
-        const snapshot = result.snapshot;
-        if (!result.revealed) {
-          return { success: false, error: snapshot.failureCode ?? 'unavailable' };
-        }
-        loggers.main.info('Relay verified installer folder opened', snapshot);
-        app.quit();
+        const snapshot = await manager.install();
+        loggers.main.info('Relay update installation completed', snapshot);
         return { success: true, data: snapshot };
       } catch (error) {
-        warn('Relay verified installer folder unavailable', { error });
+        warn('Relay update installation unavailable', { error });
         return { success: false, error: 'unavailable' };
       }
     },
   );
+
+  ipcMain.handle(IPC_CHANNELS.APP_UPDATE_RESTART, async (event): Promise<IpcResult<boolean>> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_UPDATE_RESTART)) {
+      return { success: false, error: 'untrusted-sender' };
+    }
+    if (!rateLimiters.fsOperations.tryConsume().allowed) {
+      return { success: false, error: 'rate-limited', rateLimited: true };
+    }
+    if (shouldSuppressDesktopSideEffects()) return { success: true, data: true };
+    try {
+      return { success: true, data: await (await getManager()).restart() };
+    } catch (error) {
+      warn('Relay update restart unavailable', { error });
+      return { success: false, error: 'unavailable' };
+    }
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.APP_OPEN_RELEASES,

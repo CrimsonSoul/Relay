@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import type {
   RelayReleaseNotes,
   RelayUpdateFailureCode,
@@ -16,18 +16,19 @@ type ReleaseUpdateModalProps = Readonly<{
   onClose: () => void;
   onDownload: () => void;
   onCancelDownload: () => void;
-  onRevealInstaller: () => void;
+  onInstall: () => void;
+  onRestart: () => void;
   onCheckAgain: () => void;
   onOpenReleases: () => void;
 }>;
 
-type UpdateStep = 'download' | 'install';
+type UpdateStep = 'download' | 'install' | 'restart';
 
 const ERROR_MESSAGES: Record<RelayUpdateFailureCode, string> = {
   unsupported:
-    'Verified downloads are available only in packaged Relay for Windows x64. Use GitHub Releases for this update.',
+    'In-app updates are available only in packaged Relay for Windows x64. Use GitHub Releases for this update.',
   'release-not-immutable':
-    'GitHub has not locked this release as immutable, so Relay will not download it.',
+    'GitHub has not locked this release as immutable, so Relay will not download or run it.',
   'release-changed':
     'The latest GitHub release changed during verification. Check again before downloading.',
   'release-quarantined':
@@ -36,8 +37,10 @@ const ERROR_MESSAGES: Record<RelayUpdateFailureCode, string> = {
     'The download did not finish. Your current Relay installation was not changed.',
   'verification-failed': 'The downloaded files did not pass integrity checks and were discarded.',
   cancelled: 'The download was cancelled. Your current Relay installation was not changed.',
-  'reveal-failed':
-    'Relay could not open the verified installer folder. The verified download is still available.',
+  'install-failed':
+    'Relay could not prepare the new runtime. The verified download is available to retry.',
+  'restart-unavailable':
+    'Relay could not validate its stable launcher. Keep this window open and try restarting again.',
 };
 
 function formatBytes(bytes: number): string {
@@ -53,9 +56,30 @@ function formatBytes(bytes: number): string {
 }
 
 function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
+  const installing = update.phase === 'installing';
   const showDownloadProgress =
     (update.phase === 'downloading' || update.phase === 'downloaded') && update.totalBytes !== null;
-  if (!showDownloadProgress) return null;
+  if (!installing && !showDownloadProgress) return null;
+
+  if (installing) {
+    return (
+      <div className="release-update-modal__progress">
+        <progress
+          className="sr-only"
+          aria-label="Update installation progress"
+          data-mode="indeterminate"
+        />
+        <div
+          className="release-update-modal__progress-track"
+          aria-hidden="true"
+          data-mode="indeterminate"
+        >
+          <span className="release-update-modal__progress-fill" />
+        </div>
+      </div>
+    );
+  }
+
   const totalBytes = update.totalBytes;
   if (totalBytes === null) return null;
   const downloadedBytes =
@@ -97,8 +121,15 @@ function UpdateProgress({ update }: Readonly<{ update: RelayUpdateSnapshot }>) {
 
 function currentStep(update: RelayUpdateSnapshot): UpdateStep {
   if (
+    update.phase === 'ready-to-restart' ||
+    (update.phase === 'error' && update.failureCode === 'restart-unavailable')
+  ) {
+    return 'restart';
+  }
+  if (
     update.phase === 'downloaded' ||
-    (update.phase === 'error' && update.failureCode === 'reveal-failed')
+    update.phase === 'installing' ||
+    (update.phase === 'error' && update.failureCode === 'install-failed')
   ) {
     return 'install';
   }
@@ -106,7 +137,7 @@ function currentStep(update: RelayUpdateSnapshot): UpdateStep {
 }
 
 function stepState(step: UpdateStep, current: UpdateStep): 'complete' | 'current' | 'upcoming' {
-  const order: UpdateStep[] = ['download', 'install'];
+  const order: UpdateStep[] = ['download', 'install', 'restart'];
   const comparison = order.indexOf(step) - order.indexOf(current);
   if (comparison < 0) return 'complete';
   return comparison === 0 ? 'current' : 'upcoming';
@@ -118,15 +149,18 @@ function phaseMessage(update: RelayUpdateSnapshot): string {
     return ERROR_MESSAGES[update.failureCode];
   }
   if (!update.installable) {
-    return 'This release can be reviewed, but Relay cannot download it because GitHub has not locked it as immutable.';
+    return 'This release can be reviewed, but Relay cannot install it because GitHub has not locked it as immutable.';
   }
   const messages: Record<RelayUpdatePhase, string> = {
     idle: 'Relay is waiting for the next release check.',
-    available: 'A verified Windows update is available. Relay downloads only when you choose.',
+    available: 'A verified Windows update is available. Relay will wait for you at every step.',
     downloading:
       'Downloading from the official Relay repository. You can cancel without changing this installation.',
     downloaded:
-      'Download verified. Relay will exit and open the folder so you can run Relay.exe manually.',
+      'Download verified. Installing prepares the new runtime but does not restart Relay.',
+    installing: 'Preparing the new Relay runtime. Relay will stay open until preparation finishes.',
+    'ready-to-restart':
+      'The update is prepared. Restart only when you are ready to switch versions.',
     error: 'Relay could not continue the update.',
   };
   return messages[update.phase];
@@ -155,9 +189,15 @@ function StepMarker({ state }: Readonly<{ state: 'complete' | 'current' | 'upcom
 function modalFooter(
   update: RelayUpdateSnapshot,
   actions: Omit<ReleaseUpdateModalProps, 'isOpen' | 'update'>,
+  installingActionRef: RefObject<HTMLButtonElement | null>,
 ): ReactNode {
   const githubButton = (
-    <TactileButton key="github" variant="secondary" onClick={actions.onOpenReleases}>
+    <TactileButton
+      key="github"
+      ref={update.phase === 'installing' ? installingActionRef : undefined}
+      variant="secondary"
+      onClick={actions.onOpenReleases}
+    >
       View on GitHub
     </TactileButton>
   );
@@ -172,22 +212,51 @@ function modalFooter(
       </>
     );
   }
+  if (update.phase === 'installing') {
+    return (
+      <>
+        <output className="release-update-modal__footer-status" aria-live="polite">
+          Preparing update…
+        </output>
+        {githubButton}
+      </>
+    );
+  }
   if (update.phase === 'downloaded') {
     return (
       <>
         {githubButton}
-        <TactileButton variant="primary" onClick={actions.onRevealInstaller}>
-          Exit Relay and open installer folder
+        <TactileButton variant="primary" onClick={actions.onInstall}>
+          Install update
+        </TactileButton>
+      </>
+    );
+  }
+  if (update.phase === 'ready-to-restart') {
+    return (
+      <>
+        {githubButton}
+        <TactileButton variant="secondary" onClick={actions.onClose}>
+          Later
+        </TactileButton>
+        <TactileButton variant="primary" onClick={actions.onRestart}>
+          Restart Relay
         </TactileButton>
       </>
     );
   }
   if (update.phase === 'error') {
     let primaryAction: ReactNode = null;
-    if (update.failureCode === 'reveal-failed') {
+    if (update.failureCode === 'install-failed') {
       primaryAction = (
-        <TactileButton variant="primary" onClick={actions.onRevealInstaller}>
-          Exit Relay and open installer folder
+        <TactileButton variant="primary" onClick={actions.onInstall}>
+          Retry install
+        </TactileButton>
+      );
+    } else if (update.failureCode === 'restart-unavailable') {
+      primaryAction = (
+        <TactileButton variant="primary" onClick={actions.onRestart}>
+          Retry restart
         </TactileButton>
       );
     } else if (update.failureCode === 'release-changed') {
@@ -245,20 +314,26 @@ export function ReleaseUpdateModal({
   onClose,
   onDownload,
   onCancelDownload,
-  onRevealInstaller,
+  onInstall,
+  onRestart,
   onCheckAgain,
   onOpenReleases,
 }: ReleaseUpdateModalProps) {
   const statusId = useId();
+  const installingActionRef = useRef<HTMLButtonElement>(null);
   const step = currentStep(update);
   const actions = {
     onClose,
     onDownload,
     onCancelDownload,
-    onRevealInstaller,
+    onInstall,
+    onRestart,
     onCheckAgain,
     onOpenReleases,
   };
+  useEffect(() => {
+    if (isOpen && update.phase === 'installing') installingActionRef.current?.focus();
+  }, [isOpen, update.phase]);
 
   return (
     <Modal
@@ -275,18 +350,14 @@ export function ReleaseUpdateModal({
       dialogProps={{
         className: 'release-update-modal',
         'aria-describedby': statusId,
-        'aria-busy': update.phase === 'downloading',
+        'aria-busy': update.phase === 'downloading' || update.phase === 'installing',
       }}
-      footer={modalFooter(update, actions)}
+      dismissible={update.phase !== 'installing'}
+      footer={modalFooter(update, actions, installingActionRef)}
     >
       <div className="release-update-modal__content">
         <ol className="release-update-modal__steps" aria-label="Update steps">
-          {(
-            [
-              ['download', 'Download'],
-              ['install', 'Install manually'],
-            ] as const
-          ).map(([item, label]) => {
+          {(['download', 'install', 'restart'] as const).map((item) => {
             const state = stepState(item, step);
             return (
               <li
@@ -296,7 +367,7 @@ export function ReleaseUpdateModal({
                 aria-current={state === 'current' ? 'step' : undefined}
               >
                 <StepMarker state={state} />
-                <span>{label}</span>
+                <span>{item[0]!.toUpperCase() + item.slice(1)}</span>
               </li>
             );
           })}

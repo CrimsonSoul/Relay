@@ -7,7 +7,7 @@ const readWorkflow = (path) => parse(read(path));
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('Windows NSIS launcher contract', () => {
-  it('keeps the manual updater independent of bootstrap preparation diagnostics', () => {
+  it("keeps updater diagnostics limited to the bootstrap's fixed failure messages", () => {
     const bootstrap = read('build/windows/relay-bootstrap.nsi');
     const manager = read('src/main/releases/ReleaseUpdateManager.ts');
     const prefix = 'StrCpy $RelayFailureMessage "';
@@ -16,11 +16,19 @@ describe('Windows NSIS launcher contract', () => {
       .map((line) => line.trim())
       .filter((line) => line.startsWith(prefix) && line.endsWith('"') && !line.includes('${'))
       .map((line) => line.slice(prefix.length, -1));
+    const diagnosticBlock = manager.slice(
+      manager.indexOf('const KNOWN_BOOTSTRAP_FAILURE_REASONS'),
+      manager.indexOf('const DOWNLOAD_RETRY_FAILURES'),
+    );
+    const allowedReasons = diagnosticBlock
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('`') && (line.endsWith('`,') || line.endsWith('`')))
+      .map((line) => line.slice(1, line.endsWith('`,') ? -2 : -1));
 
     expect(reasons.length).toBeGreaterThan(20);
-    for (const reason of reasons) expect(manager).not.toContain(reason);
-    expect(manager).toContain('revealInstaller');
-    expect(manager).not.toContain('PREPARE_ONLY_ARGUMENT');
+    expect(allowedReasons.length).toBeGreaterThan(20);
+    for (const reason of allowedReasons) expect(reasons).toContain(reason);
   });
 
   it('keeps launcher state path-based and protocol-versioned', () => {
@@ -960,29 +968,29 @@ describe('Windows packaging integration contract', () => {
     }
   });
 
-  it('joins verified updater download and reveal to real Windows artifacts in CI', () => {
+  it('joins the updater manager to the real bootstrap and stable launcher in Windows CI', () => {
     const reusable = readWorkflow('.github/workflows/reusable-windows-package.yml');
     const packageJob = reusable.jobs.package;
     const integration = read('src/main/releases/ReleaseUpdateManager.windows.integration.test.ts');
-    const updater = findStep(packageJob, 'Exercise verified updater download and reveal');
+    const updater = findStep(
+      packageJob,
+      'Exercise updater manager through native install and restart',
+    );
 
     expect(updater.env.RELAY_UPDATER_INTEGRATION_CONFIRM).toBe(1);
     expect(updater.run).toContain(
       'src/main/releases/ReleaseUpdateManager.windows.integration.test.ts',
     );
     expect(updater.run).toContain('Compress-Archive');
-    expect(updater.run).toContain('Copy-Item');
     expect(updater.env.RELAY_UPDATER_INTEGRATION_ROOT).toContain('\\Relay');
     expect(updater.env.RELAY_UPDATER_INTEGRATION_CURRENT_ARTIFACT).toContain(
       'RelayBoundaryPrevious.exe',
     );
-    expect(updater.env.RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT).toContain('RelayProduction.exe');
-    expect(integration).toContain('revealInstaller');
-    expect(integration).toContain('targetInstallerDigest');
-    expect(integration).toContain('currentRuntimeDigest');
-    expect(integration).toContain('targetRuntimePath');
-    expect(integration).not.toContain('manager.install()');
-    expect(integration).not.toContain('manager.restart()');
+    expect(updater.env.RELAY_UPDATER_INTEGRATION_TARGET_ARTIFACT).toContain('release/Relay.exe');
+    expect(integration).toContain('terminateProcessTree');
+    expect(integration).toContain('waitForRelayRuntimeQuiescence');
+    expect(integration).toContain('manager.install()');
+    expect(integration).toContain('resumedManager.restart()');
     expect(integration).toContain('snapshotShortcuts');
     expect(integration).toContain('expect(stat(localAppData)).rejects');
     expect(integration).toContain('[char]9');

@@ -58,7 +58,8 @@ describe('preload Knowledge web link bridge', () => {
     expect(api.getUpdateState).toBeTypeOf('function');
     expect(api.downloadUpdate).toBeTypeOf('function');
     expect(api.cancelUpdateDownload).toBeTypeOf('function');
-    expect(api.revealUpdateInstaller).toBeTypeOf('function');
+    expect(api.installUpdate).toBeTypeOf('function');
+    expect(api.restartToUpdate).toBeTypeOf('function');
     expect(api.onUpdateStateChanged).toBeTypeOf('function');
     expect(api.openReleasesPage).toBeTypeOf('function');
 
@@ -69,7 +70,8 @@ describe('preload Knowledge web link bridge', () => {
     await api.getUpdateState!();
     await api.downloadUpdate!();
     await api.cancelUpdateDownload!();
-    await api.revealUpdateInstaller!();
+    await api.installUpdate!();
+    await api.restartToUpdate!();
     await api.openReleasesPage!();
     await api.openReleasesPage!('1.1.0');
 
@@ -97,9 +99,10 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(5, 'app:updateGetState');
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(6, 'app:updateDownload');
     expect(electronMocks.invoke).toHaveBeenNthCalledWith(7, 'app:updateCancelDownload');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, 'app:updateRevealInstaller');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(9, 'app:openReleases');
-    expect(electronMocks.invoke).toHaveBeenNthCalledWith(10, 'app:openReleases', '1.1.0');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(8, 'app:updateInstall');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(9, 'app:updateRestart');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(10, 'app:openReleases');
+    expect(electronMocks.invoke).toHaveBeenNthCalledWith(11, 'app:openReleases', '1.1.0');
     expect(callback).toHaveBeenCalledWith(update);
     expect(electronMocks.removeListener).toHaveBeenCalledWith('app:updateStateChanged', handler);
   });

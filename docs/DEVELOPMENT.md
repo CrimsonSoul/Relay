@@ -70,11 +70,10 @@ The reusable Windows job must still pass its native dependency build, Windows up
 integration tests, persistent bootstrap smoke test, packaged startup benchmark, and isolated boundary
 harness. Native recovery coverage packages synthetic consecutive fixture versions and exercises
 bootstrap activation, stable-launcher fallback, probation, promotion, and predecessor retention in a
-disposable `RUNNER_TEMP` root. The separate updater integration archives the real production
-executable as the only top-level `Relay.exe`, drives `ReleaseUpdateManager` through download,
-extraction, revalidation, and folder reveal, and proves that the current runtime, launcher, state, and
-user data remain unchanged. The integration restores any pre-existing Relay shortcuts and removes
-only its owned temporary parent.
+disposable `RUNNER_TEMP` root. The updater integration archives the target fixture as the only
+top-level `Relay.exe`, drives `ReleaseUpdateManager` through download, extraction, revalidation,
+native preparation, stable-launcher restart, promotion, staging cleanup, and predecessor retention.
+It restores any pre-existing Relay shortcuts and removes only its owned temporary parent.
 
 The release job packages the verified production executable as
 `Relay-vX.Y.Z-windows-x64.zip`, with exactly one top-level member named `Relay.exe`, and creates a
@@ -94,12 +93,10 @@ shows one advisory notification per version and a persistent, non-dismissible he
 header uses `Update · vX.Y.Z` in wide layouts and `vX.Y.Z` at the 1200 px compact-shell breakpoint,
 updates when a later release is discovered, and remains until the installed version is current.
 The toast's **Review update** action and the header control open the **Update Relay** dialog. On a
-packaged Windows x64 build, an immutable release with the exact expected assets exposes two explicit
-actions: **Download update**, then **Exit Relay and open installer folder**. Relay never downloads or
-executes an installer from a release check alone. After download, Relay revalidates the staged
-`Relay.exe` immediately before revealing it in Explorer and quits only after that reveal succeeds;
-the operator runs the verified executable manually. Mutable or malformed releases remain reviewable
-on the fixed GitHub Releases page but are not downloadable. The immutable-release re-fetch and
+packaged Windows x64 build, an immutable release with the exact expected assets exposes three explicit
+actions: **Download update**, **Install update**, then **Restart Relay**. Relay never downloads,
+prepares, or restarts from a release check alone. Mutable or malformed releases remain reviewable on
+the fixed GitHub Releases page but are not installable. The immutable-release re-fetch and
 response body remain inside the explicit download's abort and deadline scope. Cancelling while GitHub
 metadata is pending returns the dialog to the available state and allows another download attempt
 instead of leaving the action single-flighted.
@@ -112,7 +109,7 @@ first-load failure offers an explicit retry and does not affect updater actions.
 cache is capped at 512 KiB; refresh keeps the newest entries that fit so a successful write always
 remains readable by the same bounded loader.
 The updater dialog version-binds those notes to its active manager snapshot. A newer discovery result
-cannot replace notes for an older downloaded update; missing same-version notes render as unavailable
+cannot replace notes for an older update that is installing or waiting for restart; missing same-version notes render as unavailable
 instead of showing another release's body.
 
 The standalone Windows installer and stable launcher retain Relay's existing retained-build recovery
@@ -124,23 +121,15 @@ plus those files. A failed candidate is removed, server data is restored when ap
 runtime resumes, and that exact immutable `tag@commit` fingerprint is retained in bounded quarantine
 history rather than blocking a different commit at the same version.
 
-The in-app updater does not prepare or activate a runtime, create `update-request.ini` or
-`prepared.ini`, stop services, or expose install/restart actions. Those responsibilities begin only
-when the operator manually runs the revealed `Relay.exe`. For a newer protocol-2 runtime, the native
-installer first requires Relay to be fully exited, writes a pending protected transaction, stages
-the verified target runtime, and invokes that target only as a headless checkpoint helper. The helper
-registers its work without blocking Electron entry-module evaluation, waits for application readiness,
-resolves the configured mode, creates the server rollback snapshot or checkpoints the client cache,
-and atomically completes the request. The existing recovery supervisor deadline bounds the complete
-helper lifecycle so a readiness or checkpoint failure cannot leave the native installer waiting
-indefinitely. Rerunning the same immutable installer resumes its exact pending or completed transaction
-after an interruption; mismatched recovery metadata fails closed. Only then does the stable launcher
-ingest the prepared runtime, probation-test it, and either promote it or restore the prior runtime and
-server snapshot. The Windows
-boundary harness exercises native activation, fallback, settlement, and recovery independently from
-the in-app download/reveal integration. The packaged updater integration separately proves that
-revealing a production installer leaves the current runtime, stable launcher, state file, and user
-data unchanged.
+The in-app updater writes a pending protected request and runs the verified staged installer with
+`/relay-prepare-only` plus that transaction ID. The bootstrap prepares the target runtime without
+closing Relay. The explicit restart action then resolves the configured mode, stops server services
+and snapshots server data or checkpoints the client cache and pending queue, atomically completes the
+request, and relaunches through the stable supervisor. The supervisor probation-tests the candidate and
+either promotes it or restores the prior runtime and server snapshot. A valid prepared transaction is
+resumable after process loss; mismatched recovery metadata fails closed. The Windows updater integration
+drives download, preparation, restart, promotion, cleanup, and predecessor retention through real native
+executables in a disposable root.
 
 The stable launcher has its own compatibility generation, separate from the recovery-state protocol.
 Any launcher behavior change must advance both the launcher generation and its probe exit code so a
@@ -156,28 +145,27 @@ GitHub tag and full commit; repair does not alter current data or select the rep
 Start-menu **Relay Recovery** shortcut and automatic launcher fallback open this same screen from a
 verified retained runtime when the current runtime cannot start.
 
-A new installation establishes a recovery baseline with no predecessors. A manually run upgrade from
-legacy launcher state establishes the protocol-2 baseline using the executing recovery-capable
-runtime as the only initial predecessor; an older runtime without complete recovery identity is never
-guessed into the catalog. Therefore rollback choices appear only after at least one recovery-aware
-installer activation has passed probation.
+A new installation establishes a recovery baseline with no predecessors. An update from legacy
+launcher state establishes the protocol-2 baseline using the executing recovery-capable runtime as the
+only initial predecessor; an older runtime without complete recovery identity is never guessed into the
+catalog. Therefore rollback choices appear only after at least one recovery-aware update has passed
+probation.
 
-Builds that predate the desktop updater must still be upgraded manually. Newer builds use the same
-manual installer execution after Relay verifies the release assets and reveals the staged executable.
-The standalone installer replaces an incompatible stable launcher before staging its runtime, so
-manual updates can cross launcher generations safely. Relay Web does not receive the desktop updater
+Builds that predate the desktop updater must still be upgraded manually. Newer builds prepare updates
+in app, and the installer replaces an incompatible stable launcher before staging its runtime so the
+flow can cross launcher generations safely. Relay Web does not receive the desktop updater
 bridge. A failed or malformed GitHub response remains silent so update discovery cannot interrupt
 normal operations or erase a previously confirmed update; failures after an explicit updater action
 are shown with a recovery path.
 
 Focused renderer coverage for this flow must verify the dynamic release label, later-version
 replacement, persistence after a failed refresh, one notification per version, the recoverable
-open-release error, malformed-success handling, desktop-only rendering, the two manual stages,
-download progress and cancellation, immutable-release refusal, verified-folder reveal failure, wide
+open-release error, malformed-success handling, desktop-only rendering, the three explicit stages,
+download progress and cancellation, immutable-release refusal, install and restart failures, wide
 and compact-shell label variants, structured release-note rendering, cached/offline history states,
 and 400 px minimum-width geometry with the Windows window-control reservation. Main-process coverage
-must prove that only a successfully revalidated folder reveal quits the application. Recovery
-coverage remains separate and must exercise current-plus-two rotation, stopped server snapshots,
+must prove staged revalidation, protected preparation, checkpoint-before-relaunch, resumability, and
+cleanup. Recovery coverage must exercise current-plus-two rotation, stopped server snapshots,
 client WAL checkpoints, probation success and failure, PocketBase Job Object containment, native
 promotion and rollback, strict runtime integrity, quarantine, settlement reconciliation, manual
 repair, fallback-runtime UI, and transaction-aware runtime/snapshot cleanup.

@@ -1,23 +1,62 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { basename, dirname, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import {
+  createDirectoryRedirect,
+  supportsUnprivilegedFileSymlinks,
+} from '../__tests__/filesystemTestUtils';
 import type { RelayUpdateCheck } from '@shared/releases';
 import type { RelayInstallableAsset, RelayInstallableRelease } from './ReleaseUpdateService';
-import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
 import { ReleaseUpdateManager, type ReleaseUpdateManagerOptions } from './ReleaseUpdateManager';
+import {
+  parseRecoveryUpdateRequest,
+  serializeRecoveryUpdateRequest,
+} from './RecoveryUpdateRequest';
+import { serializeRecoveryCatalog, type RecoveryBuildRecord } from './RecoveryCatalog';
 
 const CURRENT_VERSION = '1.0.0';
 const INSTALLER = Buffer.from('MZverified staged installer');
 const INSTALLER_SHA256 = createHash('sha256').update(INSTALLER).digest('hex');
 const ARCHIVE_SHA256 = 'a'.repeat(64);
 const CHECKSUM_SHA256 = 'b'.repeat(64);
+const fileSymlinkIt = supportsUnprivilegedFileSymlinks ? it : it.skip;
 
 type ResolveLatestInstallable = (signal?: AbortSignal) => Promise<RelayInstallableRelease>;
 type DownloadAsset = NonNullable<ReleaseUpdateManagerOptions['downloadAsset']>;
 type ExtractInstaller = NonNullable<ReleaseUpdateManagerOptions['extractInstaller']>;
+type SpawnInstaller = NonNullable<ReleaseUpdateManagerOptions['spawnInstaller']>;
+type RestartApp = NonNullable<ReleaseUpdateManagerOptions['restartApp']>;
 type ManagerOverrides = Partial<Omit<ReleaseUpdateManagerOptions, 'service' | 'getCurrentVersion'>>;
+
+function recoveryBuild(): RecoveryBuildRecord {
+  return {
+    buildId: `r1-${'1'.repeat(40)}`,
+    version: CURRENT_VERSION,
+    releaseTag: `v${CURRENT_VERSION}`,
+    targetCommitish: '1'.repeat(40),
+    runtimeSha512: 'c'.repeat(128),
+    installerSha256: null,
+    recoveryProtocol: 1,
+    serverDataEpoch: 1,
+    clientDataEpoch: 1,
+    installedAt: '2026-08-24T15:00:00.000Z',
+    health: 'healthy',
+    rollbackSnapshotId: null,
+  };
+}
 
 function asset(id: number, name: string, size: number, sha256: string): RelayInstallableAsset {
   return {
@@ -47,26 +86,200 @@ function updateCheck(overrides: Partial<RelayUpdateCheck> = {}): RelayUpdateChec
     updateAvailable: true,
     installable: true,
     assetSizeBytes: 140_000_000,
-    releaseNotes: null,
+    releaseNotes: {
+      version: '1.1.0',
+      title: 'Relay v1.1.0',
+      body: 'Generated release notes.',
+      publishedAt: '2026-08-12T12:44:01Z',
+      immutable: true,
+    },
     ...overrides,
   };
 }
 
-function recoveryBuild(): RecoveryBuildRecord {
-  return {
-    buildId: `r1-${'1'.repeat(40)}`,
+const RECOVERY_INTEGRITY_FILES = [
+  ['executableSha512', 'Relay.exe'],
+  ['d3dCompilerSha512', 'd3dcompiler_47.dll'],
+  ['dxCompilerSha512', 'dxcompiler.dll'],
+  ['dxilSha512', 'dxil.dll'],
+  ['ffmpegSha512', 'ffmpeg.dll'],
+  ['libEglSha512', 'libEGL.dll'],
+  ['libGlesV2Sha512', 'libGLESv2.dll'],
+  ['vkSwiftshaderSha512', 'vk_swiftshader.dll'],
+  ['vulkanSha512', 'vulkan-1.dll'],
+  ['appAsarSha512', join('resources', 'app.asar')],
+  ['pocketbaseSha512', join('resources', 'pocketbase', 'win32-x64', 'pocketbase.exe')],
+  [
+    'pocketbaseHookSha512',
+    join('resources', 'pocketbase', 'hooks', 'relay_privileged_reauth.pb.js'),
+  ],
+  [
+    'betterSqlite3Sha512',
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      'better-sqlite3',
+      'build',
+      'Release',
+      'better_sqlite3.node',
+    ),
+  ],
+  [
+    'koffiSha512',
+    join(
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      '@koromix',
+      'koffi-win32-x64',
+      'win32_x64',
+      'koffi.node',
+    ),
+  ],
+] as const;
+
+type Protocol2RuntimeOptions = Readonly<{
+  buildId?: string;
+  version?: string;
+  targetCommitish?: string;
+  installerSha256?: string | null;
+  installedAt?: string;
+}>;
+
+async function writeProtocol2RuntimeMarker(
+  runtimeDirectory: string,
+  options: Protocol2RuntimeOptions = {},
+): Promise<string> {
+  const buildId = options.buildId ?? `r1-${'1'.repeat(40)}`;
+  const version = options.version ?? CURRENT_VERSION;
+  const targetCommitish = options.targetCommitish ?? '1'.repeat(40);
+  const installedAt = options.installedAt ?? '2026-08-24T15:00:00.000Z';
+  const integrity: string[] = [];
+  for (const [key, relativePath] of RECOVERY_INTEGRITY_FILES) {
+    const path = join(runtimeDirectory, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    const contents = relativePath === 'Relay.exe' ? 'MZcurrent runtime' : `fixture:${relativePath}`;
+    await writeFile(path, contents);
+    integrity.push(`${key}=${createHash('sha512').update(contents).digest('hex')}`);
+  }
+  const installerLine = options.installerSha256
+    ? [`installerSha256=${options.installerSha256}`]
+    : [];
+  const marker = `${[
+    '[Relay]',
+    'protocol=2',
+    `buildId=${buildId}`,
+    'executable=Relay.exe',
+    `payloadHash=${'c'.repeat(128)}`,
+    `version=${version}`,
+    `releaseTag=v${version}`,
+    `targetCommitish=${targetCommitish}`,
+    ...installerLine,
+    'serverDataEpoch=1',
+    'clientDataEpoch=1',
+    `installedAt=${installedAt}`,
+    '[Integrity]',
+    ...integrity,
+  ].join('\r\n')}\r\n`;
+  await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), marker);
+  return createHash('sha512').update(marker).digest('hex');
+}
+async function writePendingPreparedFixture(
+  relayRoot: string,
+  currentRuntimeDirectory: string,
+  options: Readonly<{ sourceProtocol?: 1 | 2 }> = {},
+): Promise<{ transactionId: string; targetRuntimeDirectory: string }> {
+  const targetVersion = '1.1.0';
+  const targetCommitish = release().targetCommitish;
+  const transactionId = '12345678-1234-4123-8123-123456789abc';
+  const currentBuildId = `r1-${'1'.repeat(40)}`;
+  const targetBuildId = `r2-${'2'.repeat(40)}`;
+  const sourceProtocol = options.sourceProtocol ?? 2;
+  const currentRuntimeSha512 =
+    sourceProtocol === 2
+      ? await writeProtocol2RuntimeMarker(currentRuntimeDirectory)
+      : 'c'.repeat(128);
+  const currentBuild: RecoveryBuildRecord = {
+    buildId: currentBuildId,
     version: CURRENT_VERSION,
     releaseTag: `v${CURRENT_VERSION}`,
     targetCommitish: '1'.repeat(40),
-    runtimeSha512: 'c'.repeat(128),
+    runtimeSha512: currentRuntimeSha512,
     installerSha256: null,
-    recoveryProtocol: 1,
+    recoveryProtocol: sourceProtocol,
     serverDataEpoch: 1,
     clientDataEpoch: 1,
     installedAt: '2026-08-24T15:00:00.000Z',
     health: 'healthy',
     rollbackSnapshotId: null,
   };
+  if (sourceProtocol === 2) {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      serializeRecoveryCatalog({
+        protocol: 2,
+        generation: 1,
+        currentBuildId,
+        candidateBuildId: null,
+        previousBuildIds: [],
+        builds: [currentBuild],
+        transaction: null,
+        failedReleaseFingerprints: [],
+      }),
+    );
+  } else {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=${currentBuildId}\nprevious=\n`,
+    );
+  }
+  const targetRuntimeDirectory = join(relayRoot, 'Runtime', targetBuildId);
+  await mkdir(targetRuntimeDirectory, { recursive: true });
+  const targetRuntimeSha512 = await writeProtocol2RuntimeMarker(targetRuntimeDirectory, {
+    buildId: targetBuildId,
+    installedAt: '2026-08-27T12:00:00.000Z',
+    version: targetVersion,
+    targetCommitish,
+    installerSha256: INSTALLER_SHA256,
+  });
+  const recoveryRoot = join(relayRoot, 'Recovery');
+  await mkdir(recoveryRoot);
+  await writeFile(
+    join(recoveryRoot, 'update-request.ini'),
+    serializeRecoveryUpdateRequest({
+      protocol: 2,
+      transactionId,
+      source: currentBuild,
+      targetVersion,
+      targetCommitish,
+      targetInstallerSha256: INSTALLER_SHA256,
+      mode: 'unconfigured',
+      checkpoint: 'pending',
+      snapshotId: null,
+      requestedAt: '2026-08-27T12:00:00.000Z',
+    }),
+  );
+  await writeFile(
+    join(recoveryRoot, 'prepared.ini'),
+    `${[
+      '[Prepared]',
+      'protocol=2',
+      `transactionId=${transactionId}`,
+      `buildId=${targetBuildId}`,
+      `version=${targetVersion}`,
+      `releaseTag=v${targetVersion}`,
+      `targetCommitish=${targetCommitish}`,
+      `runtimeSha512=${targetRuntimeSha512}`,
+      `installerSha256=${INSTALLER_SHA256}`,
+      'recoveryProtocol=2',
+      'serverDataEpoch=1',
+      'clientDataEpoch=1',
+      'preparedAt=2026-08-27T12:00:00.000Z',
+      'health=candidate',
+    ].join('\n')}\n`,
+  );
+  return { transactionId, targetRuntimeDirectory };
 }
 
 describe('ReleaseUpdateManager', () => {
@@ -75,10 +288,12 @@ describe('ReleaseUpdateManager', () => {
   let relayRoot: string;
   let runtimeDirectory: string;
   let execPath: string;
-  let resolveLatestInstallable: ReturnType<typeof vi.fn<ResolveLatestInstallable>>;
-  let downloadAsset: ReturnType<typeof vi.fn<DownloadAsset>>;
-  let extractInstaller: ReturnType<typeof vi.fn<ExtractInstaller>>;
-  let revealInstaller: ReturnType<typeof vi.fn<(path: string) => unknown>>;
+  let stableLauncher: string;
+  let resolveLatestInstallable: Mock<ResolveLatestInstallable>;
+  let downloadAsset: Mock<DownloadAsset>;
+  let extractInstaller: Mock<ExtractInstaller>;
+  let spawnInstaller: Mock<SpawnInstaller>;
+  let restartApp: Mock<RestartApp>;
 
   beforeEach(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), 'relay-update-manager-'));
@@ -86,25 +301,33 @@ describe('ReleaseUpdateManager', () => {
     relayRoot = join(localAppData, 'Relay');
     runtimeDirectory = join(relayRoot, 'Runtime', `r1-${'1'.repeat(40)}`);
     execPath = join(runtimeDirectory, 'Relay.exe');
+    stableLauncher = join(relayRoot, 'Relay.exe');
     await mkdir(runtimeDirectory, { recursive: true });
     await writeFile(execPath, 'MZcurrent runtime');
+    await writeFile(
+      join(runtimeDirectory, '.relay-runtime-ready'),
+      `[Relay]\nprotocol=1\nbuildId=r1-${'1'.repeat(40)}\nexecutable=Relay.exe\npayloadHash=${'C'.repeat(128)}\n`,
+    );
+    await writeFile(stableLauncher, 'MZstable launcher');
 
-    resolveLatestInstallable = vi.fn<ResolveLatestInstallable>().mockResolvedValue(release());
-    downloadAsset = vi.fn<DownloadAsset>().mockImplementation(async (releaseAsset, destination) => {
-      if (releaseAsset.name.endsWith('.sha256')) {
-        await writeFile(destination, `${ARCHIVE_SHA256}  ${release().archive.name}\n`);
-      } else {
-        await writeFile(destination, 'verified archive fixture');
-      }
-      return { bytes: releaseAsset.size, sha256: releaseAsset.sha256 };
+    resolveLatestInstallable = vi.fn<ResolveLatestInstallable>(async () => release());
+    downloadAsset = vi.fn<DownloadAsset>(
+      async (releaseAsset: RelayInstallableAsset, destination: string, options) => {
+        if (releaseAsset.name.endsWith('.sha256')) {
+          await writeFile(destination, `${ARCHIVE_SHA256}  Relay-v1.1.0-windows-x64.zip\n`);
+        } else {
+          await writeFile(destination, 'archive bytes');
+          options.onProgress?.(releaseAsset.size, releaseAsset.size);
+        }
+        return { bytes: releaseAsset.size, sha256: releaseAsset.sha256 };
+      },
+    );
+    extractInstaller = vi.fn<ExtractInstaller>(async (_archive: string, destination: string) => {
+      await writeFile(destination, INSTALLER);
+      return { bytes: INSTALLER.byteLength, sha256: INSTALLER_SHA256 };
     });
-    extractInstaller = vi
-      .fn<ExtractInstaller>()
-      .mockImplementation(async (_archive, destination) => {
-        await writeFile(destination, INSTALLER);
-        return { bytes: INSTALLER.byteLength, sha256: INSTALLER_SHA256 };
-      });
-    revealInstaller = vi.fn<(path: string) => unknown>();
+    spawnInstaller = vi.fn<SpawnInstaller>(async () => 0);
+    restartApp = vi.fn<RestartApp>();
   });
 
   afterEach(async () => {
@@ -122,14 +345,16 @@ describe('ReleaseUpdateManager', () => {
       execPath,
       downloadAsset,
       extractInstaller,
-      revealInstaller,
-      createPrivateDirectory: (path) => mkdir(path, { recursive: false, mode: 0o700 }),
+      spawnInstaller,
+      restartApp,
+      createPrivateDirectory: (path: string) => mkdir(path, { recursive: false, mode: 0o700 }),
       ...overrides,
     });
   }
 
   it('keeps discovery advisory until the operator explicitly downloads', async () => {
     const updates = manager();
+
     await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
       phase: 'available',
       latestVersion: '1.1.0',
@@ -137,11 +362,25 @@ describe('ReleaseUpdateManager', () => {
     });
     expect(resolveLatestInstallable).not.toHaveBeenCalled();
     expect(downloadAsset).not.toHaveBeenCalled();
-    expect(revealInstaller).not.toHaveBeenCalled();
+    expect(spawnInstaller).not.toHaveBeenCalled();
+    expect(restartApp).not.toHaveBeenCalled();
   });
 
   it('suppresses the exact immutable release after probation quarantines it', async () => {
-    const currentBuild = recoveryBuild();
+    const currentBuild: RecoveryBuildRecord = {
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512: 'c'.repeat(128),
+      installerSha256: null,
+      recoveryProtocol: 1,
+      serverDataEpoch: 1,
+      clientDataEpoch: 1,
+      installedAt: '2026-08-24T15:00:00.000Z',
+      health: 'healthy',
+      rollbackSnapshotId: null,
+    };
     await writeFile(
       join(relayRoot, 'state.ini'),
       serializeRecoveryCatalog({
@@ -156,8 +395,10 @@ describe('ReleaseUpdateManager', () => {
       }),
     );
     const updates = manager();
+
     await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
       phase: 'available',
+      latestVersion: '1.1.0',
       installable: false,
       failureCode: 'release-quarantined',
     });
@@ -168,7 +409,20 @@ describe('ReleaseUpdateManager', () => {
   });
 
   it('does not quarantine a different commit published under the same version', async () => {
-    const currentBuild = recoveryBuild();
+    const currentBuild: RecoveryBuildRecord = {
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512: 'c'.repeat(128),
+      installerSha256: null,
+      recoveryProtocol: 1,
+      serverDataEpoch: 1,
+      clientDataEpoch: 1,
+      installedAt: '2026-08-24T15:00:00.000Z',
+      health: 'healthy',
+      rollbackSnapshotId: null,
+    };
     await writeFile(
       join(relayRoot, 'state.ini'),
       serializeRecoveryCatalog({
@@ -182,164 +436,1059 @@ describe('ReleaseUpdateManager', () => {
         failedReleaseFingerprints: [`v1.1.0@${'f'.repeat(40)}`],
       }),
     );
-    await expect(manager().noteCheck(updateCheck())).resolves.toMatchObject({
+    const updates = manager();
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
       phase: 'available',
+      latestVersion: '1.1.0',
       installable: true,
       failureCode: null,
     });
   });
 
-  it('reveals only the freshly verified installer and keeps it available', async () => {
+  it('requires separate download, install, and restart actions', async () => {
     const updates = manager();
+    const snapshots: string[] = [];
+    updates.subscribe((snapshot) => snapshots.push(snapshot.phase));
     await updates.noteCheck(updateCheck());
+
     await expect(updates.download()).resolves.toMatchObject({
       phase: 'downloaded',
       downloadedBytes: 140_000_000,
       totalBytes: 140_000_000,
     });
+    expect(resolveLatestInstallable).toHaveBeenCalledOnce();
+    expect(downloadAsset).toHaveBeenCalledTimes(2);
+    expect(extractInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).not.toHaveBeenCalled();
 
-    await expect(updates.revealInstaller()).resolves.toMatchObject({
-      revealed: true,
-      snapshot: { phase: 'downloaded', failureCode: null },
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(
+        /^\/relay-transaction=[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+      ),
+    ]);
+    const recoveryRequest = parseRecoveryUpdateRequest(
+      await readFile(join(relayRoot, 'Recovery', 'update-request.ini'), 'utf8'),
+    );
+    expect(recoveryRequest).toMatchObject({
+      source: {
+        buildId: `r1-${'1'.repeat(40)}`,
+        version: CURRENT_VERSION,
+        recoveryProtocol: 1,
+        runtimeSha512: 'c'.repeat(128),
+      },
+      targetVersion: '1.1.0',
+      targetCommitish: '0123456789abcdef0123456789abcdef01234567',
+      targetInstallerSha256: INSTALLER_SHA256,
+      mode: 'unconfigured',
     });
-    expect(revealInstaller).toHaveBeenCalledOnce();
-    const installerPath = revealInstaller.mock.calls[0]?.[0];
-    expect(installerPath).toBeTypeOf('string');
-    expect(basename(installerPath!)).toBe('Relay.exe');
-    expect(installerPath).toContain(join(relayRoot, 'Updates'));
-    await expect(readFile(installerPath!)).resolves.toEqual(INSTALLER);
+    expect(restartApp).not.toHaveBeenCalled();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+    expect(snapshots).toEqual(
+      expect.arrayContaining([
+        'available',
+        'downloading',
+        'downloaded',
+        'installing',
+        'ready-to-restart',
+      ]),
+    );
   });
 
-  it('retains a verified installer when revealing its folder fails', async () => {
-    revealInstaller.mockRejectedValueOnce(new Error('Explorer unavailable'));
+  it('prepares an update from a verified protocol-2 runtime marker', async () => {
+    const runtimeSha512 = await writeProtocol2RuntimeMarker(runtimeDirectory);
     const updates = manager();
     await updates.noteCheck(updateCheck());
     await updates.download();
 
-    await expect(updates.revealInstaller()).resolves.toMatchObject({
-      revealed: false,
-      snapshot: { phase: 'error', failureCode: 'reveal-failed' },
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    const request = parseRecoveryUpdateRequest(
+      await readFile(join(relayRoot, 'Recovery', 'update-request.ini'), 'utf8'),
+    );
+    expect(request?.source).toMatchObject({
+      buildId: `r1-${'1'.repeat(40)}`,
+      version: CURRENT_VERSION,
+      releaseTag: `v${CURRENT_VERSION}`,
+      targetCommitish: '1'.repeat(40),
+      runtimeSha512,
+      recoveryProtocol: 2,
+      health: 'healthy',
     });
-    await expect(updates.revealInstaller()).resolves.toMatchObject({
-      revealed: true,
-      snapshot: { phase: 'downloaded', failureCode: null },
-    });
-    expect(revealInstaller).toHaveBeenCalledTimes(2);
   });
 
-  it('re-hashes the staged installer immediately before revealing it', async () => {
+  it('rehydrates a valid prepared update and completes its manual restart', async () => {
+    const { transactionId } = await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      currentVersion: CURRENT_VERSION,
+      latestVersion: '1.1.0',
+      installable: true,
+      failureCode: null,
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(transactionId);
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
+  it('rehydrates restart-ready state without a network release check', async () => {
+    await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const updates = manager();
+
+    await expect(updates.readySnapshot()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+  });
+
+  it('rehydrates a protected update prepared from a protocol-1 source runtime', async () => {
+    const { transactionId } = await writePendingPreparedFixture(relayRoot, runtimeDirectory, {
+      sourceProtocol: 1,
+    });
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(transactionId);
+  });
+
+  it.each([
+    [
+      'version',
+      (contents: string) =>
+        contents
+          .replace('version=1.1.0', 'version=1.2.0')
+          .replace('releaseTag=v1.1.0', 'releaseTag=v1.2.0'),
+    ],
+    ['commit', (contents: string) => contents.replace(release().targetCommitish, '3'.repeat(40))],
+    ['installer digest', (contents: string) => contents.replace(INSTALLER_SHA256, 'd'.repeat(64))],
+    [
+      'runtime hash',
+      (contents: string) =>
+        contents.replace(/runtimeSha512=[0-9a-f]+/u, `runtimeSha512=${'e'.repeat(128)}`),
+    ],
+    [
+      'server epoch',
+      (contents: string) => contents.replace('serverDataEpoch=1', 'serverDataEpoch=2'),
+    ],
+    [
+      'client epoch',
+      (contents: string) => contents.replace('clientDataEpoch=1', 'clientDataEpoch=2'),
+    ],
+  ])('does not rehydrate when the prepared %s mismatches', async (_label, mutate) => {
+    await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const preparedPath = join(relayRoot, 'Recovery', 'prepared.ini');
+    await writeFile(preparedPath, mutate(await readFile(preparedPath, 'utf8')));
+    const updates = manager();
+
+    await updates.noteCheck(updateCheck());
+
+    expect(updates.snapshot().phase).not.toBe('ready-to-restart');
+    await expect(updates.restart()).resolves.toBe(false);
+  });
+
+  it('does not rehydrate when the request source is not the executing catalog build', async () => {
+    await writePendingPreparedFixture(relayRoot, runtimeDirectory);
+    const requestPath = join(relayRoot, 'Recovery', 'update-request.ini');
+    const request = parseRecoveryUpdateRequest(await readFile(requestPath, 'utf8'));
+    expect(request).not.toBeNull();
+    await writeFile(
+      requestPath,
+      serializeRecoveryUpdateRequest({
+        ...request!,
+        source: { ...request!.source, buildId: `r9-${'9'.repeat(40)}` },
+      }),
+    );
+    const updates = manager();
+
+    await updates.noteCheck(updateCheck());
+
+    expect(updates.snapshot().phase).not.toBe('ready-to-restart');
+    await expect(updates.restart()).resolves.toBe(false);
+  });
+
+  it('does not rehydrate when the prepared runtime contents changed', async () => {
+    const { targetRuntimeDirectory } = await writePendingPreparedFixture(
+      relayRoot,
+      runtimeDirectory,
+    );
+    await writeFile(join(targetRuntimeDirectory, 'Relay.exe'), 'MZchanged runtime');
+    const updates = manager();
+
+    await updates.noteCheck(updateCheck());
+
+    expect(updates.snapshot().phase).not.toBe('ready-to-restart');
+    await expect(updates.restart()).resolves.toBe(false);
+  });
+
+  it('does not offer download for a mutable notification-only release', async () => {
+    const updates = manager();
+    await updates.noteCheck(updateCheck({ installable: false, assetSizeBytes: null }));
+
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'release-not-immutable',
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+    expect(downloadAsset).not.toHaveBeenCalled();
+  });
+
+  it('cancels a download, removes staging, and returns to the available state', async () => {
+    downloadAsset.mockImplementation(
+      async (_releaseAsset: RelayInstallableAsset, destination: string, options) => {
+        await writeFile(destination, 'partial');
+        return new Promise((_resolve, reject) => {
+          options.signal!.addEventListener(
+            'abort',
+            () => reject(options.signal!.reason ?? new Error('cancelled')),
+            { once: true },
+          );
+        });
+      },
+    );
     const updates = manager();
     await updates.noteCheck(updateCheck());
-    await updates.download();
-    const [stagingName] = await readdir(join(relayRoot, 'Updates'));
-    await writeFile(join(relayRoot, 'Updates', stagingName!, 'Relay.exe'), 'MZchanged');
 
-    await expect(updates.revealInstaller()).resolves.toMatchObject({
-      revealed: false,
-      snapshot: { phase: 'error', failureCode: 'verification-failed' },
+    const pending = updates.download();
+    await vi.waitFor(() => expect(downloadAsset).toHaveBeenCalledOnce());
+    void updates.cancelDownload();
+
+    await expect(pending).resolves.toMatchObject({
+      phase: 'available',
+      latestVersion: '1.1.0',
+      failureCode: null,
     });
-    expect(revealInstaller).not.toHaveBeenCalled();
-    await expect(stat(join(relayRoot, 'Updates', stagingName!))).rejects.toThrow();
+    const stagingDirectory = join(relayRoot, 'Updates');
+    await expect(stat(stagingDirectory)).resolves.toBeDefined();
+    await expect(readFile(downloadAsset.mock.calls[0]![1])).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('cancels metadata resolution and releases the download single-flight', async () => {
+    resolveLatestInstallable.mockImplementationOnce(
+      (signal?: AbortSignal) =>
+        new Promise<RelayInstallableRelease>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('cancelled')), {
+            once: true,
+          });
+        }),
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+
+    const pending = updates.download();
+    await vi.waitFor(() => expect(resolveLatestInstallable).toHaveBeenCalledOnce());
+    const cancelled = updates.cancelDownload();
+
+    await expect(pending).resolves.toMatchObject({ phase: 'available', downloadedBytes: 0 });
+    await expect(cancelled).resolves.toMatchObject({ phase: 'available', downloadedBytes: 0 });
+    resolveLatestInstallable.mockResolvedValueOnce(release());
+    await expect(updates.download()).resolves.toMatchObject({ phase: 'downloaded' });
   });
 
   it('fails closed when the checksum and downloaded archive disagree', async () => {
-    downloadAsset.mockImplementation(async (releaseAsset, destination) => {
-      if (releaseAsset.name.endsWith('.sha256')) {
-        await writeFile(destination, `${'f'.repeat(64)}  ${release().archive.name}\n`);
-      } else {
-        await writeFile(destination, 'archive');
-      }
-      return { bytes: releaseAsset.size, sha256: releaseAsset.sha256 };
-    });
+    downloadAsset.mockImplementation(
+      async (releaseAsset: RelayInstallableAsset, destination: string) => {
+        if (releaseAsset.name.endsWith('.sha256')) {
+          await writeFile(destination, `${'c'.repeat(64)}  Relay-v1.1.0-windows-x64.zip\n`);
+        } else {
+          await writeFile(destination, 'archive bytes');
+        }
+        return { bytes: releaseAsset.size, sha256: releaseAsset.sha256 };
+      },
+    );
     const updates = manager();
     await updates.noteCheck(updateCheck());
+
     await expect(updates.download()).resolves.toMatchObject({
       phase: 'error',
       failureCode: 'verification-failed',
     });
     expect(extractInstaller).not.toHaveBeenCalled();
+    expect(spawnInstaller).not.toHaveBeenCalled();
   });
 
   it('classifies malformed archive extraction as a verification failure', async () => {
     extractInstaller.mockRejectedValueOnce(new Error('Relay release ZIP failed CRC validation'));
     const updates = manager();
     await updates.noteCheck(updateCheck());
+
     await expect(updates.download()).resolves.toMatchObject({
       phase: 'error',
       failureCode: 'verification-failed',
     });
+    expect(spawnInstaller).not.toHaveBeenCalled();
   });
 
-  it('cancels an in-flight download and removes partial staging', async () => {
-    downloadAsset.mockImplementation(async (releaseAsset, destination, options) => {
-      if (releaseAsset.name.endsWith('.sha256')) {
-        await writeFile(destination, ARCHIVE_SHA256 + '  ' + release().archive.name + '\n');
-        return { bytes: releaseAsset.size, sha256: releaseAsset.sha256 };
-      }
-      await writeFile(destination, 'partial');
-      const signal = options.signal;
-      if (!signal) throw new Error('Download signal is required');
-      await new Promise<void>((_resolve, reject) => {
-        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-      });
-      throw new Error('unreachable');
-    });
+  it('re-hashes the staged installer immediately before execution', async () => {
     const updates = manager();
     await updates.noteCheck(updateCheck());
-    const pending = updates.download();
-    await vi.waitFor(() => expect(downloadAsset).toHaveBeenCalledTimes(2));
-    await expect(updates.cancelDownload()).resolves.toMatchObject({
-      phase: 'available',
+    await updates.download();
+    const installerPath = extractInstaller.mock.calls[0]![1];
+    await writeFile(installerPath, 'MZtampered after verification');
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'verification-failed',
+    });
+    expect(spawnInstaller).not.toHaveBeenCalled();
+  });
+
+  it('keeps the staged update retryable when the bootstrap exits unsuccessfully', async () => {
+    spawnInstaller.mockResolvedValue(1);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledTimes(2);
+    expect(restartApp).not.toHaveBeenCalled();
+  });
+
+  it('reports the current native bootstrap failure without exposing paths or arguments', async () => {
+    const nativeReason = 'Relay could not activate the prepared build.';
+    const encodedReason = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from(`[Relay]\r\nmessage=${nativeReason}\r\n`, 'utf16le'),
+    ]);
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(join(relayRoot, 'bootstrap-error.ini'), encodedReason);
+      return 1;
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(onInstallDiagnostic).toHaveBeenCalledWith({
+      targetVersion: '1.1.0',
+      outcome: 'failed',
+      protectedAttempt: {
+        stage: 'protected-preparation',
+        exitCode: 1,
+        nativeReason,
+        spawnErrorCode: null,
+      },
+      legacyFallback: 'ineligible',
+      fallbackAttempt: null,
+    });
+  });
+
+  it("rejects native bootstrap text that is not one of Relay's fixed failure reasons", async () => {
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(
+        join(relayRoot, 'bootstrap-error.ini'),
+        '[Relay]\r\nmessage=C:\\Users\\operator\\private\\Relay.exe /relay-transaction=secret\r\n',
+      );
+      return 1;
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await updates.install();
+
+    expect(onInstallDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protectedAttempt: expect.objectContaining({ nativeReason: null }),
+      }),
+    );
+  });
+
+  it('removes a stale native bootstrap failure before starting a new attempt', async () => {
+    await writeFile(
+      join(relayRoot, 'bootstrap-error.ini'),
+      '[Relay]\r\nmessage=Stale failure from an earlier update.\r\n',
+    );
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockResolvedValueOnce(1);
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await updates.install();
+
+    expect(onInstallDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protectedAttempt: expect.objectContaining({ nativeReason: null }),
+      }),
+    );
+    await expect(stat(join(relayRoot, 'bootstrap-error.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('falls back to direct activation when protected preparation fails on legacy state', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
       failureCode: null,
     });
-    await pending;
-    await expect(readdir(join(relayRoot, 'Updates'))).resolves.toEqual([]);
+    expect(spawnInstaller).toHaveBeenNthCalledWith(1, expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(/^\/relay-transaction=/u),
+    ]);
+    expect(spawnInstaller).toHaveBeenNthCalledWith(2, expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+    ]);
+    await expect(stat(join(relayRoot, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(prepareRecoveryRestart).not.toHaveBeenCalled();
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
   });
 
-  it('rejects a release that changes after discovery', async () => {
-    resolveLatestInstallable.mockResolvedValueOnce(release('1.2.0'));
+  it('reports when legacy direct activation recovers a protected preparation failure', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    const onInstallDiagnostic = vi.fn();
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+
+    expect(onInstallDiagnostic).toHaveBeenCalledWith({
+      targetVersion: '1.1.0',
+      outcome: 'recovered',
+      protectedAttempt: {
+        stage: 'protected-preparation',
+        exitCode: 1,
+        nativeReason: null,
+        spawnErrorCode: null,
+      },
+      legacyFallback: 'succeeded',
+      fallbackAttempt: null,
+    });
+  });
+
+  it('does not let a diagnostic callback failure replace the protected update outcome', async () => {
+    spawnInstaller.mockResolvedValueOnce(1);
+    const onInstallDiagnostic = vi.fn(() => {
+      throw new Error('diagnostic sink unavailable');
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(onInstallDiagnostic).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a diagnostic callback failure replace legacy fallback recovery', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const onInstallDiagnostic = vi.fn(() => {
+      throw new Error('diagnostic sink unavailable');
+    });
+    const updates = manager({ onInstallDiagnostic } as ManagerOverrides);
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      failureCode: null,
+    });
+    expect(onInstallDiagnostic).toHaveBeenCalledOnce();
+  });
+
+  it('uses direct legacy activation to repair an unverifiable running marker', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    await writeFile(join(runtimeDirectory, '.relay-runtime-ready'), '[Relay]\nprotocol=2\n');
     const updates = manager();
     await updates.noteCheck(updateCheck());
-    await expect(updates.download()).resolves.toMatchObject({
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+    ]);
+  });
+
+  it.each([
+    ['protected state', `[Relay]\nprotocol=2\ncurrent=r1-${'1'.repeat(40)}\n`],
+    ['a different legacy current build', '[Relay]\nprotocol=1\ncurrent=r1-other\n'],
+  ])('never bypasses recovery preparation for %s', async (_label, state) => {
+    await writeFile(join(relayRoot, 'state.ini'), state);
+    spawnInstaller.mockResolvedValue(1);
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
       phase: 'error',
-      failureCode: 'release-changed',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+    expect(spawnInstaller).toHaveBeenCalledWith(expect.stringMatching(/Relay\.exe$/u), [
+      '/relay-prepare-only',
+      expect.stringMatching(/^\/relay-transaction=/u),
+    ]);
+  });
+
+  it('rechecks legacy state after the protected attempt before direct activation', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(
+        join(relayRoot, 'state.ini'),
+        `[Relay]\nprotocol=2\ncurrent=r1-${'1'.repeat(40)}\n`,
+      );
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed legacy state written during the protected attempt', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await writeFile(join(relayRoot, 'state.ini'), '[Relay]\nprotocol=1\ncurrent=../redirected\n');
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  fileSymlinkIt('rejects legacy state redirected during the protected attempt', async () => {
+    const statePath = join(relayRoot, 'state.ini');
+    const redirectedStatePath = join(tempRoot, 'redirected-state.ini');
+    await writeFile(
+      statePath,
+      '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111111111111111111111111111\nprevious=\n',
+    );
+    await writeFile(
+      redirectedStatePath,
+      '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111111111111111111111111111\nprevious=\n',
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await rm(statePath);
+      await symlink(redirectedStatePath, statePath, 'file');
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a redirected managed root during the protected attempt', async () => {
+    const statePath = join(relayRoot, 'state.ini');
+    const originalRelayRoot = join(localAppData, 'Relay.original');
+    await writeFile(
+      statePath,
+      '[Relay]\nprotocol=1\ncurrent=r1-1111111111111111111111111111111111111111\nprevious=\n',
+    );
+    spawnInstaller.mockImplementationOnce(async () => {
+      await rename(relayRoot, originalRelayRoot);
+      await createDirectoryRedirect(originalRelayRoot, relayRoot);
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('binds legacy fallback eligibility to the canonical executing build', async () => {
+    const canonicalRuntime = join(relayRoot, 'Runtime', 'r1-canonical');
+    await rename(runtimeDirectory, canonicalRuntime);
+    await createDirectoryRedirect(canonicalRuntime, runtimeDirectory);
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    expect(spawnInstaller).not.toHaveBeenCalled();
+  });
+
+  it('re-hashes the staged installer before legacy direct activation', async () => {
+    await writeFile(
+      join(relayRoot, 'state.ini'),
+      `[Relay]\nprotocol=1\ncurrent=r1-${'1'.repeat(40)}\nprevious=\n`,
+    );
+    spawnInstaller.mockImplementationOnce(async (path) => {
+      const tamperedInstaller = Buffer.from(INSTALLER);
+      tamperedInstaller.fill(0x78, 2);
+      expect(tamperedInstaller).toHaveLength(INSTALLER.byteLength);
+      await writeFile(path, tamperedInstaller);
+      return 1;
+    });
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'verification-failed',
+    });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('removes a recovery request when the bootstrap cannot be started', async () => {
+    spawnInstaller.mockRejectedValueOnce(new Error('spawn failed'));
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    await expect(updates.install()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'install-failed',
+    });
+    await expect(stat(join(relayRoot, 'Recovery', 'update-request.ini'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('defers a newer release check while an older release is being prepared', async () => {
+    const deferredSpawn: { resolve?: (exitCode: number | null) => void } = {};
+    spawnInstaller.mockReturnValueOnce(
+      new Promise<number | null>((resolvePromise) => {
+        deferredSpawn.resolve = resolvePromise;
+      }),
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    const pendingInstall = updates.install();
+    await vi.waitFor(() => expect(spawnInstaller).toHaveBeenCalledOnce());
+    await expect(
+      updates.noteCheck(updateCheck({ latestVersion: '1.2.0', assetSizeBytes: 150_000_000 })),
+    ).resolves.toMatchObject({
+      phase: 'installing',
+      latestVersion: '1.1.0',
+    });
+
+    deferredSpawn.resolve?.(0);
+    await expect(pendingInstall).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
+  });
+
+  it('single-flights install and rejects a competing download without changing state', async () => {
+    const deferredSpawn: { resolve?: (exitCode: number | null) => void } = {};
+    spawnInstaller.mockReturnValueOnce(
+      new Promise<number | null>((resolvePromise) => {
+        deferredSpawn.resolve = resolvePromise;
+      }),
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    const downloadCallsBeforeInstall = downloadAsset.mock.calls.length;
+
+    const firstInstall = updates.install();
+    const duplicateInstall = updates.install();
+    expect(duplicateInstall).toBe(firstInstall);
+    await vi.waitFor(() => expect(spawnInstaller).toHaveBeenCalledOnce());
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'installing',
+      latestVersion: '1.1.0',
+    });
+    expect(downloadAsset).toHaveBeenCalledTimes(downloadCallsBeforeInstall);
+
+    deferredSpawn.resolve?.(0);
+    await expect(firstInstall).resolves.toMatchObject({ phase: 'ready-to-restart' });
+    expect(spawnInstaller).toHaveBeenCalledOnce();
+  });
+
+  it('single-flights duplicate restart requests', async () => {
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    const firstRestart = updates.restart();
+    const duplicateRestart = updates.restart();
+    expect(duplicateRestart).toBe(firstRestart);
+    await expect(firstRestart).resolves.toBe(true);
+    expect(restartApp).toHaveBeenCalledOnce();
+  });
+
+  it('finishes the recovery checkpoint before handing control to the stable launcher', async () => {
+    const prepareRecoveryRestart = vi.fn(async () => 'ready' as const);
+    const updates = manager({ prepareRecoveryRestart });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+
+    expect(prepareRecoveryRestart).toHaveBeenCalledWith(expect.stringMatching(/^[0-9a-f-]{36}$/u));
+    expect(prepareRecoveryRestart.mock.invocationCallOrder[0]).toBeLessThan(
+      restartApp.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('keeps the restart handoff safe when no runtime callback is configured', async () => {
+    const updates = manager({ restartApp: undefined });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).not.toHaveBeenCalled();
+  });
+
+  it('keeps Relay open when the recovery checkpoint cannot be completed', async () => {
+    const updates = manager({ prepareRecoveryRestart: async () => 'unchanged' });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(false);
+
+    expect(restartApp).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'restart-unavailable',
+    });
+  });
+
+  it('relaunches through the stable supervisor when restart preparation fails after teardown', async () => {
+    const updates = manager({ prepareRecoveryRestart: async () => 'restart-current' });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+
+    await expect(updates.restart()).resolves.toBe(true);
+
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
+  });
+
+  it('discards a staged older release when discovery advances', async () => {
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    const installerPath = extractInstaller.mock.calls[0]![1];
+
+    await expect(
+      updates.noteCheck(updateCheck({ latestVersion: '1.2.0', assetSizeBytes: 150_000_000 })),
+    ).resolves.toMatchObject({
+      phase: 'available',
+      latestVersion: '1.2.0',
+      downloadedBytes: 0,
+    });
+    await expect(stat(installerPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('aborts and drains an older in-flight download before publishing a newer release', async () => {
+    let archiveAbortObserved = false;
+    let partialArchivePath = '';
+    let markArchiveAbortReady: (() => void) | undefined;
+    const archiveAbortReady = new Promise<void>((resolvePromise) => {
+      markArchiveAbortReady = resolvePromise;
+    });
+    downloadAsset.mockImplementation(
+      async (releaseAsset: RelayInstallableAsset, destination: string, options) => {
+        if (releaseAsset.name.endsWith('.sha256')) {
+          await writeFile(destination, `${ARCHIVE_SHA256}  Relay-v1.1.0-windows-x64.zip\n`);
+          return { bytes: releaseAsset.size, sha256: releaseAsset.sha256 };
+        }
+
+        partialArchivePath = destination;
+        await writeFile(destination, 'partial archive');
+        return new Promise((_resolve, reject) => {
+          options.signal!.addEventListener(
+            'abort',
+            () => {
+              archiveAbortObserved = true;
+              reject(options.signal!.reason ?? new Error('cancelled'));
+            },
+            { once: true },
+          );
+          markArchiveAbortReady?.();
+        });
+      },
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    const pendingDownload = updates.download();
+    await archiveAbortReady;
+    expect(downloadAsset).toHaveBeenCalledTimes(2);
+
+    const superseding = await updates.noteCheck(
+      updateCheck({ latestVersion: '1.2.0', assetSizeBytes: 150_000_000 }),
+    );
+    const wasAbortedBeforeFallbackCleanup = archiveAbortObserved;
+    await pendingDownload;
+
+    expect(wasAbortedBeforeFallbackCleanup).toBe(true);
+    expect(superseding).toMatchObject({
+      phase: 'available',
+      latestVersion: '1.2.0',
+      downloadedBytes: 0,
+    });
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'available',
+      latestVersion: '1.2.0',
+      downloadedBytes: 0,
+    });
+    await expect(stat(partialArchivePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(extractInstaller).not.toHaveBeenCalled();
+  });
+
+  it('drains a superseded download while release verification is still pending', async () => {
+    const deferredRelease: { resolve?: (value: RelayInstallableRelease) => void } = {};
+    resolveLatestInstallable.mockReturnValueOnce(
+      new Promise<RelayInstallableRelease>((resolvePromise) => {
+        deferredRelease.resolve = resolvePromise;
+      }),
+    );
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+
+    const pendingDownload = updates.download();
+    await vi.waitFor(() => expect(resolveLatestInstallable).toHaveBeenCalledOnce());
+
+    let supersedingSettled = false;
+    const supersedingPromise = updates
+      .noteCheck(updateCheck({ latestVersion: '1.2.0', assetSizeBytes: 150_000_000 }))
+      .then((snapshot) => {
+        supersedingSettled = true;
+        return snapshot;
+      });
+    await Promise.resolve();
+    expect(supersedingSettled).toBe(false);
+
+    deferredRelease.resolve?.(release());
+    const [superseding] = await Promise.all([supersedingPromise, pendingDownload]);
+
+    expect(superseding).toMatchObject({
+      phase: 'available',
+      latestVersion: '1.2.0',
+      downloadedBytes: 0,
+    });
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'available',
+      latestVersion: '1.2.0',
+      downloadedBytes: 0,
     });
     expect(downloadAsset).not.toHaveBeenCalled();
+    expect(extractInstaller).not.toHaveBeenCalled();
   });
 
-  it('preserves a verified download when discovery confirms the same release', async () => {
+  it('preserves manual progress when discovery confirms the same release again', async () => {
     const updates = manager();
     await updates.noteCheck(updateCheck());
     await updates.download();
-    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({ phase: 'downloaded' });
-    expect(downloadAsset).toHaveBeenCalledTimes(2);
+
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'downloaded',
+      latestVersion: '1.1.0',
+      downloadedBytes: 140_000_000,
+    });
+
+    await updates.install();
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'ready-to-restart',
+      latestVersion: '1.1.0',
+    });
   });
 
-  it('clears the old staged installer when discovery moves to a newer release', async () => {
+  it('refuses updater actions outside packaged Windows x64 Relay', async () => {
+    const updates = manager({ platform: 'darwin' });
+    await expect(updates.noteCheck(updateCheck())).resolves.toMatchObject({
+      phase: 'available',
+      installable: false,
+      failureCode: 'unsupported',
+    });
+
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'unsupported',
+    });
+    expect(resolveLatestInstallable).not.toHaveBeenCalled();
+  });
+
+  fileSymlinkIt('refuses restart when the stable launcher becomes a symbolic link', async () => {
     const updates = manager();
     await updates.noteCheck(updateCheck());
     await updates.download();
-    const [stagingName] = await readdir(join(relayRoot, 'Updates'));
+    await updates.install();
+    await rm(stableLauncher);
+    await symlink(execPath, stableLauncher);
 
-    await updates.noteCheck(
-      updateCheck({ latestVersion: '1.2.0', targetCommitish: '2'.repeat(40) }),
-    );
-    await expect(stat(join(relayRoot, 'Updates', stagingName!))).rejects.toThrow();
-    expect(updates.snapshot()).toMatchObject({ phase: 'available', latestVersion: '1.2.0' });
+    await expect(updates.restart()).resolves.toBe(false);
+    expect(restartApp).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'restart-unavailable',
+    });
+
+    await rm(stableLauncher);
+    await writeFile(stableLauncher, 'MZstable launcher restored');
+    await expect(updates.restart()).resolves.toBe(true);
+    expect(restartApp).toHaveBeenCalledWith(stableLauncher);
   });
 
-  it('removes only abandoned Relay staging directories during initialization', async () => {
+  it('refuses restart when the managed root becomes redirected', async () => {
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+    await updates.install();
+    const originalRelayRoot = join(localAppData, 'Relay.original');
+    await rename(relayRoot, originalRelayRoot);
+    await createDirectoryRedirect(originalRelayRoot, relayRoot);
+
+    await expect(updates.restart()).resolves.toBe(false);
+    expect(restartApp).not.toHaveBeenCalled();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'error',
+      failureCode: 'restart-unavailable',
+    });
+  });
+
+  it('removes only updater staging directories that have been abandoned for over 24 hours', async () => {
     const updatesRoot = join(relayRoot, 'Updates');
-    const stale = join(updatesRoot, 'v1.1.0-12345678-1234-4123-8123-123456789abc');
-    const unrelated = join(updatesRoot, 'operator-files');
-    await mkdir(stale, { recursive: true });
-    await mkdir(unrelated, { recursive: true });
-    const old = new Date(Date.now() - 25 * 60 * 60 * 1_000);
-    await utimes(stale, old, old);
+    const staleDirectory = join(updatesRoot, 'v1.0.1-12345678-1234-4123-8123-123456789abc');
+    const recentDirectory = join(updatesRoot, 'v1.0.3-12345678-1234-4123-8123-123456789abc');
+    const unrelatedDirectory = join(updatesRoot, 'operator-files');
+    const linkedDirectory = join(updatesRoot, 'v1.0.2-12345678-1234-4123-8123-123456789abc');
+    await mkdir(staleDirectory, { recursive: true });
+    await writeFile(join(staleDirectory, 'partial.zip'), 'partial');
+    await mkdir(recentDirectory);
+    const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1_000);
+    await utimes(staleDirectory, staleTime, staleTime);
+    await mkdir(unrelatedDirectory);
+    await createDirectoryRedirect(unrelatedDirectory, linkedDirectory);
 
-    await manager().readySnapshot();
-    await expect(stat(stale)).rejects.toThrow();
-    await expect(stat(unrelated)).resolves.toBeDefined();
+    const updates = manager();
+    await updates.noteCheck(updateCheck());
+
+    await expect(stat(staleDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(recentDirectory)).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
+    });
+    await expect(stat(unrelatedDirectory)).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
+    });
+    await expect(lstat(linkedDirectory)).resolves.toMatchObject({
+      isSymbolicLink: expect.any(Function),
+    });
+  });
+
+  it('uses an app-private version directory for every staged update', async () => {
+    const createPrivateDirectory = vi.fn((path: string) =>
+      mkdir(path, { recursive: false, mode: 0o700 }),
+    );
+    const updates = manager({ createPrivateDirectory });
+    await updates.noteCheck(updateCheck());
+    await updates.download();
+
+    expect(createPrivateDirectory).toHaveBeenCalledOnce();
+    const privatePath = createPrivateDirectory.mock.calls[0]![0];
+    expect(privatePath.startsWith(join(relayRoot, 'Updates'))).toBe(true);
+    expect(basename(privatePath)).toMatch(/^v1\.1\.0-[0-9a-f-]+$/u);
+    await expect(stat(privatePath)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+  });
+
+  it('fails before downloading when private staging cannot be secured', async () => {
+    const updates = manager({
+      createPrivateDirectory: () => {
+        throw new Error('Windows private DACL unavailable');
+      },
+    });
+    await updates.noteCheck(updateCheck());
+
+    await expect(updates.download()).resolves.toMatchObject({
+      phase: 'error',
+      failureCode: 'download-failed',
+    });
+    expect(downloadAsset).not.toHaveBeenCalled();
+    expect(extractInstaller).not.toHaveBeenCalled();
   });
 
   it('removes completed staging for the healthy current version and older versions', async () => {
