@@ -560,7 +560,9 @@ Dynatrace dashboard definitions are workstation-local configuration in
 Relay supports the main window, route-limited auxiliary windows, On-Call popouts, and Relay-framed
 Dynatrace dashboard windows. App windows deny unexpected navigation and `window.open()` calls.
 Dynatrace content runs in a separate `WebContentsView` and isolated session partition, with
-navigation limited to approved Dynatrace and Microsoft authentication hosts.
+navigation limited to approved Dynatrace and Microsoft authentication hosts. Relay reapplies a
+100% page scale after navigation settles so Chromium's persisted host zoom cannot offset
+coordinate-sensitive dashboard interactions such as map location selection.
 
 Window creation and navigation policy live in `src/main/app/windowFactory.ts` and
 `src/main/dynatrace/DynatraceWindowManager.ts`.
