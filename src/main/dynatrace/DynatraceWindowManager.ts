@@ -283,6 +283,17 @@ export class DynatraceWindowManager {
 
   private attachDynatraceContentHandlers(id: string, view: WebContentsView): void {
     const { webContents } = view;
+    const applyStablePageScale = () => {
+      webContents.setZoomFactor(1);
+      void webContents.setVisualZoomLevelLimits(1, 1).catch((error) => {
+        loggers.main.warn('Failed to lock Dynatrace page zoom', {
+          error: getErrorMessage(error),
+        });
+      });
+    };
+
+    applyStablePageScale();
+    webContents.on('did-stop-loading', applyStablePageScale);
 
     webContents.on('will-navigate', (event, url) => {
       this.applyNavigationPolicy(id, event, url);

@@ -39,6 +39,8 @@ const {
         mockDynatraceWebContentsHandlers.set(event, handler);
         return mockDynatraceView.webContents;
       }),
+      setVisualZoomLevelLimits: vi.fn(async () => undefined),
+      setZoomFactor: vi.fn(),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => { action: 'deny' }) => {
         mockWindowOpenHandlers.push(handler);
       }),
@@ -195,6 +197,18 @@ describe('DynatraceWindowManager', () => {
     expect(mockHostWindow.loadURL).not.toHaveBeenCalledWith(
       'https://abc.live.dynatrace.com/dashboard',
     );
+  });
+
+  it('keeps the persistent Dynatrace page scale at 100% after navigation settles', async () => {
+    await manager.openDashboard('dt_1');
+
+    expect(mockDynatraceView.webContents.setZoomFactor).toHaveBeenCalledWith(1);
+    expect(mockDynatraceView.webContents.setVisualZoomLevelLimits).toHaveBeenCalledWith(1, 1);
+
+    mockDynatraceView.webContents.setZoomFactor.mockClear();
+    mockDynatraceWebContentsHandlers.get('did-stop-loading')?.();
+
+    expect(mockDynatraceView.webContents.setZoomFactor).toHaveBeenCalledWith(1);
   });
 
   it('loads the packaged Relay shell when the app is packaged', async () => {
