@@ -4,13 +4,11 @@ import { parse } from 'yaml';
 
 const { test } = process.env.VITEST ? await import('vitest') : await import('node:test');
 
-const [buildWorkflow, securityWorkflow] = await Promise.all([
-  readFile(new URL('../.github/workflows/build.yml', import.meta.url), 'utf8'),
-  readFile(new URL('../.github/workflows/security.yml', import.meta.url), 'utf8'),
-]);
-
+const buildWorkflow = await readFile(
+  new URL('../.github/workflows/build.yml', import.meta.url),
+  'utf8',
+);
 const build = parse(buildWorkflow);
-const security = parse(securityWorkflow);
 const normalizeExpression = (value) => value.replaceAll(/\s+/gu, ' ').trim();
 const findStep = (job, name) => {
   assert.ok(job?.steps, `missing workflow job for step: ${name}`);
@@ -37,17 +35,17 @@ test('main pull requests emit the stable build quality gate', () => {
   assert.deepEqual(build.jobs.quality.needs, [
     'provenance',
     'static',
-    'unit-tests',
-    'renderer-tests',
+    'unit-coverage',
+    'renderer-coverage',
   ]);
   const aggregate = findStep(build.jobs.quality, 'Require successful build components');
   assert.deepEqual(aggregate.env, {
     ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
     PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-    RENDERER_TESTS_RESULT: '${{ needs.renderer-tests.result }}',
+    RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
     REUSE: '${{ needs.provenance.outputs.reuse }}',
     STATIC_RESULT: '${{ needs.static.result }}',
-    UNIT_TESTS_RESULT: '${{ needs.unit-tests.result }}',
+    UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
   });
   assert.match(aggregate.run, /exit 1/u);
   assert.ok(
@@ -56,10 +54,10 @@ test('main pull requests emit the stable build quality gate', () => {
   );
 });
 
-test('Sonar consumes unit coverage and both merged renderer coverage shards', () => {
-  const unitCoverage = security.jobs['unit-coverage'];
-  const rendererCoverage = security.jobs['renderer-coverage'];
-  const sonar = security.jobs.sonarqube;
+test('Sonar consumes unit coverage and all four merged renderer coverage shards', () => {
+  const unitCoverage = build.jobs['unit-coverage'];
+  const rendererCoverage = build.jobs['renderer-coverage'];
+  const sonar = build.jobs.sonarqube;
 
   assert.equal(
     findStep(unitCoverage, 'Generate unit coverage').run,
@@ -76,8 +74,8 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
     },
   });
   assert.deepEqual(rendererCoverage.strategy.matrix, {
-    'shard-index': [1, 2],
-    'shard-total': [2],
+    'shard-index': [1, 2, 3, 4],
+    'shard-total': [4],
   });
   assert.equal(rendererCoverage.strategy['fail-fast'], false);
   assert.equal(
@@ -125,7 +123,7 @@ test('Sonar consumes unit coverage and both merged renderer coverage shards', ()
 });
 
 test('Sonar runs on the exact commit and fails closed without valid reuse or fresh coverage', () => {
-  const sonar = security.jobs.sonarqube;
+  const sonar = build.jobs.sonarqube;
 
   assert.equal(
     normalizeExpression(sonar.if),
@@ -167,36 +165,30 @@ test('Sonar runs on the exact commit and fails closed without valid reuse or fre
 });
 
 test('scanner jobs retain stable required names and bounded CI entrypoints', () => {
-  assert.equal(security.jobs.sonarqube.name, 'SonarQube quality gate');
-  assert.equal(security.jobs.snyk.name, 'Snyk security gate');
-  assert.equal(security.jobs.sonarqube['timeout-minutes'], 25);
-  assert.equal(security.jobs['snyk-scan']['timeout-minutes'], 25);
-  assert.deepEqual(security.permissions, { contents: 'read' });
-  assert.deepEqual(security.jobs.provenance.permissions, {
+  assert.equal(build.jobs.sonarqube.name, 'SonarQube quality gate');
+  assert.equal(build.jobs.snyk.name, 'Snyk security gate');
+  assert.equal(build.jobs.sonarqube['timeout-minutes'], 25);
+  assert.equal(build.jobs['snyk-scan']['timeout-minutes'], 25);
+  assert.deepEqual(build.permissions, { contents: 'read' });
+  assert.deepEqual(build.jobs.provenance.permissions, {
     actions: 'read',
     checks: 'read',
     contents: 'read',
     'pull-requests': 'read',
   });
-  assert.equal(security.jobs.provenance.outputs.eligible, '${{ steps.finalize.outputs.eligible }}');
-  assert.equal(security.jobs.provenance.outputs.reuse, '${{ steps.finalize.outputs.reuse }}');
-  assert.equal(security.jobs.provenance.outputs.reason, '${{ steps.finalize.outputs.reason }}');
-  assert.deepEqual(security.jobs.sonarqube.permissions, {
+  assert.equal(build.jobs.provenance.outputs.eligible, '${{ steps.finalize.outputs.eligible }}');
+  assert.equal(build.jobs.provenance.outputs.reuse, '${{ steps.finalize.outputs.reuse }}');
+  assert.equal(build.jobs.provenance.outputs.reason, '${{ steps.finalize.outputs.reason }}');
+  assert.deepEqual(build.jobs.sonarqube.permissions, {
     actions: 'read',
     contents: 'read',
   });
-  assert.match(
-    findStep(security.jobs.sonarqube, 'Run Sonar finding gate').run,
-    /security:sonar:ci/u,
-  );
-  assert.match(
-    findStep(security.jobs['snyk-scan'], 'Run Snyk finding gate').run,
-    /security:snyk:ci/u,
-  );
+  assert.match(findStep(build.jobs.sonarqube, 'Run Sonar finding gate').run, /security:sonar:ci/u);
+  assert.match(findStep(build.jobs['snyk-scan'], 'Run Snyk finding gate').run, /security:snyk:ci/u);
 });
 
 test('Snyk delegates internal main pull requests and merged pushes to its CI gate', () => {
-  const snyk = security.jobs['snyk-scan'];
+  const snyk = build.jobs['snyk-scan'];
   assert.equal(snyk.needs, 'provenance');
   assert.equal(
     normalizeExpression(snyk.if),
@@ -213,7 +205,7 @@ test('Snyk delegates internal main pull requests and merged pushes to its CI gat
   const scanStep = findStep(snyk, 'Run Snyk finding gate');
   assert.equal(scanStep.run, 'npm run security:snyk:ci');
 
-  const gate = security.jobs.snyk;
+  const gate = build.jobs.snyk;
   assert.equal(gate.name, 'Snyk security gate');
   assert.deepEqual(gate.needs, ['provenance', 'snyk-scan']);
   assert.match(normalizeExpression(gate.if), /^always\(\) &&/u);

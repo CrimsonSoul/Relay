@@ -783,6 +783,10 @@ describe('DynatraceProblemsManager', () => {
     const existingProblem = {
       id: 'matched-record',
       ...makeProblem('MATCHED', 'Original emailed problem'),
+      workflowTitle: 'NOC · Original alert',
+      workflowDescription: 'NOC routing context',
+      workflowTags: ['teams:network'],
+      workflowAffectedEntityTypes: ['SERVICE'],
     };
     const updatedProblem = makeProblem('MATCHED', 'Latest title after an excluded update');
     const neverMatched = makeProblem('NEVER-MATCHED', 'Not relevant to the NOC');
@@ -824,15 +828,88 @@ describe('DynatraceProblemsManager', () => {
 
     await expect(manager.syncNow()).resolves.toBe(1);
 
-    expect(problemCollection.update).toHaveBeenCalledWith('matched-record', updatedProblem, {
-      requestKey: null,
-    });
+    expect(problemCollection.update).toHaveBeenCalledWith(
+      'matched-record',
+      {
+        ...updatedProblem,
+        workflowTitle: 'NOC · Original alert',
+        workflowDescription: 'NOC routing context',
+        workflowTags: ['teams:network'],
+        workflowAffectedEntityTypes: ['SERVICE'],
+      },
+      { requestKey: null },
+    );
     expect(problemCollection.update).not.toHaveBeenCalledWith(
       'matched-record',
       expect.objectContaining({ scopeExcluded: true }),
       expect.anything(),
     );
     expect(problemCollection.create).not.toHaveBeenCalled();
+  });
+
+  it('preserves stored workflow metadata when a matched problem is absent from the change page', async () => {
+    const matcherConfig = {
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+    const existingProblem = {
+      id: 'matched-record',
+      ...makeProblem('MATCHED', 'Original canonical title'),
+      workflowTitle: 'NOC · Original alert',
+      workflowDescription: 'NOC routing context',
+      workflowTags: ['teams:network'],
+      workflowAffectedEntityTypes: ['SERVICE'],
+    };
+    const updatedProblem = makeProblem('MATCHED', 'Latest canonical title');
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([existingProblem]),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({
+        id: 'sync-1',
+        key: 'primary',
+        lastSuccessAt: new Date(Date.now() - 60_000).toISOString(),
+        lastReconciledAt: new Date().toISOString(),
+      }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
+    const client = {
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [updatedProblem],
+        changedProblems: [],
+        totalCount: 1,
+        resultTruncated: true,
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).resolves.toBe(1);
+
+    expect(problemCollection.update).toHaveBeenCalledWith(
+      'matched-record',
+      {
+        ...updatedProblem,
+        workflowTitle: 'NOC · Original alert',
+        workflowDescription: 'NOC routing context',
+        workflowTags: ['teams:network'],
+        workflowAffectedEntityTypes: ['SERVICE'],
+      },
+      { requestKey: null },
+    );
   });
 
   it('preserves the last complete custom scope when a reconciliation result is truncated', async () => {

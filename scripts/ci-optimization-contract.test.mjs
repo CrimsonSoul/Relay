@@ -33,7 +33,7 @@ describe('CI optimization contracts', () => {
     expect(pkg.scripts['format:check']).toContain('--cache-strategy content');
   });
 
-  it('never restores ESLint across commits while allowing safe Prettier content-cache reuse', async () => {
+  it('restores safe content-addressed static-analysis caches across commits', async () => {
     const build = await readYaml('.github/workflows/build.yml');
     const eslintCache = findStep(build.jobs.static, 'Cache ESLint results');
     const prettierCache = findStep(build.jobs.static, 'Cache Prettier results');
@@ -45,9 +45,10 @@ describe('CI optimization contracts', () => {
       with: {
         path: '.cache/eslint',
         key: "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}",
+        'restore-keys':
+          "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-",
       },
     });
-    expect(eslintCache.with).not.toHaveProperty('restore-keys');
 
     expect(prettierCache).toEqual({
       name: 'Cache Prettier results',
@@ -62,58 +63,63 @@ describe('CI optimization contracts', () => {
     });
   });
 
-  it('shards renderer tests behind a fail-closed aggregate build gate', async () => {
+  it('runs the canonical coverage suites once behind a fail-closed aggregate build gate', async () => {
     const build = await readYaml('.github/workflows/build.yml');
 
-    for (const jobName of ['static', 'unit-tests', 'renderer-tests']) {
+    for (const jobName of ['static', 'unit-coverage', 'renderer-coverage']) {
       expect(build.jobs[jobName].needs).toBe('provenance');
       expect(build.jobs[jobName].if).toBe("needs.provenance.outputs.reuse != 'true'");
     }
-    expect(build.jobs['renderer-tests'].strategy).toEqual({
+    expect(build.jobs).not.toHaveProperty('unit-tests');
+    expect(build.jobs).not.toHaveProperty('renderer-tests');
+    expect(build.jobs['renderer-coverage'].strategy).toEqual({
       'fail-fast': false,
       matrix: {
-        'shard-index': [1, 2],
-        'shard-total': [2],
+        'shard-index': [1, 2, 3, 4],
+        'shard-total': [4],
       },
     });
-    expect(findStep(build.jobs['renderer-tests'], 'Run renderer tests').run).toBe(
-      'npm run test:renderer -- --shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
+    expect(
+      findStep(build.jobs['renderer-coverage'], 'Generate renderer coverage shard').run,
+    ).toContain('--shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}');
+    expect(findStep(build.jobs['unit-coverage'], 'Generate unit coverage').run).toContain(
+      'npm run test:coverage',
     );
-    expect(findStep(build.jobs['unit-tests'], 'Run unit tests').run).toBe(
-      'npm run test:unit && npm run test:cache',
+    expect(findStep(build.jobs['unit-coverage'], 'Run cache integration tests').run).toBe(
+      'npm run test:cache',
     );
 
     const quality = build.jobs.quality;
     expect(quality.name).toBe('Build quality gate');
     expect(quality.if).toBe('always()');
-    expect(quality.needs).toEqual(['provenance', 'static', 'unit-tests', 'renderer-tests']);
+    expect(quality.needs).toEqual(['provenance', 'static', 'unit-coverage', 'renderer-coverage']);
     const aggregate = findStep(quality, 'Require successful build components');
     expect(aggregate.env).toEqual({
       ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
       PROVENANCE_RESULT: '${{ needs.provenance.result }}',
-      RENDERER_TESTS_RESULT: '${{ needs.renderer-tests.result }}',
+      RENDERER_COVERAGE_RESULT: '${{ needs.renderer-coverage.result }}',
       REUSE: '${{ needs.provenance.outputs.reuse }}',
       STATIC_RESULT: '${{ needs.static.result }}',
-      UNIT_TESTS_RESULT: '${{ needs.unit-tests.result }}',
+      UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
     });
     expect(aggregate.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
     expect(aggregate.run).toContain('[[ "$REUSE" == "true" ]]');
     expect(aggregate.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
     expect(aggregate.run.replaceAll(/\s+/gu, ' ')).toContain(
-      'if [[ "$STATIC_RESULT" != "success" || "$UNIT_TESTS_RESULT" != "success" || "$RENDERER_TESTS_RESULT" != "success" ]]; then',
+      'if [[ "$STATIC_RESULT" != "success" || "$UNIT_COVERAGE_RESULT" != "success" || "$RENDERER_COVERAGE_RESULT" != "success" ]]; then',
     );
     expect(aggregate.run).toContain('exit 1');
   });
 
-  it('merges both renderer coverage shards before the Sonar scan', async () => {
-    const security = await readYaml('.github/workflows/security.yml');
-    const rendererCoverage = security.jobs['renderer-coverage'];
+  it('merges all four renderer coverage shards before the Sonar scan', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const rendererCoverage = build.jobs['renderer-coverage'];
 
     expect(rendererCoverage.strategy).toEqual({
       'fail-fast': false,
       matrix: {
-        'shard-index': [1, 2],
-        'shard-total': [2],
+        'shard-index': [1, 2, 3, 4],
+        'shard-total': [4],
       },
     });
     const rendererCommand = findStep(rendererCoverage, 'Generate renderer coverage shard').run;
@@ -123,7 +129,7 @@ describe('CI optimization contracts', () => {
       '--shard=${{ matrix.shard-index }}/${{ matrix.shard-total }}',
     );
 
-    const sonar = security.jobs.sonarqube;
+    const sonar = build.jobs.sonarqube;
     expect(sonar.name).toBe('SonarQube quality gate');
     expect(sonar.needs).toEqual(['provenance', 'unit-coverage', 'renderer-coverage']);
     const merge = findStep(sonar, 'Merge renderer coverage');
@@ -133,101 +139,96 @@ describe('CI optimization contracts', () => {
     expect(merge.run).toContain('--coverage.reportsDirectory=coverage/renderer');
   });
 
-  it('resolves exact-tree provenance in both workflows with least read authority', async () => {
-    const [build, security] = await Promise.all([
-      readYaml('.github/workflows/build.yml'),
-      readYaml('.github/workflows/security.yml'),
-    ]);
+  it('resolves exact-tree provenance once with least read authority', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
 
-    for (const workflow of [build, security]) {
-      expect(workflow.permissions).toEqual({ contents: 'read' });
-      const provenance = workflow.jobs.provenance;
-      expect(provenance.permissions).toEqual({
-        actions: 'read',
-        checks: 'read',
-        contents: 'read',
-        'pull-requests': 'read',
-      });
-      expect(provenance.outputs).toEqual({
-        'coverage-artifact': '${{ steps.metadata.outputs.coverage-artifact }}',
-        eligible: '${{ steps.finalize.outputs.eligible }}',
-        'head-sha': '${{ steps.metadata.outputs.head-sha }}',
-        'head-tree': '${{ steps.metadata.outputs.head-tree }}',
-        'pull-request': '${{ steps.metadata.outputs.pull-request }}',
-        reason: '${{ steps.finalize.outputs.reason }}',
-        reuse: '${{ steps.finalize.outputs.reuse }}',
-        'security-run-id': '${{ steps.metadata.outputs.security-run-id }}',
-      });
-      const metadata = findStep(provenance, 'Resolve exact-tree reuse metadata');
-      expect(metadata.id).toBe('metadata');
-      expect(metadata.env).toEqual({ GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' });
-      expect(metadata.uses).toBe('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd');
-      expect(metadata).not.toHaveProperty('run');
-      expect(metadata.with['github-token']).toBe('${{ secrets.GITHUB_TOKEN }}');
-      expect(metadata.with.script).toContain('await import(');
-      expect(metadata.with.script).toContain(
-        '`${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`',
-      );
-      expect(metadata.with.script).toContain('requestJson: async (route, parameters) =>');
-      expect(metadata.with.script).toContain('github.request(route, parameters)');
-      expect(provenance.steps.some((step) => step.name === 'Install dependencies')).toBe(false);
+    expect(build.permissions).toEqual({ contents: 'read' });
+    const provenance = build.jobs.provenance;
+    expect(provenance.permissions).toEqual({
+      actions: 'read',
+      checks: 'read',
+      contents: 'read',
+      'pull-requests': 'read',
+    });
+    expect(provenance.outputs).toEqual({
+      'coverage-artifact': '${{ steps.metadata.outputs.coverage-artifact }}',
+      eligible: '${{ steps.finalize.outputs.eligible }}',
+      'head-sha': '${{ steps.metadata.outputs.head-sha }}',
+      'head-tree': '${{ steps.metadata.outputs.head-tree }}',
+      'pull-request': '${{ steps.metadata.outputs.pull-request }}',
+      reason: '${{ steps.finalize.outputs.reason }}',
+      reuse: '${{ steps.finalize.outputs.reuse }}',
+      'security-run-id': '${{ steps.metadata.outputs.security-run-id }}',
+    });
+    const metadata = findStep(provenance, 'Resolve exact-tree reuse metadata');
+    expect(metadata.id).toBe('metadata');
+    expect(metadata.env).toEqual({ GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' });
+    expect(metadata.uses).toBe('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd');
+    expect(metadata).not.toHaveProperty('run');
+    expect(metadata.with['github-token']).toBe('${{ secrets.GITHUB_TOKEN }}');
+    expect(metadata.with.script).toContain('await import(');
+    expect(metadata.with.script).toContain(
+      '`${process.env.GITHUB_WORKSPACE}/scripts/ciTreeReuse.mjs`',
+    );
+    expect(metadata.with.script).toContain('requestJson: async (route, parameters) =>');
+    expect(metadata.with.script).toContain('github.request(route, parameters)');
+    expect(provenance.steps.some((step) => step.name === 'Install dependencies')).toBe(false);
 
-      const buildPayload = findStep(provenance, 'Download candidate Build attestation');
-      expect(buildPayload).toEqual({
-        name: 'Download candidate Build attestation',
-        id: 'build_payload',
-        if: "steps.metadata.outputs.metadata-eligible == 'true'",
-        'continue-on-error': true,
-        uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
-        with: {
-          'github-token': '${{ secrets.GITHUB_TOKEN }}',
-          name: '${{ steps.metadata.outputs.build-artifact }}',
-          path: '${{ runner.temp }}/ci-reuse/build',
-          'run-id': '${{ steps.metadata.outputs.build-run-id }}',
-        },
-      });
-      const coveragePayload = findStep(provenance, 'Download candidate merged LCOV');
-      expect(coveragePayload).toEqual({
-        name: 'Download candidate merged LCOV',
-        id: 'coverage_payload',
-        if: "steps.metadata.outputs.metadata-eligible == 'true'",
-        'continue-on-error': true,
-        uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
-        with: {
-          'github-token': '${{ secrets.GITHUB_TOKEN }}',
-          name: '${{ steps.metadata.outputs.coverage-artifact }}',
-          path: '${{ runner.temp }}/ci-reuse/coverage',
-          'run-id': '${{ steps.metadata.outputs.security-run-id }}',
-        },
-      });
+    const buildPayload = findStep(provenance, 'Download candidate Build attestation');
+    expect(buildPayload).toEqual({
+      name: 'Download candidate Build attestation',
+      id: 'build_payload',
+      if: "steps.metadata.outputs.metadata-eligible == 'true'",
+      'continue-on-error': true,
+      uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
+      with: {
+        'github-token': '${{ secrets.GITHUB_TOKEN }}',
+        name: '${{ steps.metadata.outputs.build-artifact }}',
+        path: '${{ runner.temp }}/ci-reuse/build',
+        'run-id': '${{ steps.metadata.outputs.build-run-id }}',
+      },
+    });
+    const coveragePayload = findStep(provenance, 'Download candidate merged LCOV');
+    expect(coveragePayload).toEqual({
+      name: 'Download candidate merged LCOV',
+      id: 'coverage_payload',
+      if: "steps.metadata.outputs.metadata-eligible == 'true'",
+      'continue-on-error': true,
+      uses: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
+      with: {
+        'github-token': '${{ secrets.GITHUB_TOKEN }}',
+        name: '${{ steps.metadata.outputs.coverage-artifact }}',
+        path: '${{ runner.temp }}/ci-reuse/coverage',
+        'run-id': '${{ steps.metadata.outputs.security-run-id }}',
+      },
+    });
 
-      const finalize = findStep(provenance, 'Finalize exact-tree reuse');
-      expect(finalize.id).toBe('finalize');
-      expect(finalize.if).toBe('always()');
-      expect(finalize.env).toEqual({
-        BASE_SHA: '${{ steps.metadata.outputs.base-sha }}',
-        BUILD_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/build',
-        BUILD_DOWNLOAD_OUTCOME: '${{ steps.build_payload.outcome }}',
-        COVERAGE_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/coverage',
-        COVERAGE_DOWNLOAD_OUTCOME: '${{ steps.coverage_payload.outcome }}',
-        HEAD_SHA: '${{ steps.metadata.outputs.head-sha }}',
-        METADATA_ELIGIBLE: '${{ steps.metadata.outputs.metadata-eligible }}',
-        METADATA_REASON: '${{ steps.metadata.outputs.metadata-reason }}',
-        PULL_REQUEST: '${{ steps.metadata.outputs.pull-request }}',
-        RELAY_CI_TREE_REUSE_MODE: '${{ vars.RELAY_CI_TREE_REUSE_MODE }}',
-      });
-      expect(finalize.run).toBe('node scripts/ciReuseArtifactValidation.mjs');
-      expect(provenance.steps.indexOf(finalize)).toBeGreaterThan(
-        provenance.steps.indexOf(coveragePayload),
-      );
-    }
+    const finalize = findStep(provenance, 'Finalize exact-tree reuse');
+    expect(finalize.id).toBe('finalize');
+    expect(finalize.if).toBe('always()');
+    expect(finalize.env).toEqual({
+      BASE_SHA: '${{ steps.metadata.outputs.base-sha }}',
+      BUILD_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/build',
+      BUILD_DOWNLOAD_OUTCOME: '${{ steps.build_payload.outcome }}',
+      COVERAGE_ARTIFACT_DIRECTORY: '${{ runner.temp }}/ci-reuse/coverage',
+      COVERAGE_DOWNLOAD_OUTCOME: '${{ steps.coverage_payload.outcome }}',
+      HEAD_SHA: '${{ steps.metadata.outputs.head-sha }}',
+      METADATA_ELIGIBLE: '${{ steps.metadata.outputs.metadata-eligible }}',
+      METADATA_REASON: '${{ steps.metadata.outputs.metadata-reason }}',
+      PULL_REQUEST: '${{ steps.metadata.outputs.pull-request }}',
+      RELAY_CI_TREE_REUSE_MODE: '${{ vars.RELAY_CI_TREE_REUSE_MODE }}',
+    });
+    expect(finalize.run).toBe('node scripts/ciReuseArtifactValidation.mjs');
+    expect(provenance.steps.indexOf(finalize)).toBeGreaterThan(
+      provenance.steps.indexOf(coveragePayload),
+    );
 
-    expect(security.jobs.sonarqube.permissions).toEqual({
+    expect(build.jobs.sonarqube.permissions).toEqual({
       actions: 'read',
       contents: 'read',
     });
     for (const jobName of ['unit-coverage', 'renderer-coverage', 'snyk-scan', 'snyk']) {
-      expect(security.jobs[jobName]).not.toHaveProperty('permissions');
+      expect(build.jobs[jobName]).not.toHaveProperty('permissions');
     }
   });
 
@@ -263,9 +264,9 @@ describe('CI optimization contracts', () => {
   });
 
   it('keeps shadow mode on the full security path and reuses only exact validated outputs', async () => {
-    const security = await readYaml('.github/workflows/security.yml');
-    const unit = security.jobs['unit-coverage'];
-    const renderer = security.jobs['renderer-coverage'];
+    const build = await readYaml('.github/workflows/build.yml');
+    const unit = build.jobs['unit-coverage'];
+    const renderer = build.jobs['renderer-coverage'];
 
     for (const coverage of [unit, renderer]) {
       expect(coverage.needs).toBe('provenance');
@@ -274,7 +275,7 @@ describe('CI optimization contracts', () => {
       );
     }
 
-    const sonar = security.jobs.sonarqube;
+    const sonar = build.jobs.sonarqube;
     const preflight = findStep(sonar, 'Require valid provenance or successful coverage');
     expect(sonar.if).toContain('always()');
     expect(preflight.env).toEqual({
@@ -330,9 +331,9 @@ describe('CI optimization contracts', () => {
   });
 
   it('keeps the required Snyk check materialized behind a fail-closed aggregator', async () => {
-    const security = await readYaml('.github/workflows/security.yml');
-    const scan = security.jobs['snyk-scan'];
-    const gate = security.jobs.snyk;
+    const build = await readYaml('.github/workflows/build.yml');
+    const scan = build.jobs['snyk-scan'];
+    const gate = build.jobs.snyk;
 
     expect(scan.needs).toBe('provenance');
     expect(normalizeExpression(scan.if)).toContain("needs.provenance.outputs.reuse != 'true'");
@@ -354,8 +355,8 @@ describe('CI optimization contracts', () => {
   });
 
   it('caches Sonar packages independently of scanner credentials', async () => {
-    const security = await readYaml('.github/workflows/security.yml');
-    const cache = findStep(security.jobs.sonarqube, 'Cache Sonar packages');
+    const build = await readYaml('.github/workflows/build.yml');
+    const cache = findStep(build.jobs.sonarqube, 'Cache Sonar packages');
 
     expect(cache).toEqual({
       name: 'Cache Sonar packages',
@@ -364,6 +365,7 @@ describe('CI optimization contracts', () => {
       with: {
         path: '~/.sonar/cache',
         key: "sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}",
+        'restore-keys': 'sonar-${{ runner.os }}-',
       },
     });
   });

@@ -21,7 +21,7 @@ function collectKeys(value, keys = []) {
 }
 
 describe('CodeRabbit review contract', () => {
-  it('automatically reviews main pull requests after GitHub quality checks finish', () => {
+  it('keeps CodeRabbit honest as an explicitly requested review', () => {
     expect(existsSync(configPath)).toBe(true);
 
     const config = parse(readFileSync(configPath, 'utf8'));
@@ -30,10 +30,8 @@ describe('CodeRabbit review contract', () => {
       reviews: {
         request_changes_workflow: true,
         auto_review: {
-          enabled: true,
+          enabled: false,
           drafts: false,
-          auto_incremental_review: true,
-          auto_pause_after_reviewed_commits: 2,
           base_branches: ['main'],
         },
         tools: {
@@ -43,6 +41,11 @@ describe('CodeRabbit review contract', () => {
           },
         },
       },
+    });
+    expect(config.reviews.auto_review).toEqual({
+      enabled: false,
+      drafts: false,
+      base_branches: ['main'],
     });
     expect(collectKeys(config).filter((key) => PAID_SETTING.test(key))).toEqual([]);
     expect(readFileSync(developmentPath, 'utf8')).toContain('@coderabbitai review');

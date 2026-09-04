@@ -6,6 +6,7 @@ import type { PublicRelayConfig } from '@shared/ipc';
 import {
   buildDynatraceProblemUrl,
   DYNATRACE_PROBLEM_RESOLVERS,
+  getDynatraceProblemDisplayTitle,
   type DynatraceEntityRef,
   type DynatraceProblemNoteRecord,
   type DynatraceProblemRecord,
@@ -385,7 +386,7 @@ function ProblemQueueRow({
             )}
             <span className="dt-problem-row__time">{formatDuration(problem)}</span>
           </span>
-          <span className="dt-problem-row__title">{problem.title}</span>
+          <span className="dt-problem-row__title">{getDynatraceProblemDisplayTitle(problem)}</span>
           {historyMode ? (
             <ProblemResponseMetadata summary={responseSummary} />
           ) : (
@@ -681,6 +682,16 @@ function ProblemDetail({
   if (addressed) dispositionTitle = 'Addressed locally';
   else if (resolved) dispositionTitle = 'No local disposition recorded';
 
+  const displayTitle = getDynatraceProblemDisplayTitle(problem);
+  const hasDistinctWorkflowTitle = Boolean(
+    problem.workflowTitle?.trim() && problem.workflowTitle.trim() !== problem.title.trim(),
+  );
+  const hasWorkflowContext = Boolean(
+    hasDistinctWorkflowTitle ||
+    problem.workflowDescription?.trim() ||
+    problem.workflowTags?.length ||
+    problem.workflowAffectedEntityTypes?.length,
+  );
   return (
     <section className="dt-problems__detail" aria-label="Selected problem details">
       <div className="dt-problem-detail">
@@ -693,7 +704,7 @@ function ProblemDetail({
               </span>
             )}
           </div>
-          <h3>{problem.title}</h3>
+          <h3>{displayTitle}</h3>
           <div className="dt-problem-detail__identity">
             <span>{problem.displayId || problem.problemId}</span>
             <span>
@@ -725,6 +736,44 @@ function ProblemDetail({
             </strong>
           </div>
         </div>
+        {hasWorkflowContext && (
+          <div className="dt-problem-detail__section dt-problem-detail__workflow-context">
+            <div className="dt-problem-detail__section-title">NOC workflow context</div>
+            {problem.workflowDescription && (
+              <p className="dt-problem-detail__workflow-description">
+                {problem.workflowDescription}
+              </p>
+            )}
+            <dl className="dt-problem-detail__workflow-metadata">
+              {hasDistinctWorkflowTitle && (
+                <div>
+                  <dt>Canonical problem</dt>
+                  <dd>{problem.title}</dd>
+                </div>
+              )}
+              {(problem.workflowTags?.length ?? 0) > 0 && (
+                <div>
+                  <dt>Workflow tags</dt>
+                  <dd className="dt-problem-detail__workflow-values">
+                    {problem.workflowTags?.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {(problem.workflowAffectedEntityTypes?.length ?? 0) > 0 && (
+                <div>
+                  <dt>Affected types</dt>
+                  <dd className="dt-problem-detail__workflow-values">
+                    {problem.workflowAffectedEntityTypes?.map((type) => (
+                      <span key={type}>{type.toLowerCase()}</span>
+                    ))}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
 
         <div className="dt-problem-detail__section">
           <div className="dt-problem-detail__section-title">Affected entities</div>
@@ -1201,7 +1250,9 @@ export const DynatraceProblemsTab: React.FC<{
 
       <div className="dt-problems__workspace">
         <span className="sr-only" aria-live="polite">
-          {selectedProblem ? `Selected problem ${selectedProblem.title}` : 'No problem selected'}
+          {selectedProblem
+            ? 'Selected problem ' + getDynatraceProblemDisplayTitle(selectedProblem)
+            : 'No problem selected'}
         </span>
         <ProblemQueue
           problems={filteredProblems}

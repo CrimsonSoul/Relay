@@ -16,6 +16,9 @@ const QUERY_COMPLETION_TIMEOUT_MS = 60_000;
 const QUERY_WAIT_TIMEOUT_MS = 12_000;
 const POLL_INTERVAL_MS = 250;
 const MAX_PROBLEMS = 10_000;
+const MAX_WORKFLOW_METADATA_VALUES = 100;
+const MAX_WORKFLOW_METADATA_VALUE_LENGTH = 512;
+const MAX_WORKFLOW_METADATA_LIST_LENGTH = 8_000;
 
 export type DynatraceProblemsQueryScope =
   { mode: 'reconcile' } | { mode: 'incremental'; lookbackMinutes: number };
@@ -48,6 +51,8 @@ const PROBLEMS_QUERY_FIELDS = `${PROBLEM_QUERY_FIELDS}
 const PAGED_PROBLEMS_QUERY_FIELDS = `${PROBLEM_QUERY_FIELDS}
 | sort problemId asc
 | limit ${MAX_PROBLEMS}`;
+const WORKFLOW_METADATA_QUERY_FIELDS =
+  '| fields problemId=event.id, workflowTitle=event.name, workflowDescription=event.description,\n    workflowTags=entity_tags,\n    workflowAffectedEntityTypes=affected_entity_types';
 
 const ALERTING_PROFILES_QUERY = `fetch dt.davis.problems, from:-365d
 | dedup event.id, sort:{timestamp desc}
@@ -94,6 +99,13 @@ const problemSchema = z.object({
   relatedEntities: z.array(entitySchema).nullish(),
   alertingProfiles: stringListSchema.nullish(),
 });
+const workflowMetadataSchema = z.object({
+  problemId: z.string().min(1),
+  workflowTitle: z.string().nullish(),
+  workflowDescription: z.string().nullish(),
+  workflowTags: stringListSchema.nullish(),
+  workflowAffectedEntityTypes: stringListSchema.nullish(),
+});
 
 const problemIdSchema = z.object({ problemId: z.string().min(1) });
 
@@ -127,6 +139,8 @@ type GrailProblem = z.infer<typeof problemSchema>;
 type QueryResponse = z.infer<typeof queryResponseSchema>;
 type QueryResult = z.infer<typeof queryResultSchema>;
 type FetchLike = typeof fetch;
+type GrailWorkflowMetadata = z.infer<typeof workflowMetadataSchema>;
+type WorkflowMetadataList = string | string[] | null | undefined;
 
 type ProblemQueryResult = {
   result: QueryResult;
@@ -209,6 +223,30 @@ function buildProblemsQuery(
   return `${buildProblemQueryBase(scope)}${buildProblemScopeFilters(config, scope)}${cursorFilter}
 ${pagedCustomReconciliation ? PAGED_PROBLEMS_QUERY_FIELDS : PROBLEMS_QUERY_FIELDS}`;
 }
+function buildWorkflowMetadataQuery(
+  config: DynatraceProblemsConfig,
+  scope: DynatraceProblemsQueryScope,
+  afterProblemId: string | null = null,
+): string {
+  const matcher = normalizeDynatraceCustomDqlMatcher(config.customDqlMatcher ?? '');
+  const matcherError = getDynatraceCustomDqlMatcherError(matcher);
+  if (matcherError) throw new Error(matcherError);
+  if (!matcher) throw new Error('A custom Dynatrace problem matcher is required.');
+  const cursorFilter = afterProblemId
+    ? '\n| filter problemId > ' + dqlStringLiteral(afterProblemId)
+    : '';
+  return (
+    'fetch events, from:' +
+    queryTimeframe(scope) +
+    '\n| filter event.kind == "DAVIS_PROBLEM"\n| filter (\n' +
+    matcher +
+    '\n)\n| dedup event.id, sort:{timestamp desc}\n' +
+    WORKFLOW_METADATA_QUERY_FIELDS +
+    cursorFilter +
+    '\n| sort problemId asc\n| limit ' +
+    MAX_PROBLEMS
+  );
+}
 
 function buildMatchingProblemCountQuery(config: DynatraceProblemsConfig): string {
   return `${buildProblemQueryBase(DEFAULT_PROBLEMS_QUERY_SCOPE)}
@@ -233,6 +271,34 @@ function normalizeStringList(
   else if (value) values = [value];
   const normalized = values.map((item) => item.trim()).filter(Boolean);
   return deduplicate ? [...new Set(normalized)] : normalized;
+}
+
+function normalizeWorkflowMetadataList(value: WorkflowMetadataList): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  let totalLength = 0;
+  for (const item of normalizeStringList(value, false)) {
+    if (normalized.length >= MAX_WORKFLOW_METADATA_VALUES) break;
+    const bounded = item.slice(0, MAX_WORKFLOW_METADATA_VALUE_LENGTH);
+    if (seen.has(bounded) || totalLength + bounded.length > MAX_WORKFLOW_METADATA_LIST_LENGTH) {
+      continue;
+    }
+    seen.add(bounded);
+    normalized.push(bounded);
+    totalLength += bounded.length;
+  }
+  return normalized;
+}
+
+function normalizeWorkflowMetadata(metadata: GrailWorkflowMetadata) {
+  return {
+    workflowTitle: metadata.workflowTitle?.trim().slice(0, 1_000) ?? '',
+    workflowDescription: metadata.workflowDescription?.trim().slice(0, 8_000) ?? '',
+    workflowTags: normalizeWorkflowMetadataList(metadata.workflowTags),
+    workflowAffectedEntityTypes: normalizeWorkflowMetadataList(
+      metadata.workflowAffectedEntityTypes,
+    ),
+  };
 }
 
 function classicAffectedEntities(problem: GrailProblem): DynatraceEntityRef[] {
@@ -351,6 +417,7 @@ function toRecord(
   problem: GrailProblem,
   environmentUrl: string,
   syncedAt: string,
+  workflowMetadata?: GrailWorkflowMetadata,
 ): Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'> {
   return {
     problemId: problem.problemId,
@@ -367,6 +434,15 @@ function toRecord(
     impactedEntities: (problem.relatedEntities ?? []).map(toEntityRef),
     managementZones: [],
     alertingProfiles: normalizeStringList(problem.alertingProfiles),
+    ...normalizeWorkflowMetadata(
+      workflowMetadata ?? {
+        problemId: problem.problemId,
+        workflowTitle: '',
+        workflowDescription: '',
+        workflowTags: [],
+        workflowAffectedEntityTypes: [],
+      },
+    ),
     scopeExcluded: false,
     scopeExcludedAt: '',
     environmentUrl,
@@ -508,8 +584,8 @@ export class DynatraceProblemsClient {
     scope: DynatraceProblemsQueryScope = DEFAULT_PROBLEMS_QUERY_SCOPE,
   ): Promise<DynatraceProblemsFetchResult> {
     const syncedAt = new Date().toISOString();
-    const shouldFetchChangedProblems =
-      scope.mode === 'incremental' && Boolean(config.customDqlMatcher?.trim());
+    const customMatcherConfigured = Boolean(config.customDqlMatcher?.trim());
+    const shouldFetchChangedProblems = scope.mode === 'incremental' && customMatcherConfigured;
     const [problemQuery, changedProblemQuery] = await Promise.all([
       this.runProblemsQuery(config, scope),
       shouldFetchChangedProblems
@@ -519,14 +595,31 @@ export class DynatraceProblemsClient {
           )
         : Promise.resolve(null),
     ]);
+    const workflowMetadataQuery = customMatcherConfigured
+      ? await this.runWorkflowMetadataQuery(config, scope)
+      : null;
     const { result } = problemQuery;
     const parsed = z.array(problemSchema).safeParse(result.records);
     if (!parsed.success) {
       throw new Error('Dynatrace returned an unexpected Grail Problems response.');
     }
+    const parsedWorkflowMetadata = workflowMetadataQuery
+      ? z.array(workflowMetadataSchema).safeParse(workflowMetadataQuery.result.records)
+      : null;
+    if (parsedWorkflowMetadata && !parsedWorkflowMetadata.success) {
+      throw new Error('Dynatrace returned unexpected NOC workflow metadata.');
+    }
+    const workflowMetadataByProblemId = new Map(
+      (parsedWorkflowMetadata?.data ?? []).map((metadata) => [metadata.problemId, metadata]),
+    );
 
     const problems = parsed.data.map((problem) =>
-      toRecord(problem, config.environmentUrl, syncedAt),
+      toRecord(
+        problem,
+        config.environmentUrl,
+        syncedAt,
+        workflowMetadataByProblemId.get(problem.problemId),
+      ),
     );
     const parsedChangedProblems = changedProblemQuery
       ? z.array(problemSchema).safeParse(changedProblemQuery.result.records)
@@ -545,6 +638,7 @@ export class DynatraceProblemsClient {
       totalCount: problems.length,
       resultTruncated:
         problemQuery.resultTruncated ||
+        Boolean(workflowMetadataQuery?.resultTruncated) ||
         Boolean(
           changedProblemQuery &&
           (changedProblemQuery.resultTruncated || (changedProblems?.length ?? 0) >= MAX_PROBLEMS),
@@ -590,6 +684,39 @@ export class DynatraceProblemsClient {
       const cursor = problemIdSchema.safeParse(page.records.at(-1));
       if (!cursor.success || (afterProblemId && cursor.data.problemId <= afterProblemId)) {
         throw new Error('Dynatrace returned an invalid custom problem scope page.');
+      }
+      afterProblemId = cursor.data.problemId;
+    }
+  }
+  private async runWorkflowMetadataQuery(
+    config: DynatraceProblemsConfig,
+    scope: DynatraceProblemsQueryScope,
+  ): Promise<ProblemQueryResult> {
+    if (scope.mode !== 'reconcile') {
+      const result = await this.runQuery(config, buildWorkflowMetadataQuery(config, scope));
+      return {
+        result,
+        resultTruncated: resultWasTruncated(result) || result.records.length >= MAX_PROBLEMS,
+      };
+    }
+
+    const records: QueryResult['records'] = [];
+    let afterProblemId: string | null = null;
+    while (true) {
+      const page = await this.runQuery(
+        config,
+        buildWorkflowMetadataQuery(config, scope, afterProblemId),
+      );
+      records.push(...page.records);
+      if (page.records.length < MAX_PROBLEMS) {
+        return {
+          result: { ...page, records },
+          resultTruncated: resultWasTruncated(page),
+        };
+      }
+      const cursor = problemIdSchema.safeParse(page.records.at(-1));
+      if (!cursor.success || (afterProblemId && cursor.data.problemId <= afterProblemId)) {
+        throw new Error('Dynatrace returned an invalid NOC workflow metadata page.');
       }
       afterProblemId = cursor.data.problemId;
     }

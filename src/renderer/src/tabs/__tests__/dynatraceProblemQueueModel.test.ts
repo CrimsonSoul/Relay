@@ -95,4 +95,26 @@ describe('buildDynatraceProblemQueueModel', () => {
       responder: 'Ryan',
     });
   });
+  it('searches workflow naming and metadata alongside canonical problem fields', () => {
+    const enriched = {
+      ...problem('enriched', 'OPEN', 300),
+      workflowTitle: 'NOC · WAN edge packet loss',
+      workflowDescription: 'Escalate to the network team.',
+      workflowTags: ['teams:network', 'critical_intf'],
+      workflowAffectedEntityTypes: ['ROUTER'],
+    };
+
+    const model = buildDynatraceProblemQueueModel({
+      problems: [enriched],
+      stateByProblemId: new Map(),
+      notesByProblemId: new Map(),
+      totalHistoryCount: 0,
+      filter: 'unaddressed',
+      query: 'teams:network',
+      historySort: 'newest',
+      historyResponseFilter: 'all',
+    });
+
+    expect(model.filteredProblems).toEqual([enriched]);
+  });
 });

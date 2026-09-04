@@ -62,8 +62,9 @@ since the highest reachable `vX.Y.Z` tag:
 Because protected `main` uses squash merges, a release-intended pull request title must itself use
 the applicable conventional prefix; branch commit subjects alone do not guarantee release
 classification. Preserve a title such as `feat(release): describe the capability` for a minor
-release or `fix(release): describe the correction` for a patch release through merge. The build
-quality gate rejects non-conventional pull request titles and reruns when a title is edited.
+release or `fix(release): describe the correction` for a patch release through merge. The
+lightweight title gate rejects non-conventional pull request titles and reruns when a title is
+edited without restarting the heavy Build workflow.
 
 The calculated version is injected into Electron package metadata without changing the source commit.
 The reusable Windows job must still pass its native dependency build, Windows updater and private-DACL
@@ -182,25 +183,39 @@ release-worthy conventional commit through the protected `main` pull-request wor
 
 ## CI Verification and Exact-Tree Reuse
 
-The Build workflow keeps the required `Build quality gate` as a fail-closed aggregate of static
-checks, unit tests, and two renderer-test shards. The security workflow similarly runs unit
-coverage and two renderer-coverage shards, merges their reports before Sonar analysis, and keeps
-the required `Snyk security gate` fail closed. Sonar always runs for the exact final `main` commit,
-including its reviewed-issue reconciliation; optimization never turns a post-merge branch Sonar
-scan into a reused PR result.
+The Build workflow owns the full pull-request and `main` verification graph. Its required
+`Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
+production build, unit coverage plus cache integration tests, and four renderer-coverage shards.
+Those coverage jobs are canonical: Sonar consumes their merged reports instead of rerunning the
+same tests. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
+the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
+reconciliation; optimization never turns a post-merge branch Sonar scan into a reused PR result.
+
+Pull-request title validation runs in the lightweight `Pull Request Title` workflow. Title edits
+rerun only its `Release-compatible pull request title` check, not the heavy Build graph. Automatic
+Windows packaging runs only once per `main` commit through the Release workflow; the Build
+workflow's Windows package remains available by manual dispatch and uses the latest successful
+Release artifact as its comparison baseline.
 
 Vitest suppresses console output from passing tests while retaining failure output. The ESLint,
 Prettier, and Sonar content-addressed caches are advisory and failure-tolerant: they can improve
 runtime but cannot supply correctness, credentials, dependencies, build outputs, or release
-assets.
+assets. ESLint and Prettier may restore a matching dependency-and-configuration prefix from an
+earlier commit because both tools validate file content before accepting cached results.
 
 Merged internal pull requests can be evaluated for exact-tree reuse. The resolver remains in
-shadow mode by default; only the exact repository variable value
-`RELAY_CI_TREE_REUSE_MODE=enabled` permits reuse. Enabling it still requires matching internal PR,
-base, head, parent, recursive tree, required-check, workflow-run, and artifact provenance. Any
-missing, malformed, ambiguous, stale, expired, or mismatched signal selects the normal full Build,
-Snyk, and coverage work instead. The PR provenance attestation and merged LCOV artifact last one
-day and are optimization evidence only, never a release or branch-protection authority.
+shadow mode unless the exact repository variable value `RELAY_CI_TREE_REUSE_MODE=enabled` permits
+reuse. The production repository enables that mode, but reuse still requires matching internal PR,
+base, head, parent, recursive tree, all required checks, the shared workflow run, and both
+attestation artifacts. Any missing, malformed, ambiguous, stale, expired, or mismatched signal
+selects the normal full Build, Snyk, and coverage work instead. The PR provenance attestation and
+merged LCOV artifact last one day and are optimization evidence only, never a release or
+branch-protection authority.
+
+CodeRabbit review is manual while the public repository is ineligible for its automatic review
+tier. Request it with `@coderabbitai review`; its findings remain blocking through review state and
+required conversation resolution, but a skipped CodeRabbit status is not represented as automatic
+review coverage.
 
 ## Startup Performance
 
@@ -456,13 +471,17 @@ profile catalog together. A temporary catalog failure preserves the last success
 problem-sync retry behavior remains unchanged.
 
 Relay preserves the complete custom expression, including its internal `or` and `and` clauses. It
-polls `dt.davis.problems` directly for the latest display state, but determines custom-scope
-eligibility by applying the expression to the raw `DAVIS_PROBLEM` event stream used by Dynatrace
-workflows. Matching event IDs are joined back to the latest problem view, so Relay does not wait for
-workflow execution or email delivery. Full custom-scope reconciliation walks the eligible one-year
-set in stable problem-ID pages instead of treating Dynatrace's per-query record limit as the end of
-the result. Expressions may reference `event.status_transition`. Do not include `fetch`, a leading
-`filter` pipe, other pipeline stages, comments, or control characters.
+polls `dt.davis.problems` directly for authoritative status, severity, timestamps, and entity state,
+but determines custom-scope eligibility by applying the expression to the raw `DAVIS_PROBLEM` event
+stream used by Dynatrace workflows. Matching events contribute only bounded presentation metadata:
+the workflow-facing name, description, entity tags, and affected entity types. Relay joins both views
+by canonical problem ID, prefers workflow naming in the Problems UI and notifications, and falls back
+to the canonical problem title when enrichment is absent. It does not wait for workflow execution or
+email delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
+reconciliation walks both eligible problems and metadata in stable problem-ID pages instead of
+treating Dynatrace's per-query record limit as the end of the result. Expressions may reference
+`event.status_transition`. Do not include `fetch`, a leading `filter` pipe, other pipeline stages,
+comments, or control characters.
 
 Owner and Administrator sessions manage this server-wide scope from Relay administration. Review
 first runs the protected `administration.dynatrace-problem-scope.test` command, which validates the
@@ -476,11 +495,12 @@ mechanisms.
 Saving a validated scope queues a full reconciliation and returns without holding the administration
 request open for the one-year backfill. Problems that leave scope are marked hidden instead of being
 deleted, preserving their notes and local disposition. Incremental custom-scope polls fetch both new
-workflow-eligible matches and the latest records for all changed problems. A later delivery-only
-update that does not match the expression cannot revoke an already eligible problem, but its latest
-status and details still refresh in Relay. Daily reconciliation remains authoritative for the
-complete rolling-year eligibility set. A truncated full custom-scope result fails closed and leaves
-the last complete visible scope intact.
+workflow-eligible matches and the authoritative records for all changed problems. A later
+workflow-ineligible update or incomplete incremental enrichment cannot revoke an already eligible
+problem: its latest lifecycle and technical details still refresh while Relay preserves the last
+matching workflow metadata. Daily reconciliation remains authoritative for the complete rolling-year
+eligibility and enrichment set. A truncated full custom-scope result fails closed and leaves the last
+complete visible scope intact.
 
 After a successful sync, Relay removes resolved problems whose Dynatrace end time is more than 365
 days old. Records excluded from scope receive the same 365-day retention window. Associated local
@@ -633,10 +653,11 @@ scope, authorization failures, malformed responses, and unknown failures are Con
 aggregate local thresholds. Use `npm run test:coverage` when you need the local aggregate-threshold
 decision.
 
-`.github/workflows/security.yml` owns the exact pull-request and `main`-branch gate sequence.
-Publishing requires successful Build, SonarQube, and Snyk checks plus resolved review findings.
-If a fixed CodeRabbit review has not resumed, comment `@coderabbitai review` on the pull request and
-wait for its Request Changes state and review conversations to clear.
+`.github/workflows/build.yml` owns the exact pull-request and `main`-branch quality and security gate
+sequence; `.github/workflows/pr-title.yml` owns the lightweight squash-title check. Publishing
+requires successful title, Build, SonarQube, and Snyk checks plus resolved review findings. Request
+CodeRabbit manually with `@coderabbitai review`, then wait for its Request Changes state and review
+conversations to clear.
 See `docs/SECURITY.md` for security policy and gate interpretation. The reviewed-finding reconciler
 is a restricted `main`-branch write operation and is not part of normal local development.
 

@@ -6,8 +6,13 @@ const ARTIFACT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const BUILD_ARTIFACT_PREFIX = 'relay-pr-provenance';
 const COVERAGE_ARTIFACT_PREFIX = 'relay-merged-lcov';
 const BUILD_WORKFLOW_PATH = '.github/workflows/build.yml';
-const SECURITY_WORKFLOW_PATH = '.github/workflows/security.yml';
-const REQUIRED_CHECKS = ['Build quality gate', 'SonarQube quality gate', 'Snyk security gate'];
+const SECURITY_WORKFLOW_PATH = BUILD_WORKFLOW_PATH;
+const REQUIRED_CHECKS = [
+  'Build quality gate',
+  'SonarQube quality gate',
+  'Snyk security gate',
+  'Release-compatible pull request title',
+];
 const MAX_COMPARE_COMMITS = 300;
 
 const blankResult = (reason) => ({
@@ -258,6 +263,7 @@ export function evaluateTreeReuse(input) {
     input.repository,
   );
   if (
+    buildRunId !== sonarRunId ||
     sonarRunId !== snykRunId ||
     !validateWorkflowRun(input, pullRequest, input.securityRun, sonarRunId, SECURITY_WORKFLOW_PATH)
   ) {
@@ -507,22 +513,8 @@ async function resolveFromGitHub({ env, requestJson }) {
   }
 
   const securityRunId = checkRunId('SonarQube quality gate');
-  let securityRun = null;
-  let artifacts = [];
-  if (Number.isSafeInteger(securityRunId) && securityRunId > 0) {
-    securityRun = requireObject(
-      await githubRequest(WORKFLOW_RUN_ROUTE, {
-        ...repositoryParameters,
-        run_id: securityRunId,
-      }),
-    );
-    artifacts = await collectPages({
-      field: 'artifacts',
-      parameters: { ...repositoryParameters, run_id: securityRunId },
-      requestJson: githubRequest,
-      route: ARTIFACTS_ROUTE,
-    });
-  }
+  const securityRun = securityRunId === buildRunId ? buildRun : null;
+  const artifacts = securityRunId === buildRunId ? buildArtifacts : [];
 
   return evaluateTreeReuse({
     ...common,
