@@ -7,6 +7,7 @@ import {
 } from '../services/pocketbase';
 import './statusbar.css';
 import { usePendingSyncStatus } from '../hooks/usePendingSyncStatus';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 interface StatusBarProps {
   readonly left?: ReactNode;
@@ -37,11 +38,18 @@ const connectionLabels: Record<ConnectionState, string> = {
   'auth-failed': 'Sign-in failed — check the passphrase in Settings',
 };
 
+function connectionLabel(state: ConnectionState): string {
+  if (state === 'offline' && getRelayRuntime().kind === 'web') {
+    return 'Offline — reconnect to continue';
+  }
+  return connectionLabels[state];
+}
+
 export function StatusBarLive({ label }: { readonly label?: string }) {
   const [state, setState] = useState<ConnectionState>(getConnectionState());
   const pendingStatus = usePendingSyncStatus();
   const { pendingCount, issueCount = 0 } = pendingStatus;
-  const resolvedLabel = label ?? connectionLabels[state];
+  const resolvedLabel = label ?? connectionLabel(state);
 
   useEffect(() => {
     return onConnectionStateChange(setState);

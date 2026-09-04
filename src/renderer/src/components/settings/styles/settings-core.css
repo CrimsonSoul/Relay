@@ -1137,3 +1137,23 @@
     justify-self: start;
   }
 }
+.settings-page .web-about {
+  gap: var(--space-3);
+}
+
+.web-about :is(h2, p, dl) {
+  margin: 0;
+}
+
+.web-about__details {
+  display: grid;
+  grid-template-columns: minmax(140px, max-content) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+}
+.web-about__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.web-about__details dt {
+  color: var(--color-text-secondary);
+}

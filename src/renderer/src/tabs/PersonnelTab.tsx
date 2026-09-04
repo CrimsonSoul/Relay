@@ -76,6 +76,7 @@ export const PersonnelTab: React.FC<{
   } | null>(null);
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const { showToast } = useToast();
+  const hasTeams = teams.length > 0;
 
   // Pre-group rows by teamId for performance
   const groupedOnCall = useMemo(() => {
@@ -273,6 +274,7 @@ export const PersonnelTab: React.FC<{
             <OnCallDisplayControl
               value={effectiveOnCallFontScale}
               onChange={onOnCallFontScaleChange}
+              disabled={!hasTeams}
             />
             <TactileButton
               variant="secondary"
@@ -281,6 +283,7 @@ export const PersonnelTab: React.FC<{
               aria-label="Copy All On-Call Info"
               tooltip="Copy all on-call info"
               className="oncall-command-action"
+              disabled={!hasTeams}
               icon={
                 <svg
                   width="20"
@@ -306,6 +309,7 @@ export const PersonnelTab: React.FC<{
               aria-label="Export to CSV"
               tooltip="Export to CSV"
               className="oncall-command-action"
+              disabled={!hasTeams}
               icon={
                 <svg
                   width="20"
@@ -330,7 +334,7 @@ export const PersonnelTab: React.FC<{
             <TactileButton
               variant="secondary"
               onClick={toggleBoardLock}
-              disabled={isBoardLockTogglePending}
+              disabled={isBoardLockTogglePending || !hasTeams}
               title={
                 bs.effectiveLocked
                   ? 'Unlock Board (enable drag reorder)'
@@ -438,32 +442,39 @@ export const PersonnelTab: React.FC<{
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
           <ul ref={setMasonryRef} className="oncall-masonry" aria-label="Sortable On-Call Teams">
-            {teamColumns.map((column) => (
-              <div className="oncall-masonry-column" key={column.id}>
-                {column.teamIds.map((teamId) => {
-                  const teamName = teamIdToName.get(teamId) || teamId;
-                  return (
-                    <li key={teamId} className="oncall-masonry-item">
-                      <SortableTeamCard
-                        id={teamId}
-                        team={teamName}
-                        index={teams.indexOf(teamId)}
-                        rows={groupedOnCall.get(teamId) || []}
-                        contacts={contacts}
-                        onUpdateRows={handleUpdateRows}
-                        onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
-                        onRemoveTeam={handleRemoveTeam}
-                        setConfirm={setConfirmDelete}
-                        setMenu={setMenu}
-                        onCopyTeamInfo={handleCopyTeamInfo}
-                        tick={tick}
-                        disabled={isDragDisabled}
-                      />
-                    </li>
-                  );
-                })}
-              </div>
-            ))}
+            {hasTeams ? (
+              teamColumns.map((column) => (
+                <div className="oncall-masonry-column" key={column.id}>
+                  {column.teamIds.map((teamId) => {
+                    const teamName = teamIdToName.get(teamId) || teamId;
+                    return (
+                      <li key={teamId} className="oncall-masonry-item">
+                        <SortableTeamCard
+                          id={teamId}
+                          team={teamName}
+                          index={teams.indexOf(teamId)}
+                          rows={groupedOnCall.get(teamId) || []}
+                          contacts={contacts}
+                          onUpdateRows={handleUpdateRows}
+                          onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
+                          onRemoveTeam={handleRemoveTeam}
+                          setConfirm={setConfirmDelete}
+                          setMenu={setMenu}
+                          onCopyTeamInfo={handleCopyTeamInfo}
+                          tick={tick}
+                          disabled={isDragDisabled}
+                        />
+                      </li>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              <li className="oncall-empty-state">
+                <h2>No on-call teams</h2>
+                <p>Add a card to define coverage and make the board actionable.</p>
+              </li>
+            )}
           </ul>
         </SortableContext>
         <div aria-live="polite" className="sr-only">

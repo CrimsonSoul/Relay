@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, rm } from 'node:fs/promises';
+import { mkdir, open, rm, type FileHandle } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -32,12 +32,15 @@ type ActiveBatch = {
   dir: string;
   files: StagedFile[];
   replacementDocumentId?: string;
+  reselectUploadId?: string;
   committed: boolean;
 };
 
 export type WebKnowledgeStagingBatch = {
   batchId: string;
   files: Array<{ id: string; name: string; size: number }>;
+  replacementDocumentId?: string;
+  reselectUploadId?: string;
 };
 
 type WebKnowledgeUploadStagingOptions = {
@@ -48,6 +51,7 @@ type WebKnowledgeUploadStagingOptions = {
     paths: readonly string[],
     localSourceId: string,
     replacementDocumentId?: string,
+    reselectUploadId?: string,
   ) => Promise<KnowledgeUploadSelectionResult>;
   createId?: () => string;
   validatePath?: (path: string) => Promise<void>;
@@ -60,6 +64,15 @@ type AppendInput = {
   contentLength: number | undefined;
   body: AsyncIterable<Uint8Array>;
 };
+
+async function closeFailedChunk(
+  handle: FileHandle,
+  received: number,
+  interrupted: boolean,
+): Promise<void> {
+  if (interrupted) await handle.truncate(received).catch(() => undefined);
+  await handle.close().catch(() => undefined);
+}
 
 function safeId(value: string): boolean {
   return /^[A-Za-z0-9_-]{1,200}$/u.test(value);
@@ -115,7 +128,7 @@ export class WebKnowledgeUploadStaging {
   private readonly createId: () => string;
   private readonly validatePath: (path: string) => Promise<void>;
   private batch: ActiveBatch | null = null;
-  private readonly committedDirs = new Set<string>();
+  private readonly committedDirs = new Map<string, string>();
   private disposed = false;
 
   constructor(private readonly options: WebKnowledgeUploadStagingOptions) {
@@ -130,12 +143,17 @@ export class WebKnowledgeUploadStaging {
   async begin(
     declarations: readonly FileDeclaration[],
     replacementDocumentId?: string,
+    reselectUploadId?: string,
   ): Promise<WebKnowledgeStagingBatch> {
     this.assertAvailable();
     if (this.batch) throw new WebKnowledgeStagingError('conflict');
     if (
       declarations.length < 1 ||
       declarations.length > KNOWLEDGE_UPLOAD_MAX_FILES ||
+      (reselectUploadId !== undefined &&
+        (!safeId(reselectUploadId) ||
+          declarations.length !== 1 ||
+          replacementDocumentId !== undefined)) ||
       (replacementDocumentId !== undefined &&
         (!safeDocumentId(replacementDocumentId) || declarations.length !== 1)) ||
       declarations.some(
@@ -181,6 +199,7 @@ export class WebKnowledgeUploadStaging {
       dir: batchDir,
       files,
       ...(replacementDocumentId ? { replacementDocumentId } : {}),
+      ...(reselectUploadId ? { reselectUploadId } : {}),
       committed: false,
     };
     return {
@@ -232,16 +251,32 @@ export class WebKnowledgeUploadStaging {
         }
         written += chunk.byteLength;
       }
-      if (written !== length) throw new WebKnowledgeStagingError('invalid-request');
+      if (written !== length) throw new Error('incomplete-transfer');
       file.received += written;
     } catch (error) {
-      await handle.close().catch(() => undefined);
-      await this.abortCurrent();
+      // Keep the declarations when a browser closes mid-request. Reselection restarts the
+      // whole batch, and the unacknowledged tail must never be treated as received bytes.
+      const interrupted = !(error instanceof WebKnowledgeStagingError);
+      await closeFailedChunk(handle, file.received, interrupted);
+      if (!interrupted) await this.abortCurrent();
       throw error instanceof WebKnowledgeStagingError
         ? error
         : new WebKnowledgeStagingError('upload-failed');
     }
     await handle.close();
+  }
+
+  pending(): WebKnowledgeStagingBatch | null {
+    const batch = this.batch;
+    if (!batch || batch.committed || this.disposed) return null;
+    return {
+      batchId: batch.id,
+      files: batch.files.map(({ id, name, size }) => ({ id, name, size })),
+      ...(batch.replacementDocumentId
+        ? { replacementDocumentId: batch.replacementDocumentId }
+        : {}),
+      ...(batch.reselectUploadId ? { reselectUploadId: batch.reselectUploadId } : {}),
+    };
   }
 
   async commit(batchId: string): Promise<KnowledgeUploadSelectionResult> {
@@ -258,22 +293,30 @@ export class WebKnowledgeUploadStaging {
     try {
       for (const file of batch.files) await this.validatePath(file.path);
       const paths = batch.files.map((file) => file.path);
-      const result = batch.replacementDocumentId
-        ? await this.options.queuePaths(
-            paths,
-            this.options.localSourceId,
-            batch.replacementDocumentId,
-          )
-        : await this.options.queuePaths(paths, this.options.localSourceId);
+      let result: KnowledgeUploadSelectionResult;
+      if (batch.reselectUploadId) {
+        result = await this.options.queuePaths(
+          paths,
+          this.options.localSourceId,
+          undefined,
+          batch.reselectUploadId,
+        );
+      } else if (batch.replacementDocumentId) {
+        result = await this.options.queuePaths(
+          paths,
+          this.options.localSourceId,
+          batch.replacementDocumentId,
+        );
+      } else {
+        result = await this.options.queuePaths(paths, this.options.localSourceId);
+      }
       if (!result.ok) {
         await this.abortCurrent();
         return result;
       }
       batch.committed = true;
       this.batch = null;
-      const staleDirs = [...this.committedDirs];
-      this.committedDirs.clear();
-      this.committedDirs.add(batch.dir);
+      const staleDirs = this.retainCommittedBatch(batch);
       await Promise.all(staleDirs.map((dir) => rm(dir, { recursive: true, force: true })));
       return result;
     } catch (error) {
@@ -301,6 +344,20 @@ export class WebKnowledgeUploadStaging {
 
   private assertAvailable(): void {
     if (this.disposed) throw new WebKnowledgeStagingError('upload-failed');
+  }
+
+  private retainCommittedBatch(batch: ActiveBatch): string[] {
+    const key = batch.reselectUploadId ?? '';
+    const previous = this.committedDirs.get(key);
+    // A new queue replaces the previous completed batch. Reselecting one source must
+    // preserve its siblings, while repeated reselections should not accumulate files.
+    const previousRecoveryDirs = previous ? [previous] : [];
+    const staleDirs = batch.reselectUploadId
+      ? previousRecoveryDirs
+      : [...this.committedDirs.values()];
+    if (!batch.reselectUploadId) this.committedDirs.clear();
+    this.committedDirs.set(key, batch.dir);
+    return staleDirs;
   }
 
   private async abortCurrent(): Promise<void> {

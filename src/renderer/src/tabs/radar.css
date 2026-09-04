@@ -75,7 +75,32 @@
 }
 
 .radar-notice--error {
+  flex-direction: column;
+  align-items: stretch;
+  color: var(--color-text-secondary);
+}
+
+.radar-notice--error p {
+  margin: 0;
   color: var(--color-danger);
+  line-height: 1.45;
+}
+
+.radar-notice__details {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.radar-notice__details summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+.radar-notice__details code {
+  display: block;
+  margin-top: var(--space-2);
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
 }
 
 /* ---- Board --------------------------------------------------------------- */

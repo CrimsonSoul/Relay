@@ -511,7 +511,9 @@ identifies the active inner destination.
 At widths at or below 1200 px, the sidebar rests at 64 px and expands labeled navigation above the
 content on hover or keyboard focus; the active tab never reflows. The overlay remains open while
 either pointer or focus is inside the rail, and reduced-motion mode removes its width animation.
-Top-level shortcuts follow sidebar order through Cmd/Ctrl+7 for Radar. While Problems is active,
+Desktop top-level shortcuts follow sidebar order through Cmd/Ctrl+7 for Radar. Relay Web uses
+Alt+Shift+1–7, Alt+Shift+K for search, and Alt+Shift+, for Settings so browser tab and search bindings
+remain available. Global shortcuts yield to editable controls and open dialogs. While Problems is active,
 Alt+Down and Alt+Up move through unaddressed problems and Alt+N focuses the selected response note;
 editable controls and modals suppress these triage shortcuts.
 

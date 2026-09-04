@@ -15,6 +15,8 @@ import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { AdministrationSettings } from './settings/AdministrationSettings';
 import { AboutSettings } from './settings/AboutSettings';
+import { WebAboutSettings } from './settings/WebAboutSettings';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 import { WorkstationSettings } from './settings/WorkstationSettings';
 import { AppearanceSettings, AppearanceSettingsProvider } from './settings/AppearanceSettings';
 import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
@@ -131,7 +133,9 @@ function SettingsShell({
             Relay configuration
           </h1>
           <p className="settings-page__description">
-            Manage this workstation, shared data, account access, and Dynatrace.
+            {getRelayRuntime().kind === 'web'
+              ? 'Manage this browser, shared data, account access, and Dynatrace.'
+              : 'Manage this workstation, shared data, account access, and Dynatrace.'}
           </p>
         </div>
       </header>
@@ -622,7 +626,10 @@ const SettingsModalContent: React.FC<Props> = ({
     () =>
       SETTINGS_SECTIONS.filter((section) => {
         if (section.id === 'about') {
-          return presentation === 'page' && Boolean(globalThis.api?.getAppVersion);
+          return (
+            presentation === 'page' &&
+            (getRelayRuntime().kind === 'web' || Boolean(globalThis.api?.getAppVersion))
+          );
         }
         if (section.id === 'workstation') {
           return Boolean(globalThis.api?.getWorkstationAwakeState);
@@ -692,7 +699,9 @@ const SettingsModalContent: React.FC<Props> = ({
       {presentation === 'page' && activeSection === 'administration' && (
         <AdministrationSettings relayMode={relayMode} />
       )}
-      {presentation === 'page' && activeSection === 'about' && <AboutSettings />}
+      {presentation === 'page' &&
+        activeSection === 'about' &&
+        (getRelayRuntime().kind === 'web' ? <WebAboutSettings /> : <AboutSettings />)}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
   );

@@ -205,7 +205,9 @@ export function RelayConnectionSettings({
       <div className="settings-section">
         <div className="settings-section-heading">Relay connection</div>
         <div className="settings-description">
-          This workstation&apos;s role and the address other Relay stations use.
+          {canConfigureConnection
+            ? "This workstation's role and the address other Relay stations use."
+            : 'The Relay server supplying shared data to this browser.'}
         </div>
         {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
         {!pbConfigLoading && !pbConfig && <div className="settings-data-path">Not configured</div>}

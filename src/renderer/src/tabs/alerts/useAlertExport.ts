@@ -205,7 +205,12 @@ export function useAlertExport({
       });
       const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
       if (success) {
-        showToast(isWebRuntime ? 'Alert draft downloaded' : 'Outlook draft opened', 'success');
+        showToast(
+          isWebRuntime
+            ? 'relay-alert.eml download started — open it in Outlook, review recipients, and send.'
+            : 'Outlook draft opened',
+          'success',
+        );
         void addHistory(historyDraft);
         return true;
       }

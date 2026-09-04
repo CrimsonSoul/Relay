@@ -389,7 +389,6 @@ export function MainApp({
   return (
     <SearchProvider activeTab={activeTab} searchInputRef={searchInputRef}>
       <div className="app-container">
-        <WebRuntimeBanner />
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabRequest}
@@ -402,6 +401,7 @@ export function MainApp({
         />
 
         <main className="main-content" aria-label="Application content">
+          <WebRuntimeBanner />
           <header className="app-header" aria-label="Application navigation">
             <div className="header-title-container">
               <span className="header-breadcrumb">

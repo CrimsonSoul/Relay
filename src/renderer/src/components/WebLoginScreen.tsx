@@ -1,4 +1,5 @@
-import { useState, type ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { RELAY_WEB_API_PREFIX } from '@shared/webApi';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
 
@@ -21,6 +22,32 @@ type Props = {
 type FormSubmitEvent = Parameters<NonNullable<ComponentProps<'form'>['onSubmit']>>[0];
 
 export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
+  const [serverName, setServerName] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetch(`${RELAY_WEB_API_PREFIX}/session/server-name`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      redirect: 'error',
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const info: unknown = await response.json();
+        if (
+          active &&
+          info &&
+          typeof info === 'object' &&
+          'serverName' in info &&
+          typeof info.serverName === 'string' &&
+          info.serverName.length <= 255
+        )
+          setServerName(info.serverName);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
   const [passphrase, setPassphrase] = useState('');
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<WebLoginFailure | null>(null);
@@ -50,7 +77,9 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
           <h1 id="relay-web-sign-in-title" className="web-login__title">
             Relay Web
           </h1>
-          <p className="web-login__server">{serverLabel}</p>
+          <p className="web-login__server">
+            {serverName ? `${serverName} · ${serverLabel}` : serverLabel}
+          </p>
         </header>
 
         <div className="web-login__warning" role="note">
@@ -58,6 +87,10 @@ export function WebLoginScreen({ serverLabel, onLogin }: Readonly<Props>) {
         </div>
 
         <form className="web-login__form" onSubmit={handleSubmit}>
+          <p>
+            Get the connection passphrase from Settings → Relay data on the Relay server PC, or ask
+            its operator.
+          </p>
           <Input
             label="Connection passphrase"
             name="relay-passphrase"

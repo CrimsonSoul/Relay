@@ -136,7 +136,11 @@ describe('RadarTab', () => {
     expect(container.querySelector('.radar-overall')).toHaveAttribute('data-radar-tone', 'unknown');
     expect(screen.getByText('prod01')).toBeInTheDocument();
     expect(screen.getByText('TRANSACTION.MEMBERSHIPS.ERROR.QUEUE')).toBeInTheDocument();
-    expect(screen.getByText(/ECONNREFUSED/)).toHaveTextContent('stale');
+    expect(screen.getByRole('status', { name: 'Radar refresh problem' })).toHaveTextContent(
+      'The Radar server refused the connection',
+    );
+    const details = screen.getByText('Technical details').closest('details');
+    expect(details).toHaveTextContent('ECONNREFUSED');
     expect(
       screen.getByText('Last successful update').nextElementSibling?.querySelector('time'),
     ).toHaveAttribute('dateTime', '2026-07-28T19:57:00.000Z');
@@ -269,11 +273,29 @@ describe('RadarTab', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('surfaces a fetch failure instead of presenting stale counts as live', async () => {
-    getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'ECONNREFUSED' }));
+  it('turns a DNS failure into operator guidance while preserving technical details', async () => {
+    getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'net::ERR_NAME_NOT_RESOLVED' }));
     render(<RadarTab />);
 
-    expect(await screen.findByText(/ECONNREFUSED/)).toBeInTheDocument();
+    const notice = await screen.findByRole('status', { name: 'Radar refresh problem' });
+    expect(notice).toHaveTextContent('Relay could not find the Radar server');
+    expect(notice).toHaveTextContent('trusted network or VPN');
+    expect(notice).toHaveTextContent('Retained Radar data is stale');
+    expect(screen.getByText('Technical details').closest('details')).toHaveTextContent(
+      'net::ERR_NAME_NOT_RESOLVED',
+    );
+  });
+
+  it('uses actionable generic guidance for an unfamiliar Radar failure', async () => {
+    getRadarSnapshot.mockResolvedValue(snapshotWith({ error: 'upstream reset by gateway' }));
+    render(<RadarTab />);
+
+    const notice = await screen.findByRole('status', { name: 'Radar refresh problem' });
+    expect(notice).toHaveTextContent('Relay could not refresh Radar');
+    expect(notice).toHaveTextContent('try again');
+    expect(screen.getByText('Technical details').closest('details')).toHaveTextContent(
+      'upstream reset by gateway',
+    );
   });
 
   it('shows a placeholder rather than a zero before the first reading', async () => {

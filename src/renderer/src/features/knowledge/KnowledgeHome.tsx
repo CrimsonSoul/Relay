@@ -1,14 +1,17 @@
 import { useCallback, type MouseEvent } from 'react';
 import { TabPageHeader } from '../../components/tab-chrome/TabChrome';
+import { TactileButton } from '../../components/TactileButton';
 import './knowledgeWorkspace.css';
 
 export type KnowledgeHomeDestination = 'wiki' | 'contacts' | 'servers';
 
 export type KnowledgeHomeProps = Readonly<{
   wikiCount: number | null;
+  wikiCountLoading?: boolean;
   contactCount: number | null;
   serverCount: number | null;
   onOpen: (destination: KnowledgeHomeDestination) => void;
+  onRetryWikiCount?: () => void;
 }>;
 
 type DestinationDefinition = {
@@ -23,6 +26,7 @@ type DestinationDefinition = {
 type DestinationPanelProps = Readonly<
   DestinationDefinition & {
     count: number | null;
+    loading?: boolean;
     onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   }
 >;
@@ -57,17 +61,24 @@ const DESTINATIONS: readonly DestinationDefinition[] = [
   },
 ];
 
-function formatCount(count: number | null, noun: string): string {
+function formatCount(count: number | null, noun: string, loading = false): string {
   if (count === null) {
+    if (loading) return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} count loading`;
     return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} count unavailable`;
   }
   const countNoun = count === 1 ? noun : `${noun}s`;
   return `${count} ${countNoun}`;
 }
 
-function formatHeaderCount(count: number | null, noun: string, qualifier = ''): string {
+function formatHeaderCount(
+  count: number | null,
+  noun: string,
+  qualifier = '',
+  loading = false,
+): string {
   if (count === null) {
     const label = (qualifier || noun).trim();
+    if (loading) return `${label.charAt(0).toUpperCase()}${label.slice(1)} count loading`;
     return `${label.charAt(0).toUpperCase()}${label.slice(1)} count unavailable`;
   }
   const countNoun = count === 1 ? noun : `${noun}s`;
@@ -92,10 +103,11 @@ function DestinationPanel({
   description,
   openLabel,
   count,
+  loading,
   mark,
   onOpen,
 }: DestinationPanelProps) {
-  const countLabel = formatCount(count, noun);
+  const countLabel = formatCount(count, noun, loading);
 
   return (
     <button
@@ -122,9 +134,11 @@ function DestinationPanel({
 
 export function KnowledgeHome({
   wikiCount,
+  wikiCountLoading = false,
   contactCount,
   serverCount,
   onOpen,
+  onRetryWikiCount,
 }: KnowledgeHomeProps) {
   const handleOpen = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -135,7 +149,7 @@ export function KnowledgeHome({
     [onOpen],
   );
   const countSummary = [
-    formatHeaderCount(wikiCount, 'document', 'Wiki '),
+    formatHeaderCount(wikiCount, 'document', 'Wiki ', wikiCountLoading),
     formatHeaderCount(contactCount, 'contact'),
     formatHeaderCount(serverCount, 'server'),
   ].join(' · ');
@@ -147,7 +161,16 @@ export function KnowledgeHome({
         title="Knowledge"
         headingId="knowledge-home-title"
         headingLevel={1}
-        metadata={<output>{countSummary}</output>}
+        metadata={
+          <span className="knowledge-home__count-summary">
+            <output>{countSummary}</output>
+            {wikiCount === null && !wikiCountLoading && onRetryWikiCount && (
+              <TactileButton variant="ghost" size="sm" onClick={onRetryWikiCount}>
+                Retry Wiki count
+              </TactileButton>
+            )}
+          </span>
+        }
       />
 
       <div className="knowledge-home__destinations">
@@ -158,6 +181,7 @@ export function KnowledgeHome({
               key={destination.id}
               {...destination}
               count={count}
+              loading={destination.id === 'wiki' && wikiCountLoading}
               onOpen={handleOpen}
             />
           );

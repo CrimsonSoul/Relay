@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
 import type { RelayAdministrationSettingSummary } from '@shared/privilegedAccess';
+import { getDynatraceEnvironmentUrlError } from '@shared/dynatraceProblems';
 import { usePrivilegedAccess } from '../../../contexts/PrivilegedAccessContext';
 import { Modal } from '../../Modal';
 import { TactileButton } from '../../TactileButton';
@@ -26,6 +27,8 @@ export function DynatraceConnectionSettings({
   const [tokenConfirming, setTokenConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const tokenFormId = useId();
+  const needsEnvironment = environment?.configured === false;
+  const environmentError = getDynatraceEnvironmentUrlError(environmentUrl);
 
   useEffect(
     () => () => {
@@ -37,7 +40,7 @@ export function DynatraceConnectionSettings({
 
   const replaceEnvironment = async (event: FormSubmitEvent) => {
     event.preventDefault();
-    if (!environment) return;
+    if (!environment || !token?.configured) return;
     const result = await execute({
       command: 'administration.setting.replace',
       payload: {
@@ -55,24 +58,34 @@ export function DynatraceConnectionSettings({
 
   const replaceToken = async (event: FormSubmitEvent) => {
     event.preventDefault();
-    if (!token) return;
+    if (!token || !platformToken.trim() || (needsEnvironment && environmentError)) return;
     const replacement = platformToken;
     const proof = await reauthenticate(password);
     setPassword('');
     setPlatformToken('');
-    if (!proof) return;
+    if (!proof) {
+      setTokenConfirming(false);
+      onFeedback(
+        'Authentication was not confirmed. Sign in if needed, then enter the token again to retry.',
+      );
+      return;
+    }
     const result = await execute({
       command: 'administration.setting.replace',
       payload: {
         setting: 'dynatrace.platform-token',
-        value: { apiToken: replacement },
+        value: {
+          apiToken: replacement,
+          ...(needsEnvironment ? { environmentUrl } : {}),
+        },
         expectedRevision: token.revision,
         reauthRequestId: proof.proofId,
       },
       expectedRevision: null,
     });
+    setTokenConfirming(false);
     if (result.ok) {
-      setTokenConfirming(false);
+      if (needsEnvironment) setEnvironmentUrl('');
       onFeedback('Dynatrace platform token replaced.');
     }
   };
@@ -95,6 +108,12 @@ export function DynatraceConnectionSettings({
           </span>
         </div>
         {typeof environment?.valueSummary === 'string' && <code>{environment.valueSummary}</code>}
+        {needsEnvironment && (
+          <p>
+            For first-time setup, enter the URL here and a platform token below, then review the
+            token replacement to save both together.
+          </p>
+        )}
         <label className="administration-field">
           <span>Replacement URL</span>
           <input
@@ -104,9 +123,15 @@ export function DynatraceConnectionSettings({
             onChange={(event) => setEnvironmentUrl(event.target.value)}
             placeholder="https://abc123.apps.dynatrace.com"
             required
+            aria-invalid={Boolean(environmentUrl && environmentError)}
           />
         </label>
-        <TactileButton type="submit" disabled={!environment} variant="primary">
+        {environmentUrl && environmentError && <p role="alert">{environmentError}</p>}
+        <TactileButton
+          type="submit"
+          disabled={!environment || !token?.configured || Boolean(environmentError)}
+          variant="primary"
+        >
           Replace URL
         </TactileButton>
       </form>
@@ -133,7 +158,9 @@ export function DynatraceConnectionSettings({
         </label>
         <TactileButton
           variant="primary"
-          disabled={!token || !platformToken}
+          disabled={
+            !token || !platformToken.trim() || (needsEnvironment && Boolean(environmentError))
+          }
           onClick={() => setTokenConfirming(true)}
         >
           Review token replacement
@@ -162,6 +189,7 @@ export function DynatraceConnectionSettings({
               form={tokenFormId}
               variant="primary"
               loading={busy === 'reauthenticate'}
+              disabled={!platformToken.trim()}
             >
               Replace token
             </TactileButton>
@@ -174,6 +202,11 @@ export function DynatraceConnectionSettings({
           onSubmit={(event) => void replaceToken(event)}
         >
           <p>Relay will discard the prior token after the replacement is accepted.</p>
+          {needsEnvironment && (
+            <p>
+              Set up Dynatrace for <code>{environmentUrl}</code>.
+            </p>
+          )}
           <label className="administration-field">
             <span>Administrator password</span>
             <input

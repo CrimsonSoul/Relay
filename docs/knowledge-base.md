@@ -44,7 +44,7 @@ Relay resumes acknowledged upload work after temporary network or server failure
 
 On Relay Desktop, the queue survives an app restart when operating-system encrypted storage is available. Work interrupted by sign-out or shutdown resumes when the same Publisher returns. If a source file moved, choose **Reselect PDF** and select the same unchanged file. When encrypted storage is unavailable, Relay keeps the queue only in memory.
 
-In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry or a Relay server restart. The browser cannot reselect a lost source file; start a new batch if its source becomes unavailable.
+In Relay Web, the queue belongs to the current browser/server session rather than persistent desktop storage. Do not rely on it across session expiry, sign-out, or a Relay server restart. After an interrupted browser transfer, **Manage Wiki → Reselect PDFs** accepts the original filenames and sizes and restarts the whole transfer. **Discard transfer** removes only unfinished staged bytes. For an existing queued upload whose source is missing, **Reselect PDF** verifies the original filename, size, and checksum on the server before continuing. Browser storage never retains the source files.
 
 Unpublished server uploads expire after seven days. Validation failures remain unpublished with a safe reason for the Publisher. Publishing moves the validated PDF into the managed library and clears its temporary staging data.
 

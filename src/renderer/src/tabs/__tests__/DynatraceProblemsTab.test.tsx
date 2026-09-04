@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   loadMoreHistory: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
   connectionState: 'online',
+  privilegedSession: {
+    state: 'signed-out',
+    capabilities: [],
+  } as { state: 'signed-out' | 'active'; capabilities: string[] },
   hookValue: {} as Record<string, unknown>,
 }));
 
@@ -38,6 +42,10 @@ vi.mock('../../components/Toast', () => ({
 
 vi.mock('../../hooks/useDynatraceProblems', () => ({
   useDynatraceProblems: () => mocks.hookValue,
+}));
+
+vi.mock('../../contexts/PrivilegedAccessContext', () => ({
+  usePrivilegedAccess: () => ({ session: mocks.privilegedSession }),
 }));
 
 vi.mock('../../services/pocketbase', () => ({
@@ -102,6 +110,7 @@ describe('DynatraceProblemsTab', () => {
     vi.clearAllMocks();
     localStorage.removeItem(HISTORY_PREFERENCES_STORAGE_KEY);
     mocks.connectionState = 'online';
+    mocks.privilegedSession = { state: 'signed-out', capabilities: [] };
     mocks.hookValue = {
       problems: [openProblem],
       stateByProblemId: new Map(),
@@ -152,7 +161,7 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.queryByRole('button', { name: /Alerting profiles/i })).not.toBeInTheDocument();
     expect(utility).toContainElement(screen.getByRole('searchbox', { name: 'Search problems' }));
     expect(utility).toContainElement(
-      screen.getByRole('button', { name: 'Reload Relay problem data' }),
+      screen.getByRole('button', { name: 'Reload Relay data only' }),
     );
     expect(screen.getByText(/Alt\+↑\/↓/)).toBeVisible();
     expect(screen.getByText(/Alt\+N/)).toBeVisible();
@@ -165,23 +174,40 @@ describe('DynatraceProblemsTab', () => {
   it('syncs Dynatrace problems and alerting profiles before refreshing Relay data', async () => {
     render(<DynatraceProblemsTab relayMode="server" />);
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Sync Dynatrace problems and alerting profiles now' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Sync now from Dynatrace' }));
 
     await waitFor(() => expect(globalThis.api?.syncDynatraceProblems).toHaveBeenCalledOnce());
     expect(mocks.refetch).toHaveBeenCalledOnce();
   });
 
-  it('reloads Relay data without requesting a privileged sync in Relay Web', async () => {
+  it('reloads Relay data without requesting a privileged sync in unprivileged Relay Web', async () => {
     if (!globalThis.api) throw new Error('Expected bridge fixture');
     (globalThis.api as unknown as { runtime: { kind: 'web' } }).runtime = { kind: 'web' };
+    mocks.privilegedSession = {
+      state: 'active',
+      capabilities: ['privileged.status.read'],
+    };
 
     render(<DynatraceProblemsTab relayMode="server" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Reload Relay problem data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reload Relay data only' }));
 
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledOnce());
     expect(globalThis.api.syncDynatraceProblems).not.toHaveBeenCalled();
+  });
+
+  it('allows Relay Web operators with settings.manage to sync before reloading Relay data', async () => {
+    if (!globalThis.api) throw new Error('Expected bridge fixture');
+    (globalThis.api as unknown as { runtime: { kind: 'web' } }).runtime = { kind: 'web' };
+    mocks.privilegedSession = {
+      state: 'active',
+      capabilities: ['privileged.status.read', 'settings.manage'],
+    };
+
+    render(<DynatraceProblemsTab relayMode="server" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sync now from Dynatrace' }));
+
+    await waitFor(() => expect(globalThis.api?.syncDynatraceProblems).toHaveBeenCalledOnce());
+    expect(mocks.refetch).toHaveBeenCalledOnce();
   });
 
   it('shows the unaddressed queue and selected problem context', async () => {

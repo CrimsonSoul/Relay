@@ -64,6 +64,9 @@ function rendererManualChunk(id: string): string | undefined {
 
 function mainManualChunk(id: string): string | undefined {
   const normalizedId = id.replaceAll('\\', '/');
+  if (normalizedId.endsWith('/src/main/web/WebSessionStore.ts')) {
+    return 'web-session-store';
+  }
   if (
     normalizedId.endsWith('/src/main/app/startupState.ts') ||
     normalizedId.endsWith('/src/main/releases/RecoveryLaunchIntent.ts') ||

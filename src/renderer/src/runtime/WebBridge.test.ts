@@ -7,7 +7,7 @@ import { RADAR_URL } from '@shared/radar';
 import { WEB_RUNTIME } from '@shared/runtime';
 import type { WebSessionBootstrap } from '@shared/webApi';
 import type { WebBridgeRequest } from './WebBridge';
-import { createWebBridge, createWebEventSubscriber } from './WebBridge';
+import { createWebBridge, createWebEventSubscriber, getWebEventState } from './WebBridge';
 import { createBrowserActions } from './browserActions';
 
 const SESSION: WebSessionBootstrap = {
@@ -68,6 +68,35 @@ function stubWebRequest(
 describe('WebBridge', () => {
   beforeEach(() => {
     document.body.replaceChildren();
+  });
+  it('reselects matching PDFs to restart an interrupted transfer without losing the replacement target', async () => {
+    const pending = {
+      batchId: 'pending-batch',
+      files: [{ id: 'file-a', name: 'Runbook.pdf', size: 5 }],
+      replacementDocumentId: 'document-target',
+    };
+    const { request, calls } = stubWebRequest((path) => {
+      if (path.endsWith('/pending')) return pending;
+      if (path.endsWith('/begin')) return { batchId: 'new-batch', files: pending.files };
+      if (path.endsWith('/commit')) return { ok: true, uploads: [] };
+      return { ok: true };
+    });
+    const bridge = createWebBridge(SESSION, {
+      request,
+      fetcher: vi.fn(async () => new Response('{}', { status: 200 })),
+      actions: createBrowserActions({
+        pickPdfFiles: async () => [new File(['%PDF-'], 'Runbook.pdf', { type: 'application/pdf' })],
+      }),
+    });
+    await expect(bridge.reselectKnowledgeUploadSource('pending-batch')).resolves.toBe(true);
+    expect(calls).toHaveBeenCalledWith('/knowledge/upload/abort', {
+      method: 'POST',
+      body: { batchId: 'pending-batch' },
+    });
+    expect(calls).toHaveBeenCalledWith('/knowledge/upload/begin', {
+      method: 'POST',
+      body: { files: [{ name: 'Runbook.pdf', size: 5 }], replacementDocumentId: 'document-target' },
+    });
   });
 
   it('provides an exhaustive safe bridge with the current in-memory connection', async () => {
@@ -270,7 +299,6 @@ describe('WebBridge', () => {
       error: 'Web access is online-only.',
     });
     await expect(bridge.selectReminderSound()).resolves.toMatchObject({ success: false });
-    await expect(bridge.reselectKnowledgeUploadSource('upload-1')).resolves.toBe(false);
 
     await bridge.getCloudStatus();
     await bridge.listDynatraceDashboards();
@@ -566,6 +594,17 @@ describe('WebBridge', () => {
     const stopA = subscribe('alert-dismissed', vi.fn());
     const stopB = subscribe('dynatrace-dashboards-changed', vi.fn());
     expect(instances).toHaveLength(1);
+    const openListener = instances[0]!.addEventListener.mock.calls.find(
+      ([name]) => name === 'open',
+    )?.[1];
+    expect(openListener).toBeTypeOf('function');
+    openListener();
+    expect(getWebEventState()).toBe('connected');
+    const errorListener = instances[0]!.addEventListener.mock.calls.find(
+      ([name]) => name === 'error',
+    )?.[1];
+    errorListener();
+    expect(getWebEventState()).toBe('reconnecting');
     stopA();
     expect(instances[0]?.close).not.toHaveBeenCalled();
     stopB();

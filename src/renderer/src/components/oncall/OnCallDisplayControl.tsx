@@ -9,19 +9,24 @@ import {
 type Props = {
   value: number;
   onChange?: (scale: number) => void;
+  disabled?: boolean;
 };
 
-export const OnCallDisplayControl: React.FC<Props> = ({ value, onChange }) => {
+export const OnCallDisplayControl: React.FC<Props> = ({ value, onChange, disabled = false }) => {
   const fontScale = clampOnCallFontScale(value);
   const handleChange = (nextScale: number) => onChange?.(clampOnCallFontScale(nextScale));
 
   return (
-    <div className="oncall-font-scale-control" role="group" aria-label="On-call board font scale">
+    <fieldset
+      className="oncall-font-scale-control"
+      aria-label="On-call board font scale"
+      disabled={disabled}
+    >
       <button
         type="button"
         className="oncall-font-scale-button"
         aria-label="Decrease board font size"
-        disabled={!onChange || fontScale <= ON_CALL_FONT_SCALE_MIN}
+        disabled={disabled || !onChange || fontScale <= ON_CALL_FONT_SCALE_MIN}
         onClick={() => handleChange(fontScale - ON_CALL_FONT_SCALE_STEP)}
       >
         A-
@@ -35,7 +40,7 @@ export const OnCallDisplayControl: React.FC<Props> = ({ value, onChange }) => {
         value={fontScale}
         aria-label="Board font scale"
         aria-valuetext={`${fontScale}%`}
-        disabled={!onChange}
+        disabled={disabled || !onChange}
         onChange={(event) => handleChange(Number(event.target.value))}
       />
       <output className="oncall-font-scale-value">{fontScale}%</output>
@@ -43,11 +48,11 @@ export const OnCallDisplayControl: React.FC<Props> = ({ value, onChange }) => {
         type="button"
         className="oncall-font-scale-button"
         aria-label="Increase board font size"
-        disabled={!onChange || fontScale >= ON_CALL_FONT_SCALE_MAX}
+        disabled={disabled || !onChange || fontScale >= ON_CALL_FONT_SCALE_MAX}
         onClick={() => handleChange(fontScale + ON_CALL_FONT_SCALE_STEP)}
       >
         A+
       </button>
-    </div>
+    </fieldset>
   );
 };

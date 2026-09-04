@@ -1,4 +1,13 @@
-import { Activity, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  Activity,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { BridgeGroup, Contact, PublicRelayConfig, Server } from '@shared/ipc';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TabFallback } from '../../components/TabFallback';
@@ -202,6 +211,48 @@ export function KnowledgeWorkspace({
     () => new Set<KnowledgeDestination>(['home', initialDestination]),
   );
   const [wikiCount, setWikiCount] = useState<number | null>(null);
+  const [wikiCountLoading, setWikiCountLoading] = useState(true);
+  const wikiCountRequestRef = useRef(0);
+
+  const loadWikiCount = useCallback(async () => {
+    const requestId = ++wikiCountRequestRef.current;
+    setWikiCountLoading(true);
+    const getStatus = globalThis.api?.getKnowledgeIndexStatus;
+    if (!getStatus) {
+      if (requestId === wikiCountRequestRef.current) setWikiCountLoading(false);
+      return;
+    }
+    try {
+      const status = await getStatus();
+      if (requestId === wikiCountRequestRef.current) {
+        setWikiCount(status.state === 'error' ? null : status.documentCount);
+      }
+    } catch {
+      if (requestId === wikiCountRequestRef.current) setWikiCount(null);
+    } finally {
+      if (requestId === wikiCountRequestRef.current) setWikiCountLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadWikiCount();
+    const unsubscribe = globalThis.api?.onKnowledgeIndexStatusChanged?.((status) => {
+      wikiCountRequestRef.current += 1;
+      setWikiCount(status.state === 'error' ? null : status.documentCount);
+      setWikiCountLoading(false);
+    });
+    return () => {
+      wikiCountRequestRef.current += 1;
+      unsubscribe?.();
+    };
+  }, [loadWikiCount]);
+
+  const handleWikiCountChange = useCallback((count: number | null) => {
+    if (count !== null) {
+      setWikiCount(count);
+      setWikiCountLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     persistLastKnowledgeDestination(destination);
@@ -256,9 +307,11 @@ export function KnowledgeWorkspace({
         <WorkspacePanel destination="home" activeDestination={destination}>
           <KnowledgeHome
             wikiCount={wikiCount}
+            wikiCountLoading={wikiCountLoading}
             contactCount={contacts.length}
             serverCount={servers.length}
             onOpen={open}
+            onRetryWikiCount={() => void loadWikiCount()}
           />
         </WorkspacePanel>
 
@@ -269,7 +322,7 @@ export function KnowledgeWorkspace({
                 <WikiSurface
                   active={active && destination === 'wiki'}
                   relayMode={relayMode}
-                  onLibraryCountChange={setWikiCount}
+                  onLibraryCountChange={handleWikiCountChange}
                 />
               </Suspense>
             </DestinationBoundary>

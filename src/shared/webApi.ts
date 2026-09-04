@@ -38,6 +38,16 @@ import {
 
 export const RELAY_WEB_API_PREFIX = '/relay-api/v1';
 
+export const WebServerStatusSchema = z
+  .object({
+    serverName: z.string().min(1).max(255),
+    version: z.string().min(1).max(100),
+    uptimeSeconds: z.number().nonnegative(),
+    sessionExpiresAt: z.number().int().positive(),
+  })
+  .strict();
+export type WebServerStatus = z.infer<typeof WebServerStatusSchema>;
+
 export const WebIdentifierSchema = z
   .string()
   .trim()
@@ -100,6 +110,7 @@ export const WebKnowledgeUploadBeginSchema = z
       .max(200)
       .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u)
       .optional(),
+    reselectUploadId: WebIdentifierSchema.optional(),
   })
   .strict();
 
@@ -108,6 +119,8 @@ export const WebKnowledgeUploadBatchSchema = z.object({ batchId: WebIdentifierSc
 export const WebKnowledgeUploadStagingBatchSchema = z
   .object({
     batchId: WebIdentifierSchema,
+    replacementDocumentId: z.string().min(1).max(200).optional(),
+    reselectUploadId: WebIdentifierSchema.optional(),
     files: z
       .array(
         z

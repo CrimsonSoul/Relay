@@ -503,6 +503,17 @@ backup/restore file selection, native alarms, and unrestricted clipboard or file
 Desktop-only actions must remain behind runtime capabilities rather than user-agent checks inside
 features. Deployment requirements and operator-visible limitations live in `docs/relay-web.md`.
 
+The Web notice participates in normal shell layout. Its alarm status observes the shared reminder
+collection and browser audio results. Read-only session status exposes bounded server identity,
+version, running time, and the absolute session deadline without credentials. The sign-in identity
+route exposes only the server name within the same network boundary. Event-stream connection state
+is reported separately from PocketBase connectivity.
+
+Web PDF staging retains pending declarations after interrupted transport until the browser session
+ends. Reselection restarts the entire staged transfer; queued-source recovery runs the existing
+upload service's filename, size, checksum, and session checks against a server-staged path. No
+browser-supplied filesystem path or persistent browser file cache is accepted.
+
 ## Renderer Structure
 
 ### App shell and navigation

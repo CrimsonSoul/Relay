@@ -92,10 +92,19 @@ export class WebKnowledgeSession {
       rootDir: options.rootDir,
       sessionId: options.logicalSessionId,
       localSourceId: this.localSourceId,
-      queuePaths: (paths, localSourceId, replacementDocumentId) =>
-        replacementDocumentId
+      queuePaths: async (paths, localSourceId, replacementDocumentId, reselectUploadId) => {
+        if (reselectUploadId) {
+          const accepted =
+            paths.length === 1 &&
+            (await this.upload.reselectSource(reselectUploadId, undefined, paths[0]));
+          return accepted
+            ? { ok: true, uploads: (await this.upload.refresh()).items }
+            : { ok: false, error: 'invalid-file' };
+        }
+        return replacementDocumentId
           ? this.upload.queuePaths(paths, localSourceId, replacementDocumentId)
-          : this.upload.queuePaths(paths, localSourceId),
+          : this.upload.queuePaths(paths, localSourceId);
+      },
     });
     this.stopRuntime = options.runtime.onSessionChanged((view: PrivilegedSessionView) => {
       this.upload.handleSessionChanged(view);
@@ -112,9 +121,10 @@ export class WebKnowledgeSession {
   async begin(
     files: ReadonlyArray<{ name: string; size: number }>,
     replacementDocumentId?: string,
+    reselectUploadId?: string,
   ): Promise<WebKnowledgeStagingBatch> {
     await this.ensureReady();
-    return this.staging.begin(files, replacementDocumentId);
+    return this.staging.begin(files, replacementDocumentId, reselectUploadId);
   }
 
   async append(input: AppendInput): Promise<void> {
@@ -129,6 +139,10 @@ export class WebKnowledgeSession {
 
   async abort(batchId: string): Promise<void> {
     await this.staging.abort(batchId);
+  }
+
+  pending(): WebKnowledgeStagingBatch | null {
+    return this.staging.pending();
   }
 
   async getQueue(): Promise<KnowledgeUploadQueueView> {
@@ -149,11 +163,6 @@ export class WebKnowledgeSession {
   async retryUpload(id: string): Promise<void> {
     await this.ensureReady();
     this.upload.retryUpload(id);
-  }
-
-  async reselectSource(id: string): Promise<boolean> {
-    await this.ensureReady();
-    return this.upload.reselectSource(id);
   }
 
   async cancelUpload(id: string): Promise<void> {

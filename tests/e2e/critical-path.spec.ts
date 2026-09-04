@@ -2324,7 +2324,7 @@ test.describe('Vital Critical Path', () => {
 
     await expect(window.getByRole('heading', { name: 'Local response queue' })).toBeVisible();
     await expect(window.getByRole('button', { name: 'Unaddressed 0' })).toBeVisible();
-    await expect(window.getByRole('button', { name: 'Sync Dynatrace problems now' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Reload Relay data only' })).toBeVisible();
   });
 
   test('Service Status uses the operational queue layout', async () => {
