@@ -358,8 +358,7 @@ export function createKnowledgeWebApi({
             (candidate) => candidate.id === id || candidate.uploadId === id,
           );
           if (
-            !item ||
-            item.state !== 'source-required' ||
+            item?.state !== 'source-required' ||
             files.length !== 1 ||
             files[0]!.name !== item.fileName ||
             files[0]!.size !== item.byteSize

@@ -292,6 +292,8 @@
 
 .oncall-font-scale-control {
   display: inline-flex;
+  margin: 0;
+  min-inline-size: 0;
   align-items: center;
   gap: 6px;
   height: var(--tab-command-control-height, 36px);

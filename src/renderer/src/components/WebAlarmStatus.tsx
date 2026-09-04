@@ -63,7 +63,7 @@ export function WebAlarmStatus() {
           {overdue} overdue {overdue === 1 ? 'alarm' : 'alarms'}
         </strong>
       )}
-      <span role="status">{soundLabel}</span>
+      <output>{soundLabel}</output>
       <TactileButton
         size="sm"
         variant="ghost"

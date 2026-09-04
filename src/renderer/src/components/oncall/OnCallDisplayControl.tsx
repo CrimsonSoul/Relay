@@ -17,11 +17,10 @@ export const OnCallDisplayControl: React.FC<Props> = ({ value, onChange, disable
   const handleChange = (nextScale: number) => onChange?.(clampOnCallFontScale(nextScale));
 
   return (
-    <div
+    <fieldset
       className="oncall-font-scale-control"
-      role="group"
       aria-label="On-call board font scale"
-      aria-disabled={disabled || undefined}
+      disabled={disabled}
     >
       <button
         type="button"
@@ -54,6 +53,6 @@ export const OnCallDisplayControl: React.FC<Props> = ({ value, onChange, disable
       >
         A+
       </button>
-    </div>
+    </fieldset>
   );
 };
