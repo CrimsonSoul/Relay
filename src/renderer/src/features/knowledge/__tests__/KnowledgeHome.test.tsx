@@ -93,6 +93,37 @@ describe('KnowledgeHome', () => {
     expect(screen.getByText('Server count unavailable')).toBeInTheDocument();
   });
 
+  it('distinguishes a loading Wiki count and exposes retry only after failure', () => {
+    const onRetryWikiCount = vi.fn();
+    const { rerender } = render(
+      <KnowledgeHome
+        wikiCount={null}
+        wikiCountLoading
+        contactCount={6}
+        serverCount={3}
+        onOpen={vi.fn()}
+        onRetryWikiCount={onRetryWikiCount}
+      />,
+    );
+
+    expect(screen.getByText('Document count loading')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry Wiki count' })).not.toBeInTheDocument();
+
+    rerender(
+      <KnowledgeHome
+        wikiCount={null}
+        wikiCountLoading={false}
+        contactCount={6}
+        serverCount={3}
+        onOpen={vi.fn()}
+        onRetryWikiCount={onRetryWikiCount}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Wiki count' }));
+
+    expect(onRetryWikiCount).toHaveBeenCalledOnce();
+  });
+
   it('gives every destination a unique accessible name', () => {
     render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
 

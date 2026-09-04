@@ -34,6 +34,10 @@ export function UnsupportedViewport({ children }: Readonly<PropsWithChildren>): 
       </div>
       <h1>Larger window required</h1>
       <p>Relay Web needs a desktop browser window at least 1024 pixels wide.</p>
+      <p>
+        Maximize the window or reduce browser zoom until the workspace fits. Phones and narrow
+        tablets are not supported.
+      </p>
     </main>
   );
 }

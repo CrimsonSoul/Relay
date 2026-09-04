@@ -2,12 +2,9 @@ import { useState } from 'react';
 import { getRelayRuntime } from '../runtime/relayRuntime';
 import { webSessionClient } from '../runtime/WebSessionClient';
 import { TactileButton } from './TactileButton';
+import { WebAlarmStatus } from './WebAlarmStatus';
 
 export const WEB_HTTP_WARNING = 'Trusted LAN/VPN only - browser traffic is not encrypted';
-
-// The banner itself is click-through so it never blocks the shell underneath; only the control
-// inside it takes pointer events.
-const SIGN_OUT_STYLE = { pointerEvents: 'auto' } as const;
 
 export function WebRuntimeBanner() {
   const [signingOut, setSigningOut] = useState(false);
@@ -30,11 +27,11 @@ export function WebRuntimeBanner() {
     <aside className="web-runtime-banner" aria-label="Relay Web connection notice">
       <span className="web-runtime-banner__label">Web</span>
       <span className="web-runtime-banner__warning">{WEB_HTTP_WARNING}</span>
+      <WebAlarmStatus />
       <TactileButton
         type="button"
         variant="ghost"
         size="sm"
-        style={SIGN_OUT_STYLE}
         disabled={signingOut}
         onClick={() => void signOut()}
       >

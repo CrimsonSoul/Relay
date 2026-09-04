@@ -2661,15 +2661,7 @@ describe('KnowledgeUploadService', () => {
     expect(store.save).not.toHaveBeenCalled();
   });
 
-  it('revalidates session and paused state before accepting a reselected source', async () => {
-    let releasePlanning!: () => void;
-    let planningStarted!: () => void;
-    const planningGate = new Promise<void>((resolve) => {
-      releasePlanning = resolve;
-    });
-    const started = new Promise<void>((resolve) => {
-      planningStarted = resolve;
-    });
+  it('rejects a staged Web source whose checksum differs without opening a native picker', async () => {
     const checksum = manifest().checksum;
     const store = queueStore({
       version: 2,
@@ -2693,30 +2685,91 @@ describe('KnowledgeUploadService', () => {
         },
       ],
     });
-    const replacement = candidate('/private/work/First.pdf');
     const { runtime } = commandRuntime([manifest()]);
+    const selectFiles = vi.fn(async () => []);
     const service = new KnowledgeUploadService({
       getRuntime: () => runtime as never,
       store,
-      selectFiles: vi.fn(async () => ['/private/work/First.pdf']),
-      inspectCandidate: vi.fn(async () => replacement),
-      planSource: vi.fn(async () => {
-        planningStarted();
-        await planningGate;
-        return { ...replacement, checksum, chunkCount: 1 };
+      selectFiles,
+      inspectCandidate: async () => candidate('/private/staging/First.pdf'),
+      planSource: async () => ({
+        ...candidate('/private/staging/First.pdf'),
+        checksum: '0'.repeat(64),
+        chunkCount: 1,
       }),
     });
     await service.start();
-
-    const reselection = service.reselectSource('local-1');
-    await started;
-    service.pauseBatch('batch-1');
-    releasePlanning();
-
-    await expect(reselection).resolves.toBe(false);
-    expect(service.snapshot().items[0]?.state).toBe('paused');
-    expect(store.current().entries[0]?.source.canonicalPath).toBe('/private/work/First.pdf');
+    await expect(
+      service.reselectSource('local-1', undefined, '/private/staging/First.pdf'),
+    ).resolves.toBe(false);
+    expect(selectFiles).not.toHaveBeenCalled();
+    expect(store.current().entries[0]?.source.checksum).toBe(checksum);
+    await service.dispose();
   });
+
+  it.each(['desktop', 'web'])(
+    'revalidates session and paused state before accepting a %s reselected source',
+    async (kind) => {
+      let releasePlanning!: () => void;
+      let planningStarted!: () => void;
+      const planningGate = new Promise<void>((resolve) => {
+        releasePlanning = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        planningStarted = resolve;
+      });
+      const checksum = manifest().checksum;
+      const store = queueStore({
+        version: 2,
+        restartRecovery: true,
+        entries: [
+          {
+            localId: 'local-1',
+            batchRequestId: 'batch-request-1',
+            batchId: 'batch-1',
+            batchRevision: 0,
+            uploadId: 'upload-1',
+            uploadRevision: 0,
+            accountId: view.accountId,
+            deviceId: view.deviceId,
+            localSourceId: view.deviceId,
+            source: { ...candidate(), checksum, chunkCount: 1 },
+            acknowledgedChunkIndexes: [],
+            state: 'paused',
+            safeError: 'source-required',
+            retryCount: 0,
+          },
+        ],
+      });
+      const replacement = candidate('/private/work/First.pdf');
+      const { runtime } = commandRuntime([manifest()]);
+      const service = new KnowledgeUploadService({
+        getRuntime: () => runtime as never,
+        store,
+        selectFiles: vi.fn(async () => ['/private/work/First.pdf']),
+        inspectCandidate: vi.fn(async () => replacement),
+        planSource: vi.fn(async () => {
+          planningStarted();
+          await planningGate;
+          return { ...replacement, checksum, chunkCount: 1 };
+        }),
+      });
+      await service.start();
+
+      const reselection = service.reselectSource(
+        'local-1',
+        undefined,
+        kind === 'web' ? '/private/work/First.pdf' : undefined,
+      );
+      await started;
+      service.pauseBatch('batch-1');
+      releasePlanning();
+
+      await expect(reselection).resolves.toBe(false);
+      expect(service.snapshot().items[0]?.state).toBe('paused');
+      expect(store.current().entries[0]?.source.canonicalPath).toBe('/private/work/First.pdf');
+    },
+  );
 
   it('reconciles a published server upload before accepting the next batch', async () => {
     const checksum = manifest().checksum;

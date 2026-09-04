@@ -175,6 +175,10 @@ vi.mock('../components/WindowControls', () => ({
   WindowControls: () => <div data-testid="window-controls" />,
 }));
 
+vi.mock('../components/WebAlarmStatus', () => ({
+  WebAlarmStatus: () => <span data-testid="web-alarm-status" />,
+}));
+
 vi.mock('../components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode; fallback?: React.ReactNode }) => (
     <>{children}</>
@@ -518,6 +522,7 @@ function renderApp(searchParams = '', props: Partial<React.ComponentProps<typeof
 describe('MainApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    globalThis.api = { runtime: ELECTRON_RUNTIME } as never;
     mockActiveTab = 'Compose';
     mockSettingsOpen = false;
     lastSidebarProps = null;
@@ -565,6 +570,28 @@ describe('MainApp', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('world-clock')).toBeInTheDocument();
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+  });
+
+  it('places Relay Web status in main-content flow above the application header', () => {
+    const previousApi = globalThis.api;
+    globalThis.api = { ...previousApi, runtime: WEB_RUNTIME } as typeof globalThis.api;
+
+    try {
+      renderApp();
+      const main = screen.getByRole('main', { name: 'Application content' });
+      const banner = screen.getByRole('complementary', {
+        name: 'Relay Web connection notice',
+      });
+      const header = screen.getByRole('banner', { name: 'Application navigation' });
+
+      expect(main).toContainElement(banner);
+      expect(main.firstElementChild).toBe(banner);
+      expect(
+        banner.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    } finally {
+      globalThis.api = previousApi;
+    }
   });
 
   it('mounts Radar queue notifications in the desktop main window and opens Radar', () => {

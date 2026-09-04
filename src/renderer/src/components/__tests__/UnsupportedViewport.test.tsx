@@ -31,6 +31,7 @@ describe('UnsupportedViewport', () => {
 
     const state = screen.getByRole('main', { name: 'Larger window required' });
     expect(state).toHaveFocus();
+    expect(state).toHaveTextContent('Maximize the window or reduce browser zoom');
     expect(screen.queryByRole('button', { name: 'Dense control' })).not.toBeInTheDocument();
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });

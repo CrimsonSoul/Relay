@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createServer as createNetServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WEB_RUNTIME } from '@shared/runtime';
+import { WebServerStatusSchema } from '@shared/webApi';
 import { WebRequestSecurity } from '../WebRequestSecurity';
 import {
   WebRouter,
@@ -195,6 +196,25 @@ describe('Relay Web session routes', () => {
     const body = await unavailable.json();
     expect(body).toEqual({ ok: false, error: 'unauthenticated' });
     expect(JSON.stringify(body)).not.toContain(PASSPHRASE);
+  });
+
+  it('exposes bounded server status only to an authenticated browser', async () => {
+    const { origin } = await fixture();
+    const url = `${origin}/relay-api/v1/session/status`;
+    expect((await fetch(url)).status).toBe(401);
+    const signedIn = await login(origin);
+    const response = await fetch(url, { headers: { cookie: sessionCookie(signedIn) } });
+    expect(response.status).toBe(200);
+    const status = WebServerStatusSchema.parse(await response.json());
+    expect(status).toMatchObject({
+      serverName: expect.any(String),
+      version: expect.any(String),
+      sessionExpiresAt: expect.any(Number),
+      uptimeSeconds: expect.any(Number),
+    });
+    expect(status.sessionExpiresAt).toBeGreaterThan(Date.now());
+    expect(status).not.toHaveProperty('auth');
+    expect(JSON.stringify(status)).not.toContain(PASSPHRASE);
   });
 
   it('bootstraps from the opaque cookie without retaining the submitted passphrase', async () => {

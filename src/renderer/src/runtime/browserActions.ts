@@ -236,8 +236,10 @@ export function createBrowserActions(options: BrowserActionsOptions = {}) {
         audio.preload = 'auto';
         audio.currentTime = 0;
         await audio.play();
+        globalThis.dispatchEvent(new CustomEvent('relay-web-audio-result', { detail: true }));
         return true;
       } catch {
+        globalThis.dispatchEvent(new CustomEvent('relay-web-audio-result', { detail: false }));
         return false;
       }
     },

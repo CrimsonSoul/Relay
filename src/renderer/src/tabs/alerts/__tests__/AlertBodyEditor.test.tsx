@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readCssBundle } from '../../../styles/readCssBundle.test-util';
 import { AlertBodyEditor } from '../AlertBodyEditor';
@@ -65,6 +65,28 @@ describe('AlertBodyEditor', () => {
     vi.clearAllMocks();
     document.execCommand = vi.fn().mockReturnValue(true);
     document.queryCommandState = vi.fn().mockReturnValue(false);
+  });
+  it('inserts a pasted image file and rejects oversized dropped images', async () => {
+    render(<AlertBodyEditor {...defaultProps} />);
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const png = new File([new Uint8Array([137, 80, 78, 71])], 'screen.png', { type: 'image/png' });
+    fireEvent.paste(editor, { clipboardData: { files: [png], getData: () => '' } });
+    await waitFor(() =>
+      expect(document.execCommand).toHaveBeenCalledWith(
+        'insertHTML',
+        false,
+        expect.stringContaining('data:image/png;base64,'),
+      ),
+    );
+    vi.mocked(document.execCommand).mockClear();
+    const large = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'large.png', {
+      type: 'image/png',
+    });
+    fireEvent.drop(editor, { dataTransfer: { files: [large] } });
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith(expect.stringContaining('5 MiB'), 'error'),
+    );
+    expect(document.execCommand).not.toHaveBeenCalled();
   });
 
   it('renders the body label', () => {
@@ -344,6 +366,20 @@ describe('AlertBodyEditor', () => {
     const editor = screen.getByRole('textbox', { name: 'Alert body' });
     fireEvent.keyDown(editor, init);
     expect(editor).toBeInTheDocument();
+  });
+
+  it.each([
+    ['highlight', { key: '1', metaKey: true }],
+    ['clear highlight', { key: '0', ctrlKey: true }],
+  ])('keeps the handled %s shortcut inside the editor', (_case, init) => {
+    const globalKeydown = vi.fn();
+    globalThis.addEventListener('keydown', globalKeydown);
+    render(<AlertBodyEditor {...defaultProps} />);
+
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Alert body' }), init);
+
+    expect(globalKeydown).not.toHaveBeenCalled();
+    globalThis.removeEventListener('keydown', globalKeydown);
   });
 
   it('does not add active class when formats are inactive', () => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type MockedFunction } from 'vitest';
 import type { BridgeAPI, Contact, Server } from '@shared/ipc';
+import { WEB_RUNTIME } from '@shared/runtime';
 import type {
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
@@ -266,6 +267,21 @@ describe('HeaderSearch', () => {
     (globalThis as Record<string, unknown>).api = { platform: 'win32' };
     render(<HeaderSearch {...defaultProps} />);
     expect(screen.getByText('Ctrl+K')).toBeInTheDocument();
+  });
+
+  it('shows the browser-safe search shortcut in Relay Web', () => {
+    const bridge: Partial<BridgeAPI> = {
+      runtime: WEB_RUNTIME,
+      platform: 'darwin',
+      searchKnowledge,
+      cancelKnowledgeSearch,
+    };
+    vi.stubGlobal('api', bridge);
+
+    render(<HeaderSearch {...defaultProps} />);
+
+    expect(screen.getByText('Alt⇧K')).toBeInTheDocument();
+    expect(screen.queryByText('⌘K')).not.toBeInTheDocument();
   });
 
   it('blurs search input on Escape when query is empty', () => {

@@ -20,6 +20,7 @@ import {
   type AccentId,
 } from '../../theme/accent';
 import { TactileButton } from '../TactileButton';
+import { getRelayRuntime } from '../../runtime/relayRuntime';
 
 const CUSTOM_ACCENT_EXAMPLE = '#2dd4bf';
 
@@ -295,7 +296,10 @@ export function AppearanceSettings({ active }: Readonly<{ active: boolean }>) {
         <div className="accent-schedule-header">
           <div className="accent-schedule-heading-group">
             <div className="custom-accent-label">Accent Schedule</div>
-            <div className="accent-schedule-description">Fixed Central Time shift windows.</div>
+            <div className="accent-schedule-description">
+              Fixed Central Time shift windows.
+              {getRelayRuntime().kind === 'web' && ' Saved only in this browser.'}
+            </div>
           </div>
           <button
             type="button"

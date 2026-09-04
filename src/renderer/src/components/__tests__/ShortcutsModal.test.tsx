@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi, afterEach } from 'vitest';
+import { ELECTRON_RUNTIME, WEB_RUNTIME } from '@shared/runtime';
 import { ShortcutsModal } from '../ShortcutsModal';
 
 describe('ShortcutsModal', () => {
@@ -81,9 +82,25 @@ describe('ShortcutsModal platform detection', () => {
     // Re-import the module with non-darwin platform to cover the isMac branch
     // The module-level isMac is evaluated at import time, so we need to test
     // the actual rendered content which uses the already-evaluated modKey
+    globalThis.api = { runtime: ELECTRON_RUNTIME, platform: 'win32' } as never;
     render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
     // The shortcut keys should contain either Ctrl or Cmd symbol
     const allShortcutKeys = screen.getAllByText(/Ctrl|⌘/);
     expect(allShortcutKeys.length).toBeGreaterThan(0);
+  });
+
+  it('shows browser-safe shortcuts and explains the different Web mapping', () => {
+    globalThis.api = { runtime: WEB_RUNTIME, platform: 'darwin' } as never;
+
+    render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
+
+    expect(screen.getByText('Alt + Shift + 1')).toBeInTheDocument();
+    expect(screen.getByText('Alt + Shift + K')).toBeInTheDocument();
+    expect(screen.getByText('Alt + Shift + ,')).toBeInTheDocument();
+    expect(screen.getByText('Alt + Shift + ?')).toBeInTheDocument();
+    expect(screen.getByText(/avoid browser-reserved shortcuts/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Escape does not dismiss an expired-session sign-in/i),
+    ).toBeInTheDocument();
   });
 });

@@ -560,13 +560,15 @@ export class KnowledgeUploadService {
     void this.persistAndEmit();
   }
 
-  async reselectSource(id: string, window?: BrowserWindow): Promise<boolean> {
+  async reselectSource(id: string, window?: BrowserWindow, stagedPath?: string): Promise<boolean> {
     const entry = this.findControllableEntry(id);
     if (!entry?.source.checksum || entry.cancelRequested || isTerminal(entry.state)) return false;
     const session = this.activeUploadSession();
     if (!this.sessionMatchesEntry(session, entry)) return false;
     const generation = this.controlGeneration;
-    const paths = await this.selectFiles(window, true);
+    // Web supplies only a server-staged path. The same filename, size, checksum, and session
+    // checks below apply to both browser reselection and the Desktop file picker.
+    const paths = stagedPath ? [stagedPath] : await this.selectFiles(window, true);
     if (paths.length !== 1) return false;
     if (!this.reselectionCurrent(entry, session, generation)) return false;
     try {

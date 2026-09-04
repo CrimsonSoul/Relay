@@ -22,6 +22,7 @@ import { TactileButton } from '../components/TactileButton';
 import { useToast } from '../components/Toast';
 import { SearchInput } from '../components/SearchInput';
 import { TabCommandBar, TabCommandGroup, TabPageHeader } from '../components/tab-chrome/TabChrome';
+import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
 import { useDynatraceProblemShortcuts } from '../hooks/useDynatraceProblemShortcuts';
 import {
@@ -335,15 +336,20 @@ function refreshControlCopy(
   canSyncDynatrace: boolean,
   refreshing: boolean,
 ): { label: string; tooltip: string } {
-  const label = canSyncDynatrace
-    ? 'Sync Dynatrace problems and alerting profiles now'
-    : 'Reload Relay problem data';
-  if (!refreshing) return { label, tooltip: label };
+  const label = canSyncDynatrace ? 'Sync now from Dynatrace' : 'Reload Relay data only';
+  if (!refreshing) {
+    return {
+      label,
+      tooltip: canSyncDynatrace
+        ? 'Sync current problems and alerting profiles from Dynatrace, then reload Relay data'
+        : 'Reload stored Relay problem data without requesting a Dynatrace sync',
+    };
+  }
   return {
     label,
     tooltip: canSyncDynatrace
-      ? 'Syncing Dynatrace problems and alerting profiles'
-      : 'Reloading Relay problem data',
+      ? 'Syncing from Dynatrace, then reloading Relay data'
+      : 'Reloading stored Relay problem data',
   };
 }
 
@@ -973,6 +979,7 @@ export const DynatraceProblemsTab: React.FC<{
   active?: boolean;
 }> = ({ relayMode, active = true }) => {
   const { showToast } = useToast();
+  const { session: privilegedSession } = usePrivilegedAccess();
   const {
     problems,
     stateByProblemId,
@@ -1125,12 +1132,18 @@ export const DynatraceProblemsTab: React.FC<{
     [showToast],
   );
 
+  const isWebRuntime = globalThis.api?.runtime?.kind === 'web';
+  const canManageWebSettings =
+    privilegedSession.state === 'active' &&
+    privilegedSession.capabilities.includes('settings.manage');
+  const canSyncDynatrace =
+    relayMode === 'server' && (!isWebRuntime || canManageWebSettings) && sync?.state !== 'disabled';
+
   const handleRefresh = async () => {
     if (savingAction) return;
     await runExclusive('refresh', async () => {
       try {
-        const canSyncDynatrace = relayMode === 'server' && globalThis.api?.runtime?.kind !== 'web';
-        if (canSyncDynatrace && sync?.state !== 'disabled') {
+        if (canSyncDynatrace) {
           const result = await globalThis.api?.syncDynatraceProblems();
           if (result && !result.success) throw new Error(result.error || 'Dynatrace sync failed.');
         }
@@ -1147,7 +1160,6 @@ export const DynatraceProblemsTab: React.FC<{
   if (loading && problems.length === 0) return <TabFallback />;
 
   const lastSyncLabel = getLastSyncLabel(sync);
-  const canSyncDynatrace = relayMode === 'server' && globalThis.api?.runtime?.kind !== 'web';
   const refreshControl = refreshControlCopy(canSyncDynatrace, savingAction === 'refresh');
 
   return (

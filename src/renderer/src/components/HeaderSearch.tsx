@@ -26,12 +26,18 @@ import {
   serverRecordKey,
   type KnowledgeRecordTarget,
 } from '../features/knowledge/knowledgeRecordNavigation';
+import { getRelayRuntime } from '../runtime/relayRuntime';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
   Personnel: ['contact', 'group', 'server'],
 };
 const IMMEDIATE_RESULT_LIMIT = 15;
+
+function getSearchShortcutLabel(isMac: boolean): string {
+  if (getRelayRuntime().kind === 'web') return 'Alt⇧K';
+  return isMac ? '\u2318K' : 'Ctrl+K';
+}
 
 type WikiPassageSearchResult = SearchResult & {
   source: 'wiki-passage';
@@ -576,6 +582,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
 
   const isMac =
     typeof globalThis.api?.platform === 'string' ? globalThis.api.platform === 'darwin' : true;
+  const shortcutLabel = getSearchShortcutLabel(isMac);
 
   return (
     <>
@@ -637,7 +644,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
             </button>
           </Tooltip>
         ) : (
-          <kbd className="header-search-bar-shortcut">{isMac ? '\u2318K' : 'Ctrl+K'}</kbd>
+          <kbd className="header-search-bar-shortcut">{shortcutLabel}</kbd>
         )}
       </div>
 

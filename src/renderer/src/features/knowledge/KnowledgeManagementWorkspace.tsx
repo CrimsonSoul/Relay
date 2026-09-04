@@ -5,6 +5,8 @@ import { KnowledgeDocumentsSection } from './management/KnowledgeDocumentsSectio
 import { KnowledgeTrashSection } from './management/KnowledgeTrashSection';
 import { KnowledgeUploadsSection } from './management/KnowledgeUploadsSection';
 import { useKnowledgeManagement } from './useKnowledgeManagement';
+import { getRelayRuntime } from '../../runtime/relayRuntime';
+import { WebUploadRecovery } from './WebUploadRecovery';
 
 type Section = 'documents' | 'categories' | 'uploads' | 'trash';
 
@@ -164,6 +166,15 @@ export function KnowledgeManagementWorkspace({
         </>
       )}
 
+      {management.canManage && getRelayRuntime().kind === 'web' && (
+        <WebUploadRecovery
+          uploading={management.busy === 'upload'}
+          onRecovered={async () => {
+            await management.refresh();
+            openSection('uploads');
+          }}
+        />
+      )}
       <div className="knowledge-management__workspace" hidden={!management.canManage}>
         <nav className="knowledge-management__rail" aria-label="Knowledge management">
           {(['documents', 'categories', 'uploads', 'trash'] as const).map((id) => (

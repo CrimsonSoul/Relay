@@ -210,11 +210,11 @@ async function uploadKnowledgePdfs(
   fetcher: typeof fetch,
   csrfToken: string,
   replacementDocumentId?: string,
+  reselectUploadId?: string,
 ): Promise<KnowledgeUploadSelectionResult> {
   if (!validSelectedPdfs(files, replacementDocumentId)) {
     return { ok: false, error: 'invalid-file' };
   }
-  let batchId: string | null = null;
   try {
     const batch = WebKnowledgeUploadStagingBatchSchema.parse(
       await request('/knowledge/upload/begin', {
@@ -222,10 +222,11 @@ async function uploadKnowledgePdfs(
         body: {
           files: files.map((file) => ({ name: file.name, size: file.size })),
           ...(replacementDocumentId ? { replacementDocumentId } : {}),
+          ...(reselectUploadId ? { reselectUploadId } : {}),
         },
       }),
     );
-    batchId = batch.batchId;
+    const batchId = batch.batchId;
     if (
       batch.files.length !== files.length ||
       batch.files.some(
@@ -263,11 +264,8 @@ async function uploadKnowledgePdfs(
     );
     return result ?? { ok: false, error: 'upload-failed' };
   } catch {
-    if (batchId) {
-      void request('/knowledge/upload/abort', { method: 'POST', body: { batchId } }).catch(
-        () => undefined,
-      );
-    }
+    // Retain declarations in the server session so a refreshed tab can reselect the PDFs.
+    // Restarting sends every byte again; no unverified partial file is reused.
     return { ok: false, error: 'upload-failed' };
   }
 }
@@ -344,7 +342,58 @@ export function createKnowledgeWebApi({
       request<boolean>('/knowledge/upload/retry-upload', { method: 'POST', body: { id } }).catch(
         () => false,
       ),
-    reselectKnowledgeUploadSource: async () => false,
+    reselectKnowledgeUploadSource: async (id) => {
+      // Open the picker before awaiting network I/O to retain browser user activation.
+      const files = await actions.selectPdfs(false);
+      if (!files.length) return false;
+      try {
+        const pending = WebKnowledgeUploadStagingBatchSchema.nullable().parse(
+          await request('/knowledge/upload/pending', { method: 'GET' }),
+        );
+        if (!pending) {
+          const queue = normalizeKnowledgeUploadQueueView(
+            await request('/knowledge/upload/queue', { method: 'GET' }),
+          );
+          const item = queue?.items.find(
+            (candidate) => candidate.id === id || candidate.uploadId === id,
+          );
+          if (
+            !item ||
+            item.state !== 'source-required' ||
+            files.length !== 1 ||
+            files[0]!.name !== item.fileName ||
+            files[0]!.size !== item.byteSize
+          )
+            return false;
+          return (
+            await uploadKnowledgePdfs(files, request, fetcher, session.csrfToken, undefined, id)
+          ).ok;
+        }
+        if (
+          pending.batchId !== id ||
+          pending.files.length !== files.length ||
+          !validSelectedPdfs(files, pending.replacementDocumentId)
+        )
+          return false;
+        const ordered = pending.files.map((item) =>
+          files.find((file) => file.name === item.name && file.size === item.size),
+        );
+        if (ordered.some((file) => !file)) return false;
+        await request('/knowledge/upload/abort', { method: 'POST', body: { batchId: id } });
+        return (
+          await uploadKnowledgePdfs(
+            ordered as File[],
+            request,
+            fetcher,
+            session.csrfToken,
+            pending.replacementDocumentId,
+            pending.reselectUploadId,
+          )
+        ).ok;
+      } catch {
+        return false;
+      }
+    },
     cancelKnowledgeUpload: (id) =>
       request<boolean>('/knowledge/upload/cancel-upload', { method: 'POST', body: { id } }).catch(
         () => false,

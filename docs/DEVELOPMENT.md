@@ -621,7 +621,7 @@ and its packaged smoke and updater-manager integration tests exercise the actual
 stable process supervisor, Job Object, shortcut, retained build, snapshot swap, restart, and
 probation lifecycle.
 
-`npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs the critical browser workflow in Chromium profiles for Chrome and Edge plus WebKit for Safari. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
+`npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs browser workflows in Chromium profiles for Chrome and Edge plus WebKit for Safari. Coverage includes the 1,024-pixel shell and Web status page, connection recovery and sign-out, Compose and On-Call actions, image insertion and PNG/EML/ICS downloads, protected Dynatrace actions, and interrupted PDF reselection followed by Wiki publication and reading. Upstream Radar data is a controlled fixture; this suite does not verify live tenant access or delivery in Outlook or a calendar application. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
 Coverage thresholds are currently 80% for lines, functions, branches, and statements in the main/shared and renderer configs. The cache config has no independent coverage threshold.
 

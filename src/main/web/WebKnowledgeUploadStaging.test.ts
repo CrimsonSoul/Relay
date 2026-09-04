@@ -31,6 +31,113 @@ async function chunks(...values: string[]): Promise<AsyncIterable<Uint8Array>> {
 }
 
 describe('WebKnowledgeUploadStaging', () => {
+  it('preserves sibling sources when reselecting one PDF and replaces only that recovery source', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-reselect-siblings-'));
+    const queuePaths = vi.fn<QueuePaths>(async () => ({ ok: true, uploads: [] }));
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'siblings',
+      localSourceId: 'web-siblings',
+      queuePaths,
+    });
+    const transfer = async (names: string[], reselectUploadId?: string) => {
+      const batch = await staging.begin(
+        names.map((name) => ({ name, size: 12 })),
+        undefined,
+        reselectUploadId,
+      );
+      for (const file of batch.files) {
+        await staging.append({
+          fileId: file.id,
+          offset: 0,
+          contentType: 'application/octet-stream',
+          contentLength: 12,
+          body: await chunks('%PDF-first!!'),
+        });
+      }
+      await staging.commit(batch.batchId);
+      return queuePaths.mock.calls.at(-1)![0];
+    };
+    const original = await transfer(['First.pdf', 'Second.pdf']);
+    const recovered = await transfer(['First.pdf'], 'first-upload');
+    expect(await readFile(original[1]!, 'utf8')).toBe('%PDF-first!!');
+    const recoveredAgain = await transfer(['First.pdf'], 'first-upload');
+    expect(await missing(recovered[0]!)).toBe(true);
+    expect(await readFile(original[1]!, 'utf8')).toBe('%PDF-first!!');
+    expect(await readFile(recoveredAgain[0]!, 'utf8')).toBe('%PDF-first!!');
+    await staging.dispose();
+  });
+  it('retains reselection metadata after a browser closes during a chunk', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-interrupted-'));
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'interrupted',
+      localSourceId: 'web-interrupted',
+      queuePaths: async () => ({ ok: true, uploads: [] }),
+    });
+    const batch = await staging.begin([{ name: 'Runbook.pdf', size: 12 }]);
+    const body = (async function* () {
+      yield new TextEncoder().encode('%PDF-');
+      throw new Error('connection reset');
+    })();
+    await expect(
+      staging.append({
+        fileId: batch.files[0]!.id,
+        offset: 0,
+        contentType: 'application/octet-stream',
+        contentLength: 12,
+        body,
+      }),
+    ).rejects.toMatchObject({ code: 'upload-failed' });
+    expect(staging.pending()).toEqual(batch);
+    await staging.dispose();
+  });
+  it('routes a fully validated reselection to its original upload without creating another document', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-reselect-source-'));
+    const queuePaths = vi.fn(async () => ({ ok: true as const, uploads: [] }));
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'reselect',
+      localSourceId: 'web-reselect',
+      queuePaths,
+    });
+    const batch = await staging.begin(
+      [{ name: 'Runbook.pdf', size: 12 }],
+      undefined,
+      'upload-original',
+    );
+    expect(staging.pending()?.reselectUploadId).toBe('upload-original');
+    await staging.append({
+      fileId: batch.files[0]!.id,
+      offset: 0,
+      contentType: 'application/octet-stream',
+      contentLength: 12,
+      body: await chunks('%PDF-first!!'),
+    });
+    await staging.commit(batch.batchId);
+    expect(queuePaths).toHaveBeenCalledWith(
+      [expect.stringContaining('Runbook.pdf')],
+      'web-reselect',
+      undefined,
+      'upload-original',
+    );
+    await staging.dispose();
+  });
+  it('exposes only pending file declarations for browser reselection, then clears them on abort', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-reselect-'));
+    const staging = new WebKnowledgeUploadStaging({
+      rootDir,
+      sessionId: 'reselect',
+      localSourceId: 'web-reselect',
+      queuePaths: async () => ({ ok: true, uploads: [] }),
+    });
+    const batch = await staging.begin([{ name: 'Runbook.pdf', size: 12 }], 'document-target');
+    expect(staging.pending()).toEqual({ ...batch, replacementDocumentId: 'document-target' });
+    expect(JSON.stringify(staging.pending())).not.toContain(rootDir);
+    await staging.abort(batch.batchId);
+    expect(staging.pending()).toBeNull();
+    await staging.dispose();
+  });
   it('streams ordered PDF bytes into private files before queueing validated paths', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'relay-web-knowledge-'));
     const queuePaths = vi.fn<QueuePaths>(async () => ({ ok: true, uploads: [] }));

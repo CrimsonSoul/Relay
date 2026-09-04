@@ -18,6 +18,21 @@ import { createPrivilegedWebApi } from './webBridge/privilegedWebApi';
 
 export type { WebBridgeRequest, WebBridgeSubscribe } from './webBridge/context';
 
+type WebEventState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
+let webEventState: WebEventState = 'connecting';
+const webEventStateListeners = new Set<() => void>();
+export const getWebEventState = () => webEventState;
+export function subscribeWebEventState(listener: () => void): () => void {
+  webEventStateListeners.add(listener);
+  return () => {
+    webEventStateListeners.delete(listener);
+  };
+}
+function setWebEventState(state: WebEventState): void {
+  webEventState = state;
+  for (const listener of webEventStateListeners) listener();
+}
+
 type WebBridgeOptions = {
   fetcher?: typeof fetch;
   request?: WebBridgeRequest;
@@ -55,7 +70,12 @@ export function createWebEventSubscriber(
   return <T>(event: string, callback: (value: T) => void): (() => void) => {
     const Source = EventSourceConstructor ?? globalThis.EventSource;
     if (!Source) return () => undefined;
-    source ??= new Source(`${RELAY_WEB_API_PREFIX}/session/events`);
+    if (!source) {
+      source = new Source(`${RELAY_WEB_API_PREFIX}/session/events`);
+      setWebEventState('connecting');
+      source.addEventListener('open', () => setWebEventState('connected'));
+      source.addEventListener('error', () => setWebEventState('reconnecting'));
+    }
     const activeSource = source;
     const listener = (message: MessageEvent<string>) => {
       try {
@@ -75,6 +95,7 @@ export function createWebEventSubscriber(
       if (listenerCount === 0 && source === activeSource) {
         activeSource.close();
         source = null;
+        setWebEventState('closed');
       }
     };
   };

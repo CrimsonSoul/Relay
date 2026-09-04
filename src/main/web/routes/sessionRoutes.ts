@@ -1,4 +1,6 @@
 import type { ServerResponse } from 'node:http';
+import { hostname } from 'node:os';
+import { version } from '../../../../package.json';
 import { WEB_RUNTIME } from '@shared/runtime';
 import {
   RELAY_WEB_API_PREFIX,
@@ -6,6 +8,7 @@ import {
   type WebSessionBootstrap,
 } from '@shared/webApi';
 import type { WebSessionCreateInput, WebSessionRecord, WebSessionStore } from '../WebSessionStore';
+import { WEB_SESSION_ABSOLUTE_TIMEOUT_MS } from '../WebSessionStore';
 import { WEB_SESSION_COOKIE_NAME, type WebRouter, type WebRouteResponse } from '../WebRouter';
 import { WebPrivilegedSession } from '../WebPrivilegedSession';
 import { WebResourceBudget } from '../WebResourceBudget';
@@ -63,6 +66,25 @@ export function registerWebSessionRoutes(
     MAX_EVENT_STREAMS_PER_SESSION,
     MAX_EVENT_STREAMS_GLOBAL,
   );
+  router.register({
+    method: 'GET',
+    path: `${RELAY_WEB_API_PREFIX}/session/server-name`,
+    handler: async () => ({ status: 200, body: { serverName: hostname() } }),
+  });
+  router.register({
+    method: 'GET',
+    path: `${RELAY_WEB_API_PREFIX}/session/status`,
+    authenticated: true,
+    handler: async ({ session }) => ({
+      status: 200,
+      body: {
+        serverName: hostname(),
+        version,
+        uptimeSeconds: Math.floor(process.uptime()),
+        sessionExpiresAt: session!.createdAt + WEB_SESSION_ABSOLUTE_TIMEOUT_MS,
+      },
+    }),
+  });
   router.register({
     method: 'POST',
     path: `${RELAY_WEB_API_PREFIX}/session/login`,

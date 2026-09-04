@@ -30,6 +30,20 @@ function formatMetricValue(value: string): string {
   return Number(bare).toLocaleString();
 }
 
+function radarErrorGuidance(error: string): string {
+  const normalized = error.toLocaleLowerCase('en-US');
+  if (normalized.includes('name_not_resolved') || normalized.includes('enotfound')) {
+    return 'Relay could not find the Radar server. Check the trusted network or VPN, then refresh Radar.';
+  }
+  if (normalized.includes('econnrefused') || normalized.includes('connection refused')) {
+    return 'The Radar server refused the connection. Confirm Radar is available, then refresh.';
+  }
+  if (normalized.includes('timeout') || normalized.includes('timed out')) {
+    return 'Radar did not respond before the request timed out. Check the network connection, then refresh.';
+  }
+  return 'Relay could not refresh Radar. Check the trusted network or VPN, then try again.';
+}
+
 const DepthRows: React.FC<{ rows: RadarRow[]; nameHeading: string }> = ({ rows, nameHeading }) => (
   <table className="radar-table">
     <thead>
@@ -128,11 +142,6 @@ export const RadarTab: React.FC = () => {
         </TabCommandGroup>
       </TabCommandBar>
 
-      {/*
-        <output> carries an implicit status role and is a live region, so a
-        failure arriving on the next poll is announced without a redundant role
-        attribute on a div.
-      */}
       {signInRequired && (
         <output className="radar-notice">
           {isWeb ? (
@@ -156,9 +165,15 @@ export const RadarTab: React.FC = () => {
       )}
 
       {error && !signInRequired && (
-        <output className="radar-notice radar-notice--error">
-          Could not reach Radar: {error}. Retained Radar data is stale.
-        </output>
+        <div className="radar-notice radar-notice--error">
+          <p role="status" aria-live="polite" aria-label="Radar refresh problem">
+            {radarErrorGuidance(error)} Retained Radar data is stale.
+          </p>
+          <details className="radar-notice__details">
+            <summary>Technical details</summary>
+            <code>{error}</code>
+          </details>
+        </div>
       )}
 
       <div className="radar-workspace">

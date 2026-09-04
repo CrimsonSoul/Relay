@@ -764,3 +764,31 @@
 .oncall-masonry-item {
   list-style: none;
 }
+
+.oncall-empty-state {
+  display: grid;
+  width: min(100%, 520px);
+  min-height: 220px;
+  margin: auto;
+  padding: var(--space-6);
+  place-content: center;
+  gap: var(--space-2);
+  border-block: 1px solid var(--color-border-medium);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.oncall-empty-state h2,
+.oncall-empty-state p {
+  margin: 0;
+}
+
+.oncall-empty-state h2 {
+  color: var(--color-text-primary);
+  font-size: var(--text-lg);
+}
+
+.oncall-empty-state p {
+  line-height: 1.5;
+  text-wrap: balance;
+}

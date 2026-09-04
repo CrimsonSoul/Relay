@@ -798,7 +798,10 @@ describe('AlertsTab', () => {
 
     fireEvent.click(screen.getByText('Download Draft'));
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Alert draft downloaded', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'relay-alert.eml download started — open it in Outlook, review recipients, and send.',
+        'success',
+      );
     });
     expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledOnce();
   });

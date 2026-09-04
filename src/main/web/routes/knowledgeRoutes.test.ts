@@ -134,6 +134,10 @@ describe('Relay Web Knowledge routes', () => {
     const session = createSession();
     const stagedBytes: Uint8Array[] = [];
     const knowledgeSession = {
+      pending: () => ({
+        batchId: 'batch-1',
+        files: [{ id: 'file-1', name: 'Runbook.pdf', size: 12 }],
+      }),
       begin: vi.fn(async () => ({
         batchId: 'batch-1',
         files: [{ id: 'file-1', name: 'Runbook.pdf', size: 12 }],
@@ -209,6 +213,19 @@ describe('Relay Web Knowledge routes', () => {
       createSessionHeaders: () => sessionHeaders(createSession()),
     };
   }
+
+  it('keeps pending transfer metadata authenticated and publisher-only', async () => {
+    const { origin, headers, router } = await fixture();
+    const path = '/relay-api/v1/knowledge/upload/pending';
+    expect((await fetch(`${origin}${path}`)).status).toBe(401);
+    const response = await fetch(`${origin}${path}`, { headers });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      batchId: 'batch-1',
+      files: [{ id: 'file-1', name: 'Runbook.pdf', size: 12 }],
+    });
+    expect(knowledgeRoute(router, '/upload/pending').capability).toBe('knowledge.manage');
+  });
 
   it('streams authenticated PDF ranges and preserves service normalization', async () => {
     const { origin, headers, services } = await fixture();
@@ -429,6 +446,7 @@ describe('Relay Web Knowledge routes', () => {
     expect(knowledgeSession.begin).toHaveBeenCalledWith(
       [{ name: 'Runbook.pdf', size: 12 }],
       'document-target',
+      undefined,
     );
 
     const chunk = await fetch(

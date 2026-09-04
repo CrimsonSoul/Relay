@@ -127,14 +127,57 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
     onChange(nextValue);
   }, [onChange]);
 
-  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const html = e.clipboardData.getData('text/html');
-    const plain = e.clipboardData.getData('text/plain');
-    const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
-    // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
-    document.execCommand('insertHTML', false, cleaned);
-  }, []);
+  const insertImageFile = useCallback(
+    (file: File) => {
+      if (
+        !/^image\/(?:png|jpeg|webp)$/u.test(file.type) ||
+        file.size > 5 * 1024 * 1024 ||
+        file.size === 0
+      ) {
+        showToast('Choose a PNG, JPEG, or WebP image no larger than 5 MiB.', 'error');
+        return;
+      }
+      const editor = editorRef.current;
+      const selection = globalThis.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+      const reader = new FileReader();
+      reader.onerror = () => showToast('Could not read this image. Try Insert image.', 'error');
+      reader.onload = () => {
+        if (!editor?.isConnected || typeof reader.result !== 'string') return;
+        editor.focus();
+        if (range && editor.contains(range.commonAncestorContainer)) {
+          const currentSelection = globalThis.getSelection();
+          currentSelection?.removeAllRanges();
+          currentSelection?.addRange(range);
+        }
+        const html = sanitizeHtml(
+          `<p><img src="${reader.result}" alt="Alert image" class="alert-body-image"></p>`,
+        );
+        // eslint-disable-next-line sonarjs/deprecation -- contentEditable insertion preserves native undo
+        document.execCommand('insertHTML', false, html);
+        handleBodyInput();
+      };
+      reader.readAsDataURL(file);
+    },
+    [handleBodyInput, showToast],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const file = e.clipboardData.files?.[0];
+      if (file) {
+        insertImageFile(file);
+        return;
+      }
+      const html = e.clipboardData.getData('text/html');
+      const plain = e.clipboardData.getData('text/plain');
+      const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
+      // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
+      document.execCommand('insertHTML', false, cleaned);
+    },
+    [insertImageFile],
+  );
 
   const updateActiveFormats = useCallback(() => {
     /* eslint-disable sonarjs/deprecation -- queryCommandState is the only way to check formatting in contentEditable */
@@ -242,10 +285,12 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
       const key = e.key;
       if (key >= '1' && key <= '5') {
         e.preventDefault();
+        e.stopPropagation();
         const idx = Number.parseInt(key) - 1;
         if (HIGHLIGHTS[idx]) applyHighlight(HIGHLIGHTS[idx].type);
       } else if (key === '0') {
         e.preventDefault();
+        e.stopPropagation();
         clearHighlight();
       }
     },
@@ -417,6 +462,14 @@ export const AlertBodyEditor: React.FC<AlertBodyEditorProps> = ({ value, onChang
           data-placeholder="Write your alert message here. Cmd+B bold, Cmd+I italic, Cmd+U underline."
           onInput={handleBodyInput}
           onPaste={handlePaste}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+          }}
+          onDrop={(event) => {
+            if (!event.dataTransfer.files.length) return;
+            event.preventDefault();
+            insertImageFile(event.dataTransfer.files[0]!);
+          }}
           onKeyDown={handleKeyDown}
         />
       </div>

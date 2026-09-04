@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
 import {
@@ -15,22 +15,41 @@ import {
 } from '../knowledgeNavigation';
 import type { KnowledgeRecordOpenRequest } from '../knowledgeRecordNavigation';
 
+let knowledgeStatusListener:
+  | ((status: {
+      state: 'idle' | 'indexing' | 'warning' | 'error';
+      documentCount: number;
+      categoryCount: number;
+      lastIndexedAt: string | null;
+    }) => void)
+  | null = null;
+const unsubscribeKnowledgeStatus = vi.fn();
+const getKnowledgeIndexStatus = vi.fn();
+
 vi.mock('../KnowledgeHome', () => ({
   KnowledgeHome: ({
     wikiCount,
+    wikiCountLoading,
     contactCount,
     serverCount,
     onOpen,
+    onRetryWikiCount,
   }: {
     wikiCount: number | null;
+    wikiCountLoading?: boolean;
     contactCount: number | null;
     serverCount: number | null;
     onOpen: (destination: Exclude<KnowledgeDestination, 'home'>) => void;
+    onRetryWikiCount?: () => void;
   }) => (
     <div data-testid="knowledge-home">
       <span>{String(wikiCount)} wiki documents</span>
+      <span>{wikiCountLoading ? 'wiki count loading' : 'wiki count settled'}</span>
       <span>{contactCount} contacts</span>
       <span>{serverCount} servers</span>
+      {wikiCount === null && !wikiCountLoading && (
+        <button onClick={onRetryWikiCount}>Retry Wiki count</button>
+      )}
       <button onClick={() => onOpen('wiki')}>Open Wiki</button>
       <button onClick={() => onOpen('contacts')}>Open Contacts</button>
       <button onClick={() => onOpen('servers')}>Open Servers</button>
@@ -186,6 +205,21 @@ function visiblePanel() {
 describe('KnowledgeWorkspace', () => {
   beforeEach(() => {
     localStorage.removeItem(KNOWLEDGE_LAST_DESTINATION_STORAGE_KEY);
+    knowledgeStatusListener = null;
+    unsubscribeKnowledgeStatus.mockClear();
+    getKnowledgeIndexStatus.mockReset().mockResolvedValue({
+      state: 'idle',
+      documentCount: 7,
+      categoryCount: 2,
+      lastIndexedAt: '2026-09-04T12:00:00.000Z',
+    });
+    globalThis.api = {
+      getKnowledgeIndexStatus,
+      onKnowledgeIndexStatusChanged: vi.fn((listener) => {
+        knowledgeStatusListener = listener;
+        return unsubscribeKnowledgeStatus;
+      }),
+    } as never;
     surfaceMocks.wikiEffectStarted.mockClear();
     surfaceMocks.wikiEffectCleanedUp.mockClear();
   });
@@ -196,17 +230,72 @@ describe('KnowledgeWorkspace', () => {
     acknowledgeKnowledgeDestinationOpen('contacts');
     acknowledgeKnowledgeDestinationOpen('servers');
     surfaceMocks.wikiShouldThrow = false;
+    globalThis.api = undefined;
     vi.restoreAllMocks();
   });
 
-  it('starts on the Knowledge home with launcher counts', () => {
+  it('loads the Wiki count on Home without mounting the heavy Wiki surface', async () => {
     renderWorkspace();
 
     expect(screen.getByTestId('knowledge-home')).toBeInTheDocument();
-    expect(screen.getByText('null wiki documents')).toBeInTheDocument();
+    expect(screen.getByText('wiki count loading')).toBeInTheDocument();
+    expect(await screen.findByText('7 wiki documents')).toBeInTheDocument();
     expect(screen.getByText('1 contacts')).toBeInTheDocument();
     expect(screen.getByText('1 servers')).toBeInTheDocument();
     expect(visiblePanel()).toHaveAttribute('data-destination', 'home');
+    expect(screen.queryByTestId('wiki-surface')).not.toBeInTheDocument();
+  });
+
+  it('offers a lightweight retry when the Wiki count read fails', async () => {
+    getKnowledgeIndexStatus
+      .mockRejectedValueOnce(new Error('index status unavailable'))
+      .mockResolvedValueOnce({
+        state: 'idle',
+        documentCount: 5,
+        categoryCount: 2,
+        lastIndexedAt: '2026-09-04T12:00:00.000Z',
+      });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry Wiki count' }));
+
+    expect(await screen.findByText('5 wiki documents')).toBeInTheDocument();
+    expect(getKnowledgeIndexStatus).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('wiki-surface')).not.toBeInTheDocument();
+  });
+
+  it('keeps the Home count current from lightweight index status events', async () => {
+    renderWorkspace();
+    await screen.findByText('7 wiki documents');
+
+    act(() => {
+      knowledgeStatusListener?.({
+        state: 'idle',
+        documentCount: 9,
+        categoryCount: 3,
+        lastIndexedAt: '2026-09-04T12:05:00.000Z',
+      });
+    });
+
+    expect(screen.getByText('9 wiki documents')).toBeInTheDocument();
+  });
+
+  it('treats resolved server errors and error events as unavailable counts', async () => {
+    const unavailable = {
+      state: 'error' as const,
+      documentCount: 0,
+      categoryCount: 0,
+      lastIndexedAt: null,
+    };
+    getKnowledgeIndexStatus.mockResolvedValueOnce(unavailable);
+    renderWorkspace();
+    expect(await screen.findByRole('button', { name: 'Retry Wiki count' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Wiki count' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Retry Wiki count' })).not.toBeInTheDocument(),
+    );
+    act(() => knowledgeStatusListener?.(unavailable));
+    expect(screen.getByRole('button', { name: 'Retry Wiki count' })).toBeVisible();
   });
 
   it('restores the last content destination on the next Knowledge mount', async () => {
@@ -418,7 +507,7 @@ describe('KnowledgeWorkspace', () => {
 
   it('shows the live Wiki count on Home after the Wiki snapshot loads', async () => {
     renderWorkspace();
-    expect(screen.getByText('null wiki documents')).toBeInTheDocument();
+    expect(await screen.findByText('7 wiki documents')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Publish Wiki count' }));

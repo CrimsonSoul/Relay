@@ -91,7 +91,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       if (success) {
         showToast(
           isWebRuntime
-            ? 'Invite downloaded — import it into your calendar'
+            ? 'relay-schedule.ics download started — open it in your calendar, review attendees, and send.'
             : 'Invite created — review and send in your calendar',
           'success',
         );

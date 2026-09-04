@@ -157,6 +157,16 @@ function uploadSession(
 }
 
 export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRouteOptions): void {
+  router.register({
+    method: 'GET',
+    path: `${RELAY_WEB_API_PREFIX}/knowledge/upload/pending`,
+    authenticated: true,
+    capability: 'knowledge.manage',
+    handler: async ({ logicalSessionId }) => {
+      const session = uploadSession(options, logicalSessionId);
+      return session ? { status: 200, body: session.pending() } : { status: 403, body: null };
+    },
+  });
   const pdfReads = new WebResourceBudget(
     MAX_CONCURRENT_PDF_READS_PER_SESSION,
     MAX_CONCURRENT_PDF_READS_GLOBAL,
@@ -279,7 +289,11 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
         return session
           ? {
               status: 200,
-              body: await session.begin(body.files, body.replacementDocumentId),
+              body: await session.begin(
+                body.files,
+                body.replacementDocumentId,
+                body.reselectUploadId,
+              ),
             }
           : { status: 403, body: { ok: false, error: 'unauthorized' } };
       } catch (error) {
@@ -384,7 +398,6 @@ export function registerKnowledgeRoutes(router: WebRouter, options: KnowledgeRou
     ['pause-batch', (session: WebKnowledgeSession, id: string) => session.pauseBatch(id)],
     ['resume-batch', (session: WebKnowledgeSession, id: string) => session.resumeBatch(id)],
     ['retry-upload', (session: WebKnowledgeSession, id: string) => session.retryUpload(id)],
-    ['reselect-source', (session: WebKnowledgeSession, id: string) => session.reselectSource(id)],
     ['cancel-upload', (session: WebKnowledgeSession, id: string) => session.cancelUpload(id)],
     ['cancel-batch', (session: WebKnowledgeSession, id: string) => session.cancelBatch(id)],
   ] as const) {

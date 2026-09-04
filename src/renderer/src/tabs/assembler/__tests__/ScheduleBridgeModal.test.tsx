@@ -166,7 +166,7 @@ describe('ScheduleBridgeModal', () => {
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Invite downloaded — import it into your calendar',
+        'relay-schedule.ics download started — open it in your calendar, review attendees, and send.',
         'success',
       ),
     );

@@ -417,12 +417,30 @@ describe('PersonnelTab — team rendering', () => {
     expect(mockAnimationParent).toHaveBeenCalledWith(list);
   });
 
-  it('renders no team cards when there are no teams', () => {
+  it('explains an empty board and disables actions that require team data', () => {
     const bs = makeReadyBoardSettings([]);
-    render(<PersonnelTab onCall={[]} contacts={defaultContacts} boardSettings={bs} />);
+    render(
+      <PersonnelTab
+        onCall={[]}
+        contacts={defaultContacts}
+        boardSettings={bs}
+        onOnCallFontScaleChange={vi.fn()}
+      />,
+    );
 
     const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
-    expect(list).toBeDefined();
+    expect(within(list).getByRole('heading', { name: 'No on-call teams' })).toBeInTheDocument();
+    expect(within(list).getByText(/Add a card to define coverage/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy All On-Call Info' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export to CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Lock Board' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add Card' })).toBeEnabled();
+
+    const fontScale = screen.getByRole('group', { name: 'On-call board font scale' });
+    expect(within(fontScale).getByRole('slider', { name: 'Board font scale' })).toBeDisabled();
+    within(fontScale)
+      .getAllByRole('button', { name: /board font size/i })
+      .forEach((button) => expect(button).toBeDisabled());
   });
 
   it('renders the week range', () => {
