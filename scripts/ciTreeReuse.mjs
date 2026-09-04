@@ -7,6 +7,7 @@ const BUILD_ARTIFACT_PREFIX = 'relay-pr-provenance';
 const COVERAGE_ARTIFACT_PREFIX = 'relay-merged-lcov';
 const BUILD_WORKFLOW_PATH = '.github/workflows/build.yml';
 const SECURITY_WORKFLOW_PATH = BUILD_WORKFLOW_PATH;
+const TITLE_WORKFLOW_PATH = '.github/workflows/pr-title.yml';
 const REQUIRED_CHECKS = [
   'Build quality gate',
   'SonarQube quality gate',
@@ -239,6 +240,13 @@ export function evaluateTreeReuse(input) {
   if (headTree.reason !== null) return blankResult(headTree.reason);
   const checks = requiredCheckEvidence(input.checkRuns, pullRequest.headSha);
   if (checks.reason !== null) return blankResult(checks.reason);
+  const titleRunId = actionRunId(
+    checks.required.get('Release-compatible pull request title')?.details_url,
+    input.repository,
+  );
+  if (!validateWorkflowRun(input, pullRequest, input.titleRun, titleRunId, TITLE_WORKFLOW_PATH)) {
+    return blankResult('title-run-mismatch');
+  }
   const buildRunId = actionRunId(
     checks.required.get('Build quality gate')?.details_url,
     input.repository,
@@ -495,6 +503,16 @@ async function resolveFromGitHub({ env, requestJson }) {
     return checks.length === 1 ? actionRunId(checks[0].details_url, common.repository) : null;
   };
   const buildRunId = checkRunId('Build quality gate');
+  const titleRunId = checkRunId('Release-compatible pull request title');
+  let titleRun = null;
+  if (Number.isSafeInteger(titleRunId) && titleRunId > 0) {
+    titleRun = requireObject(
+      await githubRequest(WORKFLOW_RUN_ROUTE, {
+        ...repositoryParameters,
+        run_id: titleRunId,
+      }),
+    );
+  }
   let buildRun = null;
   let buildArtifacts = [];
   if (Number.isSafeInteger(buildRunId) && buildRunId > 0) {
@@ -528,6 +546,7 @@ async function resolveFromGitHub({ env, requestJson }) {
     pullRequest,
     pullRequests,
     securityRun,
+    titleRun,
   });
 }
 

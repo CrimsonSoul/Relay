@@ -106,6 +106,17 @@ const validFixture = {
     repository: { full_name: repository },
     status: 'completed',
   },
+  titleRun: {
+    conclusion: 'success',
+    event: 'pull_request',
+    head_branch: headRef,
+    head_repository: { full_name: repository },
+    head_sha: headSha,
+    id: titleRunId,
+    path: '.github/workflows/pr-title.yml',
+    repository: { full_name: repository },
+    status: 'completed',
+  },
 };
 
 describe('evaluateTreeReuse', () => {
@@ -280,6 +291,15 @@ describe('evaluateTreeReuse', () => {
         ),
       }).reason,
     ).toBe('required-check-unsuccessful');
+  });
+
+  it('binds the title check to the exact successful pull request title workflow run', () => {
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        titleRun: { ...validFixture.titleRun, path: '.github/workflows/build.yml' },
+      }).reason,
+    ).toBe('title-run-mismatch');
   });
 
   it('binds the Sonar check details URL to the exact successful shared pull request run', () => {
@@ -484,6 +504,9 @@ const validFetchJson = async (rawUrl) => {
   if (url.pathname === `/repos/${repository}/actions/runs/${buildRunId}`) {
     return validFixture.buildRun;
   }
+  if (url.pathname === `/repos/${repository}/actions/runs/${titleRunId}`) {
+    return validFixture.titleRun;
+  }
   if (url.pathname === `/repos/${repository}/actions/runs/${buildRunId}/artifacts`) {
     return {
       artifacts: validFixture.buildArtifacts,
@@ -569,7 +592,7 @@ describe('runCiTreeReuse adapter', () => {
 
     expect(result).toMatchObject({ eligible: true, reason: 'eligible' });
     expect(result).not.toHaveProperty('reuse');
-    expect(requests).toHaveLength(8);
+    expect(requests).toHaveLength(9);
     expect(
       requests.some((rawUrl) => {
         const url = new URL(rawUrl);

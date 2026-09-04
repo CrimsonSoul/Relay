@@ -42,6 +42,7 @@
     "security:snyk:open-source": "snyk test --dev --severity-threshold=high",
     "security:snyk:code": "snyk code test --severity-threshold=high",
     "security:snyk:monitor": "snyk monitor --dev",
+    "security:snyk:monitor:ci": "node scripts/run-snyk-ci.mjs --monitor-only",
     "security:snyk": "npm run security:snyk:open-source && npm run security:snyk:code",
     "security:snyk:ci": "node scripts/run-snyk-ci.mjs",
     "format": "prettier --write .",

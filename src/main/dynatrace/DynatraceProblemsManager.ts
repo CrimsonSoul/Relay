@@ -437,6 +437,7 @@ export class DynatraceProblemsManager {
             result.problems,
             result.changedProblems,
             reconciliation,
+            result.workflowMetadataComplete !== false,
           )
         : applyAlertingProfileScope(result.problems, selectedProfileSet);
       const problems = scopedProblems.map((problem) => ({
@@ -479,6 +480,11 @@ export class DynatraceProblemsManager {
         reconciliationPending: false,
       });
       this.scheduledRetryAt = 0;
+      if (config.customDqlMatcher && result.workflowMetadataComplete === false) {
+        loggers.main.warn(
+          'Dynatrace workflow metadata was incomplete; canonical problem state was synchronized while stored enrichment was preserved',
+        );
+      }
       loggers.main.info('Dynatrace Problems synchronized', {
         mode: queryScope.mode,
         fetchedCount: problems.length,
@@ -528,12 +534,16 @@ export class DynatraceProblemsManager {
     matchedProblems: IncomingProblem[],
     changedProblems: IncomingProblem[] | null | undefined,
     reconciliation: boolean,
+    workflowMetadataComplete: boolean,
   ): Promise<IncomingProblem[]> {
-    if (reconciliation || !changedProblems) return matchedProblems;
+    if ((reconciliation || !changedProblems) && workflowMetadataComplete) return matchedProblems;
 
     const observedProblems = [
       ...new Map(
-        [...matchedProblems, ...changedProblems].map((problem) => [problem.problemId, problem]),
+        [...matchedProblems, ...(changedProblems ?? [])].map((problem) => [
+          problem.problemId,
+          problem,
+        ]),
       ).values(),
     ];
     const existing = await this.loadExistingProblems(pb, observedProblems, false);
@@ -545,13 +555,7 @@ export class DynatraceProblemsManager {
 
     const selected = new Map(
       matchedProblems.map((problem) => {
-        const hasWorkflowMetadata = Boolean(
-          problem.workflowTitle?.trim() ||
-          problem.workflowDescription?.trim() ||
-          problem.workflowTags?.length ||
-          problem.workflowAffectedEntityTypes?.length,
-        );
-        const workflowSource = hasWorkflowMetadata
+        const workflowSource = workflowMetadataComplete
           ? problem
           : existingByProblemId.get(problem.problemId);
         return [
@@ -566,7 +570,7 @@ export class DynatraceProblemsManager {
         ] as const;
       }),
     );
-    for (const problem of changedProblems) {
+    for (const problem of changedProblems ?? []) {
       if (!qualifiedProblemIds.has(problem.problemId)) continue;
       const workflowSource =
         selected.get(problem.problemId) ?? existingByProblemId.get(problem.problemId);

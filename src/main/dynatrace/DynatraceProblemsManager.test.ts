@@ -847,7 +847,77 @@ describe('DynatraceProblemsManager', () => {
     expect(problemCollection.create).not.toHaveBeenCalled();
   });
 
-  it('preserves stored workflow metadata when a matched problem is absent from the change page', async () => {
+  it('preserves stored workflow metadata while applying canonical updates when enrichment is incomplete', async () => {
+    const matcherConfig = {
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    };
+    const existingProblem = {
+      id: 'matched-record',
+      ...makeProblem('MATCHED', 'Original canonical title'),
+      workflowTitle: 'NOC · Original alert',
+      workflowDescription: 'NOC routing context',
+      workflowTags: ['teams:network'],
+      workflowAffectedEntityTypes: ['SERVICE'],
+    };
+    const updatedProblem = {
+      ...makeProblem('MATCHED', 'Latest canonical title'),
+      status: 'CLOSED' as const,
+      endTime: 1_750_003_600_000,
+    };
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([existingProblem]),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({
+        id: 'sync-1',
+        key: 'primary',
+        lastSuccessAt: new Date(Date.now() - 60_000).toISOString(),
+        lastReconciledAt: new Date().toISOString(),
+      }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn(),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = { load: vi.fn().mockReturnValue(matcherConfig), getPublicSettings: vi.fn() };
+    const client = {
+      fetchProblems: vi.fn().mockResolvedValue({
+        problems: [updatedProblem],
+        changedProblems: [],
+        totalCount: 1,
+        resultTruncated: false,
+        workflowMetadataComplete: false,
+      }),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await expect(manager.syncNow()).resolves.toBe(1);
+
+    expect(problemCollection.update).toHaveBeenCalledWith(
+      'matched-record',
+      {
+        ...updatedProblem,
+        workflowTitle: 'NOC · Original alert',
+        workflowDescription: 'NOC routing context',
+        workflowTags: ['teams:network'],
+        workflowAffectedEntityTypes: ['SERVICE'],
+      },
+      { requestKey: null },
+    );
+  });
+
+  it('clears stale workflow metadata only after a complete enrichment response', async () => {
     const matcherConfig = {
       ...config,
       customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
@@ -888,7 +958,8 @@ describe('DynatraceProblemsManager', () => {
         problems: [updatedProblem],
         changedProblems: [],
         totalCount: 1,
-        resultTruncated: true,
+        resultTruncated: false,
+        workflowMetadataComplete: true,
       }),
     };
     const manager = new DynatraceProblemsManager(
@@ -903,10 +974,10 @@ describe('DynatraceProblemsManager', () => {
       'matched-record',
       {
         ...updatedProblem,
-        workflowTitle: 'NOC · Original alert',
-        workflowDescription: 'NOC routing context',
-        workflowTags: ['teams:network'],
-        workflowAffectedEntityTypes: ['SERVICE'],
+        workflowTitle: '',
+        workflowDescription: '',
+        workflowTags: [],
+        workflowAffectedEntityTypes: [],
       },
       { requestKey: null },
     );

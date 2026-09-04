@@ -153,6 +153,8 @@ export type DynatraceProblemsFetchResult = {
   changedProblems: Omit<DynatraceProblemRecord, 'id' | 'created' | 'updated'>[] | null;
   totalCount: number;
   resultTruncated: boolean;
+  /** False when optional workflow presentation metadata was unavailable or incomplete. */
+  workflowMetadataComplete: boolean;
 };
 
 export type DynatraceAlertingProfileFieldHealth = {
@@ -595,22 +597,29 @@ export class DynatraceProblemsClient {
           )
         : Promise.resolve(null),
     ]);
-    const workflowMetadataQuery = customMatcherConfigured
-      ? await this.runWorkflowMetadataQuery(config, scope)
-      : null;
     const { result } = problemQuery;
     const parsed = z.array(problemSchema).safeParse(result.records);
     if (!parsed.success) {
       throw new Error('Dynatrace returned an unexpected Grail Problems response.');
     }
-    const parsedWorkflowMetadata = workflowMetadataQuery
-      ? z.array(workflowMetadataSchema).safeParse(workflowMetadataQuery.result.records)
-      : null;
-    if (parsedWorkflowMetadata && !parsedWorkflowMetadata.success) {
-      throw new Error('Dynatrace returned unexpected NOC workflow metadata.');
+
+    let workflowMetadataComplete = !customMatcherConfigured;
+    let workflowMetadata: GrailWorkflowMetadata[] = [];
+    if (customMatcherConfigured) {
+      try {
+        const query = await this.runWorkflowMetadataQuery(config, scope);
+        const parsedMetadata = z.array(workflowMetadataSchema).safeParse(query.result.records);
+        if (parsedMetadata.success && !query.resultTruncated) {
+          workflowMetadata = parsedMetadata.data;
+          workflowMetadataComplete = true;
+        }
+      } catch {
+        // Presentation metadata is best-effort. The canonical Problems query above remains
+        // authoritative for lifecycle and technical state when this projection is unavailable.
+      }
     }
     const workflowMetadataByProblemId = new Map(
-      (parsedWorkflowMetadata?.data ?? []).map((metadata) => [metadata.problemId, metadata]),
+      workflowMetadata.map((metadata) => [metadata.problemId, metadata]),
     );
 
     const problems = parsed.data.map((problem) =>
@@ -638,11 +647,11 @@ export class DynatraceProblemsClient {
       totalCount: problems.length,
       resultTruncated:
         problemQuery.resultTruncated ||
-        Boolean(workflowMetadataQuery?.resultTruncated) ||
         Boolean(
           changedProblemQuery &&
           (changedProblemQuery.resultTruncated || (changedProblems?.length ?? 0) >= MAX_PROBLEMS),
         ),
+      workflowMetadataComplete,
     };
   }
 

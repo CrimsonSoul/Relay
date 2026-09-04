@@ -336,8 +336,17 @@ describe('CI optimization contracts', () => {
     const gate = build.jobs.snyk;
 
     expect(scan.needs).toBe('provenance');
-    expect(normalizeExpression(scan.if)).toContain("needs.provenance.outputs.reuse != 'true'");
-    expect(findStep(scan, 'Run Snyk finding gate').run).toBe('npm run security:snyk:ci');
+    expect(normalizeExpression(scan.if)).toContain(
+      "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+    );
+    expect(findStep(scan, 'Run Snyk finding gate')).toMatchObject({
+      if: "needs.provenance.outputs.reuse != 'true'",
+      run: 'npm run security:snyk:ci',
+    });
+    expect(findStep(scan, 'Refresh reused main Snyk snapshot')).toMatchObject({
+      if: "needs.provenance.outputs.reuse == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'",
+      run: 'npm run security:snyk:monitor:ci',
+    });
     expect(gate.name).toBe('Snyk security gate');
     expect(gate.if).toContain('always()');
     expect(gate.needs).toEqual(['provenance', 'snyk-scan']);
@@ -350,7 +359,7 @@ describe('CI optimization contracts', () => {
     });
     expect(aggregate.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
     expect(aggregate.run).toContain('[[ "$REUSE" == "true" ]]');
-    expect(aggregate.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
+    expect(aggregate.run).toContain('[[ "$ELIGIBLE" != "true" ]]');
     expect(aggregate.run).toContain('[[ "$SNYK_SCAN_RESULT" != "success" ]]');
   });
 

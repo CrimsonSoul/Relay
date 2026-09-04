@@ -367,12 +367,11 @@ jobs:
   snyk-scan:
     name: Snyk scan
     if: >-
-      needs.provenance.outputs.reuse != 'true' && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'pull_request' &&
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (needs.provenance.outputs.reuse != 'true' &&
+       github.event_name == 'pull_request' &&
          github.event.pull_request.base.ref == 'main' &&
-         github.event.pull_request.head.repo.full_name == github.repository)
-      )
+       github.event.pull_request.head.repo.full_name == github.repository)
     needs: provenance
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -395,10 +394,18 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Run Snyk finding gate
+        if: needs.provenance.outputs.reuse != 'true'
         env:
           SNYK_ORG: ${{ vars.SNYK_ORG }}
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: npm run security:snyk:ci
+
+      - name: Refresh reused main Snyk snapshot
+        if: needs.provenance.outputs.reuse == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          SNYK_ORG: ${{ vars.SNYK_ORG }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: npm run security:snyk:monitor:ci
 
   snyk:
     name: Snyk security gate
@@ -426,11 +433,10 @@ jobs:
           fi
 
           if [[ "$REUSE" == "true" ]]; then
-            if [[ "$ELIGIBLE" == "true" ]]; then
-              exit 0
+            if [[ "$ELIGIBLE" != "true" ]]; then
+              echo "Tree reuse was enabled without validated eligibility."
+              exit 1
             fi
-            echo "Tree reuse was enabled without validated eligibility."
-            exit 1
           fi
 
           if [[ "$SNYK_SCAN_RESULT" != "success" ]]; then

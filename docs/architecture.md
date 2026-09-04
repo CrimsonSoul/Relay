@@ -34,11 +34,16 @@ Vitest output is suppressed while failure output remains visible.
 
 Content-addressed ESLint, Prettier, and Sonar caches are advisory and cannot establish correctness.
 Exact-tree reuse requires `RELAY_CI_TREE_REUSE_MODE=enabled` exactly; the production repository
-enables it. Full merged-internal-PR/base/head/parent/tree/check/shared-workflow-run/artifact
-provenance must validate, otherwise Relay falls back to full Build, Snyk, and coverage work.
-Required Build and Snyk aggregates stay fail closed. Sonar runs on the exact final `main` commit and
-performs reviewed-issue reconciliation. One-day PR attestations and merged LCOV artifacts are
-optimization evidence, not release authority.
+enables it. Full merged-internal-PR/base/head/parent/tree/check/title-workflow-run/shared-Build-run/
+artifact provenance must validate, otherwise Relay falls back to full Build, Snyk, and coverage
+work. Required Build and Snyk aggregates stay fail closed. Sonar runs on the exact final `main`
+commit and performs reviewed-issue reconciliation. One-day PR attestations and merged LCOV
+artifacts are optimization evidence, not release authority. Reused Snyk finding evidence still
+triggers a main-only monitor upload so the canonical project snapshot follows every merge.
+
+Credentialed Sonar and Snyk scans accept only same-repository pull requests. This makes repository
+write access a privileged CI scanner-secret boundary; fork pull requests are excluded and receive
+no scanner credentials.
 
 ## Runtime Model
 
@@ -388,8 +393,10 @@ for lifecycle and technical state while an `event.id in [...]` subquery evaluate
 raw `DAVIS_PROBLEM` events. Relay separately projects a bounded set of workflow-event fields keyed by
 the same problem ID: operator-facing name, description, entity tags, and affected entity types. The
 renderer prefers that workflow name and context but falls back to the canonical problem title when
-enrichment is absent. Text and list bounds are applied before persistence. Relay does not depend on
-workflow execution or email delivery. Pipelines, comments, and control characters are rejected.
+enrichment is absent. Text and list bounds are applied before persistence. A failed, malformed, or
+truncated workflow-metadata projection is treated as incomplete: canonical problem updates continue
+and stored enrichment remains unchanged until a complete projection succeeds. Relay does not depend
+on workflow execution or email delivery. Pipelines, comments, and control characters are rejected.
 Dynatrace remains the final grammar authority through a canonical count query that runs before the
 configuration is saved. A zero count is valid.
 
@@ -407,9 +414,10 @@ still fails closed without applying exclusions. Incremental custom-scope polling
 problems and a bounded unfiltered set of current problem changes. Existing eligible IDs receive the
 latest authoritative status and technical details even when an update does not independently match
 the workflow expression or an incremental metadata page omits the problem; their last matching
-workflow metadata is preserved until full reconciliation. Unrelated changed IDs are ignored. Full
-reconciliation owns enrichment replacement and exclusions. Exclusion hides the record from active
-views without deleting its notes or local disposition; normal retention owns eventual deletion.
+workflow metadata is preserved until a complete enrichment projection replaces it. Unrelated changed
+IDs are ignored. Full reconciliation owns scope exclusions and replaces enrichment only when that
+projection is complete. Exclusion hides the record from active views without deleting its notes or
+local disposition; normal retention owns eventual deletion.
 
 ### Dispatcher Radar
 

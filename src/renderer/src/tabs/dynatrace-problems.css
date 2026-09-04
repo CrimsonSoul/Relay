@@ -631,6 +631,7 @@
   font-weight: var(--weight-bold);
   letter-spacing: 0;
   line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
@@ -710,6 +711,7 @@
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .dt-problem-detail__workflow-metadata {
@@ -744,6 +746,9 @@
 }
 
 .dt-problem-detail__workflow-values > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 2px var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: 2px;

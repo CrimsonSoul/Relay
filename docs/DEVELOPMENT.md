@@ -190,6 +190,8 @@ Those coverage jobs are canonical: Sonar consumes their merged reports instead o
 same tests. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
 the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
 reconciliation; optimization never turns a post-merge branch Sonar scan into a reused PR result.
+When validated PR Snyk findings are reused, a lightweight main-only monitor still refreshes the
+canonical Snyk project snapshot before the required Snyk gate succeeds.
 
 Pull-request title validation runs in the lightweight `Pull Request Title` workflow. Title edits
 rerun only its `Release-compatible pull request title` check, not the heavy Build graph. Automatic
@@ -206,11 +208,16 @@ earlier commit because both tools validate file content before accepting cached 
 Merged internal pull requests can be evaluated for exact-tree reuse. The resolver remains in
 shadow mode unless the exact repository variable value `RELAY_CI_TREE_REUSE_MODE=enabled` permits
 reuse. The production repository enables that mode, but reuse still requires matching internal PR,
-base, head, parent, recursive tree, all required checks, the shared workflow run, and both
-attestation artifacts. Any missing, malformed, ambiguous, stale, expired, or mismatched signal
-selects the normal full Build, Snyk, and coverage work instead. The PR provenance attestation and
-merged LCOV artifact last one day and are optimization evidence only, never a release or
-branch-protection authority.
+base, head, parent, recursive tree, all required checks, the dedicated title workflow run, the
+shared Build workflow run, and both attestation artifacts. Any missing, malformed, ambiguous,
+stale, expired, or mismatched signal selects the normal full Build, Snyk, and coverage work
+instead. The PR provenance attestation and merged LCOV artifact last one day and are optimization
+evidence only, never a release or branch-protection authority.
+
+Credentialed Sonar and Snyk jobs run only for same-repository pull requests. Repository write
+access therefore crosses the CI scanner-secret trust boundary: review who receives it and treat
+their branches as privileged. Fork pull requests are excluded from those jobs and do not receive
+the scanner credentials.
 
 CodeRabbit review is manual while the public repository is ineligible for its automatic review
 tier. Request it with `@coderabbitai review`; its findings remain blocking through review state and
@@ -478,8 +485,10 @@ the workflow-facing name, description, entity tags, and affected entity types. R
 by canonical problem ID, prefers workflow naming in the Problems UI and notifications, and falls back
 to the canonical problem title when enrichment is absent. It does not wait for workflow execution or
 email delivery. Text fields and metadata lists are size-bounded before persistence. Full custom-scope
-reconciliation walks both eligible problems and metadata in stable problem-ID pages instead of
-treating Dynatrace's per-query record limit as the end of the result. Expressions may reference
+reconciliation walks eligible problems and workflow metadata in stable problem-ID pages instead of
+treating Dynatrace's per-query record limit as the end of the result. A failed, malformed, or
+truncated presentation-metadata projection does not block canonical lifecycle updates; Relay keeps
+the last complete enrichment until a complete projection can replace it. Expressions may reference
 `event.status_transition`. Do not include `fetch`, a leading `filter` pipe, other pipeline stages,
 comments, or control characters.
 
@@ -499,8 +508,8 @@ workflow-eligible matches and the authoritative records for all changed problems
 workflow-ineligible update or incomplete incremental enrichment cannot revoke an already eligible
 problem: its latest lifecycle and technical details still refresh while Relay preserves the last
 matching workflow metadata. Daily reconciliation remains authoritative for the complete rolling-year
-eligibility and enrichment set. A truncated full custom-scope result fails closed and leaves the last
-complete visible scope intact.
+eligibility set and replaces enrichment only after its metadata projection is complete. A truncated
+full custom-scope result fails closed and leaves the last complete visible scope intact.
 
 After a successful sync, Relay removes resolved problems whose Dynatrace end time is more than 365
 days old. Records excluded from scope receive the same 365-day retention window. Associated local
@@ -645,9 +654,11 @@ npm run security:snyk
 ```
 
 The CI wrappers classify runs as Clean, Finding, Unavailable, or Configuration. Finding and
-Configuration block. Unavailable is limited to documented transient scanner/network failures; it
-produces no security decision and must be retried before release. Missing credentials, invalid
-scope, authorization failures, malformed responses, and unknown failures are Configuration errors.
+Configuration block. Unavailable is limited to documented transient scanner/network failures and
+produces no security decision. Snyk therefore reports the outage and fails closed so only a clean
+finding result can support exact-tree reuse; Sonar retains its warning outcome and must be retried
+before release. Missing credentials, invalid scope, authorization failures, malformed responses,
+and unknown failures are Configuration errors.
 
 `test:coverage:sonar` generates the LCOV inputs used by Sonar without enforcing the repository's
 aggregate local thresholds. Use `npm run test:coverage` when you need the local aggregate-threshold

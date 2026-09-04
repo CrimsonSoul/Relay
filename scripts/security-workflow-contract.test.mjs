@@ -193,17 +193,25 @@ test('Snyk delegates internal main pull requests and merged pushes to its CI gat
   assert.equal(
     normalizeExpression(snyk.if),
     normalizeExpression(`
-      needs.provenance.outputs.reuse != 'true' && (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (github.event_name == 'pull_request' &&
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (needs.provenance.outputs.reuse != 'true' &&
+       github.event_name == 'pull_request' &&
          github.event.pull_request.base.ref == 'main' &&
-         github.event.pull_request.head.repo.full_name == github.repository)
-      )
+       github.event.pull_request.head.repo.full_name == github.repository)
     `),
   );
 
   const scanStep = findStep(snyk, 'Run Snyk finding gate');
+  assert.equal(scanStep.if, "needs.provenance.outputs.reuse != 'true'");
   assert.equal(scanStep.run, 'npm run security:snyk:ci');
+  const monitorStep = findStep(snyk, 'Refresh reused main Snyk snapshot');
+  assert.equal(
+    normalizeExpression(monitorStep.if),
+    normalizeExpression(
+      "needs.provenance.outputs.reuse == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'",
+    ),
+  );
+  assert.equal(monitorStep.run, 'npm run security:snyk:monitor:ci');
 
   const gate = build.jobs.snyk;
   assert.equal(gate.name, 'Snyk security gate');
@@ -217,4 +225,5 @@ test('Snyk delegates internal main pull requests and merged pushes to its CI gat
     SNYK_SCAN_RESULT: '${{ needs.snyk-scan.result }}',
   });
   assert.match(aggregate.run, /exit 1/u);
+  assert.match(aggregate.run, /\$SNYK_SCAN_RESULT.*success/u);
 });

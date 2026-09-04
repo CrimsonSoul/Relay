@@ -69,6 +69,50 @@ test('adds the monitor command only after clean scans on a main-branch push', as
   assert.deepEqual(commands[2].slice(3), commands[0].slice(3));
 });
 
+test('runs only the monitor when a reused main commit already has validated scan evidence', async () => {
+  const commands = [];
+  const result = await runSnykCi({
+    env: {
+      ...configuredEnv,
+      GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF: 'refs/heads/main',
+    },
+    monitorOnly: true,
+    runCommand: async (command) => {
+      commands.push(command.args);
+      return commandResult(0);
+    },
+  });
+
+  assert.equal(result.outcome, SCANNER_OUTCOME.CLEAN);
+  assert.deepEqual(
+    commands.map((args) => args[1]),
+    ['security:snyk:monitor'],
+  );
+  assert.deepEqual(commands[0].slice(3), [
+    '--org=crimsonsoul',
+    '--project-name=CrimsonSoul/Relay',
+    '--target-reference=main',
+    '--remote-repo-url=https://github.com/CrimsonSoul/Relay.git',
+  ]);
+});
+
+test('rejects monitor-only execution outside a main-branch push', async () => {
+  let ran = false;
+  await assert.rejects(
+    runSnykCi({
+      env: configuredEnv,
+      monitorOnly: true,
+      runCommand: async () => {
+        ran = true;
+        return commandResult(0);
+      },
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.CONFIGURATION,
+  );
+  assert.equal(ran, false);
+});
+
 test('blocks documented finding exit 1 and stops before later phases', async () => {
   const commands = [];
   await assert.rejects(
@@ -84,7 +128,7 @@ test('blocks documented finding exit 1 and stops before later phases', async () 
   assert.deepEqual(commands, ['security:snyk:open-source']);
 });
 
-test('warns for documented temporary exits, timeouts, and transient service failures', async () => {
+test('reports and fails closed for documented temporary exits, timeouts, and transient failures', async () => {
   for (const scanResult of [
     commandResult(69),
     commandResult(75),
@@ -93,12 +137,14 @@ test('warns for documented temporary exits, timeouts, and transient service fail
     commandResult(2, 'request failed with ECONNRESET'),
   ]) {
     const reports = [];
-    const result = await runSnykCi({
-      env: configuredEnv,
-      runCommand: async () => scanResult,
-      reportUnavailable: (report) => reports.push(report),
-    });
-    assert.equal(result.outcome, SCANNER_OUTCOME.UNAVAILABLE);
+    await assert.rejects(
+      runSnykCi({
+        env: configuredEnv,
+        runCommand: async () => scanResult,
+        reportUnavailable: (report) => reports.push(report),
+      }),
+      (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+    );
     assert.equal(reports.length, 1);
     assert.equal(reports[0].reason.includes(configuredEnv.SNYK_TOKEN), false);
   }
@@ -122,7 +168,7 @@ test('keeps unknown and documented configuration exits blocking', async () => {
   }
 });
 
-test('treats monitor availability as warning success but monitor exit 1 as configuration', async () => {
+test('reports monitor unavailability and keeps every monitor failure blocking', async () => {
   const pushEnv = {
     ...configuredEnv,
     GITHUB_EVENT_NAME: 'push',
@@ -130,15 +176,17 @@ test('treats monitor availability as warning success but monitor exit 1 as confi
   };
   const reports = [];
   let call = 0;
-  const unavailable = await runSnykCi({
-    env: pushEnv,
-    runCommand: async () => {
-      call += 1;
-      return call === 3 ? commandResult(75) : commandResult(0);
-    },
-    reportUnavailable: (report) => reports.push(report),
-  });
-  assert.equal(unavailable.outcome, SCANNER_OUTCOME.UNAVAILABLE);
+  await assert.rejects(
+    runSnykCi({
+      env: pushEnv,
+      runCommand: async () => {
+        call += 1;
+        return call === 3 ? commandResult(75) : commandResult(0);
+      },
+      reportUnavailable: (report) => reports.push(report),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
   assert.equal(reports.length, 1);
 
   call = 0;
@@ -158,25 +206,44 @@ test('uses one aggregate deadline across sequential Snyk phases', async () => {
   let clock = 0;
   const commands = [];
   const reports = [];
-  const result = await runSnykCi({
-    env: {
-      ...configuredEnv,
-      GITHUB_EVENT_NAME: 'push',
-      GITHUB_REF: 'refs/heads/main',
-    },
-    now: () => clock,
-    runCommand: async (command) => {
-      commands.push(command);
-      clock += commands.length === 1 ? 600_000 : 480_000;
-      return commandResult(0);
-    },
-    reportUnavailable: (report) => reports.push(report),
-  });
-
-  assert.equal(result.outcome, SCANNER_OUTCOME.UNAVAILABLE);
+  await assert.rejects(
+    runSnykCi({
+      env: {
+        ...configuredEnv,
+        GITHUB_EVENT_NAME: 'push',
+        GITHUB_REF: 'refs/heads/main',
+      },
+      now: () => clock,
+      runCommand: async (command) => {
+        commands.push(command);
+        clock += commands.length === 1 ? 600_000 : 480_000;
+        return commandResult(0);
+      },
+      reportUnavailable: (report) => reports.push(report),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
   assert.equal(commands.length, 2);
   assert.equal(commands[0].timeoutMs, 600_000);
   assert.equal(commands[1].timeoutMs, 480_000);
+  assert.equal(reports.length, 1);
+});
+
+test('reports and blocks a transient monitor-only refresh failure', async () => {
+  const reports = [];
+  await assert.rejects(
+    runSnykCi({
+      env: {
+        ...configuredEnv,
+        GITHUB_EVENT_NAME: 'push',
+        GITHUB_REF: 'refs/heads/main',
+      },
+      monitorOnly: true,
+      runCommand: async () => commandResult(75),
+      reportUnavailable: (report) => reports.push(report),
+    }),
+    (error) => error instanceof ScannerGateError && error.outcome === SCANNER_OUTCOME.UNAVAILABLE,
+  );
   assert.equal(reports.length, 1);
 });
 
