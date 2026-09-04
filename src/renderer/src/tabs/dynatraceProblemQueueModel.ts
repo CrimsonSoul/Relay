@@ -1,3 +1,4 @@
+import { getDynatraceProblemDisplayTitle } from '@shared/dynatraceProblems';
 import type {
   DynatraceProblemNoteRecord,
   DynatraceProblemRecord,
@@ -102,6 +103,10 @@ function matchesFilter(
 function searchableText(problem: DynatraceProblemRecord): string {
   return [
     problem.title,
+    getDynatraceProblemDisplayTitle(problem),
+    problem.workflowDescription ?? '',
+    ...(problem.workflowTags ?? []),
+    ...(problem.workflowAffectedEntityTypes ?? []),
     problem.displayId,
     problem.problemId,
     problem.rootCauseName,

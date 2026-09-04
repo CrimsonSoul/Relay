@@ -203,6 +203,45 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Save response' })).not.toBeInTheDocument();
   });
+  it('presents NOC workflow naming and context without replacing canonical problem facts', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [
+        {
+          ...openProblem,
+          workflowTitle: 'NOC · Payment path degraded',
+          workflowDescription: 'Escalate when checkout latency remains elevated.',
+          workflowTags: ['teams:payments', 'customer-impacting'],
+          workflowAffectedEntityTypes: ['SERVICE'],
+        },
+      ],
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'NOC · Payment path degraded' }),
+    ).toBeVisible();
+    expect(screen.getByText('Selected problem NOC · Payment path degraded')).toBeInTheDocument();
+    expect(screen.getByText('NOC workflow context')).toBeVisible();
+    expect(screen.getByText('Escalate when checkout latency remains elevated.')).toBeVisible();
+    expect(screen.getByText('teams:payments')).toBeVisible();
+    expect(screen.getByText('customer-impacting')).toBeVisible();
+    expect(screen.getByText('Canonical problem')).toBeVisible();
+    expect(screen.getByText(openProblem.title)).toBeVisible();
+  });
+
+  it('does not render an empty workflow context when its title duplicates the canonical title', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [{ ...openProblem, workflowTitle: openProblem.title }],
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+
+    expect(await screen.findByRole('heading', { name: openProblem.title })).toBeVisible();
+    expect(screen.queryByText('NOC workflow context')).not.toBeInTheDocument();
+  });
 
   it('prioritizes active sync state and exposes the exact last successful timestamp', () => {
     mocks.hookValue = {

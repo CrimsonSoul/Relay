@@ -59,6 +59,14 @@ export type DynatraceProblemRecord = {
   impactedEntities: DynatraceEntityRef[];
   managementZones: DynatraceManagementZone[];
   alertingProfiles: string[];
+  /** Operator-facing name from the latest raw DAVIS_PROBLEM event matching NOC workflow scope. */
+  workflowTitle?: string;
+  /** Bounded operator context from the matching workflow event. */
+  workflowDescription?: string;
+  /** Event tags used by the NOC workflow matcher. */
+  workflowTags?: string[];
+  /** Affected entity types observed on the matching workflow event. */
+  workflowAffectedEntityTypes?: string[];
   /** Preserved locally but hidden from the active scope after an administrative scope change. */
   scopeExcluded?: boolean;
   /** Transition time used for the one-year grace period on excluded records. */
@@ -68,6 +76,11 @@ export type DynatraceProblemRecord = {
   created?: string;
   updated?: string;
 };
+export function getDynatraceProblemDisplayTitle(
+  problem: Pick<DynatraceProblemRecord, 'title' | 'workflowTitle'>,
+): string {
+  return problem.workflowTitle?.trim() || problem.title;
+}
 
 export type DynatraceProblemStateRecord = {
   id: string;

@@ -10,11 +10,28 @@ const baseSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const headSha = 'cccccccccccccccccccccccccccccccccccccccc';
 const treeSha = 'dddddddddddddddddddddddddddddddddddddddd';
 const buildRunId = 1234;
-const securityRunId = 4321;
+const securityRunId = buildRunId;
+const titleRunId = 2468;
 const pullRequestNumber = 243;
 const headRef = 'codex/ci-pipeline-optimization';
 const buildArtifactName = `relay-pr-provenance-${pullRequestNumber}-${baseSha}-${headSha}`;
 const coverageArtifactName = `relay-merged-lcov-${pullRequestNumber}-${baseSha}-${headSha}`;
+const runArtifacts = [
+  {
+    expired: false,
+    id: 8765,
+    name: buildArtifactName,
+    size_in_bytes: 123,
+    workflow_run: { id: buildRunId },
+  },
+  {
+    expired: false,
+    id: 9876,
+    name: coverageArtifactName,
+    size_in_bytes: 321,
+    workflow_run: { id: buildRunId },
+  },
+];
 
 const requiredCheck = (name, runId) => ({
   app: { slug: 'github-actions' },
@@ -26,24 +43,8 @@ const requiredCheck = (name, runId) => ({
 });
 
 const validFixture = {
-  artifacts: [
-    {
-      expired: false,
-      id: 9876,
-      name: coverageArtifactName,
-      size_in_bytes: 321,
-      workflow_run: { id: securityRunId },
-    },
-  ],
-  buildArtifacts: [
-    {
-      expired: false,
-      id: 8765,
-      name: buildArtifactName,
-      size_in_bytes: 123,
-      workflow_run: { id: buildRunId },
-    },
-  ],
+  artifacts: runArtifacts,
+  buildArtifacts: runArtifacts,
   buildRun: {
     conclusion: 'success',
     event: 'pull_request',
@@ -57,8 +58,9 @@ const validFixture = {
   },
   checkRuns: [
     requiredCheck('Build quality gate', buildRunId),
-    requiredCheck('SonarQube quality gate', securityRunId),
-    requiredCheck('Snyk security gate', securityRunId),
+    requiredCheck('SonarQube quality gate', buildRunId),
+    requiredCheck('Snyk security gate', buildRunId),
+    requiredCheck('Release-compatible pull request title', titleRunId),
   ],
   compare: {
     ahead_by: 1,
@@ -100,7 +102,18 @@ const validFixture = {
     head_repository: { full_name: repository },
     head_sha: headSha,
     id: securityRunId,
-    path: '.github/workflows/security.yml',
+    path: '.github/workflows/build.yml',
+    repository: { full_name: repository },
+    status: 'completed',
+  },
+  titleRun: {
+    conclusion: 'success',
+    event: 'pull_request',
+    head_branch: headRef,
+    head_repository: { full_name: repository },
+    head_sha: headSha,
+    id: titleRunId,
+    path: '.github/workflows/pr-title.yml',
     repository: { full_name: repository },
     status: 'completed',
   },
@@ -118,7 +131,7 @@ describe('evaluateTreeReuse', () => {
       headTree: treeSha,
       pullRequest: 243,
       reason: 'eligible',
-      securityRunId: '4321',
+      securityRunId: '1234',
     });
   });
 
@@ -259,6 +272,14 @@ describe('evaluateTreeReuse', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
+        checkRuns: validFixture.checkRuns.filter(
+          (check) => check.name !== 'Release-compatible pull request title',
+        ),
+      }).reason,
+    ).toBe('required-check-missing');
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
         checkRuns: [...validFixture.checkRuns, requiredCheck('Build quality gate', 7654)],
       }).reason,
     ).toBe('required-check-ambiguous');
@@ -272,11 +293,35 @@ describe('evaluateTreeReuse', () => {
     ).toBe('required-check-unsuccessful');
   });
 
-  it('binds the Sonar check details URL to the exact successful security pull request run', () => {
+  it('binds the title check to the exact successful pull request title workflow run', () => {
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        titleRun: { ...validFixture.titleRun, path: '.github/workflows/build.yml' },
+      }).reason,
+    ).toBe('title-run-mismatch');
+  });
+
+  it('binds the Sonar check details URL to the exact successful shared pull request run', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
         securityRun: { ...validFixture.securityRun, id: 98765 },
+      }).reason,
+    ).toBe('security-run-mismatch');
+    expect(
+      evaluateTreeReuse({
+        ...validFixture,
+        artifacts: validFixture.artifacts.map((artifact) => ({
+          ...artifact,
+          workflow_run: { id: 9999 },
+        })),
+        checkRuns: validFixture.checkRuns.map((check) =>
+          ['SonarQube quality gate', 'Snyk security gate'].includes(check.name)
+            ? requiredCheck(check.name, 9999)
+            : check,
+        ),
+        securityRun: { ...validFixture.securityRun, id: 9999 },
       }).reason,
     ).toBe('security-run-mismatch');
     expect(
@@ -287,7 +332,7 @@ describe('evaluateTreeReuse', () => {
     ).toBe('security-run-mismatch');
   });
 
-  it('binds all required checks to the exact Build and shared Security workflow runs', () => {
+  it('binds all heavy required checks to the exact shared Build workflow run', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
@@ -297,7 +342,7 @@ describe('evaluateTreeReuse', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
-        securityRun: { ...validFixture.securityRun, path: '.github/workflows/build.yml' },
+        securityRun: { ...validFixture.securityRun, path: '.github/workflows/security.yml' },
       }).reason,
     ).toBe('security-run-mismatch');
     expect(
@@ -380,19 +425,19 @@ describe('evaluateTreeReuse', () => {
     expect(
       evaluateTreeReuse({
         ...validFixture,
-        artifacts: [{ ...validFixture.artifacts[0], expired: true }],
+        artifacts: [validFixture.artifacts[0], { ...validFixture.artifacts[1], expired: true }],
       }).reason,
     ).toBe('coverage-artifact-unavailable');
     expect(
       evaluateTreeReuse({
         ...validFixture,
-        artifacts: [{ ...validFixture.artifacts[0], size_in_bytes: 0 }],
+        artifacts: [validFixture.artifacts[0], { ...validFixture.artifacts[1], size_in_bytes: 0 }],
       }).reason,
     ).toBe('coverage-artifact-unavailable');
     expect(
       evaluateTreeReuse({
         ...validFixture,
-        artifacts: [...validFixture.artifacts, { ...validFixture.artifacts[0], id: 9877 }],
+        artifacts: [...validFixture.artifacts, { ...validFixture.artifacts[1], id: 9877 }],
       }).reason,
     ).toBe('coverage-artifact-unavailable');
   });
@@ -458,6 +503,9 @@ const validFetchJson = async (rawUrl) => {
   }
   if (url.pathname === `/repos/${repository}/actions/runs/${buildRunId}`) {
     return validFixture.buildRun;
+  }
+  if (url.pathname === `/repos/${repository}/actions/runs/${titleRunId}`) {
+    return validFixture.titleRun;
   }
   if (url.pathname === `/repos/${repository}/actions/runs/${buildRunId}/artifacts`) {
     return {
@@ -544,7 +592,7 @@ describe('runCiTreeReuse adapter', () => {
 
     expect(result).toMatchObject({ eligible: true, reason: 'eligible' });
     expect(result).not.toHaveProperty('reuse');
-    expect(requests).toHaveLength(10);
+    expect(requests).toHaveLength(9);
     expect(
       requests.some((rawUrl) => {
         const url = new URL(rawUrl);
@@ -675,8 +723,11 @@ describe('runCiTreeReuse adapter', () => {
         const url = new URL(rawUrl);
         if (url.pathname === `/repos/${repository}/actions/runs/${securityRunId}/artifacts`) {
           return {
-            artifacts: [{ ...validFixture.artifacts[0], name: 'unsafe value\nattack=true' }],
-            total_count: 1,
+            artifacts: [
+              validFixture.buildArtifacts[0],
+              { ...validFixture.artifacts[1], name: 'unsafe value\nattack=true' },
+            ],
+            total_count: 2,
           };
         }
         return validFetchJson(rawUrl);

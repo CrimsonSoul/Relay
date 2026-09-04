@@ -13,12 +13,12 @@ const expression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 
 describe('CI workflow contracts', () => {
-  it('validates the pull request squash title before exact-tree reuse can pass', async () => {
-    const workflow = await readWorkflow('build.yml');
-    const step = findStep(
-      workflow.jobs.provenance,
-      'Require release-compatible pull request title',
-    );
+  it('validates pull request titles in a lightweight workflow without restarting heavy CI', async () => {
+    const [build, title] = await Promise.all([
+      readWorkflow('build.yml'),
+      readWorkflow('pr-title.yml'),
+    ]);
+    const step = findStep(title.jobs.title, 'Require release-compatible pull request title');
 
     expect(step).toMatchObject({
       env: {
@@ -27,10 +27,20 @@ describe('CI workflow contracts', () => {
       if: "github.event_name == 'pull_request'",
       run: 'node scripts/validate-release-title.mjs',
     });
-    expect(workflow.on.pull_request).toEqual({
+    expect(title.jobs.title.name).toBe('Release-compatible pull request title');
+    expect(title.on.pull_request).toEqual({
       branches: ['main'],
       types: ['opened', 'reopened', 'synchronize', 'edited'],
     });
+    expect(build.on.pull_request).toEqual({
+      branches: ['main'],
+      types: ['opened', 'reopened', 'synchronize'],
+    });
+    expect(
+      build.jobs.provenance.steps.some(
+        (candidate) => candidate.name === 'Require release-compatible pull request title',
+      ),
+    ).toBe(false);
   });
 
   it('normalizes workflow enumeration before order-sensitive collection', async () => {
@@ -46,6 +56,7 @@ describe('CI workflow contracts', () => {
 
   it('parses every workflow and takes every setup-node version from .node-version', async () => {
     const names = await readWorkflowNames();
+    expect(names).not.toContain('security.yml');
 
     for (const name of names) {
       const workflow = await readWorkflow(name);
@@ -58,6 +69,12 @@ describe('CI workflow contracts', () => {
         }
       }
     }
+  });
+
+  it('builds production bundles in the required Build quality path', async () => {
+    const workflow = await readWorkflow('build.yml');
+
+    expect(findStep(workflow.jobs.static, 'Build production bundles').run).toBe('npm run build');
   });
 
   it('defines an explicit reusable Windows packaging interface and restricted authority', async () => {
@@ -179,19 +196,11 @@ describe('CI workflow contracts', () => {
       {
         continueOnError: true,
         job: 'static',
-        key: 'electron-linux-x64-${{ steps.electron-version.outputs.version }}',
-        name: 'build.yml',
-        path: '~/.cache/electron',
-        restoreKeys: undefined,
-        step: 'Cache Electron binary',
-      },
-      {
-        continueOnError: true,
-        job: 'static',
         key: "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-${{ github.sha }}",
         name: 'build.yml',
         path: '.cache/eslint',
-        restoreKeys: undefined,
+        restoreKeys:
+          "eslint-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.renderer.json') }}-",
         step: 'Cache ESLint results',
       },
       {
@@ -203,6 +212,15 @@ describe('CI workflow contracts', () => {
         restoreKeys:
           "prettier-${{ runner.os }}-node-${{ hashFiles('.node-version') }}-${{ hashFiles('package-lock.json', '.prettierrc', '.prettierignore') }}-",
         step: 'Cache Prettier results',
+      },
+      {
+        continueOnError: true,
+        job: 'sonarqube',
+        key: "sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}",
+        name: 'build.yml',
+        path: '~/.sonar/cache',
+        restoreKeys: 'sonar-${{ runner.os }}-',
+        step: 'Cache Sonar packages',
       },
       {
         continueOnError: true,
@@ -251,15 +269,6 @@ describe('CI workflow contracts', () => {
       },
       {
         continueOnError: true,
-        job: 'sonarqube',
-        key: "sonar-${{ runner.os }}-${{ hashFiles('package-lock.json') }}",
-        name: 'security.yml',
-        path: '~/.sonar/cache',
-        restoreKeys: undefined,
-        step: 'Cache Sonar packages',
-      },
-      {
-        continueOnError: true,
         job: 'compare',
         key: "startup-comparison-win-${{ steps.electron-version.outputs.version }}-${{ hashFiles('package-lock.json') }}",
         name: 'windows-startup-comparison.yml',
@@ -300,15 +309,12 @@ describe('CI workflow contracts', () => {
 
     expect(build.jobs.quality.name).toBe('Build quality gate');
     expect(buildPackage.uses).toBe('./.github/workflows/reusable-windows-package.yml');
-    expect(expression(buildPackage.if)).toContain("github.event_name == 'workflow_dispatch'");
-    expect(expression(buildPackage.if)).toBe(
-      "github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')",
-    );
+    expect(expression(buildPackage.if)).toBe("github.event_name == 'workflow_dispatch'");
     expect(buildPackage).not.toHaveProperty('needs');
     expect(buildPackage.with).toEqual({
       'artifact-name': 'relay-windows',
-      'baseline-branch': '${{ github.ref_name }}',
-      'baseline-workflow': 'build.yml',
+      'baseline-branch': 'main',
+      'baseline-workflow': 'release.yml',
       compression: 'store',
       publish: 'never',
       'source-sha': '${{ github.sha }}',

@@ -128,6 +128,7 @@ function unavailableReason(error, env) {
 
 export async function runSnykCi({
   env = process.env,
+  monitorOnly = false,
   runCommand = runBoundedCommand,
   reportUnavailable = writeUnavailableReport,
   now = monotonicNow,
@@ -137,6 +138,21 @@ export async function runSnykCi({
     const { mainPush, serverUrl } = validateConfiguration(env);
     const deadline = now() + AGGREGATE_TIMEOUT_MS;
     const projectArgs = repositoryArguments(env, serverUrl);
+    if (monitorOnly) {
+      if (!mainPush) {
+        throw configurationError('Snyk monitor-only CI requires a push to main.');
+      }
+      await runPhase({
+        env,
+        runCommand,
+        script: 'security:snyk:monitor',
+        args: projectArgs,
+        policy: MONITOR_POLICY,
+        label: 'main-branch monitor',
+        timeoutMs: phaseTimeout(deadline, now, 'main-branch monitor'),
+      });
+      return { outcome: SCANNER_OUTCOME.CLEAN };
+    }
     await runPhase({
       env,
       runCommand,
@@ -177,7 +193,7 @@ export async function runSnykCi({
         revision: env?.GITHUB_SHA,
         env,
       });
-      return { outcome: SCANNER_OUTCOME.UNAVAILABLE, reason };
+      throw error;
     }
     throw configurationError(
       sanitizeScannerText(
@@ -191,7 +207,11 @@ export async function runSnykCi({
 
 async function main() {
   try {
-    await runSnykCi();
+    const args = process.argv.slice(2);
+    if (args.length > 1 || (args.length === 1 && args[0] !== '--monitor-only')) {
+      throw configurationError('Snyk CI accepts only the optional --monitor-only flag.');
+    }
+    await runSnykCi({ monitorOnly: args[0] === '--monitor-only' });
   } catch (error) {
     const safe = sanitizeScannerText(
       error instanceof Error ? error.message : 'Unknown Snyk CI gate failure.',

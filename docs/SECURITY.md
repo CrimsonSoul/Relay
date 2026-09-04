@@ -356,24 +356,27 @@ Currently enforced limits include:
 
 Relay's pull-request and `main`-branch controls are defined by the checked-in workflows. The required jobs are:
 
+- **Release-compatible pull request title**: validates the squash-merge title in a lightweight pull-request-only workflow, including after title edits.
 - **Build quality gate**: formatting, linting, type checking, tests, and the production build.
 - **SonarQube quality gate**: first-party quality and security analysis, imported unit and renderer coverage, unresolved-issue enforcement, and validation of the exact uploaded analysis.
 - **Snyk security gate**: high- and critical-severity Open Source and Snyk Code findings, including development dependencies. Only a merged `main` push publishes the canonical monitored snapshot for `main`.
 
 The Sonar and Snyk CI wrappers classify every run as one of four outcomes:
 
-| Outcome       | Meaning                                                                  | Merge effect                     |
-| ------------- | ------------------------------------------------------------------------ | -------------------------------- |
-| Clean         | The scanner completed and produced no blocking finding.                  | Required job succeeds.           |
-| Finding       | A completed scan or quality gate produced a blocking finding.            | Required job fails.              |
-| Unavailable   | The scanner produced no decision because a documented outage occurred.   | Required job warns and succeeds. |
-| Configuration | Credentials, scope, identity, response, or an unknown failure is unsafe. | Required job fails closed.       |
+| Outcome       | Meaning                                                                  | Merge effect               |
+| ------------- | ------------------------------------------------------------------------ | -------------------------- |
+| Clean         | The scanner completed and produced no blocking finding.                  | Required job succeeds.     |
+| Finding       | A completed scan or quality gate produced a blocking finding.            | Required job fails.        |
+| Unavailable   | The scanner produced no decision because a documented outage occurred.   | Snyk fails; Sonar warns.   |
+| Configuration | Credentials, scope, identity, response, or an unknown failure is unsafe. | Required job fails closed. |
 
-A completed finding is a release blocker. A documented scanner outage may be classified as **Unavailable** so CI can distinguish missing evidence from a negative decision, but an Unavailable result is not a clean scan. Retry it and require a real scanner decision before release. Missing credentials, authorization failures, malformed responses, identity drift, and unknown errors fail closed as Configuration failures.
+A completed finding is a release blocker. A documented scanner outage may be classified as **Unavailable** so CI can distinguish missing evidence from a negative decision, but an Unavailable result is not a clean scan. Snyk reports the outage and fails closed because only clean evidence may be reused; Sonar retains a warning outcome and must be retried before release. Missing credentials, authorization failures, malformed responses, identity drift, and unknown errors fail closed as Configuration failures.
 
-Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `main` push may apply the pinned Sonar review manifest and update the `main` Snyk snapshot. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
+Pull-request scans do not change Sonar issue state or the Snyk monitored snapshot. A merged `main` push may apply the pinned Sonar review manifest. It also refreshes the `main` Snyk snapshot; when exact-tree reuse supplies validated finding evidence, a separate monitor-only phase performs that snapshot refresh. The Sonar reconciler validates issue identity and metadata before writing, refuses unknown open findings, is idempotent, and fails closed on drift. Scanner output is bounded and redacted; scanner tokens belong only in GitHub Actions secrets.
 
-CodeRabbit findings remain blocking through its review state and unresolved review conversations even though CodeRabbit availability is not a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
+Credentialed Sonar and Snyk scans run only for same-repository pull requests. Repository write access therefore crosses the CI scanner-secret trust boundary and must be limited to trusted maintainers whose branches may execute with those credentials. Fork pull requests are excluded from credentialed scanner jobs and do not receive the scanner secrets.
+
+CodeRabbit review is requested manually with `@coderabbitai review` while the public repository is ineligible for automatic review. Its findings remain blocking through review state and unresolved review conversations even though CodeRabbit availability is not a required check. GitHub dependency alerts, automated dependency security fixes, secret scanning, and push protection should remain enabled.
 
 Treat any failing gate as a release blocker until the finding is validated and fixed or a narrowly documented exception is approved. Run a Codex Security standard scan before releases and after changes to authentication, IPC, Relay Web, updates, file handling, or privileged commands. Use a deep scan for major trust-boundary redesigns or when a standard scan identifies a plausible multi-stage attack path.
 

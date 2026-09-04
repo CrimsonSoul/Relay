@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
+import { parse } from 'yaml';
 import {
   REVIEWED_ISSUES,
   fetchCurrentSonarIssues,
@@ -741,7 +742,7 @@ test('requires environment authentication and never emits the token sentinel', a
 
 test('the Sonar CI runner reconciles reviewed issues only on main-branch pushes', async () => {
   const [workflow, packageText, runner] = await Promise.all([
-    readFile(new URL('../.github/workflows/security.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../.github/workflows/build.yml', import.meta.url), 'utf8'),
     readFile(new URL('../package.json', import.meta.url), 'utf8'),
     readFile(new URL('./run-sonar-ci.mjs', import.meta.url), 'utf8'),
   ]);
@@ -751,7 +752,7 @@ test('the Sonar CI runner reconciles reviewed issues only on main-branch pushes'
     'node scripts/sonar-reviewed-issues.mjs',
   );
 
-  assert.doesNotMatch(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(String(parse(workflow).jobs.sonarqube.if), /workflow_dispatch/u);
   assert.match(workflow, /npm run security:sonar:ci --/u);
   const branchGuard = runner.indexOf("if ('branch' in scope)");
   const reconcileStep = runner.indexOf('await reconcile({');

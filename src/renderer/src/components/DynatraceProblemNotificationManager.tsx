@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
   DYNATRACE_PROBLEMS_COLLECTION,
+  getDynatraceProblemDisplayTitle,
   type DynatraceProblemRecord,
   type DynatraceProblemSeverity,
 } from '@shared/dynatraceProblems';
@@ -34,7 +35,7 @@ function notificationMessage(problems: DynatraceProblemRecord[]): string {
   if (!primary) return '';
   const identifier = primary.displayId || primary.problemId;
   const suffix = problems.length > 1 ? ` (+${problems.length - 1} more)` : '';
-  return `${identifier} · ${primary.title}${suffix}`;
+  return identifier + ' · ' + getDynatraceProblemDisplayTitle(primary) + suffix;
 }
 
 export function DynatraceProblemNotificationManager({

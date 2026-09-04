@@ -249,7 +249,9 @@ describe('DynatraceProblemsClient', () => {
   });
 
   it('uses the complete custom matcher instead of combining it with alerting profiles', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([problem()]));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => queryResponse([problem()]));
     const client = new DynatraceProblemsClient(fetchMock);
     const workflowMatcher = `(
   matchesValue(entity_tags, "teams:network")
@@ -282,7 +284,9 @@ and dt.davis.mute.status == "NOT_MUTED"`;
   });
 
   it('keeps latest problems as the display source but evaluates custom scope on workflow events', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(queryResponse([problem()]));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => queryResponse([problem()]));
     const client = new DynatraceProblemsClient(fetchMock);
     const matcher = `matchesValue(entity_tags, "teams:network")
 and not matchesValue(event.status_transition, "UPDATED")`;
@@ -304,6 +308,181 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     expect(workflowEventsAt).toBeGreaterThan(latestProblemsAt);
     expect(matcherAt).toBeGreaterThan(workflowEventsAt);
     expect(projectionAt).toBeGreaterThan(matcherAt);
+  });
+  it('enriches authoritative problem state with bounded metadata from matching workflow events', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        queryResponse([
+          problem({
+            title: 'Canonical Dynatrace problem title',
+            status: 'ACTIVE',
+            severity: 'AVAILABILITY',
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(
+        queryResponse([
+          {
+            problemId: 'problem-1',
+            workflowTitle: 'NOC · Checkout unavailable',
+            workflowDescription: 'Customer checkout is failing in production.',
+            workflowTags: ['teams:network', 'critical_intf', 'teams:network'],
+            workflowAffectedEntityTypes: ['SERVICE', 'HOST'],
+          },
+        ]),
+      );
+    const client = new DynatraceProblemsClient(fetchMock);
+    const matcher = 'matchesValue(entity_tags, "teams:network")';
+
+    const result = await client.fetchProblems({ ...config, customDqlMatcher: matcher });
+
+    expect(result.problems[0]).toMatchObject({
+      title: 'Canonical Dynatrace problem title',
+      status: 'OPEN',
+      severity: 'AVAILABILITY',
+      workflowTitle: 'NOC · Checkout unavailable',
+      workflowDescription: 'Customer checkout is failing in production.',
+      workflowTags: ['teams:network', 'critical_intf'],
+      workflowAffectedEntityTypes: ['SERVICE', 'HOST'],
+    });
+    expect(result.workflowMetadataComplete).toBe(true);
+    const metadataQuery = requestQuery(fetchMock, 1);
+    expect(metadataQuery).toContain('fetch events, from:-365d');
+    expect(metadataQuery).toContain('| filter event.kind == "DAVIS_PROBLEM"');
+    expect(metadataQuery).toContain(
+      '| fields problemId=event.id, workflowTitle=event.name, workflowDescription=event.description',
+    );
+    expect(metadataQuery).toContain('workflowTags=entity_tags');
+    expect(metadataQuery).toContain('workflowAffectedEntityTypes=affected_entity_types');
+  });
+
+  it('keeps authoritative problem updates when the optional workflow metadata request fails', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        queryResponse([problem({ status: 'CLOSED', endTime: '2026-07-09T21:00:00.000Z' })]),
+      )
+      .mockRejectedValueOnce(new Error('Workflow projection unavailable'));
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems({
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+
+    expect(result).toMatchObject({
+      resultTruncated: false,
+      workflowMetadataComplete: false,
+      problems: [
+        expect.objectContaining({
+          problemId: 'problem-1',
+          status: 'CLOSED',
+          workflowTitle: '',
+        }),
+      ],
+    });
+  });
+
+  it('keeps authoritative problem updates when a workflow metadata row is malformed', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse([problem({ severity: 'AVAILABILITY' })]))
+      .mockResolvedValueOnce(
+        queryResponse([{ problemId: 'problem-1', workflowTags: ['valid', 42] }]),
+      );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems({
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+
+    expect(result).toMatchObject({
+      resultTruncated: false,
+      workflowMetadataComplete: false,
+      problems: [
+        expect.objectContaining({
+          problemId: 'problem-1',
+          severity: 'AVAILABILITY',
+          workflowTags: [],
+        }),
+      ],
+    });
+  });
+
+  it('does not treat a truncated workflow metadata projection as complete canonical scope', async () => {
+    const metadata = { problemId: 'problem-1', workflowTitle: 'Partial NOC title' };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse([problem()]))
+      .mockResolvedValueOnce(
+        queryResponse([metadata], {
+          result: {
+            records: [metadata],
+            metadata: {
+              grail: {
+                notifications: [
+                  {
+                    notificationType: 'RESULT_RECORD_LIMIT_REACHED',
+                    severity: 'WARN',
+                    message: 'Result limit reached',
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems({
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+
+    expect(result).toMatchObject({
+      resultTruncated: false,
+      workflowMetadataComplete: false,
+      problems: [expect.objectContaining({ workflowTitle: '' })],
+    });
+  });
+
+  it('bounds workflow metadata list values and aggregate size before persistence', async () => {
+    const oversizedValue = 'x'.repeat(600);
+    const oversizedList = Array.from(
+      { length: 40 },
+      (_, index) => `${index.toString().padStart(2, '0')}-${oversizedValue}`,
+    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(queryResponse([problem()]))
+      .mockResolvedValueOnce(
+        queryResponse([
+          {
+            problemId: 'problem-1',
+            workflowTitle: 'NOC alert',
+            workflowTags: oversizedList,
+            workflowAffectedEntityTypes: oversizedList,
+          },
+        ]),
+      );
+    const client = new DynatraceProblemsClient(fetchMock);
+
+    const result = await client.fetchProblems({
+      ...config,
+      customDqlMatcher: 'matchesValue(entity_tags, "teams:network")',
+    });
+
+    const enriched = result.problems[0];
+    expect(enriched?.workflowTags?.every((value) => value.length <= 512)).toBe(true);
+    expect(enriched?.workflowAffectedEntityTypes?.every((value) => value.length <= 512)).toBe(true);
+    expect(
+      enriched?.workflowTags?.reduce((total, value) => total + value.length, 0),
+    ).toBeLessThanOrEqual(8_000);
+    expect(
+      enriched?.workflowAffectedEntityTypes?.reduce((total, value) => total + value.length, 0),
+    ).toBeLessThanOrEqual(8_000);
   });
 
   it('counts only currently active problems with the same canonical custom scope', async () => {
@@ -338,7 +517,8 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(queryResponse(firstPage))
-      .mockResolvedValueOnce(queryResponse([finalProblem]));
+      .mockResolvedValueOnce(queryResponse([finalProblem]))
+      .mockResolvedValueOnce(queryResponse([]));
     const client = new DynatraceProblemsClient(fetchMock);
 
     const result = await client.fetchProblems({
@@ -349,9 +529,10 @@ and not matchesValue(event.status_transition, "UPDATED")`;
     expect(result.totalCount).toBe(10_001);
     expect(result.problems.at(-1)?.problemId).toBe('problem-10000');
     expect(result.resultTruncated).toBe(false);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(requestQuery(fetchMock, 0)).toContain('| sort problemId asc');
     expect(requestQuery(fetchMock, 1)).toContain('| filter event.id > "problem-09999"');
+    expect(requestQuery(fetchMock, 2)).toContain('fetch events, from:-365d');
   });
 
   it('observes unscoped changed problems during incremental custom-filter polling', async () => {
@@ -363,7 +544,8 @@ and not matchesValue(event.status_transition, "UPDATED")`;
           problem({ problemId: 'problem-1' }),
           problem({ problemId: 'problem-no-longer-matches' }),
         ]),
-      );
+      )
+      .mockResolvedValueOnce(queryResponse([]));
     const client = new DynatraceProblemsClient(fetchMock);
 
     const result = await client.fetchProblems(
@@ -395,7 +577,8 @@ and not matchesValue(event.status_transition, "UPDATED")`;
             title: 'Latest title after an excluded update',
           }),
         ]),
-      );
+      )
+      .mockResolvedValueOnce(queryResponse([]));
     const client = new DynatraceProblemsClient(fetchMock);
 
     const result = await client.fetchProblems(

@@ -42,6 +42,7 @@
     "security:snyk:open-source": "snyk test --dev --severity-threshold=high",
     "security:snyk:code": "snyk code test --severity-threshold=high",
     "security:snyk:monitor": "snyk monitor --dev",
+    "security:snyk:monitor:ci": "node scripts/run-snyk-ci.mjs --monitor-only",
     "security:snyk": "npm run security:snyk:open-source && npm run security:snyk:code",
     "security:snyk:ci": "node scripts/run-snyk-ci.mjs",
     "format": "prettier --write .",
@@ -90,7 +91,7 @@
   "overrides": {
     "@electron/asar": "^4.2.0",
     "brace-expansion": "$brace-expansion",
-    "fast-uri": "3.1.6",
+    "fast-uri": "3.1.7",
     "form-data": "4.0.6",
     "nanoid": "5.1.16",
     "postcss": "8.5.23",

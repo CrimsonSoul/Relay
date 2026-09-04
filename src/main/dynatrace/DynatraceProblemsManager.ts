@@ -109,6 +109,10 @@ const PROBLEM_COMPARISON_FIELDS = [
   'impactedEntities',
   'managementZones',
   'alertingProfiles',
+  'workflowTitle',
+  'workflowDescription',
+  'workflowTags',
+  'workflowAffectedEntityTypes',
   'scopeExcluded',
   'scopeExcludedAt',
   'environmentUrl',
@@ -221,6 +225,12 @@ function problemFingerprint(problem: IncomingProblem | ExistingProblem): string 
     impactedEntities: entities(problem.impactedEntities),
     managementZones: zones,
     alertingProfiles: [...(problem.alertingProfiles ?? [])].sort((a, b) => a.localeCompare(b)),
+    workflowTitle: problem.workflowTitle ?? '',
+    workflowDescription: problem.workflowDescription ?? '',
+    workflowTags: [...(problem.workflowTags ?? [])].sort((a, b) => a.localeCompare(b)),
+    workflowAffectedEntityTypes: [...(problem.workflowAffectedEntityTypes ?? [])].sort((a, b) =>
+      a.localeCompare(b),
+    ),
     scopeExcluded: problem.scopeExcluded === true,
     scopeExcludedAt: problem.scopeExcludedAt ?? '',
     environmentUrl: problem.environmentUrl,
@@ -427,6 +437,7 @@ export class DynatraceProblemsManager {
             result.problems,
             result.changedProblems,
             reconciliation,
+            result.workflowMetadataComplete !== false,
           )
         : applyAlertingProfileScope(result.problems, selectedProfileSet);
       const problems = scopedProblems.map((problem) => ({
@@ -469,6 +480,11 @@ export class DynatraceProblemsManager {
         reconciliationPending: false,
       });
       this.scheduledRetryAt = 0;
+      if (config.customDqlMatcher && result.workflowMetadataComplete === false) {
+        loggers.main.warn(
+          'Dynatrace workflow metadata was incomplete; canonical problem state was synchronized while stored enrichment was preserved',
+        );
+      }
       loggers.main.info('Dynatrace Problems synchronized', {
         mode: queryScope.mode,
         fetchedCount: problems.length,
@@ -518,18 +534,53 @@ export class DynatraceProblemsManager {
     matchedProblems: IncomingProblem[],
     changedProblems: IncomingProblem[] | null | undefined,
     reconciliation: boolean,
+    workflowMetadataComplete: boolean,
   ): Promise<IncomingProblem[]> {
-    if (reconciliation || !changedProblems) return matchedProblems;
+    if ((reconciliation || !changedProblems) && workflowMetadataComplete) return matchedProblems;
 
-    const existing = await this.loadExistingProblems(pb, changedProblems, false);
+    const observedProblems = [
+      ...new Map(
+        [...matchedProblems, ...(changedProblems ?? [])].map((problem) => [
+          problem.problemId,
+          problem,
+        ]),
+      ).values(),
+    ];
+    const existing = await this.loadExistingProblems(pb, observedProblems, false);
+    const existingByProblemId = new Map(existing.map((problem) => [problem.problemId, problem]));
     const qualifiedProblemIds = new Set(matchedProblems.map((problem) => problem.problemId));
     for (const problem of existing) {
       if (problem.scopeExcluded !== true) qualifiedProblemIds.add(problem.problemId);
     }
 
-    const selected = new Map(matchedProblems.map((problem) => [problem.problemId, problem]));
-    for (const problem of changedProblems) {
-      if (qualifiedProblemIds.has(problem.problemId)) selected.set(problem.problemId, problem);
+    const selected = new Map(
+      matchedProblems.map((problem) => {
+        const workflowSource = workflowMetadataComplete
+          ? problem
+          : existingByProblemId.get(problem.problemId);
+        return [
+          problem.problemId,
+          {
+            ...problem,
+            workflowTitle: workflowSource?.workflowTitle ?? '',
+            workflowDescription: workflowSource?.workflowDescription ?? '',
+            workflowTags: workflowSource?.workflowTags ?? [],
+            workflowAffectedEntityTypes: workflowSource?.workflowAffectedEntityTypes ?? [],
+          },
+        ] as const;
+      }),
+    );
+    for (const problem of changedProblems ?? []) {
+      if (!qualifiedProblemIds.has(problem.problemId)) continue;
+      const workflowSource =
+        selected.get(problem.problemId) ?? existingByProblemId.get(problem.problemId);
+      selected.set(problem.problemId, {
+        ...problem,
+        workflowTitle: workflowSource?.workflowTitle ?? '',
+        workflowDescription: workflowSource?.workflowDescription ?? '',
+        workflowTags: workflowSource?.workflowTags ?? [],
+        workflowAffectedEntityTypes: workflowSource?.workflowAffectedEntityTypes ?? [],
+      });
     }
     return [...selected.values()];
   }

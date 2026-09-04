@@ -1,0 +1,37 @@
+name: Pull Request Title
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    name: Release-compatible pull request title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
+      - name: Require release-compatible pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          RELAY_PULL_REQUEST_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/validate-release-title.mjs

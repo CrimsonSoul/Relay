@@ -66,6 +66,10 @@ const modalsCss = readFileSync(
   'utf8',
 );
 const radarCss = readFileSync(join(testDirectory, '../../src/renderer/src/tabs/radar.css'), 'utf8');
+const dynatraceProblemsCss = readFileSync(
+  join(testDirectory, '../../src/renderer/src/tabs/dynatrace-problems.css'),
+  'utf8',
+);
 const scrollCss = [
   'components/directory/directory.css',
   'components/oncall/oncall.css',
@@ -1361,6 +1365,71 @@ test('Radar keeps the health rail left when wide and stacks without overflow whe
     await expect
       .poll(async () => tab.evaluate((element) => element.scrollWidth - element.clientWidth))
       .toBeLessThanOrEqual(1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Dynatrace workflow text keeps long unbroken values inside the narrow detail pane', async () => {
+  const app = await electron.launch({ args: [mainEntry] });
+  const window = await app.firstWindow();
+
+  try {
+    await window.setViewportSize({ width: 360, height: 700 });
+    await window.setContent(`
+      <style>
+        ${themeCss}
+        ${dynatraceProblemsCss}
+        html, body { margin: 0; width: 100%; height: 100%; }
+        .dt-problems__detail { box-sizing: border-box; width: 100%; height: 100%; }
+      </style>
+      <section class="dt-problems__detail">
+        <div class="dt-problem-detail">
+          <header class="dt-problem-detail__header">
+            <h3 data-testid="long-workflow-title">${'t'.repeat(1000)}</h3>
+          </header>
+          <div class="dt-problem-detail__section dt-problem-detail__workflow-context">
+            <p class="dt-problem-detail__workflow-description" data-testid="long-workflow-description">
+              ${'d'.repeat(8000)}
+            </p>
+            <dl class="dt-problem-detail__workflow-metadata">
+              <div>
+                <dt>Workflow tags</dt>
+                <dd class="dt-problem-detail__workflow-values">
+                  <span data-testid="long-workflow-value">${'x'.repeat(512)}</span>
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+    `);
+
+    const detail = window.locator('.dt-problems__detail');
+    const workflowValues = [
+      window.getByTestId('long-workflow-title'),
+      window.getByTestId('long-workflow-description'),
+      window.getByTestId('long-workflow-value'),
+    ];
+    await Promise.all(workflowValues.map((value) => expect(value).toBeVisible()));
+    await expect
+      .poll(async () => {
+        const detailBox = await detail.boundingBox();
+        const valueBoxes = await Promise.all(workflowValues.map((value) => value.boundingBox()));
+        const widths = await detail.evaluate((element) => ({
+          client: element.clientWidth,
+          scroll: element.scrollWidth,
+        }));
+        return Boolean(
+          detailBox &&
+          valueBoxes.every(
+            (valueBox) =>
+              valueBox && valueBox.x + valueBox.width <= detailBox.x + detailBox.width + 1,
+          ) &&
+          widths.scroll <= widths.client + 1,
+        );
+      })
+      .toBe(true);
   } finally {
     await app.close();
   }

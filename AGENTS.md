@@ -122,9 +122,10 @@ Rules:
   scope, stop and ask for direction.
 - Push the exact verified tip to the temporary branch and open a pull request
   targeting main.
-- Required checks: Build quality gate, SonarQube quality gate, Snyk security
-  gate. Only a successful conclusion counts; queued, skipped, cancelled,
-  neutral, or stale is failure for merge purposes.
+- Required checks: Release-compatible pull request title, Build quality gate,
+  SonarQube quality gate, Snyk security gate. Only a successful conclusion
+  counts; queued, skipped, cancelled, neutral, or stale is failure for merge
+  purposes.
 - Automatic merge may be enabled once the user has said "push," and the merge
   happens only when every required check is successful. Diagnose and repair
   in-scope failures on the same pull request; stop for user direction if a

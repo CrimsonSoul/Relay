@@ -86,6 +86,24 @@ describe('DynatraceProblemNotificationManager', () => {
     options?.action?.onClick();
     expect(onOpenProblems).toHaveBeenCalledOnce();
   });
+  it('uses the NOC workflow name when enriched metadata is available', async () => {
+    const onOpenProblems = vi.fn();
+    const { rerender } = render(
+      <DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />,
+    );
+    mocks.collection = {
+      data: [problem({ workflowTitle: 'NOC · Checkout unavailable' })],
+      loading: false,
+    };
+    rerender(<DynatraceProblemNotificationManager onOpenProblems={onOpenProblems} />);
+
+    await waitFor(() => expect(mocks.showToast).toHaveBeenCalledOnce());
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      'P-1001 · NOC · Checkout unavailable',
+      'error',
+      expect.objectContaining({ delivery: 'dynatrace-problem' }),
+    );
+  });
 
   it.each([
     ['AVAILABILITY', 'error'],
