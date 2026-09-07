@@ -164,7 +164,12 @@ describe('CI optimization contracts', () => {
     expect(browsers.run).toBe('npx playwright install --with-deps chromium webkit');
     const electron = findStep(workflows, 'Run Electron workflows');
     const web = findStep(workflows, 'Run browser workflows');
-    expect(electron.run).toBe('xvfb-run --auto-servernum npm run test:electron');
+    expect(electron.run).toContain('sudo apt-get install --yes dbus-x11 gnome-keyring');
+    expect(electron.run).toContain('dbus-run-session -- bash -euo pipefail');
+    expect(electron.run).toContain(
+      'openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets',
+    );
+    expect(electron.run).toContain('xvfb-run --auto-servernum npm run test:electron');
     expect(web.run).toBe('xvfb-run --auto-servernum npm run test:web');
     expect(workflows.steps.indexOf(pocketbase)).toBeGreaterThan(workflows.steps.indexOf(install));
     expect(workflows.steps.indexOf(browsers)).toBeGreaterThan(workflows.steps.indexOf(pocketbase));

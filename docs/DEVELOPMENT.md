@@ -703,9 +703,11 @@ or a rehearsal against a verified production backup.
 `npm run test:electron` builds the current source before launching Playwright so it cannot test a
 stale `dist` tree. Test-mode Electron windows remain native-hidden and unfocused; on macOS the test
 process also uses accessory activation policy so the suite does not take over the interactive
-desktop. The critical-path harness disables renderer background throttling on its server and client
-test windows so hidden Linux windows continue processing animation frames and timers during UI
-actions. Run the command through npm so its native-module ABI restoration always executes.
+desktop. Linux critical-path tests require an unlocked GNOME keyring in a D-Bus session. Their
+isolated entry point selects `gnome-libsecret` before loading Relay because Playwright otherwise
+forces the `basic` password store, which cannot support privileged device pairing. CI provisions a
+disposable keyring, verifies that encryption is available, and retains failed workflow diagnostics
+for one day. Run the command through npm so its native-module ABI restoration always executes.
 
 Changes to the Windows bootstrap, stable launcher, retained-runtime metadata, rollback, or repair
 path also require `npm run build:win`. The local package script compiles both NSIS executables,

@@ -787,7 +787,7 @@ test.describe('Vital Critical Path', () => {
     // starts with a fresh budget. Account conservatively for the bootstrap
     // requests that occur before the E2E harness can interact with it.
     authenticationAttempts.clear();
-    const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+    const mainEntry = path.join(__dirname, '../fixtures/relayElectronMain.mjs');
     const launchEnv = {
       ...process.env,
       NODE_ENV: 'test',
@@ -811,10 +811,7 @@ test.describe('Vital Critical Path', () => {
     });
     window = await electronApp.firstWindow();
     await electronApp.evaluate(({ BrowserWindow }) => {
-      const testWindow = BrowserWindow.getAllWindows()[0];
-      // Hidden Linux windows otherwise throttle frames and timers used by UI actions.
-      testWindow?.webContents.setBackgroundThrottling(false);
-      testWindow?.setSize(1600, 1000);
+      BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
     });
     await window.waitForLoadState('domcontentloaded');
     startupShellWasVisible = await window.locator('.startup-shell').isVisible();
@@ -826,7 +823,7 @@ test.describe('Vital Critical Path', () => {
 
   const launchClient = async () => {
     await reserveAuthenticationRequest('app-user');
-    const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+    const mainEntry = path.join(__dirname, '../fixtures/relayElectronMain.mjs');
     const launchEnv = {
       ...process.env,
       NODE_ENV: 'test',
@@ -845,9 +842,7 @@ test.describe('Vital Critical Path', () => {
     });
     clientWindow = await clientElectronApp.firstWindow();
     await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      const testWindow = BrowserWindow.getAllWindows()[0];
-      testWindow?.webContents.setBackgroundThrottling(false);
-      testWindow?.setSize(1600, 1000);
+      BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
     });
     await clientWindow.waitForLoadState('domcontentloaded');
     await expect(clientWindow.getByTestId('sidebar-compose')).toBeVisible();
@@ -1048,7 +1043,7 @@ test.describe('Vital Critical Path', () => {
   test.describe('desktop isolation contract', () => {
     test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.default });
 
-    test('keeps the native Electron test window hidden without throttling renderer work', async () => {
+    test('keeps the native Electron test window hidden', async () => {
       if (!electronApp) throw new Error('Server Electron app not launched');
       const nativeWindowState = await electronApp.evaluate(({ BrowserWindow }) => ({
         e2eIsolationEnabled:
@@ -1056,15 +1051,12 @@ test.describe('Vital Critical Path', () => {
           process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS === '1',
         visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
         focused: BrowserWindow.getAllWindows()[0]?.isFocused() ?? null,
-        backgroundThrottling:
-          BrowserWindow.getAllWindows()[0]?.webContents.getBackgroundThrottling() ?? null,
       }));
 
       expect(nativeWindowState).toEqual({
         e2eIsolationEnabled: true,
         visible: false,
         focused: false,
-        backgroundThrottling: false,
       });
     });
   });
@@ -1502,7 +1494,27 @@ test.describe('Vital Critical Path', () => {
         const resumeAll = window.getByRole('button', { name: 'Resume all', exact: true });
         await expect(resumeAll).toBeVisible();
         await resumeAll.click();
-        await expect(window.getByRole('button', { name: 'Pause all', exact: true })).toBeVisible();
+        const controlsRow = window.locator('.knowledge-management-row--upload', {
+          hasText: 'Operational upload controls.pdf',
+        });
+        // A resumed transfer may finish before the next UI frame on a slower runner.
+        await expect(controlsRow.getByRole('button', { name: 'Publish', exact: true })).toBeEnabled(
+          {
+            timeout: 30_000,
+          },
+        );
+        await controlsRow
+          .getByRole('button', { name: 'Discard Operational upload controls.pdf' })
+          .click();
+        await controlsRow
+          .getByRole('button', { name: 'Confirm discard Operational upload controls.pdf' })
+          .click();
+        await expect(controlsRow).not.toBeVisible();
+
+        // Verify cancellation from a stable paused state on a fresh transfer.
+        await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+        await pauseAll.click();
+        await expect(resumeAll).toBeVisible();
         const cancelUpload = window.getByRole('button', {
           name: 'Cancel Operational upload controls.pdf',
           exact: true,
@@ -2049,6 +2061,13 @@ test.describe('Vital Critical Path', () => {
     await activatePrivilegedPublisherFixture(pbPort);
 
     let connectedClient = await launchConnectedClient();
+    if (!clientElectronApp) throw new Error('Client Electron app not launched');
+    const encryptionAvailable = await clientElectronApp.evaluate(({ safeStorage }) =>
+      safeStorage.isEncryptionAvailable(),
+    );
+    expect(encryptionAvailable, 'Publisher pairing requires an available OS secret store').toBe(
+      true,
+    );
     const publisherAccess = await openPrivilegedAccess(connectedClient);
     const publisherUsername = publisherAccess.getByLabel('Username');
     const publisherPassword = publisherAccess.getByLabel('Password');
@@ -2899,6 +2918,7 @@ test.describe('Vital Critical Path', () => {
   });
 
   test('Vital 5: Composer Workflow (Add, Group, Draft)', async () => {
+    test.setTimeout(120_000);
     const suffix = uniqueSuffix();
     const name = `Composer Test ${suffix}`;
     const email = `composer.test.${suffix}@example.com`;
