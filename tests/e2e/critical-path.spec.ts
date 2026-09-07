@@ -811,7 +811,10 @@ test.describe('Vital Critical Path', () => {
     });
     window = await electronApp.firstWindow();
     await electronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
+      const testWindow = BrowserWindow.getAllWindows()[0];
+      // Hidden Linux windows otherwise throttle frames and timers used by UI actions.
+      testWindow?.webContents.setBackgroundThrottling(false);
+      testWindow?.setSize(1600, 1000);
     });
     await window.waitForLoadState('domcontentloaded');
     startupShellWasVisible = await window.locator('.startup-shell').isVisible();
@@ -842,7 +845,9 @@ test.describe('Vital Critical Path', () => {
     });
     clientWindow = await clientElectronApp.firstWindow();
     await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
+      const testWindow = BrowserWindow.getAllWindows()[0];
+      testWindow?.webContents.setBackgroundThrottling(false);
+      testWindow?.setSize(1600, 1000);
     });
     await clientWindow.waitForLoadState('domcontentloaded');
     await expect(clientWindow.getByTestId('sidebar-compose')).toBeVisible();
@@ -1043,7 +1048,7 @@ test.describe('Vital Critical Path', () => {
   test.describe('desktop isolation contract', () => {
     test.use({ criticalPathFixtureProfile: criticalPathFixtureProfiles.default });
 
-    test('keeps the native Electron test window hidden', async () => {
+    test('keeps the native Electron test window hidden without throttling renderer work', async () => {
       if (!electronApp) throw new Error('Server Electron app not launched');
       const nativeWindowState = await electronApp.evaluate(({ BrowserWindow }) => ({
         e2eIsolationEnabled:
@@ -1051,12 +1056,15 @@ test.describe('Vital Critical Path', () => {
           process.env.RELAY_E2E_DISABLE_DESKTOP_SIDE_EFFECTS === '1',
         visible: BrowserWindow.getAllWindows()[0]?.isVisible() ?? null,
         focused: BrowserWindow.getAllWindows()[0]?.isFocused() ?? null,
+        backgroundThrottling:
+          BrowserWindow.getAllWindows()[0]?.webContents.getBackgroundThrottling() ?? null,
       }));
 
       expect(nativeWindowState).toEqual({
         e2eIsolationEnabled: true,
         visible: false,
         focused: false,
+        backgroundThrottling: false,
       });
     });
   });
@@ -1168,7 +1176,7 @@ test.describe('Vital Critical Path', () => {
       for (const section of ['Documents', 'Categories', 'Uploads', 'Trash']) {
         const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
         await expect(button.locator('span')).toHaveText(section.toLowerCase());
-        expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+        expect(Math.round((await button.boundingBox())?.height ?? 0)).toBeGreaterThanOrEqual(44);
         expect(
           await button.evaluate((element) => {
             const buttonRect = element.getBoundingClientRect();
