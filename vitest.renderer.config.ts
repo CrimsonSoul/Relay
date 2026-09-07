@@ -12,8 +12,10 @@ export default defineConfig({
     },
   },
   test: {
-    // globals required for @testing-library/jest-dom which expects global `expect`
+    // Keep globals for Testing Library's automatic afterEach cleanup.
     globals: true,
+    // Preserve the pre-v5 mock lifecycle; suites explicitly clear their own mocks.
+    clearMocks: false,
     environment: 'jsdom',
     silent: 'passed-only',
     include: ['src/renderer/**/*.test.tsx', 'src/renderer/**/*.test.ts'],

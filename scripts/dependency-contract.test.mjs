@@ -113,11 +113,17 @@ test('the dependency tree includes brace-expansion for compatibility verificatio
 
 test('PostCSS can load through the Snyk-safe nanoid release', async () => {
   const nanoidPath = path.dirname(requireFromTest.resolve('nanoid/package.json'));
-  assert.equal(packageJson(nanoidPath).version, '5.1.16');
+  assert.equal(packageJson(nanoidPath).version, '6.0.1');
 
   const postcss = requireFromTest('postcss');
   const result = await postcss([]).process('a { color: red }', { from: undefined });
   assert.equal(result.css, 'a { color: red }');
+});
+
+test('CommonJS packaging consumers can parse and build property lists', () => {
+  const plist = requireFromTest('plist');
+  const values = { CFBundleName: 'Relay', flags: [true, false], settings: { count: 3 } };
+  assert.deepEqual(plist.parse(plist.build(values)), values);
 });
 
 for (const packagePath of braceExpansionInstalls) {

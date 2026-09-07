@@ -1,5 +1,5 @@
 /// <reference path="../../../pb_data/types.d.ts" />
-/* global $apis, $security, BadRequestError, DynamicModel, Record, routerAdd */
+/* global $apis, $security, ApiError, BadRequestError, ForbiddenError, DynamicModel, Record, RecordUpsertForm, routerAdd */
 
 routerAdd(
   'POST',
@@ -114,4 +114,102 @@ routerAdd(
   },
   $apis.requireAuth('relay_privileged_accounts'),
   $apis.bodyLimit(4096),
+);
+
+// Keep server request handlers in this integrity-verified hook: its filename is
+// part of the retained-runtime manifest used by existing Windows launchers.
+// Ordinary CRUD stays on PocketBase's built-in routes. Only offline replay needs
+// this transaction boundary; unsupported servers reject its route before writing.
+routerAdd(
+  'POST',
+  '/api/relay/offline/replay',
+  (e) => {
+    const input = e.requestInfo().body;
+    const allowedCollections = [
+      'contacts',
+      'servers',
+      'oncall',
+      'bridge_groups',
+      'bridge_history',
+      'alert_history',
+      'alert_reminders',
+      'notes',
+      'oncall_dismissals',
+      'oncall_board_settings',
+      'dynatrace_problem_states',
+      'dynatrace_problem_notes',
+    ];
+    if (
+      !allowedCollections.includes(input.collection) ||
+      !['update', 'delete'].includes(input.action) ||
+      typeof input.recordId !== 'string' ||
+      !/^[a-z0-9]{15}$/.test(input.recordId) ||
+      typeof input.expectedUpdated !== 'string' ||
+      input.expectedUpdated.length > 40 ||
+      !Number.isFinite(Date.parse(input.expectedUpdated.replace(' ', 'T'))) ||
+      typeof input.expectedFingerprint !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(input.expectedFingerprint) ||
+      (input.action === 'update' &&
+        (!input.data || typeof input.data !== 'object' || Array.isArray(input.data))) ||
+      (input.action === 'delete' && input.data !== undefined)
+    ) {
+      throw new BadRequestError('Invalid offline replay request.');
+    }
+
+    e.app.runInTransaction((transaction) => {
+      const collection = transaction.findCollectionByNameOrId(input.collection);
+      const rule = input.action === 'update' ? collection.updateRule : collection.deleteRule;
+      if (collection.type !== 'base' || rule === null) throw new ForbiddenError();
+      const records = transaction.findRecordsByFilter(collection, 'id = {:id}', '', 1, 0, {
+        id: input.recordId,
+      });
+      const record = records[0];
+      if (!record) {
+        if (input.action === 'delete') return;
+        throw new ApiError(409, 'The server record changed. The offline change remains queued.');
+      }
+      const requestInfo = e.requestInfo().clone();
+      // PocketBase evaluates update rules against resolved modifier values.
+      const normalizedData = record.replaceModifiers(input.data || {});
+      for (const field of collection.fields) {
+        if (field.getHidden()) delete normalizedData[field.getName()];
+      }
+      requestInfo.body = normalizedData;
+      requestInfo.method = input.action === 'update' ? 'PATCH' : 'DELETE';
+      if (!transaction.canAccessRecord(record, requestInfo, rule)) throw new ForbiddenError();
+      // Timestamps alone cannot distinguish writes within the same millisecond.
+      // Materialize Go-backed date/JSON values as the plain JSON seen by the SDK.
+      const snapshot = JSON.parse(toString(record.marshalJSON()));
+      const canonical = JSON.stringify(snapshot, (_key, value) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.fromEntries(
+              Object.entries(value).sort(([a], [b]) => {
+                if (a === b) return 0;
+                return a < b ? -1 : 1;
+              }),
+            )
+          : value,
+      );
+      if (
+        record.getString('updated') !== input.expectedUpdated ||
+        $security.sha256(canonical) !== input.expectedFingerprint
+      ) {
+        throw new ApiError(409, 'The server record changed. The offline change remains queued.');
+      }
+      if (input.action === 'delete') {
+        transaction.delete(record);
+      } else {
+        const form = new RecordUpsertForm(transaction, record);
+        form.load(normalizedData);
+        try {
+          form.submit();
+        } catch {
+          throw new BadRequestError('The offline change failed record validation.');
+        }
+      }
+    });
+    return e.json(200, { applied: true });
+  },
+  $apis.requireAuth(),
+  $apis.bodyLimit(270336),
 );

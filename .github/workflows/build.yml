@@ -224,9 +224,56 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: renderer-coverage-${{ matrix.shard-index }}
-          path: .vitest-reports/
+          path: .vitest/blob/
           if-no-files-found: error
           include-hidden-files: true
+          retention-days: 1
+
+  workflow-tests:
+    name: PocketBase, Electron and browser workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
+      - name: Verify PocketBase replay against real storage
+        run: npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts
+
+      - name: Install Playwright browsers and Linux dependencies
+        run: npx playwright install --with-deps chromium webkit
+
+      # Each npm runner restores the Node ABI before the next suite starts.
+      - name: Run Electron workflows
+        run: |
+          sudo apt-get install --yes dbus-x11 gnome-keyring
+          dbus-run-session -- bash -euo pipefail -c '
+            openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
+            xvfb-run --auto-servernum npm run test:electron
+          '
+
+      - name: Run browser workflows
+        run: xvfb-run --auto-servernum npm run test:web
+
+      - name: Upload workflow failure details
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: workflow-test-failures
+          path: test-results/
+          if-no-files-found: ignore
           retention-days: 1
 
   sonarqube:
@@ -316,7 +363,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: renderer-coverage-*
-          path: .vitest-reports
+          path: .vitest/blob
           merge-multiple: true
 
       - name: Merge renderer coverage
@@ -447,7 +494,7 @@ jobs:
   quality:
     name: Build quality gate
     if: always()
-    needs: [provenance, static, unit-coverage, renderer-coverage]
+    needs: [provenance, static, unit-coverage, renderer-coverage, workflow-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Require successful build components
@@ -458,10 +505,16 @@ jobs:
           STATIC_RESULT: ${{ needs.static.result }}
           UNIT_COVERAGE_RESULT: ${{ needs.unit-coverage.result }}
           RENDERER_COVERAGE_RESULT: ${{ needs.renderer-coverage.result }}
+          WORKFLOW_TESTS_RESULT: ${{ needs.workflow-tests.result }}
         shell: bash
         run: |
           if [[ "$PROVENANCE_RESULT" != "success" ]]; then
             echo "Tree reuse provenance did not succeed: provenance=$PROVENANCE_RESULT"
+            exit 1
+          fi
+
+          if [[ "$WORKFLOW_TESTS_RESULT" != "success" ]]; then
+            echo "Workflow verification did not succeed: workflow-tests=$WORKFLOW_TESTS_RESULT"
             exit 1
           fi
 

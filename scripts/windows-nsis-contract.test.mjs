@@ -52,8 +52,8 @@ describe('Windows NSIS launcher contract', () => {
     const source = read('build/windows/relay-launcher.nsi');
     const contract = read('build/windows/include/relay-runtime-contract.nsh');
 
-    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "6"');
-    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 106');
+    expect(contract).toContain('!define RELAY_LAUNCHER_GENERATION "7"');
+    expect(contract).toContain('!define RELAY_LAUNCHER_PROTOCOL_EXIT_CODE 107');
     expect(source).toContain('VIProductVersion "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"FileVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');
     expect(source).toContain('"ProductVersion" "${RELAY_LAUNCHER_GENERATION}.0.0.0"');

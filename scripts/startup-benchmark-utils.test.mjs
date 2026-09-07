@@ -11,6 +11,85 @@ import {
 } from './startup-benchmark-utils.mjs';
 
 describe('startup benchmark utilities', () => {
+  it('attributes launcher work without treating unmeasured process overhead as hashing', () => {
+    expect(startupBenchmarkUtils.parseLauncherTiming).toBeTypeOf('function');
+    const marker = JSON.stringify({
+      protocol: 1,
+      elapsedMs: 4100,
+      runtimeValidationMs: 3700,
+      contentHashMs: 3600,
+      processCreationMs: 200,
+      runtimeValidationCount: 1,
+    });
+
+    expect(startupBenchmarkUtils.parseLauncherTiming(marker, 4500)).toEqual({
+      elapsedMs: 4100,
+      runtimeValidationMs: 3700,
+      contentHashMs: 3600,
+      processCreationMs: 200,
+      runtimeValidationCount: 1,
+      outsideMeasuredLauncherMs: 400,
+    });
+    expect(startupBenchmarkUtils.parseLauncherTiming(null, 4500)).toBeNull();
+    expect(startupBenchmarkUtils.parseLauncherTiming(marker, 4090).outsideMeasuredLauncherMs).toBe(
+      0,
+    );
+  });
+
+  it('rejects malformed or internally inconsistent native launcher measurements', () => {
+    expect(startupBenchmarkUtils.parseLauncherTiming).toBeTypeOf('function');
+    const valid = {
+      protocol: 1,
+      elapsedMs: 100,
+      runtimeValidationMs: 60,
+      contentHashMs: 50,
+      processCreationMs: 20,
+      runtimeValidationCount: 1,
+    };
+    const invalidMarkers = [
+      '{',
+      '[]',
+      'null',
+      ' '.repeat(1025),
+      JSON.stringify({ ...valid, protocol: 2 }),
+      JSON.stringify({ ...valid, contentHashMs: 61 }),
+      JSON.stringify({ ...valid, processCreationMs: 41 }),
+      JSON.stringify({ ...valid, elapsedMs: -1 }),
+      JSON.stringify({ ...valid, elapsedMs: 1_800_001 }),
+      JSON.stringify({ ...valid, runtimeValidationCount: 0 }),
+      JSON.stringify({ ...valid, runtimeValidationCount: 33 }),
+      JSON.stringify({ ...valid, runtimeValidationMs: '60' }),
+      JSON.stringify({ ...valid, contentHashMs: 1.5 }),
+      JSON.stringify({ ...valid, path: 'C:\\private\\runtime' }),
+    ];
+    for (const marker of invalidMarkers) {
+      expect(() => startupBenchmarkUtils.parseLauncherTiming(marker, 200)).toThrow(
+        /launcher timing/i,
+      );
+    }
+  });
+
+  it('reports unavailable attribution when any measured launcher predates the marker', () => {
+    expect(startupBenchmarkUtils.summarizeLauncherTimings).toBeTypeOf('function');
+    const timing = {
+      elapsedMs: 100,
+      runtimeValidationMs: 60,
+      contentHashMs: 50,
+      processCreationMs: 20,
+      runtimeValidationCount: 1,
+      outsideMeasuredLauncherMs: 10,
+    };
+    expect(
+      startupBenchmarkUtils.summarizeLauncherTimings([
+        { launcherTiming: timing },
+        { launcherTiming: { ...timing, elapsedMs: 200, outsideMeasuredLauncherMs: 30 } },
+      ]),
+    ).toEqual({ ...timing, elapsedMs: 150, outsideMeasuredLauncherMs: 20 });
+    expect(
+      startupBenchmarkUtils.summarizeLauncherTimings([{ launcherTiming: timing }, {}]),
+    ).toBeNull();
+  });
+
   it('allows the benchmark module to be imported without an entry script argument', () => {
     const result = spawnSync(
       process.execPath,

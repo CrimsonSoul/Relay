@@ -568,8 +568,14 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   await page.getByRole('button', { name: 'More Compose actions' }).click();
   await page.getByRole('menuitem', { name: 'Create Calendar Invite' }).click();
   const bridge = page.getByRole('dialog', { name: 'Schedule Bridge' });
-  await bridge.getByLabel('Subject').fill(`Relay Web bridge ${suffix}`);
-  await bridge.getByLabel('Your Email (Organizer)').fill('operator@example.com');
+  const bridgeSubject = bridge.getByLabel('Subject');
+  await bridgeSubject.click();
+  await bridgeSubject.fill(`Relay Web bridge ${suffix}`);
+  await expect(bridgeSubject).toHaveValue(`Relay Web bridge ${suffix}`);
+  const organizer = bridge.getByLabel('Your Email (Organizer)');
+  await organizer.click();
+  await organizer.fill('operator@example.com');
+  await expect(organizer).toHaveValue('operator@example.com');
   const ics = await readDownload(page, () =>
     bridge.getByRole('button', { name: 'Create Invite' }).click(),
   );
@@ -586,7 +592,11 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   const teamName = `Browser Team ${suffix}`;
   await page.getByRole('button', { name: 'ADD CARD' }).click();
   const addCard = page.getByRole('dialog', { name: /Add New Card/i });
-  await addCard.getByPlaceholder(/Card Name/i).fill(teamName);
+  const cardName = addCard.getByPlaceholder(/Card Name/i);
+  // Clicking waits for the opening animation to settle before WebKit inserts text.
+  await cardName.click();
+  await cardName.fill(teamName);
+  await expect(cardName).toHaveValue(teamName);
   await addCard.getByRole('button', { name: 'Add Card' }).click();
   await expect(addCard).not.toBeVisible();
 
@@ -596,7 +606,10 @@ test('runs Compose, On-Call CRUD, and browser alert exports @critical', async ({
   await page.getByRole('menuitem', { name: 'Rename Team' }).click();
   const renameCard = page.getByRole('dialog', { name: /Rename Card/i });
   const renamedTeam = `${teamName} Renamed`;
-  await renameCard.locator('input').first().fill(renamedTeam);
+  const renamedCardName = renameCard.locator('input').first();
+  await renamedCardName.click();
+  await renamedCardName.fill(renamedTeam);
+  await expect(renamedCardName).toHaveValue(renamedTeam);
   await renameCard.getByRole('button', { name: 'Rename' }).click();
   const renamedCard = page.locator('.team-card-body', { hasText: renamedTeam }).first();
   await expect(renamedCard).toBeVisible();
@@ -812,10 +825,10 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await knowledgeHome.getByRole('button', { name: /^Open Wiki,/ }).click();
   await page.getByRole('button', { name: 'Manage Wiki', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Manage Wiki', exact: true })).toBeVisible();
-  let interruptedFirstChunk = false;
+  let interruptedChunks = 0;
   await page.route('**/relay-api/v1/knowledge/upload/chunk?**', async (route) => {
-    if (!interruptedFirstChunk) {
-      interruptedFirstChunk = true;
+    if (interruptedChunks < 2) {
+      interruptedChunks += 1;
       await route.abort('connectionfailed');
       return;
     }
@@ -830,7 +843,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
     mimeType: 'application/pdf',
     buffer: pdfFixture,
   });
-  await expect.poll(() => interruptedFirstChunk).toBe(true);
+  await expect.poll(() => interruptedChunks).toBe(1);
 
   await page.reload();
   await expect(page.getByTestId('sidebar-compose')).toBeVisible();
@@ -847,6 +860,16 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await interruptedTransfer.getByRole('button', { name: 'Reselect PDFs' }).click();
   const recoveryChooser = await recoveryChooserPromise;
   await recoveryChooser.setFiles({
+    name: documentFile,
+    mimeType: 'application/pdf',
+    buffer: pdfFixture,
+  });
+  await expect.poll(() => interruptedChunks).toBe(2);
+  await expect(interruptedTransfer.getByRole('alert')).toContainText(/select.*PDFs/i);
+  const retryChooserPromise = page.waitForEvent('filechooser');
+  await interruptedTransfer.getByRole('button', { name: 'Reselect PDFs' }).click();
+  const retryChooser = await retryChooserPromise;
+  await retryChooser.setFiles({
     name: documentFile,
     mimeType: 'application/pdf',
     buffer: pdfFixture,

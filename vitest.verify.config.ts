@@ -9,6 +9,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // in the normal suite.
 export default defineConfig({
   test: {
+    // Preserve the pre-v5 mock lifecycle; suites explicitly clear their own mocks.
+    clearMocks: false,
     environment: 'node',
     silent: 'passed-only',
     include: ['verification/**/*.test.ts'],

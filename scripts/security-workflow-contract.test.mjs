@@ -37,6 +37,7 @@ test('main pull requests emit the stable build quality gate', () => {
     'static',
     'unit-coverage',
     'renderer-coverage',
+    'workflow-tests',
   ]);
   const aggregate = findStep(build.jobs.quality, 'Require successful build components');
   assert.deepEqual(aggregate.env, {
@@ -46,6 +47,7 @@ test('main pull requests emit the stable build quality gate', () => {
     REUSE: '${{ needs.provenance.outputs.reuse }}',
     STATIC_RESULT: '${{ needs.static.result }}',
     UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+    WORKFLOW_TESTS_RESULT: '${{ needs.workflow-tests.result }}',
   });
   assert.match(aggregate.run, /exit 1/u);
   assert.ok(
@@ -87,7 +89,7 @@ test('Sonar consumes unit coverage and all four merged renderer coverage shards'
     uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
     with: {
       name: 'renderer-coverage-${{ matrix.shard-index }}',
-      path: '.vitest-reports/',
+      path: '.vitest/blob/',
       'if-no-files-found': 'error',
       'include-hidden-files': true,
       'retention-days': 1,
@@ -100,7 +102,7 @@ test('Sonar consumes unit coverage and all four merged renderer coverage shards'
   });
   assert.deepEqual(findStep(sonar, 'Download renderer coverage shards').with, {
     pattern: 'renderer-coverage-*',
-    path: '.vitest-reports',
+    path: '.vitest/blob',
     'merge-multiple': true,
   });
   const merge = findStep(sonar, 'Merge renderer coverage');

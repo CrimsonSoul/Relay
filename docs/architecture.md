@@ -9,13 +9,13 @@ tests remain authoritative when details change.
 
 | Layer         | Technology                                              |
 | ------------- | ------------------------------------------------------- |
-| Desktop shell | Electron 42.4.0                                         |
+| Desktop shell | Electron 42.11.2                                        |
 | Renderer      | React 19.2.8                                            |
 | Language      | TypeScript 6.0.3                                        |
 | Build         | Vite 7.3.6 and electron-vite 5.0.0                      |
-| Data store    | PocketBase 0.39.9 with SQLite; PocketBase JS SDK 0.27.0 |
-| Validation    | Zod 4.4.3                                               |
-| Testing       | Vitest 4.1.11 and Playwright 1.62.0                     |
+| Data store    | PocketBase 0.40.3 with SQLite; PocketBase JS SDK 0.28.1 |
+| Validation    | Zod 4.5.4                                               |
+| Testing       | Vitest 5.0.0 and Playwright 1.63.0                      |
 
 Dependency and runtime declarations live in `package.json`, `package-lock.json`, and
 `.node-version`. Release versions are derived from conventional commits on `main` and injected into
@@ -27,7 +27,11 @@ Release version resolution and Windows packaging may run in parallel with the ex
 wait, but versioned assets, tags, drafts, and publication remain blocked until the exact required
 Build, SonarQube, and Snyk gates and the Windows package have succeeded. A single Build workflow
 runs static checks and the production build, unit coverage plus cache integration tests, four
-renderer-coverage shards, SonarQube, and Snyk. Sonar merges those canonical coverage reports, so
+renderer-coverage shards, focused real-PocketBase replay verification, Electron and browser
+workflows, SonarQube, and Snyk. The unconditional `workflow-tests` job runs
+`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts` against disposable storage,
+then `npm run test:electron` and `npm run test:web` sequentially through their ABI-restoring wrappers.
+Sonar merges the canonical coverage reports, so
 the test suites do not run a second time. A separate lightweight workflow validates pull-request
 titles, and only the Release workflow packages Windows automatically after a `main` merge. Passing
 Vitest output is suppressed while failure output remains visible.
@@ -36,7 +40,9 @@ Content-addressed ESLint, Prettier, and Sonar caches are advisory and cannot est
 Exact-tree reuse requires `RELAY_CI_TREE_REUSE_MODE=enabled` exactly; the production repository
 enables it. Full merged-internal-PR/base/head/parent/tree/check/title-workflow-run/shared-Build-run/
 artifact provenance must validate, otherwise Relay falls back to full Build, Snyk, and coverage
-work. Required Build and Snyk aggregates stay fail closed. Sonar runs on the exact final `main`
+work. The real-PocketBase, Electron, and browser workflow job always runs, including on reused
+trees, and must succeed before the Build aggregate can accept reuse. Required Build and Snyk
+aggregates stay fail closed. Sonar runs on the exact final `main`
 commit and performs reviewed-issue reconciliation. One-day PR attestations and merged LCOV
 artifacts are optimization evidence, not release authority. Reused Snyk finding evidence still
 triggers a main-only monitor upload so the canonical project snapshot follows every merge.
@@ -117,6 +123,13 @@ receives Electron session cookies, desktop signing keys, local paths, or unrestr
 before Relay opens data-dependent work, while optional indexing, retention, and cleanup work starts
 after the required workspace is ready. Startup behavior is split across `src/main/app/` so window
 presentation, PocketBase readiness, maintenance, error handling, and shutdown have testable owners.
+
+For packaged Windows startup benchmarks, the stable launcher emits a bounded numeric timing marker
+only under the explicit benchmark flag and a valid run UUID. Stable samples attribute the measured
+launcher interval, runtime validation, content hashing, process creation, validation count, and
+the remaining outer process lifetime. The latter includes Windows setup, the NSIS prologue, marker
+writing, and exit. Missing markers and preparation or portable scenarios report `launcherTiming`
+as `null`. Field definitions and packaged measurement requirements are in `docs/DEVELOPMENT.md`.
 
 ### PocketBase lifecycle
 
@@ -438,8 +451,16 @@ Clients never receive CW cookies or choose an alternate Radar target.
 
 `src/main/cache/OfflineCache.ts`, `src/main/cache/PendingChanges.ts`, and
 `src/main/cache/SyncManager.ts` own desktop offline snapshots and replay. Allowed collection/action
-lists constrain the boundary. Replay rechecks server state and records conflicts instead of
-treating queued local state as authoritative.
+lists constrain the boundary. Queued updates and deletes read the current server revision, then
+send it to `POST /api/relay/offline/replay`. The existing integrity-verified
+`resources/pocketbase/hooks/relay_privileged_reauth.pb.js` hook enforces the base-collection
+allowlist, ordinary PocketBase API rules, and update field validation. It resolves field modifiers
+before evaluating rules. Comparison of the timestamp and a canonical SHA-256 fingerprint of the
+observed public record shares one transaction with the mutation. Even a concurrent edit in the same
+millisecond becomes a conflict and leaves the
+queued change pending. Creates and ordinary online CRUD retain the built-in routes, preserving
+older-client connectivity. A new client receiving 404 from an older server's missing replay route
+retains the pending update or delete and asks the operator to update the server before syncing it.
 
 Relay Web is online-only. Connection-generation guards prevent stale browser requests from
 reopening writes after a disconnect or client replacement.
@@ -510,7 +531,9 @@ route exposes only the server name within the same network boundary. Event-strea
 is reported separately from PocketBase connectivity.
 
 Web PDF staging retains pending declarations after interrupted transport until the browser session
-ends. Reselection restarts the entire staged transfer; queued-source recovery runs the existing
+ends. Reselection restarts the entire staged transfer. A failed retry refreshes the newest pending
+batch before showing recovery controls, so subsequent retry or discard targets the current
+transfer even after repeated interruptions. Queued-source recovery runs the existing
 upload service's filename, size, checksum, and session checks against a server-staged path. No
 browser-supplied filesystem path or persistent browser file cache is accepted.
 

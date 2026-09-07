@@ -355,7 +355,9 @@ function Invoke-StableFallback {
 
   $runId = [Guid]::NewGuid().ToString()
   $exitMarker = Join-Path (Join-Path $env:TEMP 'Relay\startup-benchmark') "$runId.complete"
+  $launcherTimingMarker = Join-Path (Join-Path $env:TEMP 'Relay\startup-benchmark') "$runId.launcher.json"
   Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $launcherTimingMarker -Force -ErrorAction SilentlyContinue
   $priorExitAfterRender = $env:RELAY_BENCHMARK_EXIT_AFTER_RENDER
   $priorRunId = $env:RELAY_BENCHMARK_RUN_ID
   $priorGpuDiagnostics = $env:RELAY_DISABLE_GPU_DIAGNOSTICS
@@ -372,6 +374,10 @@ function Invoke-StableFallback {
       $stateSummary = Get-FileContentSummary -Path $statePath
       $probationDiagnostic = Get-FileContentSummary -Path $probationDiagnosticPath
       throw "Stable launcher exited with code $($launcher.ExitCode): context=$Context; recoveryFiles=$recoveryFiles; probationDiagnostic=$probationDiagnostic; state=$stateSummary"
+    }
+    & node --input-type=module -e 'import { readFileSync } from "node:fs"; import { parseLauncherTiming } from "./scripts/startup-benchmark-utils.mjs"; parseLauncherTiming(readFileSync(process.argv[1], "utf8"), 0);' $launcherTimingMarker
+    if ($LASTEXITCODE -ne 0) {
+      throw "Stable launcher did not produce valid benchmark attribution: context=$Context"
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
     while (-not (Test-Path -LiteralPath $exitMarker) -and [DateTime]::UtcNow -lt $deadline) {
@@ -403,6 +409,7 @@ function Invoke-StableFallback {
     $env:RELAY_DISABLE_GPU_DIAGNOSTICS = $priorGpuDiagnostics
     $env:RELAY_DISABLE_CRASH_WATCHDOG = $priorCrashWatchdog
     Remove-Item -LiteralPath $exitMarker -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $launcherTimingMarker -Force -ErrorAction SilentlyContinue
   }
 }
 

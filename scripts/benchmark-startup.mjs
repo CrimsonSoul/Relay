@@ -12,7 +12,9 @@ import {
   buildLaunchSpec,
   extractLatestStartupTimeline,
   median,
+  parseLauncherTiming,
   parseStartupBenchmarkArgs,
+  summarizeLauncherTimings,
   waitForProcessQuiescence,
 } from './startup-benchmark-utils.mjs';
 
@@ -549,6 +551,13 @@ async function resetFailedBenchmarkProcess({
   return resolvedPid;
 }
 
+function readPackagedLauncherTiming(scenario, markerPath, processHandoffMs) {
+  // Only the stable scenario measures this process directly. During preparation the outer
+  // lifetime belongs to the installer, so subtracting the launcher interval would misattribute it.
+  if (scenario !== 'stable' || !fs.existsSync(markerPath)) return null;
+  return parseLauncherTiming(fs.readFileSync(markerPath, 'utf8'), processHandoffMs);
+}
+
 async function runPackagedBenchmark(options) {
   if (process.platform !== 'win32') {
     throw new Error('Packaged Relay startup benchmarks must run on Windows.');
@@ -605,9 +614,16 @@ async function runPackagedBenchmark(options) {
     'startup-benchmark',
     `${benchmarkRunId}.timeline.json`,
   );
+  const launcherTimingPath = path.join(
+    os.tmpdir(),
+    'Relay',
+    'startup-benchmark',
+    `${benchmarkRunId}.launcher.json`,
+  );
   fs.rmSync(exitMarkerPath, { force: true });
   fs.rmSync(pidMarkerPath, { force: true });
   fs.rmSync(timelineMarkerPath, { force: true });
+  fs.rmSync(launcherTimingPath, { force: true });
   const startedAt = performance.now();
   const launchEnv = {
     ...process.env,
@@ -650,6 +666,11 @@ async function runPackagedBenchmark(options) {
     const processQuiescenceMs = runtimeExecutablePath
       ? await waitForRuntimeProcessQuiescence(runtimeExecutablePath, launchEnv)
       : null;
+    const launcherTiming = readPackagedLauncherTiming(
+      resolvedOptions.scenario,
+      launcherTimingPath,
+      processHandoffMs,
+    );
 
     return {
       scenario: resolvedOptions.scenario,
@@ -657,6 +678,7 @@ async function runPackagedBenchmark(options) {
       executable: launchSpec.command,
       executableSizeBytes: fs.statSync(launchSpec.command).size,
       processHandoffMs,
+      launcherTiming,
       processExitMs,
       processQuiescenceMs,
       benchmarkPid,
@@ -695,6 +717,7 @@ async function runPackagedBenchmark(options) {
     fs.rmSync(exitMarkerPath, { force: true });
     fs.rmSync(pidMarkerPath, { force: true });
     fs.rmSync(timelineMarkerPath, { force: true });
+    fs.rmSync(launcherTimingPath, { force: true });
   }
 }
 
@@ -715,6 +738,7 @@ function summarizePackagedSamples(options, collection) {
         ? null
         : samples.every((sample) => sample.runtimeReused === true),
     packagedMedian: {
+      launcherTiming: summarizeLauncherTimings(samples),
       processHandoffMs: median(samples.map((sample) => sample.processHandoffMs)),
       processExitMs: median(samples.map((sample) => sample.processExitMs)),
       rendererMountedWallMs: median(samples.map((sample) => sample.rendererMountedWallMs)),

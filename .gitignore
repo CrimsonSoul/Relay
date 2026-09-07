@@ -19,6 +19,7 @@ temp
 .npm/
 
 # Test results and coverage
+.vitest/
 test-results/
 coverage/
 playwright-report/

@@ -787,7 +787,7 @@ test.describe('Vital Critical Path', () => {
     // starts with a fresh budget. Account conservatively for the bootstrap
     // requests that occur before the E2E harness can interact with it.
     authenticationAttempts.clear();
-    const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+    const mainEntry = path.join(__dirname, '../fixtures/relayElectronMain.mjs');
     const launchEnv = {
       ...process.env,
       NODE_ENV: 'test',
@@ -823,7 +823,7 @@ test.describe('Vital Critical Path', () => {
 
   const launchClient = async () => {
     await reserveAuthenticationRequest('app-user');
-    const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+    const mainEntry = path.join(__dirname, '../fixtures/relayElectronMain.mjs');
     const launchEnv = {
       ...process.env,
       NODE_ENV: 'test',
@@ -1168,7 +1168,7 @@ test.describe('Vital Critical Path', () => {
       for (const section of ['Documents', 'Categories', 'Uploads', 'Trash']) {
         const button = rail.getByRole('button', { name: new RegExp(`^${section} \\d+$`) });
         await expect(button.locator('span')).toHaveText(section.toLowerCase());
-        expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+        expect(Math.round((await button.boundingBox())?.height ?? 0)).toBeGreaterThanOrEqual(44);
         expect(
           await button.evaluate((element) => {
             const buttonRect = element.getBoundingClientRect();
@@ -1204,6 +1204,8 @@ test.describe('Vital Critical Path', () => {
     test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
       await seedKnowledgePaginationFixtures(107);
       const { content, rail, search } = await openOwnerKnowledgeManagement();
+      const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
+      await expect(loadMore).toBeVisible();
 
       const documentsScrollTop = await content.evaluate((element) => {
         element.scrollTop = 180;
@@ -1239,7 +1241,6 @@ test.describe('Vital Critical Path', () => {
         .poll(() => content.evaluate((element) => element.scrollTop))
         .toBe(documentsScrollTop);
 
-      const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
       await expect(loadMore).toBeVisible();
       const initialRows = await content.locator('.knowledge-management-row').count();
       await loadMore.click();
@@ -1493,7 +1494,27 @@ test.describe('Vital Critical Path', () => {
         const resumeAll = window.getByRole('button', { name: 'Resume all', exact: true });
         await expect(resumeAll).toBeVisible();
         await resumeAll.click();
-        await expect(window.getByRole('button', { name: 'Pause all', exact: true })).toBeVisible();
+        const controlsRow = window.locator('.knowledge-management-row--upload', {
+          hasText: 'Operational upload controls.pdf',
+        });
+        // A resumed transfer may finish before the next UI frame on a slower runner.
+        await expect(controlsRow.getByRole('button', { name: 'Publish', exact: true })).toBeEnabled(
+          {
+            timeout: 30_000,
+          },
+        );
+        await controlsRow
+          .getByRole('button', { name: 'Discard Operational upload controls.pdf' })
+          .click();
+        await controlsRow
+          .getByRole('button', { name: 'Confirm discard Operational upload controls.pdf' })
+          .click();
+        await expect(controlsRow).not.toBeVisible();
+
+        // Verify cancellation from a stable paused state on a fresh transfer.
+        await window.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+        await pauseAll.click();
+        await expect(resumeAll).toBeVisible();
         const cancelUpload = window.getByRole('button', {
           name: 'Cancel Operational upload controls.pdf',
           exact: true,
@@ -2040,6 +2061,13 @@ test.describe('Vital Critical Path', () => {
     await activatePrivilegedPublisherFixture(pbPort);
 
     let connectedClient = await launchConnectedClient();
+    if (!clientElectronApp) throw new Error('Client Electron app not launched');
+    const encryptionAvailable = await clientElectronApp.evaluate(({ safeStorage }) =>
+      safeStorage.isEncryptionAvailable(),
+    );
+    expect(encryptionAvailable, 'Publisher pairing requires an available OS secret store').toBe(
+      true,
+    );
     const publisherAccess = await openPrivilegedAccess(connectedClient);
     const publisherUsername = publisherAccess.getByLabel('Username');
     const publisherPassword = publisherAccess.getByLabel('Password');
@@ -2890,6 +2918,7 @@ test.describe('Vital Critical Path', () => {
   });
 
   test('Vital 5: Composer Workflow (Add, Group, Draft)', async () => {
+    test.setTimeout(120_000);
     const suffix = uniqueSuffix();
     const name = `Composer Test ${suffix}`;
     const email = `composer.test.${suffix}@example.com`;

@@ -48,7 +48,7 @@ The following device-specific operations stay on the desktop app:
 - Native alarm-file selection
 - Unrestricted image clipboard capture (explicit image paste and drop are supported)
 
-An interrupted browser PDF transfer can be recovered in **Manage Wiki** using **Reselect PDFs**. Select all original files with matching names and sizes; the transfer restarts from the beginning. Queued uploads with a missing source offer **Reselect PDF**, with server-side filename, size, checksum, and permission verification. Neither recovery path survives session expiry, sign-out, or a Relay server restart. No source files are persisted in browser storage.
+An interrupted browser PDF transfer can be recovered in **Manage Wiki** using **Reselect PDFs**. Select all original files with matching names and sizes; the transfer restarts from the beginning. If that retry is interrupted, Relay refreshes the latest pending transfer so the next reselection or discard applies to the current batch. Queued uploads with a missing source offer **Reselect PDF**, with server-side filename, size, checksum, and permission verification. Neither recovery path survives session expiry, sign-out, or a Relay server restart. No source files are persisted in browser storage.
 
 ## Notifications and service status
 
