@@ -6,6 +6,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
+    // Preserve the pre-v5 mock lifecycle; suites explicitly clear their own mocks.
+    clearMocks: false,
     environment: 'node',
     silent: 'passed-only',
     include: ['src/main/cache/**/*.test.ts'],

@@ -21,6 +21,7 @@ vi.mock('../logger', () => ({
 // Mock PocketBase client
 const mockPb = {
   collection: vi.fn(),
+  send: vi.fn(),
   authStore: { isValid: false },
 };
 
@@ -29,6 +30,7 @@ describe('SyncManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPb.send.mockReset().mockResolvedValue({ applied: true });
     mockPb.authStore.isValid = false;
     syncManager = new SyncManager(mockPb as unknown as import('pocketbase').default);
   });
@@ -96,6 +98,7 @@ describe('SyncManager', () => {
     expect(result.overwrittenData).toEqual(serverRecord);
     expect(result.applied).toBe(false);
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockPb.send).not.toHaveBeenCalled();
   });
 
   it('applies update without conflict when client record is newer', async () => {
@@ -114,8 +117,20 @@ describe('SyncManager', () => {
     };
 
     const result = await syncManager.applyChange(change);
-    expect(result.conflict).toBe(false);
-    expect(mockUpdate).toHaveBeenCalled();
+    expect(result).toEqual({ conflict: false, applied: true });
+    expect(mockPb.send).toHaveBeenCalledWith('/api/relay/offline/replay', {
+      method: 'POST',
+      body: {
+        collection: 'contacts',
+        action: 'update',
+        recordId: '1',
+        expectedUpdated: '2026-03-20T10:00:00Z',
+        expectedFingerprint: '3edcc33ad2974110125f6e0d4cbf19afc8985d8e6c594878d53e13ac9f9ecbfa',
+        data: { name: 'New Name' },
+      },
+      requestKey: null,
+    });
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('uses the exact cached server revision as the update conflict baseline', async () => {
@@ -139,6 +154,7 @@ describe('SyncManager', () => {
 
     expect(result).toMatchObject({ conflict: true, applied: false });
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockPb.send).not.toHaveBeenCalled();
   });
 
   it('falls back to create when record not found on server during update', async () => {
@@ -206,18 +222,21 @@ describe('SyncManager', () => {
 
     await syncManager.applyChange(change);
 
-    const updateArg = at(mockUpdate.mock.calls, 0)[1] as Record<string, unknown>;
-    expect(updateArg).not.toHaveProperty('id');
-    expect(updateArg).not.toHaveProperty('created');
-    expect(updateArg).not.toHaveProperty('updated');
-    expect(updateArg).toHaveProperty('name', 'New');
+    const request = at(mockPb.send.mock.calls, 0)[1] as {
+      body: { data: Record<string, unknown> };
+    };
+    expect(request.body.data).toEqual({ name: 'New' });
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   // ── applyChange: delete ──────────────────────────────────────────────────────
 
   it('applies delete without conflict', async () => {
     const mockDelete = vi.fn().mockResolvedValue(true);
-    mockPb.collection.mockReturnValue({ delete: mockDelete });
+    mockPb.collection.mockReturnValue({
+      getOne: vi.fn().mockResolvedValue({ id: '1', updated: '2026-03-20T10:00:00Z' }),
+      delete: mockDelete,
+    });
 
     const change: PendingChange = {
       id: 3,
@@ -228,8 +247,19 @@ describe('SyncManager', () => {
     };
 
     const result = await syncManager.applyChange(change);
-    expect(result.conflict).toBe(false);
-    expect(mockDelete).toHaveBeenCalledWith('1');
+    expect(result).toEqual({ conflict: false, applied: true });
+    expect(mockPb.send).toHaveBeenCalledWith('/api/relay/offline/replay', {
+      method: 'POST',
+      body: {
+        collection: 'contacts',
+        action: 'delete',
+        recordId: '1',
+        expectedUpdated: '2026-03-20T10:00:00Z',
+        expectedFingerprint: 'ab988e52769fcd0cc4cb5903e67e51378801ad10de4560f100ece6e73b2e2d70',
+      },
+      requestKey: null,
+    });
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('keeps an offline delete pending when the server record changed', async () => {
@@ -251,13 +281,17 @@ describe('SyncManager', () => {
 
     expect(result).toMatchObject({ conflict: true, applied: false });
     expect(mockDelete).not.toHaveBeenCalled();
+    expect(mockPb.send).not.toHaveBeenCalled();
   });
 
   it('swallows error when deleting an already-deleted record', async () => {
     const notFoundError = new Error('Record not found') as Error & { status: number };
     notFoundError.status = 404;
-    const mockDelete = vi.fn().mockRejectedValue(notFoundError);
-    mockPb.collection.mockReturnValue({ delete: mockDelete });
+    const mockDelete = vi.fn();
+    mockPb.collection.mockReturnValue({
+      getOne: vi.fn().mockRejectedValue(notFoundError),
+      delete: mockDelete,
+    });
 
     const change: PendingChange = {
       id: 3,
@@ -268,7 +302,112 @@ describe('SyncManager', () => {
     };
 
     const result = await syncManager.applyChange(change);
-    expect(result.conflict).toBe(false);
+    expect(result).toEqual({ conflict: false, applied: true });
+    expect(mockPb.send).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  describe.each(['update', 'delete'] as const)('atomic %s replay', (action) => {
+    const nativeMutation = vi.fn();
+    const change: PendingChange = {
+      id: 12,
+      collection: 'contacts',
+      action,
+      data: { id: '1', name: 'Offline version' },
+      timestamp: new Date('2026-03-21T11:00:00Z').getTime(),
+      baseUpdated: '2026-03-20T10:00:00Z',
+    };
+
+    beforeEach(() => {
+      mockPb.collection.mockReturnValue({
+        getOne: vi.fn().mockResolvedValue({ id: '1', updated: '2026-03-20T10:00:00Z' }),
+        create: nativeMutation,
+        update: nativeMutation,
+        delete: nativeMutation,
+      });
+    });
+
+    it('fingerprints all nested server values independently of object key order', async () => {
+      const getOne = vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: '1',
+          metadata: { flags: [{ a: 1, z: 2 }, 'keep'], owner: 'server' },
+          updated: '2026-03-20T10:00:00Z',
+        })
+        .mockResolvedValueOnce({
+          updated: '2026-03-20T10:00:00Z',
+          metadata: { owner: 'server', flags: [{ z: 2, a: 1 }, 'keep'] },
+          id: '1',
+        })
+        .mockResolvedValueOnce({
+          id: '1',
+          metadata: { flags: [{ a: 2, z: 2 }, 'keep'], owner: 'server' },
+          updated: '2026-03-20T10:00:00Z',
+        });
+      mockPb.collection.mockReturnValue({ getOne });
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        expect(await syncManager.applyChange(change)).toEqual({ conflict: false, applied: true });
+      }
+
+      // Known SHA256 values for the hand-ordered JSON fixtures above.
+      const fingerprints = mockPb.send.mock.calls.map(([, options]) => {
+        return (options as { body: { expectedFingerprint: string } }).body.expectedFingerprint;
+      });
+      expect(fingerprints).toEqual([
+        'c295bb56fcaef372376561789a80760436212fd44edd1e287a5e1d56c22a8384',
+        'c295bb56fcaef372376561789a80760436212fd44edd1e287a5e1d56c22a8384',
+        '41141e7b0a5310ed7e84adea6a4496eeafd7160b548e7494d837a21e56e13987',
+      ]);
+    });
+
+    it('keeps changes unsynced when the replay route is missing without a native fallback', async () => {
+      mockPb.send.mockRejectedValueOnce(
+        Object.assign(new Error('Route not found'), { status: 404 }),
+      );
+
+      const result = await syncManager.syncAll([change]);
+
+      expect(result.synced).toEqual([]);
+      expect(result.conflicted).toEqual([]);
+      expect(result.failed).toEqual([
+        { changeId: 12, error: expect.stringContaining('Update the Relay server') },
+      ]);
+      expect(nativeMutation).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { label: 'null response', response: null },
+      { label: 'missing confirmation', response: {} },
+      { label: 'false confirmation', response: { applied: false } },
+      { label: 'nonboolean confirmation', response: { applied: 'true' } },
+    ])('keeps changes unsynced for $label without a native fallback', async ({ response }) => {
+      mockPb.send.mockResolvedValueOnce(response);
+
+      const result = await syncManager.syncAll([change]);
+
+      expect(result.synced).toEqual([]);
+      expect(result.conflicted).toEqual([]);
+      expect(result.failed).toEqual([
+        { changeId: 12, error: expect.stringContaining('did not confirm the offline change') },
+      ]);
+      expect(nativeMutation).not.toHaveBeenCalled();
+    });
+
+    it('marks a concurrent revision conflict without syncing or falling back', async () => {
+      mockPb.send.mockRejectedValueOnce(
+        Object.assign(new Error('Revision changed'), { status: 409 }),
+      );
+
+      const result = await syncManager.syncAll([change]);
+
+      expect(result.synced).toEqual([]);
+      expect(result.conflicts).toBe(1);
+      expect(result.conflicted).toEqual([12]);
+      expect(result.failed).toEqual([]);
+      expect(nativeMutation).not.toHaveBeenCalled();
+    });
   });
 
   // ── applyChange: unknown action ──────────────────────────────────────────────
@@ -290,7 +429,11 @@ describe('SyncManager', () => {
   it('syncAll processes multiple changes and returns correct totals', async () => {
     const mockCreate = vi.fn().mockResolvedValue({ id: 'new-1' });
     const mockDelete = vi.fn().mockResolvedValue(true);
-    mockPb.collection.mockReturnValue({ create: mockCreate, delete: mockDelete });
+    mockPb.collection.mockReturnValue({
+      create: mockCreate,
+      getOne: vi.fn().mockResolvedValue({ id: '5', updated: '2026-03-20T10:00:00Z' }),
+      delete: mockDelete,
+    });
 
     const changes: PendingChange[] = [
       {
@@ -314,6 +457,7 @@ describe('SyncManager', () => {
     expect(result.total).toBe(3);
     expect(result.conflicts).toBe(0);
     expect(result.errors).toHaveLength(0);
+    expect(result.synced).toEqual([1, 2, 3]);
   });
 
   it('syncAll counts conflicts correctly', async () => {

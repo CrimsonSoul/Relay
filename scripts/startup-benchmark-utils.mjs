@@ -7,6 +7,58 @@ const STARTUP_OPTION_KEYS = new Map([
   ['--compression', 'compression'],
   ['--runs', 'runs'],
 ]);
+const LAUNCHER_TIMING_KEYS = [
+  'elapsedMs',
+  'runtimeValidationMs',
+  'contentHashMs',
+  'processCreationMs',
+  'runtimeValidationCount',
+];
+
+export function parseLauncherTiming(text, processHandoffMs) {
+  if (text === null) return null;
+  const invalid = () => new Error('Relay wrote an invalid launcher timing marker.');
+  if (typeof text !== 'string' || text.length > 1024) throw invalid();
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw invalid();
+  }
+  if (
+    !value ||
+    Array.isArray(value) ||
+    value.protocol !== 1 ||
+    Object.keys(value).length !== LAUNCHER_TIMING_KEYS.length + 1 ||
+    LAUNCHER_TIMING_KEYS.some(
+      (key) => !Number.isSafeInteger(value[key]) || value[key] < 0 || value[key] > 1_800_000,
+    ) ||
+    value.runtimeValidationCount < 1 ||
+    value.runtimeValidationCount > 32 ||
+    value.contentHashMs > value.runtimeValidationMs ||
+    value.runtimeValidationMs + value.processCreationMs > value.elapsedMs ||
+    !Number.isFinite(processHandoffMs) ||
+    processHandoffMs < 0
+  ) {
+    throw invalid();
+  }
+  return {
+    ...Object.fromEntries(LAUNCHER_TIMING_KEYS.map((key) => [key, value[key]])),
+    // Includes Windows process setup, marker writing, and launcher exit overhead. The native
+    // GetTickCount resolution can also make this small difference round below zero.
+    outsideMeasuredLauncherMs: Math.max(0, processHandoffMs - value.elapsedMs),
+  };
+}
+
+export function summarizeLauncherTimings(samples) {
+  if (samples.length === 0 || samples.some((sample) => !sample.launcherTiming)) return null;
+  return Object.fromEntries(
+    [...LAUNCHER_TIMING_KEYS, 'outsideMeasuredLauncherMs'].map((key) => [
+      key,
+      median(samples.map((sample) => sample.launcherTiming[key])),
+    ]),
+  );
+}
 
 function requireFlagValue(argv, index) {
   const value = argv[index + 1];

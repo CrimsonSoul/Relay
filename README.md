@@ -71,7 +71,7 @@ See [Wiki administration](docs/knowledge-base.md) for publishing, links, queue r
 
 ## Quick Start
 
-Requires Node.js 22 and npm.
+Requires Node.js 22.23.2 LTS (see `.node-version`) and npm.
 
 ```bash
 npm ci

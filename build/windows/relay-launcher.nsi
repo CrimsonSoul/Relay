@@ -189,6 +189,73 @@ Var RelayProbationStartupInfo
 Var RelayProbationProcessHandle
 Var RelayProbationThreadHandle
 Var RelayProbationWaitResult
+Var RelayBenchmarkEnabled
+Var RelayBenchmarkRunId
+Var RelayBenchmarkStartedAt
+Var RelayBenchmarkValidationStartedAt
+Var RelayBenchmarkHashStartedAt
+Var RelayBenchmarkExecStartedAt
+Var RelayBenchmarkElapsed
+Var RelayBenchmarkValidationMs
+Var RelayBenchmarkHashMs
+Var RelayBenchmarkExecMs
+Var RelayBenchmarkValidationCount
+Var RelayBenchmarkFile
+
+!macro RelayBenchmarkTick DESTINATION
+  ${If} $RelayBenchmarkEnabled == "1"
+    Push $0
+    System::Call 'kernel32::GetTickCount() i.r0'
+    StrCpy ${DESTINATION} $0
+    Pop $0
+  ${EndIf}
+!macroend
+
+!macro RelayBenchmarkAccumulate START TOTAL
+  ${If} $RelayBenchmarkEnabled == "1"
+    Push $0
+    System::Call 'kernel32::GetTickCount() i.r0'
+    IntOp $0 $0 - ${START}
+    IntOp ${TOTAL} ${TOTAL} + $0
+    Pop $0
+  ${EndIf}
+!macroend
+
+Function RelayInitBenchmarkTiming
+  StrCpy $RelayBenchmarkEnabled "0"
+  ReadEnvStr $RelayBenchmarkRunId "RELAY_BENCHMARK_EXIT_AFTER_RENDER"
+  ${If} $RelayBenchmarkRunId != "1"
+    Return
+  ${EndIf}
+  ReadEnvStr $RelayBenchmarkRunId "RELAY_BENCHMARK_RUN_ID"
+  !insertmacro RelayValidateTransactionId "$RelayBenchmarkRunId" $RelayTransactionIsValid
+  ${If} $RelayTransactionIsValid != "1"
+    Return
+  ${EndIf}
+  StrCpy $RelayBenchmarkEnabled "1"
+  StrCpy $RelayBenchmarkElapsed "0"
+  StrCpy $RelayBenchmarkValidationMs "0"
+  StrCpy $RelayBenchmarkHashMs "0"
+  StrCpy $RelayBenchmarkExecMs "0"
+  StrCpy $RelayBenchmarkValidationCount "0"
+  !insertmacro RelayBenchmarkTick $RelayBenchmarkStartedAt
+FunctionEnd
+
+Function RelayWriteBenchmarkTiming
+  ${If} $RelayBenchmarkEnabled != "1"
+    Return
+  ${EndIf}
+  !insertmacro RelayBenchmarkAccumulate $RelayBenchmarkStartedAt $RelayBenchmarkElapsed
+  ; One bounded local marker after successful Exec avoids adding disk writes to the measured
+  ; verification phases. No filenames, hashes, settings, or operational data are recorded.
+  CreateDirectory "$TEMP\Relay\startup-benchmark"
+  ClearErrors
+  FileOpen $RelayBenchmarkFile "$TEMP\Relay\startup-benchmark\$RelayBenchmarkRunId.launcher.json" w
+  ${IfNot} ${Errors}
+    FileWrite $RelayBenchmarkFile '{"protocol":1,"elapsedMs":$RelayBenchmarkElapsed,"runtimeValidationMs":$RelayBenchmarkValidationMs,"contentHashMs":$RelayBenchmarkHashMs,"processCreationMs":$RelayBenchmarkExecMs,"runtimeValidationCount":$RelayBenchmarkValidationCount}$\r$\n'
+    FileClose $RelayBenchmarkFile
+  ${EndIf}
+FunctionEnd
 
 Function RelayRunProbation
   StrCpy $RelayExitCode "1"
@@ -254,6 +321,10 @@ Function RelayRunProbation
 FunctionEnd
 
 !macro RelayRuntimeIsUsable BUILD_ID RESULT
+  !insertmacro RelayBenchmarkTick $RelayBenchmarkValidationStartedAt
+  ${If} $RelayBenchmarkEnabled == "1"
+    IntOp $RelayBenchmarkValidationCount $RelayBenchmarkValidationCount + 1
+  ${EndIf}
   StrCpy ${RESULT} "0"
   !insertmacro RelayValidateBuildId "${BUILD_ID}" $RelayBuildIsValid
   ${If} $RelayBuildIsValid == "1"
@@ -273,7 +344,9 @@ FunctionEnd
     StrCpy $RelayContentIntegrity "0"
     ${If} $RelayMarkerProtocol == "${RELAY_RECOVERY_STATE_PROTOCOL}"
       ${StdUtils.HashFile} $RelayMarkerHash "SHA2-512" "$RelayMarker"
+      !insertmacro RelayBenchmarkTick $RelayBenchmarkHashStartedAt
       !insertmacro RelayVerifyRuntimeContent "$RelayRuntimeDir" "$RelayMarker" $RelayContentIntegrity
+      !insertmacro RelayBenchmarkAccumulate $RelayBenchmarkHashStartedAt $RelayBenchmarkHashMs
     ${EndIf}
     StrLen $RelayPayloadHashLength $RelayMarkerPayloadHash
     ${StrFilter} "$RelayMarkerPayloadHash" "" "0123456789abcdefABCDEF" "" $RelayPayloadHashFiltered
@@ -356,6 +429,7 @@ FunctionEnd
       ${EndIf}
     ${EndIf}
   ${EndIf}
+  !insertmacro RelayBenchmarkAccumulate $RelayBenchmarkValidationStartedAt $RelayBenchmarkValidationMs
 !macroend
 
 Function RelayRestoreServerSnapshot
@@ -637,9 +711,12 @@ FunctionEnd
   !insertmacro RelayRuntimeIsUsable "${BUILD_ID}" $RelayRuntimeIsUsable
   ${If} $RelayRuntimeIsUsable == "1"
     SetOutPath "$RelayRuntimeDir"
+    !insertmacro RelayBenchmarkTick $RelayBenchmarkExecStartedAt
     ClearErrors
     Exec '"$RelayExecutable" $RelayArgs'
     ${IfNot} ${Errors}
+      !insertmacro RelayBenchmarkAccumulate $RelayBenchmarkExecStartedAt $RelayBenchmarkExecMs
+      Call RelayWriteBenchmarkTiming
       SetErrorLevel 0
       Quit
     ${EndIf}
@@ -650,9 +727,12 @@ FunctionEnd
   !insertmacro RelayRuntimeIsUsable "${BUILD_ID}" $RelayRuntimeIsUsable
   ${If} $RelayRuntimeIsUsable == "1"
     SetOutPath "$RelayRuntimeDir"
+    !insertmacro RelayBenchmarkTick $RelayBenchmarkExecStartedAt
     ClearErrors
     Exec '"$RelayExecutable" ${RELAY_RECOVERY_CENTER_ARGUMENT}'
     ${IfNot} ${Errors}
+      !insertmacro RelayBenchmarkAccumulate $RelayBenchmarkExecStartedAt $RelayBenchmarkExecMs
+      Call RelayWriteBenchmarkTiming
       SetErrorLevel 0
       Quit
     ${EndIf}
@@ -667,6 +747,7 @@ Function .onInit
     SetErrorLevel ${RELAY_LAUNCHER_PROTOCOL_EXIT_CODE}
     Quit
   ${EndIf}
+  Call RelayInitBenchmarkTiming
   System::Call 'kernel32::CreateFileW(w "$RelayRoot\launcher.lock", i 0x40000000, i 0, p 0, i 4, i 0x80, p 0) p.r0 ?e'
   Pop $RelayLockError
   StrCpy $RelayLockHandle $0

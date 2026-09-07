@@ -40,15 +40,18 @@ export function WebUploadRecovery({
     setBusy(true);
     setError(null);
     try {
-      if (!(await globalThis.api?.reselectKnowledgeUploadSource(pending.batchId))) {
+      const recovered = await globalThis.api?.reselectKnowledgeUploadSource(pending.batchId);
+      // Even an interrupted restart can replace the original staging batch.
+      await refresh();
+      if (!recovered) {
         setError(
           'Select all original PDFs with matching names and sizes. The transfer restarts from the beginning; cancelled selection leaves it unchanged.',
         );
         return;
       }
-      await refresh();
       await onRecovered();
     } catch {
+      await refresh();
       setError('Transfer could not restart. Reconnect and reselect the PDFs again.');
     } finally {
       setBusy(false);

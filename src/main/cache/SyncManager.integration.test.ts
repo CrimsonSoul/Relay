@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { SyncManager } from './SyncManager';
 import { PendingChanges, type PendingChange } from './PendingChanges';
 
@@ -12,6 +13,31 @@ function at<T>(items: readonly T[], index: number): T {
     throw new Error(`Expected an element at index ${index} (length ${items.length})`);
   }
   return item;
+}
+
+type ReplayRequest = {
+  collection: string;
+  action: 'update' | 'delete';
+  recordId: string;
+  expectedUpdated: string;
+  expectedFingerprint: string;
+  data?: Record<string, unknown>;
+};
+
+function sortJsonKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonKeys);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort((left, right) => {
+          if (left === right) return 0;
+          return left < right ? -1 : 1;
+        })
+        .map((key) => [key, sortJsonKeys(record[key])]),
+    );
+  }
+  return value;
 }
 
 function createFakePb(
@@ -31,6 +57,30 @@ function createFakePb(
         return authValid;
       },
       token: authValid ? 'fake-token' : '',
+    },
+    async send(url: string, options: { method: string; body: ReplayRequest; requestKey: null }) {
+      if (url !== '/api/relay/offline/replay' || options.method !== 'POST') {
+        throw Object.assign(new Error('Route not found'), { status: 404 });
+      }
+      const { collection, action, recordId, expectedUpdated, expectedFingerprint, data } =
+        options.body;
+      calls.push({ method: `replay-${action}`, collection, id: recordId, data });
+      const existing = records.get(recordId);
+      if (
+        !existing ||
+        existing.updated !== expectedUpdated ||
+        createHash('sha256')
+          .update(JSON.stringify(sortJsonKeys(existing)))
+          .digest('hex') !== expectedFingerprint
+      ) {
+        throw Object.assign(new Error('Revision changed'), { status: 409 });
+      }
+      if (action === 'delete') {
+        records.delete(recordId);
+      } else {
+        records.set(recordId, { ...existing, ...data, updated: new Date().toISOString() });
+      }
+      return { applied: true };
     },
     collection(name: string) {
       return {
@@ -141,20 +191,72 @@ describe('SyncManager integration tests', () => {
     expect(result.total).toBe(3);
     expect(result.conflicts).toBe(0);
     expect(result.errors).toHaveLength(0);
+    expect(result.synced).toEqual([1, 2, 3]);
+    expect(serverRecords.get(existingId)).toMatchObject({ name: 'Updated Name' });
+    expect(serverRecords.has(deleteId)).toBe(false);
 
     // Verify PB methods were called for each action
     const methods = fakePb.calls.map((c) => c.method);
     expect(methods).toContain('create');
-    expect(methods).toContain('getOne'); // update path fetches first
-    expect(methods).toContain('update');
-    expect(methods).toContain('delete');
+    expect(methods).toContain('getOne'); // update and delete read their expected revision first
+    expect(methods).toContain('replay-update');
+    expect(methods).toContain('replay-delete');
+    expect(methods).not.toContain('update');
+    expect(methods).not.toContain('delete');
 
-    // Drain the queue
-    for (const change of changes) {
-      pendingChanges.remove(change.id);
+    // Drain only acknowledged changes from the queue.
+    for (const changeId of result.synced) {
+      pendingChanges.remove(changeId);
     }
     expect(pendingChanges.getAll()).toHaveLength(0);
   });
+
+  it.each([
+    { action: 'update', updated: '2026-03-20T10:00:00Z' },
+    { action: 'delete', updated: '2026-03-20T10:00:00Z' },
+    { action: 'update', updated: '2026-03-20T10:01:00Z' },
+    { action: 'delete', updated: '2026-03-20T10:01:00Z' },
+  ] as const)(
+    'retains the queued $action and concurrent server edit at $updated',
+    async ({ action, updated }) => {
+      const recordId = 'rec_concurrent_001';
+      const baseUpdated = '2026-03-20T10:00:00Z';
+      const serverRecords = new Map<string, Record<string, unknown>>([
+        [recordId, { id: recordId, name: 'Original', updated: baseUpdated }],
+      ]);
+      const fakePb = createFakePb({ records: serverRecords });
+      const concurrentEdit = {
+        id: recordId,
+        name: 'Concurrent server edit',
+        updated,
+      };
+      const manager = new SyncManager({
+        ...fakePb,
+        send: async (...args: Parameters<typeof fakePb.send>) => {
+          serverRecords.set(recordId, concurrentEdit);
+          return fakePb.send(...args);
+        },
+      } as never);
+      const changeId = pendingChanges.enqueue(
+        'notes',
+        action,
+        { id: recordId, name: 'Offline version' },
+        baseUpdated,
+      );
+
+      const result = await manager.syncAll(pendingChanges.getAll());
+      for (const syncedId of result.synced) pendingChanges.remove(syncedId);
+
+      expect(result.synced).toEqual([]);
+      expect(result.conflicts).toBe(1);
+      expect(result.conflicted).toEqual([changeId]);
+      expect(result.errors).toEqual([]);
+      expect(serverRecords.get(recordId)).toEqual(concurrentEdit);
+      expect(pendingChanges.getAll()).toMatchObject([
+        { id: changeId, action, data: { id: recordId, name: 'Offline version' }, baseUpdated },
+      ]);
+    },
+  );
 
   it('conflict detection: older client timestamp triggers conflict_log create', async () => {
     const recordId = 'rec_conflict_001';
@@ -267,6 +369,8 @@ describe('SyncManager integration tests', () => {
     expect(result.total).toBe(1);
     expect(result.errors).toHaveLength(0);
     expect(result.conflicts).toBe(0);
+    expect(result.synced).toEqual([1]);
+    expect(fakePb.calls.map((call) => call.method)).toEqual(['getOne']);
   });
 
   it('error accumulation: failing create is recorded but other changes still process', async () => {

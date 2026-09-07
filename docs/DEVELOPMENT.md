@@ -15,6 +15,37 @@ Use these directories as the primary mental model:
 
 For runtime structure, see `docs/architecture.md`.
 
+## Dependency Compatibility
+
+Use Node.js 22.23.2 LTS from `.node-version`, with matching Node 22 type declarations, and
+install the committed lockfile with `npm ci`. Dependency updates must satisfy peer requirements
+and the native runtime contract as well as passing tests. Do not bypass peer validation to force
+an unsupported major version into the tree.
+
+The current compatibility bounds are deliberate:
+
+- Node 22 avoids a native cleanup crash reproduced with better-sqlite3 12 rebuilt against
+  Node 24.20 headers. Fresh prebuilt installs can hide it; verify the cache tests after native
+  module restoration before advancing the Node major version.
+- Electron 42 retains Windows prebuilt bindings for better-sqlite3 12; Electron 43's ABI has no
+  matching upstream Windows prebuild, so packaging from macOS fails. Electron 44 also removes the
+  separate ANGLE libraries required by existing Windows runtime markers. Moving beyond these
+  bounds requires verified Windows native builds and a compatible updater transition, including
+  validation by already installed clients and retained-build rollback.
+- better-sqlite3 12 retains the native binding location covered by the same integrity contract.
+  Version 13 moves the loaded binding to `prebuilds/win32-x64.node`; that transition needs the same
+  compatibility verification before deployment.
+- electron-vite 5 supports Vite through version 7. Keep Vite 7 and React plugin 5 together until
+  electron-vite supports Vite 8.
+- The React and JSX accessibility lint plugins support ESLint through version 9. The TypeScript
+  parser supports TypeScript below 6.1. Keep ESLint 9 and TypeScript 6 until those peer bounds move.
+- plist 4 remains loadable by CommonJS packaging consumers on Node 22. Version 5 exposes only an
+  import entry point. The existing legacy inflight compatibility override remains pinned rather
+  than substituting lru-cache 11's incompatible export shape.
+
+Check the upstream releases again when changing these bounds. Ordinary compatible package and
+lockfile updates do not authorize dropping runtime integrity checks or changing existing data.
+
 ## Source Of Truth
 
 These files define the current workflow and should win over stale assumptions:
@@ -132,7 +163,8 @@ resumable after process loss; mismatched recovery metadata fails closed. The Win
 drives download, preparation, restart, promotion, cleanup, and predecessor retention through real native
 executables in a disposable root.
 
-The stable launcher has its own compatibility generation, separate from the recovery-state protocol.
+The stable launcher has its own compatibility generation, separate from the recovery-state protocol:
+the current generation is `7`, with probe exit code `107`.
 Any launcher behavior change must advance both the launcher generation and its probe exit code so a
 new bootstrap cannot mistake an older executable for the required supervisor. The packaged Windows
 smoke test installs the previous artifact first, then requires the current installer to expose the
@@ -185,7 +217,14 @@ release-worthy conventional commit through the protected `main` pull-request wor
 
 The Build workflow owns the full pull-request and `main` verification graph. Its required
 `Build quality gate` fails closed over formatting, linting, type checking, dependency audit, the
-production build, unit coverage plus cache integration tests, and four renderer-coverage shards.
+production build, unit coverage plus cache integration tests, four renderer-coverage shards, and
+the mandatory `workflow-tests` job. That job installs PocketBase and runs
+`npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts`, then installs Playwright's
+Chromium, WebKit, and Linux dependencies and runs `npm run test:electron` followed by
+`npm run test:web` under Xvfb. Both browser-driven suites use the npm wrappers sequentially so each
+restores the Node native-module ABI before the next suite starts. The job runs on every Build
+invocation, including when exact-tree reuse succeeds; any unsuccessful or missing result blocks
+the aggregate gate and the Release workflow that waits for it.
 Those coverage jobs are canonical: Sonar consumes their merged reports instead of rerunning the
 same tests. The required `SonarQube quality gate` and `Snyk security gate` names remain stable in
 the same workflow. Sonar always runs for the exact final `main` commit, including its reviewed-issue
@@ -247,6 +286,26 @@ opens the current user's Relay database. The JSON report contains:
 - `timeline`: Relay's internal monotonic milestones, including window creation, shell readiness,
   PocketBase health, credentials, schema, workspace readiness, and renderer mount
 
+Packaged Windows `stable` samples also include `launcherTiming`. The native launcher writes a
+bounded local numeric marker only when `RELAY_BENCHMARK_EXIT_AFTER_RENDER=1` and
+`RELAY_BENCHMARK_RUN_ID` is a valid UUID. The benchmark reads that marker and reports:
+
+| Field                       | Measured work                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `elapsedMs`                 | Native launcher interval from benchmark initialization through successful runtime process creation             |
+| `runtimeValidationMs`       | Total runtime validation time across all attempted runtimes                                                    |
+| `contentHashMs`             | Launch-critical content hash verification, included within `runtimeValidationMs`                               |
+| `processCreationMs`         | Time in the native runtime process creation call                                                               |
+| `runtimeValidationCount`    | Number of runtime validation attempts                                                                          |
+| `outsideMeasuredLauncherMs` | Remaining outer process lifetime, including Windows process setup, the NSIS prologue, marker writing, and exit |
+
+`outsideMeasuredLauncherMs` subtracts `elapsedMs` from `processHandoffMs` and clamps small negative
+timer-resolution differences to zero. The packaged summary reports per-field medians only when
+every sample has a valid marker. Missing markers, including older launchers, and the `prepare` and
+`portable` scenarios report `launcherTiming: null`; they do not fabricate zero-duration samples.
+Malformed markers fail the benchmark. Startup performance conclusions require measurements from
+the actual packaged Windows launch path.
+
 Compare results on the same machine and power state. The proxy does not reproduce OS-level cache
 changes made by a particular installer, so use packaged-build measurements as the final release
 check when update behavior itself changes.
@@ -266,6 +325,17 @@ Current conventions:
 - Route API failures through `handleApiError()`
 
 In Relay, normal record reads and online writes go directly from the renderer to PocketBase. Standard writes pass through `mutationGateway.ts`: it uses the PocketBase SDK while online, routes offline-capable desktop mutations through validated IPC into the main-process queue, and rejects offline writes in Relay Web.
+
+Queued desktop updates and deletes use `POST /api/relay/offline/replay` after reading the server
+revision. The existing integrity-verified `relay_privileged_reauth.pb.js` hook validates the
+allowlisted base collection, normal API rule, and update fields, then compares the observed
+`updated` revision and a canonical public-record SHA-256 fingerprint before applying the mutation
+in one transaction. The fingerprint distinguishes changes with the same millisecond timestamp;
+field modifiers are resolved before API rules are evaluated. A concurrent change returns a
+conflict and leaves the queued mutation pending. Creates and ordinary online CRUD retain their
+existing PocketBase routes, including for older clients. An older server without the replay route
+returns 404; new clients retain those pending changes and tell the operator to update the Relay
+server before syncing them.
 
 ### Adding A Service
 
@@ -361,7 +431,7 @@ Checked-in PocketBase JavaScript hooks live separately under
 be committed. The Windows package copies that directory to `pocketbase/hooks` beside the embedded
 binary. Local macOS development loads the same checked-in hooks without producing a Mac release
 artifact. Server startup deliberately fails if the required privileged reauthentication hook is
-missing or not registered. The new hook and paired-client reauthentication call must be tested as a
+missing or not registered. The hook and paired-client reauthentication call must be tested as a
 coordinated server/client rollout; mixed versions retain ordinary connectivity but cannot complete
 fresh-password protected actions.
 
@@ -586,6 +656,11 @@ The demo seed intentionally writes historical `author` and `addressedBy` snapsho
 
 Relay uses three Vitest configurations:
 
+Vitest 5 retains the existing explicit mock cleanup through `clearMocks: false`. The renderer
+registers jest-dom's standalone matchers and declares their Vitest 5 types in
+`src/renderer/src/vitest.d.ts`. Sharded renderer coverage uses `.vitest/blob` for both CI artifact
+upload and report merging.
+
 | Suite               | Config                      | Environment |
 | ------------------- | --------------------------- | ----------- |
 | Main/shared/scripts | `vitest.config.ts`          | Node        |
@@ -600,12 +675,30 @@ npm run test:unit
 npm run test:cache
 npm run test:renderer
 npm run test:coverage
+npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts
 npm run test:electron
 npm run test:web
 npm run test:knowledge-upload-soak
 ```
 
 `npm test` runs the main/shared, cache, and renderer suites in sequence. `test:knowledge-upload-soak` is a standalone stress harness rather than a Vitest suite.
+
+The focused PocketBase replay test starts the downloaded binary with disposable data and verifies
+concurrent update/delete rejection, normal API rules and field validation, and unchanged ordinary
+CRUD for older clients. Use its explicit filename to avoid invoking unrelated verification harnesses.
+
+When upgrading the bundled PocketBase executable, run
+`RELAY_VERIFY_PREVIOUS_POCKETBASE=/absolute/path/to/previous/pocketbase npm run test:pocketbase -- verification/pocketbase-upgrade.test.ts`.
+This opt-in creates disposable data using the previous executable, then checks authentication,
+record IDs, JSON, relations, protected attachments, unknown collections, repeated startup, and
+backup/restore with the current executable. It also restores the complete stopped pre-upgrade
+snapshot with the previous executable, and verifies that a server without the atomic replay hook
+keeps offline edits pending while ordinary online CRUD continues to work. Deploy the Relay server
+before new desktop clients so their queued edits can synchronize.
+The suite accepts an executable path only and never uses an existing data directory. The PocketBase
+backup API case is unavailable on Windows; the suite skips when the previous executable is not
+supplied. These disposable rehearsals do not replace the native Windows updater/recovery checks
+or a rehearsal against a verified production backup.
 
 `npm run test:electron` builds the current source before launching Playwright so it cannot test a
 stale `dist` tree. Test-mode Electron windows remain native-hidden and unfocused; on macOS the test
@@ -621,7 +714,7 @@ and its packaged smoke and updater-manager integration tests exercise the actual
 stable process supervisor, Job Object, shortcut, retained build, snapshot swap, restart, and
 probation lifecycle.
 
-`npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs browser workflows in Chromium profiles for Chrome and Edge plus WebKit for Safari. Coverage includes the 1,024-pixel shell and Web status page, connection recovery and sign-out, Compose and On-Call actions, image insertion and PNG/EML/ICS downloads, protected Dynatrace actions, and interrupted PDF reselection followed by Wiki publication and reading. Upstream Radar data is a controlled fixture; this suite does not verify live tenant access or delivery in Outlook or a calendar application. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
+`npm run test:web` builds Relay, starts a real Relay Web server in an isolated temporary data directory, and runs browser workflows in Chromium profiles for Chrome and Edge plus WebKit for Safari. Coverage includes the 1,024-pixel shell and Web status page, connection recovery and sign-out, Compose and On-Call actions, image insertion and PNG/EML/ICS downloads, protected Dynatrace actions, and repeated PDF transfer interruptions followed by reselection, Wiki publication, and reading. Failed reselection refreshes the latest pending batch so retry and discard operate on the current transfer. Upstream Radar data is a controlled fixture; this suite does not verify live tenant access or delivery in Outlook or a calendar application. Run the command through npm so the native `better-sqlite3` module is restored to the correct ABI after Electron exits.
 
 Coverage thresholds are currently 80% for lines, functions, branches, and statements in the main/shared and renderer configs. The cache config has no independent coverage threshold.
 

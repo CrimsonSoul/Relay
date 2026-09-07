@@ -812,10 +812,10 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await knowledgeHome.getByRole('button', { name: /^Open Wiki,/ }).click();
   await page.getByRole('button', { name: 'Manage Wiki', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Manage Wiki', exact: true })).toBeVisible();
-  let interruptedFirstChunk = false;
+  let interruptedChunks = 0;
   await page.route('**/relay-api/v1/knowledge/upload/chunk?**', async (route) => {
-    if (!interruptedFirstChunk) {
-      interruptedFirstChunk = true;
+    if (interruptedChunks < 2) {
+      interruptedChunks += 1;
       await route.abort('connectionfailed');
       return;
     }
@@ -830,7 +830,7 @@ test('protects Web administration while keeping Problems actions and Wiki readin
     mimeType: 'application/pdf',
     buffer: pdfFixture,
   });
-  await expect.poll(() => interruptedFirstChunk).toBe(true);
+  await expect.poll(() => interruptedChunks).toBe(1);
 
   await page.reload();
   await expect(page.getByTestId('sidebar-compose')).toBeVisible();
@@ -847,6 +847,16 @@ test('protects Web administration while keeping Problems actions and Wiki readin
   await interruptedTransfer.getByRole('button', { name: 'Reselect PDFs' }).click();
   const recoveryChooser = await recoveryChooserPromise;
   await recoveryChooser.setFiles({
+    name: documentFile,
+    mimeType: 'application/pdf',
+    buffer: pdfFixture,
+  });
+  await expect.poll(() => interruptedChunks).toBe(2);
+  await expect(interruptedTransfer.getByRole('alert')).toContainText(/select.*PDFs/i);
+  const retryChooserPromise = page.waitForEvent('filechooser');
+  await interruptedTransfer.getByRole('button', { name: 'Reselect PDFs' }).click();
+  const retryChooser = await retryChooserPromise;
+  await retryChooser.setFiles({
     name: documentFile,
     mimeType: 'application/pdf',
     buffer: pdfFixture,

@@ -1204,6 +1204,8 @@ test.describe('Vital Critical Path', () => {
     test('Knowledge management document workflow preserves search edit rename and pagination', async () => {
       await seedKnowledgePaginationFixtures(107);
       const { content, rail, search } = await openOwnerKnowledgeManagement();
+      const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
+      await expect(loadMore).toBeVisible();
 
       const documentsScrollTop = await content.evaluate((element) => {
         element.scrollTop = 180;
@@ -1239,7 +1241,6 @@ test.describe('Vital Critical Path', () => {
         .poll(() => content.evaluate((element) => element.scrollTop))
         .toBe(documentsScrollTop);
 
-      const loadMore = window.getByRole('button', { name: 'Load more documents', exact: true });
       await expect(loadMore).toBeVisible();
       const initialRows = await content.locator('.knowledge-management-row').count();
       await loadMore.click();

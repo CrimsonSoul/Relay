@@ -1,10 +1,25 @@
 import type PocketBase from 'pocketbase';
+import { createHash } from 'node:crypto';
 import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import type { PendingChange } from './PendingChanges';
 import { loggers } from '../logger';
 import { authenticateRelayAppUserShared } from '../pocketbase/RelayAppUserAuthCoordinator';
 
 const logger = loggers.sync;
+
+function fingerprintRecord(record: Record<string, unknown>): string {
+  const canonical = JSON.stringify(record, (_key, value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).sort(([a], [b]) => {
+            if (a === b) return 0;
+            return a < b ? -1 : 1;
+          }),
+        )
+      : value,
+  );
+  return createHash('sha256').update(canonical).digest('hex');
+}
 
 export interface SyncResult {
   conflict: boolean;
@@ -91,20 +106,17 @@ export class SyncManager {
     data: Record<string, unknown>,
     change: PendingChange,
   ): Promise<SyncResult> {
-    let conflict = false;
-    let overwrittenData: Record<string, unknown> | undefined;
+    let expectedRecord: Record<string, unknown>;
 
     try {
       const serverRecord = await this.pb.collection(collection).getOne(recordId);
+      expectedRecord = serverRecord;
       const serverUpdated = new Date(serverRecord.updated).getTime();
 
       const baseTimestamp = change.baseUpdated
         ? new Date(change.baseUpdated).getTime()
         : change.timestamp;
       if (serverUpdated > baseTimestamp) {
-        conflict = true;
-        overwrittenData = { ...serverRecord };
-
         // Wrap conflict_log write in its own try/catch so logging failure
         // doesn't prevent the sync from completing.
         try {
@@ -123,7 +135,7 @@ export class SyncManager {
         }
 
         logger.warn('Conflict detected during sync', { collection, recordId });
-        return { conflict: true, applied: false, overwrittenData };
+        return { conflict: true, applied: false, overwrittenData: { ...serverRecord } };
       }
     } catch (err: unknown) {
       // Distinguish 404 (record not found → create) from other errors (rethrow)
@@ -147,16 +159,14 @@ export class SyncManager {
       throw err;
     }
 
-    // Apply the client's version (last-write-wins)
+    // The server checks this observed revision and writes in one transaction.
     const {
       id: _id, // eslint-disable-line sonarjs/no-unused-vars
       created: _created, // eslint-disable-line sonarjs/no-unused-vars
       updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
       ...updateData
     } = data;
-    await this.pb.collection(collection).update(recordId, updateData);
-
-    return { conflict, applied: true, overwrittenData };
+    return this.mutateUnchanged(collection, 'update', recordId, expectedRecord, updateData);
   }
 
   private async applyDelete(
@@ -164,22 +174,65 @@ export class SyncManager {
     recordId: string,
     baseUpdated?: string,
   ): Promise<SyncResult> {
+    let existing: Record<string, unknown>;
     try {
-      if (baseUpdated) {
-        const existing = await this.pb.collection(collection).getOne(recordId);
-        if (new Date(existing.updated).getTime() > new Date(baseUpdated).getTime()) {
-          return { conflict: true, applied: false, overwrittenData: { ...existing } };
-        }
-      }
-      await this.pb.collection(collection).delete(recordId);
+      existing = await this.pb.collection(collection).getOne(recordId);
     } catch (err: unknown) {
-      // Only swallow 404 (already deleted); let network/auth errors propagate
+      // Only a missing record is idempotent; a missing replay route is not.
       const status = (err as { status?: number })?.status;
       if (status !== 404) {
         throw err;
       }
+      return { conflict: false, applied: true };
     }
-    return { conflict: false, applied: true };
+    if (
+      baseUpdated &&
+      new Date(String(existing.updated)).getTime() > new Date(baseUpdated).getTime()
+    ) {
+      return { conflict: true, applied: false, overwrittenData: { ...existing } };
+    }
+    return this.mutateUnchanged(collection, 'delete', recordId, existing);
+  }
+
+  private async mutateUnchanged(
+    collection: string,
+    action: 'update' | 'delete',
+    recordId: string,
+    expectedRecord: Record<string, unknown>,
+    data?: Record<string, unknown>,
+  ): Promise<SyncResult> {
+    const expectedUpdated = expectedRecord.updated;
+    if (typeof expectedUpdated !== 'string' || !Number.isFinite(Date.parse(expectedUpdated))) {
+      throw new Error(
+        'The server record has no valid revision. The offline change remains queued.',
+      );
+    }
+    try {
+      const result = await this.pb.send<{ applied: boolean }>('/api/relay/offline/replay', {
+        method: 'POST',
+        body: {
+          collection,
+          action,
+          recordId,
+          expectedUpdated,
+          expectedFingerprint: fingerprintRecord(expectedRecord),
+          ...(data ? { data } : {}),
+        },
+        requestKey: null,
+      });
+      if (result?.applied !== true)
+        throw new Error('The server did not confirm the offline change.');
+      return { conflict: false, applied: true };
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      if (status === 409) return { conflict: true, applied: false };
+      if (status === 404) {
+        throw new Error(
+          'Update the Relay server before syncing offline changes. Your changes remain queued.',
+        );
+      }
+      throw error;
+    }
   }
 
   async syncAll(

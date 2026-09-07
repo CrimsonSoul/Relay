@@ -905,6 +905,15 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
 
           error.scrollLeft = shouldScrollToEnd ? error.scrollWidth : 0;
           const errorStyles = globalThis.getComputedStyle(error);
+          const errorText = error.firstChild;
+          if (!(errorText instanceof globalThis.Text) || errorText.length === 0) {
+            throw new Error('Missing error text');
+          }
+          const terminalRange = globalThis.document.createRange();
+          terminalRange.setStart(errorText, errorText.length - 1);
+          terminalRange.setEnd(errorText, errorText.length);
+          const terminalRect = terminalRange.getBoundingClientRect();
+          const errorViewportLeft = error.getBoundingClientRect().left + error.clientLeft;
           return {
             mode: requestedMode,
             wideNativeGutterSimulation,
@@ -922,6 +931,10 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
               scrollWidth: error.scrollWidth,
               scrollLeft: error.scrollLeft,
               maxScrollLeft: error.scrollWidth - error.clientWidth,
+              terminalContentVisible:
+                terminalRect.width > 0 &&
+                terminalRect.left >= errorViewportLeft - 1 &&
+                terminalRect.right <= errorViewportLeft + error.clientWidth + 1,
               overflowX: errorStyles.overflowX,
               controlLeft: control.getBoundingClientRect().left,
               controlWidth: control.getBoundingClientRect().width,
@@ -1149,8 +1162,13 @@ test('stable gutters preserve Relay topology under overlay and classic scrollbar
         controlWidth: before[mode].error.controlWidth,
       });
       expect(after[mode].error.scrollWidth, mode).toBeGreaterThan(after[mode].error.clientWidth);
-      expect(after[mode].error.scrollLeft, mode).toBe(after[mode].error.maxScrollLeft);
+      // scrollLeft preserves subpixels while scrollWidth and clientWidth are rounded integers.
+      expect(
+        Math.abs(after[mode].error.scrollLeft - after[mode].error.maxScrollLeft),
+        mode,
+      ).toBeLessThanOrEqual(1);
       expect(after[mode].error.scrollLeft, mode).toBeGreaterThan(0);
+      expect(after[mode].error.terminalContentVisible, `${mode} error tail`).toBe(true);
     }
   } finally {
     await app.close();

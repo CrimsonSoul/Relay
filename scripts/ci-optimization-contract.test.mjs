@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -12,6 +13,36 @@ const readJson = async (path) => JSON.parse(await readProjectFile(path));
 const readYaml = async (path) => parse(await readProjectFile(path));
 const findStep = (job, name) => job.steps.find((step) => step.name === name);
 const normalizeExpression = (value) => String(value).replaceAll(/\s+/gu, ' ').trim();
+const runBuildGate = async (env) => {
+  const build = await readYaml('.github/workflows/build.yml');
+  const aggregate = findStep(build.jobs.quality, 'Require successful build components');
+  return spawnSync('/bin/bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', aggregate.run], {
+    encoding: 'utf8',
+    env: {
+      ELIGIBLE: 'false',
+      PROVENANCE_RESULT: 'success',
+      REUSE: 'false',
+      STATIC_RESULT: 'success',
+      UNIT_COVERAGE_RESULT: 'success',
+      RENDERER_COVERAGE_RESULT: 'success',
+      WORKFLOW_TESTS_RESULT: 'success',
+      ...env,
+    },
+  });
+};
+const reuseModes = [
+  { name: 'fresh verification', env: {} },
+  {
+    name: 'validated static-tree reuse',
+    env: {
+      ELIGIBLE: 'true',
+      REUSE: 'true',
+      STATIC_RESULT: 'skipped',
+      UNIT_COVERAGE_RESULT: 'skipped',
+      RENDERER_COVERAGE_RESULT: 'skipped',
+    },
+  },
+];
 
 describe('CI optimization contracts', () => {
   it('keeps passing test output quiet in every Vitest suite', () => {
@@ -92,7 +123,13 @@ describe('CI optimization contracts', () => {
     const quality = build.jobs.quality;
     expect(quality.name).toBe('Build quality gate');
     expect(quality.if).toBe('always()');
-    expect(quality.needs).toEqual(['provenance', 'static', 'unit-coverage', 'renderer-coverage']);
+    expect(quality.needs).toEqual([
+      'provenance',
+      'static',
+      'unit-coverage',
+      'renderer-coverage',
+      'workflow-tests',
+    ]);
     const aggregate = findStep(quality, 'Require successful build components');
     expect(aggregate.env).toEqual({
       ELIGIBLE: '${{ needs.provenance.outputs.eligible }}',
@@ -101,14 +138,80 @@ describe('CI optimization contracts', () => {
       REUSE: '${{ needs.provenance.outputs.reuse }}',
       STATIC_RESULT: '${{ needs.static.result }}',
       UNIT_COVERAGE_RESULT: '${{ needs.unit-coverage.result }}',
+      WORKFLOW_TESTS_RESULT: '${{ needs.workflow-tests.result }}',
     });
-    expect(aggregate.run).toContain('[[ "$PROVENANCE_RESULT" != "success" ]]');
-    expect(aggregate.run).toContain('[[ "$REUSE" == "true" ]]');
-    expect(aggregate.run).toContain('[[ "$ELIGIBLE" == "true" ]]');
-    expect(aggregate.run.replaceAll(/\s+/gu, ' ')).toContain(
-      'if [[ "$STATIC_RESULT" != "success" || "$UNIT_COVERAGE_RESULT" != "success" || "$RENDERER_COVERAGE_RESULT" != "success" ]]; then',
+  });
+
+  it('runs Electron and browser workflows sequentially through ABI-restoring npm scripts on every build', async () => {
+    const build = await readYaml('.github/workflows/build.yml');
+    const workflows = build.jobs['workflow-tests'];
+
+    expect(workflows).toBeDefined();
+    expect(workflows).not.toHaveProperty('if');
+    expect(workflows).not.toHaveProperty('needs');
+    expect(workflows['runs-on']).toBe('ubuntu-latest');
+    expect(workflows['continue-on-error']).not.toBe(true);
+    expect(workflows.env?.RELAY_SKIP_POCKETBASE_DOWNLOAD).not.toBe('1');
+    const install = findStep(workflows, 'Install dependencies');
+    expect(install.run).toBe('npm ci --prefer-offline');
+    expect(install.env?.RELAY_SKIP_POCKETBASE_DOWNLOAD).not.toBe('1');
+    const pocketbase = findStep(workflows, 'Verify PocketBase replay against real storage');
+    expect(pocketbase).toBeDefined();
+    expect(pocketbase.run).toBe(
+      'npm run test:pocketbase -- verification/offline-replay-real-pb.test.ts',
     );
-    expect(aggregate.run).toContain('exit 1');
+    const browsers = findStep(workflows, 'Install Playwright browsers and Linux dependencies');
+    expect(browsers.run).toBe('npx playwright install --with-deps chromium webkit');
+    const electron = findStep(workflows, 'Run Electron workflows');
+    const web = findStep(workflows, 'Run browser workflows');
+    expect(electron.run).toBe('xvfb-run --auto-servernum npm run test:electron');
+    expect(web.run).toBe('xvfb-run --auto-servernum npm run test:web');
+    expect(workflows.steps.indexOf(pocketbase)).toBeGreaterThan(workflows.steps.indexOf(install));
+    expect(workflows.steps.indexOf(browsers)).toBeGreaterThan(workflows.steps.indexOf(pocketbase));
+    expect(workflows.steps.indexOf(electron)).toBeGreaterThan(workflows.steps.indexOf(browsers));
+    expect(workflows.steps.indexOf(web)).toBeGreaterThan(workflows.steps.indexOf(electron));
+    for (const step of [install, pocketbase, browsers, electron, web]) {
+      expect(step).not.toHaveProperty('if');
+      expect(step['continue-on-error']).not.toBe(true);
+    }
+  });
+
+  describe.each(reuseModes)('Build gate with $name', ({ env }) => {
+    it('accepts successful workflow verification', async () => {
+      const outcome = await runBuildGate(env);
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(0);
+    });
+
+    it.each(['failure', 'cancelled', 'skipped', 'neutral', 'pending', ''])(
+      'rejects workflow result "%s"',
+      async (result) => {
+        const outcome = await runBuildGate({ ...env, WORKFLOW_TESTS_RESULT: result });
+        expect(outcome.error).toBeUndefined();
+        expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
+      },
+    );
+
+    it('rejects unsuccessful provenance even when workflow verification passes', async () => {
+      const outcome = await runBuildGate({ ...env, PROVENANCE_RESULT: 'failure' });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
+    });
+  });
+
+  it.each(['STATIC_RESULT', 'UNIT_COVERAGE_RESULT', 'RENDERER_COVERAGE_RESULT'])(
+    'rejects a failed %s when reuse is disabled',
+    async (component) => {
+      const outcome = await runBuildGate({ [component]: 'failure' });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
+    },
+  );
+
+  it('rejects reuse without validated eligibility even when all verification passes', async () => {
+    const outcome = await runBuildGate({ REUSE: 'true', ELIGIBLE: 'false' });
+    expect(outcome.error).toBeUndefined();
+    expect(outcome.status, outcome.stdout + outcome.stderr).toBe(1);
   });
 
   it('merges all four renderer coverage shards before the Sonar scan', async () => {
