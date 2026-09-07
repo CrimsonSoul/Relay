@@ -203,7 +203,7 @@ export class SyncManager {
   ): Promise<SyncResult> {
     const expectedUpdated = expectedRecord.updated;
     if (typeof expectedUpdated !== 'string' || !Number.isFinite(Date.parse(expectedUpdated))) {
-      throw new Error(
+      throw new TypeError(
         'The server record has no valid revision. The offline change remains queued.',
       );
     }
