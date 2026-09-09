@@ -393,6 +393,9 @@ export class CollectionStore<T extends CollectionRecord> {
   private clientUnsubscribe: (() => void) | null = null;
   private inFlightEvents: { action: string; record: CollectionRecord }[] | null = null;
   private hasOnlineMemory = false;
+  private retainedRecords = new Map<string, T>();
+  private readonly retainedDeletes = new Set<string>();
+  private displayedScope: string | null = null;
   private clientGeneration: number | null = null;
   private serverGeneration = 0;
   private persistenceGeneration = 0;
@@ -472,6 +475,12 @@ export class CollectionStore<T extends CollectionRecord> {
       return;
     }
     this.dynamicFilterValues = nextValues;
+    this.invalidateQuerySave();
+    if (!isOnline())
+      this.updateSnapshot({
+        offlineReadiness: 'incomplete',
+        offlineError: 'Reconnect to finish saving this view.',
+      });
     const data = this.snapshot.data.filter(this.acceptsCreate);
     if (data.length !== this.snapshot.data.length) this.updateSnapshot({ data });
     if (this.active) void this.fetchData();
@@ -485,6 +494,7 @@ export class CollectionStore<T extends CollectionRecord> {
     this.updateSnapshot({ loadingMore: true, error: null });
     try {
       this.loadedLimit = previousLimit + boundedPageSize;
+      this.invalidateQuerySave();
       const succeeded = await this.fetchData();
       if (!succeeded && this.active) {
         this.loadedLimit = previousLimit;
@@ -511,6 +521,9 @@ export class CollectionStore<T extends CollectionRecord> {
     record: CollectionRecord,
     reconciled = false,
   ): void {
+    this.invalidateQuerySave();
+    this.rememberMutation(action, record);
+    const wasHeld = this.snapshot.data.some((item) => item.id === record.id);
     // An in-flight read predates this local queue/cache change.
     this.fetchGeneration += 1;
     this.inFlightEvents = null;
@@ -531,7 +544,18 @@ export class CollectionStore<T extends CollectionRecord> {
       this.filtered,
     );
     if (next !== this.snapshot.data) {
-      this.updateSnapshot({ data: next });
+      const totalItems = adjustedRealtimeTotal(
+        this.snapshot.totalItems,
+        this.snapshot.data.length,
+        action,
+        wasHeld,
+        this.acceptsCreate(record),
+      );
+      this.updateSnapshot({
+        data: next,
+        totalItems,
+        hasMore: totalItems === undefined ? this.snapshot.hasMore : next.length < totalItems,
+      });
       void this.writeQueryMembership(next);
     }
   }
@@ -559,6 +583,9 @@ export class CollectionStore<T extends CollectionRecord> {
 
   private resetServerMemory(): void {
     this.hasOnlineMemory = false;
+    this.retainedRecords.clear();
+    this.retainedDeletes.clear();
+    this.displayedScope = null;
     this.lastSnapshotSignature = null;
     this.persistenceGeneration += 1;
     this.serverGeneration += 1;
@@ -662,6 +689,7 @@ export class CollectionStore<T extends CollectionRecord> {
   }
 
   private handleRealtimeEvent(action: string, record: CollectionRecord): void {
+    this.rememberMutation(action, record);
     const wasHeld = this.snapshot.data.some((item) => item.id === record.id);
     const accepted = this.acceptsCreate(record);
     let next = applyRealtimeEvent(
@@ -676,6 +704,7 @@ export class CollectionStore<T extends CollectionRecord> {
       next = next.slice(0, this.loadedLimit);
     }
     if (next !== this.snapshot.data) {
+      this.invalidateQuerySave();
       const adjustedTotal = adjustedRealtimeTotal(
         this.snapshot.totalItems,
         this.snapshot.data.length,
@@ -796,51 +825,86 @@ export class CollectionStore<T extends CollectionRecord> {
       ),
     });
     this.hasOnlineMemory = true;
+    this.retainedRecords = new Map(next.map((record) => [record.id, record]));
+    this.retainedDeletes.clear();
+    this.displayedScope = this.memoryScopeKey();
     this.webGate?.markReady();
     void this.writeCacheRecords(next);
   }
 
+  private memoryScopeKey(): string {
+    return JSON.stringify([
+      this.options.pageSize ? this.loadedLimit : null,
+      [...this.dynamicFilterValues].sort((left, right) => left.localeCompare(right)),
+    ]);
+  }
+
+  private rememberMutation(action: string, record: CollectionRecord): void {
+    if (!this.hasOnlineMemory) return;
+    if (action === 'delete') {
+      this.retainedRecords.delete(record.id);
+      this.retainedDeletes.add(record.id);
+    } else {
+      this.retainedDeletes.delete(record.id);
+      this.retainedRecords.set(record.id, record as T);
+    }
+  }
+
+  private cachedScopeComplete(membership: CachedQueryMembership | null): boolean {
+    if (!membership?.complete) return false;
+    if (!this.batchedFilterField) return true;
+    const savedValues = new Set(membership.filterValues ?? []);
+    return [...this.dynamicFilterValues].every((value) => savedValues.has(value));
+  }
+
   private async fetchOfflineSnapshot(isCurrent: () => boolean): Promise<void> {
-    if (this.hasOnlineMemory) return;
+    const scope = this.memoryScopeKey();
+    if (this.hasOnlineMemory && this.displayedScope === scope) return;
     const cachedQuery = await this.readCachedQueryRecords();
-    const allCached = sortCachedRecords(cachedQuery.records, this.comparator);
-    const filtered = allCached?.filter(this.acceptsCreate) ?? null;
-    const cached =
-      filtered && this.options.pageSize ? filtered.slice(0, this.loadedLimit) : filtered;
+    const persisted = new Map((cachedQuery.records ?? []).map((record) => [record.id, record]));
+    const merged = new Map(persisted);
+    for (const id of this.retainedDeletes) merged.delete(id);
+    for (const [id, record] of this.retainedRecords) merged.set(id, record);
+    const filtered =
+      sortCachedRecords([...merged.values()].filter(this.acceptsCreate), this.comparator) ?? [];
+    const cached = this.options.pageSize ? filtered.slice(0, this.loadedLimit) : filtered;
     const status = await getApi()
       ?.cacheSnapshotStatus?.(this.collectionName)
       .catch((): CacheSnapshotStatus => ({ complete: false }));
-    if (isCurrent() && cached) {
-      const totalItems = cachedQuery.membership?.totalItems ?? filtered?.length ?? cached.length;
-      const complete = this.queryCacheKey
-        ? cachedQuery.membership?.complete === true &&
-          cached.length === cachedQuery.membership.recordIds.length
-        : status?.complete === true;
-      this.updateSnapshot({
-        data: cached,
-        offlineSupported: status?.supported !== false,
-        offlineReadiness: complete ? 'ready' : 'incomplete',
-        offlineError: 'Reconnect to finish saving this directory.',
-        error: null,
-        hasLoadedSnapshot: true,
-        totalItems,
-        hasMore: Boolean(filtered && cached.length < filtered.length),
-        cachedPartial:
-          cachedQuery.membership !== null &&
-          (!cachedQuery.membership.complete ||
-            cached.length < cachedQuery.membership.recordIds.length),
-      });
-    }
+    if (!isCurrent() || cachedQuery.records === null) return;
+    const membership = cachedQuery.membership;
+    const totalItems = this.batchedFilterField
+      ? filtered.length
+      : (membership?.totalItems ?? filtered.length);
+    const missingMembers = membership?.recordIds.some((id) => !persisted.has(id)) === true;
+    const persistedFiltered =
+      sortCachedRecords([...persisted.values()].filter(this.acceptsCreate), this.comparator) ?? [];
+    const persistedVisible = this.options.pageSize
+      ? persistedFiltered.slice(0, this.loadedLimit)
+      : persistedFiltered;
+    const sameAsDisk = JSON.stringify(cached) === JSON.stringify(persistedVisible);
+    const completeSource = this.queryCacheKey
+      ? this.cachedScopeComplete(membership) && !missingMembers
+      : status?.complete === true;
+    const complete = completeSource && sameAsDisk && cached.length >= totalItems;
+    this.displayedScope = scope;
+    this.updateSnapshot({
+      data: cached,
+      offlineSupported: status?.supported !== false,
+      offlineReadiness: complete ? 'ready' : 'incomplete',
+      offlineError: complete ? undefined : 'Reconnect to finish saving this view.',
+      error: null,
+      hasLoadedSnapshot: true,
+      totalItems,
+      hasMore: cached.length < filtered.length,
+      cachedPartial: membership !== null && !complete,
+    });
   }
 
   private async recoverFromFetchError(error: unknown, isCurrent: () => boolean): Promise<void> {
     if (isAutocancelledError(error) || !isCurrent()) return;
     handleApiError(error);
     if (this.webGate) {
-      this.updateSnapshot({ error: errorMessage(error) });
-      return;
-    }
-    if (this.hasOnlineMemory) {
       this.updateSnapshot({ error: errorMessage(error) });
       return;
     }
@@ -897,6 +961,12 @@ export class CollectionStore<T extends CollectionRecord> {
     if (membership === null) return { records: cached, membership: null };
     const memberIds = new Set(membership.recordIds);
     return { records: cached.filter((record) => memberIds.has(record.id)), membership };
+  }
+
+  private invalidateQuerySave(): void {
+    if (!this.queryCacheKey || this.snapshot.offlineReadiness !== 'saving') return;
+    this.invalidatePersistence();
+    this.markPersistenceFailure('Data changed while saving. Retry offline save.');
   }
 
   private invalidatePersistence(): void {
@@ -1057,6 +1127,7 @@ export class CollectionStore<T extends CollectionRecord> {
       const result = await getApi()?.cacheQuerySnapshot?.(this.collectionName, this.queryCacheKey, {
         recordIds,
         totalItems,
+        ...(this.batchedFilterField ? { filterValues: [...this.dynamicFilterValues] } : {}),
         complete: recordIds.length >= totalItems,
       });
       if (current() && !result?.ok) this.markPersistenceFailure(result?.error);

@@ -110,7 +110,8 @@ function isQueryMembershipWithinCacheLimit(
   membership: unknown,
 ): membership is CachedQueryMembership {
   if (!membership || typeof membership !== 'object' || Array.isArray(membership)) return false;
-  const { recordIds, totalItems, complete } = membership as Partial<CachedQueryMembership>;
+  const { recordIds, totalItems, complete, filterValues } =
+    membership as Partial<CachedQueryMembership>;
   if (!Array.isArray(recordIds) || recordIds.length > MAX_CACHE_RECORDS) return false;
   if (
     typeof totalItems !== 'number' ||
@@ -120,8 +121,13 @@ function isQueryMembershipWithinCacheLimit(
   ) {
     return false;
   }
+  if (
+    filterValues !== undefined &&
+    (!Array.isArray(filterValues) || filterValues.length > MAX_CACHE_RECORDS)
+  )
+    return false;
   let totalBytes = 0;
-  for (const id of recordIds) {
+  for (const id of [...recordIds, ...(filterValues ?? [])]) {
     if (typeof id !== 'string' || id.trim().length === 0) return false;
     const bytes = Buffer.byteLength(id, 'utf8');
     if (bytes > MAX_CACHE_RECORD_ID_BYTES) return false;

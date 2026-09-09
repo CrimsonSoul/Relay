@@ -64,6 +64,24 @@ function rendererManualChunk(id: string): string | undefined {
 
 function mainManualChunk(id: string): string | undefined {
   const normalizedId = id.replaceAll('\\', '/');
+  // Static leaf graphs only: these have no runtime edge back into the entry.
+  // Privileged/Knowledge startup remains linked exactly as before.
+  if (
+    normalizedId.endsWith('/src/shared/ipc.ts') ||
+    normalizedId.endsWith('/src/shared/offlineCollections.ts')
+  )
+    return 'ipc-contract';
+  if (
+    normalizedId.endsWith('/src/main/logger.ts') ||
+    normalizedId.endsWith('/src/shared/logging.ts') ||
+    normalizedId.endsWith('/src/shared/logRedaction.ts')
+  )
+    return 'main-logging';
+  if (
+    normalizedId.endsWith('/src/main/pocketbase/BackupManager.ts') ||
+    normalizedId.endsWith('/src/main/pocketbase/BackupVerification.ts')
+  )
+    return 'backup-manager';
   if (normalizedId.endsWith('/src/main/web/WebSessionStore.ts')) {
     return 'web-session-store';
   }

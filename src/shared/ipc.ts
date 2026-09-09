@@ -49,6 +49,8 @@ export {
 
 export type CachedQueryMembership = {
   recordIds: string[];
+  /** Equality values whose complete result this batched query actually saved. */
+  filterValues?: string[];
   totalItems: number;
   complete: boolean;
 };

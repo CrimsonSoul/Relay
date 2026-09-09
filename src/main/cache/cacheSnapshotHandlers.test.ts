@@ -106,3 +106,20 @@ it('revokes a prior renderer document generation on main-frame navigation', () =
   callback({}, 'file:///renderer/index.html', false, true);
   expect(call(C.CACHE_SNAPSHOT_APPEND, stage.generation, 0, rows).ok).toBe(false);
 });
+it('bounds and persists the equality scope attached to query completeness', () => {
+  cache.updateRecord('contacts', 'create', rows[0]!);
+  const membership = {
+    recordIds: ['saved'],
+    totalItems: 1,
+    complete: true,
+    filterValues: ['team-a', 'team-b'],
+  };
+  expect(
+    call(C.CACHE_QUERY_SNAPSHOT, 'contacts', '0123456789abcdef', {
+      ...membership,
+      filterValues: ['x'.repeat(513)],
+    }).ok,
+  ).toBe(false);
+  expect(call(C.CACHE_QUERY_SNAPSHOT, 'contacts', '0123456789abcdef', membership).ok).toBe(true);
+  expect(cache.readQueryMembership('contacts', '0123456789abcdef')).toEqual(membership);
+});

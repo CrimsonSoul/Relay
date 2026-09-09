@@ -485,7 +485,11 @@ The renderer keeps complete online data visible while it saves. A same-server di
 refresh retains this newer in-memory snapshot even if persistence failed; changing servers clears
 it, including when a disposed store is revived. Revision signatures suppress writes only after a
 current durable acknowledgement. Filtered and paged views acknowledge record writes before saving
-exact persisted query membership; incomplete pages do not claim full-directory completeness.
+exact persisted query membership; a newer realtime or queued mutation interrupts a captured query
+save before it can overwrite that mutation, and retry saves the current view. Offline filter or
+page expansion merges saved records with newer retained rows and deletion markers. Batched-query
+membership records its saved equality values, so an expanded unsaved scope cannot inherit a ready
+status. Incomplete pages do not claim full-directory completeness.
 The status bar aggregates active Contacts, Servers, On-call, and bridge-group directory stores,
 showing “Saving for offline use”, “Offline copy ready”, or an incomplete reason with “Retry offline
 save”. Pending-change controls remain available. Readiness is independent of current-connection

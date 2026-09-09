@@ -553,6 +553,9 @@ export class OfflineCache {
       const membership = JSON.parse(row.value) as Partial<CachedQueryMembership>;
       return Array.isArray(membership.recordIds) &&
         membership.recordIds.every((id) => typeof id === 'string') &&
+        (membership.filterValues === undefined ||
+          (Array.isArray(membership.filterValues) &&
+            membership.filterValues.every((value) => typeof value === 'string'))) &&
         typeof membership.totalItems === 'number' &&
         Number.isSafeInteger(membership.totalItems) &&
         membership.totalItems >= membership.recordIds.length &&
