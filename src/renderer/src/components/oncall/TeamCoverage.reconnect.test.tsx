@@ -19,6 +19,7 @@ vi.mock('../../services/pocketbase', () => ({
     state.listeners.add(listener);
     return () => state.listeners.delete(listener);
   },
+  getPocketBaseClientGeneration: () => 0,
   onPocketBaseClientChange: () => () => {},
   handleApiError: vi.fn(),
   getPb: () => ({

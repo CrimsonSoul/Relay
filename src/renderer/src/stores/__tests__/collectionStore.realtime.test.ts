@@ -20,6 +20,7 @@ vi.mock('@renderer/services/pocketbase', () => ({
   handleApiError: vi.fn(),
   isOnline: () => true,
   onConnectionStateChange: () => () => undefined,
+  getPocketBaseClientGeneration: () => 0,
   onPocketBaseClientChange: () => () => undefined,
 }));
 

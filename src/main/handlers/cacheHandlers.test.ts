@@ -39,6 +39,7 @@ describe('cacheHandlers', () => {
     readCollection: vi.fn(),
     readQueryMembership: vi.fn(),
     updateRecord: vi.fn(),
+    markSnapshotIncomplete: vi.fn(),
     completePendingChange: vi.fn(() => false),
     writeCollection: vi.fn(),
     writeQueryMembership: vi.fn(),

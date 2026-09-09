@@ -1,4 +1,9 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useState, useSyncExternalStore } from 'react';
+import {
+  getOfflineReadiness,
+  subscribeOfflineReadiness,
+  retryOfflineCopies,
+} from '../stores/collectionStoreRegistry';
 import type { ReactNode } from 'react';
 import {
   getConnectionState,
@@ -50,6 +55,7 @@ export function StatusBarLive({ label }: { readonly label?: string }) {
   const [state, setState] = useState<ConnectionState>(getConnectionState());
   const pendingStatus = usePendingSyncStatus();
   const [pendingOpen, setPendingOpen] = useState(false);
+  const offlineCopy = useSyncExternalStore(subscribeOfflineReadiness, getOfflineReadiness);
   const { pendingCount, issueCount = 0 } = pendingStatus;
   const resolvedLabel = label ?? connectionLabel(state);
 
@@ -62,6 +68,26 @@ export function StatusBarLive({ label }: { readonly label?: string }) {
       <span className={`status-bar-live status-bar-live--${state}`} data-connection-state={state}>
         <span className="status-bar-live-dot" />
         {resolvedLabel}
+        {getRelayRuntime().kind !== 'web' && offlineCopy && (
+          <span className="status-bar-offline-copy" role="status">
+            {offlineCopy.state === 'saving' && 'Saving for offline use'}
+            {offlineCopy.state === 'ready' && 'Offline copy ready'}
+            {offlineCopy.state === 'incomplete' && (
+              <>
+                <span title={offlineCopy.reason}>
+                  Offline copy incomplete — {offlineCopy.reason ?? 'saving failed'}
+                </span>
+                <button
+                  type="button"
+                  className="status-bar-pending"
+                  onClick={() => void retryOfflineCopies()}
+                >
+                  Retry offline save
+                </button>
+              </>
+            )}
+          </span>
+        )}
         {pendingCount > 0 && getRelayRuntime().kind !== 'web' && (
           <button type="button" className="status-bar-pending" onClick={() => setPendingOpen(true)}>
             {pendingCount} {pendingCount === 1 ? 'change' : 'changes'} pending

@@ -198,6 +198,14 @@ const api: BridgeAPI = {
   setWorkstationAwakeEnabled: (enabled) =>
     ipcRenderer.invoke(IPC_CHANNELS.WORKSTATION_AWAKE_SET_ENABLED, enabled),
   // Cache (offline)
+  cacheSnapshotBegin: (collection, manifest) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT_BEGIN, collection, manifest),
+  cacheSnapshotAppend: (generation, sequence, records) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT_APPEND, generation, sequence, records),
+  cacheSnapshotCommit: (generation) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT_COMMIT, generation),
+  cacheSnapshotStatus: (collection) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT_STATUS, collection),
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
   cacheQueryRead: (collection: string, queryKey: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.CACHE_QUERY_READ, collection, queryKey),

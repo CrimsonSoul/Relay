@@ -1,3 +1,9 @@
+import type {
+  CacheSnapshotManifest,
+  CacheSnapshotBeginAck,
+  CacheWriteAck,
+  CacheSnapshotStatus,
+} from './cacheSnapshot';
 import type { BackupHealth } from './backupHealth';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
 import type {
@@ -815,9 +821,24 @@ export type BridgeAPI = {
     collection: string,
     queryKey: string,
     membership: CachedQueryMembership,
-  ) => Promise<void>;
-  cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
-  cacheSnapshot: (collection: string, signature: string, records: unknown[]) => Promise<void>;
+  ) => Promise<CacheWriteAck>;
+  cacheWrite: (collection: string, action: string, record: unknown) => Promise<CacheWriteAck>;
+  cacheSnapshot: (
+    collection: string,
+    signature: string,
+    records: unknown[],
+  ) => Promise<CacheWriteAck>;
+  cacheSnapshotBegin?: (
+    collection: string,
+    manifest: CacheSnapshotManifest,
+  ) => Promise<CacheSnapshotBeginAck>;
+  cacheSnapshotAppend?: (
+    generation: string,
+    sequence: number,
+    records: unknown[],
+  ) => Promise<CacheWriteAck>;
+  cacheSnapshotCommit?: (generation: string) => Promise<CacheWriteAck>;
+  cacheSnapshotStatus?: (collection: string) => Promise<CacheSnapshotStatus>;
   mutateOffline: (input: OfflineMutationInput) => Promise<OfflineMutationResult>;
   onOfflineMutationApplied: (callback: (event: OfflineMutationApplied) => void) => () => void;
   getPendingSyncStatus: () => Promise<PendingSyncStatus>;
@@ -998,6 +1019,10 @@ export const IPC_CHANNELS = {
   CACHE_QUERY_SNAPSHOT: 'cache:querySnapshot',
   CACHE_WRITE: 'cache:write',
   CACHE_SNAPSHOT: 'cache:snapshot',
+  CACHE_SNAPSHOT_BEGIN: 'cache:snapshotBegin',
+  CACHE_SNAPSHOT_APPEND: 'cache:snapshotAppend',
+  CACHE_SNAPSHOT_COMMIT: 'cache:snapshotCommit',
+  CACHE_SNAPSHOT_STATUS: 'cache:snapshotStatus',
   OFFLINE_MUTATE: 'offline:mutate',
   OFFLINE_MUTATION_APPLIED: 'offline:mutationApplied',
   OFFLINE_PENDING_STATUS: 'offline:pendingStatus',

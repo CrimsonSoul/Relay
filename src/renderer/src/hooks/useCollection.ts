@@ -20,6 +20,9 @@ interface UseCollectionResult<T> {
   hasMore: boolean;
   loadingMore: boolean;
   cachedPartial?: boolean;
+  offlineReadiness?: NonNullable<CollectionSnapshot<CollectionRecord>['offlineReadiness']>;
+  offlineError?: string;
+  retryOfflineSave?: () => Promise<void>;
   refetch: () => Promise<void>;
   loadMore: () => Promise<void>;
 }
@@ -74,6 +77,9 @@ export function useCollection<T extends CollectionRecord = RecordModel>(
       hasMore: snapshot.hasMore === true,
       loadingMore: snapshot.loadingMore === true,
       cachedPartial: snapshot.cachedPartial === true,
+      offlineReadiness: snapshot.offlineReadiness,
+      offlineError: snapshot.offlineError,
+      retryOfflineSave: store?.retryOfflineSave ?? refetchDisabled,
       refetch: store?.refetch ?? refetchDisabled,
       loadMore: store?.loadMore ?? refetchDisabled,
     }),

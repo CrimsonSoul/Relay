@@ -395,8 +395,8 @@ describe('useCollection', () => {
 
   it('persists filtered query membership without deleting unrelated cached rows', async () => {
     const current = makeRecord('current', { status: 'CLOSED' });
-    const cacheWrite = vi.fn();
-    const cacheQuerySnapshot = vi.fn();
+    const cacheWrite = vi.fn().mockResolvedValue({ ok: true, persisted: true });
+    const cacheQuerySnapshot = vi.fn().mockResolvedValue({ ok: true, persisted: true });
     (globalThis as Record<string, unknown>).api = {
       cacheQuerySnapshot,
       cacheWrite,
@@ -913,7 +913,7 @@ describe('useCollection', () => {
   });
 
   it('does not send an unchanged full snapshot again on refetch', async () => {
-    const cacheSnapshotMock = vi.fn();
+    const cacheSnapshotMock = vi.fn().mockResolvedValue({ ok: true, persisted: true });
     (globalThis as Record<string, unknown>).api = {
       cacheSnapshot: cacheSnapshotMock,
     };
@@ -1465,6 +1465,7 @@ describe('useCollection', () => {
     const { result } = renderHook(() => useCollection('contacts'));
     await waitFor(() => expect(result.current.data[0]?.id).toBe('server'));
 
+    act(() => getCollectionStore('contacts').applyOptimisticMutation('update', optimisticRecord));
     vi.mocked(isOnline).mockReturnValue(false);
     act(() => connectionChangeCallback?.('offline'));
     await waitFor(() => expect(result.current.data[0]?.name).toBe('Offline edit'));

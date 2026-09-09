@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import type { CacheSnapshotManifest } from '@shared/cacheSnapshot';
 import { ipcMain } from 'electron';
 import {
   setupPendingRecoveryHandlers,
@@ -56,6 +58,13 @@ const VALID_COLLECTIONS = new Set([
 ]);
 
 const VALID_ACTIONS = new Set(['create', 'update', 'delete']);
+const CACHE_FAILURE = {
+  ok: false,
+  persisted: false,
+  error: 'The offline copy could not be saved. Retry when connected.',
+} as const;
+const CACHE_UNSUPPORTED = { ...CACHE_FAILURE, unsupported: true } as const;
+const CACHE_SAVED = { ok: true, persisted: true } as const;
 const MAX_CACHE_RECORDS = 10_000;
 const MAX_CACHE_RECORD_BYTES = 256 * 1024;
 const MAX_CACHE_SNAPSHOT_BYTES = 10 * 1024 * 1024;
@@ -218,6 +227,85 @@ export function setupCacheHandlers(
   getSyncManager?: () => SyncManager | null,
   getAppConfig?: () => AppConfig | null,
 ): void {
+  const snapshotSessions = new WeakMap<Electron.WebContents, string>();
+  let snapshotIdentity: { cache: OfflineCache | null; server: string } | undefined;
+  const snapshotOwner = (event: Electron.IpcMainInvokeEvent) => {
+    let session = snapshotSessions.get(event.sender);
+    if (!session) {
+      session = randomUUID();
+      snapshotSessions.set(event.sender, session);
+      event.sender.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace) snapshotSessions.set(event.sender, randomUUID());
+      });
+    }
+    const config = getAppConfig?.()?.load();
+    const server = config?.mode === 'client' ? config.serverUrl : 'local';
+    const cache = getCache();
+    if (
+      snapshotIdentity &&
+      (snapshotIdentity.cache !== cache || snapshotIdentity.server !== server)
+    ) {
+      cache?.invalidateSnapshotTransfers();
+    }
+    snapshotIdentity = { cache, server };
+    return `${session}:${event.sender.id}:${event.senderFrame?.processId}:${event.senderFrame?.routingId}:${server}`;
+  };
+  ipcMain.handle(
+    IPC_CHANNELS.CACHE_SNAPSHOT_BEGIN,
+    (event, collection: string, manifest: CacheSnapshotManifest) => {
+      if (
+        !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_BEGIN) ||
+        !VALID_COLLECTIONS.has(collection)
+      )
+        return CACHE_FAILURE;
+      if (getAppConfig?.()?.load()?.mode === 'server') return CACHE_UNSUPPORTED;
+      return getCache()?.beginSnapshot(collection, snapshotOwner(event), manifest) ?? CACHE_FAILURE;
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.CACHE_SNAPSHOT_APPEND,
+    (event, generation: string, sequence: number, records: Record<string, unknown>[]) => {
+      if (
+        !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_APPEND) ||
+        typeof generation !== 'string' ||
+        !Number.isSafeInteger(sequence)
+      )
+        return CACHE_FAILURE;
+      return (
+        getCache()?.appendSnapshot(snapshotOwner(event), generation, sequence, records) ??
+        CACHE_FAILURE
+      );
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.CACHE_SNAPSHOT_COMMIT, (event, generation: string) => {
+    if (
+      !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_COMMIT) ||
+      typeof generation !== 'string'
+    )
+      return CACHE_FAILURE;
+    const cache = getCache();
+    if (!cache) return CACHE_FAILURE;
+    const result = cache.commitSnapshot(snapshotOwner(event), generation);
+    const config = getAppConfig?.()?.load();
+    if (result.ok && config?.mode === 'client') {
+      const existing = cache.getUsableCacheMarker();
+      cache.setUsableCacheMarker(
+        config.serverUrl,
+        existing?.authenticatedAt ?? Date.now(),
+        Date.now(),
+      );
+    }
+    return result;
+  });
+  ipcMain.handle(IPC_CHANNELS.CACHE_SNAPSHOT_STATUS, (event, collection: string) => {
+    if (
+      !assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT_STATUS) ||
+      !VALID_COLLECTIONS.has(collection)
+    )
+      return { complete: false };
+    if (getAppConfig?.()?.load()?.mode === 'server') return { complete: false, supported: false };
+    return { ...(getCache()?.snapshotStatus(collection) ?? { complete: false }), supported: true };
+  });
   ipcMain.handle(IPC_CHANNELS.CACHE_READ, (event, collection: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_READ)) return [];
     if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
@@ -260,76 +348,82 @@ export function setupCacheHandlers(
   ipcMain.handle(
     IPC_CHANNELS.CACHE_QUERY_SNAPSHOT,
     (event, collection: string, queryKey: string, membership: CachedQueryMembership) => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)) return;
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_QUERY_SNAPSHOT)) return CACHE_FAILURE;
       if (!isValidCacheQuery(collection, queryKey)) {
         loggers.cache.error('CACHE_QUERY_SNAPSHOT: invalid query identity', { collection });
-        return;
+        return CACHE_FAILURE;
       }
       if (!isQueryMembershipWithinCacheLimit(membership)) {
         loggers.cache.error('CACHE_QUERY_SNAPSHOT: invalid membership', { collection });
-        return;
+        return CACHE_FAILURE;
       }
-      getCache()?.writeQueryMembership(collection, queryKey, membership);
+      return getCache()?.writeQueryMembership(collection, queryKey, membership)
+        ? CACHE_SAVED
+        : CACHE_FAILURE;
     },
   );
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_WRITE,
     (event, collection: string, action: string, record: Record<string, unknown>) => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return;
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return CACHE_FAILURE;
       // This channel persists trusted realtime events locally. User/offline server mutations
       // use OFFLINE_MUTATE and its narrower writable-collection allowlist.
       if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_WRITE: invalid collection', { collection });
-        return;
+        return CACHE_FAILURE;
       }
       if (typeof action !== 'string' || !VALID_ACTIONS.has(action)) {
         loggers.cache.error('CACHE_WRITE: invalid action', { action });
-        return;
+        return CACHE_FAILURE;
       }
       if (!record || typeof record !== 'object' || Array.isArray(record)) {
         loggers.cache.error('CACHE_WRITE: invalid record', { record: typeof record });
-        return;
+        return CACHE_FAILURE;
       }
       if (!hasNonEmptyStringId(record)) {
         loggers.cache.error('CACHE_WRITE: record missing valid id', {
           idType: typeof (record as { id?: unknown }).id,
         });
-        return;
+        return CACHE_FAILURE;
       }
       if (!isRecordWithinCacheLimit(record)) {
+        getCache()?.markSnapshotIncomplete(collection);
         loggers.cache.error('CACHE_WRITE: record exceeds cache size limit', { id: record.id });
-        return;
+        return CACHE_FAILURE;
       }
       const cache = getCache();
-      if (!cache) return;
+      if (!cache) return CACHE_FAILURE;
       if (collection === KNOWLEDGE_DOCUMENTS_COLLECTION && record.lifecycleState === 'trashed') {
-        cache.updateRecord(collection, 'delete', { id: record.id });
-        return;
+        return cache.updateRecord(collection, 'delete', { id: record.id })
+          ? CACHE_SAVED
+          : CACHE_FAILURE;
       }
-      cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record);
+      return cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record)
+        ? CACHE_SAVED
+        : CACHE_FAILURE;
     },
   );
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_SNAPSHOT,
     (event, collection: string, signature: string, records: Record<string, unknown>[]) => {
-      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT)) return;
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT)) return CACHE_FAILURE;
       if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_SNAPSHOT: invalid collection', { collection });
-        return;
+        return CACHE_FAILURE;
       }
       if (typeof signature !== 'string' || !CACHE_SIGNATURE_PATTERN.test(signature)) {
         loggers.cache.error('CACHE_SNAPSHOT: invalid revision signature');
-        return;
+        return CACHE_FAILURE;
       }
       if (!Array.isArray(records)) {
         loggers.cache.error('CACHE_SNAPSHOT: records is not an array', { records: typeof records });
-        return;
+        return CACHE_FAILURE;
       }
       if (!records.every(hasNonEmptyStringId)) {
         loggers.cache.error('CACHE_SNAPSHOT: records contain invalid ids');
-        return;
+        return CACHE_FAILURE;
       }
       const readableRecords = readableCacheRecords(collection, records);
       if (!isSnapshotWithinCacheLimit(readableRecords)) {
@@ -337,10 +431,10 @@ export function setupCacheHandlers(
           collection,
           count: records.length,
         });
-        return;
+        return CACHE_FAILURE;
       }
       const cache = getCache();
-      if (!cache) return;
+      if (!cache) return CACHE_FAILURE;
       const wrote = cache.writeCollection(collection, signature, readableRecords);
       const config = getAppConfig?.()?.load();
       if (wrote !== false && config?.mode === 'client') {
@@ -351,6 +445,7 @@ export function setupCacheHandlers(
           Date.now(),
         );
       }
+      return wrote ? CACHE_SAVED : CACHE_FAILURE;
     },
   );
 

@@ -462,6 +462,36 @@ queued change pending. Creates and ordinary online CRUD retain the built-in rout
 older-client connectivity. A new client receiving 404 from an older server's missing replay route
 retains the pending update or delete and asks the operator to update the server before syncing it.
 
+Full desktop directory snapshots use acknowledged `cache:snapshotBegin`, `cache:snapshotAppend`,
+and `cache:snapshotCommit` IPC. The main process stages one generation per collection in SQLite,
+separate from the visible cache; only a verified final transaction replaces the collection and
+its explicit completeness marker. Generations bind the trusted renderer frame, cache instance,
+and server identity. A new generation, another full collection writer, reconfiguration, or close
+invalidates the previous transfer; restart removes abandoned staging. Unfinished transfers expire
+after ten minutes and are cleaned on the next begin or restart. Rejection, interruption, or commit
+failure preserves the last committed snapshot.
+
+Each record is limited to 256 KiB of serialized UTF-8, each IPC chunk to 512 records and 2 MiB
+including array punctuation, and each full collection to 100,000 records and 256 MiB. The staging
+mutation journal also shares that byte ceiling; overflow invalidates the transfer while keeping
+ordinary cache mutations usable. Sequence, unique IDs, counts, byte totals, and revision signature
+are checked before promotion. Realtime mutations and reviewed/queued cache changes during staging
+are journaled, then durable pending overlays are reapplied inside the final transaction, preserving
+saved revisions and separate `queuedAt` markers. Empty complete snapshots remove previous rows.
+Legacy one-shot IPC retains its 10,000-record/10 MiB guard and now acknowledges success or failure;
+legacy full writers supersede staging and do not manufacture chunk-protocol completeness.
+
+The renderer keeps complete online data visible while it saves. A same-server disconnect or failed
+refresh retains this newer in-memory snapshot even if persistence failed; changing servers clears
+it, including when a disposed store is revived. Revision signatures suppress writes only after a
+current durable acknowledgement. Filtered and paged views acknowledge record writes before saving
+exact persisted query membership; incomplete pages do not claim full-directory completeness.
+The status bar aggregates active Contacts, Servers, On-call, and bridge-group directory stores,
+showing “Saving for offline use”, “Offline copy ready”, or an incomplete reason with “Retry offline
+save”. Pending-change controls remain available. Readiness is independent of current-connection
+`isAuthoritative` server data and is shown only for supported desktop client storage; server mode
+and Relay Web do not claim an offline copy.
+
 The desktop status bar opens a bounded pending-change list with record identity, failure reason,
 and field-level local/server comparison. `offline:pendingChanges` is a trusted-sender-only durable
 queue facility, not an ordinary CRUD route; it is intentionally absent from Relay Web. List pages

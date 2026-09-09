@@ -1,6 +1,16 @@
+import {
+  collectionRevisionSignature,
+  CACHE_SNAPSHOT_LIMITS,
+  type CacheWriteAck,
+  type CacheSnapshotBeginAck,
+  type CacheSnapshotManifest,
+  type CacheSnapshotStatus,
+} from '@shared/cacheSnapshot';
+export { collectionRevisionSignature } from '@shared/cacheSnapshot';
 import type { CachedQueryMembership, PendingMutationOverlay } from '@shared/ipc';
 import {
   getPb,
+  getPocketBaseClientGeneration,
   handleApiError,
   isOnline,
   onConnectionStateChange,
@@ -50,6 +60,9 @@ export interface CollectionSnapshot<T extends CollectionRecord> {
   hasMore?: boolean;
   loadingMore?: boolean;
   cachedPartial?: boolean;
+  offlineSupported?: boolean;
+  offlineReadiness?: 'saving' | 'ready' | 'incomplete';
+  offlineError?: string;
 }
 
 interface ExtendedApi {
@@ -59,9 +72,28 @@ interface ExtendedApi {
     collection: string,
     queryKey: string,
     membership: CachedQueryMembership,
-  ) => void;
-  cacheWrite?: (collection: string, action: string, record: CollectionRecord) => void;
-  cacheSnapshot?: (collection: string, signature: string, records: CollectionRecord[]) => void;
+  ) => Promise<CacheWriteAck> | void;
+  cacheWrite?: (
+    collection: string,
+    action: string,
+    record: CollectionRecord,
+  ) => Promise<CacheWriteAck> | void;
+  cacheSnapshot?: (
+    collection: string,
+    signature: string,
+    records: CollectionRecord[],
+  ) => Promise<CacheWriteAck> | void;
+  cacheSnapshotBegin?: (
+    collection: string,
+    manifest: CacheSnapshotManifest,
+  ) => Promise<CacheSnapshotBeginAck>;
+  cacheSnapshotAppend?: (
+    generation: string,
+    sequence: number,
+    records: CollectionRecord[],
+  ) => Promise<CacheWriteAck>;
+  cacheSnapshotCommit?: (generation: string) => Promise<CacheWriteAck>;
+  cacheSnapshotStatus?: (collection: string) => Promise<CacheSnapshotStatus>;
   syncPending?: () => Promise<{
     remaining?: number;
     remainingChanges?: PendingMutationOverlay[];
@@ -90,20 +122,6 @@ function syncPendingOnce(): Promise<
     pendingReconnectSync = null;
   });
   return pendingReconnectSync;
-}
-
-export function collectionRevisionSignature(records: readonly CollectionRecord[]): string {
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  const mask = 0xffffffffffffffffn;
-  for (const record of records) {
-    const revision = `${record.id}\u0000${record.updated ?? ''}\u0000${record.queuedAt ?? ''}\u0000`;
-    for (let index = 0; index < revision.length; index += 1) {
-      hash ^= BigInt(revision.charCodeAt(index));
-      hash = (hash * prime) & mask;
-    }
-  }
-  return `${records.length}:${hash.toString(16).padStart(16, '0')}`;
 }
 
 export function collectionQueryCacheKey(
@@ -374,6 +392,11 @@ export class CollectionStore<T extends CollectionRecord> {
   private connectionUnsubscribe: (() => void) | null = null;
   private clientUnsubscribe: (() => void) | null = null;
   private inFlightEvents: { action: string; record: CollectionRecord }[] | null = null;
+  private hasOnlineMemory = false;
+  private clientGeneration: number | null = null;
+  private serverGeneration = 0;
+  private persistenceGeneration = 0;
+  private persistenceFailureEpoch = 0;
   private lastSnapshotSignature: string | null = null;
   private webGate: WebCollectionGate | null = null;
   private loadedLimit: number;
@@ -384,6 +407,7 @@ export class CollectionStore<T extends CollectionRecord> {
     private readonly collectionName: string,
     private readonly options: CollectionQueryOptions,
     private readonly onSubscriberCountChange: SubscriberCountListener = () => undefined,
+    private readonly onReadinessChange: Listener = () => undefined,
   ) {
     this.comparator = buildComparator<T>(options.sort);
     this.acceptsBaseFilter = buildCreateGate(options.filter);
@@ -413,12 +437,21 @@ export class CollectionStore<T extends CollectionRecord> {
     };
   };
 
+  get isOfflineDirectory(): boolean {
+    return !this.queryCacheKey;
+  }
+
   get subscriberCount(): number {
     return this.listeners.size;
   }
 
   readonly refetch = async (): Promise<void> => {
     await this.fetchData();
+  };
+
+  readonly retryOfflineSave = async (): Promise<void> => {
+    if (this.hasOnlineMemory) await this.writeCacheRecords(this.snapshot.data);
+    else await this.fetchData();
   };
 
   readonly loadMore = (): Promise<void> => {
@@ -499,7 +532,7 @@ export class CollectionStore<T extends CollectionRecord> {
     );
     if (next !== this.snapshot.data) {
       this.updateSnapshot({ data: next });
-      this.writeQueryMembership(next);
+      void this.writeQueryMembership(next);
     }
   }
 
@@ -508,6 +541,7 @@ export class CollectionStore<T extends CollectionRecord> {
     if (!this.active) return;
     this.active = false;
     this.updateSnapshot({ isAuthoritative: false });
+    this.invalidatePersistence();
     this.connectionGeneration += 1;
     this.fetchGeneration += 1;
     this.stopRealtimeSubscription();
@@ -523,7 +557,30 @@ export class CollectionStore<T extends CollectionRecord> {
     this.webGate = null;
   }
 
+  private resetServerMemory(): void {
+    this.hasOnlineMemory = false;
+    this.lastSnapshotSignature = null;
+    this.persistenceGeneration += 1;
+    this.serverGeneration += 1;
+    this.updateSnapshot({
+      data: [],
+      loading: true,
+      error: null,
+      hasLoadedSnapshot: false,
+      totalItems: undefined,
+      hasMore: false,
+      cachedPartial: false,
+      offlineSupported: undefined,
+      offlineReadiness: undefined,
+      offlineError: undefined,
+    });
+  }
+
   private start(): void {
+    const clientGeneration = getPocketBaseClientGeneration();
+    if (this.clientGeneration !== null && this.clientGeneration !== clientGeneration)
+      this.resetServerMemory();
+    this.clientGeneration = clientGeneration;
     this.active = true;
     this.connected = isOnline();
     if (isWebRuntime()) this.webGate = registerWebCollectionGate();
@@ -552,6 +609,8 @@ export class CollectionStore<T extends CollectionRecord> {
     this.clientUnsubscribe = onPocketBaseClientChange(() => {
       if (!this.active) return;
       this.connected = isOnline();
+      this.clientGeneration = getPocketBaseClientGeneration();
+      this.resetServerMemory();
       this.webGate?.markDisconnected();
       this.restartConnectionCycle();
     });
@@ -629,13 +688,12 @@ export class CollectionStore<T extends CollectionRecord> {
         totalItems: adjustedTotal,
         hasMore: adjustedTotal === undefined ? this.snapshot.hasMore : next.length < adjustedTotal,
       });
-      this.writeQueryMembership(next);
     }
     const mayChangePageBoundary = realtimeMayChangePageBoundary(action, wasHeld, accepted);
     if (this.options.pageSize && mayChangePageBoundary) {
       this.schedulePageBoundaryRefresh();
     }
-    if (!this.webGate) getApi()?.cacheWrite?.(this.collectionName, action, record);
+    if (!this.webGate) void this.persistRealtime(action, record);
     if (this.inFlightEvents && this.inFlightEvents.length < 1000) {
       this.inFlightEvents.push({ action, record });
     }
@@ -656,6 +714,7 @@ export class CollectionStore<T extends CollectionRecord> {
   ): Promise<boolean> {
     if (!this.active) return true;
     const generation = ++this.fetchGeneration;
+    if (isOnline()) this.invalidatePersistence();
     this.updateSnapshot({ isAuthoritative: false });
     const isCurrent = () =>
       this.active &&
@@ -736,21 +795,32 @@ export class CollectionStore<T extends CollectionRecord> {
         (overlay) => overlay.collection === this.collectionName,
       ),
     });
+    this.hasOnlineMemory = true;
     this.webGate?.markReady();
-    this.writeCacheRecords(records);
-    this.writeQueryMembership(next);
+    void this.writeCacheRecords(next);
   }
 
   private async fetchOfflineSnapshot(isCurrent: () => boolean): Promise<void> {
+    if (this.hasOnlineMemory) return;
     const cachedQuery = await this.readCachedQueryRecords();
     const allCached = sortCachedRecords(cachedQuery.records, this.comparator);
     const filtered = allCached?.filter(this.acceptsCreate) ?? null;
     const cached =
       filtered && this.options.pageSize ? filtered.slice(0, this.loadedLimit) : filtered;
+    const status = await getApi()
+      ?.cacheSnapshotStatus?.(this.collectionName)
+      .catch((): CacheSnapshotStatus => ({ complete: false }));
     if (isCurrent() && cached) {
       const totalItems = cachedQuery.membership?.totalItems ?? filtered?.length ?? cached.length;
+      const complete = this.queryCacheKey
+        ? cachedQuery.membership?.complete === true &&
+          cached.length === cachedQuery.membership.recordIds.length
+        : status?.complete === true;
       this.updateSnapshot({
         data: cached,
+        offlineSupported: status?.supported !== false,
+        offlineReadiness: complete ? 'ready' : 'incomplete',
+        offlineError: 'Reconnect to finish saving this directory.',
         error: null,
         hasLoadedSnapshot: true,
         totalItems,
@@ -770,28 +840,12 @@ export class CollectionStore<T extends CollectionRecord> {
       this.updateSnapshot({ error: errorMessage(error) });
       return;
     }
-    const cachedQuery = await this.readCachedQueryRecords();
-    const cached = sortCachedRecords(cachedQuery.records, this.comparator);
-    if (!isCurrent()) return;
-    const filtered = cached?.filter(this.acceptsCreate) ?? null;
-    const visible =
-      filtered && this.options.pageSize ? filtered.slice(0, this.loadedLimit) : filtered;
-    const totalItems = cachedQuery.membership?.totalItems ?? filtered?.length ?? visible?.length;
-    this.updateSnapshot({
-      ...(visible
-        ? {
-            data: visible,
-            hasLoadedSnapshot: true,
-            totalItems,
-            hasMore: Boolean(filtered && visible.length < filtered.length),
-            cachedPartial:
-              cachedQuery.membership !== null &&
-              (!cachedQuery.membership.complete ||
-                visible.length < cachedQuery.membership.recordIds.length),
-          }
-        : {}),
-      error: errorMessage(error),
-    });
+    if (this.hasOnlineMemory) {
+      this.updateSnapshot({ error: errorMessage(error) });
+      return;
+    }
+    await this.fetchOfflineSnapshot(isCurrent);
+    if (isCurrent()) this.updateSnapshot({ error: errorMessage(error) });
   }
 
   private async fetchFullOnlineRecords(): Promise<T[]> {
@@ -845,30 +899,171 @@ export class CollectionStore<T extends CollectionRecord> {
     return { records: cached.filter((record) => memberIds.has(record.id)), membership };
   }
 
-  private writeCacheRecords(records: T[]): void {
-    if (this.webGate) return;
-    if (this.filtered || this.options.pageSize) {
-      const cacheWrite = getApi()?.cacheWrite;
-      for (const record of records) cacheWrite?.(this.collectionName, 'update', record);
-      return;
-    }
-    const cacheSnapshot = getApi()?.cacheSnapshot;
-    if (!cacheSnapshot) return;
-    const signature = collectionRevisionSignature(records);
-    if (signature === this.lastSnapshotSignature) return;
-    this.lastSnapshotSignature = signature;
-    cacheSnapshot(this.collectionName, signature, records);
+  private invalidatePersistence(): void {
+    this.persistenceGeneration += 1;
+    if (this.snapshot.offlineReadiness !== 'saving') return;
+    this.updateSnapshot({
+      offlineReadiness: this.snapshot.offlineSupported ? 'incomplete' : undefined,
+      offlineError: 'Saving was interrupted. Retry offline save.',
+    });
   }
 
-  private writeQueryMembership(records: T[]): void {
+  private markPersistenceFailure(reason = 'The offline copy could not be saved.'): void {
+    this.persistenceFailureEpoch += 1;
+    this.lastSnapshotSignature = null;
+    this.updateSnapshot({
+      offlineSupported: true,
+      offlineReadiness: 'incomplete',
+      offlineError: reason,
+    });
+  }
+
+  private async persistRealtime(action: string, record: CollectionRecord): Promise<void> {
+    if (this.snapshot.offlineSupported === false) return;
+    const server = this.serverGeneration;
+    try {
+      const result = await getApi()?.cacheWrite?.(this.collectionName, action, record);
+      if (server !== this.serverGeneration || !this.active) return;
+      if (!result?.ok) this.markPersistenceFailure(result?.error);
+      else await this.writeQueryMembership(this.snapshot.data);
+    } catch {
+      if (server === this.serverGeneration && this.active) this.markPersistenceFailure();
+    }
+  }
+
+  private async writeCacheRecords(records: T[]): Promise<void> {
+    if (this.webGate) return;
+    const signature = collectionRevisionSignature(records);
+    if (signature === this.lastSnapshotSignature && this.snapshot.offlineReadiness === 'ready')
+      return;
+    const generation = ++this.persistenceGeneration;
+    const failureEpoch = this.persistenceFailureEpoch;
+    const current = () => this.active && generation === this.persistenceGeneration;
+    this.updateSnapshot({ offlineReadiness: 'saving', offlineError: undefined });
+    try {
+      const result = this.queryCacheKey
+        ? await this.persistQueryRecords(records, current)
+        : await this.persistFullRecords(records, signature, current);
+      if (!current()) return;
+      if (!result?.ok) {
+        if (result?.unsupported) {
+          this.updateSnapshot({ offlineSupported: false, offlineReadiness: undefined });
+          return;
+        }
+        throw new Error(result?.error ?? 'The offline copy could not be saved.');
+      }
+      if (failureEpoch !== this.persistenceFailureEpoch) return;
+      this.lastSnapshotSignature = signature;
+      this.updateSnapshot({
+        offlineSupported: true,
+        offlineReadiness: 'ready',
+        offlineError: undefined,
+      });
+    } catch (error) {
+      if (current()) this.markPersistenceFailure(errorMessage(error));
+    }
+  }
+
+  private async persistQueryRecords(
+    records: T[],
+    current: () => boolean,
+  ): Promise<CacheWriteAck | void> {
+    for (const record of records) {
+      if (!current()) return;
+      const result = await getApi()?.cacheWrite?.(this.collectionName, 'update', record);
+      if (!result?.ok) return result;
+    }
+    if (!current()) return;
+    const membership = await this.writeQueryMembership(records);
+    if (this.snapshot.hasMore)
+      throw new Error('Load the remaining records to complete this offline view.');
+    return membership;
+  }
+
+  private async persistFullRecords(
+    records: T[],
+    signature: string,
+    current: () => boolean,
+  ): Promise<CacheWriteAck | void> {
+    const api = getApi();
+    if (!api?.cacheSnapshotBegin || !api.cacheSnapshotAppend || !api.cacheSnapshotCommit) {
+      return api?.cacheSnapshot?.(this.collectionName, signature, records);
+    }
+    const encoder = new TextEncoder();
+    const sizes = records.map((record) => encoder.encode(JSON.stringify(record)).byteLength);
+    const bytes = sizes.reduce((sum, size) => sum + size, 0);
+    if (
+      records.length > CACHE_SNAPSHOT_LIMITS.records ||
+      bytes > CACHE_SNAPSHOT_LIMITS.bytes ||
+      sizes.some((size) => size > CACHE_SNAPSHOT_LIMITS.recordBytes)
+    ) {
+      throw new Error('This directory exceeds the supported offline size.');
+    }
+    const begin = await api.cacheSnapshotBegin(this.collectionName, {
+      count: records.length,
+      bytes,
+      signature,
+    });
+    if (!current()) return;
+    if (!begin.ok) return begin;
+    this.updateSnapshot({ offlineSupported: true });
+    await this.appendSnapshotChunks(
+      api.cacheSnapshotAppend,
+      begin.generation,
+      records,
+      sizes,
+      current,
+    );
+    if (!current()) return;
+    return api.cacheSnapshotCommit(begin.generation);
+  }
+
+  private async appendSnapshotChunks(
+    append: NonNullable<ExtendedApi['cacheSnapshotAppend']>,
+    generation: string,
+    records: T[],
+    sizes: number[],
+    current: () => boolean,
+  ): Promise<void> {
+    let offset = 0;
+    let sequence = 0;
+    while (offset < records.length) {
+      let end = offset;
+      let chunkBytes = 2;
+      while (
+        end < records.length &&
+        end - offset < CACHE_SNAPSHOT_LIMITS.chunkRecords &&
+        chunkBytes + (sizes[end] ?? 0) + 1 <= CACHE_SNAPSHOT_LIMITS.chunkBytes
+      ) {
+        chunkBytes += (sizes[end] ?? 0) + 1;
+        end += 1;
+      }
+      const result = await append(generation, sequence++, records.slice(offset, end));
+      if (!current()) return;
+      if (!result.ok) throw new Error(result.error);
+      offset = end;
+    }
+  }
+
+  private async writeQueryMembership(records: T[]): Promise<CacheWriteAck | void> {
     if (this.webGate || !this.queryCacheKey) return;
+    const server = this.serverGeneration;
+    const generation = this.persistenceGeneration;
+    const current = () =>
+      this.active && server === this.serverGeneration && generation === this.persistenceGeneration;
     const recordIds = records.map((record) => record.id);
     const totalItems = Math.max(recordIds.length, this.snapshot.totalItems ?? recordIds.length);
-    getApi()?.cacheQuerySnapshot?.(this.collectionName, this.queryCacheKey, {
-      recordIds,
-      totalItems,
-      complete: recordIds.length >= totalItems,
-    });
+    try {
+      const result = await getApi()?.cacheQuerySnapshot?.(this.collectionName, this.queryCacheKey, {
+        recordIds,
+        totalItems,
+        complete: recordIds.length >= totalItems,
+      });
+      if (current() && !result?.ok) this.markPersistenceFailure(result?.error);
+      return result;
+    } catch {
+      if (current()) this.markPersistenceFailure();
+    }
   }
 
   private updateSnapshot(patch: Partial<CollectionSnapshot<T>>): void {
@@ -882,11 +1077,15 @@ export class CollectionStore<T extends CollectionRecord> {
       next.totalItems === this.snapshot.totalItems &&
       next.hasMore === this.snapshot.hasMore &&
       next.loadingMore === this.snapshot.loadingMore &&
-      next.cachedPartial === this.snapshot.cachedPartial
+      next.cachedPartial === this.snapshot.cachedPartial &&
+      next.offlineSupported === this.snapshot.offlineSupported &&
+      next.offlineReadiness === this.snapshot.offlineReadiness &&
+      next.offlineError === this.snapshot.offlineError
     ) {
       return;
     }
     this.snapshot = next;
     this.listeners.forEach((listener) => listener());
+    this.onReadinessChange();
   }
 }
