@@ -82,10 +82,42 @@ describe('durable pending recovery', () => {
     const inspected = await review();
     expect(
       await request({ action: 'resolve', token: inspected.token, resolution: 'server' }),
-    ).toEqual({ ok: true, resolved: true });
+    ).toEqual({ ok: true, resolved: true, remainingChanges: [] });
     expect(pending.count()).toBe(0);
     expect(cache.readCollection('contacts')).toEqual([server]);
   });
+  it.each(['server', 'retry'] as const)(
+    'returns durable remaining overlays after %s resolution',
+    async (resolution) => {
+      cache.applyOfflineMutationAtomically(
+        'oncall',
+        'update',
+        { id: 'remainingrecord', name: 'Queued', updated: 'local' },
+        '2026-01-01T00:00:00Z',
+      );
+      cache.applyOfflineMutationAtomically('contacts', 'delete', { id: 'deletedrecordid' }, 'base');
+      const inspected = await review();
+      const result = await request({ action: 'resolve', token: inspected.token, resolution });
+      expect(result).toMatchObject({
+        ok: true,
+        resolved: true,
+        remainingChanges: [
+          {
+            collection: 'oncall',
+            action: 'update',
+            record: {
+              id: 'remainingrecord',
+              name: 'Queued',
+              updated: '2026-01-01T00:00:00Z',
+              queuedAt: expect.any(String),
+            },
+          },
+          { collection: 'contacts', action: 'delete', record: { id: 'deletedrecordid' } },
+        ],
+      });
+      expect(pending.count()).toBe(2);
+    },
+  );
   it('rejects stale review after a coalesced local edit', async () => {
     const inspected = await review();
     cache.applyOfflineMutationAtomically(
@@ -109,7 +141,11 @@ describe('durable pending recovery', () => {
         resolution: 'retry',
         edits: { name: 'Merged' },
       }),
-    ).toMatchObject({ ok: true, resolved: false });
+    ).toMatchObject({
+      ok: true,
+      resolved: false,
+      remainingChanges: [{ collection: 'contacts', action: 'update', record: { name: 'Merged' } }],
+    });
     expect(pending.getAll()[0]).toMatchObject({
       data: { name: 'Merged' },
       expectedFingerprint: expect.any(String),
@@ -192,7 +228,7 @@ describe('durable pending recovery', () => {
         resolution: 'retry',
         edits: { name: 'Merged create' },
       }),
-    ).toEqual({ ok: true, resolved: true });
+    ).toEqual({ ok: true, resolved: true, remainingChanges: [] });
     expect(send).toHaveBeenCalledWith(
       '/api/relay/offline/replay',
       expect.objectContaining({

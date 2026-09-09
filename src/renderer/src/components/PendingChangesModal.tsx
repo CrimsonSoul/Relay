@@ -209,6 +209,7 @@ export function PendingChangesModal({
         resolution,
         ...(resolution === 'retry' ? { edits } : {}),
       });
+      if ('resolved' in result) await refreshStoresAfterPendingSync(result.remainingChanges);
       if (!mounted.current) return;
       setReview(null);
       setConfirmDiscard(false);

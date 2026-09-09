@@ -514,7 +514,10 @@ retry” supports existing scalar fields; structured values remain read-only and
 It durably stages the edited data, reviewed server timestamp, and exact fingerprint before replay.
 Later retries and coalesced local edits retain that fingerprint rather than promoting a newer
 server revision. A colliding create becomes an update only after explicit review; deleted server
-records can be discarded, not silently recreated by the reviewed retry.
+records can be discarded, not silently recreated by the reviewed retry. Both resolution actions
+return the remaining queue overlays and refresh renderer collection stores even if the dialog
+closes. Coverage stays unverified until fresh server reads succeed without pending on-call
+overlays; remaining local intent is reapplied to those reads.
 
 Before sending a create, replay durably marks it as attempted. A never-sent create followed by a
 delete still cancels locally; both queue writers retain the delete once that create may have been

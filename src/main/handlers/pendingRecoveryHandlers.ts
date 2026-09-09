@@ -5,6 +5,7 @@ import {
   type PendingChangeSummary,
   type PendingChangesRequest,
   type PendingChangesResponse,
+  type PendingMutationOverlay,
 } from '@shared/ipc';
 import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import type { OfflineCache } from '../cache/OfflineCache';
@@ -90,6 +91,31 @@ function summary(change: PendingChange): PendingChangeSummary {
     label: typeof label === 'string' ? label.slice(0, 200) : String(change.data.id).slice(0, 200),
     reason,
   };
+}
+
+export function pendingOverlays(
+  changes: ReturnType<PendingChanges['getAll']>,
+): PendingMutationOverlay[] {
+  return changes.flatMap((change) => {
+    const id = change.data?.id;
+    if (typeof id !== 'string' || !isOfflineWritableCollection(change.collection)) return [];
+    return [
+      {
+        collection: change.collection,
+        action: change.action,
+        record: {
+          ...change.data,
+          id,
+          ...(change.collection === 'oncall' && change.action !== 'delete'
+            ? {
+                updated: change.baseUpdated ?? '',
+                queuedAt: new Date(change.timestamp).toISOString(),
+              }
+            : {}),
+        },
+      },
+    ];
+  });
 }
 
 export function publishPendingReconciliation(
@@ -226,7 +252,11 @@ export function setupPendingRecoveryHandlers(options: {
       reviews.delete(input.token);
       publishPendingReconciliation(cache, pending, change);
       publishPendingStatus(pending);
-      return { ok: true, resolved: true };
+      return {
+        ok: true,
+        resolved: true,
+        remainingChanges: pendingOverlays(pending.getAllStrict()),
+      };
     }
     if (!server)
       return {
@@ -257,7 +287,12 @@ export function setupPendingRecoveryHandlers(options: {
       options.getSync() !== held.sync
     )
       return { ok: false, error: STALE };
-    return { ok: true, resolved: !pending.getAllStrict().some((entry) => entry.id === change.id) };
+    const remaining = pending.getAllStrict();
+    return {
+      ok: true,
+      resolved: !remaining.some((entry) => entry.id === change.id),
+      remainingChanges: pendingOverlays(remaining),
+    };
   };
 
   ipcMain.handle(

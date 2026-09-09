@@ -638,7 +638,7 @@ export type PendingChangesResponse =
   | { ok: false; error: string }
   | { ok: true; entries: PendingChangeSummary[]; nextAfterId?: number }
   | { ok: true; review: PendingChangeReview }
-  | { ok: true; resolved: boolean };
+  | { ok: true; resolved: boolean; remainingChanges: PendingMutationOverlay[] };
 
 export type PendingMutationOverlay = {
   collection: OfflineWritableCollection;

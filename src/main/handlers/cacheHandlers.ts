@@ -4,14 +4,10 @@ import { ipcMain } from 'electron';
 import {
   setupPendingRecoveryHandlers,
   publishPendingReconciliation,
+  pendingOverlays,
 } from './pendingRecoveryHandlers';
 
-import {
-  IPC_CHANNELS,
-  RELAY_APP_USER_EMAIL,
-  type CachedQueryMembership,
-  type PendingMutationOverlay,
-} from '@shared/ipc';
+import { IPC_CHANNELS, RELAY_APP_USER_EMAIL, type CachedQueryMembership } from '@shared/ipc';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import { fingerprintRecord, type SyncManager } from '../cache/SyncManager';
@@ -26,7 +22,6 @@ import {
 } from '@shared/dynatraceProblems';
 import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
-import { isOfflineWritableCollection } from '@shared/offlineCollections';
 import { safePocketBaseAuthFailure } from '../app/pbErrors';
 import {
   EXTENSION_CLOUD_STATUS_COLLECTION,
@@ -154,29 +149,6 @@ function readableCacheRecords(
   return records.filter(
     (record) => record.lifecycleState === undefined || record.lifecycleState === 'active',
   );
-}
-
-function pendingOverlays(changes: ReturnType<PendingChanges['getAll']>): PendingMutationOverlay[] {
-  return changes.flatMap((change) => {
-    const id = change.data?.id;
-    if (typeof id !== 'string' || !isOfflineWritableCollection(change.collection)) return [];
-    return [
-      {
-        collection: change.collection,
-        action: change.action,
-        record: {
-          ...change.data,
-          id,
-          ...(change.collection === 'oncall' && change.action !== 'delete'
-            ? {
-                updated: change.baseUpdated ?? '',
-                queuedAt: new Date(change.timestamp).toISOString(),
-              }
-            : {}),
-        },
-      },
-    ];
-  });
 }
 
 const NOT_SIGNED_IN_ERROR = 'Relay is not signed in';
