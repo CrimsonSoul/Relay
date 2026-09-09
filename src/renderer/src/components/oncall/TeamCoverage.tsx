@@ -6,14 +6,21 @@ import {
   calendarDate,
   confirmCoverage,
   coverageState,
+  coverageFingerprint,
   COVERAGE_COLLECTION,
   COVERAGE_UNAVAILABLE,
   type CoverageReview,
 } from '../../services/oncallCoverageService';
+import type { OnCallRecord } from '../../services/oncallService';
 import { lastEditedLabel } from '../../utils/oncallFreshness';
 import { Modal } from '../Modal';
 import { Input } from '../Input';
 import { TactileButton } from '../TactileButton';
+
+function unverifiedLabel(rowError: string | null, reviewError: string | null): string {
+  if (rowError) return 'Coverage unverified';
+  return reviewError ? 'Confirmation unavailable' : 'Checking coverage';
+}
 
 export function TeamCoverage({
   teamId,
@@ -25,6 +32,8 @@ export function TeamCoverage({
   locked: boolean;
 }>) {
   const reviews = useCollection<CoverageReview>(COVERAGE_COLLECTION);
+  // Shares useAppData's store: this adds a subscriber, not another fetch.
+  const oncall = useCollection<OnCallRecord>('oncall', { sort: 'sortOrder,id' });
   const [online, setOnline] = useState(isOnline);
   const [pending, setPending] = useState<number | null>(null);
   const [saved, setSaved] = useState<CoverageReview | null>(null);
@@ -63,7 +72,15 @@ export function TeamCoverage({
     saved && (!persisted || (saved.updated ?? '') > (persisted.updated ?? '')) ? saved : persisted;
   const state = coverageState(review, rows);
   const queued = rows.some((row) => row.queuedAt) || (pending ?? 0) > 0;
-  const available = reviews.hasLoadedSnapshot && !reviews.loading && !reviews.error;
+  const rowsMatch =
+    coverageFingerprint(rows) ===
+    coverageFingerprint(oncall.data.filter((row) => row.teamId === teamId));
+  const available =
+    reviews.isAuthoritative &&
+    oncall.isAuthoritative &&
+    rowsMatch &&
+    !reviews.error &&
+    !oncall.error;
   const disabled = locked || !online || queued || pending === null || !available || saving;
   let label = 'Not confirmed';
   if (state === 'needs-review') label = 'Needs review';
@@ -71,7 +88,7 @@ export function TeamCoverage({
   if (pending === null) label = 'Checking pending changes';
   if (!online) label = 'Offline — coverage unverified';
   if (queued) label = 'Pending changes';
-  if (!available) label = reviews.error ? 'Confirmation unavailable' : 'Checking coverage';
+  if (!available && online && !queued) label = unverifiedLabel(oncall.error, reviews.error);
   const save = async () => {
     if (disabled) return;
     setSaving(true);
@@ -106,6 +123,7 @@ export function TeamCoverage({
       </TactileButton>
       {queued && <p>Sync pending changes before confirming coverage.</p>}
       {reviews.error && <p>{COVERAGE_UNAVAILABLE}</p>}
+      {oncall.error && <p>On-call data could not be refreshed. Reconnect and try again.</p>}
       <Modal
         isOpen={open}
         onClose={() => {

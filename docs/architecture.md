@@ -591,6 +591,12 @@ Confirmation is online-only, including Relay Web, and never enters the offline w
 Any pending desktop mutation conservatively blocks confirmation with “Sync pending changes
 before confirming coverage,” including queued deletions absent from visible rows. This may
 require syncing unrelated work before confirming a team. Offline coverage is unverified.
+Both row and review stores must report `isAuthoritative` for the current connection/fetch cycle
+before the UI shows confirmed coverage; the displayed rows must also match that authoritative
+row snapshot. Disconnect, refetch, local overlays, or disposal revoke authority immediately.
+Cached fallback and failed or stale-generation reads never restore it. Until both fresh reads
+succeed the label stays Checking coverage, or Coverage unverified after a row-read failure.
+
 An older server without the collection keeps normal on-call reads and edits working and shows
 an upgrade/reconnect message for confirmation. Reviews use shared collection subscriptions
 and read-only desktop snapshots; refreshes replace local queue markers with authoritative data.

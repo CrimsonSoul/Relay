@@ -15,6 +15,7 @@ interface UseCollectionResult<T> {
   loading: boolean;
   error: string | null;
   hasLoadedSnapshot: boolean;
+  isAuthoritative: boolean;
   totalItems: number;
   hasMore: boolean;
   loadingMore: boolean;
@@ -32,6 +33,7 @@ const DISABLED_SNAPSHOT: CollectionSnapshot<never> = {
   loading: false,
   error: null,
   hasLoadedSnapshot: false,
+  isAuthoritative: false,
 };
 const subscribeDisabled = () => () => undefined;
 const getDisabledSnapshot = () => DISABLED_SNAPSHOT;
@@ -67,6 +69,7 @@ export function useCollection<T extends CollectionRecord = RecordModel>(
       loading: snapshot.loading,
       error: snapshot.error,
       hasLoadedSnapshot: snapshot.hasLoadedSnapshot,
+      isAuthoritative: snapshot.isAuthoritative,
       totalItems: snapshot.totalItems ?? snapshot.data.length,
       hasMore: snapshot.hasMore === true,
       loadingMore: snapshot.loadingMore === true,

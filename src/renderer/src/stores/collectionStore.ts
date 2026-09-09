@@ -44,6 +44,8 @@ export interface CollectionSnapshot<T extends CollectionRecord> {
   loading: boolean;
   error: string | null;
   hasLoadedSnapshot: boolean;
+  /** Successful server read for the current connection/fetch cycle, without local overlays. */
+  isAuthoritative: boolean;
   totalItems?: number;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -353,6 +355,7 @@ export class CollectionStore<T extends CollectionRecord> {
     loading: true,
     error: null,
     hasLoadedSnapshot: false,
+    isAuthoritative: false,
   };
   private readonly listeners = new Set<Listener>();
   private readonly comparator: ((a: T, b: T) => number) | null;
@@ -469,6 +472,7 @@ export class CollectionStore<T extends CollectionRecord> {
   applyOptimisticMutation(action: 'create' | 'update' | 'delete', record: CollectionRecord): void {
     // The main-process mutation changed cached content outside this snapshot writer.
     this.lastSnapshotSignature = null;
+    this.updateSnapshot({ isAuthoritative: false });
     const next = applyRealtimeEvent(
       this.snapshot.data,
       action,
@@ -487,6 +491,7 @@ export class CollectionStore<T extends CollectionRecord> {
   dispose(): void {
     if (!this.active) return;
     this.active = false;
+    this.updateSnapshot({ isAuthoritative: false });
     this.connectionGeneration += 1;
     this.fetchGeneration += 1;
     this.stopRealtimeSubscription();
@@ -512,11 +517,13 @@ export class CollectionStore<T extends CollectionRecord> {
       this.connected = online;
 
       if (online && wasOffline) {
+        this.updateSnapshot({ isAuthoritative: false });
+        const generation = this.connectionGeneration;
         if (this.webGate) {
           this.restartConnectionCycle();
         } else {
           void syncPendingOnce().then((result) => {
-            if (this.active && this.connected) {
+            if (this.active && this.connected && generation === this.connectionGeneration) {
               this.restartConnectionCycle(result?.remainingChanges ?? []);
             }
           });
@@ -537,6 +544,7 @@ export class CollectionStore<T extends CollectionRecord> {
 
   private restartConnectionCycle(pendingOverlays: PendingMutationOverlay[] = []): void {
     const connectionGeneration = ++this.connectionGeneration;
+    this.updateSnapshot({ isAuthoritative: false });
     this.fetchGeneration += 1;
     this.webGate?.markDisconnected();
     this.stopRealtimeSubscription();
@@ -632,6 +640,7 @@ export class CollectionStore<T extends CollectionRecord> {
   ): Promise<boolean> {
     if (!this.active) return true;
     const generation = ++this.fetchGeneration;
+    this.updateSnapshot({ isAuthoritative: false });
     const isCurrent = () =>
       this.active &&
       generation === this.fetchGeneration &&
@@ -707,6 +716,9 @@ export class CollectionStore<T extends CollectionRecord> {
       totalItems,
       hasMore: next.length < totalItems,
       cachedPartial: false,
+      isAuthoritative: !pendingOverlays.some(
+        (overlay) => overlay.collection === this.collectionName,
+      ),
     });
     this.webGate?.markReady();
     this.writeCacheRecords(records);
@@ -850,6 +862,7 @@ export class CollectionStore<T extends CollectionRecord> {
       next.loading === this.snapshot.loading &&
       next.error === this.snapshot.error &&
       next.hasLoadedSnapshot === this.snapshot.hasLoadedSnapshot &&
+      next.isAuthoritative === this.snapshot.isAuthoritative &&
       next.totalItems === this.snapshot.totalItems &&
       next.hasMore === this.snapshot.hasMore &&
       next.loadingMore === this.snapshot.loadingMore &&

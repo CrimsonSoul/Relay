@@ -12,6 +12,7 @@ describe('CollectionStore', () => {
       loading: true,
       error: null,
       hasLoadedSnapshot: false,
+      isAuthoritative: false,
     });
   });
 

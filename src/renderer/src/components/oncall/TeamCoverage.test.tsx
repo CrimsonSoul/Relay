@@ -5,15 +5,17 @@ import { TeamCoverage } from './TeamCoverage';
 import { coverageFingerprint } from '../../services/oncallCoverageService';
 const state = vi.hoisted(() => ({
   reviews: [] as unknown[],
+  rows: [] as unknown[],
   online: true,
   error: null as string | null,
 }));
 vi.mock('../../hooks/useCollection', () => ({
-  useCollection: () => ({
-    data: state.reviews,
+  useCollection: (name: string) => ({
+    data: name === 'oncall' ? state.rows : state.reviews,
     loading: false,
     error: state.error,
     hasLoadedSnapshot: true,
+    isAuthoritative: true,
     refetch: async () => {},
   }),
 }));
@@ -37,6 +39,7 @@ const row: OnCallRow = {
 };
 beforeEach(() => {
   state.reviews = [];
+  state.rows = [row];
   state.error = null;
   state.online = true;
   vi.clearAllMocks();
@@ -68,6 +71,7 @@ it('confirms through a chosen date and shows saved coverage separately from last
   expect(await screen.findByText('Confirmed through 2099-12-31')).toBeInTheDocument();
 });
 it('invalidates edited coverage and shows queued state', async () => {
+  state.rows = [{ ...row, name: 'Bob' }];
   state.reviews = [
     {
       id: 'review1',
