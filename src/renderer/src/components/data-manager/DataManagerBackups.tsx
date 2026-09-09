@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { BackupEntry } from '@shared/ipc';
+import type { BackupHealth } from '@shared/backupHealth';
 import { TactileButton } from '../TactileButton';
 import { ConfirmModal } from '../ConfirmModal';
 import { useMounted } from '../../hooks/useMounted';
 
 declare const api: {
+  getBackupHealth?: () => Promise<{ success: boolean; data?: BackupHealth; error?: string }>;
+  verifyBackup?: (name: string) => Promise<{ success: boolean; error?: string }>;
   listBackups: () => Promise<BackupEntry[]>;
   createBackup: () => Promise<{ success: boolean; data?: string; error?: string }>;
   restoreBackup: (name: string) => Promise<{ success: boolean; error?: string }>;
@@ -27,6 +30,8 @@ function formatDate(iso: string): string {
 }
 
 export const DataManagerBackups: React.FC = () => {
+  const [health, setHealth] = useState<BackupHealth | null>(null);
+  const [verifying, setVerifying] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -39,9 +44,10 @@ export const DataManagerBackups: React.FC = () => {
     if (!mounted.current) return;
     setLoading(true);
     try {
-      const list = await api.listBackups();
+      const [list, status] = await Promise.all([api.listBackups(), api.getBackupHealth?.()]);
       if (!mounted.current) return;
       setBackups(list);
+      if (status?.success && status.data) setHealth(status.data);
       setError(null);
     } catch {
       if (mounted.current) setError('Failed to load backups');
@@ -58,13 +64,31 @@ export const DataManagerBackups: React.FC = () => {
     setCreating(true);
     try {
       const result = await api.createBackup();
-      if (result.success) {
-        if (mounted.current) await loadBackups();
-      } else if (mounted.current) setError(result.error ?? 'Failed to create backup');
+      if (mounted.current) {
+        await loadBackups();
+        if (!result.success) setError(result.error ?? 'Failed to create backup');
+      }
     } catch {
       if (mounted.current) setError('Failed to create backup');
     } finally {
       if (mounted.current) setCreating(false);
+    }
+  };
+
+  const handleVerify = async (name: string) => {
+    if (!api.verifyBackup) return;
+    setVerifying(name);
+    setError(null);
+    try {
+      const result = await api.verifyBackup(name);
+      if (mounted.current) {
+        await loadBackups();
+        if (!result.success) setError(result.error ?? 'Disposable verification failed');
+      }
+    } catch {
+      if (mounted.current) setError('Could not verify backup. Try again.');
+    } finally {
+      if (mounted.current) setVerifying(null);
     }
   };
 
@@ -89,26 +113,55 @@ export const DataManagerBackups: React.FC = () => {
     }
   };
 
+  const verificationOutcome = health?.lastVerification?.outcome === 'success' ? 'Passed' : 'Failed';
   return (
     <div className="data-manager-section">
       <div className="data-manager-section-heading">Backups</div>
       <div className="data-manager-section-description">
-        Backups are created automatically on startup. You can also create one manually or restore
-        from a previous backup.
+        Daily backups are checked in a disposable folder before history cleanup. Verification checks
+        database and file readability; it does not replace testing a full server restore.
       </div>
+
+      {health && (
+        <div className="data-manager-section-description" role="status" aria-live="polite">
+          <strong>{health.retentionAllowed ? 'Retention protected' : 'Retention paused'}</strong>
+          <div>
+            Latest completed backup:{' '}
+            {health.restorePointAgeMs === null
+              ? 'No confirmed archive'
+              : `${Math.floor(health.restorePointAgeMs / 3_600_000)} hours old`}
+          </div>
+          <div>
+            Last disposable verification:{' '}
+            {health.lastVerification
+              ? `${verificationOutcome} — ${formatDate(health.lastVerification.completedAt)}`
+              : 'Not yet checked'}
+          </div>
+          {health.lastVerified && (
+            <div>
+              Last verified backup: {formatDate(health.lastVerified.completedAt)} (
+              {Math.floor((Date.now() - Date.parse(health.lastVerified.completedAt)) / 3_600_000)}{' '}
+              hours since verification)
+            </div>
+          )}
+          {health.lastFailure && <div>{health.lastFailure}</div>}
+          {health.retryDue && <div>Next backup attempt: {formatDate(health.retryDue)}</div>}
+          {verifying && <div>Verifying backup in a disposable folder…</div>}
+        </div>
+      )}
 
       <TactileButton
         variant="primary"
         onClick={handleCreate}
-        disabled={creating || restoring}
+        disabled={creating || restoring || verifying !== null || health?.busy}
         loading={creating}
         className="dm-big-btn"
       >
-        Create Backup
+        {health?.lastFailure ? 'Retry backup' : 'Create Backup'}
       </TactileButton>
 
       {error && (
-        <div className="data-manager-import-result data-manager-import-result--error">
+        <div className="data-manager-import-result data-manager-import-result--error" role="alert">
           <div className="data-manager-import-result-header">
             <span>{error}</span>
             <button
@@ -125,7 +178,9 @@ export const DataManagerBackups: React.FC = () => {
       {loading && <div className="dm-backup-empty">Loading backups...</div>}
 
       {!loading && backups.length === 0 && (
-        <div className="dm-backup-empty">No backups available</div>
+        <div className="dm-backup-empty">
+          No backups available. Create a backup to establish a recovery point.
+        </div>
       )}
 
       {!loading && backups.length > 0 && (
@@ -136,11 +191,23 @@ export const DataManagerBackups: React.FC = () => {
                 <span className="dm-backup-date">{formatDate(b.date)}</span>
                 <span className="dm-backup-size">{formatSize(b.size)}</span>
               </div>
+              {api.verifyBackup && (
+                <TactileButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleVerify(b.name)}
+                  disabled={creating || restoring || verifying !== null || health?.busy}
+                  loading={verifying === b.name}
+                  aria-label={`Verify backup ${b.name}`}
+                >
+                  Verify backup
+                </TactileButton>
+              )}
               <TactileButton
                 variant="secondary"
                 size="sm"
                 onClick={() => setConfirmRestore(b)}
-                disabled={restoring}
+                disabled={creating || restoring || verifying !== null || health?.busy}
               >
                 Restore
               </TactileButton>

@@ -1,12 +1,17 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { BackupHealth } from '@shared/backupHealth';
 import type { BackupEntry, IpcResult } from '@shared/ipc';
 
+const mockGetHealth = vi.fn<() => Promise<IpcResult<BackupHealth>>>();
+const mockVerify = vi.fn<(name: string) => Promise<IpcResult>>();
 const mockListBackups = vi.fn<() => Promise<BackupEntry[]>>();
 const mockCreateBackup = vi.fn<() => Promise<IpcResult<string>>>();
 const mockRestoreBackup = vi.fn<(name: string) => Promise<IpcResult>>();
 
 vi.stubGlobal('api', {
+  getBackupHealth: mockGetHealth,
+  verifyBackup: mockVerify,
   listBackups: mockListBackups,
   createBackup: mockCreateBackup,
   restoreBackup: mockRestoreBackup,
@@ -52,6 +57,37 @@ describe('DataManagerBackups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListBackups.mockResolvedValue(SAMPLE_BACKUPS);
+    mockGetHealth.mockResolvedValue({ success: false });
+  });
+
+  it('shows degraded protection and offers retry and disposable verification', async () => {
+    mockGetHealth.mockResolvedValue({
+      success: true,
+      data: {
+        attempts: [],
+        failures: 1,
+        retentionAllowed: false,
+        restorePointAgeMs: null,
+        busy: false,
+        lastFailure: 'Backup failed',
+        lastVerification: {
+          name: 'bad.zip',
+          completedAt: new Date().toISOString(),
+          outcome: 'failed',
+        },
+      },
+    });
+    mockCreateBackup.mockResolvedValue({ success: true });
+    mockVerify.mockResolvedValue({ success: false, error: 'Disposable verification failed' });
+    render(<DataManagerBackups />);
+    await screen.findByText('Retention paused');
+    expect(screen.getByText(/Last disposable verification: Failed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry backup' }));
+    await waitFor(() => expect(mockCreateBackup).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getAllByText('Verify backup')[0]).not.toBeDisabled());
+    fireEvent.click(screen.getAllByText('Verify backup')[0]!);
+    await screen.findByRole('alert');
+    expect(mockVerify).toHaveBeenCalledWith(SAMPLE_BACKUPS[0]!.name);
   });
 
   it('renders backup list on mount', async () => {
@@ -77,7 +113,7 @@ describe('DataManagerBackups', () => {
     render(<DataManagerBackups />);
 
     await waitFor(() => {
-      expect(screen.getByText('No backups available')).toBeInTheDocument();
+      expect(screen.getByText(/No backups available/)).toBeInTheDocument();
     });
   });
 

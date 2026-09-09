@@ -5,7 +5,9 @@ import { KnowledgeManagementCleanup } from '../knowledge/KnowledgeManagementClea
 const logger = loggers.retention;
 
 export class RetentionManager {
-  private interval: ReturnType<typeof setInterval> | null = null;
+  private restartSchedule?: (delay: number) => void;
+  private generation = 0;
+  private running = false;
   private initialTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly pb: PocketBase) {}
@@ -34,50 +36,57 @@ export class RetentionManager {
     intervalMs = 24 * 60 * 60 * 1000,
     beforeCleanup?: () => Promise<void>,
     initialDelayMs = 0,
+    failureDelay?: () => number,
   ): void {
     this.stop();
-    let running = false;
+    this.restartSchedule = (delay) =>
+      this.startSchedule(intervalMs, beforeCleanup, delay, failureDelay);
+    const generation = this.generation;
+    let failures = 0;
     const run = async (): Promise<void> => {
-      if (running) {
+      if (generation !== this.generation) return;
+      if (this.running) {
         logger.warn('Previous retention run still in progress; skipping this cycle');
+        schedule(intervalMs);
         return;
       }
-      running = true;
+      this.running = true;
+      let nextDelay = intervalMs;
       try {
-        try {
-          await beforeCleanup?.();
-        } catch (err) {
-          logger.error('Pre-cleanup maintenance failed; continuing with cleanup', { error: err });
-        }
+        await beforeCleanup?.();
+        if (generation !== this.generation) return;
         await this.runCleanup();
+        failures = 0;
+      } catch (err) {
+        logger.error('Pre-cleanup maintenance failed; cleanup deferred', { error: err });
+        nextDelay =
+          failureDelay?.() ?? [15 * 60_000, 60 * 60_000, 6 * 60 * 60_000][Math.min(failures++, 2)]!;
       } finally {
-        running = false;
+        this.running = false;
+        if (generation === this.generation) schedule(nextDelay);
       }
     };
-    const startRecurringSchedule = () => {
-      this.initialTimeout = null;
-      void run();
-      this.interval = setInterval(() => {
+    const schedule = (delay: number): void => {
+      this.initialTimeout = setTimeout(() => {
+        this.initialTimeout = null;
         void run();
-      }, intervalMs);
-      this.interval.unref?.();
-    };
-    if (initialDelayMs > 0) {
-      this.initialTimeout = setTimeout(startRecurringSchedule, initialDelayMs);
+      }, delay);
       this.initialTimeout.unref?.();
-    } else {
-      startRecurringSchedule();
-    }
+    };
+    if (initialDelayMs > 0) schedule(initialDelayMs);
+    else void run();
+  }
+
+  reschedule(delay: number): void {
+    this.restartSchedule?.(delay);
   }
 
   stop(): void {
+    this.restartSchedule = undefined;
+    this.generation++;
     if (this.initialTimeout) {
       clearTimeout(this.initialTimeout);
       this.initialTimeout = null;
-    }
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
     }
   }
 

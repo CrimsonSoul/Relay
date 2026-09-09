@@ -10,6 +10,7 @@ vi.mock('../logger', () => ({
   },
 }));
 
+import { loggers } from '../logger';
 import { RetentionManager } from './RetentionManager';
 
 function makeRecord(id: string) {
@@ -64,7 +65,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs completion after cleanup', async () => {
-      const { loggers } = await import('../logger');
       const pb = makePb();
       const manager = new RetentionManager(pb);
 
@@ -137,15 +137,17 @@ describe('RetentionManager', () => {
       manager.stop();
     });
 
-    it('a failing beforeCleanup does not prevent cleanup', async () => {
-      vi.useRealTimers();
+    it('a failing beforeCleanup defers cleanup and retries after 15 minutes', async () => {
       const manager = new RetentionManager(makePb());
       const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
 
       manager.startSchedule(60_000, async () => {
         throw new Error('backup failed');
       });
-      await vi.waitFor(() => expect(cleanupSpy).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(cleanupSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(cleanupSpy).not.toHaveBeenCalled();
       manager.stop();
     });
 
@@ -166,9 +168,8 @@ describe('RetentionManager', () => {
       expect(getFullList.mock.calls).toHaveLength(callsAfterStop);
     });
 
-    it('skips overlapping runs and logs a warning', async () => {
+    it('does not overlap runs and stop prevents cleanup after an in-flight prerequisite', async () => {
       vi.useRealTimers();
-      const { loggers } = await import('../logger');
 
       // Deferred that controls when beforeCleanup resolves
       let resolveDeferred!: () => void;
@@ -190,15 +191,37 @@ describe('RetentionManager', () => {
 
       // First run is blocked in beforeCleanup; cleanup should not have been called yet
       expect(cleanupSpy).toHaveBeenCalledTimes(0);
-      // At least one skip warning should have been logged
-      expect(vi.mocked(loggers.retention.warn)).toHaveBeenCalledWith(
-        'Previous retention run still in progress; skipping this cycle',
-      );
-
       // Unblock the first (and only) run and wait for it to complete
       resolveDeferred();
-      await vi.waitFor(() => expect(cleanupSpy).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(cleanupSpy).not.toHaveBeenCalled();
     });
+  });
+
+  it('cancels retries after failure and ignores manual reschedule after stop', async () => {
+    const manager = new RetentionManager(makePb());
+    const prerequisite = vi.fn().mockRejectedValue(new Error('backup unavailable'));
+    manager.startSchedule(86400000, prerequisite);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prerequisite).toHaveBeenCalledOnce();
+    manager.stop();
+    manager.reschedule(0);
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60_000);
+    expect(prerequisite).toHaveBeenCalledOnce();
+  });
+  it('retries a failed prerequisite at bounded delays before allowing deletion', async () => {
+    const manager = new RetentionManager(makePb());
+    const prerequisite = vi.fn().mockRejectedValue(new Error('backup unavailable'));
+    const cleanup = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+    manager.startSchedule(86400000, prerequisite);
+    await vi.advanceTimersByTimeAsync(0);
+    for (const minutes of [15, 60, 360]) await vi.advanceTimersByTimeAsync(minutes * 60_000);
+    expect(prerequisite).toHaveBeenCalledTimes(4);
+    expect(cleanup).not.toHaveBeenCalled();
+    prerequisite.mockResolvedValue(undefined);
+    await vi.advanceTimersByTimeAsync(360 * 60_000);
+    expect(cleanup).toHaveBeenCalledOnce();
+    manager.stop();
   });
 
   describe('stop()', () => {
@@ -279,7 +302,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs error if bridge_history cleanup throws', async () => {
-      const { loggers } = await import('../logger');
       const pb = {
         collection: vi.fn().mockImplementation((col: string) => {
           if (col === 'bridge_history') {
@@ -372,7 +394,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs error if alert_history cleanup throws', async () => {
-      const { loggers } = await import('../logger');
       const pb = {
         collection: vi.fn().mockImplementation((col: string) => {
           if (col === 'alert_history') {
@@ -417,7 +438,6 @@ describe('RetentionManager', () => {
     });
 
     it('logs error if conflict_log cleanup throws', async () => {
-      const { loggers } = await import('../logger');
       const pb = {
         collection: vi.fn().mockImplementation((col: string) => {
           if (col === 'conflict_log') {

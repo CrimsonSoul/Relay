@@ -59,8 +59,14 @@ const mocks = vi.hoisted(() => {
   const backup = vi.fn().mockResolvedValue(undefined);
   const backupIfDue = vi.fn().mockResolvedValue(null);
   const startSchedule = vi.fn();
-  const backupManager = { setPocketBase: vi.fn(), backup, backupIfDue };
-  const retentionManager = { startSchedule, stop: vi.fn() };
+  const backupManager = {
+    setPocketBase: vi.fn(),
+    backup,
+    backupIfDue,
+    getHealth: vi.fn(() => ({ retentionAllowed: true, failures: 0 })),
+    setMaintenanceWakeup: vi.fn(),
+  };
+  const retentionManager = { startSchedule, stop: vi.fn(), reschedule: vi.fn() };
   const maintenancePb = {
     collection: vi.fn(() => ({ authWithPassword: superuserAuth })),
   };
@@ -1280,6 +1286,7 @@ describe('pocketbaseBootstrap', () => {
       24 * 60 * 60 * 1000,
       expect.any(Function),
       30_000,
+      expect.any(Function),
     );
     const beforeCleanup = mocks.startSchedule.mock.calls[0]?.[1] as () => Promise<void>;
     await beforeCleanup();

@@ -270,6 +270,8 @@ const api: BridgeAPI = {
   relaunchApp: () => ipcRenderer.invoke(IPC_CHANNELS.APP_RELAUNCH),
 
   // Backups
+  getBackupHealth: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_HEALTH),
+  verifyBackup: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_VERIFY, name),
   listBackups: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST),
   createBackup: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE),
   restoreBackup: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, name),

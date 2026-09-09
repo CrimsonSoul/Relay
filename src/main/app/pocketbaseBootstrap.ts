@@ -246,14 +246,29 @@ export function startPocketBaseMaintenanceSchedule(serverConfig: ServerConfig): 
     return false;
   }
 
-  retentionManager.startSchedule(
-    MAINTENANCE_INTERVAL_MS,
-    async () => {
-      await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
-      await backupManager.backupIfDue();
-    },
-    MAINTENANCE_INITIAL_DELAY_MS,
-  );
+  const armSchedule = (delay: number): void =>
+    retentionManager.startSchedule(
+      MAINTENANCE_INTERVAL_MS,
+      async () => {
+        await backupManager.backupIfDue(new Date(), MAINTENANCE_INTERVAL_MS, async () => {
+          await pb
+            .collection('_superusers')
+            .authWithPassword('admin@relay.app', serverConfig.secret);
+        });
+        if (!backupManager.getHealth().retentionAllowed)
+          throw new Error('Verified backup required before retention');
+      },
+      delay,
+      () => retryDelay(),
+    );
+  const retryDelay = (): number => {
+    const health = backupManager.getHealth();
+    return health.retryDue
+      ? Math.max(0, Date.parse(health.retryDue) - Date.now())
+      : MAINTENANCE_INITIAL_DELAY_MS;
+  };
+  backupManager.setMaintenanceWakeup(() => retentionManager.reschedule(retryDelay()));
+  armSchedule(backupManager.getHealth().failures > 0 ? retryDelay() : MAINTENANCE_INITIAL_DELAY_MS);
   loggers.pocketbase.info('Backup and retention schedule started');
   return true;
 }

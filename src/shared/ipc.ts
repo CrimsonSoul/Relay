@@ -1,3 +1,4 @@
+import type { BackupHealth } from './backupHealth';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
 import type {
   DynatraceProblemsPublicSettings,
@@ -861,6 +862,8 @@ export type BridgeAPI = {
   startPocketBase: () => Promise<boolean>;
   relaunchApp: () => Promise<void>;
   // Backups
+  getBackupHealth?: () => Promise<IpcResult<BackupHealth>>;
+  verifyBackup?: (name: string) => Promise<IpcResult>;
   listBackups: () => Promise<BackupEntry[]>;
   createBackup: () => Promise<IpcResult<string>>;
   restoreBackup: (name: string) => Promise<IpcResult>;
@@ -1027,6 +1030,8 @@ export const IPC_CHANNELS = {
   WORKSTATION_AWAKE_GET_STATE: 'workstationAwake:getState',
   WORKSTATION_AWAKE_SET_ENABLED: 'workstationAwake:setEnabled',
   // Backups
+  BACKUP_HEALTH: 'backup:health',
+  BACKUP_VERIFY: 'backup:verify',
   BACKUP_LIST: 'backup:list',
   BACKUP_CREATE: 'backup:create',
   BACKUP_RESTORE: 'backup:restore',

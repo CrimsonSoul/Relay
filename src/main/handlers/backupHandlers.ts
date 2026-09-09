@@ -15,6 +15,34 @@ export function setupBackupHandlers(
 ): void {
   let restoreInProgress = false;
 
+  ipcMain.handle(IPC_CHANNELS.BACKUP_HEALTH, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.BACKUP_HEALTH))
+      return { success: false, error: 'Untrusted sender' };
+    const mgr = getBackupManager();
+    return mgr
+      ? { success: true, data: mgr.getHealth() }
+      : { success: false, error: 'Backup manager not available' };
+  });
+  ipcMain.handle(IPC_CHANNELS.BACKUP_VERIFY, async (event, name: string): Promise<IpcResult> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.BACKUP_VERIFY))
+      return { success: false, error: 'Untrusted sender' };
+    if (typeof name !== 'string' || !/^[\w.-]+\.zip$/.test(name) || name.includes('..'))
+      return { success: false, error: 'Invalid backup name' };
+    const mgr = getBackupManager();
+    if (!mgr) return { success: false, error: 'Backup manager not available' };
+    if (restoreInProgress) return { success: false, error: 'Backup restore already in progress' };
+    try {
+      await mgr.verify(name);
+      return { success: true };
+    } catch {
+      return {
+        success: false,
+        error:
+          'Disposable verification failed. Retention is paused; retain the earlier verified backup.',
+      };
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (event): Promise<BackupEntry[]> => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.BACKUP_LIST)) return [];
     const mgr = getBackupManager();
@@ -34,6 +62,7 @@ export function setupBackupHandlers(
     const mgr = getBackupManager();
     if (!mgr) return { success: false, error: 'Backup manager not available' };
 
+    if (restoreInProgress) return { success: false, error: 'Backup restore already in progress' };
     try {
       const path = await mgr.backup();
       return { success: true, data: path };
@@ -57,24 +86,24 @@ export function setupBackupHandlers(
 
     try {
       restoreInProgress = true;
-      await mgr.restore(name);
-
-      // Invalidate offline cache after restore so stale data isn't served
-      try {
-        const cache = getOfflineCache?.();
-        if (cache) {
-          cache.clear();
-          logger.info('Offline cache cleared after backup restore');
+      await mgr.restore(name, async () => {
+        // Invalidate offline cache after restore so stale data isn't served
+        try {
+          const cache = getOfflineCache?.();
+          if (cache) {
+            cache.clear();
+            logger.info('Offline cache cleared after backup restore');
+          }
+        } catch (cacheErr) {
+          logger.warn('Failed to clear offline cache after backup restore', { error: cacheErr });
         }
-      } catch (cacheErr) {
-        logger.warn('Failed to clear offline cache after backup restore', { error: cacheErr });
-      }
 
-      logger.info('Backup restored, restarting PocketBase...');
-      const restarted = await restartPb();
-      if (!restarted) {
-        return { success: false, error: 'Backup restored but PocketBase failed to restart' };
-      }
+        logger.info('Backup restored, restarting PocketBase...');
+        const restarted = await restartPb();
+        if (!restarted) {
+          throw new Error('Backup restored but PocketBase failed to restart');
+        }
+      });
       return { success: true };
     } catch (err) {
       logger.error('Backup restore failed', { error: err });

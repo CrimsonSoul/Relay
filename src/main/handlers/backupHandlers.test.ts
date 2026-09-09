@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { setupBackupHandlers } from './backupHandlers';
 
 vi.mock('electron', () => ({
@@ -15,7 +16,7 @@ vi.mock('../logger', () => ({
 // exercised for real (positive + negative) in authHandlers.test.ts.
 // Here it is mocked to pass so each handler's own behavior is what's tested.
 vi.mock('../utils/trustedSender', () => ({
-  assertTrustedIpcSender: () => true,
+  assertTrustedIpcSender: vi.fn(() => true),
   isTrustedIpcSender: () => true,
 }));
 
@@ -28,6 +29,8 @@ describe('backupHandlers', () => {
   };
 
   const mockBackupManager = {
+    getHealth: vi.fn(() => ({ retentionAllowed: false })),
+    verify: vi.fn().mockResolvedValue(undefined),
     listBackups: vi.fn(),
     backup: vi.fn(),
     restore: vi.fn(),
@@ -57,6 +60,34 @@ describe('backupHandlers', () => {
     expect(calls).toContain('backup:list');
     expect(calls).toContain('backup:create');
     expect(calls).toContain('backup:restore');
+  });
+
+  it('returns backup health only to a trusted sender', async () => {
+    expect(await getHandler(IPC_CHANNELS.BACKUP_HEALTH)({})).toEqual({
+      success: true,
+      data: { retentionAllowed: false },
+    });
+    vi.mocked(assertTrustedIpcSender).mockReturnValueOnce(false);
+    expect(await getHandler(IPC_CHANNELS.BACKUP_HEALTH)({})).toEqual({
+      success: false,
+      error: 'Untrusted sender',
+    });
+  });
+  it('rejects unsafe verify names and untrusted verification', async () => {
+    expect(await getHandler(IPC_CHANNELS.BACKUP_VERIFY)({}, '../bad.zip')).toEqual({
+      success: false,
+      error: 'Invalid backup name',
+    });
+    vi.mocked(assertTrustedIpcSender).mockReturnValueOnce(false);
+    expect(await getHandler(IPC_CHANNELS.BACKUP_VERIFY)({}, 'good.zip')).toEqual({
+      success: false,
+      error: 'Untrusted sender',
+    });
+    expect(mockBackupManager.verify).not.toHaveBeenCalled();
+  });
+  it('verifies an existing backup through the local manager', async () => {
+    expect(await getHandler(IPC_CHANNELS.BACKUP_VERIFY)({}, 'good.zip')).toEqual({ success: true });
+    expect(mockBackupManager.verify).toHaveBeenCalledWith('good.zip');
   });
 
   describe('BACKUP_LIST', () => {
@@ -128,12 +159,19 @@ describe('backupHandlers', () => {
 
   describe('BACKUP_RESTORE', () => {
     it('restores a valid backup, clears cache, and restarts PB', async () => {
-      mockBackupManager.restore.mockResolvedValue(undefined);
+      mockBackupManager.restore.mockImplementation(
+        async (_name: string, after?: () => Promise<void>) => {
+          await after?.();
+        },
+      );
       restartPb.mockResolvedValue(true);
 
       const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup-001.zip');
 
-      expect(mockBackupManager.restore).toHaveBeenCalledWith('backup-001.zip');
+      expect(mockBackupManager.restore).toHaveBeenCalledWith(
+        'backup-001.zip',
+        expect.any(Function),
+      );
       expect(mockOfflineCache.clear).toHaveBeenCalled();
       expect(restartPb).toHaveBeenCalled();
       expect(result).toEqual({ success: true });
@@ -177,7 +215,11 @@ describe('backupHandlers', () => {
     });
 
     it('returns failure when PocketBase fails to restart after restore', async () => {
-      mockBackupManager.restore.mockResolvedValue(undefined);
+      mockBackupManager.restore.mockImplementation(
+        async (_name: string, after?: () => Promise<void>) => {
+          await after?.();
+        },
+      );
       restartPb.mockResolvedValue(false);
 
       const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
@@ -208,7 +250,11 @@ describe('backupHandlers', () => {
     });
 
     it('handles offline cache clear failure gracefully during restore', async () => {
-      mockBackupManager.restore.mockResolvedValue(undefined);
+      mockBackupManager.restore.mockImplementation(
+        async (_name: string, after?: () => Promise<void>) => {
+          await after?.();
+        },
+      );
       mockOfflineCache.clear.mockImplementation(() => {
         throw new Error('cache error');
       });
@@ -221,7 +267,11 @@ describe('backupHandlers', () => {
 
     it('handles null offline cache during restore', async () => {
       getOfflineCache.mockReturnValueOnce(null as never);
-      mockBackupManager.restore.mockResolvedValue(undefined);
+      mockBackupManager.restore.mockImplementation(
+        async (_name: string, after?: () => Promise<void>) => {
+          await after?.();
+        },
+      );
       restartPb.mockResolvedValue(true);
 
       const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)({}, 'backup.zip');
@@ -230,7 +280,11 @@ describe('backupHandlers', () => {
     });
 
     it('accepts valid names with dots, dashes, and underscores', async () => {
-      mockBackupManager.restore.mockResolvedValue(undefined);
+      mockBackupManager.restore.mockImplementation(
+        async (_name: string, after?: () => Promise<void>) => {
+          await after?.();
+        },
+      );
       restartPb.mockResolvedValue(true);
 
       const result = await getHandler(IPC_CHANNELS.BACKUP_RESTORE)(
@@ -238,7 +292,10 @@ describe('backupHandlers', () => {
         'relay_backup-2026.03.27.zip',
       );
 
-      expect(mockBackupManager.restore).toHaveBeenCalledWith('relay_backup-2026.03.27.zip');
+      expect(mockBackupManager.restore).toHaveBeenCalledWith(
+        'relay_backup-2026.03.27.zip',
+        expect.any(Function),
+      );
       expect(result).toEqual({ success: true });
     });
   });
