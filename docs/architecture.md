@@ -489,7 +489,9 @@ exact persisted query membership; a newer realtime or queued mutation interrupts
 save before it can overwrite that mutation, and retry saves the current view. Offline filter or
 page expansion merges saved records with newer retained rows and deletion markers. Batched-query
 membership records its saved equality values, so an expanded unsaved scope cannot inherit a ready
-status. Incomplete pages do not claim full-directory completeness.
+status. Storage retry uses the scope covered by a successful fetch or complete saved membership;
+it cannot certify newly requested values without fetching them. Query retry also saves retained
+deletions before current rows. Incomplete pages do not claim full-directory completeness.
 The status bar aggregates active Contacts, Servers, On-call, and bridge-group directory stores,
 showing “Saving for offline use”, “Offline copy ready”, or an incomplete reason with “Retry offline
 save”. Pending-change controls remain available. Readiness is independent of current-connection

@@ -7,7 +7,12 @@ vi.mock('../services/pocketbase', () => ({
   getConnectionState: () => (state.online ? 'online' : 'offline'),
   onConnectionStateChange: () => () => {},
 }));
-vi.mock('../stores/collectionStoreRegistry', () => ({ refreshStoresAfterPendingSync: vi.fn() }));
+vi.mock('../stores/collectionStoreRegistry', () => ({
+  refreshStoresAfterPendingSync: vi.fn(),
+  subscribeOfflineReadiness: () => () => {},
+  getOfflineReadiness: () => null,
+  retryOfflineCopies: vi.fn(),
+}));
 const pendingChanges = vi.fn();
 const syncPending = vi.fn();
 const entry = {

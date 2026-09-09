@@ -396,6 +396,8 @@ export class CollectionStore<T extends CollectionRecord> {
   private retainedRecords = new Map<string, T>();
   private readonly retainedDeletes = new Set<string>();
   private displayedScope: string | null = null;
+  private coveredFilterValues = new Set<string>();
+  private cachedScopeIsComplete = false;
   private clientGeneration: number | null = null;
   private serverGeneration = 0;
   private persistenceGeneration = 0;
@@ -453,7 +455,8 @@ export class CollectionStore<T extends CollectionRecord> {
   };
 
   readonly retryOfflineSave = async (): Promise<void> => {
-    if (this.hasOnlineMemory) await this.writeCacheRecords(this.snapshot.data);
+    if (this.hasOnlineMemory && this.hasCoveredMemoryScope())
+      await this.writeCacheRecords(this.snapshot.data);
     else await this.fetchData();
   };
 
@@ -586,6 +589,8 @@ export class CollectionStore<T extends CollectionRecord> {
     this.retainedRecords.clear();
     this.retainedDeletes.clear();
     this.displayedScope = null;
+    this.coveredFilterValues.clear();
+    this.cachedScopeIsComplete = false;
     this.lastSnapshotSignature = null;
     this.persistenceGeneration += 1;
     this.serverGeneration += 1;
@@ -828,6 +833,8 @@ export class CollectionStore<T extends CollectionRecord> {
     this.retainedRecords = new Map(next.map((record) => [record.id, record]));
     this.retainedDeletes.clear();
     this.displayedScope = this.memoryScopeKey();
+    this.coveredFilterValues = new Set(next.length >= totalItems ? this.dynamicFilterValues : []);
+    this.cachedScopeIsComplete = false;
     this.webGate?.markReady();
     void this.writeCacheRecords(next);
   }
@@ -837,6 +844,12 @@ export class CollectionStore<T extends CollectionRecord> {
       this.options.pageSize ? this.loadedLimit : null,
       [...this.dynamicFilterValues].sort((left, right) => left.localeCompare(right)),
     ]);
+  }
+
+  private hasCoveredMemoryScope(): boolean {
+    if (this.displayedScope !== this.memoryScopeKey()) return false;
+    if (!this.batchedFilterField || this.cachedScopeIsComplete) return true;
+    return [...this.dynamicFilterValues].every((value) => this.coveredFilterValues.has(value));
   }
 
   private rememberMutation(action: string, record: CollectionRecord): void {
@@ -888,6 +901,7 @@ export class CollectionStore<T extends CollectionRecord> {
       : status?.complete === true;
     const complete = completeSource && sameAsDisk && cached.length >= totalItems;
     this.displayedScope = scope;
+    this.cachedScopeIsComplete = completeSource;
     this.updateSnapshot({
       data: cached,
       offlineSupported: status?.supported !== false,
@@ -1038,6 +1052,11 @@ export class CollectionStore<T extends CollectionRecord> {
     records: T[],
     current: () => boolean,
   ): Promise<CacheWriteAck | void> {
+    for (const id of this.retainedDeletes) {
+      if (!current()) return;
+      const result = await getApi()?.cacheWrite?.(this.collectionName, 'delete', { id });
+      if (!result?.ok) return result;
+    }
     for (const record of records) {
       if (!current()) return;
       const result = await getApi()?.cacheWrite?.(this.collectionName, 'update', record);
@@ -1045,6 +1064,7 @@ export class CollectionStore<T extends CollectionRecord> {
     }
     if (!current()) return;
     const membership = await this.writeQueryMembership(records);
+    if (!this.hasCoveredMemoryScope()) throw new Error('Reconnect to finish saving this view.');
     if (this.snapshot.hasMore)
       throw new Error('Load the remaining records to complete this offline view.');
     return membership;
@@ -1128,7 +1148,7 @@ export class CollectionStore<T extends CollectionRecord> {
         recordIds,
         totalItems,
         ...(this.batchedFilterField ? { filterValues: [...this.dynamicFilterValues] } : {}),
-        complete: recordIds.length >= totalItems,
+        complete: this.hasCoveredMemoryScope() && recordIds.length >= totalItems,
       });
       if (current() && !result?.ok) this.markPersistenceFailure(result?.error);
       return result;

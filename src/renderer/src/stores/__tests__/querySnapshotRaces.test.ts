@@ -118,6 +118,34 @@ it('restores saved related records after offline filter shrink and expansion', a
   expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  const savedMembership = membership;
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  expect(membership).toEqual(savedMembership);
+  expect(membership?.filterValues).toEqual(['alpha', 'beta']);
+  expect(transport.list).toHaveBeenCalledOnce();
+  store.dispose();
+  start({
+    ...batchedOptions(),
+    batchedFilter: {
+      ...batchedOptions().batchedFilter!,
+      values: ['alpha', 'beta', 'uncached-team'],
+    },
+  });
+  await waitFor(() => expect(store.getSnapshot().hasLoadedSnapshot).toBe(true));
+  expect(store.getSnapshot().data).toEqual(rows);
+  expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  const fetchedRows = [...rows, { id: 'c', team: 'uncached-team', value: 1 }];
+  transport.list.mockResolvedValue(fetchedRows);
+  transport.online = true;
+  transport.connection('online');
+  await waitFor(() => expect(store.getSnapshot().offlineReadiness).toBe('ready'));
+  expect(store.getSnapshot().data).toEqual(fetchedRows);
+  expect(membership).toMatchObject({
+    recordIds: ['a', 'b', 'c'],
+    filterValues: ['alpha', 'beta', 'uncached-team'],
+    complete: true,
+  });
 });
 it('preserves a newer unsaved related row when offline scope expansion reads an older disk copy', async () => {
   start(batchedOptions());
@@ -133,6 +161,10 @@ it('preserves a newer unsaved related row when offline scope expansion reads an 
   await waitFor(() => expect(store.getSnapshot().data).toHaveLength(2));
   expect(store.getSnapshot().data.find((row) => row.id === 'b')?.value).toBe(2);
   expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('ready');
+  expect(disk.get('b')?.value).toBe(2);
+  expect(membership).toMatchObject({ filterValues: ['alpha', 'beta'], complete: true });
 });
 it('loads a saved next page offline without downgrading a newer visible row', async () => {
   transport.page.mockResolvedValue({ items: [rows[0]], totalItems: 2 });
@@ -163,4 +195,29 @@ it('does not restore a newer deletion or claim its stale disk projection ready a
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(store.getSnapshot().data).toEqual([rows[0]]);
   expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('ready');
+  expect(disk.has('b')).toBe(false);
+  expect(membership).toMatchObject({
+    recordIds: ['a'],
+    filterValues: ['alpha', 'beta'],
+    complete: true,
+  });
+});
+
+it('retries a failed complete online query after offline scope changes without requiring a saved membership', async () => {
+  write.mockResolvedValueOnce({ ok: false, persisted: false, error: 'Disk unavailable' });
+  start(batchedOptions());
+  await waitFor(() => expect(store.getSnapshot().offlineReadiness).toBe('incomplete'));
+  expect(membership).toBeNull();
+  transport.online = false;
+  transport.connection('offline');
+  store.updateBatchedFilterValues(['alpha']);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  store.updateBatchedFilterValues(['alpha', 'beta']);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('ready');
+  expect([...disk.values()]).toEqual(rows);
+  expect(membership).toMatchObject({ filterValues: ['alpha', 'beta'], complete: true });
 });
