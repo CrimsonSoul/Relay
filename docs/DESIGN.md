@@ -478,7 +478,9 @@ remain part of the exported-content contract.
 Alerts keeps History in the utility group and exposes one delivery primary action: Open in Outlook
 on Desktop or Download Draft in Relay Web. Save Image remains a visible secondary action; lower
 frequency actions stay in the keyboard-accessible overflow. Optional delivery details remain
-collapsed until requested.
+collapsed until requested. The Outlook draft keeps the branded card as an inline image and also
+includes the alert's severity, subject, body, sender, recipient, update number, event timing, and
+safe links as readable HTML and plain text. The image is never the draft's only message content.
 
 ---
 

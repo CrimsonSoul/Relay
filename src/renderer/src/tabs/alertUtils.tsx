@@ -93,8 +93,23 @@ function renderDataImage(el: Element): string | null {
   return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(alt)}"${className}>`;
 }
 
+type SanitizeHtmlOptions = {
+  allowLinks?: boolean;
+};
+
+function sanitizeHttpHref(value: string): string | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (!parsed.hostname || parsed.username || parsed.password) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 /** Strip unsafe HTML while keeping alert formatting, highlights, and inline data images. */
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const walk = (node: Node): string => {
     if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent ?? '');
@@ -113,6 +128,10 @@ export function sanitizeHtml(html: string): string {
       if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
         return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
       }
+    }
+    if (tag === 'a' && options.allowLinks) {
+      const href = sanitizeHttpHref(el.getAttribute('href')?.trim() ?? '');
+      if (href) return `<a href="${escapeHtmlAttribute(href)}">${children}</a>`;
     }
     if (tag === 'img') {
       return renderDataImage(el) ?? '';

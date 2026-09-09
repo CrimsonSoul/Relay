@@ -37,6 +37,7 @@ For first-time Dynatrace setup, open **Settings → Administration → Relay ser
 Browser navigation uses **Alt+Shift+1–7**, search uses **Alt+Shift+K**, and Settings uses **Alt+Shift+,**. Global navigation does not interrupt text entry. The shortcut reference displays the bindings for the active runtime.
 
 Alerts accepts images explicitly pasted or dropped into the body, in addition to its file picker. PNG, JPEG, and WebP images are limited to 5 MiB. **Download Draft** starts a `relay-alert.eml` download; open it in Outlook, review recipients, and send. Calendar invites download as `relay-schedule.ics`; open the file in your calendar, review attendees, and send. Relay cannot confirm completion in the external application.
+The alert draft retains the branded inline card while providing the complete alert as readable HTML and plain text, so recipients can read its severity, subject, body, sender, recipient, update details, timing, and safe links when images are unavailable.
 
 The following device-specific operations stay on the desktop app:
 

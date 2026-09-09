@@ -76,6 +76,16 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function decodeEmlPart(eml: string, contentType: 'text/plain' | 'text/html'): string {
+  const encoded = eml
+    .split(
+      `Content-Type: ${contentType}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`,
+    )[1]
+    ?.split('\r\n--relay_alert_')[0]
+    ?.replaceAll('\r\n', '');
+  return Buffer.from(encoded ?? '', 'base64').toString('utf8');
+}
+
 // --- Mocks ---
 
 const OPTIMIZED_OUTLOOK_DATA_URL = 'data:image/png;base64,T1BUSU1JWkVEX09VVExPT0tfQ0FQVFVSRQ==';
@@ -784,12 +794,35 @@ describe('AlertsTab', () => {
     expect(eml).not.toMatch(/(^|\r\n)From:/);
     expect(eml).not.toMatch(/(^|\r\n)To:/);
     expect(eml).toContain('Content-ID: <relay-alert-image>');
-    const encodedHtml = eml
-      .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
-      ?.split('\r\n--relay_alert_')[0]
-      ?.replaceAll('\r\n', '');
-    const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+    const html = decodeEmlPart(eml, 'text/html');
     expect(html).toContain('width="640" height="600"');
+  });
+
+  it('exports the alert fields shown on the card as readable message content', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+    fireEvent.click(screen.getByTestId('set-sender'));
+    fireEvent.click(screen.getByTestId('set-recipient'));
+    fireEvent.click(screen.getByTestId('set-update-number'));
+    fireEvent.click(screen.getByText('Open in Outlook'));
+
+    await waitFor(() => {
+      expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
+    });
+    const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
+    const text = decodeEmlPart(eml, 'text/plain');
+    for (const expected of [
+      'ALERT ISSUE',
+      'UPDATE #2',
+      'Test Subject',
+      'body',
+      'Security',
+      'Managers',
+    ]) {
+      expect(text).toContain(expected);
+    }
   });
 
   it('downloads an EML with browser-specific action text in the web runtime', async () => {
@@ -815,11 +848,7 @@ describe('AlertsTab', () => {
       expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
     });
     const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
-    const encodedHtml = eml
-      .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
-      ?.split('\r\n--relay_alert_')[0]
-      ?.replaceAll('\r\n', '');
-    const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+    const html = decodeEmlPart(eml, 'text/html');
     expect(html).toContain('<a href="https://status.example.com/incident"');
     expect(html.match(/<a href=/g)).toHaveLength(1);
   });

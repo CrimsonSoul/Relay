@@ -131,6 +131,14 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     () => ({ severity, subject, bodyHtml, sender, recipient }),
     [bodyHtml, recipient, sender, severity, subject],
   );
+  const eventTimeStartIso = useMemo(
+    () => localToIso(eventTimeStart, eventTimeSourceTz),
+    [eventTimeStart, eventTimeSourceTz],
+  );
+  const eventTimeEndIso = useMemo(
+    () => localToIso(eventTimeEnd, eventTimeSourceTz),
+    [eventTimeEnd, eventTimeSourceTz],
+  );
   const {
     isCapturing,
     saveImage: handleSaveImage,
@@ -141,6 +149,9 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     displaySubject,
     isWebRuntime,
     historyDraft: alertHistoryDraft,
+    updateNumber,
+    eventTimeStart: eventTimeStartIso,
+    eventTimeEnd: eventTimeEndIso,
     addHistory,
     requestOptionalFieldAttention,
     showToast,
@@ -199,15 +210,6 @@ const AlertsTabContent: React.FC<AlertsTabProps> = ({
     }
     onLoadedReminderAlertConsumed?.();
   }, [applyReminderAlert, loadedReminderAlert, onLoadedReminderAlertConsumed]);
-
-  const eventTimeStartIso = useMemo(
-    () => localToIso(eventTimeStart, eventTimeSourceTz),
-    [eventTimeStart, eventTimeSourceTz],
-  );
-  const eventTimeEndIso = useMemo(
-    () => localToIso(eventTimeEnd, eventTimeSourceTz),
-    [eventTimeEnd, eventTimeSourceTz],
-  );
 
   const handleLoadFromHistory = useCallback(
     (entry: AlertHistoryEntry) => {
