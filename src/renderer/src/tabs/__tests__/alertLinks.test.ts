@@ -111,6 +111,9 @@ describe('alertLinks', () => {
       expect(text).toContain(expected);
       expect(htmlWithoutImages).toContain(expected);
     }
+    expect(htmlWithoutImages).toContain(
+      '<a href="https://status.example.com/incidents/42">More information</a>',
+    );
   });
 
   it('preserves multiline lists and safe links while removing active and unsafe markup', () => {

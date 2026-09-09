@@ -214,6 +214,9 @@ export function buildAlertOutlookHtml({
   const eventTime = buildEventTimeText(severity, eventTimeStart, eventTimeEnd);
   const severityLabel = severity ? `ALERT ${severity}` : 'RELAY ALERT';
   const updateLabel = updateNumber && updateNumber > 0 ? `UPDATE #${Math.floor(updateNumber)}` : '';
+  const safeLinkHtml = safeHref
+    ? `<p style="margin:16px 0 0;font-size:14px;line-height:1.5;"><a href="${escapeHtml(safeHref)}">More information</a></p>`
+    : '';
   const semanticHtml = [
     `<p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;color:#4b5563;">${escapeHtml(severityLabel)}</p>`,
     updateLabel
@@ -225,6 +228,7 @@ export function buildAlertOutlookHtml({
       : '',
     `<p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#374151;"><strong>FROM:</strong> ${escapeHtml(normalizeSemanticText(sender, 'IT'))}<br><strong>TO:</strong> ${escapeHtml(normalizeSemanticText(recipient, 'All Employees'))}</p>`,
     `<div style="font-size:16px;line-height:1.55;color:#111827;">${semanticBody.html || '<p>No additional message was provided.</p>'}</div>`,
+    safeLinkHtml,
   ].join('');
 
   return `<!doctype html>

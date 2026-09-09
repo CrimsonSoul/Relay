@@ -105,11 +105,23 @@ describe('useAlertExport', () => {
         ?.split('\r\n--relay_alert_')[0]
         ?.replaceAll('\r\n', '');
       const text = Buffer.from(encodedText ?? '', 'base64').toString('utf8');
-      expect(text).toContain('Payments are unavailable.');
-      expect(text).toContain('Operations');
-      expect(text).toContain('Store leaders');
-      expect(text).toContain('UPDATE #3');
-      expect(text).toContain('2026-07-02T12:00:00.000Z');
+      const encodedHtml = eml
+        .split(
+          'Content-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n',
+        )[1]
+        ?.split('\r\n--relay_alert_')[0]
+        ?.replaceAll('\r\n', '');
+      const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+      for (const expected of [
+        'Payments are unavailable.',
+        'Operations',
+        'Store leaders',
+        'UPDATE #3',
+        '2026-07-02T12:00:00.000Z',
+      ]) {
+        expect(text).toContain(expected);
+        expect(html).toContain(expected);
+      }
     },
   );
 });
