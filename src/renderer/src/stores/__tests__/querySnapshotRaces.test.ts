@@ -180,6 +180,10 @@ it('loads a saved next page offline without downgrading a newer visible row', as
   await store.loadMore();
   expect(store.getSnapshot().data).toEqual([{ ...rows[0], value: 2 }, rows[1]]);
   expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('ready');
+  expect(disk.get('a')?.value).toBe(2);
+  expect(membership).toMatchObject({ recordIds: ['a', 'b'], totalItems: 2, complete: true });
 });
 it('does not restore a newer deletion or claim its stale disk projection ready after offline expansion', async () => {
   start(batchedOptions());
@@ -220,4 +224,56 @@ it('retries a failed complete online query after offline scope changes without r
   expect(store.getSnapshot().offlineReadiness).toBe('ready');
   expect([...disk.values()]).toEqual(rows);
   expect(membership).toMatchObject({ filterValues: ['alpha', 'beta'], complete: true });
+});
+
+it('keeps a partially saved page incomplete after offline expansion and retry', async () => {
+  transport.page.mockResolvedValue({ items: [rows[0]], totalItems: 2 });
+  start({ sort: 'id', pageSize: 1 });
+  await waitFor(() => expect(store.getSnapshot().offlineReadiness).toBe('incomplete'));
+  expect(membership).toMatchObject({ recordIds: ['a'], totalItems: 2, complete: false });
+  transport.online = false;
+  transport.connection('offline');
+  await store.loadMore();
+  expect(store.getSnapshot()).toMatchObject({
+    data: [rows[0]],
+    totalItems: 2,
+    cachedPartial: true,
+  });
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+  expect(membership).toMatchObject({ recordIds: ['a'], totalItems: 2, complete: false });
+});
+it.each(['realtime', 'queued'])(
+  'does not count a %s row entering a partial filtered page as proof of full coverage',
+  async (source) => {
+    transport.page.mockResolvedValue({ items: [rows[0]], totalItems: 2 });
+    start({ sort: 'id', pageSize: 1, filter: 'value=1' });
+    await waitFor(() => expect(store.getSnapshot().offlineReadiness).toBe('incomplete'));
+    transport.online = false;
+    transport.connection('offline');
+    await store.loadMore();
+    const changed = { id: 'c', value: 1 };
+    if (source === 'queued') {
+      disk.set(changed.id, changed);
+      store.applyOptimisticMutation('update', changed);
+    } else transport.realtime({ action: 'update', record: changed });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.getSnapshot()).toMatchObject({ data: [rows[0], changed], totalItems: 2 });
+    await store.retryOfflineSave();
+    expect(store.getSnapshot().offlineReadiness).toBe('incomplete');
+    expect(membership?.complete).toBe(false);
+    expect(disk.has('b')).toBe(false);
+  },
+);
+it('retries a complete paged online snapshot after failed persistence without refetching', async () => {
+  transport.page.mockResolvedValue({ items: rows, totalItems: 2 });
+  write.mockResolvedValueOnce({ ok: false, persisted: false, error: 'Disk unavailable' });
+  start({ sort: 'id', pageSize: 2 });
+  await waitFor(() => expect(store.getSnapshot().offlineReadiness).toBe('incomplete'));
+  transport.online = false;
+  transport.connection('offline');
+  await store.retryOfflineSave();
+  expect(store.getSnapshot().offlineReadiness).toBe('ready');
+  expect(membership).toMatchObject({ recordIds: ['a', 'b'], totalItems: 2, complete: true });
+  expect(transport.page).toHaveBeenCalledOnce();
 });

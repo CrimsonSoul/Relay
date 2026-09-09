@@ -397,6 +397,7 @@ export class CollectionStore<T extends CollectionRecord> {
   private readonly retainedDeletes = new Set<string>();
   private displayedScope: string | null = null;
   private coveredFilterValues = new Set<string>();
+  private completeOnlineScope = false;
   private cachedScopeIsComplete = false;
   private clientGeneration: number | null = null;
   private serverGeneration = 0;
@@ -590,6 +591,7 @@ export class CollectionStore<T extends CollectionRecord> {
     this.retainedDeletes.clear();
     this.displayedScope = null;
     this.coveredFilterValues.clear();
+    this.completeOnlineScope = false;
     this.cachedScopeIsComplete = false;
     this.lastSnapshotSignature = null;
     this.persistenceGeneration += 1;
@@ -833,7 +835,10 @@ export class CollectionStore<T extends CollectionRecord> {
     this.retainedRecords = new Map(next.map((record) => [record.id, record]));
     this.retainedDeletes.clear();
     this.displayedScope = this.memoryScopeKey();
-    this.coveredFilterValues = new Set(next.length >= totalItems ? this.dynamicFilterValues : []);
+    // Local/realtime overlays cannot establish coverage of rows the server has not returned.
+    this.completeOnlineScope =
+      !pages || records.length >= Math.max(...pages.map((page) => page.totalItems));
+    this.coveredFilterValues = new Set(this.completeOnlineScope ? this.dynamicFilterValues : []);
     this.cachedScopeIsComplete = false;
     this.webGate?.markReady();
     void this.writeCacheRecords(next);
@@ -848,8 +853,15 @@ export class CollectionStore<T extends CollectionRecord> {
 
   private hasCoveredMemoryScope(): boolean {
     if (this.displayedScope !== this.memoryScopeKey()) return false;
-    if (!this.batchedFilterField || this.cachedScopeIsComplete) return true;
+    if (this.cachedScopeIsComplete) return true;
+    if (!this.batchedFilterField) return this.completeOnlineScope;
     return [...this.dynamicFilterValues].every((value) => this.coveredFilterValues.has(value));
+  }
+
+  private isQuerySnapshotComplete(records: T[]): boolean {
+    return (
+      this.hasCoveredMemoryScope() && records.length >= (this.snapshot.totalItems ?? records.length)
+    );
   }
 
   private rememberMutation(action: string, record: CollectionRecord): void {
@@ -1064,9 +1076,8 @@ export class CollectionStore<T extends CollectionRecord> {
     }
     if (!current()) return;
     const membership = await this.writeQueryMembership(records);
-    if (!this.hasCoveredMemoryScope()) throw new Error('Reconnect to finish saving this view.');
-    if (this.snapshot.hasMore)
-      throw new Error('Load the remaining records to complete this offline view.');
+    if (!this.isQuerySnapshotComplete(records))
+      throw new Error('This view is incomplete. Reconnect or load the remaining records.');
     return membership;
   }
 
@@ -1148,7 +1159,7 @@ export class CollectionStore<T extends CollectionRecord> {
         recordIds,
         totalItems,
         ...(this.batchedFilterField ? { filterValues: [...this.dynamicFilterValues] } : {}),
-        complete: this.hasCoveredMemoryScope() && recordIds.length >= totalItems,
+        complete: this.isQuerySnapshotComplete(records),
       });
       if (current() && !result?.ok) this.markPersistenceFailure(result?.error);
       return result;

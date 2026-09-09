@@ -491,7 +491,10 @@ page expansion merges saved records with newer retained rows and deletion marker
 membership records its saved equality values, so an expanded unsaved scope cannot inherit a ready
 status. Storage retry uses the scope covered by a successful fetch or complete saved membership;
 it cannot certify newly requested values without fetching them. Query retry also saves retained
-deletions before current rows. Incomplete pages do not claim full-directory completeness.
+deletions before current rows. Paged completeness requires a server response covering its reported
+total before local/realtime overlays, or complete saved membership. Both persisted membership and
+the final ready acknowledgement require that coverage plus all expected rows; inserted local rows
+cannot fill an unfetched page by count. Incomplete pages do not claim full-directory completeness.
 The status bar aggregates active Contacts, Servers, On-call, and bridge-group directory stores,
 showing “Saving for offline use”, “Offline copy ready”, or an incomplete reason with “Retry offline
 save”. Pending-change controls remain available. Readiness is independent of current-connection
